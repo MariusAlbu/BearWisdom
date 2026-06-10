@@ -31,9 +31,18 @@ fn search_single_result_inlines_path_and_omits_files_section() {
     let out = search(&results, 50);
 
     assert!(out.contains("#format:compact-v1"));
-    assert!(!out.contains("#files"), "single-result must not emit a #files registry, got:\n{out}");
-    assert!(!out.contains("F1:"), "single-result must not produce F1 references, got:\n{out}");
-    assert!(out.contains("src/foo.rs:42"), "single-result must inline the path, got:\n{out}");
+    assert!(
+        !out.contains("#files"),
+        "single-result must not emit a #files registry, got:\n{out}"
+    );
+    assert!(
+        !out.contains("F1:"),
+        "single-result must not produce F1 references, got:\n{out}"
+    );
+    assert!(
+        out.contains("src/foo.rs:42"),
+        "single-result must inline the path, got:\n{out}"
+    );
 }
 
 #[test]
@@ -44,7 +53,10 @@ fn search_multi_result_uses_files_registry() {
     ];
     let out = search(&results, 50);
 
-    assert!(out.contains("#files"), "multi-result must keep the file registry, got:\n{out}");
+    assert!(
+        out.contains("#files"),
+        "multi-result must keep the file registry, got:\n{out}"
+    );
     assert!(out.contains("F1:src/a.rs"));
     assert!(out.contains("F2:src/b.rs"));
 }
@@ -52,10 +64,8 @@ fn search_multi_result_uses_files_registry() {
 #[test]
 fn with_freshness_header_injects_index_block_into_compact_response() {
     let response = format!("#format:compact-v1\n#meta\ncount:0\n");
-    let out = crate::server::BearWisdomServer::with_freshness_header(
-        response,
-        Some(1_700_000_000_000),
-    );
+    let out =
+        crate::server::BearWisdomServer::with_freshness_header(response, Some(1_700_000_000_000));
     assert!(out.starts_with("#format:compact-v1\n"));
     assert!(out.contains("#index"));
     assert!(out.contains("last_indexed_at_ms:1700000000000"));
@@ -79,10 +89,17 @@ fn with_freshness_header_handles_unknown_index_time() {
 
 #[test]
 fn grep_single_result_inlines_path() {
-    let results = vec![make_grep_match("crates/foo/src/lib.rs", 10, "fn hello() {}")];
+    let results = vec![make_grep_match(
+        "crates/foo/src/lib.rs",
+        10,
+        "fn hello() {}",
+    )];
     let out = grep(&results, 50);
 
-    assert!(!out.contains("#files"), "single-result grep must skip #files, got:\n{out}");
+    assert!(
+        !out.contains("#files"),
+        "single-result grep must skip #files, got:\n{out}"
+    );
     assert!(out.contains("crates/foo/src/lib.rs:10"));
 }
 
@@ -95,12 +112,18 @@ fn search_capped_at_limit_sets_truncated_flag() {
         make_search_result("c.rs", 3),
     ];
     let out = search(&results, 3);
-    assert!(out.contains("truncated:true"), "expected truncation flag, got:\n{out}");
+    assert!(
+        out.contains("truncated:true"),
+        "expected truncation flag, got:\n{out}"
+    );
 }
 
 #[test]
 fn search_under_limit_omits_truncated_flag() {
     let results = vec![make_search_result("a.rs", 1), make_search_result("b.rs", 2)];
     let out = search(&results, 50);
-    assert!(!out.contains("truncated:true"), "should not flag truncation when under limit, got:\n{out}");
+    assert!(
+        !out.contains("truncated:true"),
+        "should not flag truncation when under limit, got:\n{out}"
+    );
 }

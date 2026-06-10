@@ -13,9 +13,21 @@ fn ada_calls_row_accepts_type_conversions_and_functions() {
     // table. Ada's parens-everywhere syntax means a Calls ref may bind to a
     // type (conversion `UInt16(x)`) as well as a function/procedure.
     let t = ADA_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Struct));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::TypeAlias));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Struct
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::TypeAlias
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
 }
 
 #[test]

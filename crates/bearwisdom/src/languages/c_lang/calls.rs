@@ -21,9 +21,7 @@ pub(super) fn template_arg_names(args: Node, src: &[u8]) -> Vec<String> {
         let name = match child.kind() {
             "type_descriptor" => first_type_identifier(&child, src),
             "type_identifier" | "primitive_type" => Some(node_text(child, src)),
-            "qualified_identifier" => child
-                .child_by_field_name("name")
-                .map(|n| node_text(n, src)),
+            "qualified_identifier" => child.child_by_field_name("name").map(|n| node_text(n, src)),
             _ => None,
         };
         if let Some(n) = name.filter(|n| !n.is_empty()) {
@@ -55,13 +53,33 @@ fn unwrap_template<'a>(node: Node<'a>) -> (Node<'a>, Option<Node<'a>>) {
 fn is_overloadable_binary_operator(tok: &str) -> bool {
     matches!(
         tok,
-        "+" | "-" | "*" | "/" | "%"
-            | "&" | "|" | "^"
-            | "<<" | ">>"
-            | "<" | ">" | "<=" | ">=" | "==" | "!="
-            | "&&" | "||"
-            | "+=" | "-=" | "*=" | "/=" | "%="
-            | "&=" | "|=" | "^=" | "<<=" | ">>="
+        "+" | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "&"
+            | "|"
+            | "^"
+            | "<<"
+            | ">>"
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            | "=="
+            | "!="
+            | "&&"
+            | "||"
+            | "+="
+            | "-="
+            | "*="
+            | "/="
+            | "%="
+            | "&="
+            | "|="
+            | "^="
+            | "<<="
+            | ">>="
     )
 }
 
@@ -86,7 +104,12 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&fn_node, src));
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &fn_node, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &fn_node,
+                        refs,
+                    );
                     // `defined(MACRO)` inside `#if`/`#elif` directives parses
                     // as call_expression in tree-sitter-c. It's a C preprocessor
                     // operator, not a function call, and never resolves to a
@@ -102,7 +125,9 @@ pub(super) fn extract_calls_from_body(
                         && target_name != "defined"
                         && !is_c_compiler_intrinsic(&target_name)
                     {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -111,9 +136,9 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: fn_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 extract_calls_from_body(&child, src, language, source_symbol_index, refs);
@@ -137,7 +162,9 @@ pub(super) fn extract_calls_from_body(
                 if let Some(op) = child.child_by_field_name("operator") {
                     let tok = node_text(op, src);
                     if is_overloadable_binary_operator(&tok) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: format!("operator{tok}"),
                             kind: EdgeKind::Calls,
@@ -155,7 +182,9 @@ pub(super) fn extract_calls_from_body(
             }
 
             "subscript_expression" if language != "c" => {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: "operator[]".to_string(),
                     kind: EdgeKind::Calls,
@@ -193,17 +222,26 @@ pub(super) fn extract_calls_from_body(
                 for inner in child.children(&mut ic) {
                     match inner.kind() {
                         "type_descriptor" => {
-                            emit_typerefs_for_type_descriptor(inner, src, source_symbol_index, refs);
+                            emit_typerefs_for_type_descriptor(
+                                inner,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
                         }
                         "parenthesized_expression" => {
                             // `sizeof(Foo)` where Foo looks like a value expression.
                             // Emit TypeRef for any bare identifier inside.
                             let mut pc = inner.walk();
                             for pchild in inner.children(&mut pc) {
-                                if pchild.kind() == "identifier" || pchild.kind() == "type_identifier" {
+                                if pchild.kind() == "identifier"
+                                    || pchild.kind() == "type_identifier"
+                                {
                                     let name = node_text(pchild, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index,
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
@@ -212,9 +250,9 @@ pub(super) fn extract_calls_from_body(
                                             module: None,
                                             chain: None,
                                             byte_offset: pchild.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
                                     }
                                 }
                             }
@@ -237,7 +275,9 @@ pub(super) fn extract_calls_from_body(
                         "type_identifier" => {
                             let name = node_text(inner, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name.clone(),
                                     kind: EdgeKind::Instantiates,
@@ -246,10 +286,12 @@ pub(super) fn extract_calls_from_body(
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -258,9 +300,9 @@ pub(super) fn extract_calls_from_body(
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         "template_type" => {
@@ -268,7 +310,9 @@ pub(super) fn extract_calls_from_body(
                                 if name_node.kind() == "type_identifier" {
                                     let name = node_text(name_node, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index,
                                             target_name: name.clone(),
                                             kind: EdgeKind::Instantiates,
@@ -277,10 +321,12 @@ pub(super) fn extract_calls_from_body(
                                             module: None,
                                             chain: None,
                                             byte_offset: name_node.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index,
                                             target_name: name,
                                             kind: EdgeKind::TypeRef,
@@ -289,14 +335,19 @@ pub(super) fn extract_calls_from_body(
                                             module: None,
                                             chain: None,
                                             byte_offset: name_node.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
                                     }
                                 }
                             }
                             // also recurse into template args for TypeRefs
-                            emit_typerefs_for_type_descriptor(inner, src, source_symbol_index, refs);
+                            emit_typerefs_for_type_descriptor(
+                                inner,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
                         }
                         _ => {}
                     }
@@ -366,7 +417,12 @@ fn extract_lambda_param_typerefs(
             for param in child.children(&mut pc) {
                 if param.kind() == "parameter_declaration" {
                     if let Some(type_node) = param.child_by_field_name("type") {
-                        emit_typerefs_for_type_descriptor(type_node, src, source_symbol_index, refs);
+                        emit_typerefs_for_type_descriptor(
+                            type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     } else {
                         // Fallback: walk for type_identifier children.
                         let mut ic = param.walk();
@@ -374,7 +430,9 @@ fn extract_lambda_param_typerefs(
                             if inner.kind() == "type_identifier" {
                                 let name = node_text(inner, src);
                                 if !name.is_empty() {
-                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
@@ -383,9 +441,9 @@ fn extract_lambda_param_typerefs(
                                         module: None,
                                         chain: None,
                                         byte_offset: inner.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
+                                    });
                                 }
                             }
                         }
@@ -413,7 +471,9 @@ fn extract_catch_typerefs(
                     "type_identifier" => {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -422,9 +482,9 @@ fn extract_catch_typerefs(
                                 module: None,
                                 chain: None,
                                 byte_offset: inner.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "qualified_identifier" => {
@@ -432,7 +492,9 @@ fn extract_catch_typerefs(
                         if let Some(name_node) = inner.child_by_field_name("name") {
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -441,9 +503,9 @@ fn extract_catch_typerefs(
                                     module: None,
                                     chain: None,
                                     byte_offset: name_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -473,10 +535,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
         // build_chain_inner returns None for any qualified call and the chain
         // never gets built — so `std::make_shared<T>()` would lose both its
         // namespace context and its template type-args.
-        "identifier"
-        | "field_identifier"
-        | "type_identifier"
-        | "namespace_identifier" => {
+        "identifier" | "field_identifier" | "type_identifier" | "namespace_identifier" => {
             segments.push(ChainSegment {
                 name: node_text(node, src),
                 node_kind: node.kind().to_string(),
@@ -485,11 +544,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -502,11 +561,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -518,9 +577,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
         // `make_shared<HttpRequest>` into the target_name.
         "template_function" | "template_method" => {
             let (name_node, args) = unwrap_template(node);
-            let type_args = args
-                .map(|a| template_arg_names(a, src))
-                .unwrap_or_default();
+            let type_args = args.map(|a| template_arg_names(a, src)).unwrap_or_default();
             segments.push(ChainSegment {
                 name: node_text(name_node, src),
                 node_kind: name_node.kind().to_string(),
@@ -529,11 +586,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args,
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -542,9 +599,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
             let field = node.child_by_field_name("field")?;
             build_chain_inner(argument, src, segments)?;
             let (field_name, args) = unwrap_template(field);
-            let type_args = args
-                .map(|a| template_arg_names(a, src))
-                .unwrap_or_default();
+            let type_args = args.map(|a| template_arg_names(a, src)).unwrap_or_default();
             segments.push(ChainSegment {
                 name: node_text(field_name, src),
                 node_kind: field_name.kind().to_string(),
@@ -553,11 +608,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args,
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -568,9 +623,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 build_chain_inner(scope_node, src, segments)?;
             }
             let (inner_name, args) = unwrap_template(name_node);
-            let type_args = args
-                .map(|a| template_arg_names(a, src))
-                .unwrap_or_default();
+            let type_args = args.map(|a| template_arg_names(a, src)).unwrap_or_default();
             segments.push(ChainSegment {
                 name: node_text(inner_name, src),
                 node_kind: inner_name.kind().to_string(),
@@ -579,11 +632,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args,
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 

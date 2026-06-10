@@ -34,7 +34,10 @@ fn sha256_hex_stable() {
 fn cache_path_contains_hash() {
     let path = cache_path("abc123");
     let name = path.file_name().unwrap().to_string_lossy();
-    assert!(name.contains("bw_fypp_abc123"), "unexpected cache name: {name}");
+    assert!(
+        name.contains("bw_fypp_abc123"),
+        "unexpected cache name: {name}"
+    );
     assert!(name.ends_with(".f90"));
 }
 

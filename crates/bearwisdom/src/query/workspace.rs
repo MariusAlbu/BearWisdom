@@ -9,8 +9,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use crate::query::QueryResult;
 use crate::query::architecture::HotspotSymbol;
+use crate::query::QueryResult;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
@@ -175,13 +175,13 @@ pub fn list_packages(db: &Database) -> QueryResult<Vec<PackageStats>> {
                 None
             };
             Ok(PackageStats {
-                name:            row.get(0)?,
-                path:            row.get(1)?,
-                kind:            row.get(2)?,
-                file_count:      row.get::<_, u32>(3).unwrap_or(0),
-                symbol_count:    row.get::<_, u32>(4).unwrap_or(0),
-                edge_count:      row.get::<_, u32>(5).unwrap_or(0),
-                resolved_refs:   resolved,
+                name: row.get(0)?,
+                path: row.get(1)?,
+                kind: row.get(2)?,
+                file_count: row.get::<_, u32>(3).unwrap_or(0),
+                symbol_count: row.get::<_, u32>(4).unwrap_or(0),
+                edge_count: row.get::<_, u32>(5).unwrap_or(0),
+                resolved_refs: resolved,
                 unresolved_refs: unresolved,
                 resolved_pct,
             })
@@ -267,10 +267,10 @@ pub fn workspace_overview(db: &Database) -> QueryResult<WorkspaceOverview> {
     let hotspot_rows = hotspot_stmt
         .query_map([], |row| {
             Ok(HotspotSymbol {
-                name:          row.get(0)?,
+                name: row.get(0)?,
                 qualified_name: row.get(1)?,
-                kind:          row.get(2)?,
-                file_path:     row.get(3)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
                 incoming_refs: row.get(4)?,
             })
         })
@@ -324,13 +324,13 @@ pub fn package_dependencies(db: &Database) -> QueryResult<Vec<PackageDependency>
     let rows = stmt
         .query_map([], |row| {
             Ok(PackageDependency {
-                source_package:      row.get(0)?,
-                target_package:      row.get(1)?,
+                source_package: row.get(0)?,
+                target_package: row.get(1)?,
                 source_package_path: row.get(2)?,
                 target_package_path: row.get(3)?,
                 source_package_kind: row.get(4)?,
                 target_package_kind: row.get(5)?,
-                edge_count:          row.get(6)?,
+                edge_count: row.get(6)?,
             })
         })
         .context("Failed to execute package_dependencies query")?;
@@ -420,20 +420,22 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
     for row in edge_rows {
         let (src_id, tgt_id, src_name, tgt_name, src_path, tgt_path, src_kind, tgt_kind, kind, cnt) =
             row.context("row fetch failed")?;
-        let entry = acc.entry((src_id, tgt_id)).or_insert_with(|| WorkspaceGraphEdge {
-            source_package: src_name,
-            target_package: tgt_name,
-            source_package_path: src_path,
-            target_package_path: tgt_path,
-            source_package_kind: src_kind,
-            target_package_kind: tgt_kind,
-            code_edges: 0,
-            code_by_kind: Vec::new(),
-            flow_edges: 0,
-            flow_by_kind: Vec::new(),
-            declared_dep: false,
-            total_edges: 0,
-        });
+        let entry = acc
+            .entry((src_id, tgt_id))
+            .or_insert_with(|| WorkspaceGraphEdge {
+                source_package: src_name,
+                target_package: tgt_name,
+                source_package_path: src_path,
+                target_package_path: tgt_path,
+                source_package_kind: src_kind,
+                target_package_kind: tgt_kind,
+                code_edges: 0,
+                code_by_kind: Vec::new(),
+                flow_edges: 0,
+                flow_by_kind: Vec::new(),
+                declared_dep: false,
+                total_edges: 0,
+            });
         if is_flow(&kind) {
             entry.flow_edges += cnt;
             entry.flow_by_kind.push((kind, cnt));
@@ -501,28 +503,32 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
     for row in dep_rows {
         let (src_id, tgt_id, src_name, tgt_name, src_path, tgt_path, src_kind, tgt_kind) =
             row.context("dep row fetch failed")?;
-        let entry = acc.entry((src_id, tgt_id)).or_insert_with(|| WorkspaceGraphEdge {
-            source_package: src_name,
-            target_package: tgt_name,
-            source_package_path: src_path,
-            target_package_path: tgt_path,
-            source_package_kind: src_kind,
-            target_package_kind: tgt_kind,
-            code_edges: 0,
-            code_by_kind: Vec::new(),
-            flow_edges: 0,
-            flow_by_kind: Vec::new(),
-            declared_dep: false,
-            total_edges: 0,
-        });
+        let entry = acc
+            .entry((src_id, tgt_id))
+            .or_insert_with(|| WorkspaceGraphEdge {
+                source_package: src_name,
+                target_package: tgt_name,
+                source_package_path: src_path,
+                target_package_path: tgt_path,
+                source_package_kind: src_kind,
+                target_package_kind: tgt_kind,
+                code_edges: 0,
+                code_by_kind: Vec::new(),
+                flow_edges: 0,
+                flow_by_kind: Vec::new(),
+                declared_dep: false,
+                total_edges: 0,
+            });
         entry.declared_dep = true;
     }
 
     // Stable output: sort by total edges desc, then src/tgt name.
     let mut out: Vec<WorkspaceGraphEdge> = acc.into_values().collect();
     for e in &mut out {
-        e.code_by_kind.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        e.flow_by_kind.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        e.code_by_kind
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        e.flow_by_kind
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     }
     out.sort_by(|a, b| {
         b.total_edges
@@ -541,4 +547,3 @@ pub fn workspace_graph(db: &Database) -> QueryResult<Vec<WorkspaceGraphEdge>> {
 #[cfg(test)]
 #[path = "workspace_tests.rs"]
 mod tests;
-

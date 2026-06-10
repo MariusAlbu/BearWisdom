@@ -15,14 +15,16 @@ use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
 fn cov_component_class_symbol_from_filename() {
-    let r = extract::extract(
-        "<template><div>Hello</div></template>",
-        "MyButton.vue",
-    );
+    let r = extract::extract("<template><div>Hello</div></template>", "MyButton.vue");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "MyButton"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "MyButton"),
         "Vue SFC should produce Class(MyButton) from filename; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -32,27 +34,31 @@ fn cov_component_class_symbol_from_filename() {
 
 #[test]
 fn cov_element_pascal_produces_calls() {
-    let r = extract::extract(
-        "<template><UserCard></UserCard></template>",
-        "App.vue",
-    );
+    let r = extract::extract("<template><UserCard></UserCard></template>", "App.vue");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
         "PascalCase element should produce Calls(UserCard); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn cov_self_closing_tag_produces_calls() {
-    let r = extract::extract(
-        "<template><Modal /></template>",
-        "App.vue",
-    );
+    let r = extract::extract("<template><Modal /></template>", "App.vue");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Modal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Modal"),
         "self-closing PascalCase tag should produce Calls(Modal); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -63,9 +69,14 @@ fn cov_kebab_element_produces_calls() {
         "Page.vue",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MyComponent"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MyComponent"),
         "kebab element should produce Calls(MyComponent); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -81,9 +92,14 @@ fn cov_directive_attribute_v_on_produces_calls() {
         "Form.vue",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "submitForm"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "submitForm"),
         "v-on:submit directive should produce Calls(submitForm); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -95,9 +111,14 @@ fn cov_directive_attribute_at_shorthand_produces_calls() {
         "Button.vue",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
         "@click shorthand should produce Calls(handleClick); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -109,9 +130,14 @@ fn cov_directive_attribute_handler_with_args_produces_calls() {
         "Input.vue",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "onInput"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "onInput"),
         "@input with $event arg should produce Calls(onInput); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -126,14 +152,24 @@ fn cov_standard_html_elements_do_not_produce_calls() {
         "<template><div><p><span>text</span></p></div></template>",
         "Layout.vue",
     );
-    let html_calls: Vec<_> = r.refs.iter()
+    let html_calls: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
-        .filter(|rf| matches!(rf.target_name.as_str(), "div" | "Div" | "p" | "P" | "span" | "Span"))
+        .filter(|rf| {
+            matches!(
+                rf.target_name.as_str(),
+                "div" | "Div" | "p" | "P" | "span" | "Span"
+            )
+        })
         .collect();
     assert!(
         html_calls.is_empty(),
         "standard HTML elements must not produce Calls; got: {:?}",
-        html_calls.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        html_calls
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -144,14 +180,16 @@ fn cov_standard_html_elements_do_not_produce_calls() {
 #[test]
 fn cov_component_symbol_from_multi_word_filename() {
     // UserProfileCard.vue → Class(UserProfileCard)
-    let r = extract::extract(
-        "<template><div></div></template>",
-        "UserProfileCard.vue",
-    );
+    let r = extract::extract("<template><div></div></template>", "UserProfileCard.vue");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "UserProfileCard"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "UserProfileCard"),
         "multi-word filename should produce Class(UserProfileCard); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -167,9 +205,14 @@ fn cov_nested_pascal_component_in_template_body_produces_calls() {
         "Dashboard.vue",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DataTable"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DataTable"),
         "nested PascalCase component should produce Calls(DataTable); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 

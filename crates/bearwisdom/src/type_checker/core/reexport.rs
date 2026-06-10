@@ -6,6 +6,7 @@
 //
 //   TS   `export { X } from './y'`   ·   `export * from './z'`
 //   Rust `pub use crate::bar::X`     ·   `pub use crate::bar::*`
+//   Nim  `export results`
 //
 // The walk consults `SymbolLookup::reexports_from`, which is populated ONLY
 // from refs the extractor tagged `is_reexport=true`. A private import never
@@ -35,9 +36,10 @@ use crate::types::EdgeKind;
 /// `kind_compatible` decides whether a candidate symbol's kind is a plausible
 /// target for `edge_kind` — passed in so the walk stays language-agnostic.
 ///
-/// A re-export whose source module does not resolve to a project-internal file
-/// (unresolvable, or an `ext:` external file) is skipped: cross-package and
-/// external re-exports are the externals stage's job, not this per-file walk.
+/// A re-export whose source module does not resolve to a known file is skipped:
+/// unindexed bare packages are the externals stage's job, not this per-file
+/// walk. If the source resolves to an already-indexed `ext:` file, following it
+/// is still safe because only explicit re-export entries enter this map.
 pub(crate) fn follow_reexports(
     module_path: &str,
     target_name: &str,
@@ -61,15 +63,15 @@ pub(crate) fn follow_reexports(
     let mut wildcard_sources: Vec<&str> = Vec::new();
 
     for (exported_name, source_module) in reexports {
-        // Skip external bare specifiers. A relative source (`./y`, `../z`) is
+        // Skip unresolved bare specifiers. A relative source (`./y`, `../z`) is
         // internal by construction and always followed. A non-relative source
-        // (`react`, Rust `crate::bar`) is followed ONLY when it resolves to a
-        // project-internal file — Rust `crate::bar` does; an npm package
-        // resolves to `ext:` or nowhere and is left to the cross-package
-        // re-export walk and the externals stage.
+        // (`react`, Rust `crate::bar`, Nim `results`) is followed when module
+        // resolution can map it to a known file. That file may be `ext:` when
+        // dependency discovery has already indexed it; unresolved bare packages
+        // remain the externals stage's job.
         if !is_relative_specifier(source_module) {
             match lookup.resolve_module_from(module_path, source_module) {
-                Some(p) if !p.starts_with("ext:") => {}
+                Some(_) => {}
                 _ => continue,
             }
         }
@@ -106,6 +108,18 @@ pub(crate) fn follow_reexports(
                 });
             }
         }
+        if !is_relative_specifier(source_module) {
+            if let Some(res) = resolve_reexport_by_matching_file(
+                lookup,
+                source_module,
+                target_name,
+                edge_kind,
+                kind_compatible,
+                "reexport_chain",
+            ) {
+                return Some(res);
+            }
+        }
 
         // Not directly in `source_module` — it may itself be a re-exporting
         // module. Recurse, preferring the resolved file path so the next hop's
@@ -114,9 +128,14 @@ pub(crate) fn follow_reexports(
             .resolve_module_from(module_path, source_module)
             .map(|s| s.to_string());
         let next_path: &str = next.as_deref().unwrap_or(source_module);
-        if let Some(res) =
-            follow_reexports(next_path, target_name, edge_kind, kind_compatible, lookup, depth + 1)
-        {
+        if let Some(res) = follow_reexports(
+            next_path,
+            target_name,
+            edge_kind,
+            kind_compatible,
+            lookup,
+            depth + 1,
+        ) {
             return Some(res);
         }
     }
@@ -142,15 +161,32 @@ pub(crate) fn follow_reexports(
                 });
             }
         }
+        if !is_relative_specifier(source_module) {
+            if let Some(res) = resolve_reexport_by_matching_file(
+                lookup,
+                source_module,
+                target_name,
+                edge_kind,
+                kind_compatible,
+                "reexport_star",
+            ) {
+                return Some(res);
+            }
+        }
 
         // Recurse into wildcard sources too — chase via the resolved file path.
         let next = lookup
             .resolve_module_from(module_path, source_module)
             .map(|s| s.to_string());
         let next_path: &str = next.as_deref().unwrap_or(source_module);
-        if let Some(res) =
-            follow_reexports(next_path, target_name, edge_kind, kind_compatible, lookup, depth + 1)
-        {
+        if let Some(res) = follow_reexports(
+            next_path,
+            target_name,
+            edge_kind,
+            kind_compatible,
+            lookup,
+            depth + 1,
+        ) {
             return Some(res);
         }
     }
@@ -164,9 +200,56 @@ pub(crate) fn follow_reexports(
 /// resolves to an internal file. Kept local so the walk carries no
 /// per-language dependency.
 fn is_relative_specifier(s: &str) -> bool {
-    s.starts_with('.')
-        || s.starts_with('/')
-        || (s.len() >= 2 && s.as_bytes()[1] == b':')
+    s.starts_with('.') || s.starts_with('/') || (s.len() >= 2 && s.as_bytes()[1] == b':')
+}
+
+fn resolve_reexport_by_matching_file(
+    lookup: &dyn SymbolLookup,
+    source_module: &str,
+    target_name: &str,
+    edge_kind: EdgeKind,
+    kind_compatible: fn(EdgeKind, &str) -> bool,
+    strategy: &'static str,
+) -> Option<Resolution> {
+    let mut matches = lookup.by_name(target_name).iter().filter(|sym| {
+        sym.name == target_name
+            && kind_compatible(edge_kind, &sym.kind)
+            && file_path_matches_module(&sym.file_path, source_module)
+    });
+    let first = matches.next()?;
+    let first_file = first.file_path.as_ref();
+    if matches.any(|sym| sym.file_path.as_ref() != first_file) {
+        return None;
+    }
+    Some(Resolution {
+        target_symbol_id: first.id,
+        confidence: RESOLVED_CONFIDENCE,
+        strategy,
+        resolved_yield_type: None,
+        flow_emit: None,
+    })
+}
+
+fn file_path_matches_module(file_path: &str, source_module: &str) -> bool {
+    let trimmed = source_module.trim_matches('"').trim_matches('\'').trim();
+    let stripped = trimmed
+        .strip_prefix("std/")
+        .or_else(|| trimmed.strip_prefix("pkg/"))
+        .unwrap_or(trimmed)
+        .replace('\\', "/");
+    let module = stripped.trim_matches('/');
+    if module.is_empty() {
+        return false;
+    }
+    let normalized = file_path.replace('\\', "/");
+    let candidates = if module.ends_with(".nim") {
+        vec![module.to_string()]
+    } else {
+        vec![format!("{module}.nim"), format!("{module}/mod.nim")]
+    };
+    candidates
+        .iter()
+        .any(|candidate| normalized == *candidate || normalized.ends_with(&format!("/{candidate}")))
 }
 
 #[cfg(test)]

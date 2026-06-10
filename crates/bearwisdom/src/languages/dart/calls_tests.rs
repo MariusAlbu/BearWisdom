@@ -29,8 +29,7 @@ fn find<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
 /// call), and run the call-arg extractor against it.
 fn call_args(src: &str) -> Vec<CallArg> {
     let tree = parse(src);
-    let arg_part = find(tree.root_node(), "argument_part")
-        .expect("argument_part node in snippet");
+    let arg_part = find(tree.root_node(), "argument_part").expect("argument_part node in snippet");
     extract_dart_call_args(&arg_part, src)
 }
 
@@ -39,7 +38,8 @@ fn call_args_string_literal() {
     let src = "void caller() { fetch('/api/users'); }";
     let args = call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit, got: {args:?}"
     );
 }
@@ -49,7 +49,8 @@ fn call_args_identifier() {
     let src = "void caller(x) { f(x); }";
     let args = call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "x")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "x")),
         "expected Ident, got: {args:?}"
     );
 }
@@ -69,7 +70,8 @@ fn call_args_list_literal_produces_array_literal_variant() {
     let src = "void caller(x, y) { f([x, y]); }";
     let args = call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for list arg, got: {args:?}"
     );
 }
@@ -96,7 +98,10 @@ fn call_args_spread_element_produces_spread_variant() {
         }
         _ => false,
     });
-    assert!(spread_seen, "expected Spread variant for spread element, got: {args:?}");
+    assert!(
+        spread_seen,
+        "expected Spread variant for spread element, got: {args:?}"
+    );
 }
 
 #[test]
@@ -104,7 +109,8 @@ fn call_args_subscript_produces_index_access_variant() {
     let src = "void caller(a, i) { f(a[i]); }";
     let args = call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for subscript arg, got: {args:?}"
     );
 }
@@ -114,7 +120,8 @@ fn call_args_binary_expression_produces_binary_variant() {
     let src = "void caller(a, b) { f(a + b); }";
     let args = call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\", got: {args:?}"
     );
 }

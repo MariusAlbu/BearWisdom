@@ -221,9 +221,7 @@ fn build_benchmark_md(scores: &[TaskScore], results: &[RunResult]) -> String {
 
     // ---------------- Reproducibility ----------------
     md.push_str("## Reproducibility\n\n");
-    md.push_str(&format!(
-        "- Run counts per (project, condition):\n\n"
-    ));
+    md.push_str(&format!("- Run counts per (project, condition):\n\n"));
     md.push_str("| Project | Condition | Runs | Completed | MaxIter | ApiErr |\n");
     md.push_str("|---|---|---:|---:|---:|---:|\n");
     for ((project, cond), st) in &stats {
@@ -247,11 +245,7 @@ fn build_benchmark_md(scores: &[TaskScore], results: &[RunResult]) -> String {
 // Section writers
 // ---------------------------------------------------------------------------
 
-fn write_headline(
-    md: &mut String,
-    stats: &ProjectStats,
-    projects: &[String],
-) {
+fn write_headline(md: &mut String, stats: &ProjectStats, projects: &[String]) {
     // Aggregate (project median) → cross-project mean per condition.
     // Numbers: median total tokens, median iterations, median wall_ms, mean F1, completion rate.
     let mut agg: HashMap<&str, ConditionAgg> = HashMap::new();
@@ -268,8 +262,7 @@ fn write_headline(
                 let (_, m_tok, _) = quantiles(st.total_tokens.clone());
                 let (_, m_it, _) = quantiles(st.iterations.clone());
                 let (_, m_wall, _) = quantiles(st.wall_ms.clone());
-                let mean_f1: f64 =
-                    st.f1.iter().sum::<f64>() / (st.f1.len().max(1) as f64);
+                let mean_f1: f64 = st.f1.iter().sum::<f64>() / (st.f1.len().max(1) as f64);
                 let comp_rate = st.completed as f64 / (st.runs.max(1) as f64);
                 entry.tokens.push(m_tok);
                 entry.iterations.push(m_it);
@@ -413,8 +406,7 @@ fn write_category_breakdown(md: &mut String, scores: &[TaskScore]) {
                 continue;
             }
             let n = subset.len();
-            let mean_f1 =
-                subset.iter().map(|s| s.f1).sum::<f64>() / (n as f64);
+            let mean_f1 = subset.iter().map(|s| s.f1).sum::<f64>() / (n as f64);
             let med_tokens = median_or_zero(
                 &subset
                     .iter()
@@ -422,7 +414,10 @@ fn write_category_breakdown(md: &mut String, scores: &[TaskScore]) {
                     .collect::<Vec<_>>(),
             );
             let med_iter = median_or_zero(
-                &subset.iter().map(|s| s.iterations as f64).collect::<Vec<_>>(),
+                &subset
+                    .iter()
+                    .map(|s| s.iterations as f64)
+                    .collect::<Vec<_>>(),
             );
             let med_tc = median_or_zero(
                 &subset
@@ -441,7 +436,9 @@ fn write_category_breakdown(md: &mut String, scores: &[TaskScore]) {
 }
 
 fn write_failure_modes(md: &mut String, stats: &ProjectStats, projects: &[String]) {
-    md.push_str("Per-project completion (`completed` / `max_iterations` / `api_error`) by condition:\n\n");
+    md.push_str(
+        "Per-project completion (`completed` / `max_iterations` / `api_error`) by condition:\n\n",
+    );
     md.push_str("| Project | Condition | Completed | MaxIter | ApiErr | Total |\n");
     md.push_str("|---|---|---:|---:|---:|---:|\n");
     for project in projects {

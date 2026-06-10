@@ -36,9 +36,17 @@ fn make_dart_fixture(root: &Path, deps: &[&str]) {
         let pkg_dir = cache_dir.join(format!("{dep}-1.0.0"));
         let lib_dir = pkg_dir.join("lib");
         std::fs::create_dir_all(&lib_dir).unwrap();
-        std::fs::write(lib_dir.join(format!("{dep}.dart")), format!("class {dep}Widget {{}}\n")).unwrap();
+        std::fs::write(
+            lib_dir.join(format!("{dep}.dart")),
+            format!("class {dep}Widget {{}}\n"),
+        )
+        .unwrap();
         std::fs::create_dir_all(lib_dir.join("src")).unwrap();
-        std::fs::write(lib_dir.join("src").join("internal.dart"), "class _Internal {}\n").unwrap();
+        std::fs::write(
+            lib_dir.join("src").join("internal.dart"),
+            "class _Internal {}\n",
+        )
+        .unwrap();
 
         let root_uri = format!("../../_dart_pub_cache/{dep}-1.0.0");
         packages.push(serde_json::json!({
@@ -109,9 +117,11 @@ fn dart_lock_cache_fallback_finds_packages() {
     let _ = std::fs::remove_dir_all(&cache_dir);
 
     std::fs::create_dir_all(&tmp).unwrap();
-    std::fs::write(tmp.join("pubspec.yaml"),
-        "name: app\ndependencies:\n  shelf: ^1.4.0\n"
-    ).unwrap();
+    std::fs::write(
+        tmp.join("pubspec.yaml"),
+        "name: app\ndependencies:\n  shelf: ^1.4.0\n",
+    )
+    .unwrap();
     let lock_content = "packages:
   shelf:
     dependency: \"direct main\"
@@ -173,8 +183,10 @@ part 'src/part_file.dart';
     let exports = extract_dart_exports(src, "provider");
     assert!(exports.contains(&"src/provider.dart".to_string()));
     assert!(exports.contains(&"src/value_listenable.dart".to_string()));
-    assert!(exports.contains(&"src/async.dart".to_string()),
-        "expected in-package spec, got {exports:?}");
+    assert!(
+        exports.contains(&"src/async.dart".to_string()),
+        "expected in-package spec, got {exports:?}"
+    );
     assert!(exports.contains(&"src/part_file.dart".to_string()));
     assert!(!exports.iter().any(|s| s.contains("flutter")));
 }
@@ -190,7 +202,8 @@ fn resolve_entry_follows_exports_into_src() {
 export 'src/internal.dart';
 export 'public.dart';
         "#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(lib.join("public.dart"), "class Public {}\n").unwrap();
     std::fs::write(lib.join("src").join("internal.dart"), "class Internal {}\n").unwrap();
 

@@ -344,8 +344,7 @@ pub fn finalize_resolution(db: &mut Database) -> Result<()> {
         .context("Failed to synthesize dispatch edges")?;
     crate::query::entry_points::rebuild_entry_points(db)
         .context("Failed to rebuild entry_points")?;
-    reachability::materialize_reachability(db)
-        .context("Failed to materialize reachability")?;
+    reachability::materialize_reachability(db).context("Failed to materialize reachability")?;
     crate::query::dead_code::materialize_package_resolution_health(db)
         .context("Failed to materialize package_resolution_health")?;
 

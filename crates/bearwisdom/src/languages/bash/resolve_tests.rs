@@ -3,10 +3,8 @@
 // Ported from pre-restructure commit 8dcc438 (dangling in object store).
 
 use super::hooks::{ends_with_path_suffix, shell_path_suffix, BashHooks};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolIndex,
-};
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
 };
@@ -16,11 +14,7 @@ use std::collections::HashMap;
 // Test fixtures
 // ---------------------------------------------------------------------------
 
-fn make_sh_file(
-    path: &str,
-    symbols: Vec<ExtractedSymbol>,
-    refs: Vec<ExtractedRef>,
-) -> ParsedFile {
+fn make_sh_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
         language: "bash".to_string(),
@@ -62,11 +56,11 @@ fn make_fn_sym(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_source_import(raw_path: &str) -> ExtractedRef {
@@ -77,7 +71,9 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
         .trim_end_matches(".sh")
         .trim_end_matches(".bash")
         .to_string();
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: stem,
         kind: EdgeKind::Imports,
@@ -92,7 +88,9 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
 }
 
 fn make_calls_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -138,7 +136,7 @@ fn ends_with_path_suffix_requires_boundary() {
     ));
     assert!(ends_with_path_suffix("lib/helpers.sh", "helpers.sh"));
     assert!(ends_with_path_suffix("foo/obar.sh", "obar.sh")); // slash IS the boundary
-    // Exact match is fine.
+                                                              // Exact match is fine.
     assert!(ends_with_path_suffix("foo.sh", "foo.sh"));
     // False when the suffix partially overlaps a filename component (no slash boundary).
     // "src/foobar.sh" ends with "bar.sh" in bytes but 'b' before 'bar' isn't a separator.
@@ -183,9 +181,15 @@ fn shell_source_resolves_relative_path() {
     };
 
     let res = BashHooks.resolve_bare_pre(&ref_ctx, &file_ctx, &index);
-    assert!(res.is_some(), "run_backup called in main.sh should resolve via shell source");
+    assert!(
+        res.is_some(),
+        "run_backup called in main.sh should resolve via shell source"
+    );
     let res = res.unwrap();
-    assert_eq!(res.target_symbol_id, 10, "should resolve to helpers.sh:run_backup (id=10)");
+    assert_eq!(
+        res.target_symbol_id, 10,
+        "should resolve to helpers.sh:run_backup (id=10)"
+    );
     assert_eq!(res.confidence, 1.0);
     assert_eq!(res.strategy, "bash_shell_source");
 }
@@ -262,7 +266,10 @@ fn shell_source_skips_absolute_source_path() {
     let some = make_sh_file(
         "some.sh",
         vec![make_fn_sym("do_thing")],
-        vec![make_source_import("/etc/profile"), make_calls_ref("profile_fn")],
+        vec![
+            make_source_import("/etc/profile"),
+            make_calls_ref("profile_fn"),
+        ],
     );
     // A file that happens to define `profile_fn` (but not sourced by some.sh).
     let other = make_sh_file("other.sh", vec![make_fn_sym("profile_fn")], vec![]);

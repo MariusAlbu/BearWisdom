@@ -5,12 +5,10 @@
 // construct: package, class, interface, function, method, import, call.
 // =============================================================================
 
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
-use super::predicates;
 use super::calls::{build_receiver_chain, extract_call_args, scan_local_types, visit_for_calls};
 use super::node_helpers::{build_qualified_name, named_field_text, node_text};
+use super::predicates;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -53,10 +51,26 @@ pub(super) fn visit(
             "method_invocation" => {
                 let local_types = HashMap::new();
                 extract_call(&child, src, parent_index.unwrap_or(0), refs, &local_types);
-                visit(child, src, symbols, refs, parent_index, inside_class, namespace);
+                visit(
+                    child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    inside_class,
+                    namespace,
+                );
             }
             _ => {
-                visit(child, src, symbols, refs, parent_index, inside_class, namespace);
+                visit(
+                    child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    inside_class,
+                    namespace,
+                );
             }
         }
     }
@@ -91,12 +105,12 @@ fn extract_package(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -141,12 +155,12 @@ fn extract_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract superclass (extends) → Inherits edge
     if let Some(superclass_node) = node.child_by_field_name("superclass") {
@@ -155,7 +169,9 @@ fn extract_class(
             if sc_child.kind() == "type_identifier" || sc_child.kind() == "identifier" {
                 let target = node_text(&sc_child, src).to_string();
                 if !target.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: class_idx,
                         target_name: target,
                         kind: EdgeKind::Inherits,
@@ -164,9 +180,9 @@ fn extract_class(
                         module: None,
                         chain: None,
                         byte_offset: superclass_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -187,10 +203,25 @@ fn extract_class(
         for child in body.children(&mut cursor) {
             match child.kind() {
                 "method_declaration" => {
-                    extract_method_declaration(&child, src, symbols, refs, Some(class_idx), class_scope);
+                    extract_method_declaration(
+                        &child,
+                        src,
+                        symbols,
+                        refs,
+                        Some(class_idx),
+                        class_scope,
+                    );
                 }
                 "function_definition" => {
-                    extract_function(&child, src, symbols, refs, Some(class_idx), true, class_scope);
+                    extract_function(
+                        &child,
+                        src,
+                        symbols,
+                        refs,
+                        Some(class_idx),
+                        true,
+                        class_scope,
+                    );
                 }
                 "class_declaration" => {
                     // Inner / nested class — recurse so its methods are found.
@@ -254,12 +285,12 @@ fn extract_interface(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract parent interfaces (extends_interfaces child → type_list)
     let mut cursor = node.walk();
@@ -307,12 +338,12 @@ fn extract_field(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -334,7 +365,9 @@ fn extract_type_list_refs(
             "type_identifier" | "identifier" => {
                 let name = node_text(&child, src).to_string();
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind,
@@ -343,9 +376,9 @@ fn extract_type_list_refs(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {
@@ -375,7 +408,11 @@ fn extract_function(
     };
 
     let line = node.start_position().row as u32;
-    let kind = if inside_class { SymbolKind::Method } else { SymbolKind::Function };
+    let kind = if inside_class {
+        SymbolKind::Method
+    } else {
+        SymbolKind::Function
+    };
     let idx = symbols.len();
 
     // Qualify the name when inside a class so the method appears as
@@ -400,12 +437,12 @@ fn extract_function(
         // the enclosing class for bare method calls like `assertSingleViolation()`.
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     let local_types = scan_local_types(node, src);
     emit_local_variable_symbols(node, src, idx, symbols);
@@ -461,12 +498,12 @@ fn extract_method_declaration(
         // the enclosing class for bare method calls.
         scope_path: class_scope.map(|s| s.to_string()),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     let local_types = scan_local_types(node, src);
     emit_local_variable_symbols(node, src, idx, symbols);
@@ -510,11 +547,11 @@ fn emit_local_variable_symbols(
                                 scope_path: None,
                                 parent_index: Some(parent_index),
                                 byte_offset: 0,
-                                                            declared_type: None,
+                                declared_type: None,
                                 return_type: None,
                                 param_types: Vec::new(),
                                 generic_params: Vec::new(),
-});
+                            });
                         }
                     }
                 }
@@ -539,9 +576,7 @@ fn extract_import(
     // Also strip the optional `static` keyword that appears in static imports:
     //   import static org.codenarc.test.TestUtil.shouldFail
     // After stripping "import" we may see "static" as the next token — skip it.
-    let after_import = text
-        .trim_start_matches("import")
-        .trim();
+    let after_import = text.trim_start_matches("import").trim();
 
     // Skip the `static` keyword when present.
     let path_str = if after_import.starts_with("static ") || after_import == "static" {
@@ -577,7 +612,9 @@ fn extract_import(
         (full_path.clone(), full_path.clone())
     };
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name,
         kind: EdgeKind::Imports,
@@ -586,9 +623,9 @@ fn extract_import(
         module: Some(module_path),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -617,12 +654,15 @@ pub(super) fn extract_call(
     // This enables the chain walker and the external classifier to determine
     // the receiver type and classify the call correctly (e.g. `file.path.endsWith`
     // where `file` has declared type `File` from a for-loop or local declaration).
-    let chain = node.child_by_field_name("object")
+    let chain = node
+        .child_by_field_name("object")
         .and_then(|obj| build_receiver_chain(&obj, &name, src, local_types));
 
     let call_args = extract_call_args(node, src);
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: name,
         kind: EdgeKind::Calls,

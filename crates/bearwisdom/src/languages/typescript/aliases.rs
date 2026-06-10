@@ -13,9 +13,7 @@ use tracing::debug;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
-};
+use crate::indexer::resolve::engine::{Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE};
 use crate::type_checker::core::reexport::follow_reexports;
 
 use super::predicates;
@@ -161,9 +159,14 @@ pub(super) fn resolve_via_alias(
     // shape. Follows `export { X } from './y'` and `export * from './z'`
     // up to the existing 5-hop depth limit.
     for candidate in &candidates {
-        if let Some(res) =
-            follow_reexports(candidate, target, edge_kind, predicates::kind_compatible, lookup, 0)
-        {
+        if let Some(res) = follow_reexports(
+            candidate,
+            target,
+            edge_kind,
+            predicates::kind_compatible,
+            lookup,
+            0,
+        ) {
             return Some(res);
         }
     }
@@ -173,7 +176,10 @@ pub(super) fn resolve_via_alias(
     // never matches the file-stem class symbol. Accept the single class
     // symbol as the default export.
     const DEFAULT_EXPORT_EXTS: &[&str] = &[".vue", ".astro", ".svelte"];
-    if DEFAULT_EXPORT_EXTS.iter().any(|ext| rewritten.ends_with(ext)) {
+    if DEFAULT_EXPORT_EXTS
+        .iter()
+        .any(|ext| rewritten.ends_with(ext))
+    {
         for sym in lookup.in_file(rewritten) {
             if sym.kind == "class" && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
@@ -267,7 +273,10 @@ pub(super) fn resolve_workspace_package(
 /// remainder after the boundary `/`. Returns `None` when `specifier` is
 /// itself the declared_name (no deep path) or when no workspace package
 /// matches.
-pub(super) fn sub_path_for_deep_import(specifier: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+pub(super) fn sub_path_for_deep_import(
+    specifier: &str,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
     if lookup.is_workspace_declared_name(specifier) {
         return None;
     }

@@ -3,9 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::type_checker::core::types::{
-    GenericParamData, LitValue, PrimKind, Type, TypeArena,
-};
+use crate::type_checker::core::types::{GenericParamData, LitValue, PrimKind, Type, TypeArena};
 
 fn make_param(arena: &TypeArena, name: &str) -> GenericParamId {
     arena.intern_generic(GenericParamData {
@@ -382,8 +380,14 @@ fn unify_recurses_into_matching_apply() {
     let gen_t = arena.intern(Type::Generic { param: t });
     let array = arena.class("Array");
     let user = arena.class("User");
-    let param = arena.intern(Type::Apply { base: array, args: vec![gen_t] });
-    let arg = arena.intern(Type::Apply { base: array, args: vec![user] });
+    let param = arena.intern(Type::Apply {
+        base: array,
+        args: vec![gen_t],
+    });
+    let arg = arena.intern(Type::Apply {
+        base: array,
+        args: vec![user],
+    });
 
     let mut env = GenericEnv::new();
     unify_into(param, arg, &bindable(&[t]), &mut env, &arena);
@@ -399,8 +403,14 @@ fn unify_skips_apply_with_different_base() {
     let array = arena.class("Array");
     let list = arena.class("List");
     let user = arena.class("User");
-    let param = arena.intern(Type::Apply { base: array, args: vec![gen_t] });
-    let arg = arena.intern(Type::Apply { base: list, args: vec![user] });
+    let param = arena.intern(Type::Apply {
+        base: array,
+        args: vec![gen_t],
+    });
+    let arg = arena.intern(Type::Apply {
+        base: list,
+        args: vec![user],
+    });
 
     let mut env = GenericEnv::new();
     unify_into(param, arg, &bindable(&[t]), &mut env, &arena);
@@ -417,8 +427,14 @@ fn unify_recurses_into_function_param_and_return() {
     let gen_u = arena.intern(Type::Generic { param: u });
     let user = arena.class("User");
     let account = arena.class("Account");
-    let param = arena.intern(Type::Function { params: vec![gen_t], return_: gen_u });
-    let arg = arena.intern(Type::Function { params: vec![user], return_: account });
+    let param = arena.intern(Type::Function {
+        params: vec![gen_t],
+        return_: gen_u,
+    });
+    let arg = arena.intern(Type::Function {
+        params: vec![user],
+        return_: account,
+    });
 
     let mut env = GenericEnv::new();
     unify_into(param, arg, &bindable(&[t, u]), &mut env, &arena);

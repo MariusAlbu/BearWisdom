@@ -23,16 +23,16 @@ fn pulls_gitignored_relative_import() {
         "import { Db } from './generated/db';\nexport const x = 1;\n",
     )
     .unwrap();
-    fs::write(
-        root.join("src/generated/db.ts"),
-        "export class Db {}\n",
-    )
-    .unwrap();
+    fs::write(root.join("src/generated/db.ts"), "export class Db {}\n").unwrap();
 
     let primary = vec![make_walked(root, "src/app.ts", "typescript")];
     let extra = pull_gitignored_imports(root, &primary);
 
-    assert_eq!(extra.len(), 1, "expected exactly one extra file; got {extra:?}");
+    assert_eq!(
+        extra.len(),
+        1,
+        "expected exactly one extra file; got {extra:?}"
+    );
     assert!(
         extra[0].relative_path.ends_with("generated/db.ts"),
         "expected the gitignored file; got {}",
@@ -51,11 +51,7 @@ fn pulls_project_relative_import() {
         "import { Db } from 'src/generated/db';\nexport const x = 1;\n",
     )
     .unwrap();
-    fs::write(
-        root.join("src/generated/db.ts"),
-        "export class Db {}\n",
-    )
-    .unwrap();
+    fs::write(root.join("src/generated/db.ts"), "export class Db {}\n").unwrap();
 
     let primary = vec![make_walked(root, "src/app.ts", "typescript")];
     let extra = pull_gitignored_imports(root, &primary);
@@ -71,11 +67,7 @@ fn skips_node_modules_imports() {
     let root = tmp.path();
     fs::create_dir_all(root.join("node_modules/react")).unwrap();
     fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(
-        root.join("src/app.ts"),
-        "import React from 'react';\n",
-    )
-    .unwrap();
+    fs::write(root.join("src/app.ts"), "import React from 'react';\n").unwrap();
     fs::write(
         root.join("node_modules/react/index.d.ts"),
         "export default class React {}\n",
@@ -86,7 +78,9 @@ fn skips_node_modules_imports() {
     let extra = pull_gitignored_imports(root, &primary);
 
     assert!(
-        extra.iter().all(|f| !f.relative_path.contains("node_modules")),
+        extra
+            .iter()
+            .all(|f| !f.relative_path.contains("node_modules")),
         "must not pull from node_modules: {extra:?}"
     );
 }
@@ -97,11 +91,7 @@ fn does_not_duplicate_primary_files() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(
-        root.join("src/app.ts"),
-        "import { x } from './lib';\n",
-    )
-    .unwrap();
+    fs::write(root.join("src/app.ts"), "import { x } from './lib';\n").unwrap();
     fs::write(root.join("src/lib.ts"), "export const x = 1;\n").unwrap();
 
     let primary = vec![
@@ -188,8 +178,14 @@ export * from './star';
     let extra = pull_gitignored_imports(root, &primary);
 
     let names: Vec<&str> = extra.iter().map(|f| f.relative_path.as_str()).collect();
-    assert!(names.iter().any(|n| n.ends_with("sub.ts")), "export-from missing: {names:?}");
-    assert!(names.iter().any(|n| n.ends_with("star.ts")), "export-star missing: {names:?}");
+    assert!(
+        names.iter().any(|n| n.ends_with("sub.ts")),
+        "export-from missing: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.ends_with("star.ts")),
+        "export-star missing: {names:?}"
+    );
 }
 
 #[test]

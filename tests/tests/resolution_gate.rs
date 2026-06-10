@@ -13,9 +13,7 @@
 //!   downstream tools can't act on them as ground truth.
 
 use bearwisdom::full_index;
-use bearwisdom::query::dead_code::{
-    DeadCodeOptions, TrustTier, find_dead_code,
-};
+use bearwisdom::query::dead_code::{find_dead_code, DeadCodeOptions, TrustTier};
 use bearwisdom::query::stats::resolution_breakdown;
 use bearwisdom_tests::TestProject;
 
@@ -144,6 +142,8 @@ fn breakdown_metric_matches_dead_code_health() {
     assert!(
         (rb_rounded - dead.resolution_health.resolution_rate).abs() < 0.05,
         "breakdown rate {:.2}% (rounded {:.1}%) disagrees with dead-code health {:.1}%",
-        rb.internal_resolution_rate, rb_rounded, dead.resolution_health.resolution_rate,
+        rb.internal_resolution_rate,
+        rb_rounded,
+        dead.resolution_health.resolution_rate,
     );
 }

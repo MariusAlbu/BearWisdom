@@ -28,9 +28,8 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
 use super::adapters::{
-    extracted_db_sets_to_emissions, extracted_routes_to_emissions,
-    mailer_template_name_for_path, nextjs_route_consumer_emissions,
-    plugin_flow_emissions_to_emissions,
+    extracted_db_sets_to_emissions, extracted_routes_to_emissions, mailer_template_name_for_path,
+    nextjs_route_consumer_emissions, plugin_flow_emissions_to_emissions,
 };
 use super::engine::{
     self, build_scope_chain, ChainMiss, ImportEntry, RefContext, SymbolIndex, SymbolLookup,
@@ -61,7 +60,10 @@ pub(super) fn join_inferred_returns(
     // Distinct function db_ids per qname → detects cross-file collisions.
     let mut ids_by_qname: HashMap<&str, HashSet<i64>> = HashMap::new();
     for (qname, db_id, _) in candidates {
-        ids_by_qname.entry(qname.as_str()).or_default().insert(*db_id);
+        ids_by_qname
+            .entry(qname.as_str())
+            .or_default()
+            .insert(*db_id);
     }
     // Conflict-join the yield types for uniquely-owned qnames.
     // qname → Some(agreed type) | None (conflict sentinel).
@@ -141,12 +143,8 @@ pub(super) fn resolve_iteration_inner_with_arena(
     // user JS classify correctly instead of matching against those vendor
     // symbols as if they were project code.
     let external_paths = read_external_file_paths(db.conn());
-    let mut index = SymbolIndex::build_with_context_and_arena(
-        parsed,
-        symbol_id_map,
-        project_ctx,
-        type_arena,
-    );
+    let mut index =
+        SymbolIndex::build_with_context_and_arena(parsed, symbol_id_map, project_ctx, type_arena);
     if !external_paths.is_empty() {
         index.set_external_paths(external_paths);
     }
@@ -277,7 +275,9 @@ fn resolve_iteration_body(
             engine_sym_id_map: build_engine_sym_ids(parsed),
         });
     } else if !new_files.is_empty() {
-        let st = cached_side_tables.as_mut().expect("cached_side_tables is Some");
+        let st = cached_side_tables
+            .as_mut()
+            .expect("cached_side_tables is Some");
         for (k, v) in indexes::build_name_index(merged_id_map_ref, new_files) {
             st.name_to_ids.entry(k).or_default().extend(v);
         }
@@ -331,7 +331,9 @@ fn resolve_iteration_body(
         let plugin_registry = crate::languages::default_registry();
         let mut needed: std::collections::HashSet<String> = std::collections::HashSet::new();
         for pf in parsed {
-            if pf.path.starts_with("ext:") { continue }
+            if pf.path.starts_with("ext:") {
+                continue;
+            }
             if let Some(plugin) = plugin_registry.get_dedicated(&pf.language) {
                 if let Some(companion_path) = plugin.companion_file_for_imports(&pf.path) {
                     if !parsed_by_path.contains_key(companion_path.as_str()) {
@@ -382,7 +384,7 @@ fn resolve_iteration_body(
                         name: template_name,
                         role: flow_emit::ChannelRole::Consumer,
                         method: None,
-                    streaming: None,
+                        streaming: None,
                     },
                 ));
             }
@@ -421,484 +423,519 @@ fn resolve_iteration_body(
                 buf.flow_emissions.push((pf.path.clone(), line, emission));
             }
 
-        // Look up source IDs against the MERGED map so incremental
-        // resolves can find symbol IDs for files that weren't in this
-        // run's `parsed` slice (e.g. blast-radius files re-parsed for
-        // resolve but whose IDs come from the augment SELECT, not from
-        // the caller's changed-only map).
-        let file_symbol_ids: Vec<Option<i64>> = pf
-            .symbols
-            .iter()
-            .map(|sym| {
-                merged_id_map_ref
-                    .get(&(pf.path.clone(), sym.qualified_name.clone()))
-                    .copied()
-            })
-            .collect();
+            // Look up source IDs against the MERGED map so incremental
+            // resolves can find symbol IDs for files that weren't in this
+            // run's `parsed` slice (e.g. blast-radius files re-parsed for
+            // resolve but whose IDs come from the augment SELECT, not from
+            // the caller's changed-only map).
+            let file_symbol_ids: Vec<Option<i64>> = pf
+                .symbols
+                .iter()
+                .map(|sym| {
+                    merged_id_map_ref
+                        .get(&(pf.path.clone(), sym.qualified_name.clone()))
+                        .copied()
+                })
+                .collect();
 
-        // Build the per-file resolution context purely via the engine hook.
-        let host_plugin = crate::languages::default_registry().get_dedicated(&pf.language);
-        let host_file_ctx = type_engine
-            .build_file_context(&pf.language, pf, project_ctx)
-            .map(|mut ctx| {
-                // Companion imports: Angular template inherits the paired
-                // `.component.ts` imports. Lives on
-                // `LanguagePlugin::companion_file_for_imports`.
-                if let Some(companion_path) =
-                    host_plugin.and_then(|p| p.companion_file_for_imports(&pf.path))
-                {
-                    if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
-                        if let Some(comp_ctx) = type_engine
-                            .build_file_context(&comp_pf.language, comp_pf, project_ctx)
-                        {
-                            ctx.imports.extend(comp_ctx.imports);
+            // Build the per-file resolution context purely via the engine hook.
+            let host_plugin = crate::languages::default_registry().get_dedicated(&pf.language);
+            let host_file_ctx = type_engine
+                .build_file_context(&pf.language, pf, project_ctx)
+                .map(|mut ctx| {
+                    // Companion imports: Angular template inherits the paired
+                    // `.component.ts` imports. Lives on
+                    // `LanguagePlugin::companion_file_for_imports`.
+                    if let Some(companion_path) =
+                        host_plugin.and_then(|p| p.companion_file_for_imports(&pf.path))
+                    {
+                        if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
+                            if let Some(comp_ctx) = type_engine.build_file_context(
+                                &comp_pf.language,
+                                comp_pf,
+                                project_ctx,
+                            ) {
+                                ctx.imports.extend(comp_ctx.imports);
+                            }
+                        } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
+                            ctx.imports.extend(db_imports.iter().cloned());
                         }
-                    } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
-                        ctx.imports.extend(db_imports.iter().cloned());
                     }
+                    ctx
+                });
+
+            let empty_vec = vec![];
+            let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
+            let source_namespace = file_namespace_map.get(&pf.path).map(|s| s.as_str());
+
+            // R5: install a fresh per-file flow-typing cache. Narrowings are
+            // sorted innermost-first (smallest range first) so the cache's
+            // cursor-based lookup picks the most specific scope on ties.
+            let mut narrowings = pf.flow.narrowings.clone();
+            narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
+            let mut discriminants = pf.flow.discriminant_narrowings.clone();
+            discriminants.sort_by_key(|d| d.byte_end.saturating_sub(d.byte_start));
+            index.install_local_cache(narrowings, discriminants, pf.flow.cfg.clone());
+
+            // R5: seed local types from explicit annotations (`let x: T`). Unlike
+            // forward inference these need no RHS to resolve — the annotation is
+            // the type — so a chain whose receiver is an annotated local resolves
+            // even when its initializer (`expr()?`, `.unwrap()`) doesn't. The ref
+            // loop's resolved-RHS writes overwrite in source order.
+            for (&lhs_idx, decl_type) in &pf.flow.flow_binding_decl_type {
+                if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                    index.record_local_type(lhs_sym.name.clone(), decl_type.clone());
                 }
-                ctx
-            });
-
-        let empty_vec = vec![];
-        let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
-        let source_namespace = file_namespace_map.get(&pf.path).map(|s| s.as_str());
-
-        // R5: install a fresh per-file flow-typing cache. Narrowings are
-        // sorted innermost-first (smallest range first) so the cache's
-        // cursor-based lookup picks the most specific scope on ties.
-        let mut narrowings = pf.flow.narrowings.clone();
-        narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
-        let mut discriminants = pf.flow.discriminant_narrowings.clone();
-        discriminants.sort_by_key(|d| d.byte_end.saturating_sub(d.byte_start));
-        index.install_local_cache(narrowings, discriminants, pf.flow.cfg.clone());
-
-        // R5: seed local types from explicit annotations (`let x: T`). Unlike
-        // forward inference these need no RHS to resolve — the annotation is
-        // the type — so a chain whose receiver is an annotated local resolves
-        // even when its initializer (`expr()?`, `.unwrap()`) doesn't. The ref
-        // loop's resolved-RHS writes overwrite in source order.
-        for (&lhs_idx, decl_type) in &pf.flow.flow_binding_decl_type {
-            if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
-                index.record_local_type(lhs_sym.name.clone(), decl_type.clone());
             }
-        }
 
-        // R5: iterate refs in source order so forward inference
-        // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
-        // handled naturally by last-write-wins in the cache. We keep the
-        // original ref_idx alongside so flow_binding_lhs / origin-language
-        // lookups stay correct after the sort.
-        //
-        // Only sort when the file actually uses flow-typing — the sort
-        // perturbs extractor emission order, which INSERT OR IGNORE on
-        // edges is sensitive to for duplicate-target refs. When no flow
-        // metadata is present, preserve the original order.
-        let uses_flow = !pf.flow.flow_binding_lhs.is_empty()
-            || !pf.flow.narrowings.is_empty();
-        let refs_ordered: Vec<(usize, &crate::types::ExtractedRef)> = if uses_flow {
-            let mut v: Vec<_> = pf.refs.iter().enumerate().collect();
-            v.sort_by_key(|(_, r)| r.line);
-            v
-        } else {
-            pf.refs.iter().enumerate().collect()
-        };
-
-        for (ref_idx, r) in refs_ordered {
-            // Determine the effective language for this ref. Refs from embedded
-            // regions (e.g. TS inside a Vue/Svelte file, JS inside PHP/Elixir)
-            // carry their own language tag so the resolver and
-            // externals/primitives classification use the correct language's
-            // ruleset rather than the host language's.
-            let effective_lang: &str = pf
-                .ref_origin_languages
-                .get(ref_idx)
-                .and_then(|o| o.as_deref())
-                .unwrap_or(&pf.language);
-            // Whether this ref belongs to a different language than the host.
-            let is_cross_lang_embedded = effective_lang != pf.language.as_str();
-
-            // For cross-language embedded refs, look up the resolver for the
-            // embedded language. For same-language refs, reuse the host resolver
-            // and file_ctx already computed for this file.
+            // R5: iterate refs in source order so forward inference
+            // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
+            // handled naturally by last-write-wins in the cache. We keep the
+            // original ref_idx alongside so flow_binding_lhs / origin-language
+            // lookups stay correct after the sort.
             //
-            // Example: a `.vue` file (host = "vue") has `<script lang="ts">`.
-            // Embedded TS refs get effective_lang = "typescript" → we use the
-            // TypeScript resolver and build a fresh file_ctx from the same
-            // ParsedFile (which contains all embedded symbols/imports merged in).
-            // Same-language refs (the common case) borrow the per-file context
-            // built once above; only cross-language embedded refs need a fresh,
-            // owned context for the embedded language's resolver.
-            let embedded_file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
-                type_engine.build_file_context(effective_lang, pf, project_ctx)
+            // Only sort when the file actually uses flow-typing — the sort
+            // perturbs extractor emission order, which INSERT OR IGNORE on
+            // edges is sensitive to for duplicate-target refs. When no flow
+            // metadata is present, preserve the original order.
+            let uses_flow = !pf.flow.flow_binding_lhs.is_empty() || !pf.flow.narrowings.is_empty();
+            let refs_ordered: Vec<(usize, &crate::types::ExtractedRef)> = if uses_flow {
+                let mut v: Vec<_> = pf.refs.iter().enumerate().collect();
+                v.sort_by_key(|(_, r)| r.line);
+                v
             } else {
-                None
-            };
-            let file_ctx: Option<&engine::FileContext> = if is_cross_lang_embedded {
-                embedded_file_ctx.as_ref()
-            } else {
-                host_file_ctx.as_ref()
+                pf.refs.iter().enumerate().collect()
             };
 
-            let source_id = match file_symbol_ids.get(r.source_symbol_index).and_then(|id| *id) {
-                Some(id) => id,
-                None => continue,
-            };
+            for (ref_idx, r) in refs_ordered {
+                // Determine the effective language for this ref. Refs from embedded
+                // regions (e.g. TS inside a Vue/Svelte file, JS inside PHP/Elixir)
+                // carry their own language tag so the resolver and
+                // externals/primitives classification use the correct language's
+                // ruleset rather than the host language's.
+                let effective_lang: &str = pf
+                    .ref_origin_languages
+                    .get(ref_idx)
+                    .and_then(|o| o.as_deref())
+                    .unwrap_or(&pf.language);
+                // Whether this ref belongs to a different language than the host.
+                let is_cross_lang_embedded = effective_lang != pf.language.as_str();
 
-            // Wildcard imports (`use foo::*`) are scope-declaration statements, not
-            // missing-symbol references.  They cannot resolve to a single target and
-            // should not appear in the unresolved_refs table.
-            if r.kind == EdgeKind::Imports && r.target_name == "*" {
-                local_stats.external += 1; // count as "handled" so they don't inflate unresolved rate
-                continue;
-            }
+                // For cross-language embedded refs, look up the resolver for the
+                // embedded language. For same-language refs, reuse the host resolver
+                // and file_ctx already computed for this file.
+                //
+                // Example: a `.vue` file (host = "vue") has `<script lang="ts">`.
+                // Embedded TS refs get effective_lang = "typescript" → we use the
+                // TypeScript resolver and build a fresh file_ctx from the same
+                // ParsedFile (which contains all embedded symbols/imports merged in).
+                // Same-language refs (the common case) borrow the per-file context
+                // built once above; only cross-language embedded refs need a fresh,
+                // owned context for the embedded language's resolver.
+                let embedded_file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
+                    type_engine.build_file_context(effective_lang, pf, project_ctx)
+                } else {
+                    None
+                };
+                let file_ctx: Option<&engine::FileContext> = if is_cross_lang_embedded {
+                    embedded_file_ctx.as_ref()
+                } else {
+                    host_file_ctx.as_ref()
+                };
 
-            // R5: move the flow-cache cursor to this ref's byte offset so
-            // narrowing lookups in chain walkers see the right scope.
-            // Sprint 1 leaves this as 0 for languages that haven't wired
-            // their FlowConfig yet — narrowings are empty in that case so
-            // the cursor value doesn't matter.
-            let ref_byte = pf
-                .flow
-                .ref_byte_offsets
-                .get(ref_idx)
-                .copied()
-                .unwrap_or(0);
-            index.set_cursor(ref_byte);
+                let source_id = match file_symbol_ids
+                    .get(r.source_symbol_index)
+                    .and_then(|id| *id)
+                {
+                    Some(id) => id,
+                    None => continue,
+                };
 
-            // Built once per ref and shared by tier-1 resolution, the
-            // compiler-resolve reroute check, and tier-1.5 external
-            // classification — all of which need the same scope chain and
-            // source symbol.
-            let source_sym = &pf.symbols[r.source_symbol_index];
-            let ref_ctx = RefContext {
-                extracted_ref: r,
-                source_symbol: source_sym,
-                scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
-                file_package_id: pf.package_id,
-            };
-
-            // Tier 1: Try language-specific resolver (for the effective language).
-            let mut resolved_by_engine = false;
-            if let Some(file_ctx) = file_ctx {
-                // Flow-emission detection runs regardless of whether resolution
-                // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
-                // identifiable from import context alone, even when the chain
-                // walker can't resolve the external symbol to a DB id.
-                for emission in type_engine.detect_flow_emissions(file_ctx, &ref_ctx, index) {
-                    buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                // Wildcard imports (`use foo::*`) are scope-declaration statements, not
+                // missing-symbol references.  They cannot resolve to a single target and
+                // should not appear in the unresolved_refs table.
+                if r.kind == EdgeKind::Imports && r.target_name == "*" {
+                    local_stats.external += 1; // count as "handled" so they don't inflate unresolved rate
+                    continue;
                 }
 
-                // Resolution dispatches through `type_engine.resolve`. The
-                // engine routes chain-bearing refs through the unified
-                // chain walker (when a profile is registered), chain-less
-                // refs through the bare-name resolver, and falls back to
-                // the language hook's `resolve_ref` (the absorbed legacy
-                // resolver body) for everything the engine declines.
-                let resolution = type_engine
-                    .resolve(&ref_ctx, file_ctx, index)
-                    .map(|r| (r, true));
+                // R5: move the flow-cache cursor to this ref's byte offset so
+                // narrowing lookups in chain walkers see the right scope.
+                // Sprint 1 leaves this as 0 for languages that haven't wired
+                // their FlowConfig yet — narrowings are empty in that case so
+                // the cursor value doesn't matter.
+                let ref_byte = pf.flow.ref_byte_offsets.get(ref_idx).copied().unwrap_or(0);
+                index.set_cursor(ref_byte);
 
-                if let Some((resolution, came_from_engine)) = resolution {
-                    // R5 forward-inference cache write. Engine yields are
-                    // recorded only when the engine path provided them;
-                    // legacy resolutions still drive the cache as before.
-                    // We don't gate this on came_from_engine because both
-                    // paths populate `resolved_yield_type` correctly when
-                    // they can — letting both feed the cache keeps yield
-                    // inference uniform across resolution sources.
-                    if let Some(lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx).copied() {
-                        let yield_str = resolution
-                            .resolved_yield_type
-                            .and_then(|id| {
-                                index.type_arena().map(|arena| arena.format_type(id))
-                            })
-                            .or_else(|| {
-                                let target_id = resolution.target_symbol_id;
-                                index
-                                    .by_name(&r.target_name)
-                                    .iter()
-                                    .find(|s| s.id == target_id)
-                                    .and_then(|s| {
-                                        index
-                                            .return_type_str(&s.qualified_name)
-                                            .or_else(|| {
-                                                index.field_type_str(&s.qualified_name)
-                                            })
-                                    })
-                            });
-                        if let Some(yield_str) = yield_str {
-                            // A `?`-unwrapped binding (`let x = expr()?`) yields
-                            // the wrapper's payload — peel one layer so `x` is
-                            // typed as `T`, not `Result<T>`.
-                            let recorded = if pf.flow.flow_binding_unwrap.contains(&lhs_idx) {
-                                engine::first_generic_arg(&yield_str)
-                                    .unwrap_or(yield_str)
-                            } else {
-                                yield_str
-                            };
-                            if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
-                                index.record_local_type(
-                                    lhs_sym.name.clone(),
-                                    recorded,
-                                );
+                // Built once per ref and shared by tier-1 resolution, the
+                // compiler-resolve reroute check, and tier-1.5 external
+                // classification — all of which need the same scope chain and
+                // source symbol.
+                let source_sym = &pf.symbols[r.source_symbol_index];
+                let ref_ctx = RefContext {
+                    extracted_ref: r,
+                    source_symbol: source_sym,
+                    scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
+                    file_package_id: pf.package_id,
+                };
+
+                // Tier 1: Try language-specific resolver (for the effective language).
+                let mut resolved_by_engine = false;
+                if let Some(file_ctx) = file_ctx {
+                    // Flow-emission detection runs regardless of whether resolution
+                    // succeeds — HTTP client calls, IPC, WebSocket emits, etc. are
+                    // identifiable from import context alone, even when the chain
+                    // walker can't resolve the external symbol to a DB id.
+                    for emission in type_engine.detect_flow_emissions(file_ctx, &ref_ctx, index) {
+                        buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                    }
+
+                    // Resolution dispatches through `type_engine.resolve`. The
+                    // engine routes chain-bearing refs through the unified
+                    // chain walker (when a profile is registered), chain-less
+                    // refs through the bare-name resolver, and falls back to
+                    // the language hook's `resolve_ref` (the absorbed legacy
+                    // resolver body) for everything the engine declines.
+                    let resolution = type_engine
+                        .resolve(&ref_ctx, file_ctx, index)
+                        .map(|r| (r, true));
+
+                    if let Some((resolution, came_from_engine)) = resolution {
+                        // R5 forward-inference cache write. Engine yields are
+                        // recorded only when the engine path provided them;
+                        // legacy resolutions still drive the cache as before.
+                        // We don't gate this on came_from_engine because both
+                        // paths populate `resolved_yield_type` correctly when
+                        // they can — letting both feed the cache keeps yield
+                        // inference uniform across resolution sources.
+                        if let Some(lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx).copied() {
+                            let yield_str = resolution
+                                .resolved_yield_type
+                                .and_then(|id| {
+                                    index.type_arena().map(|arena| arena.format_type(id))
+                                })
+                                .or_else(|| {
+                                    let target_id = resolution.target_symbol_id;
+                                    index
+                                        .by_name(&r.target_name)
+                                        .iter()
+                                        .find(|s| s.id == target_id)
+                                        .and_then(|s| {
+                                            index
+                                                .return_type_str(&s.qualified_name)
+                                                .or_else(|| index.field_type_str(&s.qualified_name))
+                                        })
+                                });
+                            if let Some(yield_str) = yield_str {
+                                // A `?`-unwrapped binding (`let x = expr()?`) yields
+                                // the wrapper's payload — peel one layer so `x` is
+                                // typed as `T`, not `Result<T>`.
+                                let recorded = if pf.flow.flow_binding_unwrap.contains(&lhs_idx) {
+                                    engine::first_generic_arg(&yield_str).unwrap_or(yield_str)
+                                } else {
+                                    yield_str
+                                };
+                                if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                                    index.record_local_type(lhs_sym.name.clone(), recorded);
+                                }
                             }
                         }
-                    }
 
-                    // INFER-3: harvest a return-type candidate. When this ref
-                    // is a `return <expr>` of a function with no declared or
-                    // already-known return type, record its resolved yield as a
-                    // candidate; the orchestrator joins candidates per function
-                    // (conflict → skip) and gap-fills the index, re-resolving so
-                    // callers read the inferred return.
-                    if let Some(fn_idx) = pf.flow.flow_return_lhs.get(&ref_idx).copied() {
-                        // The function's own DB id keys the candidate so the
-                        // join can detect a qname claimed by more than one
-                        // function (same simple name in different files) and
-                        // skip it — inference would be unsound there.
-                        let fn_db_id = file_symbol_ids.get(fn_idx).and_then(|id| *id);
-                        if let (Some(fn_sym), Some(fn_db_id)) =
-                            (pf.symbols.get(fn_idx), fn_db_id)
-                        {
-                            if fn_sym.return_type.is_none()
-                                && index.return_type_name(&fn_sym.qualified_name).is_none()
+                        // INFER-3: harvest a return-type candidate. When this ref
+                        // is a `return <expr>` of a function with no declared or
+                        // already-known return type, record its resolved yield as a
+                        // candidate; the orchestrator joins candidates per function
+                        // (conflict → skip) and gap-fills the index, re-resolving so
+                        // callers read the inferred return.
+                        if let Some(fn_idx) = pf.flow.flow_return_lhs.get(&ref_idx).copied() {
+                            // The function's own DB id keys the candidate so the
+                            // join can detect a qname claimed by more than one
+                            // function (same simple name in different files) and
+                            // skip it — inference would be unsound there.
+                            let fn_db_id = file_symbol_ids.get(fn_idx).and_then(|id| *id);
+                            if let (Some(fn_sym), Some(fn_db_id)) =
+                                (pf.symbols.get(fn_idx), fn_db_id)
                             {
-                                let yield_str = resolution
-                                    .resolved_yield_type
-                                    .and_then(|id| {
-                                        index.type_arena().map(|arena| arena.format_type(id))
-                                    })
-                                    .or_else(|| {
-                                        let target_id = resolution.target_symbol_id;
-                                        index
-                                            .by_name(&r.target_name)
-                                            .iter()
-                                            .find(|s| s.id == target_id)
-                                            .and_then(|s| {
-                                                index.return_type_str(&s.qualified_name).or_else(
-                                                    || index.field_type_str(&s.qualified_name),
-                                                )
-                                            })
-                                    });
-                                if let Some(ys) = yield_str {
-                                    // Skip the Unknown sentinel (format_type
-                                    // emits lowercase "unknown") and a bare
-                                    // generic-parameter name (e.g. `T`) — neither
-                                    // is a real, bindable return type.
-                                    let is_generic_param = index
-                                        .generic_params(&fn_sym.qualified_name)
-                                        .map_or(false, |g| g.iter().any(|p| p == &ys));
-                                    if !ys.is_empty()
-                                        && !ys.eq_ignore_ascii_case("unknown")
-                                        && !is_generic_param
-                                    {
-                                        buf.inferred_returns.push((
-                                            fn_sym.qualified_name.clone(),
-                                            fn_db_id,
-                                            ys,
-                                        ));
+                                if fn_sym.return_type.is_none()
+                                    && index.return_type_name(&fn_sym.qualified_name).is_none()
+                                {
+                                    let yield_str = resolution
+                                        .resolved_yield_type
+                                        .and_then(|id| {
+                                            index.type_arena().map(|arena| arena.format_type(id))
+                                        })
+                                        .or_else(|| {
+                                            let target_id = resolution.target_symbol_id;
+                                            index
+                                                .by_name(&r.target_name)
+                                                .iter()
+                                                .find(|s| s.id == target_id)
+                                                .and_then(|s| {
+                                                    index
+                                                        .return_type_str(&s.qualified_name)
+                                                        .or_else(|| {
+                                                            index.field_type_str(&s.qualified_name)
+                                                        })
+                                                })
+                                        });
+                                    if let Some(ys) = yield_str {
+                                        // Skip the Unknown sentinel (format_type
+                                        // emits lowercase "unknown") and a bare
+                                        // generic-parameter name (e.g. `T`) — neither
+                                        // is a real, bindable return type.
+                                        let is_generic_param = index
+                                            .generic_params(&fn_sym.qualified_name)
+                                            .map_or(false, |g| g.iter().any(|p| p == &ys));
+                                        if !ys.is_empty()
+                                            && !ys.eq_ignore_ascii_case("unknown")
+                                            && !is_generic_param
+                                        {
+                                            buf.inferred_returns.push((
+                                                fn_sym.qualified_name.clone(),
+                                                fn_db_id,
+                                                ys,
+                                            ));
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    buf.edges.push((
-                        source_id,
-                        resolution.target_symbol_id,
-                        r.kind.as_str(),
-                        r.line,
-                        resolution.confidence,
-                        resolution.strategy,
-                    ));
-                    if let Some(emission) = resolution.flow_emit {
-                        buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                        buf.edges.push((
+                            source_id,
+                            resolution.target_symbol_id,
+                            r.kind.as_str(),
+                            r.line,
+                            resolution.confidence,
+                            resolution.strategy,
+                        ));
+                        if let Some(emission) = resolution.flow_emit {
+                            buf.flow_emissions.push((pf.path.clone(), r.line, emission));
+                        }
+                        local_stats.resolved += 1;
+                        if came_from_engine {
+                            local_stats.engine_resolved += 1;
+                        }
+                        resolved_by_engine = true;
                     }
-                    local_stats.resolved += 1;
-                    if came_from_engine {
-                        local_stats.engine_resolved += 1;
-                    }
-                    resolved_by_engine = true;
                 }
-            }
 
-            if resolved_by_engine {
-                continue;
-            }
+                if resolved_by_engine {
+                    continue;
+                }
 
-            // ---------------------------------------------------------------
-            // Tier 1.1: Generic type parameter resolution.
-            // If this is a TypeRef and the target matches a generic param
-            // declared on an enclosing type (e.g., `T` in `class Repo<T>`),
-            // it's a type parameter — not a missing symbol.
-            // ---------------------------------------------------------------
-            if r.kind == EdgeKind::TypeRef {
-                // Walk the source symbol's own qualified name first, then up
-                // through its parents. The function/struct itself owns its
-                // type parameters; refs in its signature have its qname (not
-                // its parent) as the relevant scope for generic-param lookup.
-                let is_generic_param = std::iter::once(source_sym.qualified_name.as_str())
-                    .chain(ref_ctx.scope_chain.iter().map(String::as_str))
-                    .any(|scope| {
-                        index
-                            .generic_params(scope)
-                            .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
-                    });
-                if is_generic_param {
+                // ---------------------------------------------------------------
+                // Tier 1.1: Generic type parameter resolution.
+                // If this is a TypeRef and the target matches a generic param
+                // declared on an enclosing type (e.g., `T` in `class Repo<T>`),
+                // it's a type parameter — not a missing symbol.
+                // ---------------------------------------------------------------
+                if r.kind == EdgeKind::TypeRef {
+                    // Walk the source symbol's own qualified name first, then up
+                    // through its parents. The function/struct itself owns its
+                    // type parameters; refs in its signature have its qname (not
+                    // its parent) as the relevant scope for generic-param lookup.
+                    let is_generic_param = std::iter::once(source_sym.qualified_name.as_str())
+                        .chain(ref_ctx.scope_chain.iter().map(String::as_str))
+                        .any(|scope| {
+                            index
+                                .generic_params(scope)
+                                .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
+                        });
+                    if is_generic_param {
+                        buf.externals.push((
+                            source_id,
+                            r.target_name.clone(),
+                            r.kind.as_str(),
+                            r.line,
+                            "generic_param".to_string(),
+                            pf.package_id,
+                        ));
+                        local_stats.external += 1;
+                        continue;
+                    }
+                }
+
+                // Tier 1.5: external classification. The same authority the
+                // compiler-resolve reroute uses above — manifest/import hook,
+                // chain-to-external, bare-name builtins, import list (guarded by
+                // `is_module_in_project`), and module-qualified targets that name
+                // no local file.
+                let inferred_ns = classify_external_ns(
+                    r,
+                    &ref_ctx,
+                    file_ctx,
+                    file_imports,
+                    &module_to_files,
+                    &type_engine,
+                    project_ctx,
+                    index,
+                    effective_lang,
+                    // Tier-1.5 has no edge at stake — the chain heuristic is a
+                    // reasonable last-resort classification here.
+                    true,
+                );
+
+                if let Some(ns) = &inferred_ns {
+                    // EXT-1 — scope-directed external routing. The classifier
+                    // resolved this ref to a concrete external module (`ext:<mod>`).
+                    // Record a module-scoped demand so the Stage-2 expand loop pulls
+                    // the file that defines `target_name` *inside* that module and a
+                    // re-resolve upgrades this opaque `external_ref` into a real edge.
+                    // The pull is bounded: `SymbolLocationIndex::locate` only answers
+                    // for (module, name) pairs the demand-driven index actually
+                    // carries — builtin/primitive namespaces and modules the index
+                    // never scanned locate to nothing and stay external_refs, exactly
+                    // as today. The leaf of a dotted target (`Stripe.Event` → `Event`)
+                    // is the name the package exports.
+                    if let Some(module) = ns.strip_prefix("ext:").filter(|m| !m.is_empty()) {
+                        let leaf = r
+                            .target_name
+                            .rsplit(['.', ':'])
+                            .next()
+                            .unwrap_or(r.target_name.as_str());
+                        if !leaf.is_empty() {
+                            index.record_chain_miss(engine::ChainMiss {
+                                current_type: String::new(),
+                                target_name: leaf.to_string(),
+                                module: Some(module.to_string()),
+                            });
+                        }
+                    }
                     buf.externals.push((
                         source_id,
                         r.target_name.clone(),
                         r.kind.as_str(),
                         r.line,
-                        "generic_param".to_string(),
+                        ns.clone(),
                         pf.package_id,
                     ));
                     local_stats.external += 1;
                     continue;
                 }
-            }
 
-            // Tier 1.5: external classification. The same authority the
-            // compiler-resolve reroute uses above — manifest/import hook,
-            // chain-to-external, bare-name builtins, import list (guarded by
-            // `is_module_in_project`), and module-qualified targets that name
-            // no local file.
-            let inferred_ns = classify_external_ns(
-                r,
-                &ref_ctx,
-                file_ctx,
-                file_imports,
-                &module_to_files,
-                &type_engine,
-                project_ctx,
-                index,
-                effective_lang,
-                // Tier-1.5 has no edge at stake — the chain heuristic is a
-                // reasonable last-resort classification here.
-                true,
-            );
+                // The heuristic Tier-2 fallback is gone. Every deterministic
+                // strategy that lived in `heuristic.rs` was lifted into
+                // `DefaultResolver` (engine tier) and called by every language
+                // hook via `resolve_all()`. Refs reaching this point are
+                // honestly unresolved.
+                let resolution: Option<(i64, f64, &'static str)> = None;
 
-            if let Some(ns) = &inferred_ns {
-                // EXT-1 — scope-directed external routing. The classifier
-                // resolved this ref to a concrete external module (`ext:<mod>`).
-                // Record a module-scoped demand so the Stage-2 expand loop pulls
-                // the file that defines `target_name` *inside* that module and a
-                // re-resolve upgrades this opaque `external_ref` into a real edge.
-                // The pull is bounded: `SymbolLocationIndex::locate` only answers
-                // for (module, name) pairs the demand-driven index actually
-                // carries — builtin/primitive namespaces and modules the index
-                // never scanned locate to nothing and stay external_refs, exactly
-                // as today. The leaf of a dotted target (`Stripe.Event` → `Event`)
-                // is the name the package exports.
-                if let Some(module) = ns.strip_prefix("ext:").filter(|m| !m.is_empty()) {
-                    let leaf = r
-                        .target_name
-                        .rsplit(['.', ':'])
-                        .next()
-                        .unwrap_or(r.target_name.as_str());
-                    if !leaf.is_empty() {
-                        index.record_chain_miss(engine::ChainMiss {
-                            current_type: String::new(),
-                            target_name: leaf.to_string(),
-                            module: Some(module.to_string()),
-                        });
+                match resolution {
+                    Some((target_id, confidence, strategy)) => {
+                        buf.edges.push((
+                            source_id,
+                            target_id,
+                            r.kind.as_str(),
+                            r.line,
+                            confidence,
+                            strategy,
+                        ));
+                        local_stats.resolved += 1;
                     }
-                }
-                buf.externals.push((
-                    source_id,
-                    r.target_name.clone(),
-                    r.kind.as_str(),
-                    r.line,
-                    ns.clone(),
-                    pf.package_id,
-                ));
-                local_stats.external += 1;
-                continue;
-            }
-
-            // The heuristic Tier-2 fallback is gone. Every deterministic
-            // strategy that lived in `heuristic.rs` was lifted into
-            // `DefaultResolver` (engine tier) and called by every language
-            // hook via `resolve_all()`. Refs reaching this point are
-            // honestly unresolved.
-            let resolution: Option<(i64, f64, &'static str)> = None;
-
-            match resolution {
-                Some((target_id, confidence, strategy)) => {
-                    buf.edges.push((
-                        source_id,
-                        target_id,
-                        r.kind.as_str(),
-                        r.line,
-                        confidence,
-                        strategy,
-                    ));
-                    local_stats.resolved += 1;
-                }
-                None => {
-                    // Truly unresolved — no external namespace identified,
-                    // no heuristic match found.
-                    //
-                    // Guard: the outer loop skips ext: files entirely, but a
-                    // symbol's file_path could still be external (e.g. augmented
-                    // from DB during incremental). Don't pollute unresolved_refs
-                    // with gaps from third-party code — only project code's
-                    // unresolved refs are the user's concern.
-                    if pf.path.starts_with("ext:") {
-                        continue;
-                    }
-                    // Imports edges point at a module, not a symbol. The
-                    // heuristic can't bind them because the module name is
-                    // a file stem rather than an identifier. Classify
-                    // import edges generically:
-                    //
-                    //   * If the module name resolves to a project file
-                    //     stem via `module_to_files`, the import is
-                    //     satisfied locally — count as handled.
-                    //   * If the leaf name appears in the SymbolIndex
-                    //     under an `ext:` path, the import points at an
-                    //     indexed external surface — count as handled.
-                    //   * Otherwise the import points at a third-party
-                    //     dependency the package manager didn't surface
-                    //     (Nimble package not installed, Cabal package
-                    //     not in the store). The dep is external by
-                    //     definition; we just don't have its source.
-                    //     Classify as external rather than unresolved so
-                    //     "couldn't find symbol" stays distinct from
-                    //     "import points at uninstalled dep".
-                    if r.kind == EdgeKind::Imports {
-                        let probe = r
-                            .module
-                            .as_deref()
-                            .filter(|m| !m.is_empty())
-                            .unwrap_or(r.target_name.as_str());
-                        if is_module_in_project(probe, &module_to_files, index) {
-                            local_stats.external += 1;
+                    None => {
+                        // Truly unresolved — no external namespace identified,
+                        // no heuristic match found.
+                        //
+                        // Guard: the outer loop skips ext: files entirely, but a
+                        // symbol's file_path could still be external (e.g. augmented
+                        // from DB during incremental). Don't pollute unresolved_refs
+                        // with gaps from third-party code — only project code's
+                        // unresolved refs are the user's concern.
+                        if pf.path.starts_with("ext:") {
                             continue;
                         }
-                        let leaf = probe.rsplit(['/', '.', ':']).next().unwrap_or(probe);
-                        if !leaf.is_empty() {
-                            let any_external = index
-                                .by_name(leaf)
-                                .iter()
-                                .any(|s| s.file_path.starts_with("ext:"));
-                            if any_external {
-                                buf.externals.push((
-                                    source_id,
-                                    r.target_name.clone(),
-                                    r.kind.as_str(),
-                                    r.line,
-                                    format!("ext:{probe}"),
-                                    pf.package_id,
-                                ));
+                        // Imports edges point at a module, not a symbol. The
+                        // heuristic can't bind them because the module name is
+                        // a file stem rather than an identifier. Classify
+                        // import edges generically:
+                        //
+                        //   * If the module name resolves to a project file
+                        //     stem via `module_to_files`, the import is
+                        //     satisfied locally — count as handled.
+                        //   * If the leaf name appears in the SymbolIndex
+                        //     under an `ext:` path, the import points at an
+                        //     indexed external surface — count as handled.
+                        //   * Otherwise the import points at a third-party
+                        //     dependency the package manager didn't surface
+                        //     (Nimble package not installed, Cabal package
+                        //     not in the store). The dep is external by
+                        //     definition; we just don't have its source.
+                        //     Classify as external rather than unresolved so
+                        //     "couldn't find symbol" stays distinct from
+                        //     "import points at uninstalled dep".
+                        if r.kind == EdgeKind::Imports {
+                            let probe = r
+                                .module
+                                .as_deref()
+                                .filter(|m| !m.is_empty())
+                                .unwrap_or(r.target_name.as_str());
+                            if is_module_in_project(probe, &module_to_files, index) {
                                 local_stats.external += 1;
                                 continue;
                             }
+                            let leaf = probe.rsplit(['/', '.', ':']).next().unwrap_or(probe);
+                            if !leaf.is_empty() {
+                                let any_external = index
+                                    .by_name(leaf)
+                                    .iter()
+                                    .any(|s| s.file_path.starts_with("ext:"));
+                                if any_external {
+                                    buf.externals.push((
+                                        source_id,
+                                        r.target_name.clone(),
+                                        r.kind.as_str(),
+                                        r.line,
+                                        format!("ext:{probe}"),
+                                        pf.package_id,
+                                    ));
+                                    local_stats.external += 1;
+                                    continue;
+                                }
+                            }
+                            // Import we can't trace — write as unresolved so
+                            // the ref stays visible to investigation queries
+                            // rather than silently dropping it on the floor.
+                            let from_snippet = pf
+                                .symbol_from_snippet
+                                .get(r.source_symbol_index)
+                                .copied()
+                                .unwrap_or(false);
+                            buf.unresolved.push((
+                                source_id,
+                                r.target_name.clone(),
+                                r.kind.as_str(),
+                                r.line,
+                                r.module.as_deref().map(|s| s.to_string()),
+                                pf.package_id,
+                                from_snippet,
+                            ));
+                            local_stats.unresolved += 1;
+                            continue;
                         }
-                        // Import we can't trace — write as unresolved so
-                        // the ref stays visible to investigation queries
-                        // rather than silently dropping it on the floor.
+                        // Bare unresolved refs (no module path, no chain) seed
+                        // the demand-driven expand pass: record an empty-receiver
+                        // chain miss so `locate_via_symbol_index` Phase B can
+                        // probe `find_by_name(target)` against the external
+                        // symbol index and pull the declaring file. Without
+                        // this the seed and chain expand both skip bare names,
+                        // so ambient identifiers declared in external `.d.ts`
+                        // (Vue 3 macros in `@vue/runtime-core`, RxJS pipeable
+                        // operators, lodash defaults) never trigger a pull.
+                        if r.module.is_none()
+                            && r.chain.is_none()
+                            && !r.target_name.is_empty()
+                            && !r.target_name.contains('.')
+                        {
+                            index.record_chain_miss(engine::ChainMiss {
+                                current_type: String::new(),
+                                target_name: r.target_name.clone(),
+                                module: None,
+                            });
+                        }
+                        let module_value = r.module.as_deref().map(|s| s.to_string());
+                        // E3: propagate snippet flag from source symbol for
+                        // aggregate-stats exclusion.
                         let from_snippet = pf
                             .symbol_from_snippet
                             .get(r.source_symbol_index)
@@ -909,54 +946,14 @@ fn resolve_iteration_body(
                             r.target_name.clone(),
                             r.kind.as_str(),
                             r.line,
-                            r.module.as_deref().map(|s| s.to_string()),
+                            module_value,
                             pf.package_id,
                             from_snippet,
                         ));
                         local_stats.unresolved += 1;
-                        continue;
                     }
-                    // Bare unresolved refs (no module path, no chain) seed
-                    // the demand-driven expand pass: record an empty-receiver
-                    // chain miss so `locate_via_symbol_index` Phase B can
-                    // probe `find_by_name(target)` against the external
-                    // symbol index and pull the declaring file. Without
-                    // this the seed and chain expand both skip bare names,
-                    // so ambient identifiers declared in external `.d.ts`
-                    // (Vue 3 macros in `@vue/runtime-core`, RxJS pipeable
-                    // operators, lodash defaults) never trigger a pull.
-                    if r.module.is_none()
-                        && r.chain.is_none()
-                        && !r.target_name.is_empty()
-                        && !r.target_name.contains('.')
-                    {
-                        index.record_chain_miss(engine::ChainMiss {
-                            current_type: String::new(),
-                            target_name: r.target_name.clone(),
-                            module: None,
-                        });
-                    }
-                    let module_value = r.module.as_deref().map(|s| s.to_string());
-                    // E3: propagate snippet flag from source symbol for
-                    // aggregate-stats exclusion.
-                    let from_snippet = pf
-                        .symbol_from_snippet
-                        .get(r.source_symbol_index)
-                        .copied()
-                        .unwrap_or(false);
-                    buf.unresolved.push((
-                        source_id,
-                        r.target_name.clone(),
-                        r.kind.as_str(),
-                        r.line,
-                        module_value,
-                        pf.package_id,
-                        from_snippet,
-                    ));
-                    local_stats.unresolved += 1;
                 }
             }
-        }
 
             // R5: wipe the local-type cache so bindings from this file don't
             // leak into the next file processed on the same rayon worker.
@@ -1017,7 +1014,9 @@ fn resolve_iteration_body(
     let mut seen: std::collections::HashSet<ChainMiss> = std::collections::HashSet::new();
     let mut unique_misses: Vec<ChainMiss> = Vec::new();
     for m in raw_misses.iter().cloned() {
-        if seen.insert(m.clone()) { unique_misses.push(m); }
+        if seen.insert(m.clone()) {
+            unique_misses.push(m);
+        }
     }
     if !unique_misses.is_empty() {
         debug!(
@@ -1214,9 +1213,7 @@ fn is_module_in_project(
                 return true;
             }
             let basename_lower = basename.to_lowercase();
-            if basename_lower != basename
-                && module_to_files.contains_key(&basename_lower)
-            {
+            if basename_lower != basename && module_to_files.contains_key(&basename_lower) {
                 return true;
             }
             if let Some((stem, _)) = basename.rsplit_once('.') {
@@ -1225,9 +1222,7 @@ fn is_module_in_project(
                         return true;
                     }
                     let stem_lower = stem.to_lowercase();
-                    if stem_lower != stem
-                        && module_to_files.contains_key(&stem_lower)
-                    {
+                    if stem_lower != stem && module_to_files.contains_key(&stem_lower) {
                         return true;
                     }
                 }
@@ -1271,10 +1266,7 @@ pub(super) fn read_external_file_paths(
 ///
 /// Returns an empty Vec on any SQL error; the path through here is best-
 /// effort context enrichment, not a correctness-critical read.
-fn read_file_imports_from_db(
-    conn: &rusqlite::Connection,
-    file_path: &str,
-) -> Vec<ImportEntry> {
+fn read_file_imports_from_db(conn: &rusqlite::Connection, file_path: &str) -> Vec<ImportEntry> {
     let sql = "SELECT i.imported_name, i.module_path, i.alias
                FROM imports i
                JOIN files f ON f.id = i.file_id
@@ -1283,11 +1275,12 @@ fn read_file_imports_from_db(
         return Vec::new();
     };
     let rows = stmt.query_map([file_path], |r| {
+        let imported_name = r.get::<_, String>(0)?;
         Ok(ImportEntry {
-            imported_name: r.get::<_, String>(0)?,
+            is_wildcard: imported_name == "*",
+            imported_name,
             module_path: r.get::<_, Option<String>>(1)?,
             alias: r.get::<_, Option<String>>(2)?,
-            is_wildcard: false, // Not persisted; safe default.
         })
     });
     match rows {

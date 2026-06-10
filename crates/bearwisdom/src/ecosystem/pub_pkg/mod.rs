@@ -32,10 +32,18 @@ pub struct PubEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for PubEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // Kind label "dart" matches the legacy ecosystem tag and the kind
@@ -64,7 +72,9 @@ impl Ecosystem for PubEcosystem {
         walk_dart_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -75,18 +85,11 @@ impl Ecosystem for PubEcosystem {
         resolve_dart_package_entry(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         resolve_dart_package_entry(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_dart_symbol_index(dep_roots)
     }
 
@@ -104,10 +107,7 @@ impl Ecosystem for PubEcosystem {
     /// bounded by `DART_EXPORT_MAX_DEPTH`. Per-root cost: a handful of
     /// .dart files per package — total a few MB on a 79-pub-root project
     /// like ts-immich/mobile.
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         let mut out = Vec::new();
         for dep in dep_roots {
             out.extend(resolve_dart_package_entry(dep));
@@ -115,7 +115,9 @@ impl Ecosystem for PubEcosystem {
         out
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +125,9 @@ impl Ecosystem for PubEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for PubEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_dart_externals(project_root)
     }
@@ -146,8 +150,8 @@ mod walk;
 
 pub use discovery::{discover_dart_externals, find_pub_cache, parse_pubspec_lock};
 pub use manifest::{parse_pubspec_deps, PubspecManifest};
-pub use walk::walk_dart_root;
 pub(crate) use symbol_index::build_dart_symbol_index;
+pub use walk::walk_dart_root;
 
 use reachability::resolve_dart_package_entry;
 

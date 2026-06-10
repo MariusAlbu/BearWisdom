@@ -69,7 +69,11 @@ fn dot_h_with_cpp_template_routes_to_cpp() {
 #[test]
 fn dot_h_with_namespace_routes_to_cpp() {
     let dir = tempfile::TempDir::new().unwrap();
-    std::fs::write(dir.path().join("ns.h"), "namespace foo {\n  int bar();\n}\n").unwrap();
+    std::fs::write(
+        dir.path().join("ns.h"),
+        "namespace foo {\n  int bar();\n}\n",
+    )
+    .unwrap();
     let files = walk_files(dir.path());
     assert_eq!(files[0].language_id, "cpp");
 }

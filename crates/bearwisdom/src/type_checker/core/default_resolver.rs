@@ -27,8 +27,8 @@ use crate::indexer::resolve::engine::{
 use crate::type_checker::profile::language_profile::{
     AliasDecode, AmbientGlobals, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport,
     FileScopedImports, HeadAliasBind, ImportResolution, KindCompatibility, KindTable, ModuleAnchor,
-    ModuleAnchorBind, ModulePrefixRewrites, ModuleScope, NameNormalization, NameTransform, NormSpec,
-    RelativeMarker, SelectorResolution, StemMatch, StemSource, WildcardMatch,
+    ModuleAnchorBind, ModulePrefixRewrites, ModuleScope, NameNormalization, NameTransform,
+    NormSpec, RelativeMarker, SelectorResolution, StemMatch, StemSource, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -124,7 +124,10 @@ impl<'a> DefaultResolver<'a> {
     ///     file stem matches the module name.
     ///
     /// Returns None when no module is set or no candidate matches.
-    pub fn resolve_via_ref_module(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_ref_module(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let module = self.ref_ctx.extracted_ref.module.as_deref()?;
@@ -279,7 +282,10 @@ impl<'a> DefaultResolver<'a> {
     /// `import { Foo } from './foo'` then `Foo(...)`: the import brings
     /// `Foo` into local scope. Find a `target`-named symbol in any file
     /// whose path matches the import's module specifier.
-    pub fn resolve_via_file_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_file_import(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -306,6 +312,94 @@ impl<'a> DefaultResolver<'a> {
             }
         }
         None
+    }
+
+    /// Strategy — component template tag bound through an imported component.
+    ///
+    /// SFC template extractors emit component tags as `Calls` refs with no
+    /// module. Script imports carry the evidence: `import NextButton from
+    /// "./Button.vue"` means `<NextButton>` should bind to the component class
+    /// in `Button.vue`, even though the exported symbol is named `Button`.
+    /// Namespace-style tags (`<Card.Root>`) bind through the imported head
+    /// (`Card`) before any member projection exists.
+    pub fn resolve_via_component_import(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if self.ref_ctx.extracted_ref.kind != EdgeKind::Calls || !is_component_tag_target(target) {
+            return None;
+        }
+        let head = component_tag_head(target)?;
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+
+        for import in &self.file_ctx.imports {
+            let matches_direct = import.imported_name == head;
+            let matches_alias = import.alias.as_deref() == Some(head);
+            if !matches_direct && !matches_alias {
+                continue;
+            }
+            let Some(module_path) = import.module_path.as_deref() else {
+                continue;
+            };
+
+            let lookup_name = if matches_alias {
+                import.imported_name.as_str()
+            } else {
+                head
+            };
+
+            for sym in self.lookup.by_name(lookup_name) {
+                if kind(edge_kind, &sym.kind)
+                    && file_path_matches_module(&sym.file_path, module_path)
+                {
+                    return Some(self.resolution(sym.id, "default_component_import"));
+                }
+            }
+
+            if let Some(res) = self.resolve_component_import_module_symbols(module_path, kind) {
+                return Some(res);
+            }
+
+            if let Some(rewritten) = self
+                .lookup
+                .resolve_path_alias(self.ref_ctx.file_package_id, module_path)
+            {
+                if rewritten != module_path {
+                    for sym in self.lookup.in_file(&rewritten) {
+                        if is_component_file(&sym.file_path)
+                            && is_component_symbol_kind(&sym.kind)
+                            && kind(edge_kind, &sym.kind)
+                        {
+                            return Some(self.resolution(sym.id, "default_component_import"));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn resolve_component_import_module_symbols(
+        &self,
+        module_path: &str,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let mut compatible = self
+            .lookup
+            .in_module_from(&self.file_ctx.file_path, module_path)
+            .iter()
+            .filter(|sym| {
+                is_component_file(&sym.file_path)
+                    && is_component_symbol_kind(&sym.kind)
+                    && kind(edge_kind, &sym.kind)
+            });
+        let first = compatible.next()?;
+        if compatible.next().is_some() {
+            return None;
+        }
+        Some(self.resolution(first.id, "default_component_import"))
     }
 
     /// Strategy 4 — dotted namespace import + bare target → expand to qname.
@@ -377,7 +471,11 @@ impl<'a> DefaultResolver<'a> {
         sep: &str,
     ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
-        if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/') {
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
+        {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
@@ -416,7 +514,10 @@ impl<'a> DefaultResolver<'a> {
     /// package prefix. Look up the leaf via by_name and accept any
     /// candidate whose qname ENDS WITH `.{target}` — the package prefix
     /// is absorbed.
-    pub fn resolve_via_ambient_namespace_path(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_ambient_namespace_path(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         if !target.contains('.') {
@@ -535,7 +636,10 @@ impl<'a> DefaultResolver<'a> {
     /// `resolve::resolve_and_write()` with `use crate::indexer::resolve`:
     /// the chain prefix `resolve` matches the import; the import's
     /// module path tells us which directory the target lives in.
-    pub fn resolve_via_chain_prefix(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_chain_prefix(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let chain = self.ref_ctx.extracted_ref.chain.as_ref()?;
@@ -587,7 +691,10 @@ impl<'a> DefaultResolver<'a> {
     ///   (b) Dotted: `import { Ns } from 'pkg-a'` and target is `Ns.Inner`
     ///       — first segment is the import alias, last segment is the
     ///       symbol to resolve.
-    pub fn resolve_via_reexport_chain(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_reexport_chain(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
 
@@ -600,8 +707,9 @@ impl<'a> DefaultResolver<'a> {
         {
             if let Some(module) = matching.module_path.as_deref() {
                 if !module.is_empty() && !is_relative_specifier(module) {
-                    if let Some(id) =
-                        self.lookup.resolve_external_reexport(target, target, module)
+                    if let Some(id) = self
+                        .lookup
+                        .resolve_external_reexport(target, target, module)
                     {
                         return self
                             .candidate_with_compatible_kind(target, id, edge_kind, kind)
@@ -631,9 +739,7 @@ impl<'a> DefaultResolver<'a> {
                             {
                                 return self
                                     .candidate_with_compatible_kind(suffix, id, edge_kind, kind)
-                                    .map(|sid| {
-                                        self.resolution(sid, "default_reexport_chain")
-                                    });
+                                    .map(|sid| self.resolution(sid, "default_reexport_chain"));
                             }
                         }
                     }
@@ -645,10 +751,11 @@ impl<'a> DefaultResolver<'a> {
 
     /// Strategy — follow re-export chains from an imported module.
     ///
-    /// When the file imports `target` from a module that does not itself
-    /// define it but RE-EXPORTS it (`export { X } from './y'`, Rust
-    /// `pub use crate::bar::X`), walk the re-export chain to the module that
-    /// actually defines `target`.
+    /// When the file imports `target` from a module, or wildcard-imports a
+    /// module, and that module does not itself define `target` but RE-EXPORTS
+    /// it (`export { X } from './y'`, Rust `pub use crate::bar::X`, Nim
+    /// `export results`), walk the re-export chain to the module that actually
+    /// defines `target`.
     ///
     /// The walk consults `reexports_from`, which carries ONLY refs the
     /// extractor tagged `is_reexport=true`. A private import
@@ -667,7 +774,8 @@ impl<'a> DefaultResolver<'a> {
         let from_file = self.file_ctx.file_path.as_str();
 
         for import in &self.file_ctx.imports {
-            if import.is_wildcard || import.imported_name != target {
+            if !import.is_wildcard && import.imported_name != "*" && import.imported_name != target
+            {
                 continue;
             }
             let Some(module) = import.module_path.as_deref() else {
@@ -676,15 +784,13 @@ impl<'a> DefaultResolver<'a> {
             if module.is_empty() {
                 continue;
             }
-            // Resolve the imported module to a project file. An `ext:` hit is
-            // external — no project-internal re-export hop possible. A relative
+            // Resolve the imported module to an indexed file. A relative
             // specifier is project-internal by construction; when per-source
             // resolution has no entry (`reexports_from` is keyed by file path and
             // `resolve_module_from` populated lazily), fall back to the raw
             // specifier — `reexports_from` resolves it via its own exact-path /
             // `module_to_file` fallback.
             let resolved = match self.lookup.resolve_module_from(from_file, module) {
-                Some(p) if p.starts_with("ext:") => continue,
                 Some(p) => p.to_string(),
                 None if is_relative_specifier(module) => module.to_string(),
                 None => continue,
@@ -710,8 +816,14 @@ impl<'a> DefaultResolver<'a> {
     /// `globals.d.ts`). The project opted into those packages as ambient
     /// providers, so an unimported reference to one of their members is
     /// the intended target — not an ambiguous bare-name guess.
-    pub fn resolve_via_ambient_package(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
-        self.resolve_via_ambient_package_named(self.ref_ctx.extracted_ref.target_name.as_str(), kind)
+    pub fn resolve_via_ambient_package(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        self.resolve_via_ambient_package_named(
+            self.ref_ctx.extracted_ref.target_name.as_str(),
+            kind,
+        )
     }
 
     /// `resolve_via_ambient_package` against an explicit `name` rather than the
@@ -747,11 +859,7 @@ impl<'a> DefaultResolver<'a> {
         edge_kind: EdgeKind,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<i64> {
-        let candidate = self
-            .lookup
-            .by_name(name)
-            .iter()
-            .find(|sym| sym.id == id)?;
+        let candidate = self.lookup.by_name(name).iter().find(|sym| sym.id == id)?;
         if kind(edge_kind, &candidate.kind) {
             Some(id)
         } else {
@@ -772,7 +880,10 @@ impl<'a> DefaultResolver<'a> {
     /// (`scope_visible`, `same_file`, `file_import`, `ref_module`) catch
     /// the explicit-evidence cases first; this is the residual that
     /// catches "the project has one `foo` and the caller didn't qualify".
-    pub fn resolve_via_unique_internal_name(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_unique_internal_name(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         if target.contains('.') || target.contains("::") || target.contains('/') {
@@ -792,9 +903,7 @@ impl<'a> DefaultResolver<'a> {
                 .cmp(&b.qualified_name)
                 .then(a.kind.cmp(&b.kind))
         });
-        compatible.dedup_by(|a, b| {
-            a.qualified_name == b.qualified_name && a.kind == b.kind
-        });
+        compatible.dedup_by(|a, b| a.qualified_name == b.qualified_name && a.kind == b.kind);
         if compatible.len() != 1 {
             return None;
         }
@@ -922,8 +1031,9 @@ impl<'a> DefaultResolver<'a> {
                 .iter()
                 .any(|id| arena.generic_param(*id).name == target)
             {
-                if let Some(sym) =
-                    self.lookup.by_qualified_name(&self.ref_ctx.source_symbol.qualified_name)
+                if let Some(sym) = self
+                    .lookup
+                    .by_qualified_name(&self.ref_ctx.source_symbol.qualified_name)
                 {
                     return Some(self.resolution(sym.id, "engine_generic_param"));
                 }
@@ -936,12 +1046,14 @@ impl<'a> DefaultResolver<'a> {
         // appear only in its own signature, never in an enclosing scope. The
         // scope-chain loop below deliberately skips the source symbol's qname,
         // so without this those self-declared params stay unresolved.
-        if let Some(params) =
-            self.lookup.generic_params(&self.ref_ctx.source_symbol.qualified_name)
+        if let Some(params) = self
+            .lookup
+            .generic_params(&self.ref_ctx.source_symbol.qualified_name)
         {
             if params.iter().any(|p| p == target) {
-                if let Some(sym) =
-                    self.lookup.by_qualified_name(&self.ref_ctx.source_symbol.qualified_name)
+                if let Some(sym) = self
+                    .lookup
+                    .by_qualified_name(&self.ref_ctx.source_symbol.qualified_name)
                 {
                     return Some(self.resolution(sym.id, "engine_generic_param"));
                 }
@@ -955,7 +1067,9 @@ impl<'a> DefaultResolver<'a> {
             if scope_qname == &self.ref_ctx.source_symbol.qualified_name {
                 continue;
             }
-            let Some(params) = self.lookup.generic_params(scope_qname) else { continue };
+            let Some(params) = self.lookup.generic_params(scope_qname) else {
+                continue;
+            };
             if params.iter().any(|p| p == target) {
                 if let Some(sym) = self.lookup.by_qualified_name(scope_qname) {
                     return Some(self.resolution(sym.id, "engine_generic_param"));
@@ -1003,7 +1117,10 @@ impl<'a> DefaultResolver<'a> {
     /// resolve to its direct parent via `parent_class_qname`. Catches
     /// `super(...)` constructor delegation and bare-keyword refs that carry
     /// no member chain for the chain walker to follow.
-    pub fn resolve_via_self_keyword(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_self_keyword(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let enclosing = self.enclosing_type()?;
@@ -1027,7 +1144,10 @@ impl<'a> DefaultResolver<'a> {
     /// chain with `parent_class_qname` and accepts a member whose simple name
     /// matches — reaching inherited fields/methods declared on a base class.
     /// Climb is bounded at `MAX_INHERITANCE_DEPTH`.
-    pub fn resolve_via_enclosing_member(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_enclosing_member(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() || target.contains('.') || target.contains("::") {
             return None;
@@ -1055,7 +1175,10 @@ impl<'a> DefaultResolver<'a> {
     /// aliases (`@/utils`, `$lib/...`) which must first be rewritten to a
     /// real path. Fires only when the rewrite changes the specifier — the
     /// raw-path case already ran in `resolve_via_file_import`.
-    pub fn resolve_via_aliased_import(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_aliased_import(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         for import in &self.file_ctx.imports {
@@ -1064,7 +1187,9 @@ impl<'a> DefaultResolver<'a> {
             if !matches_direct && !matches_alias {
                 continue;
             }
-            let Some(raw_module) = import.module_path.as_deref() else { continue };
+            let Some(raw_module) = import.module_path.as_deref() else {
+                continue;
+            };
             let Some(rewritten) = self
                 .lookup
                 .resolve_path_alias(self.ref_ctx.file_package_id, raw_module)
@@ -1104,10 +1229,7 @@ impl<'a> DefaultResolver<'a> {
     /// All per-language behavior is in `ir` — the algorithm is one shape. A
     /// non-`Imports` ref, an empty target, or a declined leading slash short-
     /// circuits to `None` so the regular ladder is unaffected.
-    pub fn resolve_via_import_path(
-        &self,
-        ir: &ImportResolution,
-    ) -> Option<Resolution> {
+    pub fn resolve_via_import_path(&self, ir: &ImportResolution) -> Option<Resolution> {
         if self.ref_ctx.extracted_ref.kind != EdgeKind::Imports {
             return None;
         }
@@ -1122,14 +1244,8 @@ impl<'a> DefaultResolver<'a> {
 
         for candidate in import_path_candidates(source_dir, target, ir) {
             let path_str = candidate.to_string_lossy().replace('\\', "/");
-            let file_stem = candidate
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            let file_name = candidate
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let file_stem = candidate.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let file_name = candidate.file_name().and_then(|s| s.to_str()).unwrap_or("");
             for sym in self.lookup.in_file(&path_str) {
                 if sym.kind != ir.bind_kind {
                     continue;
@@ -1137,8 +1253,7 @@ impl<'a> DefaultResolver<'a> {
                 let name_ok = match ir.stem_match {
                     StemMatch::StemExact => sym.name == file_stem,
                     StemMatch::StemOrUnderscoreStripped => {
-                        sym.name == file_stem
-                            || sym.name == file_stem.trim_start_matches('_')
+                        sym.name == file_stem || sym.name == file_stem.trim_start_matches('_')
                     }
                     StemMatch::BasenameWithExt => sym.name == file_name,
                     StemMatch::AnyClassInFile => true,
@@ -1197,9 +1312,7 @@ impl<'a> DefaultResolver<'a> {
         let is_relative = match relative_marker {
             RelativeMarker::None => true,
             RelativeMarker::DotPrefix => module.starts_with('.'),
-            RelativeMarker::DotSlashPrefix => {
-                module.starts_with("./") || module.starts_with("../")
-            }
+            RelativeMarker::DotSlashPrefix => module.starts_with("./") || module.starts_with("../"),
         };
         // A relative module takes the in_module_from bind; an absolute module
         // (only possible when a marker is set) takes the directory-containment
@@ -1242,9 +1355,7 @@ impl<'a> DefaultResolver<'a> {
                         if overload_pick_all {
                             for sym in self.lookup.all_by_qualified_name(&qname) {
                                 if kind(edge_kind, &sym.kind) {
-                                    return Some(
-                                        self.resolution(sym.id, "default_module_anchor"),
-                                    );
+                                    return Some(self.resolution(sym.id, "default_module_anchor"));
                                 }
                             }
                         } else if let Some(sym) = self.lookup.by_qualified_name(&qname) {
@@ -1372,8 +1483,10 @@ impl<'a> DefaultResolver<'a> {
                     if m.starts_with('.') {
                         continue;
                     }
-                    let stripped =
-                        m.strip_prefix("std/").or_else(|| m.strip_prefix("pkg/")).unwrap_or(m);
+                    let stripped = m
+                        .strip_prefix("std/")
+                        .or_else(|| m.strip_prefix("pkg/"))
+                        .unwrap_or(m);
                     let leaf = stripped.rsplit('/').next().unwrap_or(stripped);
                     if !leaf.is_empty() {
                         needles.push(leaf.to_lowercase());
@@ -1400,9 +1513,9 @@ impl<'a> DefaultResolver<'a> {
                 ExtFileMatcher::PkgSegment(roots) => {
                     let pkg_seg = external_package_segment(&sym.file_path);
                     !pkg_seg.is_empty()
-                        && roots
-                            .iter()
-                            .any(|root| pkg_seg == *root || pkg_seg.starts_with(&format!("{root}-")))
+                        && roots.iter().any(|root| {
+                            pkg_seg == *root || pkg_seg.starts_with(&format!("{root}-"))
+                        })
                 }
                 ExtFileMatcher::FileStemOrDir(needles) => {
                     let file_lower = sym.file_path.to_lowercase();
@@ -1434,9 +1547,15 @@ impl<'a> DefaultResolver<'a> {
     /// the ref carries none (unlike `resolve_via_module_anchor`, which early-
     /// returns on a missing module). Selected by `ModuleScope::SameDir` via
     /// `resolve_via_module_scope`.
-    pub fn resolve_via_same_dir(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_same_dir(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
-        if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/')
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
         {
             return None;
         }
@@ -1720,10 +1839,7 @@ impl<'a> DefaultResolver<'a> {
             };
             let (type_name, member_name) = match import.alias.as_deref() {
                 Some(alias) => match alias.split_once(decode.separator) {
-                    Some((t, m)) => (
-                        (!t.is_empty()).then_some(t),
-                        (!m.is_empty()).then_some(m),
-                    ),
+                    Some((t, m)) => ((!t.is_empty()).then_some(t), (!m.is_empty()).then_some(m)),
                     None => ((!alias.is_empty()).then_some(alias), None),
                 },
                 None => (None, None),
@@ -1867,8 +1983,7 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         // npm-globals namespace probe.
-        let globals_candidate =
-            format!("{}.{target}", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
+        let globals_candidate = format!("{}.{target}", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
         if let Some(sym) = self.lookup.by_qualified_name(&globals_candidate) {
             if kind(edge_kind, &sym.kind) {
                 return Some(Resolution {
@@ -1918,18 +2033,32 @@ impl<'a> DefaultResolver<'a> {
     pub fn resolve_via_namespaceless_global(
         &self,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
+        self_keywords: &[&str],
     ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
-        for sym in self.lookup.by_name(target) {
-            if self.lookup.is_external_file(&sym.file_path) {
-                continue;
-            }
-            if kind(edge_kind, &sym.kind) {
-                return Some(self.resolution(sym.id, "default_namespaceless_global"));
+        // Try the raw target, then the self-keyword-stripped leaf: flat-namespace
+        // sigil languages keep the sigil in the ref (`var.X`, `local.X`) but
+        // declare the symbol bare (`X`). `strip_self_keyword` is a no-op when the
+        // language declares no self keyword or the target carries no sigil.
+        let stripped = strip_self_keyword(target, self_keywords);
+        let raw_then_stripped = [target, stripped];
+        let candidates: &[&str] = if stripped == target {
+            &raw_then_stripped[..1]
+        } else {
+            &raw_then_stripped[..]
+        };
+        for &cand in candidates {
+            for sym in self.lookup.by_name(cand) {
+                if self.lookup.is_external_file(&sym.file_path) {
+                    continue;
+                }
+                if kind(edge_kind, &sym.kind) {
+                    return Some(self.resolution(sym.id, "default_namespaceless_global"));
+                }
             }
         }
         None
@@ -2060,11 +2189,10 @@ impl<'a> DefaultResolver<'a> {
         if matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements)
             && r.target_name.contains('<')
         {
-            let head =
-                crate::indexer::resolve::engine::chain_walker::parse_type_head_and_args(
-                    &r.target_name,
-                )
-                .0;
+            let head = crate::indexer::resolve::engine::chain_walker::parse_type_head_and_args(
+                &r.target_name,
+            )
+            .0;
             if !head.is_empty() && head.len() != r.target_name.len() {
                 let mut bare_ref = r.clone();
                 bare_ref.target_name = head.to_string();
@@ -2228,6 +2356,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| self.resolve_via_reexport_chain(kind))
             .or_else(|| self.resolve_via_explicit_member_import(pd.explicit_member_import, kind))
             .or_else(|| self.resolve_via_file_import(kind))
+            .or_else(|| self.resolve_via_component_import(kind))
             .or_else(|| self.resolve_via_reexport_following())
             .or_else(|| self.resolve_via_aliased_import(kind))
             .or_else(|| self.resolve_via_namespace_import(kind, pd.name_normalization))
@@ -2278,7 +2407,7 @@ impl<'a> DefaultResolver<'a> {
             // above wins first; gated on `namespaceless_global_type_lookup`.
             .or_else(|| {
                 pd.namespaceless_global_type_lookup
-                    .then(|| self.resolve_via_namespaceless_global(kind))
+                    .then(|| self.resolve_via_namespaceless_global(kind, pd.self_keywords))
                     .flatten()
             });
         if result.is_none() {
@@ -2313,13 +2442,12 @@ impl<'a> DefaultResolver<'a> {
         if trivial {
             return;
         }
-        self.lookup.record_chain_miss(
-            crate::indexer::resolve::engine::ChainMiss {
+        self.lookup
+            .record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
                 current_type: String::new(),
                 target_name: target.to_string(),
                 module: None,
-            },
-        );
+            });
     }
 
     /// Strategy — bare target brought into scope by a wildcard / static
@@ -2371,9 +2499,9 @@ impl<'a> DefaultResolver<'a> {
                 continue;
             }
             let under_a_wildcard = match mode {
-                WildcardMatch::QnameUnder => {
-                    wildcards.iter().any(|ns| qname_directly_under(&sym.qualified_name, ns))
-                }
+                WildcardMatch::QnameUnder => wildcards
+                    .iter()
+                    .any(|ns| qname_directly_under(&sym.qualified_name, ns)),
                 WildcardMatch::FileStem { underscore_prefix } => {
                     // The candidate's surface name must match the ref under the
                     // profile's normalization before its file is checked — a
@@ -2473,9 +2601,16 @@ impl<'a> DefaultResolver<'a> {
     /// in N external packages (e.g. `description` declared in hundreds of
     /// ARM templates, `expect` declared in every `@types/jest` variant) but
     /// the older strict path bailed on ambiguity.
-    pub fn resolve_via_ranked_candidates(&self, kind: &dyn Fn(EdgeKind, &str) -> bool) -> Option<Resolution> {
+    pub fn resolve_via_ranked_candidates(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
-        if target.is_empty() || target.contains('.') || target.contains("::") || target.contains('/') {
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
+        {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
@@ -2515,9 +2650,7 @@ impl<'a> DefaultResolver<'a> {
         // Same workspace package as caller. Strongest signal — a workspace
         // boundary is a strong intent marker, and same-package resolution
         // beats almost everything else.
-        if let (Some(caller_pkg), Some(sym_pkg)) =
-            (self.ref_ctx.file_package_id, sym.package_id)
-        {
+        if let (Some(caller_pkg), Some(sym_pkg)) = (self.ref_ctx.file_package_id, sym.package_id) {
             if caller_pkg == sym_pkg {
                 s += 1000;
             }
@@ -2532,7 +2665,9 @@ impl<'a> DefaultResolver<'a> {
         //       the import's module path (dot/slash/double-colon normalised).
         let mut matched_workspace_import = false;
         for import in &self.file_ctx.imports {
-            let Some(mod_path) = import.module_path.as_deref() else { continue };
+            let Some(mod_path) = import.module_path.as_deref() else {
+                continue;
+            };
             if let Some(wp_id) = self.lookup.workspace_package_id(mod_path) {
                 if Some(wp_id) == sym.package_id {
                     s += 500;
@@ -2639,7 +2774,9 @@ fn is_type_kind(kind: &str) -> bool {
 /// dot-separated) prefix followed by `.` and one or more segments.
 fn qname_under_module(qualified_name: &str, module_path: &str) -> bool {
     let dotted = module_path.replace("::", ".").replace('/', ".");
-    if dotted.is_empty() { return false }
+    if dotted.is_empty() {
+        return false;
+    }
     let needle = format!("{dotted}.");
     qualified_name.starts_with(&needle) || qualified_name == dotted
 }
@@ -2649,9 +2786,13 @@ fn qname_under_module(qualified_name: &str, module_path: &str) -> bool {
 /// matches `Assertions`; `Assertions.Nested.foo` does not.
 fn qname_directly_under(qualified_name: &str, module_path: &str) -> bool {
     let dotted = module_path.replace("::", ".").replace('/', ".");
-    if dotted.is_empty() { return false }
+    if dotted.is_empty() {
+        return false;
+    }
     let needle = format!("{dotted}.");
-    let Some(rest) = qualified_name.strip_prefix(needle.as_str()) else { return false };
+    let Some(rest) = qualified_name.strip_prefix(needle.as_str()) else {
+        return false;
+    };
     !rest.contains('.')
 }
 
@@ -2689,19 +2830,13 @@ pub fn implicit_prelude_namespaces(language_id: &str) -> &'static [&'static str]
 fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
     let caller_norm = caller_path.replace('\\', "/");
     let candidate_norm = candidate_path.replace('\\', "/");
-    let caller_dir = caller_norm
-        .rsplit_once('/')
-        .map(|(d, _)| d)
-        .unwrap_or("");
+    let caller_dir = caller_norm.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let candidate_dir = candidate_norm
         .rsplit_once('/')
         .map(|(d, _)| d)
         .unwrap_or("");
     let caller_segs: Vec<&str> = caller_dir.split('/').filter(|s| !s.is_empty()).collect();
-    let candidate_segs: Vec<&str> = candidate_dir
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let candidate_segs: Vec<&str> = candidate_dir.split('/').filter(|s| !s.is_empty()).collect();
     let shared = caller_segs
         .iter()
         .zip(candidate_segs.iter())
@@ -2747,7 +2882,10 @@ fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
     }
     normalized.split('/').any(|seg| {
         seg == module_lower
-            || seg.split(':').next_back().map_or(false, |tail| tail == module_lower)
+            || seg
+                .split(':')
+                .next_back()
+                .map_or(false, |tail| tail == module_lower)
     })
 }
 
@@ -2800,7 +2938,10 @@ fn wildcard_file_stem_matches(
     }
     let normalized = file_path_lower.replace('\\', "/");
     let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
-    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
+    let stem = basename
+        .rsplit_once('.')
+        .map(|(s, _)| s)
+        .unwrap_or(basename);
     stem.starts_with(&format!("{module_lower}_"))
 }
 
@@ -3180,15 +3321,8 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
         return false;
     }
     let normalized = file_path.replace('\\', "/");
-    let cleaned = module.trim_start_matches("./").trim_start_matches("../");
-    let stem = normalized
-        .trim_end_matches(".ts")
-        .trim_end_matches(".tsx")
-        .trim_end_matches(".js")
-        .trim_end_matches(".jsx")
-        .trim_end_matches(".mts")
-        .trim_end_matches(".cts")
-        .trim_end_matches(".cs");
+    let cleaned = trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
+    let stem = trim_source_extension(&normalized);
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }
@@ -3206,6 +3340,41 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
         return false;
     }
     path_contains_segment_run(&normalized, &dotted)
+}
+
+fn trim_source_extension(path: &str) -> &str {
+    path.trim_end_matches(".svelte")
+        .trim_end_matches(".vue")
+        .trim_end_matches(".tsx")
+        .trim_end_matches(".jsx")
+        .trim_end_matches(".mts")
+        .trim_end_matches(".cts")
+        .trim_end_matches(".ts")
+        .trim_end_matches(".js")
+        .trim_end_matches(".cs")
+}
+
+fn component_tag_head(target: &str) -> Option<&str> {
+    let head = target
+        .split(['.', ':', '/'])
+        .next()
+        .unwrap_or(target)
+        .trim();
+    (!head.is_empty()).then_some(head)
+}
+
+fn is_component_tag_target(target: &str) -> bool {
+    component_tag_head(target)
+        .and_then(|head| head.chars().next())
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
+fn is_component_file(path: &str) -> bool {
+    path.ends_with(".vue") || path.ends_with(".svelte")
+}
+
+fn is_component_symbol_kind(kind: &str) -> bool {
+    matches!(kind, "class" | "component")
 }
 
 /// True when `run` (a `/`-joined path fragment) appears in `path` aligned to

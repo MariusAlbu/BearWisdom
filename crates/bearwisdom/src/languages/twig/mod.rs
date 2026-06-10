@@ -27,15 +27,25 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct TwigPlugin;
 
 impl LanguagePlugin for TwigPlugin {
-    fn id(&self) -> &str { "twig" }
+    fn id(&self) -> &str {
+        "twig"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["twig"] }
+    fn language_ids(&self) -> &[&str] {
+        &["twig"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".twig", ".html.twig"] }
+    fn extensions(&self) -> &[&str] {
+        &[".twig", ".html.twig"]
+    }
 
-    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> { None }
+    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
+        None
+    }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
@@ -50,8 +60,12 @@ impl LanguagePlugin for TwigPlugin {
         embedded::detect_regions(source)
     }
 
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
 
     fn profile(
         &self,

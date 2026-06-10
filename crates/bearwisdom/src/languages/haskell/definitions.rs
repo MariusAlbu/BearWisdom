@@ -68,11 +68,16 @@ pub(super) fn extract_function(
     } else {
         // Final fallback: use raw text of the first named child (truncated).
         // This handles pattern-only bindings like `(x, y) = ...` or `_ = ...`.
-        let fallback = node.named_child(0)
+        let fallback = node
+            .named_child(0)
             .map(|c| {
                 let t = node_text(c, src);
                 // Truncate to 40 chars to avoid huge names
-                if t.len() > 40 { t[..40].to_string() } else { t }
+                if t.len() > 40 {
+                    t[..40].to_string()
+                } else {
+                    t
+                }
             })
             .unwrap_or_default();
         if fallback.is_empty() {
@@ -81,18 +86,16 @@ pub(super) fn extract_function(
         fallback
     };
 
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
-    let qname = if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() };
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
+    let qname = if let Some(p) = &scope {
+        format!("{}.{}", p, name)
+    } else {
+        name.clone()
+    };
 
     let idx = symbols.len();
-    symbols.push(make_symbol(
-        name,
-        qname,
-        kind,
-        node,
-        None,
-        parent_index,
-    ));
+    symbols.push(make_symbol(name, qname, kind, node, None, parent_index));
     // Attach scope_path
     if let Some(ref s) = scope {
         symbols[idx].scope_path = Some(s.clone());
@@ -119,8 +122,13 @@ pub(super) fn extract_named_symbol(
         return None;
     }
 
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
-    let qname = if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() };
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
+    let qname = if let Some(p) = &scope {
+        format!("{}.{}", p, name)
+    } else {
+        name.clone()
+    };
 
     let idx = symbols.len();
     symbols.push(make_symbol(
@@ -165,7 +173,8 @@ pub(super) fn extract_instance(
         format!("{} {}", class_name, type_name)
     };
 
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
     let idx = symbols.len();
     symbols.push(make_symbol(
         instance_name.clone(),
@@ -181,7 +190,9 @@ pub(super) fn extract_instance(
 
     // Implements edge: this type instance → the type class
     let source_idx = idx;
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: class_name,
         kind: EdgeKind::Implements,
@@ -190,9 +201,9 @@ pub(super) fn extract_instance(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     Some(idx)
 }
@@ -206,7 +217,11 @@ fn extract_instance_type(node: &Node, src: &[u8]) -> String {
             found_name = true;
             continue;
         }
-        if found_name && (child.kind() == "name" || child.kind() == "constructor" || child.kind() == "variable") {
+        if found_name
+            && (child.kind() == "name"
+                || child.kind() == "constructor"
+                || child.kind() == "variable")
+        {
             let t = node_text(child, src);
             if !t.is_empty() {
                 return t;
@@ -257,7 +272,9 @@ fn collect_deriving_names(
             "name" | "constructor" => {
                 let name = node_text(child, src);
                 if !name.is_empty() && name != "deriving" {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Implements,
@@ -266,9 +283,9 @@ fn collect_deriving_names(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "deriving" | "tuple" | "list" | "class" | "qualified" => {
@@ -432,7 +449,9 @@ pub(super) fn extract_import(
         Some(a) => a.clone(),
         None => module.rsplit('.').next().unwrap_or(&module).to_string(),
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Imports,
@@ -461,16 +480,30 @@ pub(super) fn extract_foreign(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "signature" {
-            let name_node = child.child_by_field_name("name")
+            let name_node = child
+                .child_by_field_name("name")
                 .or_else(|| child.named_child(0))?;
             let name = node_text(name_node, src);
             if name.is_empty() {
                 return None;
             }
-            let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
-            let qname = if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() };
+            let scope =
+                scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+                    .map(|s| s.qualified_name.clone());
+            let qname = if let Some(p) = &scope {
+                format!("{}.{}", p, name)
+            } else {
+                name.clone()
+            };
             let idx = symbols.len();
-            symbols.push(make_symbol(name, qname, SymbolKind::Function, node, None, parent_index));
+            symbols.push(make_symbol(
+                name,
+                qname,
+                SymbolKind::Function,
+                node,
+                None,
+                parent_index,
+            ));
             if let Some(ref s) = scope {
                 symbols[idx].scope_path = Some(s.clone());
             }
@@ -649,7 +682,14 @@ pub(super) fn extract_signature_symbols(
             name.clone()
         };
         let idx = symbols.len();
-        symbols.push(make_symbol(name, qname, kind, node, signature.clone(), parent_index));
+        symbols.push(make_symbol(
+            name,
+            qname,
+            kind,
+            node,
+            signature.clone(),
+            parent_index,
+        ));
         if let Some(ref s) = scope {
             symbols[idx].scope_path = Some(s.clone());
         }

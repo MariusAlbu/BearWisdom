@@ -58,7 +58,9 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
             };
             let arg = extract_arg(&value_node, src, 0);
             out.push(if is_spread {
-                CallArg::Spread { expr: Box::new(arg) }
+                CallArg::Spread {
+                    expr: Box::new(arg),
+                }
             } else {
                 arg
             });
@@ -86,7 +88,9 @@ fn append_trailing_lambda(call_node: &Node, src: &[u8], out: &mut Vec<CallArg>) 
     let mut cursor = call_node.walk();
     for child in call_node.children(&mut cursor) {
         if let Some(ll) = trailing_lambda_literal(&child) {
-            out.push(CallArg::Lambda { params: lambda_literal_params(&ll, src) });
+            out.push(CallArg::Lambda {
+                params: lambda_literal_params(&ll, src),
+            });
         }
     }
     // Case 2 — `call_node` is the callee `navigation_expression`: the lambda is
@@ -96,7 +100,9 @@ fn append_trailing_lambda(call_node: &Node, src: &[u8], out: &mut Vec<CallArg>) 
         let mut sib = call_node.next_named_sibling();
         while let Some(node) = sib {
             if let Some(ll) = trailing_lambda_literal(&node) {
-                out.push(CallArg::Lambda { params: lambda_literal_params(&ll, src) });
+                out.push(CallArg::Lambda {
+                    params: lambda_literal_params(&ll, src),
+                });
             }
             sib = node.next_named_sibling();
         }
@@ -125,8 +131,8 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             CallArg::StringLit(strip_kt_string(&raw))
         }
         "simple_identifier" | "identifier" => CallArg::Ident(node_text(*node, src)),
-        "integer_literal" | "long_literal" | "real_literal" | "hex_literal"
-        | "bin_literal" | "unsigned_literal" => CallArg::Literal(node_text(*node, src)),
+        "integer_literal" | "long_literal" | "real_literal" | "hex_literal" | "bin_literal"
+        | "unsigned_literal" => CallArg::Literal(node_text(*node, src)),
         "boolean_literal" | "null_literal" => CallArg::Literal(node.kind().to_string()),
 
         // `if (cond) a else b` — Kotlin's `if` is an expression and the direct
@@ -174,7 +180,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
 
         // `container[index]` — first named child is the container, the second
@@ -224,7 +232,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // `extract_call_args`. Capture the lambda's own positional parameter
         // names so the chain walker can type them from the higher-order
         // method's callback-parameter signature.
-        "lambda_literal" => CallArg::Lambda { params: lambda_literal_params(node, src) },
+        "lambda_literal" => CallArg::Lambda {
+            params: lambda_literal_params(node, src),
+        },
 
         _ => CallArg::Other,
     }
@@ -310,9 +320,16 @@ pub(super) fn extract_calls_from_body(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&callee, src));
                     let call_args = extract_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &callee,
+                        refs,
+                    );
                     if !target_name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -350,8 +367,15 @@ pub(super) fn extract_calls_from_body(
                     if let Some(seg) = c.segments.last() {
                         let target = seg.name.clone();
                         if !target.is_empty() {
-                            crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            crate::languages::emit_chain_type_ref(
+                                &chain,
+                                source_symbol_index,
+                                &child,
+                                refs,
+                            );
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: target,
                                 kind: EdgeKind::Calls,
@@ -444,7 +468,12 @@ pub(super) fn extract_calls_from_body(
                                 match type_child.kind() {
                                     "user_type" | "nullable_type" | "function_type"
                                     | "non_nullable_type" | "parenthesized_type" | "type" => {
-                                        extract_type_ref_from_type_node(&type_child, src, source_symbol_index, refs);
+                                        extract_type_ref_from_type_node(
+                                            &type_child,
+                                            src,
+                                            source_symbol_index,
+                                            refs,
+                                        );
                                     }
                                     _ => {}
                                 }
@@ -471,7 +500,9 @@ pub(super) fn extract_type_ref_from_type_node(
 ) {
     let name = kotlin_type_name(node, src);
     if !name.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -480,9 +511,9 @@ pub(super) fn extract_type_ref_from_type_node(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -527,7 +558,6 @@ pub(super) fn kotlin_type_name(node: &Node, src: &[u8]) -> String {
     }
 }
 
-
 /// Build a structured member access chain from a Kotlin CST node.
 pub(super) fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
     let mut segments = Vec::new();
@@ -550,11 +580,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -567,11 +597,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -584,11 +614,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -603,7 +633,9 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
             // We must handle both forms.
             let named_children: Vec<_> = {
                 let mut cursor = node.walk();
-                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+                node.children(&mut cursor)
+                    .filter(|c| c.is_named())
+                    .collect()
             };
             if named_children.is_empty() {
                 return None;
@@ -626,11 +658,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                                     type_args: vec![],
                                     optional_chaining: false,
                                     byte_offset: 0,
-                                                                    declared_type_id: None,
+                                    declared_type_id: None,
                                     is_call: false,
                                     call_args: Vec::new(),
                                     type_arg_ids: Vec::new(),
-});
+                                });
                                 break;
                             }
                         }
@@ -645,11 +677,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                             type_args: vec![],
                             optional_chaining: false,
                             byte_offset: 0,
-                                                    declared_type_id: None,
+                            declared_type_id: None,
                             is_call: false,
                             call_args: Vec::new(),
                             type_arg_ids: Vec::new(),
-});
+                        });
                     }
                     _ => {} // type_arguments, etc. — skip
                 }
@@ -707,8 +739,7 @@ fn extract_call_arguments(
             continue; // this is the callee — already handled by build_chain
         }
         match child.kind() {
-            "value_arguments" | "annotated_lambda" | "lambda_literal"
-            | "function_literal" => {
+            "value_arguments" | "annotated_lambda" | "lambda_literal" | "function_literal" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             // Named argument labels (`modifier =` in `foo(modifier = x)`) are
@@ -739,11 +770,15 @@ fn extract_nav_arguments(
             // grammar may wrap the receiver in a call_expression node), and
             // navigation suffixes — skip entirely.  All of these are fully
             // captured by build_chain.
-            "navigation_expression" | "call_expression" | "navigation_suffix"
-            | "simple_identifier" | "identifier" | "this_expression" | "super_expression" => {}
+            "navigation_expression"
+            | "call_expression"
+            | "navigation_suffix"
+            | "simple_identifier"
+            | "identifier"
+            | "this_expression"
+            | "super_expression" => {}
             // Argument nodes — recurse to capture calls inside arguments.
-            "value_arguments" | "annotated_lambda" | "lambda_literal"
-            | "function_literal" => {
+            "value_arguments" | "annotated_lambda" | "lambda_literal" | "function_literal" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             _ => {

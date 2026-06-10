@@ -64,13 +64,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
     for child in root.children(&mut cursor) {
         match child.kind() {
             "from_instruction" => {
-                let sym_idx = extract_from(
-                    &child,
-                    source,
-                    &mut symbols,
-                    &mut refs,
-                    stage_counter,
-                );
+                let sym_idx = extract_from(&child, source, &mut symbols, &mut refs, stage_counter);
                 current_stage_index = Some(sym_idx);
                 // Record stage name for numeric --from=N resolution.
                 if let Some(sym) = symbols.get(sym_idx) {
@@ -97,7 +91,13 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 extract_label(&child, source, &mut symbols, current_stage_index);
             }
             "entrypoint_instruction" => {
-                extract_entry_function(&child, source, "ENTRYPOINT", &mut symbols, current_stage_index);
+                extract_entry_function(
+                    &child,
+                    source,
+                    "ENTRYPOINT",
+                    &mut symbols,
+                    current_stage_index,
+                );
             }
             "cmd_instruction" => {
                 extract_entry_function(&child, source, "CMD", &mut symbols, current_stage_index);
@@ -181,15 +181,17 @@ fn extract_from(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Imports edge to the base image
     if let Some(img) = &image {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: img.clone(),
             kind: EdgeKind::Imports,
@@ -198,11 +200,13 @@ fn extract_from(
             module: Some(img.clone()),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
         // Inherits edge: each stage inherits its base image
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: img.clone(),
             kind: EdgeKind::Inherits,
@@ -211,9 +215,9 @@ fn extract_from(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     idx
@@ -284,12 +288,12 @@ fn extract_arg(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -346,12 +350,12 @@ fn extract_env_pair(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -404,12 +408,12 @@ fn extract_label(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
                 emitted = true;
             }
         }
@@ -440,12 +444,12 @@ fn extract_label(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
                 break; // one symbol per label_instruction in fallback mode
             }
         }
@@ -478,14 +482,13 @@ fn extract_copy(
             if let Some(raw_stage) = parse_from_param(&text) {
                 found_from_param = true;
                 let target_name = if let Ok(n) = raw_stage.parse::<usize>() {
-                    stage_names_by_index
-                        .get(n)
-                        .cloned()
-                        .unwrap_or(raw_stage)
+                    stage_names_by_index.get(n).cloned().unwrap_or(raw_stage)
                 } else {
                     raw_stage
                 };
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name,
                     kind: EdgeKind::Calls,
@@ -494,9 +497,9 @@ fn extract_copy(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -504,7 +507,9 @@ fn extract_copy(
     // For regular COPY/ADD (no --from), emit an Imports ref at the node's line
     // so the copy_instruction appears in coverage as matched.
     if !found_from_param {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: ".".to_string(),
             kind: EdgeKind::Imports,
@@ -513,9 +518,9 @@ fn extract_copy(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -547,7 +552,12 @@ fn extract_entry_function(
 ) {
     // Use first line of the instruction as the signature
     let full_text = node_text(*node, src);
-    let sig = full_text.lines().next().unwrap_or(keyword).trim().to_string();
+    let sig = full_text
+        .lines()
+        .next()
+        .unwrap_or(keyword)
+        .trim()
+        .to_string();
 
     symbols.push(ExtractedSymbol {
         name: keyword.to_string(),
@@ -562,12 +572,12 @@ fn extract_entry_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------

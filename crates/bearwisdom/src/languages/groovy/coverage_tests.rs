@@ -22,9 +22,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_class_definition() {
     let r = extract("class Foo {\n    def bar() { baz() }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
         "expected Class Foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -33,11 +38,25 @@ fn symbol_class_definition() {
 fn groovy_packaged_class_methods_are_qualified() {
     let src = "package org.codenarc.rule\n\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    void assertSingleViolation(String code) {}\n    void testFoo() {\n        assertSingleViolation('code')\n    }\n}";
     let r = extract(src);
-    let cls = r.symbols.iter().find(|s| s.name == "AbstractRuleTestCase").expect("missing class");
+    let cls = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "AbstractRuleTestCase")
+        .expect("missing class");
     assert_eq!(cls.qualified_name, "org.codenarc.rule.AbstractRuleTestCase");
-    let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation").expect("missing method");
-    assert_eq!(method.scope_path.as_deref(), Some("org.codenarc.rule.AbstractRuleTestCase"));
-    assert_eq!(method.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation");
+    let method = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "assertSingleViolation")
+        .expect("missing method");
+    assert_eq!(
+        method.scope_path.as_deref(),
+        Some("org.codenarc.rule.AbstractRuleTestCase")
+    );
+    assert_eq!(
+        method.qualified_name,
+        "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation"
+    );
 }
 
 /// Probe exact AbstractAstVisitorRuleTest syntax from groovy-codenarc.
@@ -45,9 +64,18 @@ fn groovy_packaged_class_methods_are_qualified() {
 fn groovy_concrete_subclass_with_generic_parent() {
     let src = "package org.codenarc.rule\n\nimport static org.codenarc.test.TestUtil.shouldFailWithMessageContaining\n\nclass AbstractAstVisitorRuleTest extends AbstractRuleTestCase<AbstractAstVisitorRule> {\n    void testApplyTo() {\n        assertSingleViolation('code')\n    }\n}";
     let r = extract(src);
-    eprintln!("has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, s.scope_path.as_deref())).collect::<Vec<_>>());
+    eprintln!(
+        "has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind, s.scope_path.as_deref()))
+            .collect::<Vec<_>>()
+    );
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractAstVisitorRuleTest"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractAstVisitorRuleTest"),
         "expected class symbol; got {:?}",
         r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
     );
@@ -58,9 +86,14 @@ fn groovy_concrete_subclass_with_generic_parent() {
 fn symbol_function_definition_top_level() {
     let r = extract("def greet(name) {\n    println(name)\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "greet" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "greet" && s.kind == SymbolKind::Function),
         "expected Function greet; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -69,9 +102,14 @@ fn symbol_function_definition_top_level() {
 fn symbol_function_definition_method() {
     let r = extract("class Foo {\n    def bar() { baz() }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "bar" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "bar" && s.kind == SymbolKind::Method),
         "expected Method bar; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -80,9 +118,14 @@ fn symbol_function_definition_method() {
 fn symbol_function_declaration() {
     let r = extract("class Calc {\n    int add(int a, int b) { return a + b }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "add" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "add" && s.kind == SymbolKind::Method),
         "expected Method add; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -93,7 +136,10 @@ fn symbol_groovy_package() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
         "expected Namespace from package_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -106,9 +152,14 @@ fn symbol_groovy_package() {
 fn ref_function_call() {
     let r = extract("class Foo {\n    def bar() { baz() }\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "baz" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "baz" && rf.kind == EdgeKind::Calls),
         "expected Calls baz; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -117,9 +168,14 @@ fn ref_function_call() {
 fn ref_juxt_function_call() {
     let r = extract("def run() {\n    println(\"hello\")\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "println" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "println" && rf.kind == EdgeKind::Calls),
         "expected Calls println; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -130,7 +186,10 @@ fn ref_groovy_import() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from import_declaration; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -144,9 +203,14 @@ fn ref_groovy_import() {
 fn symbol_field_declaration() {
     let r = extract("class Foo {\n    String name = \"hello\"\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "name" && s.kind == SymbolKind::Field),
         "expected Field name; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -162,7 +226,10 @@ fn symbol_groovy_package_name_format() {
     assert!(
         !ns.is_empty(),
         "expected Namespace symbol from package; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         ns[0].name.contains('.'),
@@ -176,14 +243,24 @@ fn symbol_groovy_package_name_format() {
 fn symbol_nested_class() {
     let r = extract("class Outer {\n    class Inner {}\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Outer" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Outer" && s.kind == SymbolKind::Class),
         "expected Class Outer; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
         "expected Class Inner; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     let inner = r.symbols.iter().find(|s| s.name == "Inner").unwrap();
     assert!(
@@ -206,7 +283,10 @@ fn ref_groovy_wildcard_import() {
             .iter()
             .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("groovy.json")),
         "expected Imports from wildcard import; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -214,11 +294,18 @@ fn ref_groovy_wildcard_import() {
 #[test]
 fn ref_multiple_calls_in_method() {
     let r = extract("class Foo {\n    def run() {\n        bar()\n        baz()\n    }\n}");
-    let calls: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.len() >= 2,
         "expected >= 2 Calls edges; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -227,9 +314,14 @@ fn ref_multiple_calls_in_method() {
 fn ref_class_extends_produces_inherits() {
     let r = extract("class Dog extends Animal {}");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
         "expected Inherits(Animal) from extends clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -238,9 +330,14 @@ fn ref_class_extends_produces_inherits() {
 fn ref_class_implements_produces_implements() {
     let r = extract("class Foo implements IBar {}");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "IBar"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "IBar"),
         "expected Implements(IBar) from implements clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -248,27 +345,54 @@ fn ref_class_implements_produces_implements() {
 #[test]
 fn symbol_abstract_class_with_generic_bound() {
     let r = extract("package org.codenarc.rule\n\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    protected void assertSingleViolation(String code) {}\n}");
-    eprintln!("has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>());
+    eprintln!(
+        "has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind, &s.qualified_name))
+            .collect::<Vec<_>>()
+    );
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
         "expected Class AbstractRuleTestCase; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation");
     assert!(method.is_some(), "expected method assertSingleViolation");
     let method = method.unwrap();
-    assert_eq!(method.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation");
+    assert_eq!(
+        method.qualified_name,
+        "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation"
+    );
 }
 
 /// annotated class (with @Annotation before class keyword) is extracted as Class
 #[test]
 fn symbol_annotated_class_is_extracted() {
     let r = extract("package org.codenarc.rule\n\n@SuppressWarnings('DuplicateLiteral')\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    protected void assertSingleViolation(String code) {}\n}");
-    eprintln!("annotated class: has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>());
+    eprintln!(
+        "annotated class: has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind, &s.qualified_name))
+            .collect::<Vec<_>>()
+    );
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
         "expected Class AbstractRuleTestCase with @SuppressWarnings; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -280,20 +404,33 @@ fn symbol_class_with_angle_bracket_literal() {
     let r = extract(src);
     eprintln!("angle bracket literal: has_errors={}", r.has_errors);
     for s in &r.symbols {
-        eprintln!("  {:?} name={} qname={} scope={:?}", s.kind, s.name, s.qualified_name, s.scope_path);
+        eprintln!(
+            "  {:?} name={} qname={} scope={:?}",
+            s.kind, s.name, s.qualified_name, s.scope_path
+        );
     }
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
         "expected Class AbstractRuleTestCase with '<init>' literal; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation");
     assert!(method.is_some(), "expected method assertSingleViolation");
     let m = method.unwrap();
-    assert_eq!(m.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation",
-        "method qname should be fully qualified");
-    assert_eq!(m.scope_path.as_deref(), Some("org.codenarc.rule.AbstractRuleTestCase"),
-        "method scope_path should point to class");
+    assert_eq!(
+        m.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation",
+        "method qname should be fully qualified"
+    );
+    assert_eq!(
+        m.scope_path.as_deref(),
+        Some("org.codenarc.rule.AbstractRuleTestCase"),
+        "method scope_path should point to class"
+    );
 }
 
 /// Method with typed return type → Method symbol still emitted
@@ -301,9 +438,14 @@ fn symbol_class_with_angle_bracket_literal() {
 fn symbol_method_with_return_type_produces_method() {
     let r = extract("class Service {\n    List<String> getNames() {\n        return []\n    }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "getNames" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "getNames" && s.kind == SymbolKind::Method),
         "expected Method getNames; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -319,9 +461,14 @@ fn symbol_actual_abstract_rule_test_case_from_disk() {
         eprintln!("  {:?} name={} qname={}", s.kind, s.name, s.qualified_name);
     }
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
         "expected Class AbstractRuleTestCase from file; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -354,12 +501,20 @@ abstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {
     let r = extract(src);
     eprintln!("actual file: has_errors={}", r.has_errors);
     for s in &r.symbols {
-        eprintln!("  {:?} name={} qname={} scope={:?}", s.kind, s.name, s.qualified_name, s.scope_path);
+        eprintln!(
+            "  {:?} name={} qname={} scope={:?}",
+            s.kind, s.name, s.qualified_name, s.scope_path
+        );
     }
     assert!(
-        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
         "expected Class AbstractRuleTestCase; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -531,11 +686,17 @@ fn ref_inherits_gets_module_from_import() {
                    def 'a feature'() { expect: true }\n\
                }";
     let r = extract(src);
-    let inh = r.refs.iter().find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Specification");
+    let inh = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Specification");
     assert!(
         inh.is_some(),
         "expected Inherits ref for Specification; refs={:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         inh.unwrap().module.as_deref(),
@@ -550,11 +711,17 @@ fn ref_implements_gets_module_from_import() {
     let src = "import java.io.Serializable\n\
                class MyClass implements Serializable {}";
     let r = extract(src);
-    let imp = r.refs.iter().find(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "Serializable");
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "Serializable");
     assert!(
         imp.is_some(),
         "expected Implements ref for Serializable; refs={:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         imp.unwrap().module.as_deref(),
@@ -568,7 +735,10 @@ fn ref_implements_gets_module_from_import() {
 fn ref_inherits_without_import_leaves_module_none() {
     let src = "class Child extends Parent {}";
     let r = extract(src);
-    let inh = r.refs.iter().find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent");
+    let inh = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent");
     assert!(inh.is_some(), "expected Inherits ref for Parent");
     assert_eq!(
         inh.unwrap().module,
@@ -583,9 +753,14 @@ fn symbol_interface_declaration() {
     let src = "interface Serializable {}";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Serializable" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Serializable" && s.kind == SymbolKind::Class),
         "expected Class symbol for interface Serializable; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -595,9 +770,14 @@ fn symbol_nested_interface_in_class() {
     let src = "class Outer {\n    interface Inner {}\n}";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
         "expected Class symbol for nested interface Inner; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -607,9 +787,14 @@ fn ref_interface_extends_emits_inherits() {
     let src = "interface Child extends Parent {}";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Parent"),
         "expected Inherits ref to Parent from interface; refs={:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -637,19 +822,31 @@ fn symbol_two_space_private_method_is_extracted() {
     let r = extract(src);
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        r.symbols.iter().any(|s| s.name == "isAndroid" && s.kind == SymbolKind::Method),
-        "expected Method isAndroid at 2-space indent; symbols={:?}", names
+        r.symbols
+            .iter()
+            .any(|s| s.name == "isAndroid" && s.kind == SymbolKind::Method),
+        "expected Method isAndroid at 2-space indent; symbols={:?}",
+        names
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "checkReady" && s.kind == SymbolKind::Method),
-        "expected Method checkReady at 2-space indent; symbols={:?}", names
+        r.symbols
+            .iter()
+            .any(|s| s.name == "checkReady" && s.kind == SymbolKind::Method),
+        "expected Method checkReady at 2-space indent; symbols={:?}",
+        names
     );
     // scope_path must point to the outer class, not an inner class
-    for sym in r.symbols.iter().filter(|s| s.name == "isAndroid" || s.name == "checkReady") {
+    for sym in r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "isAndroid" || s.name == "checkReady")
+    {
         assert_eq!(
             sym.scope_path.as_deref(),
             Some("com.example.Utils"),
-            "{} scope_path should be com.example.Utils; got {:?}", sym.name, sym.scope_path
+            "{} scope_path should be com.example.Utils; got {:?}",
+            sym.name,
+            sym.scope_path
         );
     }
 }
@@ -670,8 +867,14 @@ fn symbol_inner_class_methods_not_attributed_to_outer() {
     let r = extract(src);
     // outerMethod must be scoped to Outer, not Inner
     let outer_m = r.symbols.iter().find(|s| s.name == "outerMethod");
-    assert!(outer_m.is_some(), "expected outerMethod; symbols={:?}",
-        r.symbols.iter().map(|s| (&s.name, s.scope_path.as_deref())).collect::<Vec<_>>());
+    assert!(
+        outer_m.is_some(),
+        "expected outerMethod; symbols={:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.scope_path.as_deref()))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         outer_m.unwrap().scope_path.as_deref(),
         Some("com.example.Outer"),
@@ -679,8 +882,14 @@ fn symbol_inner_class_methods_not_attributed_to_outer() {
     );
     // innerMethod must be scoped to Inner (grammar handles it)
     let inner_m = r.symbols.iter().find(|s| s.name == "innerMethod");
-    assert!(inner_m.is_some(), "expected innerMethod from grammar; symbols={:?}",
-        r.symbols.iter().map(|s| (&s.name, s.scope_path.as_deref())).collect::<Vec<_>>());
+    assert!(
+        inner_m.is_some(),
+        "expected innerMethod from grammar; symbols={:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.scope_path.as_deref()))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         inner_m.unwrap().scope_path.as_deref(),
         Some("com.example.Inner"),
@@ -704,12 +913,18 @@ fn ref_static_class_call_emits_bare_method_name() {
                \x20\x20}\n\
                }";
     let r = extract(src);
-    let call = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "doSomething");
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "doSomething");
     assert!(
         call.is_some(),
         "expected Calls ref with target_name='doSomething'; refs={:?}",
-        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls)
-            .map(|rf| &rf.target_name).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -724,10 +939,15 @@ fn ref_instance_call_on_lowercase_receiver_stays_bare() {
     let r = extract(src);
     // "afterEvaluate" must appear as a bare call — the resolver picks it up
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "afterEvaluate"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "afterEvaluate"),
         "expected bare Calls ref for afterEvaluate; refs={:?}",
-        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls)
-            .map(|rf| &rf.target_name).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -751,8 +971,11 @@ fn symbol_four_space_multiline_method_recovered() {
     let r = extract(src);
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
-        "expected Method addTasksForSourceSet recovered by supplemental scanner; symbols={:?}", names
+        r.symbols
+            .iter()
+            .any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForSourceSet recovered by supplemental scanner; symbols={:?}",
+        names
     );
 }
 
@@ -769,19 +992,35 @@ fn symbol_protobuf_plugin_actual_file_methods_extracted() {
     eprintln!("has_errors={}", r.has_errors);
     eprintln!("symbols:");
     for s in &r.symbols {
-        eprintln!("  {:?} name={} col={} scope={:?}", s.kind, s.name, s.start_col, s.scope_path.as_deref());
+        eprintln!(
+            "  {:?} name={} col={} scope={:?}",
+            s.kind,
+            s.name,
+            s.start_col,
+            s.scope_path.as_deref()
+        );
     }
     assert!(
-        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
         "expected Method addTasksForSourceSet; has_errors={} symbols={:?}",
         r.has_errors,
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "addTasksForVariant" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "addTasksForVariant" && s.kind == SymbolKind::Method),
         "expected Method addTasksForVariant; has_errors={} symbols={:?}",
         r.has_errors,
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -802,11 +1041,21 @@ fn symbol_four_space_multiline_method_recovered_with_generic_implements() {
                \x20\x20\x20\x20\x20\x20\x20\x20SourceSet sourceSet, Configuration config) {}\n\
                }";
     let r = extract(src);
-    eprintln!("has_errors={}, symbols={:?}", r.has_errors,
-        r.symbols.iter().map(|s| (&s.name, s.kind, s.start_col)).collect::<Vec<_>>());
+    eprintln!(
+        "has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind, s.start_col))
+            .collect::<Vec<_>>()
+    );
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        r.symbols.iter().any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
-        "expected Method addTasksForSourceSet recovered; has_errors={} symbols={:?}", r.has_errors, names
+        r.symbols
+            .iter()
+            .any(|s| s.name == "addTasksForSourceSet" && s.kind == SymbolKind::Method),
+        "expected Method addTasksForSourceSet recovered; has_errors={} symbols={:?}",
+        r.has_errors,
+        names
     );
 }

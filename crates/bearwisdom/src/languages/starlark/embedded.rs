@@ -85,7 +85,9 @@ fn find_cmd_assignment(bytes: &[u8], from: usize) -> Option<CmdAssign> {
                 j += 1;
             }
             if j < bytes.len() && bytes[j] == b'=' {
-                return Some(CmdAssign { after_equals: j + 1 });
+                return Some(CmdAssign {
+                    after_equals: j + 1,
+                });
             }
         }
         i += 1;

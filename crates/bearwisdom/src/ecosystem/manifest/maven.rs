@@ -18,7 +18,8 @@ impl ManifestReader for MavenManifest {
         }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
     }
@@ -29,7 +30,9 @@ impl ManifestReader for MavenManifest {
 
         let mut out = Vec::new();
         for manifest_path in pom_paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
 
             let mut data = ManifestData::default();
             for group_id in parse_pom_xml_dependencies(&content) {

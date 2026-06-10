@@ -18,11 +18,15 @@ impl LanguageEngineHooks for VueHooks {
         // PascalCase components (app.component) — these resolve by name in the
         // project index.
         if let Some(ctx_ref) = project_ctx {
-            if let Some(registry) = ctx_ref.plugin_state.get::<global_registry::VueGlobalRegistry>() {
+            if let Some(registry) = ctx_ref
+                .plugin_state
+                .get::<global_registry::VueGlobalRegistry>()
+            {
                 let name = &ref_ctx.extracted_ref.target_name;
                 if name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                    if let Some(global_registry::VueComponentSource::ExplicitRegistration { .. }) =
-                        registry.components.get(name.as_str())
+                    if let Some(global_registry::VueComponentSource::ExplicitRegistration {
+                        ..
+                    }) = registry.components.get(name.as_str())
                     {
                         return None;
                     }
@@ -30,7 +34,10 @@ impl LanguageEngineHooks for VueHooks {
             }
         }
         crate::languages::typescript::hooks::infer_external_inner_with_lookup(
-            file_ctx, ref_ctx, project_ctx, lookup,
+            file_ctx,
+            ref_ctx,
+            project_ctx,
+            lookup,
         )
     }
 
@@ -53,12 +60,16 @@ impl LanguageEngineHooks for VueHooks {
         // (via a prefix convention), add a synthetic ImportEntry so the engine's
         // import loop resolves the component against the external index.
         if let Some(ctx_ref) = project_ctx {
-            if let Some(registry) =
-                ctx_ref.plugin_state.get::<global_registry::VueGlobalRegistry>()
+            if let Some(registry) = ctx_ref
+                .plugin_state
+                .get::<global_registry::VueGlobalRegistry>()
             {
                 if !registry.is_empty() {
-                    let already_imported: std::collections::HashSet<&str> =
-                        ctx.imports.iter().map(|e| e.imported_name.as_str()).collect();
+                    let already_imported: std::collections::HashSet<&str> = ctx
+                        .imports
+                        .iter()
+                        .map(|e| e.imported_name.as_str())
+                        .collect();
 
                     let mut extra_imports: Vec<ImportEntry> = Vec::new();
                     for r in &file.refs {

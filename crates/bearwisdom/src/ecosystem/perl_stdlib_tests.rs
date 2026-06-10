@@ -41,7 +41,10 @@ fn walk_finds_pm_files_skips_test_dirs() {
         .collect();
     assert!(names.contains(&"Carp.pm"));
     assert!(names.contains(&"Dumper.pm"));
-    assert!(!names.contains(&"excluded.pm"), "t/ subdir should be excluded");
+    assert!(
+        !names.contains(&"excluded.pm"),
+        "t/ subdir should be excluded"
+    );
     for w in &walked {
         assert_eq!(w.language, "perl");
         assert!(w.relative_path.starts_with("ext:perl-stdlib:"));

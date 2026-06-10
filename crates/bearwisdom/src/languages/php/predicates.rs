@@ -35,21 +35,18 @@ pub(crate) fn normalize_php_ns(ns: &str) -> String {
 
 /// Always-external PHP namespace roots (frameworks + major libraries).
 const ALWAYS_EXTERNAL: &[&str] = &[
-    "Illuminate",   // Laravel
-    "Symfony",      // Symfony
-    "Doctrine",     // Doctrine ORM
-    "PHPUnit",      // PHPUnit
-    "Psr",          // PSR interfaces
-    "GuzzleHttp",   // Guzzle HTTP
-    "Carbon",       // Carbon date
-    "Monolog",      // Monolog logging
+    "Illuminate", // Laravel
+    "Symfony",    // Symfony
+    "Doctrine",   // Doctrine ORM
+    "PHPUnit",    // PHPUnit
+    "Psr",        // PSR interfaces
+    "GuzzleHttp", // Guzzle HTTP
+    "Carbon",     // Carbon date
+    "Monolog",    // Monolog logging
 ];
 
 /// Check whether a PHP namespace (dotted form) is external.
-pub(super) fn is_external_php_namespace(
-    ns: &str,
-    project_ctx: Option<&ProjectContext>,
-) -> bool {
+pub(super) fn is_external_php_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
     // Always-external first.
     for prefix in ALWAYS_EXTERNAL {
         if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
@@ -93,4 +90,3 @@ pub(super) fn is_manifest_php_external(ctx: &ProjectContext, ns: &str) -> bool {
     }
     false
 }
-

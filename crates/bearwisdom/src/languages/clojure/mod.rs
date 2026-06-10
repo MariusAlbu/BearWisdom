@@ -9,11 +9,11 @@
 //! - `def` → Variable
 //! - `defmacro` → Function (macro)
 
-mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
-pub mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
+pub mod keywords;
+mod predicates;
+pub(crate) mod profile;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -36,17 +36,25 @@ use crate::types::ExtractionResult;
 pub struct ClojurePlugin;
 
 impl LanguagePlugin for ClojurePlugin {
-    fn id(&self) -> &str { "clojure" }
+    fn id(&self) -> &str {
+        "clojure"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["clojure"] }
+    fn language_ids(&self) -> &[&str] {
+        &["clojure"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".clj", ".cljs", ".cljc", ".edn"] }
+    fn extensions(&self) -> &[&str] {
+        &[".clj", ".cljs", ".cljc", ".edn"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_clojure::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -85,8 +93,7 @@ impl LanguagePlugin for ClojurePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::CLOJURE_HOOKS)
     }
 }

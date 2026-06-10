@@ -166,9 +166,10 @@ pub fn chunk_one_file_in_tx(
 /// Returns the total number of chunks inserted.
 pub fn bulk_chunk_and_store(
     conn: &Connection,
-    files: &[(i64, &str)],  // (file_id, content)
+    files: &[(i64, &str)], // (file_id, content)
 ) -> Result<u32> {
-    let tx = conn.unchecked_transaction()
+    let tx = conn
+        .unchecked_transaction()
         .context("Failed to begin chunk transaction")?;
 
     let mut total = 0u32;
@@ -211,14 +212,15 @@ pub fn chunk_and_store(conn: &Connection, file_id: i64, content: &str) -> Result
     // Build a multiset of new content hashes (same hash can appear multiple times).
     let mut new_hash_budget: HashMap<&str, u32> = HashMap::new();
     for chunk in &new_chunks {
-        *new_hash_budget.entry(chunk.content_hash.as_str()).or_default() += 1;
+        *new_hash_budget
+            .entry(chunk.content_hash.as_str())
+            .or_default() += 1;
     }
 
     // Query existing chunks for this file.
     let existing: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, content_hash FROM code_chunks WHERE file_id = ?1 ORDER BY id",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, content_hash FROM code_chunks WHERE file_id = ?1 ORDER BY id")?;
         let rows: Vec<(i64, String)> = stmt
             .query_map([file_id], |row| Ok((row.get(0)?, row.get(1)?)))?
             .filter_map(|r| r.ok())

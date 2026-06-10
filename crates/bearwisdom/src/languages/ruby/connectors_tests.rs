@@ -22,9 +22,7 @@ fn route_count(conn: &Connection) -> i64 {
 
 fn routes_for_method(conn: &Connection, method: &str) -> Vec<String> {
     let mut stmt = conn
-        .prepare(
-            "SELECT route_template FROM routes WHERE http_method = ?1 ORDER BY route_template",
-        )
+        .prepare("SELECT route_template FROM routes WHERE http_method = ?1 ORDER BY route_template")
         .unwrap();
     stmt.query_map([method], |r| r.get(0))
         .unwrap()
@@ -47,7 +45,9 @@ fn verb_regex_matches_get_with_single_quotes() {
 #[test]
 fn verb_regex_matches_post_with_double_quotes() {
     let re = build_verb_regex();
-    let cap = re.captures(r#"  post "/orders", to: "orders#create""#).unwrap();
+    let cap = re
+        .captures(r#"  post "/orders", to: "orders#create""#)
+        .unwrap();
     assert_eq!(&cap[1], "post");
     assert_eq!(&cap[2], "/orders");
 }
@@ -140,13 +140,20 @@ end
 "#;
     let entries = parse_routes_source(source);
 
-    assert_eq!(entries.len(), 7, "resources :articles should yield 7 routes");
+    assert_eq!(
+        entries.len(),
+        7,
+        "resources :articles should yield 7 routes"
+    );
 
     let templates: Vec<&str> = entries.iter().map(|e| e.route_template.as_str()).collect();
     assert!(templates.contains(&"/articles"), "index route missing");
     assert!(templates.contains(&"/articles/:id"), "show route missing");
     assert!(templates.contains(&"/articles/new"), "new route missing");
-    assert!(templates.contains(&"/articles/:id/edit"), "edit route missing");
+    assert!(
+        templates.contains(&"/articles/:id/edit"),
+        "edit route missing"
+    );
 }
 
 #[test]
@@ -158,7 +165,11 @@ end
 "#;
     let entries = parse_routes_source(source);
 
-    assert_eq!(entries.len(), 2, "only: [:index, :show] should yield 2 routes");
+    assert_eq!(
+        entries.len(),
+        2,
+        "only: [:index, :show] should yield 2 routes"
+    );
 
     let templates: Vec<&str> = entries.iter().map(|e| e.route_template.as_str()).collect();
     assert!(templates.contains(&"/comments"));

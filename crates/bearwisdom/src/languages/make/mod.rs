@@ -1,8 +1,8 @@
 //! Make / Makefile language plugin.
 
-pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::MAKE_HOOKS;
@@ -63,11 +63,7 @@ impl LanguagePlugin for MakePlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "include_directive",
-            "function_call",
-            "shell_function",
-        ]
+        &["include_directive", "function_call", "shell_function"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -82,8 +78,7 @@ impl LanguagePlugin for MakePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::MAKE_HOOKS)
     }
 }

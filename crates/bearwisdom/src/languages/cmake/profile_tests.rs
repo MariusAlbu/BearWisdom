@@ -11,12 +11,36 @@ fn cmake_profile_identity_and_shadow_mode() {
 fn cmake_kind_table_matches_former_predicate() {
     let t = CMAKE_PROFILE.kind_compatible_table;
     // Calls → function (macros extract as Function).
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));
-    assert!(!KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Variable));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
     // TypeRef → variable | function.
-    assert!(KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Variable));
-    assert!(KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Function));
-    assert!(!KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Class));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Variable
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Function
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Class
+    ));
     // Unlisted edge kinds stay permissive.
-    assert!(KindCompatibility::check(t, EdgeKind::Imports, SymbolKind::Namespace));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Imports,
+        SymbolKind::Namespace
+    ));
 }

@@ -19,7 +19,9 @@
 // `export` as a visibility modifier and C-like block syntax.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 
 pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -30,7 +32,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -49,7 +53,9 @@ pub fn extract(source: &str) -> ExtractionResult {
 
         // use statement
         if let Some(target) = parse_use(trimmed) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -58,9 +64,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                 module: None,
                 chain: None,
                 byte_offset: line_starts.get(i).copied().unwrap_or(0),
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             i += 1;
             continue;
         }
@@ -104,7 +110,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 if let Some(name) = parse_fn_name(rest) {
                     let start = i as u32;
                     let end = find_brace_end(&lines, i);
-                    let vis = if is_export { Visibility::Public } else { Visibility::Private };
+                    let vis = if is_export {
+                        Visibility::Public
+                    } else {
+                        Visibility::Private
+                    };
                     symbols.push(make_sym(name, SymbolKind::Function, vis, start, end));
                     i = end as usize + 1;
                     continue;
@@ -120,7 +130,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                     } else {
                         find_semicolon_end(&lines, i)
                     };
-                    let vis = if is_export { Visibility::Public } else { Visibility::Private };
+                    let vis = if is_export {
+                        Visibility::Public
+                    } else {
+                        Visibility::Private
+                    };
                     symbols.push(make_sym(name, kind, vis, start, end));
                     i = end as usize + 1;
                     continue;
@@ -132,7 +146,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 if let Some(name) = parse_def_let_name(rest) {
                     let start = i as u32;
                     let end = find_semicolon_end(&lines, i);
-                    let vis = if is_export { Visibility::Public } else { Visibility::Private };
+                    let vis = if is_export {
+                        Visibility::Public
+                    } else {
+                        Visibility::Private
+                    };
                     symbols.push(make_sym(name, SymbolKind::Variable, vis, start, end));
                     i = end as usize + 1;
                     continue;
@@ -160,7 +178,9 @@ fn parse_use(line: &str) -> Option<String> {
         .trim_end_matches(';')
         .trim()
         .to_string();
-    if module.is_empty() { return None; }
+    if module.is_empty() {
+        return None;
+    }
     Some(module)
 }
 
@@ -178,7 +198,9 @@ fn parse_fn_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     Some(name)
 }
 
@@ -192,7 +214,9 @@ fn parse_type_decl(line: &str) -> Option<(String, SymbolKind)> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     let rhs = rest[eq_pos + 1..].trim();
     let kind = if rhs.starts_with("struct") || rhs.starts_with("nullable") {
         SymbolKind::Struct
@@ -219,7 +243,9 @@ fn parse_def_let_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     Some(name)
 }
 
@@ -227,7 +253,13 @@ fn parse_def_let_name(line: &str) -> Option<String> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u32) -> ExtractedSymbol {
+fn make_sym(
+    name: String,
+    kind: SymbolKind,
+    vis: Visibility,
+    start: u32,
+    end: u32,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         qualified_name: name.clone(),
         name,
@@ -242,19 +274,20 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn find_brace_end(lines: &[&str], start: usize) -> u32 {
     let mut depth = 0i32;
     for (k, &line) in lines[start..].iter().enumerate() {
         for ch in line.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
                 depth -= 1;
                 if depth <= 0 {
                     return (start + k) as u32;

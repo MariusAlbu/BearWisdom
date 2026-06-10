@@ -284,10 +284,7 @@ impl LocalTypeCache {
             return Some(s);
         }
         for n in &self.narrowings {
-            if n.name == name
-                && n.byte_start <= self.cursor
-                && self.cursor < n.byte_end
-            {
+            if n.name == name && n.byte_start <= self.cursor && self.cursor < n.byte_end {
                 return Some(&n.narrowed_type);
             }
         }
@@ -303,10 +300,7 @@ impl LocalTypeCache {
             return Some(v);
         }
         for n in &self.narrowings {
-            if n.name == name
-                && n.byte_start <= self.cursor
-                && self.cursor < n.byte_end
-            {
+            if n.name == name && n.byte_start <= self.cursor && self.cursor < n.byte_end {
                 return Some(vec![n.narrowed_type.clone()]);
             }
         }

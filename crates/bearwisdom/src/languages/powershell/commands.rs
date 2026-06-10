@@ -66,7 +66,9 @@ pub(super) fn extract_command(
             {
                 let module = text.trim_matches(|c| c == '"' || c == '\'').to_string();
                 if !module.is_empty() && module != cmd_name {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: module.clone(),
                         kind: EdgeKind::Imports,
@@ -75,9 +77,9 @@ pub(super) fn extract_command(
                         module: Some(module),
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                     emitted = true;
                     break;
                 }
@@ -85,7 +87,9 @@ pub(super) fn extract_command(
         }
         if !emitted {
             // Couldn't resolve module name — still emit so the node is covered
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: cmd_name,
                 kind: EdgeKind::Calls,
@@ -94,14 +98,16 @@ pub(super) fn extract_command(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: cmd_name,
         kind: EdgeKind::Calls,
@@ -110,16 +116,21 @@ pub(super) fn extract_command(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Walk subtree collecting command/call nodes
 // ---------------------------------------------------------------------------
 
-pub(super) fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
+pub(super) fn visit_for_calls(
+    node: &Node,
+    src: &str,
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "command" {
@@ -140,7 +151,9 @@ pub(super) fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &
                 });
             if !name.is_empty() {
                 let module = invokation_module(&child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -149,9 +162,9 @@ pub(super) fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &
                     module,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             visit_for_calls(&child, src, source_idx, refs);
         } else {

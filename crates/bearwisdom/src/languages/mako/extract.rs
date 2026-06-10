@@ -5,19 +5,34 @@ use crate::types::{
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let norm = file_path.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    let stem = if let Some(x) = name.strip_suffix(".html.mako") { x.to_string() }
-        else { std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string() };
+    let stem = if let Some(x) = name.strip_suffix(".html.mako") {
+        x.to_string()
+    } else {
+        std::path::Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+            .to_string()
+    };
     let mut symbols = vec![ExtractedSymbol {
-        name: stem.clone(), qualified_name: stem.clone(),
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: stem.clone(),
+        qualified_name: stem.clone(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}];
+    }];
     let host_index = 0usize;
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let line_starts: Vec<u32> = std::iter::once(0)
@@ -29,35 +44,45 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         // <%def name="foo()">
         if let Some(rest) = trimmed.strip_prefix("<%def") {
             if let Some(name) = extract_attr(rest, "name") {
-                let ident = name.split(|c: char| c == '(' || c.is_whitespace()).next().unwrap_or("").to_string();
+                let ident = name
+                    .split(|c: char| c == '(' || c.is_whitespace())
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 if !ident.is_empty() {
                     symbols.push(ExtractedSymbol {
                         name: ident.clone(),
                         qualified_name: format!("{stem}.{ident}"),
-                        kind: SymbolKind::Field, visibility: Some(Visibility::Public),
-                        start_line: line_no as u32, end_line: line_no as u32,
-                        start_col: 0, end_col: 0,
+                        kind: SymbolKind::Field,
+                        visibility: Some(Visibility::Public),
+                        start_line: line_no as u32,
+                        end_line: line_no as u32,
+                        start_col: 0,
+                        end_col: 0,
                         signature: Some(trimmed.to_string()),
                         doc_comment: None,
                         scope_path: Some(stem.clone()),
                         parent_index: Some(host_index),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
         } else if let Some(rest) = trimmed.strip_prefix("<%include") {
             if let Some(file) = extract_attr(rest, "file") {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: strip_ext(&file),
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     col: 0,
-                    module: None, chain: None,
+                    module: None,
+                    chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
@@ -65,13 +90,16 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             }
         } else if let Some(rest) = trimmed.strip_prefix("<%inherit") {
             if let Some(file) = extract_attr(rest, "file") {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: strip_ext(&file),
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     col: 0,
-                    module: None, chain: None,
+                    module: None,
+                    chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
@@ -80,7 +108,12 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         }
     }
 
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+    ExtractionResult {
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
     }
@@ -99,5 +132,9 @@ fn strip_ext(path: &str) -> String {
     let p = std::path::Path::new(path);
     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(path);
     let parent = p.parent().and_then(|p| p.to_str()).unwrap_or("");
-    if parent.is_empty() { stem.to_string() } else { format!("{}/{}", parent.replace('\\', "/"), stem) }
+    if parent.is_empty() {
+        stem.to_string()
+    } else {
+        format!("{}/{}", parent.replace('\\', "/"), stem)
+    }
 }

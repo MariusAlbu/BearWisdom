@@ -23,7 +23,11 @@ fn fixture_qt_include() -> (TempDir, std::path::PathBuf) {
 
     // QtWidgets
     fs::write(include.join("QtWidgets/qwidget.h"), "class QWidget {};\n").unwrap();
-    fs::write(include.join("QtWidgets/QWidget"), "#include \"qwidget.h\"\n").unwrap();
+    fs::write(
+        include.join("QtWidgets/QWidget"),
+        "#include \"qwidget.h\"\n",
+    )
+    .unwrap();
 
     (tmp, include)
 }
@@ -81,7 +85,8 @@ fn qt_index_skips_private_subdirs() {
 
     // qobject_p.h lives in QtCore/private/ and must not be indexed under any form.
     assert!(
-        idx.locate("QtCore/private/qobject_p.h", "qobject_p.h").is_none(),
+        idx.locate("QtCore/private/qobject_p.h", "qobject_p.h")
+            .is_none(),
         "private-dir headers must be filtered"
     );
     assert!(
@@ -102,7 +107,10 @@ fn qt_resolve_header_finds_by_relative_or_basename() {
     assert!(by_basename.is_some(), "must resolve by basename fallback");
 
     let missing = resolve_qt_header(&dep, "nonexistent.h");
-    assert!(missing.is_none(), "must return None for a header not in the tree");
+    assert!(
+        missing.is_none(),
+        "must return None for a header not in the tree"
+    );
 }
 
 #[test]
@@ -111,11 +119,17 @@ fn qt_locator_returns_empty_when_no_install_present() {
     let prior = std::env::var_os("BEARWISDOM_QT_DIR");
     std::env::remove_var("BEARWISDOM_QT_DIR");
     let roots = discover_qt_include();
-    if let Some(p) = prior { std::env::set_var("BEARWISDOM_QT_DIR", p); }
+    if let Some(p) = prior {
+        std::env::set_var("BEARWISDOM_QT_DIR", p);
+    }
     // We can't assert empty unconditionally because the host might have Qt
     // installed in a default location. We CAN assert that none of the roots
     // are bogus — every returned dep root must point at an existing dir.
     for r in &roots {
-        assert!(r.root.is_dir(), "discovered root must exist on disk: {:?}", r.root);
+        assert!(
+            r.root.is_dir(),
+            "discovered root must exist on disk: {:?}",
+            r.root
+        );
     }
 }

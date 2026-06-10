@@ -31,5 +31,9 @@ pub(super) fn qualify(name: &str, prefix: &str) -> String {
 }
 
 pub(super) fn scope_from_prefix(prefix: &str) -> Option<String> {
-    if prefix.is_empty() { None } else { Some(prefix.to_string()) }
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix.to_string())
+    }
 }

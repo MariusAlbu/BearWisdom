@@ -27,9 +27,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use crate::walker::WalkedFile;
@@ -41,9 +39,15 @@ const LANGUAGES: &[&str] = &["gdscript"];
 pub struct GodotApiEcosystem;
 
 impl Ecosystem for GodotApiEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("gdscript")
@@ -78,12 +82,16 @@ impl Ecosystem for GodotApiEcosystem {
     }
 
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
-        parse_extension_api_json(&dep.root).map(Some).unwrap_or(None)
+        parse_extension_api_json(&dep.root)
+            .map(Some)
+            .unwrap_or(None)
     }
 }
 
 impl ExternalSourceLocator for GodotApiEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         Ecosystem::locate_roots(
@@ -120,19 +128,24 @@ fn project_has_godot_manifest(project_root: &Path) -> bool {
 }
 
 fn walk_for_project_godot(dir: &Path, depth: u32) -> bool {
-    if depth >= 4 { return false }
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    if depth >= 4 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
-        if ft.is_file()
-            && path.file_name().and_then(|n| n.to_str()) == Some("project.godot")
-        {
+        if ft.is_file() && path.file_name().and_then(|n| n.to_str()) == Some("project.godot") {
             return true;
         }
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, ".git" | ".godot" | "node_modules" | "target" | "build") {
+                if matches!(
+                    name,
+                    ".git" | ".godot" | "node_modules" | "target" | "build"
+                ) {
                     continue;
                 }
             }
@@ -157,7 +170,9 @@ fn probe_extension_api_json() -> Option<PathBuf> {
     }
     // Adjacent to a Godot binary if pointed to by env.
     for env_key in ["GODOT_BIN", "GODOT_HOME", "GODOT"] {
-        let Some(val) = std::env::var_os(env_key) else { continue };
+        let Some(val) = std::env::var_os(env_key) else {
+            continue;
+        };
         let base = PathBuf::from(val);
         let candidate = if base.is_file() {
             base.parent().map(|p| p.join("extension_api.json"))
@@ -165,14 +180,18 @@ fn probe_extension_api_json() -> Option<PathBuf> {
             Some(base.join("extension_api.json"))
         };
         if let Some(p) = candidate {
-            if p.is_file() { return Some(p); }
+            if p.is_file() {
+                return Some(p);
+            }
         }
     }
     // Common user-local install paths.
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
         for sub in [".godot", "godot", "Godot"] {
             let p = PathBuf::from(&home).join(sub).join("extension_api.json");
-            if p.is_file() { return Some(p); }
+            if p.is_file() {
+                return Some(p);
+            }
         }
     }
     // BearWisdom-managed cache: ~/.bearwisdom/godot/extension_api.json.
@@ -220,8 +239,10 @@ fn fetch_extension_api_to_cache(dest: &Path) -> bool {
             "--silent",
             "--show-error",
             "--location",
-            "--max-time", "30",
-            "--output", dest.to_str().unwrap_or(""),
+            "--max-time",
+            "30",
+            "--output",
+            dest.to_str().unwrap_or(""),
             URL,
         ])
         .status();
@@ -229,7 +250,9 @@ fn fetch_extension_api_to_cache(dest: &Path) -> bool {
     match status {
         Ok(s) if s.success() => {
             let ok = dest.is_file()
-                && std::fs::metadata(dest).map(|m| m.len() > 10_000).unwrap_or(false);
+                && std::fs::metadata(dest)
+                    .map(|m| m.len() > 10_000)
+                    .unwrap_or(false);
             if ok {
                 debug!("GodotApi: cached extension_api.json at {}", dest.display());
             } else {
@@ -271,7 +294,11 @@ fn parse_extension_api_json(path: &Path) -> Option<Vec<ParsedFile>> {
         out.len(),
         path.display()
     );
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn iter_array<'a>(
@@ -286,12 +313,18 @@ fn iter_array<'a>(
 
 fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile> {
     let name = class.get("name")?.as_str()?.to_string();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
 
     let virtual_path = format!("ext:gdscript-stdlib/{name}.gd");
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
 
-    let class_kind = if is_interface_like(&name) { SymbolKind::Interface } else { SymbolKind::Class };
+    let class_kind = if is_interface_like(&name) {
+        SymbolKind::Interface
+    } else {
+        SymbolKind::Class
+    };
     let inherits = class
         .get("inherits")
         .and_then(|v| v.as_str())
@@ -307,21 +340,26 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
         qualified_name: name.clone(),
         kind: class_kind,
         visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
         signature: Some(signature),
         doc_comment: None,
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let class_index = 0usize;
 
     for method in iter_array(class, "methods") {
-        let Some(m_name) = method.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(m_name) = method.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let return_type = method
             .get("return_value")
             .and_then(|r| r.get("type"))
@@ -347,21 +385,26 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             qualified_name: format!("{name}.{m_name}"),
             kind: SymbolKind::Method,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("func {m_name}({args}) -> {return_type}")),
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for prop in iter_array(class, "properties") {
-        let Some(p_name) = prop.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(p_name) = prop.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let p_type = prop
             .get("type")
             .and_then(|v| v.as_str())
@@ -372,95 +415,118 @@ fn synth_class(class: &serde_json::Value, json_path: &Path) -> Option<ParsedFile
             qualified_name: format!("{name}.{p_name}"),
             kind: SymbolKind::Property,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("var {p_name}: {p_type}")),
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for sig in iter_array(class, "signals") {
-        let Some(s_name) = sig.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(s_name) = sig.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         symbols.push(ExtractedSymbol {
             name: s_name.to_string(),
             qualified_name: format!("{name}.{s_name}"),
             kind: SymbolKind::Field,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("signal {s_name}")),
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for cst in iter_array(class, "constants") {
-        let Some(c_name) = cst.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(c_name) = cst.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         symbols.push(ExtractedSymbol {
             name: c_name.to_string(),
             qualified_name: format!("{name}.{c_name}"),
             kind: SymbolKind::Field,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: None,
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for en in iter_array(class, "enums") {
-        let Some(e_name) = en.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(e_name) = en.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         symbols.push(ExtractedSymbol {
             name: e_name.to_string(),
             qualified_name: format!("{name}.{e_name}"),
             kind: SymbolKind::Enum,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("enum {e_name}")),
             doc_comment: None,
             scope_path: Some(name.clone()),
             parent_index: Some(class_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         for value in iter_array(en, "values") {
-            let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
+            let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
             symbols.push(ExtractedSymbol {
                 name: v_name.to_string(),
                 qualified_name: format!("{name}.{e_name}.{v_name}"),
                 kind: SymbolKind::EnumMember,
                 visibility: Some(Visibility::Public),
-                start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
                 signature: None,
                 doc_comment: None,
                 scope_path: Some(format!("{name}.{e_name}")),
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 
@@ -471,28 +537,35 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
 
     for sing in iter_array(json, "singletons") {
-        let Some(name) = sing.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(name) = sing.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let ty = sing.get("type").and_then(|v| v.as_str()).unwrap_or(name);
         symbols.push(ExtractedSymbol {
             name: name.to_string(),
             qualified_name: name.to_string(),
             kind: SymbolKind::Variable,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("var {name}: {ty}")),
             doc_comment: None,
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for fun in iter_array(json, "utility_functions") {
-        let Some(name) = fun.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(name) = fun.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let return_type = fun
             .get("return_type")
             .and_then(|v| v.as_str())
@@ -517,55 +590,68 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
             qualified_name: name.to_string(),
             kind: SymbolKind::Function,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("func {name}({args}) -> {return_type}")),
             doc_comment: None,
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     for enu in iter_array(json, "global_enums") {
-        let Some(name) = enu.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(name) = enu.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         symbols.push(ExtractedSymbol {
             name: name.to_string(),
             qualified_name: name.to_string(),
             kind: SymbolKind::Enum,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!("enum {name}")),
             doc_comment: None,
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         for value in iter_array(enu, "values") {
-            let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else { continue };
+            let Some(v_name) = value.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
             symbols.push(ExtractedSymbol {
                 name: v_name.to_string(),
                 qualified_name: format!("{name}.{v_name}"),
                 kind: SymbolKind::EnumMember,
                 visibility: Some(Visibility::Public),
-                start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
                 signature: None,
                 doc_comment: None,
                 scope_path: Some(name.to_string()),
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             // Godot convention: enum values ALSO act as global constants
             // (e.g. `SIDE_LEFT`). Emit a top-level variable so project code
             // using the bare name resolves.
@@ -574,41 +660,51 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
                 qualified_name: v_name.to_string(),
                 kind: SymbolKind::Variable,
                 visibility: Some(Visibility::Public),
-                start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
                 signature: None,
                 doc_comment: None,
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 
     for cst in iter_array(json, "global_constants") {
-        let Some(name) = cst.get("name").and_then(|v| v.as_str()) else { continue };
+        let Some(name) = cst.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
         symbols.push(ExtractedSymbol {
             name: name.to_string(),
             qualified_name: name.to_string(),
             kind: SymbolKind::Variable,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: None,
             doc_comment: None,
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
-    if symbols.is_empty() { return None; }
+    if symbols.is_empty() {
+        return None;
+    }
     Some(build_parsed_file(
         "ext:gdscript-stdlib/_globals.gd".to_string(),
         symbols,
@@ -616,7 +712,11 @@ fn synth_globals(json: &serde_json::Value, json_path: &Path) -> Option<ParsedFil
     ))
 }
 
-fn build_parsed_file(virtual_path: String, symbols: Vec<ExtractedSymbol>, src: &Path) -> ParsedFile {
+fn build_parsed_file(
+    virtual_path: String,
+    symbols: Vec<ExtractedSymbol>,
+    src: &Path,
+) -> ParsedFile {
     let metadata = std::fs::metadata(src).ok();
     let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
     let mtime = metadata
@@ -654,7 +754,9 @@ fn build_parsed_file(virtual_path: String, symbols: Vec<ExtractedSymbol>, src: &
 /// classes (Reference counting managers, etc.) behave more like interfaces.
 /// Conservative default: everything is a class. Override here if a more
 /// accurate kind emerges.
-fn is_interface_like(_name: &str) -> bool { false }
+fn is_interface_like(_name: &str) -> bool {
+    false
+}
 
 /// Process-wide shared instance.
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {

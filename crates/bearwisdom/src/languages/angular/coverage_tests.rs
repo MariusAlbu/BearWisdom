@@ -21,28 +21,32 @@ use crate::types::EdgeKind;
 #[test]
 fn cov_pipe_call_in_interpolation_produces_calls() {
     // pipe_call: `value | date` in {{ }} expression → Calls(DatePipe)
-    let r = extract::extract(
-        "<p>{{ createdAt | date }}</p>",
-        "item.component.html",
-    );
+    let r = extract::extract("<p>{{ createdAt | date }}</p>", "item.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
         "pipe in interpolation should produce Calls(DatePipe); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn cov_pipe_call_with_arguments_produces_calls() {
     // pipe_call with colon-separated args: `value | date:'short'` → Calls(DatePipe)
-    let r = extract::extract(
-        "<span>{{ ts | date:'short' }}</span>",
-        "ts.component.html",
-    );
+    let r = extract::extract("<span>{{ ts | date:'short' }}</span>", "ts.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
         "pipe with args should produce Calls(DatePipe); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -54,14 +58,24 @@ fn cov_pipe_call_chained_produces_multiple_calls() {
         "name.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UppercasePipe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UppercasePipe"),
         "chained pipe should produce Calls(UppercasePipe); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "AsyncPipe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "AsyncPipe"),
         "chained pipe should produce Calls(AsyncPipe); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -73,9 +87,14 @@ fn cov_pipe_call_in_property_binding_produces_calls() {
         "img.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "TranslatePipe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "TranslatePipe"),
         "pipe in property binding should produce Calls(TranslatePipe); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -91,9 +110,14 @@ fn cov_structural_directive_ngfor_produces_calls() {
         "list.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgFor")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgFor")),
         "*ngFor should produce Calls with NgFor in name; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -105,9 +129,14 @@ fn cov_structural_directive_ngswitch_produces_calls() {
         "switch.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgSwitch")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgSwitch")),
         "*ngSwitchCase should produce Calls with NgSwitch; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -123,9 +152,14 @@ fn cov_event_binding_on_prefix_produces_calls() {
         "form.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "save"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "save"),
         "on- prefix event binding should produce Calls(save); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -155,14 +189,24 @@ fn cov_lowercase_html_tags_do_not_produce_calls() {
         "<div><p><span><a href=\"#\">link</a></span></p></div>",
         "plain.component.html",
     );
-    let html_calls: Vec<_> = r.refs.iter()
+    let html_calls: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
-        .filter(|rf| matches!(rf.target_name.as_str(), "Div" | "P" | "Span" | "A" | "div" | "p" | "span" | "a"))
+        .filter(|rf| {
+            matches!(
+                rf.target_name.as_str(),
+                "Div" | "P" | "Span" | "A" | "div" | "p" | "span" | "a"
+            )
+        })
         .collect();
     assert!(
         html_calls.is_empty(),
         "standard HTML tags must not produce Calls; got: {:?}",
-        html_calls.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        html_calls
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -171,9 +215,14 @@ fn cov_element_kebab_component_produces_calls() {
     // "element" with a hyphenated tag → Angular component selector → Calls
     let r = extract::extract("<app-header></app-header>", "test.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "AppHeader"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "AppHeader"),
         "kebab-case element should produce Calls(AppHeader); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -182,9 +231,14 @@ fn cov_element_pascal_component_produces_calls() {
     // "element" with PascalCase tag → component usage → Calls
     let r = extract::extract("<UserCard></UserCard>", "test.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
         "PascalCase element should produce Calls(UserCard); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -193,9 +247,14 @@ fn cov_self_closing_tag_produces_calls() {
     // "self_closing_tag" with hyphenated name → Calls
     let r = extract::extract("<mat-icon />", "test.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MatIcon"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MatIcon"),
         "self-closing hyphenated tag should produce Calls(MatIcon); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -207,9 +266,14 @@ fn cov_event_binding_produces_calls() {
         "btn.component.html",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
         "event binding should produce Calls(handleClick); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -218,8 +282,13 @@ fn cov_structural_directive_ngif_produces_calls() {
     // *ngIf → NgIfDirective (property_binding / interpolation path)
     let r = extract::extract(r#"<div *ngIf="show">Content</div>"#, "test.component.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgIf")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgIf")),
         "*ngIf should produce Calls with NgIf in name; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }

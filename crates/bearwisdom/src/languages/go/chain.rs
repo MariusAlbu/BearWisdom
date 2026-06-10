@@ -52,11 +52,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -82,11 +82,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 

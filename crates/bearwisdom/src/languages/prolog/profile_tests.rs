@@ -181,7 +181,10 @@ fn prolog_bare_predicate_binds_internal_over_external() {
     let res = resolve_call("src/main.pl", "solve", &[&a, &b, &ext])
         .expect("bare Prolog predicate call binds an internal definition");
     assert_eq!(res.strategy, "default_namespaceless_global");
-    assert_ne!(res.target_symbol_id, ext_id, "must not bind the ext library stub");
+    assert_ne!(
+        res.target_symbol_id, ext_id,
+        "must not bind the ext library stub"
+    );
     assert!(
         res.target_symbol_id == id_a || res.target_symbol_id == id_b,
         "binds an internal solve (got {})",

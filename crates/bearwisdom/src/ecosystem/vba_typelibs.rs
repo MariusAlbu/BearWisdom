@@ -17,9 +17,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -30,9 +28,15 @@ const LANGUAGES: &[&str] = &["vba"];
 pub struct VbaTypelibsEcosystem;
 
 impl Ecosystem for VbaTypelibsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::All(&[
@@ -52,12 +56,18 @@ impl Ecosystem for VbaTypelibsEcosystem {
 }
 
 impl ExternalSourceLocator for VbaTypelibsEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> { Vec::new() }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        Vec::new()
+    }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<VbaTypelibsEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(VbaTypelibsEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(VbaTypelibsEcosystem))
+        .clone()
 }

@@ -1,425 +1,454 @@
-    use super::extract;
-    use crate::types::*;
+use super::extract;
+use crate::types::*;
 
-    #[test]
-    fn impl_method_qualified_name() {
-        let source = r#"struct Bar;
+#[test]
+fn impl_method_qualified_name() {
+    let source = r#"struct Bar;
 
 impl Bar {
     pub fn foo(&self) {}
 }"#;
-        let r = extract::extract(source);
-        let method = r.symbols.iter().find(|s| s.name == "foo");
-        assert!(method.is_some(), "Expected method 'foo'");
-        assert_eq!(method.unwrap().qualified_name, "Bar.foo");
-        assert_eq!(method.unwrap().kind, SymbolKind::Method);
-    }
+    let r = extract::extract(source);
+    let method = r.symbols.iter().find(|s| s.name == "foo");
+    assert!(method.is_some(), "Expected method 'foo'");
+    assert_eq!(method.unwrap().qualified_name, "Bar.foo");
+    assert_eq!(method.unwrap().kind, SymbolKind::Method);
+}
 
-    #[test]
-    fn use_declaration_produces_import_ref() {
-        let source = "use crate::db::Database;";
-        let r = extract::extract(source);
-        let import_refs: Vec<_> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .collect();
-        assert!(!import_refs.is_empty(), "Expected at least one import ref");
-        let names: Vec<&str> = import_refs.iter().map(|r| r.target_name.as_str()).collect();
-        assert!(
-            names.contains(&"Database"),
-            "Expected 'Database' in import targets, got: {names:?}"
-        );
-        let db_ref = import_refs
-            .iter()
-            .find(|r| r.target_name == "Database")
-            .unwrap();
-        assert_eq!(
-            db_ref.module.as_deref(),
-            Some("crate::db"),
-            "Expected module 'crate::db'"
-        );
-    }
+#[test]
+fn use_declaration_produces_import_ref() {
+    let source = "use crate::db::Database;";
+    let r = extract::extract(source);
+    let import_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
+    assert!(!import_refs.is_empty(), "Expected at least one import ref");
+    let names: Vec<&str> = import_refs.iter().map(|r| r.target_name.as_str()).collect();
+    assert!(
+        names.contains(&"Database"),
+        "Expected 'Database' in import targets, got: {names:?}"
+    );
+    let db_ref = import_refs
+        .iter()
+        .find(|r| r.target_name == "Database")
+        .unwrap();
+    assert_eq!(
+        db_ref.module.as_deref(),
+        Some("crate::db"),
+        "Expected module 'crate::db'"
+    );
+}
 
-    #[test]
-    fn enum_produces_enum_and_members() {
-        let source = r#"enum Foo {
+#[test]
+fn enum_produces_enum_and_members() {
+    let source = r#"enum Foo {
     A,
     B,
 }"#;
-        let r = extract::extract(source);
-        let enum_sym = r.symbols.iter().find(|s| s.name == "Foo");
-        assert!(enum_sym.is_some(), "Expected 'Foo' enum");
-        assert_eq!(enum_sym.unwrap().kind, SymbolKind::Enum);
+    let r = extract::extract(source);
+    let enum_sym = r.symbols.iter().find(|s| s.name == "Foo");
+    assert!(enum_sym.is_some(), "Expected 'Foo' enum");
+    assert_eq!(enum_sym.unwrap().kind, SymbolKind::Enum);
 
-        let members: Vec<_> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::EnumMember)
-            .collect();
-        assert_eq!(members.len(), 2, "Expected 2 enum members, got {}", members.len());
-        let names: Vec<&str> = members.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"A"), "Missing 'A'");
-        assert!(names.contains(&"B"), "Missing 'B'");
-    }
+    let members: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::EnumMember)
+        .collect();
+    assert_eq!(
+        members.len(),
+        2,
+        "Expected 2 enum members, got {}",
+        members.len()
+    );
+    let names: Vec<&str> = members.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"A"), "Missing 'A'");
+    assert!(names.contains(&"B"), "Missing 'B'");
+}
 
-    #[test]
-    fn trait_maps_to_trait_kind() {
-        let source = "pub trait MyTrait { fn do_it(&self); }";
-        let r = extract::extract(source);
-        let trait_sym = r.symbols.iter().find(|s| s.name == "MyTrait");
-        assert!(trait_sym.is_some(), "Expected 'MyTrait'");
-        assert_eq!(trait_sym.unwrap().kind, SymbolKind::Trait);
-    }
+#[test]
+fn trait_maps_to_trait_kind() {
+    let source = "pub trait MyTrait { fn do_it(&self); }";
+    let r = extract::extract(source);
+    let trait_sym = r.symbols.iter().find(|s| s.name == "MyTrait");
+    assert!(trait_sym.is_some(), "Expected 'MyTrait'");
+    assert_eq!(trait_sym.unwrap().kind, SymbolKind::Trait);
+}
 
-    #[test]
-    fn mod_maps_to_module_kind() {
-        let source = r#"mod inner {
+#[test]
+fn mod_maps_to_module_kind() {
+    let source = r#"mod inner {
     pub fn foo() {}
 }"#;
-        let r = extract::extract(source);
-        let mod_sym = r.symbols.iter().find(|s| s.name == "inner");
-        assert!(mod_sym.is_some(), "Expected 'inner' mod");
-        assert_eq!(mod_sym.unwrap().kind, SymbolKind::Module);
-        let fn_sym = r.symbols.iter().find(|s| s.name == "foo");
-        assert_eq!(fn_sym.unwrap().qualified_name, "inner.foo");
-    }
+    let r = extract::extract(source);
+    let mod_sym = r.symbols.iter().find(|s| s.name == "inner");
+    assert!(mod_sym.is_some(), "Expected 'inner' mod");
+    assert_eq!(mod_sym.unwrap().kind, SymbolKind::Module);
+    let fn_sym = r.symbols.iter().find(|s| s.name == "foo");
+    assert_eq!(fn_sym.unwrap().qualified_name, "inner.foo");
+}
 
-    #[test]
-    fn extracts_pub_function() {
-        let source = r#"pub fn greet(name: &str) -> String {
+#[test]
+fn extracts_pub_function() {
+    let source = r#"pub fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
 }"#;
-        let r = extract::extract(source);
-        assert_eq!(r.symbols.len(), 1);
-        assert_eq!(r.symbols[0].name, "greet");
-        assert_eq!(r.symbols[0].kind, SymbolKind::Function);
-        assert_eq!(r.symbols[0].visibility, Some(Visibility::Public));
-    }
+    let r = extract::extract(source);
+    assert_eq!(r.symbols.len(), 1);
+    assert_eq!(r.symbols[0].name, "greet");
+    assert_eq!(r.symbols[0].kind, SymbolKind::Function);
+    assert_eq!(r.symbols[0].visibility, Some(Visibility::Public));
+}
 
-    #[test]
-    fn extracts_use_group_imports() {
-        let source = "use std::collections::{HashMap, HashSet};";
-        let r = extract::extract(source);
-        let names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(names.contains(&"HashMap"), "Missing HashMap: {names:?}");
-        assert!(names.contains(&"HashSet"), "Missing HashSet: {names:?}");
-    }
+#[test]
+fn extracts_use_group_imports() {
+    let source = "use std::collections::{HashMap, HashSet};";
+    let r = extract::extract(source);
+    let names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(names.contains(&"HashMap"), "Missing HashMap: {names:?}");
+    assert!(names.contains(&"HashSet"), "Missing HashSet: {names:?}");
+}
 
-    #[test]
-    fn extracts_test_function() {
-        let source = r#"#[test]
+#[test]
+fn extracts_test_function() {
+    let source = r#"#[test]
 fn test_something() {
     assert_eq!(1, 1);
 }"#;
-        let r = extract::extract(source);
-        let test_sym = r.symbols.iter().find(|s| s.name == "test_something");
-        assert!(test_sym.is_some());
-        assert_eq!(test_sym.unwrap().kind, SymbolKind::Test);
-    }
+    let r = extract::extract(source);
+    let test_sym = r.symbols.iter().find(|s| s.name == "test_something");
+    assert!(test_sym.is_some());
+    assert_eq!(test_sym.unwrap().kind, SymbolKind::Test);
+}
 
-    #[test]
-    fn extracts_call_references() {
-        let source = r#"fn run() {
+#[test]
+fn extracts_call_references() {
+    let source = r#"fn run() {
     foo();
     bar.baz();
 }"#;
-        let r = extract::extract(source);
-        let call_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(call_names.contains(&"foo"), "Missing 'foo': {call_names:?}");
-        assert!(call_names.contains(&"baz"), "Missing 'baz': {call_names:?}");
-    }
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(call_names.contains(&"foo"), "Missing 'foo': {call_names:?}");
+    assert!(call_names.contains(&"baz"), "Missing 'baz': {call_names:?}");
+}
 
-    #[test]
-    fn attaches_doc_comment() {
-        let source = r#"/// Documentation for foo.
+#[test]
+fn attaches_doc_comment() {
+    let source = r#"/// Documentation for foo.
 pub fn foo() {}"#;
-        let r = extract::extract(source);
-        assert_eq!(r.symbols.len(), 1);
-        let doc = r.symbols[0].doc_comment.as_deref().unwrap_or("");
-        assert!(doc.contains("Documentation for foo"), "Got: {doc:?}");
-    }
+    let r = extract::extract(source);
+    assert_eq!(r.symbols.len(), 1);
+    let doc = r.symbols[0].doc_comment.as_deref().unwrap_or("");
+    assert!(doc.contains("Documentation for foo"), "Got: {doc:?}");
+}
 
-    #[test]
-    fn handles_parse_errors_gracefully() {
-        let source = r#"fn broken( { let x = ;"#;
-        let r = extract::extract(source);
-        // Must not panic; partial results are acceptable.
-        let _ = r.symbols;
-    }
+#[test]
+fn handles_parse_errors_gracefully() {
+    let source = r#"fn broken( { let x = ;"#;
+    let r = extract::extract(source);
+    // Must not panic; partial results are acceptable.
+    let _ = r.symbols;
+}
 
-    #[test]
-    fn calls_inside_closure_are_extracted() {
-        let source = r#"fn run() {
+#[test]
+fn calls_inside_closure_are_extracted() {
+    let source = r#"fn run() {
     items.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
 }"#;
-        let r = extract::extract(source);
-        let call_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(call_names.contains(&"map"),   "Missing 'map': {call_names:?}");
-        assert!(call_names.contains(&"clone"), "Missing 'clone' inside closure: {call_names:?}");
-    }
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(call_names.contains(&"map"), "Missing 'map': {call_names:?}");
+    assert!(
+        call_names.contains(&"clone"),
+        "Missing 'clone' inside closure: {call_names:?}"
+    );
+}
 
-    #[test]
-    fn closure_parameter_emitted_as_variable_symbol() {
-        let source = r#"fn run() {
+#[test]
+fn closure_parameter_emitted_as_variable_symbol() {
+    let source = r#"fn run() {
     items.iter().map(|x| x.process()).collect::<Vec<_>>();
 }"#;
-        let r = extract::extract(source);
-        let vars: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(vars.contains(&"x"), "Missing closure param 'x': {vars:?}");
-    }
+    let r = extract::extract(source);
+    let vars: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(vars.contains(&"x"), "Missing closure param 'x': {vars:?}");
+}
 
-    #[test]
-    fn match_enum_variant_emits_typeref() {
-        let source = r#"fn dispatch(msg: Message) {
+#[test]
+fn match_enum_variant_emits_typeref() {
+    let source = r#"fn dispatch(msg: Message) {
     match msg {
         Message::Quit => quit(),
         Message::Move { x, y } => move_to(x, y),
     }
 }"#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            typerefs.iter().any(|n| n.contains("Message")),
-            "Expected TypeRef for Message variant; got: {typerefs:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.iter().any(|n| n.contains("Message")),
+        "Expected TypeRef for Message variant; got: {typerefs:?}"
+    );
+}
 
-    #[test]
-    fn match_some_emits_typeref_and_binding_variable() {
-        let source = r#"fn run(opt: Option<i32>) {
+#[test]
+fn match_some_emits_typeref_and_binding_variable() {
+    let source = r#"fn run(opt: Option<i32>) {
     match opt {
         Some(x) => println!("{}", x),
         None => {},
     }
 }"#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(typerefs.contains(&"Some"), "Expected TypeRef for Some: {typerefs:?}");
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"Some"),
+        "Expected TypeRef for Some: {typerefs:?}"
+    );
 
-        let vars: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Variable && s.name == "x")
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(!vars.is_empty(), "Expected Variable binding 'x' from Some(x)");
-    }
+    let vars: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Variable && s.name == "x")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        !vars.is_empty(),
+        "Expected Variable binding 'x' from Some(x)"
+    );
+}
 
-    #[test]
-    fn if_let_binding_emitted_as_variable() {
-        let source = r#"fn run(opt: Option<String>) {
+#[test]
+fn if_let_binding_emitted_as_variable() {
+    let source = r#"fn run(opt: Option<String>) {
     if let Some(user) = find_user() {
         user.process();
     }
 }"#;
-        let r = extract::extract(source);
-        let vars: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(vars.contains(&"user"), "Expected 'user' binding from if let: {vars:?}");
-    }
+    let r = extract::extract(source);
+    let vars: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        vars.contains(&"user"),
+        "Expected 'user' binding from if let: {vars:?}"
+    );
+}
 
-    #[test]
-    fn where_clause_bounds_emit_typerefs() {
-        let source = r#"fn serialize<T>(item: &T) -> String
+#[test]
+fn where_clause_bounds_emit_typerefs() {
+    let source = r#"fn serialize<T>(item: &T) -> String
 where
     T: Clone + Send + Serialize,
 {
     String::new()
 }"#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(typerefs.contains(&"Clone"),     "Missing Clone:     {typerefs:?}");
-        assert!(typerefs.contains(&"Send"),      "Missing Send:      {typerefs:?}");
-        assert!(typerefs.contains(&"Serialize"), "Missing Serialize: {typerefs:?}");
-    }
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"Clone"),
+        "Missing Clone:     {typerefs:?}"
+    );
+    assert!(
+        typerefs.contains(&"Send"),
+        "Missing Send:      {typerefs:?}"
+    );
+    assert!(
+        typerefs.contains(&"Serialize"),
+        "Missing Serialize: {typerefs:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // macro_invocation
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// macro_invocation
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn macro_invocation_emits_calls_edge() {
-        let source = r#"fn run() {
+#[test]
+fn macro_invocation_emits_calls_edge() {
+    let source = r#"fn run() {
     println!("hello");
     vec![1, 2, 3];
 }"#;
-        let r = extract::extract(source);
-        let call_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            call_names.contains(&"println"),
-            "expected 'println' Calls edge from macro, got: {call_names:?}"
-        );
-        assert!(
-            call_names.contains(&"vec"),
-            "expected 'vec' Calls edge from macro, got: {call_names:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"println"),
+        "expected 'println' Calls edge from macro, got: {call_names:?}"
+    );
+    assert!(
+        call_names.contains(&"vec"),
+        "expected 'vec' Calls edge from macro, got: {call_names:?}"
+    );
+}
 
-    #[test]
-    fn custom_macro_emits_calls_edge() {
-        let source = r#"fn run() {
+#[test]
+fn custom_macro_emits_calls_edge() {
+    let source = r#"fn run() {
     tracing::info!("starting");
     bail!("oh no");
 }"#;
-        let r = extract::extract(source);
-        let call_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        // `bail` macro — should produce a Calls edge.
-        assert!(
-            call_names.contains(&"bail"),
-            "expected 'bail' Calls edge, got: {call_names:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    // `bail` macro — should produce a Calls edge.
+    assert!(
+        call_names.contains(&"bail"),
+        "expected 'bail' Calls edge, got: {call_names:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // type_cast_expression
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// type_cast_expression
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn type_cast_user_type_emits_type_ref() {
-        let source = r#"fn f(x: UserId) -> i64 {
+#[test]
+fn type_cast_user_type_emits_type_ref() {
+    let source = r#"fn f(x: UserId) -> i64 {
     x as i64
 }"#;
-        let r = extract::extract(source);
-        // `i64` is a builtin — no TypeRef expected.  Verify no panic.
-        let _ = r.refs;
-    }
+    let r = extract::extract(source);
+    // `i64` is a builtin — no TypeRef expected.  Verify no panic.
+    let _ = r.refs;
+}
 
-    #[test]
-    fn type_cast_named_type_emits_type_ref() {
-        // Cast to a user-defined type (uncommon but valid with newtype patterns).
-        let source = r#"fn f(x: usize) -> MyIndex {
+#[test]
+fn type_cast_named_type_emits_type_ref() {
+    // Cast to a user-defined type (uncommon but valid with newtype patterns).
+    let source = r#"fn f(x: usize) -> MyIndex {
     x as MyIndex
 }"#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            typerefs.contains(&"MyIndex"),
-            "expected TypeRef to MyIndex from cast, got: {typerefs:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"MyIndex"),
+        "expected TypeRef to MyIndex from cast, got: {typerefs:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // let_declaration variable binding
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// let_declaration variable binding
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn let_declaration_emits_variable_symbol() {
-        let source = r#"fn run() {
+#[test]
+fn let_declaration_emits_variable_symbol() {
+    let source = r#"fn run() {
     let user = find_user();
     let (a, b) = split();
 }"#;
-        let r = extract::extract(source);
-        let var_names: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Variable)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(var_names.contains(&"user"), "missing 'user': {var_names:?}");
-    }
+    let r = extract::extract(source);
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(var_names.contains(&"user"), "missing 'user': {var_names:?}");
+}
 
-    #[test]
-    fn let_declaration_rhs_calls_extracted() {
-        let source = r#"fn run(repo: &Repo) {
+#[test]
+fn let_declaration_rhs_calls_extracted() {
+    let source = r#"fn run(repo: &Repo) {
     let user = repo.find_one(1);
     let _ = user;
 }"#;
-        let r = extract::extract(source);
-        let call_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            call_names.contains(&"find_one"),
-            "expected 'find_one' call from let rhs, got: {call_names:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"find_one"),
+        "expected 'find_one' call from let rhs, got: {call_names:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // foreign_mod_item (extern "C")
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// foreign_mod_item (extern "C")
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn extern_block_functions_extracted_as_symbols() {
-        let source = r#"extern "C" {
+#[test]
+fn extern_block_functions_extracted_as_symbols() {
+    let source = r#"extern "C" {
     fn malloc(size: usize) -> *mut u8;
     fn free(ptr: *mut u8);
 }"#;
-        let r = extract::extract(source);
-        let fn_names: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| matches!(s.kind, SymbolKind::Function | SymbolKind::Method))
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(fn_names.contains(&"malloc"), "missing 'malloc': {fn_names:?}");
-        assert!(fn_names.contains(&"free"),   "missing 'free':   {fn_names:?}");
-    }
+    let r = extract::extract(source);
+    let fn_names: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| matches!(s.kind, SymbolKind::Function | SymbolKind::Method))
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        fn_names.contains(&"malloc"),
+        "missing 'malloc': {fn_names:?}"
+    );
+    assert!(fn_names.contains(&"free"), "missing 'free':   {fn_names:?}");
+}
 
-    // -----------------------------------------------------------------------
-    // associated_type in impl
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// associated_type in impl
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn associated_type_in_impl_extracted_as_type_alias() {
-        let source = r#"struct MyIter;
+#[test]
+fn associated_type_in_impl_extracted_as_type_alias() {
+    let source = r#"struct MyIter;
 
 impl Iterator for MyIter {
     type Item = i32;
@@ -428,175 +457,187 @@ impl Iterator for MyIter {
         None
     }
 }"#;
-        let r = extract::extract(source);
-        let type_aliases: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::TypeAlias)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(
-            type_aliases.contains(&"Item"),
-            "expected 'Item' TypeAlias from associated type, got: {type_aliases:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let type_aliases: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::TypeAlias)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        type_aliases.contains(&"Item"),
+        "expected 'Item' TypeAlias from associated type, got: {type_aliases:?}"
+    );
+}
 
-    #[test]
-    fn associated_type_with_named_rhs_emits_type_ref() {
-        let source = r#"struct Wrapper;
+#[test]
+fn associated_type_with_named_rhs_emits_type_ref() {
+    let source = r#"struct Wrapper;
 
 impl Container for Wrapper {
     type Output = MyValue;
 
     fn get(&self) -> Self::Output { unimplemented!() }
 }"#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            typerefs.contains(&"MyValue"),
-            "expected TypeRef to MyValue from associated type RHS, got: {typerefs:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"MyValue"),
+        "expected TypeRef to MyValue from associated type RHS, got: {typerefs:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // extern crate declaration
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// extern crate declaration
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn extern_crate_emits_imports_edge() {
-        let source = "extern crate serde;";
-        let r = extract::extract(source);
-        let imports: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            imports.contains(&"serde"),
-            "expected 'serde' Imports edge from extern crate, got: {imports:?}"
-        );
-    }
+#[test]
+fn extern_crate_emits_imports_edge() {
+    let source = "extern crate serde;";
+    let r = extract::extract(source);
+    let imports: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        imports.contains(&"serde"),
+        "expected 'serde' Imports edge from extern crate, got: {imports:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // union_item
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// union_item
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn union_item_extracted_as_struct_kind() {
-        let source = r#"union MyUnion {
+#[test]
+fn union_item_extracted_as_struct_kind() {
+    let source = r#"union MyUnion {
     i: i32,
     f: f32,
 }"#;
-        let r = extract::extract(source);
-        let sym = r.symbols.iter().find(|s| s.name == "MyUnion");
-        assert!(sym.is_some(), "expected MyUnion symbol");
-        assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
-    }
+    let r = extract::extract(source);
+    let sym = r.symbols.iter().find(|s| s.name == "MyUnion");
+    assert!(sym.is_some(), "expected MyUnion symbol");
+    assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
+}
 
-    // -----------------------------------------------------------------------
-    // macro_definition (macro_rules!)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// macro_definition (macro_rules!)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn macro_rules_definition_extracted_as_function() {
-        let source = r#"macro_rules! my_vec {
+#[test]
+fn macro_rules_definition_extracted_as_function() {
+    let source = r#"macro_rules! my_vec {
     ($($x:expr),*) => { vec![$($x),*] };
 }"#;
-        let r = extract::extract(source);
-        let sym = r.symbols.iter().find(|s| s.name == "my_vec");
-        assert!(sym.is_some(), "expected my_vec symbol from macro_rules!");
-        assert_eq!(sym.unwrap().kind, SymbolKind::Function);
-        let sig = sym.unwrap().signature.as_deref().unwrap_or("");
-        assert!(sig.contains("macro_rules!"), "expected macro_rules! in sig, got: {sig:?}");
-    }
+    let r = extract::extract(source);
+    let sym = r.symbols.iter().find(|s| s.name == "my_vec");
+    assert!(sym.is_some(), "expected my_vec symbol from macro_rules!");
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+    let sig = sym.unwrap().signature.as_deref().unwrap_or("");
+    assert!(
+        sig.contains("macro_rules!"),
+        "expected macro_rules! in sig, got: {sig:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // struct_expression emits Calls + TypeRef
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// struct_expression emits Calls + TypeRef
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn struct_expression_emits_calls_and_type_ref() {
-        let source = r#"fn build() -> Point {
+#[test]
+fn struct_expression_emits_calls_and_type_ref() {
+    let source = r#"fn build() -> Point {
     Point { x: 1, y: 2 }
 }"#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            calls.contains(&"Point"),
-            "expected Calls edge for struct literal Point, got: {calls:?}"
-        );
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            typerefs.contains(&"Point"),
-            "expected TypeRef for struct literal Point, got: {typerefs:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"Point"),
+        "expected Calls edge for struct literal Point, got: {calls:?}"
+    );
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"Point"),
+        "expected TypeRef for struct literal Point, got: {typerefs:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // dynamic_trait_type (dyn Trait)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// dynamic_trait_type (dyn Trait)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn dyn_trait_type_in_cast_emits_type_ref() {
-        let source = r#"fn f(e: Box<dyn Error>) -> i32 {
+#[test]
+fn dyn_trait_type_in_cast_emits_type_ref() {
+    let source = r#"fn f(e: Box<dyn Error>) -> i32 {
     let _ = e as i32;
     0
 }"#;
-        // This is a type cast to a primitive, no TypeRef for i32.
-        // But the function itself has `dyn Error` in its signature — verify no panic.
-        let r = extract::extract(source);
-        let _ = r.refs;
-    }
+    // This is a type cast to a primitive, no TypeRef for i32.
+    // But the function itself has `dyn Error` in its signature — verify no panic.
+    let r = extract::extract(source);
+    let _ = r.refs;
+}
 
-    #[test]
-    fn derive_trait_refs() {
-        // Verify that each trait in #[derive(...)] is emitted as TypeRef.
-        // This is a fix for the ~59% coverage gap for attribute_item.
-        let src = r#"
+#[test]
+fn derive_trait_refs() {
+    // Verify that each trait in #[derive(...)] is emitted as TypeRef.
+    // This is a fix for the ~59% coverage gap for attribute_item.
+    let src = r#"
 #[derive(Debug, Clone, Serialize)]
 struct Point {
     x: i32,
     y: i32,
 }
 "#;
-        let r = extract::extract(src);
-        let trait_names: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(trait_names.contains(&"Debug"), "Should extract Debug trait from derive");
-        assert!(trait_names.contains(&"Clone"), "Should extract Clone trait from derive");
-        assert!(trait_names.contains(&"Serialize"), "Should extract Serialize trait from derive");
-    }
+    let r = extract::extract(src);
+    let trait_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        trait_names.contains(&"Debug"),
+        "Should extract Debug trait from derive"
+    );
+    assert!(
+        trait_names.contains(&"Clone"),
+        "Should extract Clone trait from derive"
+    );
+    assert!(
+        trait_names.contains(&"Serialize"),
+        "Should extract Serialize trait from derive"
+    );
+}
 
-    #[test]
-    fn scoped_type_identifier_in_patterns() {
-        // Verify that scoped type identifiers like std::io::Result are extracted.
-        // The extractor splits prefix::leaf so the leaf is searchable as a
-        // standalone symbol and the prefix lands in `module` for the resolver
-        // to use as a route hint (`std::io` → external std). Asserting on the
-        // split form is what protects the resolver contract — a regression to
-        // a single fused `std::io::Result` target_name would re-orphan all
-        // `Self::Variant` and `prefix::Leaf` refs.
-        let src = r#"
+#[test]
+fn scoped_type_identifier_in_patterns() {
+    // Verify that scoped type identifiers like std::io::Result are extracted.
+    // The extractor splits prefix::leaf so the leaf is searchable as a
+    // standalone symbol and the prefix lands in `module` for the resolver
+    // to use as a route hint (`std::io` → external std). Asserting on the
+    // split form is what protects the resolver contract — a regression to
+    // a single fused `std::io::Result` target_name would re-orphan all
+    // `Self::Variant` and `prefix::Leaf` refs.
+    let src = r#"
 fn process() {
     let result: std::io::Result<Data> = Ok(Data {});
     match result {
@@ -605,245 +646,247 @@ fn process() {
     }
 }
 "#;
-        let r = extract::extract(src);
-        let scoped: Vec<(&str, Option<&str>)> = r
-            .refs
+    let r = extract::extract(src);
+    let scoped: Vec<(&str, Option<&str>)> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.module.is_some())
+        .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
+        .collect();
+    assert!(
+        scoped
             .iter()
-            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.module.is_some())
-            .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
-            .collect();
-        assert!(
-            scoped.iter().any(|(t, m)| *t == "Result" && *m == Some("std::io")),
-            "expected scoped type ref split into target='Result' module='std::io', \
+            .any(|(t, m)| *t == "Result" && *m == Some("std::io")),
+        "expected scoped type ref split into target='Result' module='std::io', \
              got refs with module set: {scoped:?}"
-        );
-    }
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Import-map module enrichment on Calls refs (fourth pass)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Import-map module enrichment on Calls refs (fourth pass)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn qualified_call_gets_module_from_use_import() {
-        // `use crate::db::DbPool;` followed by `DbPool::new(config)` —
-        // the Calls ref for `new` should have module="crate::db".
-        let src = r#"
+#[test]
+fn qualified_call_gets_module_from_use_import() {
+    // `use crate::db::DbPool;` followed by `DbPool::new(config)` —
+    // the Calls ref for `new` should have module="crate::db".
+    let src = r#"
 use crate::db::DbPool;
 
 fn start() {
     let pool = DbPool::new(config);
 }
 "#;
-        let r = extract::extract(src);
-        let call = r
-            .refs
-            .iter()
-            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "new");
-        assert!(call.is_some(), "Expected Calls ref for 'new'");
-        let call = call.unwrap();
-        assert_eq!(
-            call.module.as_deref(),
-            Some("crate::db"),
-            "Calls ref for 'new' should carry module='crate::db' from the use import; got {:?}",
-            call.module
-        );
-    }
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "new");
+    assert!(call.is_some(), "Expected Calls ref for 'new'");
+    let call = call.unwrap();
+    assert_eq!(
+        call.module.as_deref(),
+        Some("crate::db"),
+        "Calls ref for 'new' should carry module='crate::db' from the use import; got {:?}",
+        call.module
+    );
+}
 
-    #[test]
-    fn qualified_call_group_import_gets_module() {
-        // `use lemmy_db_schema::source::person::{Person, Community};` —
-        // `Person::read()` should get module="lemmy_db_schema::source::person".
-        let src = r#"
+#[test]
+fn qualified_call_group_import_gets_module() {
+    // `use lemmy_db_schema::source::person::{Person, Community};` —
+    // `Person::read()` should get module="lemmy_db_schema::source::person".
+    let src = r#"
 use lemmy_db_schema::source::person::{Person, Community};
 
 async fn get_person(pool: &DbPool, id: i32) -> Option<Person> {
     Person::read(pool, id).await
 }
 "#;
-        let r = extract::extract(src);
-        let call = r
-            .refs
-            .iter()
-            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "read");
-        assert!(call.is_some(), "Expected Calls ref for 'read'");
-        let call = call.unwrap();
-        assert_eq!(
-            call.module.as_deref(),
-            Some("lemmy_db_schema::source::person"),
-            "Calls ref for 'read' should carry module from group import; got {:?}",
-            call.module
-        );
-    }
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "read");
+    assert!(call.is_some(), "Expected Calls ref for 'read'");
+    let call = call.unwrap();
+    assert_eq!(
+        call.module.as_deref(),
+        Some("lemmy_db_schema::source::person"),
+        "Calls ref for 'read' should carry module from group import; got {:?}",
+        call.module
+    );
+}
 
-    #[test]
-    fn use_as_alias_call_gets_module() {
-        // `use foo::bar::Baz as B;` followed by `B::create()` —
-        // the Calls ref for `create` should have module="foo::bar".
-        let src = r#"
+#[test]
+fn use_as_alias_call_gets_module() {
+    // `use foo::bar::Baz as B;` followed by `B::create()` —
+    // the Calls ref for `create` should have module="foo::bar".
+    let src = r#"
 use foo::bar::Baz as B;
 
 fn run() {
     B::create();
 }
 "#;
-        let r = extract::extract(src);
-        let call = r
-            .refs
-            .iter()
-            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "create");
-        assert!(call.is_some(), "Expected Calls ref for 'create'");
-        let call = call.unwrap();
-        assert_eq!(
-            call.module.as_deref(),
-            Some("foo::bar"),
-            "Aliased import call should carry parent module; got {:?}",
-            call.module
-        );
-    }
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "create");
+    assert!(call.is_some(), "Expected Calls ref for 'create'");
+    let call = call.unwrap();
+    assert_eq!(
+        call.module.as_deref(),
+        Some("foo::bar"),
+        "Aliased import call should carry parent module; got {:?}",
+        call.module
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Local variable type inference from RHS constructors
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Local variable type inference from RHS constructors
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn let_scoped_constructor_emits_typeref_for_variable() {
-        // `let pool = DbPool::new(config)` should emit a TypeRef "DbPool"
-        // attached to the `pool` Variable symbol.
-        let src = r#"
+#[test]
+fn let_scoped_constructor_emits_typeref_for_variable() {
+    // `let pool = DbPool::new(config)` should emit a TypeRef "DbPool"
+    // attached to the `pool` Variable symbol.
+    let src = r#"
 fn setup(config: Config) {
     let pool = DbPool::new(config);
     pool.get_connection();
 }
 "#;
-        let r = extract::extract(src);
+    let r = extract::extract(src);
 
-        // Find the `pool` Variable symbol.
-        let pool_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "pool");
-        assert!(pool_sym.is_some(), "Expected Variable symbol 'pool'");
-        let (pool_idx, _) = pool_sym.unwrap();
+    // Find the `pool` Variable symbol.
+    let pool_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "pool");
+    assert!(pool_sym.is_some(), "Expected Variable symbol 'pool'");
+    let (pool_idx, _) = pool_sym.unwrap();
 
-        // Find a TypeRef from that symbol with target "DbPool" and no chain.
-        let typeref = r.refs.iter().find(|rf| {
-            rf.source_symbol_index == pool_idx
-                && rf.kind == EdgeKind::TypeRef
-                && rf.target_name == "DbPool"
-                && rf.chain.is_none()
-                && rf.module.is_none()
-        });
-        assert!(
-            typeref.is_some(),
-            "Expected TypeRef 'DbPool' from 'pool' variable; refs = {:?}",
-            r.refs
-                .iter()
-                .filter(|rf| rf.source_symbol_index == pool_idx)
-                .collect::<Vec<_>>()
-        );
-    }
+    // Find a TypeRef from that symbol with target "DbPool" and no chain.
+    let typeref = r.refs.iter().find(|rf| {
+        rf.source_symbol_index == pool_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "DbPool"
+            && rf.chain.is_none()
+            && rf.module.is_none()
+    });
+    assert!(
+        typeref.is_some(),
+        "Expected TypeRef 'DbPool' from 'pool' variable; refs = {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == pool_idx)
+            .collect::<Vec<_>>()
+    );
+}
 
-    #[test]
-    fn let_struct_literal_emits_typeref_for_variable() {
-        // `let s = Foo { x: 1 }` should emit TypeRef "Foo" for the variable.
-        let src = r#"
+#[test]
+fn let_struct_literal_emits_typeref_for_variable() {
+    // `let s = Foo { x: 1 }` should emit TypeRef "Foo" for the variable.
+    let src = r#"
 fn build() {
     let s = Foo { x: 1 };
     s.method();
 }
 "#;
-        let r = extract::extract(src);
+    let r = extract::extract(src);
 
-        let s_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "s");
-        assert!(s_sym.is_some(), "Expected Variable symbol 's'");
-        let (s_idx, _) = s_sym.unwrap();
+    let s_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "s");
+    assert!(s_sym.is_some(), "Expected Variable symbol 's'");
+    let (s_idx, _) = s_sym.unwrap();
 
-        let typeref = r.refs.iter().find(|rf| {
-            rf.source_symbol_index == s_idx
-                && rf.kind == EdgeKind::TypeRef
-                && rf.target_name == "Foo"
-                && rf.chain.is_none()
-        });
-        assert!(
-            typeref.is_some(),
-            "Expected TypeRef 'Foo' from 's' variable; refs = {:?}",
-            r.refs
-                .iter()
-                .filter(|rf| rf.source_symbol_index == s_idx)
-                .collect::<Vec<_>>()
-        );
-    }
+    let typeref = r.refs.iter().find(|rf| {
+        rf.source_symbol_index == s_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "Foo"
+            && rf.chain.is_none()
+    });
+    assert!(
+        typeref.is_some(),
+        "Expected TypeRef 'Foo' from 's' variable; refs = {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == s_idx)
+            .collect::<Vec<_>>()
+    );
+}
 
-    #[test]
-    fn let_tuple_struct_constructor_emits_typeref() {
-        // `let e = MyError("msg")` — uppercase bare identifier as callee.
-        let src = r#"
+#[test]
+fn let_tuple_struct_constructor_emits_typeref() {
+    // `let e = MyError("msg")` — uppercase bare identifier as callee.
+    let src = r#"
 fn handle() {
     let e = MyError("msg");
     e.kind();
 }
 "#;
-        let r = extract::extract(src);
+    let r = extract::extract(src);
 
-        let e_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "e");
-        assert!(e_sym.is_some(), "Expected Variable symbol 'e'");
-        let (e_idx, _) = e_sym.unwrap();
+    let e_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "e");
+    assert!(e_sym.is_some(), "Expected Variable symbol 'e'");
+    let (e_idx, _) = e_sym.unwrap();
 
-        let typeref = r.refs.iter().find(|rf| {
-            rf.source_symbol_index == e_idx
-                && rf.kind == EdgeKind::TypeRef
-                && rf.target_name == "MyError"
-                && rf.chain.is_none()
-        });
-        assert!(
-            typeref.is_some(),
-            "Expected TypeRef 'MyError' from 'e' variable; refs = {:?}",
-            r.refs
-                .iter()
-                .filter(|rf| rf.source_symbol_index == e_idx)
-                .collect::<Vec<_>>()
-        );
-    }
+    let typeref = r.refs.iter().find(|rf| {
+        rf.source_symbol_index == e_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "MyError"
+            && rf.chain.is_none()
+    });
+    assert!(
+        typeref.is_some(),
+        "Expected TypeRef 'MyError' from 'e' variable; refs = {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == e_idx)
+            .collect::<Vec<_>>()
+    );
+}
 
-    #[test]
-    fn let_lowercase_call_does_not_emit_typeref() {
-        // `let x = foo()` — lowercase function, no type inference.
-        let src = r#"
+#[test]
+fn let_lowercase_call_does_not_emit_typeref() {
+    // `let x = foo()` — lowercase function, no type inference.
+    let src = r#"
 fn process() {
     let x = foo();
     x.something();
 }
 "#;
-        let r = extract::extract(src);
+    let r = extract::extract(src);
 
-        let x_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "x");
-        assert!(x_sym.is_some(), "Expected Variable symbol 'x'");
-        let (x_idx, _) = x_sym.unwrap();
+    let x_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "x");
+    assert!(x_sym.is_some(), "Expected Variable symbol 'x'");
+    let (x_idx, _) = x_sym.unwrap();
 
-        // No TypeRef with chain: None from this variable (chain-bearing TypeRefs
-        // from method calls are fine; we just don't want a bare constructor TypeRef).
-        let bare_typeref = r.refs.iter().any(|rf| {
-            rf.source_symbol_index == x_idx
-                && rf.kind == EdgeKind::TypeRef
-                && rf.chain.is_none()
-                && rf.module.is_none()
-                && rf.target_name == "foo"
-        });
-        assert!(
-            !bare_typeref,
-            "Should not emit TypeRef for lowercase call 'foo'; refs = {:?}",
-            r.refs
-                .iter()
-                .filter(|rf| rf.source_symbol_index == x_idx)
-                .collect::<Vec<_>>()
-        );
-    }
+    // No TypeRef with chain: None from this variable (chain-bearing TypeRefs
+    // from method calls are fine; we just don't want a bare constructor TypeRef).
+    let bare_typeref = r.refs.iter().any(|rf| {
+        rf.source_symbol_index == x_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.chain.is_none()
+            && rf.module.is_none()
+            && rf.target_name == "foo"
+    });
+    assert!(
+        !bare_typeref,
+        "Should not emit TypeRef for lowercase call 'foo'; refs = {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == x_idx)
+            .collect::<Vec<_>>()
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Self::Variant — call chain captures SelfRef as the root segment so the
-    // resolver chain walker can route to the enclosing impl/struct/enum/trait.
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Self::Variant — call chain captures SelfRef as the root segment so the
+// resolver chain walker can route to the enclosing impl/struct/enum/trait.
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn self_scoped_call_emits_chain_with_selfref_root() {
-        let source = r#"enum Color { Red, Green }
+#[test]
+fn self_scoped_call_emits_chain_with_selfref_root() {
+    let source = r#"enum Color { Red, Green }
 
 impl Color {
     fn make() -> Self {
@@ -853,38 +896,38 @@ impl Color {
         Self::make()
     }
 }"#;
-        let r = extract::extract(source);
-        // Self::make() is the only call — must have a chain with SelfRef
-        // as the root segment so the resolver walks to `Color.make`.
-        let self_call = r
-            .refs
-            .iter()
-            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "make");
-        let chain = self_call
-            .and_then(|rf| rf.chain.as_ref())
-            .expect("Self::make() must have a chain");
-        assert_eq!(chain.segments.len(), 2, "chain should be [Self, make]");
-        assert_eq!(
-            chain.segments[0].kind,
-            SegmentKind::SelfRef,
-            "first segment of Self::make() chain must be SelfRef, got {:?}",
-            chain.segments[0],
-        );
-        assert_eq!(chain.segments[0].name, "Self");
-        assert_eq!(chain.segments[1].name, "make");
-    }
+    let r = extract::extract(source);
+    // Self::make() is the only call — must have a chain with SelfRef
+    // as the root segment so the resolver walks to `Color.make`.
+    let self_call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "make");
+    let chain = self_call
+        .and_then(|rf| rf.chain.as_ref())
+        .expect("Self::make() must have a chain");
+    assert_eq!(chain.segments.len(), 2, "chain should be [Self, make]");
+    assert_eq!(
+        chain.segments[0].kind,
+        SegmentKind::SelfRef,
+        "first segment of Self::make() chain must be SelfRef, got {:?}",
+        chain.segments[0],
+    );
+    assert_eq!(chain.segments[0].name, "Self");
+    assert_eq!(chain.segments[1].name, "make");
+}
 
-    // -----------------------------------------------------------------------
-    // Self::Variant in TypeRef position (both match-pattern LHS and expression
-    // RHS) — the extractor emits target=leaf with a 2-segment SelfRef→Property
-    // chain and NO `module`, so the chain walker roots on the enclosing type
-    // and resolves the variant. `module="Self"` is never emitted: it doesn't
-    // name a real module and the qname / anchor binders can't see it.
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Self::Variant in TypeRef position (both match-pattern LHS and expression
+// RHS) — the extractor emits target=leaf with a 2-segment SelfRef→Property
+// chain and NO `module`, so the chain walker roots on the enclosing type
+// and resolves the variant. `module="Self"` is never emitted: it doesn't
+// name a real module and the qname / anchor binders can't see it.
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn self_scoped_typeref_emits_selfref_chain() {
-        let source = r#"enum Tree { Leaf, Node(Box<Tree>) }
+#[test]
+fn self_scoped_typeref_emits_selfref_chain() {
+    let source = r#"enum Tree { Leaf, Node(Box<Tree>) }
 
 impl Tree {
     fn next(self) -> Self {
@@ -894,128 +937,131 @@ impl Tree {
         }
     }
 }"#;
-        let r = extract::extract(source);
-        let leaf_typerefs: Vec<_> = r
-            .refs
-            .iter()
-            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Leaf")
-            .collect();
-        assert!(
-            !leaf_typerefs.is_empty(),
-            "expected TypeRef(s) for 'Leaf' from Self::Leaf"
+    let r = extract::extract(source);
+    let leaf_typerefs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Leaf")
+        .collect();
+    assert!(
+        !leaf_typerefs.is_empty(),
+        "expected TypeRef(s) for 'Leaf' from Self::Leaf"
+    );
+    for rf in &leaf_typerefs {
+        assert_eq!(
+            rf.module, None,
+            "Self::Leaf TypeRef must not carry module='Self', got {:?}",
+            rf.module,
         );
-        for rf in &leaf_typerefs {
-            assert_eq!(
-                rf.module, None,
-                "Self::Leaf TypeRef must not carry module='Self', got {:?}",
-                rf.module,
-            );
-            let chain = rf
-                .chain
-                .as_ref()
-                .expect("Self::Leaf TypeRef must carry a SelfRef chain");
-            assert_eq!(chain.segments.len(), 2, "chain should be [Self, Leaf]");
-            assert_eq!(chain.segments[0].kind, SegmentKind::SelfRef);
-            assert_eq!(chain.segments[0].name, "Self");
-            assert_eq!(chain.segments[1].name, "Leaf");
-        }
+        let chain = rf
+            .chain
+            .as_ref()
+            .expect("Self::Leaf TypeRef must carry a SelfRef chain");
+        assert_eq!(chain.segments.len(), 2, "chain should be [Self, Leaf]");
+        assert_eq!(chain.segments[0].kind, SegmentKind::SelfRef);
+        assert_eq!(chain.segments[0].name, "Self");
+        assert_eq!(chain.segments[1].name, "Leaf");
     }
+}
 
-    #[test]
-    fn pub_use_tags_reexport_private_use_does_not() {
-        // `pub use` re-exports a name onto the module surface (is_reexport=true);
-        // a bare `use` only brings it into local scope (is_reexport=false). The
-        // binder follows only the former — the gate that keeps a private import
-        // from forwarding a name through a module that merely imports it.
-        let source = "pub use crate::bar::Thing;\n\
+#[test]
+fn pub_use_tags_reexport_private_use_does_not() {
+    // `pub use` re-exports a name onto the module surface (is_reexport=true);
+    // a bare `use` only brings it into local scope (is_reexport=false). The
+    // binder follows only the former — the gate that keeps a private import
+    // from forwarding a name through a module that merely imports it.
+    let source = "pub use crate::bar::Thing;\n\
                       use crate::baz::Other;\n\
                       pub(crate) use crate::qux::Shared;\n\
                       pub use crate::wild::*;";
-        let r = extract::extract(source);
-        let imports: Vec<_> = r
-            .refs
+    let r = extract::extract(source);
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .collect();
+
+    let find = |name: &str| {
+        imports
             .iter()
-            .filter(|rf| rf.kind == EdgeKind::Imports)
-            .collect();
+            .find(|rf| rf.target_name == name)
+            .unwrap_or_else(|| panic!("expected import ref for {name:?}"))
+    };
 
-        let find = |name: &str| {
-            imports
-                .iter()
-                .find(|rf| rf.target_name == name)
-                .unwrap_or_else(|| panic!("expected import ref for {name:?}"))
-        };
+    assert!(
+        find("Thing").is_reexport,
+        "`pub use` must set is_reexport=true"
+    );
+    assert!(
+        find("Shared").is_reexport,
+        "`pub(crate) use` must set is_reexport=true"
+    );
+    assert!(
+        find("*").is_reexport,
+        "`pub use ...::*` must set is_reexport=true on the wildcard ref"
+    );
+    assert!(
+        !find("Other").is_reexport,
+        "private `use` must keep is_reexport=false"
+    );
+}
 
-        assert!(find("Thing").is_reexport, "`pub use` must set is_reexport=true");
-        assert!(
-            find("Shared").is_reexport,
-            "`pub(crate) use` must set is_reexport=true"
-        );
-        assert!(
-            find("*").is_reexport,
-            "`pub use ...::*` must set is_reexport=true on the wildcard ref"
-        );
-        assert!(
-            !find("Other").is_reexport,
-            "private `use` must keep is_reexport=false"
-        );
-    }
-
-    #[test]
-    fn qualified_call_module_keeps_colon_path_verbatim() {
-        // `use crate::db::DbPool` then `DbPool::new()`: the import-map post-pass
-        // copies the importing module onto the call ref verbatim in `::` form
-        // (`crate::db`). The engine's ByNameUnderModuleDir anchor maps separators
-        // to a path fragment and falls back to the module leaf (`db` → `db.rs`).
-        let source = r#"use crate::db::DbPool;
+#[test]
+fn qualified_call_module_keeps_colon_path_verbatim() {
+    // `use crate::db::DbPool` then `DbPool::new()`: the import-map post-pass
+    // copies the importing module onto the call ref verbatim in `::` form
+    // (`crate::db`). The engine's ByNameUnderModuleDir anchor maps separators
+    // to a path fragment and falls back to the module leaf (`db` → `db.rs`).
+    let source = r#"use crate::db::DbPool;
 
 fn make() {
     let p = DbPool::new(config);
 }"#;
-        let r = extract::extract(source);
-        let call = r
-            .refs
-            .iter()
-            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "new")
-            .expect("expected Calls ref for DbPool::new");
-        assert_eq!(
-            call.module.as_deref(),
-            Some("crate::db"),
-            "qualified-call module must keep its `::` path verbatim, got {:?}",
-            call.module,
-        );
-    }
+    let r = extract::extract(source);
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "new")
+        .expect("expected Calls ref for DbPool::new");
+    assert_eq!(
+        call.module.as_deref(),
+        Some("crate::db"),
+        "qualified-call module must keep its `::` path verbatim, got {:?}",
+        call.module,
+    );
+}
 
-    #[test]
-    fn external_crate_call_module_keeps_crate_root() {
-        // A non-`crate` root (an external dep) is also kept verbatim:
-        // `serde::Serializer` imported, `Serializer::do_thing(...)` → module
-        // stays `serde`.
-        let source = r#"use serde::Serializer;
+#[test]
+fn external_crate_call_module_keeps_crate_root() {
+    // A non-`crate` root (an external dep) is also kept verbatim:
+    // `serde::Serializer` imported, `Serializer::do_thing(...)` → module
+    // stays `serde`.
+    let source = r#"use serde::Serializer;
 
 fn run() {
     let x = Serializer::do_thing(a);
 }"#;
-        let r = extract::extract(source);
-        let call = r
-            .refs
-            .iter()
-            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "do_thing")
-            .expect("expected Calls ref for Serializer::do_thing");
-        assert_eq!(
-            call.module.as_deref(),
-            Some("serde"),
-            "external-crate module root must be preserved, got {:?}",
-            call.module,
-        );
-    }
+    let r = extract::extract(source);
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "do_thing")
+        .expect("expected Calls ref for Serializer::do_thing");
+    assert_eq!(
+        call.module.as_deref(),
+        Some("serde"),
+        "external-crate module root must be preserved, got {:?}",
+        call.module,
+    );
+}
 
-    #[test]
-    fn generic_param_typerefs_are_dropped() {
-        // Single-uppercase-letter TypeRefs and `<Upper><digit>` generics are
-        // declared type parameters, not indexable symbols — the extractor drops
-        // them so they never pollute the unresolved-refs table. Real struct
-        // names are kept.
-        let source = r#"struct Wrapper<T> {
+#[test]
+fn generic_param_typerefs_are_dropped() {
+    // Single-uppercase-letter TypeRefs and `<Upper><digit>` generics are
+    // declared type parameters, not indexable symbols — the extractor drops
+    // them so they never pollute the unresolved-refs table. Real struct
+    // names are kept.
+    let source = r#"struct Wrapper<T> {
     inner: T,
 }
 
@@ -1025,24 +1071,23 @@ fn convert<P1>(value: P1) -> Real {
 
 struct Real;
 "#;
-        let r = extract::extract(source);
-        let typeref_targets: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|rf| rf.kind == EdgeKind::TypeRef)
-            .map(|rf| rf.target_name.as_str())
-            .collect();
-        assert!(
-            !typeref_targets.contains(&"T"),
-            "single-uppercase generic param 'T' must be dropped, got {typeref_targets:?}"
-        );
-        assert!(
-            !typeref_targets.contains(&"P1"),
-            "numbered generic param 'P1' must be dropped, got {typeref_targets:?}"
-        );
-        assert!(
-            typeref_targets.contains(&"Real"),
-            "real type 'Real' must be kept, got {typeref_targets:?}"
-        );
-    }
-
+    let r = extract::extract(source);
+    let typeref_targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !typeref_targets.contains(&"T"),
+        "single-uppercase generic param 'T' must be dropped, got {typeref_targets:?}"
+    );
+    assert!(
+        !typeref_targets.contains(&"P1"),
+        "numbered generic param 'P1' must be dropped, got {typeref_targets:?}"
+    );
+    assert!(
+        typeref_targets.contains(&"Real"),
+        "real type 'Real' must be kept, got {typeref_targets:?}"
+    );
+}

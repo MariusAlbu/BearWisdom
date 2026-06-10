@@ -26,9 +26,7 @@ pub(crate) fn detect_flow_inner(
     ) {
         let url = r.call_args.iter().find_map(|a| match a {
             CallArg::StringLit(s)
-                if s.starts_with('/')
-                    || s.starts_with("http://")
-                    || s.starts_with("https://") =>
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
             {
                 Some(s.as_str())
             }
@@ -73,7 +71,10 @@ impl LanguageEngineHooks for MatlabHooks {
         let target = &ref_ctx.extracted_ref.target_name;
         let bare = target.split('.').next().unwrap_or(target);
         let hits = lookup.by_name(bare);
-        if hits.iter().any(|sym| sym.file_path.starts_with("ext:matlab:")) {
+        if hits
+            .iter()
+            .any(|sym| sym.file_path.starts_with("ext:matlab:"))
+        {
             return Some("matlab-runtime".to_string());
         }
         None

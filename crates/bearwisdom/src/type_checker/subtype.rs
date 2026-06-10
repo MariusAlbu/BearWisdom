@@ -51,7 +51,14 @@ use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
 /// Kept narrow on purpose — additions here change branch selection
 /// across every conditional alias in the index.
 const PRIMITIVES: &[&str] = &[
-    "string", "number", "boolean", "bigint", "symbol", "null", "undefined", "void",
+    "string",
+    "number",
+    "boolean",
+    "bigint",
+    "symbol",
+    "null",
+    "undefined",
+    "void",
 ];
 
 /// Maximum hops to follow `parent_class_qname` when checking an
@@ -155,7 +162,10 @@ pub fn is_assignable_to_typed(
 fn prim_kind_of(ty: &Type, prims: &[(&str, PrimKind)]) -> Option<PrimKind> {
     match ty {
         Type::Primitive(k) => Some(*k),
-        Type::Class(q) => prims.iter().find(|(n, _)| *n == q.as_str()).map(|(_, k)| *k),
+        Type::Class(q) => prims
+            .iter()
+            .find(|(n, _)| *n == q.as_str())
+            .map(|(_, k)| *k),
         _ => None,
     }
 }
@@ -188,7 +198,16 @@ pub fn is_assignable_to_typed_with(
     symbol_types: &SymbolTypeMap,
     prims: &[(&str, PrimKind)],
 ) -> SubtypeResult {
-    assignable_inner(source, target, arena, lookup, members, symbol_types, prims, 0)
+    assignable_inner(
+        source,
+        target,
+        arena,
+        lookup,
+        members,
+        symbol_types,
+        prims,
+        0,
+    )
 }
 
 /// Maximum nesting of the structural member-type re-entry before the structural
@@ -241,7 +260,16 @@ fn assignable_inner(
 
     // Optional target: peel one layer. `T` is assignable to `T | undefined`.
     if let Type::Optional(inner) = tgt_ty {
-        return assignable_inner(source, inner, arena, lookup, members, symbol_types, prims, depth);
+        return assignable_inner(
+            source,
+            inner,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            depth,
+        );
     }
 
     // Union source: every branch must be assignable; one Unknown taints the
@@ -249,7 +277,16 @@ fn assignable_inner(
     if let Type::Union(branches) = &src_ty {
         let mut any_unknown = false;
         for b in branches {
-            match assignable_inner(*b, target, arena, lookup, members, symbol_types, prims, depth) {
+            match assignable_inner(
+                *b,
+                target,
+                arena,
+                lookup,
+                members,
+                symbol_types,
+                prims,
+                depth,
+            ) {
                 SubtypeResult::Yes => continue,
                 SubtypeResult::No => return SubtypeResult::No,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -267,7 +304,16 @@ fn assignable_inner(
     if let Type::Union(branches) = &tgt_ty {
         let mut any_unknown = false;
         for b in branches {
-            match assignable_inner(source, *b, arena, lookup, members, symbol_types, prims, depth) {
+            match assignable_inner(
+                source,
+                *b,
+                arena,
+                lookup,
+                members,
+                symbol_types,
+                prims,
+                depth,
+            ) {
                 SubtypeResult::Yes => return SubtypeResult::Yes,
                 SubtypeResult::No => continue,
                 SubtypeResult::Unknown => any_unknown = true,
@@ -427,8 +473,16 @@ fn structurally_assignable(
         else {
             return SubtypeResult::Unknown;
         };
-        if member_types_assignable(have, needed, arena, lookup, members, symbol_types, prims, depth)
-            != SubtypeResult::Yes
+        if member_types_assignable(
+            have,
+            needed,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            depth,
+        ) != SubtypeResult::Yes
         {
             return SubtypeResult::Unknown;
         }
@@ -481,7 +535,14 @@ fn member_types_assignable(
         };
         // Return covariance: source return must be assignable to target return.
         if assignable_inner(
-            src_return, tgt_return, arena, lookup, members, symbol_types, prims, next,
+            src_return,
+            tgt_return,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            next,
         ) != SubtypeResult::Yes
         {
             return SubtypeResult::Unknown;
@@ -511,7 +572,14 @@ fn member_types_assignable(
     // Field-shaped: covariance on the declared type. Both sides must declare it.
     match (src_data.declared_type, tgt_data.declared_type) {
         (Some(src_decl), Some(tgt_decl)) => assignable_inner(
-            src_decl, tgt_decl, arena, lookup, members, symbol_types, prims, next,
+            src_decl,
+            tgt_decl,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            next,
         ),
         // No comparable type data recorded for this member → Unknown.
         _ => SubtypeResult::Unknown,
@@ -567,7 +635,16 @@ fn args_assignable_inner(
         return false;
     }
     for (param, arg) in params.iter().zip(args.iter()) {
-        match assignable_inner(*arg, *param, arena, lookup, members, symbol_types, prims, depth) {
+        match assignable_inner(
+            *arg,
+            *param,
+            arena,
+            lookup,
+            members,
+            symbol_types,
+            prims,
+            depth,
+        ) {
             SubtypeResult::Yes | SubtypeResult::Unknown => continue,
             SubtypeResult::No => return false,
         }

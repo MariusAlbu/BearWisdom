@@ -16,10 +16,12 @@
 // Grammar: tree-sitter-cmake (not yet in Cargo.toml — ready for when added).
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
-use super::arguments::{collect_arguments, command_identifier, first_argument_text, normalize_argument};
+use super::arguments::{
+    collect_arguments, command_identifier, first_argument_text, normalize_argument,
+};
 use super::commands::{collect_all_normal_commands, extract_normal_command};
 use super::hooks::is_cmake_builtin;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -53,7 +55,13 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 
     // Third pass: collect all normal_command nodes not yet matched (inside function/macro bodies)
     let cmd_lines: std::collections::HashSet<u32> = symbols.iter().map(|s| s.start_line).collect();
-    collect_all_normal_commands(tree.root_node(), source, &cmd_lines, &mut symbols, &mut refs);
+    collect_all_normal_commands(
+        tree.root_node(),
+        source,
+        &cmd_lines,
+        &mut symbols,
+        &mut refs,
+    );
 
     crate::types::ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -72,7 +80,9 @@ fn visit_source_file(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "source_file" | "body" => visit_source_file(child, src, symbols, refs),
-            "function_def" => extract_function_def(&child, src, symbols, refs, SymbolKind::Function),
+            "function_def" => {
+                extract_function_def(&child, src, symbols, refs, SymbolKind::Function)
+            }
             "macro_def" => extract_function_def(&child, src, symbols, refs, SymbolKind::Function),
             "normal_command" => extract_normal_command(&child, src, symbols, refs),
             _ => {}
@@ -149,19 +159,16 @@ fn build_def_signature(node: &Node, src: &str) -> String {
 }
 
 /// Recurse into the body of a function/macro def, emitting Calls refs.
-fn visit_def_body(
-    node: &Node,
-    src: &str,
-    source_idx: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn visit_def_body(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "normal_command" {
             if let Some(name) = command_identifier(&child, src) {
                 // Only emit Calls for user-defined (non-builtin) commands.
                 if !is_cmake_builtin(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -170,9 +177,9 @@ fn visit_def_body(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -205,23 +212,19 @@ pub(super) fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 /// Walk the entire tree and emit a TypeRef for every `variable_ref` node.
 /// Generator expressions (`$<...>`) are skipped.
 /// This second pass ensures coverage correlation finds a ref for every
 /// variable_ref occurrence (the ref_node_kind).
-fn collect_variable_refs(
-    node: Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn collect_variable_refs(node: Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if node.kind() == "variable_ref" {
         let raw = node_text(node, src);
         // Skip generator expressions
@@ -239,7 +242,9 @@ fn collect_variable_refs(
         // unparsed tail leaks into the name.  They cannot be resolved and
         // add noise to unresolved-ref counts.
         if !target.is_empty() && !target.contains('}') {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
                 kind: EdgeKind::TypeRef,
@@ -248,9 +253,9 @@ fn collect_variable_refs(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
     let mut cursor = node.walk();

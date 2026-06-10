@@ -22,11 +22,15 @@ fn insert_file_and_content(conn: &Connection, path: &str, language: &str, conten
 #[test]
 fn search_finds_matching_file() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(db.conn(), "src/service.rs", "rust", "fn authenticate_user() {}");
+    insert_file_and_content(
+        db.conn(),
+        "src/service.rs",
+        "rust",
+        "fn authenticate_user() {}",
+    );
     insert_file_and_content(db.conn(), "src/other.rs", "rust", "fn unrelated() {}");
 
-    let results =
-        search_content(&db, "authenticate", &SearchScope::default(), 10).unwrap();
+    let results = search_content(&db, "authenticate", &SearchScope::default(), 10).unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].file_path, "src/service.rs");
@@ -73,8 +77,7 @@ fn score_is_positive() {
     let db = Database::open_in_memory().unwrap();
     insert_file_and_content(db.conn(), "score.rs", "rust", "fn important_function() {}");
 
-    let results =
-        search_content(&db, "important", &SearchScope::default(), 10).unwrap();
+    let results = search_content(&db, "important", &SearchScope::default(), 10).unwrap();
 
     assert_eq!(results.len(), 1);
     assert!(
@@ -88,12 +91,7 @@ fn score_is_positive() {
 fn limit_respected() {
     let db = Database::open_in_memory().unwrap();
     for i in 0..10 {
-        insert_file_and_content(
-            db.conn(),
-            &format!("file{i}.rs"),
-            "rust",
-            "fn needle() {}",
-        );
+        insert_file_and_content(db.conn(), &format!("file{i}.rs"), "rust", "fn needle() {}");
     }
 
     let results = search_content(&db, "needle", &SearchScope::default(), 3).unwrap();
@@ -107,8 +105,7 @@ fn multiple_files_all_returned() {
     insert_file_and_content(db.conn(), "b.rs", "rust", "fn shared_name_too() {}");
     insert_file_and_content(db.conn(), "c.rs", "rust", "nothing here");
 
-    let results =
-        search_content(&db, "shared_name", &SearchScope::default(), 10).unwrap();
+    let results = search_content(&db, "shared_name", &SearchScope::default(), 10).unwrap();
     assert_eq!(results.len(), 2);
 }
 
@@ -202,18 +199,15 @@ fn search_content_with_lines_returns_grep_matches() {
         "fn get_catalog_item() -> CatalogItem {\n    todo!()\n}\n",
     );
 
-    let matches = search_content_with_lines(
-        &db,
-        root.path(),
-        "CatalogItem",
-        &SearchScope::default(),
-        50,
-    )
-    .unwrap();
+    let matches =
+        search_content_with_lines(&db, root.path(), "CatalogItem", &SearchScope::default(), 50)
+            .unwrap();
 
     assert!(!matches.is_empty(), "Should find at least one line match");
     assert!(
-        matches.iter().any(|m| m.line_content.contains("CatalogItem")),
+        matches
+            .iter()
+            .any(|m| m.line_content.contains("CatalogItem")),
         "Match content should contain the search term"
     );
 }

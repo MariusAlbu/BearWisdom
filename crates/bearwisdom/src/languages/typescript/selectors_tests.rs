@@ -35,7 +35,9 @@ export class HighlightDirective {}
     let symbols = vec![fake_class("HighlightDirective", "HighlightDirective")];
     let pairs = extract_component_selectors(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "appHighlight" && c == "HighlightDirective"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "appHighlight" && c == "HighlightDirective"),
         "expected appHighlight -> HighlightDirective in {pairs:?}"
     );
 }
@@ -54,7 +56,9 @@ HighlightDirective.\u{0275}dir = i0.\u{0275}\u{0275}ngDeclareDirective({
     let symbols = vec![fake_class("HighlightDirective", "HighlightDirective")];
     let pairs = extract_component_selectors(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "cElementRef" && c == "HighlightDirective"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "cElementRef" && c == "HighlightDirective"),
         "expected cElementRef -> HighlightDirective in {pairs:?}"
     );
 }
@@ -71,7 +75,9 @@ ContainerComponent.\u{0275}cmp = i0.\u{0275}\u{0275}ngDeclareComponent({
     let symbols = vec![fake_class("ContainerComponent", "ContainerComponent")];
     let pairs = extract_component_selectors(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "c-container" && c == "ContainerComponent"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "c-container" && c == "ContainerComponent"),
         "expected c-container -> ContainerComponent in {pairs:?}"
     );
 }
@@ -88,7 +94,9 @@ declare class ElementRefDirective {
     let symbols = vec![fake_class("ElementRefDirective", "ElementRefDirective")];
     let pairs = extract_component_selectors(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "cElementRef" && c == "ElementRefDirective"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "cElementRef" && c == "ElementRefDirective"),
         "expected cElementRef -> ElementRefDirective in {pairs:?}"
     );
 }
@@ -103,7 +111,9 @@ declare class AccordionComponent {
     let symbols = vec![fake_class("AccordionComponent", "AccordionComponent")];
     let pairs = extract_component_selectors(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "c-accordion" && c == "AccordionComponent"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "c-accordion" && c == "AccordionComponent"),
         "expected c-accordion -> AccordionComponent in {pairs:?}"
     );
 }
@@ -114,7 +124,9 @@ fn custom_elements_define_captures_tag_to_class() {
     let symbols = vec![fake_class("UserCard", "app.UserCard")];
     let pairs = extract_custom_element_defines(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "user-card" && c == "app.UserCard"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "user-card" && c == "app.UserCard"),
         "expected user-card -> app.UserCard in {pairs:?}"
     );
 }
@@ -138,7 +150,9 @@ fn window_customelements_define_captures_tag() {
     let symbols = vec![fake_class("UserCard", "app.UserCard")];
     let pairs = extract_custom_element_defines(src, &symbols);
     assert!(
-        pairs.iter().any(|(s, c)| s == "user-card" && c == "app.UserCard"),
+        pairs
+            .iter()
+            .any(|(s, c)| s == "user-card" && c == "app.UserCard"),
         "expected user-card -> app.UserCard via window.customElements in {pairs:?}"
     );
 }

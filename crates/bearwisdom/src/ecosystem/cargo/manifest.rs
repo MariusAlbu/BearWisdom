@@ -20,10 +20,13 @@ impl ManifestReader for CargoManifest {
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let entries = self.read_all(project_root);
-        if entries.is_empty() { return None }
+        if entries.is_empty() {
+            return None;
+        }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
     }
@@ -34,7 +37,9 @@ impl ManifestReader for CargoManifest {
 
         let mut out = Vec::new();
         for manifest_path in paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
 
             let mut data = ManifestData::default();
             for name in parse_cargo_dependencies(&content) {
@@ -64,8 +69,12 @@ impl ManifestReader for CargoManifest {
 }
 
 fn collect_cargo_tomls(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 8 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 8 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -74,7 +83,9 @@ fn collect_cargo_tomls(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             if matches!(
                 name.as_ref(),
                 "target" | ".git" | "node_modules" | "bin" | "obj" | ".cargo"
-            ) { continue }
+            ) {
+                continue;
+            }
             collect_cargo_tomls(&path, out, depth + 1);
         } else if entry.file_name() == "Cargo.toml" {
             out.push(path);
@@ -119,7 +130,9 @@ fn cargo_subtable_dep_name(trimmed: &str) -> Option<&str> {
     ] {
         if let Some(name) = body.rsplit_once(marker).map(|(_, n)| n) {
             if !name.is_empty()
-                && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                && name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
             {
                 return Some(name);
             }
@@ -151,8 +164,12 @@ pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
             in_dep_section = is_cargo_dependency_section(trimmed);
             continue;
         }
-        if !in_dep_section { continue }
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if !in_dep_section {
+            continue;
+        }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
 
         if let Some(eq_pos) = trimmed.find('=') {
             let key = trimmed[..eq_pos]
@@ -162,7 +179,9 @@ pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
                 .unwrap_or("")
                 .trim();
             if !key.is_empty()
-                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
             {
                 crates.push(key.to_string());
             }
@@ -188,15 +207,21 @@ pub fn parse_cargo_path_dependencies(content: &str) -> Vec<String> {
             pending_table.clear();
             continue;
         }
-        if !in_dep_section { continue }
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if !in_dep_section {
+            continue;
+        }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
 
         if let Some(key) = pending_key.clone() {
             pending_table.push(' ');
             pending_table.push_str(trimmed);
             if trimmed.contains('}') {
                 if pending_table.contains("path") && pending_table.contains('=') {
-                    if !out.contains(&key) { out.push(key) }
+                    if !out.contains(&key) {
+                        out.push(key)
+                    }
                 }
                 pending_key = None;
                 pending_table.clear();
@@ -204,7 +229,9 @@ pub fn parse_cargo_path_dependencies(content: &str) -> Vec<String> {
             continue;
         }
 
-        let Some(eq) = trimmed.find('=') else { continue };
+        let Some(eq) = trimmed.find('=') else {
+            continue;
+        };
         let key = trimmed[..eq]
             .trim()
             .split('.')
@@ -213,12 +240,18 @@ pub fn parse_cargo_path_dependencies(content: &str) -> Vec<String> {
             .trim()
             .to_string();
         if key.is_empty()
-            || !key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-        { continue }
+            || !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            continue;
+        }
         let value = trimmed[eq + 1..].trim();
         if value.starts_with('{') && value.ends_with('}') {
             if value.contains("path") && value.contains('=') {
-                if !out.contains(&key) { out.push(key) }
+                if !out.contains(&key) {
+                    out.push(key)
+                }
             }
             continue;
         }
@@ -239,12 +272,18 @@ pub(super) fn parse_cargo_package_name(content: &str) -> Option<String> {
             in_package = trimmed == "[package]";
             continue;
         }
-        if !in_package { continue }
+        if !in_package {
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("name") {
             let rest = rest.trim_start();
-            let Some(rest) = rest.strip_prefix('=') else { continue };
+            let Some(rest) = rest.strip_prefix('=') else {
+                continue;
+            };
             let rest = rest.trim();
-            let Some(rest) = rest.strip_prefix('"') else { continue };
+            let Some(rest) = rest.strip_prefix('"') else {
+                continue;
+            };
             let Some(end) = rest.find('"') else { continue };
             return Some(rest[..end].to_string());
         }

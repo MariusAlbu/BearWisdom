@@ -12,11 +12,28 @@ pub struct HareHooks;
 pub(crate) fn is_hare_primitive(name: &str) -> bool {
     matches!(
         name,
-        "bool" | "void" | "never" | "null" | "opaque"
-            | "int" | "i8" | "i16" | "i32" | "i64"
-            | "uint" | "u8" | "u16" | "u32" | "u64"
-            | "uintptr" | "size" | "f32" | "f64"
-            | "rune" | "str" | "bytes"
+        "bool"
+            | "void"
+            | "never"
+            | "null"
+            | "opaque"
+            | "int"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "uint"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "uintptr"
+            | "size"
+            | "f32"
+            | "f64"
+            | "rune"
+            | "str"
+            | "bytes"
     )
 }
 
@@ -42,9 +59,7 @@ pub(crate) fn detect_flow_inner(
     }
     let url = r.call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }

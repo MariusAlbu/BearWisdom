@@ -56,7 +56,9 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             let mut args: Vec<String> = Vec::new();
             if let Some(type_args_node) = node.child_by_field_name("type_arguments") {
                 for i in 0..type_args_node.child_count() {
-                    let Some(arg) = type_args_node.child(i) else { continue };
+                    let Some(arg) = type_args_node.child(i) else {
+                        continue;
+                    };
                     if matches!(arg.kind(), "<" | ">" | ",") {
                         continue;
                     }
@@ -156,12 +158,11 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                         // `index_type_query` or a type expression to
                         // iterate over (`"a" | "b"`).
                         if let Some(type_node) = child.child_by_field_name("type") {
-                            if matches!(
-                                type_node.kind(),
-                                "keyof_type" | "index_type_query"
-                            ) {
+                            if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
                                 for j in 0..type_node.child_count() {
-                                    let Some(op) = type_node.child(j) else { continue };
+                                    let Some(op) = type_node.child(j) else {
+                                        continue;
+                                    };
                                     if op.kind() == "keyof" {
                                         continue;
                                     }
@@ -184,9 +185,7 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                             // simple syntactic match, which is the
                             // dominant case for utility types
                             // (Partial / Required / Readonly).
-                            value_template = node_text(child, src)
-                                .trim()
-                                .to_string();
+                            value_template = node_text(child, src).trim().to_string();
                         }
                     }
                 }
@@ -254,7 +253,11 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                     let stripped = trimmed
                         .strip_prefix('"')
                         .and_then(|s| s.strip_suffix('"'))
-                        .or_else(|| trimmed.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                        .or_else(|| {
+                            trimmed
+                                .strip_prefix('\'')
+                                .and_then(|s| s.strip_suffix('\''))
+                        })
                         .unwrap_or(trimmed);
                     stripped.to_string()
                 }

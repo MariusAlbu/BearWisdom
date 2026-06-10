@@ -64,7 +64,13 @@ impl LanguagePlugin for PrismaPlugin {
 
     fn symbol_node_kinds(&self) -> &[&str] {
         // No grammar, but list the logical constructs for coverage tooling.
-        &["model_declaration", "enum_declaration", "datasource_declaration", "generator_declaration", "type_declaration"]
+        &[
+            "model_declaration",
+            "enum_declaration",
+            "datasource_declaration",
+            "generator_declaration",
+            "type_declaration",
+        ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
@@ -74,8 +80,7 @@ impl LanguagePlugin for PrismaPlugin {
     fn keywords(&self) -> &'static [&'static str] {
         // Prisma scalar types — no TypeRef should be emitted for these.
         &[
-            "String", "Int", "Float", "Boolean", "DateTime",
-            "Bytes", "Json", "BigInt", "Decimal",
+            "String", "Int", "Float", "Boolean", "DateTime", "Bytes", "Json", "BigInt", "Decimal",
         ]
     }
 
@@ -87,8 +92,7 @@ impl LanguagePlugin for PrismaPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PRISMA_HOOKS)
     }
 }

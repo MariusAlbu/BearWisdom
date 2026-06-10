@@ -110,7 +110,10 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").
 pub fn find_language(id: &str) -> Option<&'static LanguageDescriptor> {
-    LANGUAGES.iter().copied().find(|l| l.id == id || l.aliases.contains(&id))
+    LANGUAGES
+        .iter()
+        .copied()
+        .find(|l| l.id == id || l.aliases.contains(&id))
 }
 
 /// Find a language descriptor by a file extension (with leading dot, e.g. ".rs").

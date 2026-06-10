@@ -1,9 +1,16 @@
 use crate::types::*;
 pub static VELOCITY: LanguageDescriptor = LanguageDescriptor {
-    id: "velocity", display_name: "Apache Velocity",
+    id: "velocity",
+    display_name: "Apache Velocity",
     file_extensions: &[".vm", ".vtl"],
-    filenames: &[], aliases: &[], exclude_dirs: &[],
-    entry_point_files: &[], sdk: None, package_managers: &[],
-    test_frameworks: &[], restore_steps: &[],
-    line_comment: Some("##"), block_comment: Some(("#*", "*#")),
+    filenames: &[],
+    aliases: &[],
+    exclude_dirs: &[],
+    entry_point_files: &[],
+    sdk: None,
+    package_managers: &[],
+    test_frameworks: &[],
+    restore_steps: &[],
+    line_comment: Some("##"),
+    block_comment: Some(("#*", "*#")),
 };

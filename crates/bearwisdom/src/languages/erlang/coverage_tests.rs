@@ -15,9 +15,14 @@ fn symbol_fun_decl() {
     let src = "-module(mymod).\n-export([foo/1]).\nfoo(X) -> bar(X).";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo/1" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo/1" && s.kind == SymbolKind::Function),
         "expected Function foo/1; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -27,9 +32,14 @@ fn symbol_module_attribute() {
     let src = "-module(mymod).\nfoo() -> ok.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "mymod" && s.kind == SymbolKind::Module),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "mymod" && s.kind == SymbolKind::Module),
         "expected Module mymod; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -39,9 +49,14 @@ fn symbol_record_decl() {
     let src = "-module(user).\n-record(person, {name, age}).";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "person" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "person" && s.kind == SymbolKind::Struct),
         "expected Struct person; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,9 +67,14 @@ fn symbol_behaviour_attribute() {
     let src = "-module(myserver).\n-behaviour(gen_server).\n";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "gen_server"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "gen_server"),
         "expected Implements gen_server from behaviour_attribute; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -69,9 +89,14 @@ fn ref_call_local() {
     let r = extract(src);
     // bar is called with 1 argument → target_name is "bar/1"
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar/1" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "bar/1" && rf.kind == EdgeKind::Calls),
         "expected Calls bar/1; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -87,14 +112,20 @@ fn ref_import_attribute() {
             && rf.target_name == "map/2"
             && rf.module.as_deref() == Some("lists")),
         "expected Imports map/2 from lists; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, &rf.module, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
             && rf.target_name == "filter/2"
             && rf.module.as_deref() == Some("lists")),
         "expected Imports filter/2 from lists; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, &rf.module, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -104,9 +135,14 @@ fn ref_pp_include() {
     let src = "-module(mymod).\n-include(\"records.hrl\").\nfoo() -> ok.";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("records")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("records")),
         "expected Imports records.hrl from pp_include; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -118,7 +154,10 @@ fn ref_pp_include_lib() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from pp_include_lib; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -130,7 +169,10 @@ fn ref_behaviour_attribute() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements),
         "expected Implements ref from behaviour_attribute; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -144,9 +186,14 @@ fn symbol_type_alias() {
     let src = "-module(m).\n-type mytype() :: integer() | atom().\n";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "mytype" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "mytype" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias mytype; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -156,9 +203,14 @@ fn symbol_opaque() {
     let src = "-module(m).\n-opaque handle() :: {pid(), reference()}.\n";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "handle" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "handle" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias handle from opaque; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -168,9 +220,14 @@ fn symbol_callback() {
     let src = "-module(m).\n-callback init(Args :: term()) -> {ok, State :: term()}.\n";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "init" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "init" && s.kind == SymbolKind::Method),
         "expected Method init from callback; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -180,9 +237,14 @@ fn symbol_wild_attribute() {
     let src = "-module(m).\n-custom_tag(some_value).\n";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "custom_tag" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "custom_tag" && s.kind == SymbolKind::Variable),
         "expected Variable custom_tag from wild_attribute; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -197,9 +259,14 @@ fn ref_call_remote() {
     let r = extract(src);
     // Remote call lists:map(F, L) has 2 args → target_name emitted as "map/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
         "expected Calls map/2 from remote call lists:map/2; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -210,9 +277,14 @@ fn ref_internal_fun() {
     let r = extract(src);
     // Explicit arity in the fa AST node → target_name emitted as "bar/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar/2" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "bar/2" && rf.kind == EdgeKind::Calls),
         "expected Calls bar/2 from internal_fun; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -223,21 +295,32 @@ fn ref_external_fun() {
     let r = extract(src);
     // Explicit arity in the fa AST node → target_name emitted as "map/2".
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "map/2" && rf.kind == EdgeKind::Calls),
         "expected Calls map/2 from external_fun; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// ref_node_kind: `record_expr`  →  Instantiates edge (`#record_name{...}`)
 #[test]
 fn ref_record_expr() {
-    let src = "-module(m).\n-record(person, {name, age}).\nfoo() -> #person{name = \"bob\", age = 42}.\n";
+    let src =
+        "-module(m).\n-record(person, {name, age}).\nfoo() -> #person{name = \"bob\", age = 42}.\n";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "person" && rf.kind == EdgeKind::Instantiates),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "person" && rf.kind == EdgeKind::Instantiates),
         "expected Instantiates person from record_expr; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -247,9 +330,14 @@ fn symbol_fun_decl_private() {
     let src = "-module(mymod).\nbar(X) -> X.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "bar/1" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "bar/1" && s.kind == SymbolKind::Function),
         "expected Function bar/1; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -259,9 +347,14 @@ fn symbol_fun_decl_zero_arity() {
     let src = "-module(mymod).\n-export([start/0]).\nstart() -> ok.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "start/0" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "start/0" && s.kind == SymbolKind::Function),
         "expected Function start/0; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -286,8 +379,10 @@ fn spec_does_not_emit_type_atom_calls() {
         .iter()
         .filter(|rf| {
             rf.kind == EdgeKind::Calls
-                && (rf.target_name == "pid/0" || rf.target_name == "any/0"
-                    || rf.target_name == "list/1" || rf.target_name == "error/1"
+                && (rf.target_name == "pid/0"
+                    || rf.target_name == "any/0"
+                    || rf.target_name == "list/1"
+                    || rf.target_name == "error/1"
                     || rf.target_name == "ok/1")
         })
         .collect();

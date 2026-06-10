@@ -69,7 +69,8 @@ pub const BUILTINS: &[&str] = &[
     "yield!",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(identifier) @local.reference\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(identifier) @local.reference\n\
 \n\
 [\n\
   (namespace)\n\
@@ -102,4 +103,5 @@ pub const LOCALS_SCM: Option<&str> = Some("(identifier) @local.reference\n\
      (_ (_ (_ (_ (_ (_ (identifier) @local.definition.parameter))))))\n\
     ])\n\
   ))\n\
-");
+",
+);

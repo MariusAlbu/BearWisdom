@@ -19,8 +19,18 @@ use std::collections::HashMap;
 ///
 /// C# adds Namespace, Field, Event, Delegate that v1 was missing.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
-    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::IntoStaticStr,
+    strum::EnumString,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -54,8 +64,18 @@ impl SymbolKind {
 
 /// Kinds of directed edges in the code graph.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
-    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::IntoStaticStr,
+    strum::EnumString,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -90,8 +110,18 @@ pub enum EdgeKind {
 /// Cross-tier flow edges. Distinct from `EdgeKind` resolution edges: these
 /// land in the `flow_edges` table; resolution edges land in `edges`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
-    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::IntoStaticStr,
+    strum::EnumString,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -160,8 +190,17 @@ impl EdgeKind {
 
 /// C# and TypeScript visibility modifiers.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
-    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::IntoStaticStr,
+    strum::EnumString,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -585,8 +624,8 @@ pub struct ExtractedRef {
 pub struct ExtractedRoute {
     /// Index into Vec<ExtractedSymbol> for the handler method.
     pub handler_symbol_index: usize,
-    pub http_method: String,  // "GET", "POST", "PUT", "DELETE", "PATCH"
-    pub template: String,     // e.g. "/api/catalog/items/{id:int}"
+    pub http_method: String, // "GET", "POST", "PUT", "DELETE", "PATCH"
+    pub template: String,    // e.g. "/api/catalog/items/{id:int}"
 }
 
 /// An EF Core DbSet<T> property extracted from a DbContext class.
@@ -746,11 +785,7 @@ pub enum EmbeddedOrigin {
 }
 
 impl ExtractionResult {
-    pub fn new(
-        symbols: Vec<ExtractedSymbol>,
-        refs: Vec<ExtractedRef>,
-        has_errors: bool,
-    ) -> Self {
+    pub fn new(symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>, has_errors: bool) -> Self {
         Self {
             symbols,
             refs,
@@ -825,7 +860,9 @@ pub struct PackageInfo {
     pub is_publishable: bool,
 }
 
-fn default_is_publishable() -> bool { true }
+fn default_is_publishable() -> bool {
+    true
+}
 
 /// A conditional-narrowing scope captured at extraction time.
 ///

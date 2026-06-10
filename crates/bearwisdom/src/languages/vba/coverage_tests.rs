@@ -20,19 +20,31 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_sub_declaration_produces_function() {
     let r = extract::extract("Sub MySub()\n    MsgBox \"Hello\"\nEnd Sub\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "MySub"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "MySub"),
         "Sub should produce Function(MySub); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn cov_function_declaration_produces_function() {
-    let r = extract::extract("Function Square(x As Integer) As Integer\n    Square = x * x\nEnd Function\n");
+    let r = extract::extract(
+        "Function Square(x As Integer) As Integer\n    Square = x * x\nEnd Function\n",
+    );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "Square"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "Square"),
         "Function should produce Function(Square); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -41,9 +53,14 @@ fn cov_class_module_produces_class() {
     // VBA class module marker: `Attribute VB_Name = "ClassName"`
     let r = extract::extract("Attribute VB_Name = \"MyClass\"\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "MyClass"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "MyClass"),
         "VB_Name attribute should produce Class(MyClass); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -56,9 +73,14 @@ fn cov_call_statement_produces_calls() {
     // `Call SubName` inside a sub → Calls ref
     let r = extract::extract("Sub Main()\n    Call Helper\nEnd Sub\n");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Helper"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Helper"),
         "Call statement should produce Calls(Helper); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -148,8 +170,8 @@ fn continuation_line_does_not_produce_call_ref() {
     // The scanner must not emit a Calls ref for the continuation line.
     let src = concat!(
         "Sub Main()\n",
-        "    Result = SomeFunc(Arg1, _\n",   // ends with " _" → continues
-        "                     TokenEndingPos - 1)\n",  // continuation: NOT a call
+        "    Result = SomeFunc(Arg1, _\n", // ends with " _" → continues
+        "                     TokenEndingPos - 1)\n", // continuation: NOT a call
         "End Sub\n",
     );
     let r = extract::extract(src);
@@ -172,7 +194,9 @@ fn first_line_of_continuation_still_emits_call() {
     );
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "SomeFunc"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "SomeFunc"),
         "callee on the first line of a continuation must still produce a Calls ref; got: {:?}",
         r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
@@ -187,20 +211,31 @@ fn declare_ptrsafe_function_produces_symbol() {
     let src = "Private Declare PtrSafe Function GdipDisposeImage Lib \"gdiplus\" (ByVal Image As LongPtr) As Long\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "GdipDisposeImage"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "GdipDisposeImage"),
         "Declare PtrSafe Function must produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn declare_sub_produces_symbol() {
-    let src = "Private Declare PtrSafe Sub GdiplusShutdown Lib \"gdiplus\" (ByVal token As LongPtr)\n";
+    let src =
+        "Private Declare PtrSafe Sub GdiplusShutdown Lib \"gdiplus\" (ByVal token As LongPtr)\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "GdiplusShutdown"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "GdiplusShutdown"),
         "Declare PtrSafe Sub must produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -215,13 +250,18 @@ fn declare_inside_if_block_produces_symbol() {
         "#End If\n",
     );
     let r = extract::extract(src);
-    let count = r.symbols.iter()
+    let count = r
+        .symbols
+        .iter()
         .filter(|s| s.name == "utc_GetTimeZoneInformation" && s.kind == SymbolKind::Function)
         .count();
     assert!(
         count >= 1,
         "Declare inside #If/#Else block must produce at least one Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -240,12 +280,16 @@ fn conditional_compilation_marker_does_not_produce_call_ref() {
     );
     let r = extract::extract(src);
     // Exactly one Calls(Helper) — not two or zero.
-    let count = r.refs.iter()
+    let count = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Helper")
         .count();
     // Both branches call Helper, so two refs is correct; the key invariant is
     // that the directive lines themselves don't produce extra refs.
-    let bad_refs: Vec<_> = r.refs.iter()
+    let bad_refs: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.target_name.starts_with('#'))
         .collect();
     assert!(

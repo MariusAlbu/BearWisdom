@@ -15,7 +15,11 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                 continue;
             };
             if let Some(body) = source.get(body_start..close) {
-                let trimmed = body.trim().trim_start_matches('-').trim_end_matches('-').trim();
+                let trimmed = body
+                    .trim()
+                    .trim_start_matches('-')
+                    .trim_end_matches('-')
+                    .trim();
                 if !trimmed.is_empty() {
                     // Jinja/Nunjucks pipe-filter syntax (`x | upper`,
                     // `x | indent(4)`) doesn't survive a literal JS embed —
@@ -34,9 +38,7 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                     let (line, col) = line_col_at(bytes, body_start);
                     regions.push(EmbeddedRegion {
                         language_id: "javascript".to_string(),
-                        text: format!(
-                            "function __NjkExpr{idx}() {{ return ({expr}); }}\n"
-                        ),
+                        text: format!("function __NjkExpr{idx}() {{ return ({expr}); }}\n"),
                         line_offset: line,
                         col_offset: col,
                         origin: EmbeddedOrigin::TemplateExpr,
@@ -77,8 +79,13 @@ fn strip_pipe_filters(body: &str) -> &str {
     while i < bytes.len() {
         let b = bytes[i];
         if let Some(quote) = in_str {
-            if b == b'\\' { i += 2; continue }
-            if b == quote { in_str = None; }
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_str = None;
+            }
             i += 1;
             continue;
         }

@@ -3,12 +3,12 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use bearwisdom::full_index;
 use bearwisdom::search::content_index::rebuild_content_index_db as rebuild_content_index;
 use bearwisdom::search::content_search::search_content;
 use bearwisdom::search::fuzzy::FuzzyIndex;
 use bearwisdom::search::grep::{grep_search, GrepOptions};
 use bearwisdom::search::scope::SearchScope;
-use bearwisdom::full_index;
 use bearwisdom_tests::TestProject;
 
 fn cancel_never() -> Arc<AtomicBool> {
@@ -30,7 +30,10 @@ fn grep_finds_literal_match() {
     )
     .unwrap();
 
-    assert!(!results.is_empty(), "should find IProductRepository in C# files");
+    assert!(
+        !results.is_empty(),
+        "should find IProductRepository in C# files"
+    );
 
     // At least one match should be in the interface definition file.
     let in_interface = results
@@ -50,7 +53,10 @@ fn grep_case_insensitive() {
     };
 
     let results = grep_search(project.path(), "animal", &options, &cancel).unwrap();
-    assert!(!results.is_empty(), "case-insensitive search for 'animal' should match 'Animal'");
+    assert!(
+        !results.is_empty(),
+        "case-insensitive search for 'animal' should match 'Animal'"
+    );
 }
 
 #[test]
@@ -95,17 +101,14 @@ fn grep_respects_cancellation() {
     let project = TestProject::csharp_service();
     let cancel = Arc::new(AtomicBool::new(true)); // pre-cancelled
 
-    let results = grep_search(
-        project.path(),
-        "class",
-        &GrepOptions::default(),
-        &cancel,
-    )
-    .unwrap();
+    let results = grep_search(project.path(), "class", &GrepOptions::default(), &cancel).unwrap();
 
     // With cancellation set before start, should return 0 or very few results.
     // The exact behavior depends on whether the first file is checked before cancel.
-    assert!(results.len() <= 1, "cancelled search should return at most 1 result");
+    assert!(
+        results.len() <= 1,
+        "cancelled search should return at most 1 result"
+    );
 }
 
 // ── content search (FTS5) ───────────────────────────────────────────────
@@ -133,7 +136,10 @@ fn content_search_short_query_returns_empty() {
 
     // Queries shorter than 3 chars return empty (trigram minimum).
     let results = search_content(&db, "ab", &SearchScope::default(), 10).unwrap();
-    assert!(results.is_empty(), "sub-trigram queries should return empty");
+    assert!(
+        results.is_empty(),
+        "sub-trigram queries should return empty"
+    );
 }
 
 // ── fuzzy search ────────────────────────────────────────────────────────
@@ -147,7 +153,10 @@ fn fuzzy_match_files() {
     let index = FuzzyIndex::from_db(&db).unwrap();
     let matches = index.match_files("ProdServ", 10);
 
-    assert!(!matches.is_empty(), "fuzzy file search for 'ProdServ' should match ProductService.cs");
+    assert!(
+        !matches.is_empty(),
+        "fuzzy file search for 'ProdServ' should match ProductService.cs"
+    );
 }
 
 #[test]
@@ -159,7 +168,10 @@ fn fuzzy_match_symbols() {
     let index = FuzzyIndex::from_db(&db).unwrap();
     let matches = index.match_symbols("GetById", 10);
 
-    assert!(!matches.is_empty(), "fuzzy symbol search for 'GetById' should find the method");
+    assert!(
+        !matches.is_empty(),
+        "fuzzy symbol search for 'GetById' should find the method"
+    );
 }
 
 #[test]

@@ -41,14 +41,10 @@ class AsyncDynamicLibrary:
 "#;
     let map = run(&[("async.py", src)]);
     let kws = map.get("async.py").expect("async.py present");
-    assert!(kws
-        .iter()
-        .any(|k| k.normalized_name == "asynckeyword"
-            && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
-    assert!(kws
-        .iter()
-        .any(|k| k.normalized_name == "otherkeyword"
-            && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
+    assert!(kws.iter().any(|k| k.normalized_name == "asynckeyword"
+        && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
+    assert!(kws.iter().any(|k| k.normalized_name == "otherkeyword"
+        && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
 }
 
 #[test]
@@ -77,7 +73,10 @@ class Plain:
         return 42
 "#;
     let map = run(&[("plain.py", src)]);
-    assert!(map.is_empty(), "plain libraries should not appear in the map");
+    assert!(
+        map.is_empty(),
+        "plain libraries should not appear in the map"
+    );
 }
 
 #[test]
@@ -274,12 +273,7 @@ class DynamicWithoutKwargs:
     let map = run(&[("real.py", src)]);
     let kws = map.get("real.py").expect("real.py present");
     let names: Vec<&str> = kws.iter().map(|k| k.normalized_name.as_str()).collect();
-    for expected in [
-        "onearg",
-        "twoargs",
-        "fourargs",
-        "args&varargs",
-    ] {
+    for expected in ["onearg", "twoargs", "fourargs", "args&varargs"] {
         assert!(
             names.contains(&expected),
             "expected '{expected}' in {names:?}"

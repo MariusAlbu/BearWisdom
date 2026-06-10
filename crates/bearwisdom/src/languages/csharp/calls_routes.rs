@@ -51,8 +51,8 @@ pub(super) fn extract_attribute_routes_with_prefix(
                     if let Some(name_node) = attr.child_by_field_name("name") {
                         let attr_name = node_text(name_node, src);
                         if let Some(method) = http_method_from_attribute(&attr_name) {
-                            let method_template = attr_route_template(&attr, src)
-                                .unwrap_or_else(|| String::from(""));
+                            let method_template =
+                                attr_route_template(&attr, src).unwrap_or_else(|| String::from(""));
                             // Combine class prefix with method template.
                             let template = match class_prefix {
                                 Some(prefix) if !prefix.is_empty() => {
@@ -127,7 +127,10 @@ pub(super) fn attr_route_template(attr_node: &Node, src: &[u8]) -> Option<String
                             let mut sc = child.walk();
                             child.children(&mut sc).collect()
                         };
-                        if let Some(content) = children.iter().find(|c| c.kind() == "string_literal_content") {
+                        if let Some(content) = children
+                            .iter()
+                            .find(|c| c.kind() == "string_literal_content")
+                        {
                             return Some(node_text(*content, src));
                         }
                         // Fallback: strip quotes from the whole string_literal text.
@@ -162,7 +165,11 @@ pub(super) fn combine_route_prefix(prefix: &str, action: &str) -> String {
     let action = action.trim_matches('/');
 
     if prefix.is_empty() {
-        return if action.is_empty() { "/".to_string() } else { action.to_string() };
+        return if action.is_empty() {
+            "/".to_string()
+        } else {
+            action.to_string()
+        };
     }
     if action.is_empty() {
         return prefix.to_string();
@@ -197,17 +204,13 @@ fn build_mapgroup_prefixes<'a>(body: &Node<'a>, src: &[u8]) -> HashMap<String, S
 fn collect_mapgroup_assignments(node: &Node, src: &[u8], prefixes: &mut HashMap<String, String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "local_declaration_statement"
-            || child.kind() == "variable_declaration"
-        {
+        if child.kind() == "local_declaration_statement" || child.kind() == "variable_declaration" {
             collect_mapgroup_assignments(&child, src, prefixes);
             continue;
         }
 
         if child.kind() == "variable_declarator" {
-            let var_name = child
-                .child_by_field_name("name")
-                .map(|n| node_text(n, src));
+            let var_name = child.child_by_field_name("name").map(|n| node_text(n, src));
 
             // The initializer is a direct child of variable_declarator after `=`.
             let mut found_eq = false;
@@ -351,7 +354,10 @@ pub(super) fn first_string_arg(arg_list: &Node, src: &[u8]) -> Option<String> {
                             let mut sc = child.walk();
                             child.children(&mut sc).collect()
                         };
-                        if let Some(content) = children.iter().find(|c| c.kind() == "string_literal_content") {
+                        if let Some(content) = children
+                            .iter()
+                            .find(|c| c.kind() == "string_literal_content")
+                        {
                             return Some(node_text(*content, src));
                         }
                         let raw = node_text(child, src);

@@ -109,11 +109,9 @@ pub(crate) fn infer_external_inner(
         }
         return None;
     }
-    if let Some((lib, _)) = resolve_qualified_library(
-        file_ctx,
-        ref_ctx.extracted_ref.module.as_deref(),
-        target,
-    ) {
+    if let Some((lib, _)) =
+        resolve_qualified_library(file_ctx, ref_ctx.extracted_ref.module.as_deref(), target)
+    {
         return Some(lib);
     }
     if is_variable_ref(target) {
@@ -150,8 +148,7 @@ impl LanguageEngineHooks for RobotHooks {
                 continue;
             }
             let raw_path = r.module.as_deref().unwrap_or(&r.target_name);
-            let is_file_import =
-                raw_path.ends_with(".robot") || raw_path.ends_with(".resource");
+            let is_file_import = raw_path.ends_with(".robot") || raw_path.ends_with(".resource");
             let resolved_path = if is_file_import {
                 let lookup_key = std::path::Path::new(raw_path)
                     .file_name()
@@ -163,10 +160,8 @@ impl LanguageEngineHooks for RobotHooks {
                             .get::<super::RobotProjectState>()
                             .and_then(|s| s.resource_basenames.get(lookup_key))
                             .and_then(|paths| {
-                                super::library_map::pick_resource_for_importer(
-                                    paths, &file.path,
-                                )
-                                .map(String::from)
+                                super::library_map::pick_resource_for_importer(paths, &file.path)
+                                    .map(String::from)
                             })
                     })
                     .unwrap_or_else(|| raw_path.to_string())
@@ -190,17 +185,12 @@ impl LanguageEngineHooks for RobotHooks {
                             alias: None,
                             is_wildcard: true,
                         });
-                        if let Some(dyn_kws) =
-                            robot_state.dynamic_keywords.get(&lib.py_file_path)
-                        {
+                        if let Some(dyn_kws) = robot_state.dynamic_keywords.get(&lib.py_file_path) {
                             for kw in dyn_kws {
                                 imports.push(ImportEntry {
                                     imported_name: kw.normalized_name.clone(),
                                     module_path: Some(lib.py_file_path.clone()),
-                                    alias: encode_dynamic_alias(
-                                        &kw.class_name,
-                                        &kw.method_name,
-                                    ),
+                                    alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
                                     // Wildcard so the alias-decode pass of the
                                     // file-scoped-import strategy (gated on
                                     // `wildcard_only`) reaches this entry.

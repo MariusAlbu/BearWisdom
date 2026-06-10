@@ -85,11 +85,7 @@ pub trait SymbolLookup {
     /// of a specific source file. Returns `None` when no resolution is
     /// known. Used by re-export following so chain hops can also be
     /// resolved per-source.
-    fn resolve_module_from(
-        &self,
-        _source_file: &str,
-        _spec: &str,
-    ) -> Option<&str> {
+    fn resolve_module_from(&self, _source_file: &str, _spec: &str) -> Option<&str> {
         None
     }
 
@@ -314,11 +310,7 @@ pub trait SymbolLookup {
     /// declares it — TS `tsconfig.json#paths`, `jsconfig.json`, framework
     /// configs — so the resolver tower can rewrite aliased specifiers without
     /// baking any one config format into the language-agnostic path.
-    fn resolve_path_alias(
-        &self,
-        _package_id: Option<i64>,
-        _specifier: &str,
-    ) -> Option<String> {
+    fn resolve_path_alias(&self, _package_id: Option<i64>, _specifier: &str) -> Option<String> {
         None
     }
 

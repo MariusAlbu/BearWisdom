@@ -48,7 +48,9 @@ fn probe_skips_directory_without_lua_subdir() {
     std::env::remove_var("VIMRUNTIME");
     let probed = probe_runtime_dir();
     std::env::remove_var(key);
-    if let Some(v) = prior_vimruntime { std::env::set_var("VIMRUNTIME", v); }
+    if let Some(v) = prior_vimruntime {
+        std::env::set_var("VIMRUNTIME", v);
+    }
     // BEARWISDOM_NVIM_RUNTIME must reject the bad fixture; whatever the
     // remaining probes return is fine, just confirm the override didn't
     // win when the runtime layout is wrong.

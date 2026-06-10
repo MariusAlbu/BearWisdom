@@ -43,11 +43,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     // Script-src refs are collected via a byte-level scan that tolerates
@@ -55,7 +55,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     // to accept every unusual syntax.
     let mut refs: Vec<ExtractedRef> = extract_script_refs(source)
         .into_iter()
-        .map(|sr| ExtractedRef { is_import_binding: false, is_reexport: false,
+        .map(|sr| ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: host_index,
             target_name: sr.url.clone(),
             kind: EdgeKind::Imports,
@@ -95,7 +97,13 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         };
     };
 
-    collect_anchors(&tree.root_node(), source, &file_name, host_index, &mut symbols);
+    collect_anchors(
+        &tree.root_node(),
+        source,
+        &file_name,
+        host_index,
+        &mut symbols,
+    );
     collect_component_tags(&tree.root_node(), source, host_index, &mut refs);
 
     ExtractionResult {
@@ -135,11 +143,11 @@ fn collect_anchors(
                     scope_path: Some(file_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
         collect_anchors(&child, source, file_name, host_index, symbols);
@@ -333,10 +341,7 @@ pub(super) fn looks_generated_html(source: &str) -> bool {
         return false;
     }
     // Collapse whitespace runs so attribute order doesn't matter.
-    let collapsed: String = lower
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed: String = lower.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed.contains("name=\"generator\"")
         || collapsed.contains("name='generator'")
         || collapsed.contains("name=generator")

@@ -47,14 +47,21 @@ fn discover_finds_clone_vendored_in_project_tree() {
     std::fs::create_dir_all(root.join(".git")).unwrap();
 
     let roots = discover_bicep_source(&root);
-    assert_eq!(roots.len(), 1, "exactly one dep root from the vendored clone");
+    assert_eq!(
+        roots.len(),
+        1,
+        "exactly one dep root from the vendored clone"
+    );
     let located = &roots[0].root;
     assert!(
         located.ends_with(std::path::Path::new("src").join("Bicep.Core")),
         "dep root points at the clone's src/Bicep.Core, got {}",
         located.display()
     );
-    assert!(located.starts_with(&clone), "dep root is inside the vendored clone");
+    assert!(
+        located.starts_with(&clone),
+        "dep root is inside the vendored clone"
+    );
 
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -98,7 +105,10 @@ fn collect_string_consts_picks_up_simple_declarations() {
     "#;
     let mut consts = HashMap::new();
     collect_string_consts(src, &mut consts);
-    assert_eq!(consts.get("MetadataDescriptionPropertyName"), Some(&"description".to_string()));
+    assert_eq!(
+        consts.get("MetadataDescriptionPropertyName"),
+        Some(&"description".to_string())
+    );
     assert_eq!(consts.get("AnyFunction"), Some(&"any".to_string()));
     assert!(
         !consts.contains_key("MetadataResourceDerivedTypePropertyName"),
@@ -116,7 +126,10 @@ fn extract_function_names_handles_literal_and_constant_args() {
         BannedFunction.CreateForOperator("add", "+");
     "#;
     let mut consts = HashMap::new();
-    consts.insert("ResourceIdFunctionName".to_string(), "resourceId".to_string());
+    consts.insert(
+        "ResourceIdFunctionName".to_string(),
+        "resourceId".to_string(),
+    );
     consts.insert("AnyFunction".to_string(), "any".to_string());
 
     let names = extract_function_names(src, &consts);
@@ -135,7 +148,10 @@ fn extract_decorator_names_resolves_constant_references() {
         new DecoratorBuilder("export").Build();
     "#;
     let mut consts = HashMap::new();
-    consts.insert("MetadataDescriptionPropertyName".to_string(), "description".to_string());
+    consts.insert(
+        "MetadataDescriptionPropertyName".to_string(),
+        "description".to_string(),
+    );
     consts.insert("BatchSizePropertyName".to_string(), "batchSize".to_string());
 
     let names = extract_decorator_names(src, &consts);
@@ -194,7 +210,10 @@ fn synthesise_extracts_real_names_from_minimal_clone() {
     assert!(names.contains(&"resourceGroup"), "az ns fn registered");
     assert!(names.contains(&"description"), "decorator via const");
     assert!(names.contains(&"parameters"), "BannedFunction registered");
-    assert!(names.contains(&"sys"), "namespace alias `sys` always present");
+    assert!(
+        names.contains(&"sys"),
+        "namespace alias `sys` always present"
+    );
     assert!(names.contains(&"az"), "namespace alias `az` always present");
 
     std::fs::remove_dir_all(&tmp).unwrap();

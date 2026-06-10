@@ -32,9 +32,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol as Sym, SymbolKind, Visibility,
-};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol as Sym, SymbolKind, Visibility};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -55,7 +53,9 @@ pub(super) fn scan_all_type_identifiers(
         if child.kind() == "type_identifier" && child.is_named() {
             let name = node_text(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -97,9 +97,7 @@ pub(super) fn harvest_top_level_globals(root: Node, src: &[u8], symbols: &mut Ve
 ///   - decorator/run/config → not DI tokens; skip.
 fn angular_registration_kind(method: &str) -> Option<SymbolKind> {
     match method {
-        "service" | "factory" | "provider" | "component" | "controller" => {
-            Some(SymbolKind::Class)
-        }
+        "service" | "factory" | "provider" | "component" | "controller" => Some(SymbolKind::Class),
         "directive" | "filter" => Some(SymbolKind::Function),
         "value" | "constant" => Some(SymbolKind::Variable),
         _ => None,
@@ -121,21 +119,33 @@ fn scan_angular_registrations(node: Node, src: &[u8], symbols: &mut Vec<Sym>) {
 }
 
 fn try_emit_angular_registration(call: &Node, src: &[u8], symbols: &mut Vec<Sym>) {
-    let Some(func) = call.child_by_field_name("function") else { return };
+    let Some(func) = call.child_by_field_name("function") else {
+        return;
+    };
     if func.kind() != "member_expression" {
         return;
     }
-    let Some(prop) = func.child_by_field_name("property") else { return };
+    let Some(prop) = func.child_by_field_name("property") else {
+        return;
+    };
     let method = node_text(prop, src);
-    let Some(kind) = angular_registration_kind(&method) else { return };
+    let Some(kind) = angular_registration_kind(&method) else {
+        return;
+    };
 
-    let Some(args) = call.child_by_field_name("arguments") else { return };
+    let Some(args) = call.child_by_field_name("arguments") else {
+        return;
+    };
     let mut acursor = args.walk();
-    let Some(first_arg) = args.named_children(&mut acursor).next() else { return };
+    let Some(first_arg) = args.named_children(&mut acursor).next() else {
+        return;
+    };
     if first_arg.kind() != "string" {
         return;
     }
-    let Some(name) = string_literal_value(first_arg, src) else { return };
+    let Some(name) = string_literal_value(first_arg, src) else {
+        return;
+    };
     push_typed_global_symbol(&name, kind, call, symbols);
 }
 
@@ -172,12 +182,7 @@ fn string_literal_value(node: Node, src: &[u8]) -> Option<String> {
     Some(content)
 }
 
-fn push_typed_global_symbol(
-    name: &str,
-    kind: SymbolKind,
-    anchor: &Node,
-    symbols: &mut Vec<Sym>,
-) {
+fn push_typed_global_symbol(name: &str, kind: SymbolKind, anchor: &Node, symbols: &mut Vec<Sym>) {
     // Dedup: if a top-level symbol with the same (name, kind) already exists,
     // skip. But allow multiple kinds for the same name (a name may exist as
     // both Class (service) and Variable (window alias)).
@@ -201,12 +206,12 @@ fn push_typed_global_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index: None,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Examine one statement node (or the body of a recursively-walked IIFE)
@@ -263,13 +268,10 @@ fn scan_statement_for_globals(
 /// recorded so UMD-style `root[paramName] = factory()` assignments can
 /// resolve the subscript and emit the literal as a global (the slugify /
 /// jQuery UMD template).
-fn descend_iife(
-    call: &Node,
-    src: &[u8],
-    alias_globals: &[String],
-    symbols: &mut Vec<Sym>,
-) {
-    let Some(func) = call.child_by_field_name("function") else { return };
+fn descend_iife(call: &Node, src: &[u8], alias_globals: &[String], symbols: &mut Vec<Sym>) {
+    let Some(func) = call.child_by_field_name("function") else {
+        return;
+    };
     let inner_func = match func.kind() {
         "parenthesized_expression" => match func.named_child(0) {
             Some(n) => n,
@@ -278,10 +280,7 @@ fn descend_iife(
         "function_expression" | "arrow_function" => func,
         _ => return,
     };
-    if !matches!(
-        inner_func.kind(),
-        "function_expression" | "arrow_function"
-    ) {
+    if !matches!(inner_func.kind(), "function_expression" | "arrow_function") {
         return;
     }
     // Collect parameter names (positional).
@@ -339,7 +338,10 @@ fn descend_iife(
             }
             "identifier" => {
                 let ident = node_text(*arg, src);
-                if matches!(ident.as_str(), "window" | "global" | "globalThis" | "self" | "root") {
+                if matches!(
+                    ident.as_str(),
+                    "window" | "global" | "globalThis" | "self" | "root"
+                ) {
                     if !new_aliases.contains(pname) {
                         new_aliases.push(pname.clone());
                     }
@@ -354,7 +356,9 @@ fn descend_iife(
         }
     }
 
-    let Some(body) = inner_func.child_by_field_name("body") else { return };
+    let Some(body) = inner_func.child_by_field_name("body") else {
+        return;
+    };
 
     // UMD subscript pass: scan for `root[name] = factory()` where `root` is
     // a global alias and `name` is a parameter bound to a string literal.
@@ -398,11 +402,15 @@ fn try_emit_umd_subscript(
     string_bindings: &HashMap<String, String>,
     symbols: &mut Vec<Sym>,
 ) {
-    let Some(left) = assign.child_by_field_name("left") else { return };
+    let Some(left) = assign.child_by_field_name("left") else {
+        return;
+    };
     if left.kind() != "subscript_expression" {
         return;
     }
-    let Some(object) = left.child_by_field_name("object") else { return };
+    let Some(object) = left.child_by_field_name("object") else {
+        return;
+    };
     if object.kind() != "identifier" {
         return;
     }
@@ -410,12 +418,16 @@ fn try_emit_umd_subscript(
     if !alias_globals.iter().any(|a| a == &object_name) {
         return;
     }
-    let Some(index) = left.child_by_field_name("index") else { return };
+    let Some(index) = left.child_by_field_name("index") else {
+        return;
+    };
     if index.kind() != "identifier" {
         return;
     }
     let index_name = node_text(index, src);
-    let Some(literal) = string_bindings.get(&index_name) else { return };
+    let Some(literal) = string_bindings.get(&index_name) else {
+        return;
+    };
     // Emit as Function: UMD exports are almost always callable (factory()).
     push_typed_global_symbol(literal, SymbolKind::Function, assign, symbols);
 }
@@ -428,8 +440,12 @@ fn try_emit_global_assignment(
     alias_globals: &[String],
     symbols: &mut Vec<Sym>,
 ) {
-    let Some(left) = assign.child_by_field_name("left") else { return };
-    let Some(right) = assign.child_by_field_name("right") else { return };
+    let Some(left) = assign.child_by_field_name("left") else {
+        return;
+    };
+    let Some(right) = assign.child_by_field_name("right") else {
+        return;
+    };
 
     if lhs_targets_global(&left, src, alias_globals) {
         if let Some(name) = member_property_name(&left, src) {
@@ -461,8 +477,10 @@ fn lhs_targets_global(lhs: &Node, src: &[u8], alias_globals: &[String]) -> bool 
     match object.kind() {
         "identifier" => {
             let name = node_text(object, src);
-            matches!(name.as_str(), "window" | "global" | "globalThis" | "self" | "root")
-                || alias_globals.iter().any(|a| a == &name)
+            matches!(
+                name.as_str(),
+                "window" | "global" | "globalThis" | "self" | "root"
+            ) || alias_globals.iter().any(|a| a == &name)
         }
         "this" => true,
         _ => false,
@@ -501,7 +519,10 @@ fn push_global_symbol(name: &str, anchor: &Node, symbols: &mut Vec<Sym>) {
     // Deduplicate against symbols already pushed in this file. The main
     // extractor may have captured the same name via another path (unlikely
     // for globals inside IIFE bodies, but cheap insurance).
-    if symbols.iter().any(|s| s.name == name && s.parent_index.is_none()) {
+    if symbols
+        .iter()
+        .any(|s| s.name == name && s.parent_index.is_none())
+    {
         return;
     }
     let line = anchor.start_position().row as u32;
@@ -518,10 +539,10 @@ fn push_global_symbol(name: &str, anchor: &Node, symbols: &mut Vec<Sym>) {
         doc_comment: None,
         scope_path: None,
         parent_index: None,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }

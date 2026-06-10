@@ -21,7 +21,8 @@ fun caller() { fetch("/api/users") }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\"), got: {args:?}"
     );
 }
@@ -33,7 +34,8 @@ fun caller(url: String) { fetch(url) }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -58,7 +60,8 @@ fun caller(x: Int, y: Int) { f([x, y]) }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for collection-literal arg, got: {args:?}"
     );
 }
@@ -82,7 +85,8 @@ fun caller(a: IntArray, i: Int) { f(a[i]) }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for index arg, got: {args:?}"
     );
 }
@@ -94,7 +98,8 @@ fun caller(a: Int, b: Int) { f(a + b) }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }
@@ -107,7 +112,8 @@ fun caller(a: Int?, b: Int) { f(a ?: b) }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "?:")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "?:")),
         "expected Binary variant with op \"?:\" for elvis arg, got: {args:?}"
     );
 }

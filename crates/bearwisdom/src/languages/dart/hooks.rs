@@ -64,9 +64,7 @@ pub(crate) fn detect_dart_http_chain(
     }
     let url = call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }

@@ -939,11 +939,7 @@ fn build_function_cfg(
 /// Collect any `Narrowing` whose byte range is contained in `(start, end)`
 /// into a `FactMap` of `Single` facts. The CFG attaches these to edges
 /// whose target block is the body the narrowing was emitted for.
-fn guards_for_range(
-    narrowings: &[crate::types::Narrowing],
-    start: u32,
-    end: u32,
-) -> FactMap {
+fn guards_for_range(narrowings: &[crate::types::Narrowing], start: u32, end: u32) -> FactMap {
     let mut out = FactMap::default();
     for n in narrowings {
         if n.byte_start >= start && n.byte_end <= end && !n.name.is_empty() {
@@ -1300,14 +1296,7 @@ fn build_switch(
                     clause.end_byte() as u32,
                 );
                 add_edge(cfg, scrutinee, case_block, case_guard);
-                let tail = walk_case_statements(
-                    &clause,
-                    src,
-                    kinds,
-                    narrowings,
-                    cfg,
-                    case_block,
-                );
+                let tail = walk_case_statements(&clause, src, kinds, narrowings, cfg, case_block);
                 close_block(cfg, tail, clause.end_byte() as u32);
                 add_edge(cfg, tail, exit, FactMap::default());
             }
@@ -1347,13 +1336,7 @@ fn walk_case_statements(
 /// `node` and append them to `block`. Walks shallowly — does not descend into
 /// nested functions or into nested if-statements (those are CFG branches and
 /// their defs belong to their own blocks).
-fn collect_defs_in(
-    node: &Node,
-    src: &[u8],
-    kinds: &CfgNodeKinds,
-    cfg: &mut Cfg,
-    block: BlockId,
-) {
+fn collect_defs_in(node: &Node, src: &[u8], kinds: &CfgNodeKinds, cfg: &mut Cfg, block: BlockId) {
     let mut stack = vec![*node];
     while let Some(n) = stack.pop() {
         let k = n.kind();
@@ -1389,9 +1372,7 @@ fn collect_defs_in(
             stack.push(ch);
         }
     }
-    cfg.blocks[block as usize]
-        .defs
-        .sort_by_key(|(_, b)| *b);
+    cfg.blocks[block as usize].defs.sort_by_key(|(_, b)| *b);
 }
 
 /// Read a type-guard fact off a condition expression. Recognized patterns:
@@ -1460,8 +1441,7 @@ fn condition_to_true_guard(cond: &Node, src: &[u8]) -> FactMap {
                     if is_typeof {
                         if let Some(arg) = arg {
                             if arg.kind() == "identifier" && r.kind() == "string" {
-                                if let (Ok(name), Ok(lit)) =
-                                    (arg.utf8_text(src), r.utf8_text(src))
+                                if let (Ok(name), Ok(lit)) = (arg.utf8_text(src), r.utf8_text(src))
                                 {
                                     let ty = strip_quotes(lit);
                                     if !ty.is_empty() {
@@ -1495,8 +1475,7 @@ fn strip_quotes(s: &str) -> String {
     let s = s.trim();
     let b = s.as_bytes();
     if b.len() >= 2
-        && ((b[0] == b'"' && b[b.len() - 1] == b'"')
-            || (b[0] == b'\'' && b[b.len() - 1] == b'\''))
+        && ((b[0] == b'"' && b[b.len() - 1] == b'"') || (b[0] == b'\'' && b[b.len() - 1] == b'\''))
     {
         s[1..s.len() - 1].to_string()
     } else {
@@ -1545,12 +1524,7 @@ pub fn run_dataflow(cfg: &mut Cfg, iter_cap: usize) {
     }
 }
 
-fn compute_in_fact(
-    cfg: &Cfg,
-    bid: BlockId,
-    preds: &[Vec<usize>],
-    visited: &[bool],
-) -> FactMap {
+fn compute_in_fact(cfg: &Cfg, bid: BlockId, preds: &[Vec<usize>], visited: &[bool]) -> FactMap {
     let pred_edges = &preds[bid as usize];
     if pred_edges.is_empty() {
         return FactMap::default();

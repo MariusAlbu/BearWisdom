@@ -13,5 +13,9 @@ fn proto_type_ref_accepts_message_enum_kinds() {
     for k in [SymbolKind::Struct, SymbolKind::Enum, SymbolKind::Class] {
         assert!(KindCompatibility::check(t, EdgeKind::TypeRef, k));
     }
-    assert!(!KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Function));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Function
+    ));
 }

@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::*;
 use super::discovery::{discover_cargo_roots, parse_cargo_lock, split_crate_dir_name};
 use super::manifest::parse_cargo_path_dependencies;
 use super::reachability::{extract_rust_mod_decls, resolve_rust_mod_path};
 use super::symbol_index::scan_rust_header;
+use super::*;
 
 #[test]
 fn ecosystem_identity() {
@@ -55,12 +55,18 @@ fn parse_cargo_lock_registry_only() {
 
 #[test]
 fn split_crate_dir_name_handles_hyphenated_names() {
-    assert_eq!(split_crate_dir_name("tokio-1.38.0"),
-        Some(("tokio".into(), "1.38.0".into())));
-    assert_eq!(split_crate_dir_name("proc-macro2-1.0.91"),
-        Some(("proc-macro2".into(), "1.0.91".into())));
-    assert_eq!(split_crate_dir_name("tokio-util-0.7.9"),
-        Some(("tokio-util".into(), "0.7.9".into())));
+    assert_eq!(
+        split_crate_dir_name("tokio-1.38.0"),
+        Some(("tokio".into(), "1.38.0".into()))
+    );
+    assert_eq!(
+        split_crate_dir_name("proc-macro2-1.0.91"),
+        Some(("proc-macro2".into(), "1.0.91".into()))
+    );
+    assert_eq!(
+        split_crate_dir_name("tokio-util-0.7.9"),
+        Some(("tokio-util".into(), "0.7.9".into()))
+    );
     assert_eq!(split_crate_dir_name("no-version"), None);
 }
 
@@ -142,8 +148,11 @@ fn discover_cargo_roots_uses_lockfile() {
 
     let fake_home = tmp.join("fake_cargo_home");
     let serde_src = fake_home
-        .join("registry").join("src").join("index-abc")
-        .join("serde-1.0.200").join("src");
+        .join("registry")
+        .join("src")
+        .join("index-abc")
+        .join("serde-1.0.200")
+        .join("src");
     std::fs::create_dir_all(&serde_src).unwrap();
     std::fs::write(serde_src.join("lib.rs"), "pub trait Serialize {}").unwrap();
 
@@ -220,10 +229,7 @@ fn resolve_crate_entry_follows_mod_tree() {
     let root = tmp.path().join("serde-1.0.200");
     let src = root.join("src");
     std::fs::create_dir_all(src.join("de")).unwrap();
-    std::fs::write(
-        src.join("lib.rs"),
-        "pub mod ser;\nmod de;\n",
-    ).unwrap();
+    std::fs::write(src.join("lib.rs"), "pub mod ser;\nmod de;\n").unwrap();
     std::fs::write(src.join("ser.rs"), "pub trait Serialize {}\n").unwrap();
     std::fs::write(src.join("de").join("mod.rs"), "pub mod inner;\n").unwrap();
     std::fs::write(src.join("de").join("inner.rs"), "pub struct Inner;\n").unwrap();
@@ -231,10 +237,8 @@ fn resolve_crate_entry_follows_mod_tree() {
     let dep = mkdep(root.clone(), "serde", "1.0.200");
     let files = CargoEcosystem.resolve_import(&dep, "serde", &["Serialize"]);
     assert_eq!(files.len(), 4, "got: {:?}", files);
-    let paths: std::collections::HashSet<_> = files
-        .iter()
-        .map(|f| f.absolute_path.clone())
-        .collect();
+    let paths: std::collections::HashSet<_> =
+        files.iter().map(|f| f.absolute_path.clone()).collect();
     assert!(paths.contains(&src.join("lib.rs")));
     assert!(paths.contains(&src.join("ser.rs")));
     assert!(paths.contains(&src.join("de").join("mod.rs")));
@@ -276,7 +280,8 @@ fn resolve_crate_entry_honors_lib_path_in_manifest() {
     std::fs::write(
         bindings.join("lib.rs"),
         "pub struct Node;\nimpl Node { pub fn prev_sibling(&self) -> Option<Node> { None } }\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let dep = mkdep(root.clone(), "tree-sitter", "0.25.10");
     let files = CargoEcosystem.resolve_import(&dep, "tree-sitter", &[]);
@@ -291,7 +296,9 @@ fn resolve_crate_entry_empty_without_src_entry() {
     std::fs::create_dir_all(&root).unwrap();
 
     let dep = mkdep(root, "no-entry", "0.1.0");
-    assert!(CargoEcosystem.resolve_import(&dep, "no-entry", &[]).is_empty());
+    assert!(CargoEcosystem
+        .resolve_import(&dep, "no-entry", &[])
+        .is_empty());
 }
 
 #[test]

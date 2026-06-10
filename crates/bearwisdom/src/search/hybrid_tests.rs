@@ -5,12 +5,7 @@ fn make_db() -> Database {
     Database::open_in_memory().unwrap()
 }
 
-fn insert_file_with_chunk(
-    db: &Database,
-    path: &str,
-    language: &str,
-    content: &str,
-) -> (i64, i64) {
+fn insert_file_with_chunk(db: &Database, path: &str, language: &str, content: &str) -> (i64, i64) {
     db.conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
@@ -130,9 +125,14 @@ fn hybrid_search_degrades_to_fts_without_vec() {
     insert_file_with_chunk(&db, "src/auth.rs", "rust", "fn authenticate_user() {}");
 
     let mut embedder = Embedder::new(std::path::PathBuf::from("/nonexistent"));
-    let results =
-        hybrid_search(&db, &mut embedder, "authenticate", &SearchScope::default(), 10)
-            .unwrap();
+    let results = hybrid_search(
+        &db,
+        &mut embedder,
+        "authenticate",
+        &SearchScope::default(),
+        10,
+    )
+    .unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].file_path, "src/auth.rs");
@@ -146,8 +146,7 @@ fn hybrid_search_short_query_returns_empty() {
     insert_file_with_chunk(&db, "x.rs", "rust", "fn ab() {}");
 
     let mut embedder = Embedder::new(std::path::PathBuf::from("/nonexistent"));
-    let results =
-        hybrid_search(&db, &mut embedder, "ab", &SearchScope::default(), 10).unwrap();
+    let results = hybrid_search(&db, &mut embedder, "ab", &SearchScope::default(), 10).unwrap();
 
     // "ab" is < 3 chars — FTS5 trigram returns nothing.
     assert!(results.is_empty());
@@ -162,8 +161,7 @@ fn hybrid_search_scope_filters_results() {
     let mut embedder = Embedder::new(std::path::PathBuf::from("/nonexistent"));
     let scope = SearchScope::default().with_directory("src");
 
-    let results =
-        hybrid_search(&db, &mut embedder, "needle_function", &scope, 10).unwrap();
+    let results = hybrid_search(&db, &mut embedder, "needle_function", &scope, 10).unwrap();
 
     assert_eq!(results.len(), 1, "Scope should exclude tests/ file");
     assert!(results[0].file_path.starts_with("src/"));
@@ -175,9 +173,14 @@ fn hybrid_search_rrf_score_is_positive() {
     insert_file_with_chunk(&db, "src/x.rs", "rust", "fn target_search() {}");
 
     let mut embedder = Embedder::new(std::path::PathBuf::from("/nonexistent"));
-    let results =
-        hybrid_search(&db, &mut embedder, "target_search", &SearchScope::default(), 10)
-            .unwrap();
+    let results = hybrid_search(
+        &db,
+        &mut embedder,
+        "target_search",
+        &SearchScope::default(),
+        10,
+    )
+    .unwrap();
 
     assert!(!results.is_empty());
     assert!(results[0].rrf_score > 0.0);
@@ -218,8 +221,7 @@ fn rerank_references_falls_back_when_embedder_unavailable() {
         make_ref("BazService", "src/baz.rs", 30),
     ];
 
-    let result =
-        rerank_references(&db, &mut embedder, &refs, "definition context", 2).unwrap();
+    let result = rerank_references(&db, &mut embedder, &refs, "definition context", 2).unwrap();
 
     // Embedder cannot load → original order, truncated to limit=2.
     assert_eq!(result.len(), 2);
@@ -245,10 +247,10 @@ fn make_ref(symbol: &str, path: &str, line: u32) -> ReferenceResult {
 #[test]
 #[ignore]
 fn hybrid_search_with_full_stack() {
-    let model_dir = std::env::var("ALPHAT_MODEL_DIR")
-        .expect("Set ALPHAT_MODEL_DIR to run this test");
-    let db_path = std::env::var("ALPHAT_TEST_DB")
-        .expect("Set ALPHAT_TEST_DB to an indexed project DB");
+    let model_dir =
+        std::env::var("ALPHAT_MODEL_DIR").expect("Set ALPHAT_MODEL_DIR to run this test");
+    let db_path =
+        std::env::var("ALPHAT_TEST_DB").expect("Set ALPHAT_TEST_DB to an indexed project DB");
 
     let db = Database::open(std::path::Path::new(&db_path)).unwrap();
     let mut embedder = Embedder::new(std::path::PathBuf::from(model_dir));
@@ -272,13 +274,23 @@ fn hybrid_search_with_full_stack() {
 #[test]
 #[ignore]
 fn rerank_references_with_model() {
-    let model_dir = std::env::var("ALPHAT_MODEL_DIR")
-        .expect("Set ALPHAT_MODEL_DIR to run this test");
+    let model_dir =
+        std::env::var("ALPHAT_MODEL_DIR").expect("Set ALPHAT_MODEL_DIR to run this test");
     let db = make_db();
     let mut embedder = Embedder::new(std::path::PathBuf::from(model_dir));
 
-    insert_file_with_chunk(&db, "src/auth.rs", "rust", "fn authenticate(user: &User) -> bool { user.is_active() }");
-    insert_file_with_chunk(&db, "src/unrelated.rs", "rust", "fn format_date(ts: i64) -> String { ts.to_string() }");
+    insert_file_with_chunk(
+        &db,
+        "src/auth.rs",
+        "rust",
+        "fn authenticate(user: &User) -> bool { user.is_active() }",
+    );
+    insert_file_with_chunk(
+        &db,
+        "src/unrelated.rs",
+        "rust",
+        "fn format_date(ts: i64) -> String { ts.to_string() }",
+    );
 
     let refs = vec![
         make_ref("authenticate", "src/auth.rs", 0),

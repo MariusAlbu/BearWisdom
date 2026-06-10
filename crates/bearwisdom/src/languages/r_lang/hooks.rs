@@ -1,9 +1,7 @@
 // R language hooks. Absorbed from the deleted `r_lang/resolve.rs`.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -31,9 +29,7 @@ pub(crate) fn detect_flow_inner(
     {
         let url = r.call_args.iter().find_map(|a| match a {
             CallArg::StringLit(s)
-                if s.starts_with('/')
-                    || s.starts_with("http://")
-                    || s.starts_with("https://") =>
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
             {
                 Some(s.as_str())
             }
@@ -140,7 +136,10 @@ impl LanguageEngineHooks for RHooks {
                 ) {
                     continue;
                 }
-                if !imports.iter().any(|i| i.module_path.as_deref() == Some(dep)) {
+                if !imports
+                    .iter()
+                    .any(|i| i.module_path.as_deref() == Some(dep))
+                {
                     imports.push(ImportEntry {
                         imported_name: dep.clone(),
                         module_path: Some(dep.clone()),

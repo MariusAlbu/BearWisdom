@@ -29,7 +29,9 @@ use tracing::{debug, info, warn};
 use crate::db::{Database, DbPool};
 use crate::indexer::changeset::{self, ChangeKind, FileChangeEvent};
 use crate::indexer::full::full_index;
-use crate::indexer::incremental::{git_reindex, incremental_index, reindex_files, IncrementalStats};
+use crate::indexer::incremental::{
+    git_reindex, incremental_index, reindex_files, IncrementalStats,
+};
 use crate::types::IndexStats;
 
 /// `_bearwisdom_meta` key used to record the wall-clock time of the most
@@ -86,7 +88,11 @@ fn registered_source_extensions() -> FxHashSet<String> {
         .flat_map(|lang| lang.file_extensions.iter())
         .filter_map(|ext| {
             let last = ext.rsplit('.').next()?;
-            if last.is_empty() { None } else { Some(last.to_ascii_lowercase()) }
+            if last.is_empty() {
+                None
+            } else {
+                Some(last.to_ascii_lowercase())
+            }
         })
         .collect()
 }
@@ -148,16 +154,16 @@ impl IndexService {
     /// Starts the file watcher per `opts`. Does not run an initial reindex —
     /// the caller should invoke `reindex_now` (synchronously or on a background
     /// thread) if it wants the index brought up to current state.
-    pub fn open(
-        db_path: &Path,
-        project_root: &Path,
-        opts: IndexServiceOptions,
-    ) -> Result<Self> {
+    pub fn open(db_path: &Path, project_root: &Path, opts: IndexServiceOptions) -> Result<Self> {
         let pool = DbPool::new(db_path, opts.pool_size)
             .with_context(|| format!("create pool for {}", db_path.display()))?;
         let project_root = project_root.to_path_buf();
         let watcher = if opts.watch {
-            Some(spawn_watcher(pool.clone(), project_root.clone(), opts.debounce)?)
+            Some(spawn_watcher(
+                pool.clone(),
+                project_root.clone(),
+                opts.debounce,
+            )?)
         } else {
             None
         };
@@ -272,8 +278,7 @@ impl IndexService {
                 let inc = incremental_index(&mut db, &self.project_root, Some(&ref_cache))?;
                 ReindexStats::Incremental(inc)
             } else {
-                let stats =
-                    full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
+                let stats = full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
                 ReindexStats::Full(stats)
             }
         };
@@ -305,11 +310,7 @@ impl Drop for WatcherHandle {
     }
 }
 
-fn spawn_watcher(
-    pool: DbPool,
-    project_root: PathBuf,
-    debounce: Duration,
-) -> Result<WatcherHandle> {
+fn spawn_watcher(pool: DbPool, project_root: PathBuf, debounce: Duration) -> Result<WatcherHandle> {
     let (event_tx, event_rx) = mpsc::channel::<Event>();
 
     let mut watcher = RecommendedWatcher::new(
@@ -414,10 +415,7 @@ fn run_watcher_loop(
                 touch_last_indexed_at(&db);
                 debug!(
                     "IndexService watcher: reindexed +{} ~{} -{} files in {}ms",
-                    stats.files_added,
-                    stats.files_modified,
-                    stats.files_deleted,
-                    stats.duration_ms,
+                    stats.files_added, stats.files_modified, stats.files_deleted, stats.duration_ms,
                 );
             }
             Err(e) => warn!("IndexService watcher: reindex error: {e:#}"),

@@ -20,7 +20,11 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_binary_operator_function_assignment_emits_function() {
     let r = extract::extract("foo <- function(x) x + 1\n", "test.R");
     let sym = r.symbols.iter().find(|s| s.name == "foo");
-    assert!(sym.is_some(), "expected Function 'foo'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'foo'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -39,7 +43,11 @@ fn cov_binary_operator_r6class_emits_class() {
     let src = "Animal <- R6Class(\"Animal\", public = list(speak = function() {}))\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
-    assert!(sym.is_some(), "expected Class symbol from R6Class; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class symbol from R6Class; got: {:?}",
+        r.symbols
+    );
 }
 
 /// call node (library) → EdgeKind::Imports
@@ -66,7 +74,11 @@ fn cov_call_set_method_emits_method() {
     let src = "setMethod(\"show\", \"MyClass\", function(object) cat(\"hello\"))\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Method);
-    assert!(sym.is_some(), "expected Method symbol from setMethod(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol from setMethod(); got: {:?}",
+        r.symbols
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +95,10 @@ fn cov_call_generic_emits_calls_ref() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"plot"), "expected Calls ref to 'plot'; got: {calls:?}");
+    assert!(
+        calls.contains(&"plot"),
+        "expected Calls ref to 'plot'; got: {calls:?}"
+    );
 }
 
 /// namespace_operator (pkg::fn) → EdgeKind::Calls, target_name = function, module = package
@@ -98,7 +113,10 @@ fn cov_namespace_operator_emits_calls_ref() {
     assert!(
         !calls.is_empty(),
         "expected Calls ref with target_name='filter' from namespace_operator; got: {:?}",
-        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (&r.target_name, r.kind, &r.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         calls[0].module.as_deref(),
@@ -120,7 +138,10 @@ fn ref_namespace_operator_qualified() {
     assert!(
         !calls.is_empty(),
         "expected Calls ref with target_name='mutate'; got: {:?}",
-        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (&r.target_name, r.kind, &r.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         calls[0].module.as_deref(),
@@ -142,7 +163,10 @@ fn ref_namespace_operator_triple_colon() {
     assert!(
         !calls.is_empty(),
         "expected Calls ref with target_name='abort' from ::: operator; got: {:?}",
-        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (&r.target_name, r.kind, &r.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         calls[0].module.as_deref(),
@@ -162,7 +186,11 @@ fn cov_call_set_generic_emits_method() {
     let src = "setGeneric(\"myGeneric\", function(x, ...) standardGeneric(\"myGeneric\"))\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Method);
-    assert!(sym.is_some(), "expected Method symbol from setGeneric(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol from setGeneric(); got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().name, "myGeneric");
 }
 
@@ -172,7 +200,11 @@ fn cov_call_set_validity_emits_method() {
     let src = "setValidity(\"MyClass\", function(object) TRUE)\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Method);
-    assert!(sym.is_some(), "expected Method symbol from setValidity(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol from setValidity(); got: {:?}",
+        r.symbols
+    );
 }
 
 /// call (setRefClass) → SymbolKind::Class
@@ -181,7 +213,11 @@ fn cov_call_set_ref_class_emits_class() {
     let src = "Counter <- setRefClass(\"Counter\", fields = list(count = \"numeric\"))\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
-    assert!(sym.is_some(), "expected Class symbol from setRefClass(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class symbol from setRefClass(); got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().name, "Counter");
 }
 
@@ -191,10 +227,15 @@ fn cov_call_set_ref_class_emits_class() {
 #[test]
 fn cov_call_set_class_s4_emits_class() {
     // setClass must be on the RHS of an assignment for the Class symbol to be emitted.
-    let src = "Person <- setClass(\"Person\", representation(name = \"character\", age = \"numeric\"))\n";
+    let src =
+        "Person <- setClass(\"Person\", representation(name = \"character\", age = \"numeric\"))\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
-    assert!(sym.is_some(), "expected Class symbol from setClass(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class symbol from setClass(); got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().name, "Person");
 }
 
@@ -204,7 +245,11 @@ fn cov_call_test_that_emits_test() {
     let src = "test_that(\"adds correctly\", { expect_equal(1 + 1, 2) })\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Test);
-    assert!(sym.is_some(), "expected Test symbol from test_that(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Test symbol from test_that(); got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().name, "adds correctly");
 }
 
@@ -216,7 +261,11 @@ fn cov_call_require_emits_imports() {
         .refs
         .iter()
         .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "data.table");
-    assert!(imp.is_some(), "expected Imports ref from require(); got: {:?}", r.refs);
+    assert!(
+        imp.is_some(),
+        "expected Imports ref from require(); got: {:?}",
+        r.refs
+    );
 }
 
 /// call (requireNamespace) → EdgeKind::Imports
@@ -227,7 +276,11 @@ fn cov_call_require_namespace_emits_imports() {
         .refs
         .iter()
         .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "purrr");
-    assert!(imp.is_some(), "expected Imports ref from requireNamespace(); got: {:?}", r.refs);
+    assert!(
+        imp.is_some(),
+        "expected Imports ref from requireNamespace(); got: {:?}",
+        r.refs
+    );
 }
 
 /// binary_operator (->) right-assignment → SymbolKind::Variable
@@ -236,7 +289,11 @@ fn cov_binary_operator_right_assign_emits_variable() {
     // `42 -> y` is right-assignment; the name bound is `y`
     let r = extract::extract("42 -> y\n", "test.R");
     let sym = r.symbols.iter().find(|s| s.name == "y");
-    assert!(sym.is_some(), "expected Variable 'y' from right-assignment; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'y' from right-assignment; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -246,14 +303,21 @@ fn cov_binary_operator_superassign_function() {
     // `<<-` is the superassignment operator; semantically the same extraction path
     let r = extract::extract("counter <<- function() count + 1\n", "test.R");
     let sym = r.symbols.iter().find(|s| s.name == "counter");
-    assert!(sym.is_some(), "expected Function 'counter' from <<- assignment; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'counter' from <<- assignment; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
 /// S3 method naming convention: `print.foo <- function(x, ...) {}` → Function named "print.foo"
 #[test]
 fn cov_binary_operator_s3_method_naming() {
-    let r = extract::extract("print.myclass <- function(x, ...) cat(\"myclass\", \"\\n\")\n", "test.R");
+    let r = extract::extract(
+        "print.myclass <- function(x, ...) cat(\"myclass\", \"\\n\")\n",
+        "test.R",
+    );
     let sym = r.symbols.iter().find(|s| s.name == "print.myclass");
     assert!(
         sym.is_some(),
@@ -269,7 +333,11 @@ fn cov_call_it_emits_test() {
     let src = "it(\"behaves correctly\", { expect_true(TRUE) })\n";
     let r = extract::extract(src, "test.R");
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Test);
-    assert!(sym.is_some(), "expected Test symbol from it(); got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Test symbol from it(); got: {:?}",
+        r.symbols
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +359,11 @@ fn cov_namespace_export_emits_function() {
         "expected Function 'mutate'; got: {:?}",
         r.symbols
     );
-    assert!(r.refs.is_empty(), "NAMESPACE parser should emit no refs; got: {:?}", r.refs);
+    assert!(
+        r.refs.is_empty(),
+        "NAMESPACE parser should emit no refs; got: {:?}",
+        r.refs
+    );
 }
 
 /// exportPattern in NAMESPACE → emits pattern as Function symbol
@@ -327,15 +399,30 @@ Animal <- R6Class("Animal",
 "#;
     let r = extract::extract(src, "test.R");
     let class_sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
-    assert!(class_sym.is_some(), "expected Class symbol; got: {:?}", r.symbols);
+    assert!(
+        class_sym.is_some(),
+        "expected Class symbol; got: {:?}",
+        r.symbols
+    );
 
-    let methods: Vec<&str> = r.symbols.iter()
+    let methods: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Method)
         .map(|s| s.name.as_str())
         .collect();
-    assert!(methods.contains(&"initialize"), "expected initialize method; got: {methods:?}");
-    assert!(methods.contains(&"speak"), "expected speak method; got: {methods:?}");
-    assert!(methods.contains(&"helper"), "expected helper method; got: {methods:?}");
+    assert!(
+        methods.contains(&"initialize"),
+        "expected initialize method; got: {methods:?}"
+    );
+    assert!(
+        methods.contains(&"speak"),
+        "expected speak method; got: {methods:?}"
+    );
+    assert!(
+        methods.contains(&"helper"),
+        "expected helper method; got: {methods:?}"
+    );
 }
 
 /// R6Class methods have qualified names of the form `ClassName.methodName`.
@@ -350,19 +437,29 @@ Map <- R6Class("Map",
 )
 "#;
     let r = extract::extract(src, "test.R");
-    let qnames: Vec<&str> = r.symbols.iter()
+    let qnames: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Method)
         .map(|s| s.qualified_name.as_str())
         .collect();
-    assert!(qnames.contains(&"Map.get"), "expected qname Map.get; got: {qnames:?}");
-    assert!(qnames.contains(&"Map.set"), "expected qname Map.set; got: {qnames:?}");
+    assert!(
+        qnames.contains(&"Map.get"),
+        "expected qname Map.get; got: {qnames:?}"
+    );
+    assert!(
+        qnames.contains(&"Map.set"),
+        "expected qname Map.set; got: {qnames:?}"
+    );
 }
 
 /// `ClassName$new()` emits a Calls ref targeting the class name (constructor).
 #[test]
 fn cov_dollar_new_emits_calls_ref_to_class() {
     let r = extract::extract("obj <- Map$new()\n", "test.R");
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -376,7 +473,9 @@ fn cov_dollar_new_emits_calls_ref_to_class() {
 #[test]
 fn cov_dollar_private_emits_bare_method_ref() {
     let r = extract::extract("private$helper()\n", "test.R");
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -390,7 +489,9 @@ fn cov_dollar_private_emits_bare_method_ref() {
 #[test]
 fn cov_dollar_obj_emits_dotted_qname_ref() {
     let r = extract::extract("ctx$onInvalidate(function() {})\n", "test.R");
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();

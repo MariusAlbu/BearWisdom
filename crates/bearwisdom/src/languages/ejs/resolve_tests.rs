@@ -124,7 +124,10 @@ fn include_appends_ejs_extension() {
     assert_eq!(
         res.target_symbol_id,
         *id_map
-            .get(&("views/partials/header.ejs".to_string(), "header".to_string()))
+            .get(&(
+                "views/partials/header.ejs".to_string(),
+                "header".to_string()
+            ))
             .unwrap()
     );
 }
@@ -132,7 +135,11 @@ fn include_appends_ejs_extension() {
 #[test]
 fn include_explicit_ejs_extension_resolves() {
     // A target already carrying `.ejs` binds verbatim.
-    let target = make_file("views/layout.ejs", vec![make_class_symbol("layout")], vec![]);
+    let target = make_file(
+        "views/layout.ejs",
+        vec![make_class_symbol("layout")],
+        vec![],
+    );
     let source = make_file(
         "views/index.ejs",
         vec![make_class_symbol("index")],
@@ -163,7 +170,11 @@ fn include_ascends_with_dotdot() {
 
 #[test]
 fn include_html_extension_resolves() {
-    let target = make_file("views/banner.html", vec![make_class_symbol("banner")], vec![]);
+    let target = make_file(
+        "views/banner.html",
+        vec![make_class_symbol("banner")],
+        vec![],
+    );
     let source = make_file(
         "views/index.ejs",
         vec![make_class_symbol("index")],

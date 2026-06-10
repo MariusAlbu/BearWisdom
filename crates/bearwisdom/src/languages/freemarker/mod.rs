@@ -15,11 +15,21 @@ use crate::types::{
 pub struct FreemarkerPlugin;
 
 impl LanguagePlugin for FreemarkerPlugin {
-    fn id(&self) -> &str { "freemarker" }
-    fn language_ids(&self) -> &[&str] { &["freemarker"] }
-    fn extensions(&self) -> &[&str] { &[".ftl", ".ftlh", ".ftlx"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "freemarker"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["freemarker"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".ftl", ".ftlh", ".ftlx"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, source: &str, file_path: &str, _l: &str) -> ExtractionResult {
         let stem = stem(file_path);
         let mut symbols = vec![host(&stem)];
@@ -30,7 +40,10 @@ impl LanguagePlugin for FreemarkerPlugin {
         for (line_no, line) in source.lines().enumerate() {
             let t = line.trim_start();
             if let Some(rest) = t.strip_prefix("<#macro ") {
-                let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
                 if !name.is_empty() {
                     symbols.push(field(&stem, &name, line_no as u32, t));
                 }
@@ -41,7 +54,12 @@ impl LanguagePlugin for FreemarkerPlugin {
                 }
             }
         }
-        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+        ExtractionResult {
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -53,10 +71,17 @@ impl LanguagePlugin for FreemarkerPlugin {
         while i + 1 < bytes.len() {
             if bytes[i] == b'$' && bytes[i + 1] == b'{' {
                 let start = i + 2;
-                let mut d = 1; let mut j = start;
+                let mut d = 1;
+                let mut j = start;
                 while j < bytes.len() && d > 0 {
-                    match bytes[j] { b'{' => d += 1, b'}' => d -= 1, _ => {} }
-                    if d == 0 { break; }
+                    match bytes[j] {
+                        b'{' => d += 1,
+                        b'}' => d -= 1,
+                        _ => {}
+                    }
+                    if d == 0 {
+                        break;
+                    }
                     j += 1;
                 }
                 if j < bytes.len() && d == 0 {
@@ -67,21 +92,28 @@ impl LanguagePlugin for FreemarkerPlugin {
                             regions.push(EmbeddedRegion {
                                 language_id: "java".into(),
                                 text: format!("class __Ft {{ Object f() {{ return ({t}); }} }}\n"),
-                                line_offset: line, col_offset: col,
+                                line_offset: line,
+                                col_offset: col,
                                 origin: EmbeddedOrigin::TemplateExpr,
-                                holes: Vec::new(), strip_scope_prefix: None,
+                                holes: Vec::new(),
+                                strip_scope_prefix: None,
                             });
                         }
                     }
-                    i = j + 1; continue;
+                    i = j + 1;
+                    continue;
                 }
             }
             i += 1;
         }
         regions
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -92,30 +124,70 @@ impl LanguagePlugin for FreemarkerPlugin {
 fn stem(p: &str) -> String {
     let norm = p.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
+    std::path::Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string()
 }
 fn host(stem: &str) -> ExtractedSymbol {
-    ExtractedSymbol { name: stem.into(), qualified_name: stem.into(),
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
-        byte_offset: 0, declared_type: None, return_type: None,
-        param_types: Vec::new(), generic_params: Vec::new() }
+    ExtractedSymbol {
+        name: stem.into(),
+        qualified_name: stem.into(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
 }
 fn field(stem: &str, name: &str, line: u32, sig: &str) -> ExtractedSymbol {
-    ExtractedSymbol { name: name.into(), qualified_name: format!("{stem}.{name}"),
-        kind: SymbolKind::Field, visibility: Some(Visibility::Public),
-        start_line: line, end_line: line, start_col: 0, end_col: 0,
-        signature: Some(sig.into()), doc_comment: None,
-        scope_path: Some(stem.into()), parent_index: Some(0),
-        byte_offset: 0, declared_type: None, return_type: None,
-        param_types: Vec::new(), generic_params: Vec::new() }
+    ExtractedSymbol {
+        name: name.into(),
+        qualified_name: format!("{stem}.{name}"),
+        kind: SymbolKind::Field,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        signature: Some(sig.into()),
+        doc_comment: None,
+        scope_path: Some(stem.into()),
+        parent_index: Some(0),
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
 }
 fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
-    let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
-    ExtractedRef { is_import_binding: false, is_reexport: false, source_symbol_index: 0, target_name: target,
-        kind: EdgeKind::Imports, line, col: 0, module: None,
+    let target = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string();
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: target,
+        kind: EdgeKind::Imports,
+        line,
+        col: 0,
+        module: None,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
         chain: None,
@@ -127,10 +199,18 @@ fn quoted(s: &str) -> Option<String> {
     if s.starts_with('"') {
         let rest = &s[1..];
         rest.find('"').map(|e| rest[..e].to_string())
-    } else { None }
+    } else {
+        None
+    }
 }
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {
-    let mut line: u32 = 0; let mut nl: usize = 0;
-    for (i, b) in bytes.iter().enumerate().take(pos) { if *b == b'\n' { line += 1; nl = i + 1; } }
+    let mut line: u32 = 0;
+    let mut nl: usize = 0;
+    for (i, b) in bytes.iter().enumerate().take(pos) {
+        if *b == b'\n' {
+            line += 1;
+            nl = i + 1;
+        }
+    }
     (line, (pos - nl) as u32)
 }

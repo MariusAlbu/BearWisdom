@@ -58,7 +58,9 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
 };
 
 fn ts_grammar() -> tree_sitter::Language {
-    TypeScriptPlugin.grammar("typescript").expect("TS grammar must load")
+    TypeScriptPlugin
+        .grammar("typescript")
+        .expect("TS grammar must load")
 }
 
 fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
@@ -76,15 +78,17 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -94,8 +98,8 @@ fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
         byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 
 #[test]
@@ -103,9 +107,7 @@ fn flow_assignment_binds_lhs_to_rhs_ref() {
     let source = "const x = foo();\n";
     // "const x = foo();" byte positions:
     //   'const ' = 0..6, 'x' = 6, ' = ' = 7..10, 'foo' = 10..13, '()' = 13..15
-    let symbols = vec![
-        mk_sym("x", SymbolKind::Variable, 0),
-    ];
+    let symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
     let mut refs = vec![
         // Ref for `foo()` call at byte offset 10 (start of `foo`).
         mk_call_ref("foo", 0, 10),
@@ -222,7 +224,8 @@ fn flow_return_nested_callback_still_ignored() {
     // The inner arrow's `return g()` is now reachable by descendant matching,
     // but its nearest enclosing function is the arrow, not f — the ancestor-walk
     // guard must still reject it.
-    let source = "function f() {\n  if (true) {\n    items.forEach(x => { return g(); });\n  }\n}\n";
+    let source =
+        "function f() {\n  if (true) {\n    items.forEach(x => { return g(); });\n  }\n}\n";
     let g_off = source.find("g()").unwrap() as u32;
     let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("g", 2, g_off)];
@@ -328,7 +331,11 @@ fn flow_discriminant_switch_captures_each_case() {
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
-    assert_eq!(meta.discriminant_narrowings.len(), 2, "one narrowing per case clause");
+    assert_eq!(
+        meta.discriminant_narrowings.len(),
+        2,
+        "one narrowing per case clause"
+    );
     let circle = meta
         .discriminant_narrowings
         .iter()
@@ -352,7 +359,9 @@ fn flow_type_args_populate_chain_segment() {
     //   '.findOne' = 4..12
     //   findOne at bytes 5..12 (property_identifier: 'findOne')
     let symbols: Vec<ExtractedSymbol> = Vec::new();
-    let mut refs = vec![ExtractedRef { is_import_binding: false, is_reexport: false,
+    let mut refs = vec![ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "findOne".to_string(),
         kind: EdgeKind::Calls,
@@ -368,12 +377,12 @@ fn flow_type_args_populate_chain_segment() {
                     declared_type: None,
                     type_args: Vec::new(),
                     optional_chaining: false,
-                                    byte_offset: 0,
-    declared_type_id: None,
-    is_call: false,
-    call_args: Vec::new(),
-    type_arg_ids: Vec::new(),
-},
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
                 ChainSegment {
                     name: "findOne".to_string(),
                     node_kind: "property_identifier".to_string(),
@@ -381,18 +390,18 @@ fn flow_type_args_populate_chain_segment() {
                     declared_type: None,
                     type_args: Vec::new(),
                     optional_chaining: false,
-                                    byte_offset: 0,
-    declared_type_id: None,
-    is_call: false,
-    call_args: Vec::new(),
-    type_arg_ids: Vec::new(),
-},
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
             ],
         }),
         byte_offset: 5, // inside the `findOne` span (5..12)
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-}];
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    }];
 
     let _ = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
 
@@ -414,7 +423,9 @@ fn rust_let_mut_annotation_records_declared_type() {
     // The runner must capture the declared type for the bare-identifier name
     // even though the initializer (`.unwrap()`) wouldn't resolve to it.
     let source = "fn f() {\n    let mut index_writer: IndexWriter = build().unwrap();\n}\n";
-    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let grammar = RustLangPlugin
+        .grammar("rust")
+        .expect("rust grammar must load");
     let symbols = vec![mk_sym("index_writer", SymbolKind::Variable, 1)];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
@@ -435,7 +446,9 @@ fn rust_generic_annotation_records_bare_base() {
     // Generic annotation `Vec<String>` records the bare base `Vec` so it keys
     // the same members the dual-keyed MembersIndex registers.
     let source = "fn f() {\n    let names: Vec<String> = make();\n}\n";
-    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let grammar = RustLangPlugin
+        .grammar("rust")
+        .expect("rust grammar must load");
     let symbols = vec![mk_sym("names", SymbolKind::Variable, 1)];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
@@ -455,7 +468,9 @@ fn csharp_declaration_pattern_narrows_binding() {
     // `if (user is Admin admin) { admin.Ban(); }` — the binding `admin` is typed
     // Admin within the block (C# declaration pattern).
     let source = "class C {\n  void M(object user) {\n    if (user is Admin admin) {\n      admin.Ban();\n    }\n  }\n}\n";
-    let grammar = CSharpPlugin.grammar("csharp").expect("c# grammar must load");
+    let grammar = CSharpPlugin
+        .grammar("csharp")
+        .expect("c# grammar must load");
     let cfg = CSharpPlugin.flow_config().expect("c# flow config");
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
@@ -480,7 +495,9 @@ fn rust_try_operator_marks_binding_for_unwrap() {
     // The runner binds the inner call ref to the LHS AND flags the binding so
     // the resolver peels `Result<IndexReader>` → `IndexReader`.
     let source = "fn f() {\n    let reader = index.reader()?;\n}\n";
-    let grammar = RustLangPlugin.grammar("rust").expect("rust grammar must load");
+    let grammar = RustLangPlugin
+        .grammar("rust")
+        .expect("rust grammar must load");
     let symbols = vec![mk_sym("reader", SymbolKind::Variable, 1)];
     // A Calls ref for `index.reader()` — byte offset inside the try_expression.
     // "fn f() {\n    let reader = " is 26 bytes; `index.reader()?` starts at 26,
@@ -515,12 +532,16 @@ fn java_instanceof_pattern_binding_narrows() {
     let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
 
     assert!(
-        meta.narrowings.iter().any(|n| n.name == "a" && n.narrowed_type == "Admin"),
+        meta.narrowings
+            .iter()
+            .any(|n| n.name == "a" && n.narrowed_type == "Admin"),
         "pattern binding `a` should narrow to Admin; got {:?}",
         meta.narrowings
     );
     assert!(
-        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "Admin"),
+        meta.narrowings
+            .iter()
+            .any(|n| n.name == "x" && n.narrowed_type == "Admin"),
         "the receiver `x` also narrows to Admin"
     );
 }
@@ -539,7 +560,9 @@ fn ruby_kind_of_narrows_like_is_a() {
     let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
 
     assert!(
-        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "Foo"),
+        meta.narrowings
+            .iter()
+            .any(|n| n.name == "x" && n.narrowed_type == "Foo"),
         "kind_of? should narrow `x` to Foo; got {:?}",
         meta.narrowings
     );
@@ -553,7 +576,8 @@ fn go_type_switch_narrows_alias_per_case() {
     // `switch v := x.(type) { case *Admin: v.Ban() }` narrows `v` to Admin in
     // the matching case body. `flow_config()` is disabled for Go (go-pocketbase
     // OOM), so the static is referenced directly to validate the query.
-    let source = "func f(x interface{}) {\n\tswitch v := x.(type) {\n\tcase *Admin:\n\t\tv.Ban()\n\t}\n}\n";
+    let source =
+        "func f(x interface{}) {\n\tswitch v := x.(type) {\n\tcase *Admin:\n\t\tv.Ban()\n\t}\n}\n";
     let grammar = GoPlugin.grammar("go").expect("go grammar must load");
     let cfg = &GO_FLOW_CONFIG;
     let symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -562,7 +586,9 @@ fn go_type_switch_narrows_alias_per_case() {
     let meta = run_flow_queries(source, &grammar, cfg, &symbols, &mut refs);
 
     assert!(
-        meta.narrowings.iter().any(|n| n.name == "v" && n.narrowed_type == "Admin"),
+        meta.narrowings
+            .iter()
+            .any(|n| n.name == "v" && n.narrowed_type == "Admin"),
         "type switch should narrow `v` to Admin; got {:?}",
         meta.narrowings
     );
@@ -572,14 +598,17 @@ fn go_type_switch_narrows_alias_per_case() {
 fn ts_typeof_string_guard_narrows() {
     // `if (typeof x === "string") { ... }` narrows `x` to the string primitive.
     use crate::languages::typescript::flow::TS_FLOW_CONFIG;
-    let source = "function f(x: unknown) {\n  if (typeof x === \"string\") {\n    x.length;\n  }\n}\n";
+    let source =
+        "function f(x: unknown) {\n  if (typeof x === \"string\") {\n    x.length;\n  }\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
     let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &symbols, &mut refs);
 
     assert!(
-        meta.narrowings.iter().any(|n| n.name == "x" && n.narrowed_type == "string"),
+        meta.narrowings
+            .iter()
+            .any(|n| n.name == "x" && n.narrowed_type == "string"),
         "typeof guard should narrow `x` to string; got {:?}",
         meta.narrowings
     );
@@ -590,8 +619,7 @@ fn flow_early_return_guard_negates_and_scopes_after_block() {
     use crate::languages::typescript::flow::TS_FLOW_CONFIG;
     // `if (s.kind !== "circle") return;` — `s` narrows to NOT-circle for the
     // rest of the enclosing block (the early `return` makes the negation hold).
-    let source =
-        "function f(s: Shape) {\n  if (s.kind !== \"circle\") return;\n  s.radius;\n}\n";
+    let source = "function f(s: Shape) {\n  if (s.kind !== \"circle\") return;\n  s.radius;\n}\n";
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &symbols, &mut refs);
@@ -1135,7 +1163,9 @@ fn kotlin_is_smartcast_narrows_in_if_block() {
 
     // `if (x is Admin) { x.ban() }` smart-casts `x` to Admin in the block.
     let source = "fun f(x: Any) {\n  if (x is Admin) {\n    x.ban()\n  }\n}\n";
-    let grammar = KotlinPlugin.grammar("kotlin").expect("kotlin grammar must load");
+    let grammar = KotlinPlugin
+        .grammar("kotlin")
+        .expect("kotlin grammar must load");
     let cfg = KotlinPlugin.flow_config().expect("kotlin flow config");
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
@@ -1146,7 +1176,12 @@ fn kotlin_is_smartcast_narrows_in_if_block() {
         .narrowings
         .iter()
         .find(|n| n.name == "x" && n.narrowed_type == "Admin")
-        .unwrap_or_else(|| panic!("`is` smart-cast should narrow `x` to Admin; got {:?}", meta.narrowings));
+        .unwrap_or_else(|| {
+            panic!(
+                "`is` smart-cast should narrow `x` to Admin; got {:?}",
+                meta.narrowings
+            )
+        });
     assert!(n.byte_end > n.byte_start);
 }
 
@@ -1159,7 +1194,9 @@ fn kotlin_smartcast_dropped_on_reassignment() {
     // covered by the narrowing range.
     let source =
         "fun f(x: Any) {\n  if (x is Admin) {\n    x.ban()\n    x = reset()\n    x.bar()\n  }\n}\n";
-    let grammar = KotlinPlugin.grammar("kotlin").expect("kotlin grammar must load");
+    let grammar = KotlinPlugin
+        .grammar("kotlin")
+        .expect("kotlin grammar must load");
     let cfg = KotlinPlugin.flow_config().expect("kotlin flow config");
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

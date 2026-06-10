@@ -47,7 +47,7 @@ pub(crate) fn extracted_routes_to_emissions(
                 name,
                 role: flow_emit::ChannelRole::Consumer,
                 method: Some(method),
-            streaming: None,
+                streaming: None,
             },
         ));
     }
@@ -144,7 +144,7 @@ pub fn append_db_route_consumer_emissions(
                 name,
                 role: flow_emit::ChannelRole::Consumer,
                 method: Some(method),
-            streaming: None,
+                streaming: None,
             },
         ));
     }

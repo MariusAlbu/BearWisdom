@@ -14,9 +14,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -34,7 +32,10 @@ pub(crate) fn detect_csharp_hangfire_bg_emission(
     if !matches!(root, "BackgroundJob" | "RecurringJob" | "BatchJob") {
         return None;
     }
-    if !matches!(leaf, "Enqueue" | "Schedule" | "AddOrUpdate" | "ContinueWith") {
+    if !matches!(
+        leaf,
+        "Enqueue" | "Schedule" | "AddOrUpdate" | "ContinueWith"
+    ) {
         return None;
     }
     Some(FlowEmission::NamedChannel {
@@ -97,7 +98,15 @@ pub(crate) fn detect_csharp_mailer_emission(
     // SmtpClient / MailKit SmtpClient / SendGrid Client.
     if !matches!(
         root,
-        "smtp" | "smtpClient" | "_smtpClient" | "_emailService" | "emailService" | "mailService" | "_mailService" | "_sendGridClient" | "sendGridClient"
+        "smtp"
+            | "smtpClient"
+            | "_smtpClient"
+            | "_emailService"
+            | "emailService"
+            | "mailService"
+            | "_mailService"
+            | "_sendGridClient"
+            | "sendGridClient"
     ) {
         return None;
     }
@@ -174,11 +183,16 @@ pub(crate) fn detect_csharp_db_query_emission(
 fn parse_dapper_verb(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
-        "Query" | "QueryAsync" | "QueryFirstOrDefault" | "QueryFirstOrDefaultAsync"
-        | "QuerySingle" | "QuerySingleAsync" | "QuerySingleOrDefault"
-        | "QuerySingleOrDefaultAsync" | "QueryMultiple" | "QueryMultipleAsync" => {
-            DbQueryOp::Select
-        }
+        "Query"
+        | "QueryAsync"
+        | "QueryFirstOrDefault"
+        | "QueryFirstOrDefaultAsync"
+        | "QuerySingle"
+        | "QuerySingleAsync"
+        | "QuerySingleOrDefault"
+        | "QuerySingleOrDefaultAsync"
+        | "QueryMultiple"
+        | "QueryMultipleAsync" => DbQueryOp::Select,
         "Execute" | "ExecuteAsync" | "ExecuteScalar" | "ExecuteScalarAsync" => DbQueryOp::Other,
         _ => return None,
     })
@@ -187,15 +201,51 @@ fn parse_dapper_verb(name: &str) -> Option<crate::indexer::resolve::flow_emit::D
 fn parse_efcore_linq_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
-        "Where" | "FirstOrDefault" | "FirstOrDefaultAsync" | "First" | "FirstAsync"
-        | "Single" | "SingleAsync" | "SingleOrDefault" | "SingleOrDefaultAsync"
-        | "ToList" | "ToListAsync" | "ToArray" | "ToArrayAsync" | "Find" | "FindAsync"
-        | "Count" | "CountAsync" | "LongCount" | "LongCountAsync" | "Any" | "AnyAsync"
-        | "All" | "AllAsync" | "Sum" | "SumAsync" | "Min" | "MinAsync" | "Max" | "MaxAsync"
-        | "Average" | "AverageAsync" | "Contains" | "ContainsAsync" | "Include"
-        | "ThenInclude" | "OrderBy" | "OrderByDescending" | "GroupBy" | "Select"
-        | "AsNoTracking" | "AsTracking" | "ToDictionary" | "ToDictionaryAsync"
-        | "ToHashSet" | "ToHashSetAsync" => DbQueryOp::Select,
+        "Where"
+        | "FirstOrDefault"
+        | "FirstOrDefaultAsync"
+        | "First"
+        | "FirstAsync"
+        | "Single"
+        | "SingleAsync"
+        | "SingleOrDefault"
+        | "SingleOrDefaultAsync"
+        | "ToList"
+        | "ToListAsync"
+        | "ToArray"
+        | "ToArrayAsync"
+        | "Find"
+        | "FindAsync"
+        | "Count"
+        | "CountAsync"
+        | "LongCount"
+        | "LongCountAsync"
+        | "Any"
+        | "AnyAsync"
+        | "All"
+        | "AllAsync"
+        | "Sum"
+        | "SumAsync"
+        | "Min"
+        | "MinAsync"
+        | "Max"
+        | "MaxAsync"
+        | "Average"
+        | "AverageAsync"
+        | "Contains"
+        | "ContainsAsync"
+        | "Include"
+        | "ThenInclude"
+        | "OrderBy"
+        | "OrderByDescending"
+        | "GroupBy"
+        | "Select"
+        | "AsNoTracking"
+        | "AsTracking"
+        | "ToDictionary"
+        | "ToDictionaryAsync"
+        | "ToHashSet"
+        | "ToHashSetAsync" => DbQueryOp::Select,
         "Add" | "AddAsync" | "AddRange" | "AddRangeAsync" => DbQueryOp::Insert,
         "Update" | "UpdateRange" => DbQueryOp::Update,
         "Remove" | "RemoveRange" => DbQueryOp::Delete,
@@ -205,7 +255,9 @@ fn parse_efcore_linq_op(name: &str) -> Option<crate::indexer::resolve::flow_emit
 }
 
 fn is_pascal_case_first_cs(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 // Parse a SQL string to identify the entity (table) name and operation.
@@ -236,7 +288,11 @@ fn parse_csharp_sql_entity(
         return None;
     }
     // Drop schema qualifier (`dbo.Users` → `Users`).
-    let final_entity = entity.rsplit('.').next().unwrap_or(entity.as_str()).to_string();
+    let final_entity = entity
+        .rsplit('.')
+        .next()
+        .unwrap_or(entity.as_str())
+        .to_string();
     Some((final_entity, op))
 }
 
@@ -448,24 +504,19 @@ pub(crate) fn detect_flow_inner(
     if r.kind == EdgeKind::TypeRef {
         // Refit `[Get("/x")] Task<Foo> GetFoo();` Producer (the `[Http*]`-
         // prefixed ASP.NET Consumer side is handled by ExtractedRoute).
-        if let Some(emission) = detect_refit_attribute_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_refit_attribute_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
-        if let Some(emission) = detect_csharp_hotchocolate_emission(
-            r.target_name.as_str(),
-        ) {
+        if let Some(emission) = detect_csharp_hotchocolate_emission(r.target_name.as_str()) {
             return vec![emission];
         }
         return Vec::new();
     }
 
     if r.kind == EdgeKind::Inherits {
-        if let Some(emission) = detect_csharp_signalr_hub_emission(
-            r.target_name.as_str(),
-        ) {
+        if let Some(emission) = detect_csharp_signalr_hub_emission(r.target_name.as_str()) {
             return vec![emission];
         }
         if let Some(emission) = detect_csharp_integration_event_emission(

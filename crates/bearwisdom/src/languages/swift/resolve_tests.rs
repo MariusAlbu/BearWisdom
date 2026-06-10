@@ -1,4 +1,7 @@
-use super::hooks::{detect_swift_grdb_emission, detect_swift_grpc_emission, detect_swift_http_chain, detect_swift_vapor_route};
+use super::hooks::{
+    detect_swift_grdb_emission, detect_swift_grpc_emission, detect_swift_http_chain,
+    detect_swift_vapor_route,
+};
 use crate::types::*;
 
 use crate::indexer::resolve::engine::{
@@ -94,13 +97,7 @@ fn swift_same_module_subtree_binds_unique_internal_type() {
 /// the module-scope rung must DECLINE (distinct subtree prefixes).
 #[test]
 fn swift_same_module_declines_cross_target() {
-    let user = make_resolve_sym(
-        92,
-        "User",
-        "User",
-        "struct",
-        "Sources/Other/User.swift",
-    );
+    let user = make_resolve_sym(92, "User", "User", "struct", "Sources/Other/User.swift");
     let fix = ByNameFixture::with("User", vec![user]);
     let file_ctx = swift_file_ctx("Sources/App/Use.swift");
     let source_sym = make_resolve_source("use", "use");
@@ -125,8 +122,20 @@ fn swift_same_module_declines_cross_target() {
 /// unique-internal-name dedup yields >1 → DECLINE (no coincidental guess).
 #[test]
 fn swift_same_module_declines_when_two_candidates() {
-    let a = make_resolve_sym(93, "User", "Models.User", "struct", "Sources/App/Models/User.swift");
-    let b = make_resolve_sym(94, "User", "Dto.User", "struct", "Sources/App/Dto/User.swift");
+    let a = make_resolve_sym(
+        93,
+        "User",
+        "Models.User",
+        "struct",
+        "Sources/App/Models/User.swift",
+    );
+    let b = make_resolve_sym(
+        94,
+        "User",
+        "Dto.User",
+        "struct",
+        "Sources/App/Dto/User.swift",
+    );
     let fix = ByNameFixture::with("User", vec![a, b]);
     let file_ctx = swift_file_ctx("Sources/App/Handlers/Use.swift");
     let source_sym = make_resolve_source("use", "use");
@@ -176,20 +185,47 @@ fn swift_same_module_declines_outside_sources_layout() {
 
 impl SymbolLookup for ByNameFixture {
     fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_name_map.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        self.by_name_map
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-    fn has_in_namespace(&self, _: &str) -> bool { false }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] { &self.empty }
-    fn field_type_name(&self, _: &str) -> Option<&str> { None }
-    fn return_type_name(&self, _: &str) -> Option<&str> { None }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-    fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_reexports }
-    fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
 }
 
 fn make_resolve_sym(id: i64, name: &str, qname: &str, kind: &str, path: &str) -> SymbolInfo {
@@ -297,8 +333,13 @@ fn swift_explicit_member_import_binds_unique_internal_struct() {
 /// evidence, so it stays out of the cut (left for external classification).
 #[test]
 fn swift_plain_module_import_does_not_arm_explicit_member_strategy() {
-    let coincidental =
-        make_resolve_sym(7, "Foundation", "Foundation", "struct", "Sources/App/Foundation.swift");
+    let coincidental = make_resolve_sym(
+        7,
+        "Foundation",
+        "Foundation",
+        "struct",
+        "Sources/App/Foundation.swift",
+    );
     let fix = ByNameFixture::with("Foundation", vec![coincidental]);
 
     let file_ctx = FileContext {
@@ -343,26 +384,38 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
                 node_kind: "test".to_string(),
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
 
 #[test]
 fn test_swift_vapor_get_emits_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let args = vec![CallArg::StringLit("users".to_string())];
     match detect_swift_vapor_route("get", &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, method, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            method,
+            name,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(method, Some(HttpMethod::Get));
@@ -410,7 +463,10 @@ fn test_swift_grdb_user_fetch_all_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["User", "fetchAll"]);
     match detect_swift_grdb_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "swift.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -429,7 +485,9 @@ fn test_swift_grpc_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["UserServiceClient", "getUser"]);
     match detect_swift_grpc_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "UserService.getUser");

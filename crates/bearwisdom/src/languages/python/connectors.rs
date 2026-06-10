@@ -24,11 +24,7 @@ use crate::indexer::project_context::ProjectContext;
 /// resolve/mod.rs handles downstream flow_edges emission.
 ///
 /// Returns the count of routes written to the `routes` table.
-pub fn discover_django_routes(
-    conn: &Connection,
-    project_root: &Path,
-    ctx: &ProjectContext,
-) -> u32 {
+pub fn discover_django_routes(conn: &Connection, project_root: &Path, ctx: &ProjectContext) -> u32 {
     if !ctx.has_dependency(ManifestKind::PyProject, "django") {
         return 0;
     }
@@ -41,91 +37,87 @@ pub fn discover_django_routes(
     }
 }
 
-fn _django_routes_inner(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<u32> {
-        let re_url = regex::Regex::new(
-            r#"(?:re_)?path\s*\(\s*r?['"]([^'"]+)['"]\s*,\s*(\w[\w.]*)"#,
-        )
+fn _django_routes_inner(conn: &Connection, project_root: &Path) -> Result<u32> {
+    let re_url = regex::Regex::new(r#"(?:re_)?path\s*\(\s*r?['"]([^'"]+)['"]\s*,\s*(\w[\w.]*)"#)
         .expect("django url regex");
-        // DRF: router.register(r"prefix", ViewSetClass) or router.register("prefix", ViewSetClass)
-        let re_router = regex::Regex::new(
-            r#"\w+\.register\s*\(\s*r?['"]([^'"]+)['"]\s*,\s*(\w[\w.]*)"#,
-        )
-        .expect("drf router regex");
+    // DRF: router.register(r"prefix", ViewSetClass) or router.register("prefix", ViewSetClass)
+    let re_router =
+        regex::Regex::new(r#"\w+\.register\s*\(\s*r?['"]([^'"]+)['"]\s*,\s*(\w[\w.]*)"#)
+            .expect("drf router regex");
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, path FROM files
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path FROM files
                  WHERE language = 'python' AND (path LIKE '%urls.py' OR path = 'urls.py')",
-            )
-            .context("Failed to prepare Django urls query")?;
+        )
+        .context("Failed to prepare Django urls query")?;
 
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Django url files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Django url files")?;
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .context("Failed to query Django url files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Django url files")?;
 
-        let mut inserted: u32 = 0;
+    let mut inserted: u32 = 0;
 
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
 
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
+        for (line_idx, line_text) in source.lines().enumerate() {
+            let line_no = (line_idx + 1) as u32;
 
-                // path() / re_path() patterns
-                for cap in re_url.captures_iter(line_text) {
-                    let route_path = cap[1].to_string();
-                    let view_ref = &cap[2];
-                    let view_name = view_ref.split('.').next_back().unwrap_or(view_ref);
+            // path() / re_path() patterns
+            for cap in re_url.captures_iter(line_text) {
+                let route_path = cap[1].to_string();
+                let view_ref = &cap[2];
+                let view_name = view_ref.split('.').next_back().unwrap_or(view_ref);
 
-                    let symbol_id: Option<i64> = conn
-                        .query_row(
-                            "SELECT s.id FROM symbols s
+                let symbol_id: Option<i64> = conn
+                    .query_row(
+                        "SELECT s.id FROM symbols s
                              JOIN files f ON f.id = s.file_id
                              WHERE s.name = ?1 AND f.language = 'python'
                                AND s.kind IN ('function', 'class', 'method')
                              LIMIT 1",
-                            rusqlite::params![view_name],
-                            |r| r.get(0),
-                        )
-                        .ok();
+                        rusqlite::params![view_name],
+                        |r| r.get(0),
+                    )
+                    .ok();
 
-                    if insert_python_route(conn, file_id, symbol_id, "GET", &route_path, line_no) {
-                        inserted += 1;
-                    }
+                if insert_python_route(conn, file_id, symbol_id, "GET", &route_path, line_no) {
+                    inserted += 1;
                 }
+            }
 
-                // DRF router.register(r"prefix", ViewSetClass)
-                for cap in re_router.captures_iter(line_text) {
-                    let prefix = format!("/{}", cap[1].trim_start_matches('/'));
-                    let viewset = cap[2].to_string();
+            // DRF router.register(r"prefix", ViewSetClass)
+            for cap in re_router.captures_iter(line_text) {
+                let prefix = format!("/{}", cap[1].trim_start_matches('/'));
+                let viewset = cap[2].to_string();
 
-                    let symbol_id: Option<i64> = conn
-                        .query_row(
-                            "SELECT s.id FROM symbols s
+                let symbol_id: Option<i64> = conn
+                    .query_row(
+                        "SELECT s.id FROM symbols s
                              JOIN files f ON f.id = s.file_id
                              WHERE s.name = ?1 AND f.language = 'python'
                                AND s.kind = 'class'
                              LIMIT 1",
-                            rusqlite::params![viewset],
-                            |r| r.get(0),
-                        )
-                        .ok();
+                        rusqlite::params![viewset],
+                        |r| r.get(0),
+                    )
+                    .ok();
 
-                    if insert_python_route(conn, file_id, symbol_id, "GET", &prefix, line_no) {
-                        inserted += 1;
-                    }
+                if insert_python_route(conn, file_id, symbol_id, "GET", &prefix, line_no) {
+                    inserted += 1;
                 }
             }
         }
+    }
 
     Ok(inserted)
 }
@@ -176,61 +168,59 @@ pub fn discover_fastapi_routes(
     }
 }
 
-fn _fastapi_routes_inner(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<u32> {
-        let re_decorator = regex::Regex::new(
-            r#"@(\w+)\.(get|post|put|delete|patch|head|options)\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("fastapi decorator regex");
-        let re_apirouter = regex::Regex::new(
-            r#"(\w+)\s*=\s*APIRouter\s*\([^)]*prefix\s*=\s*['"]([^'"]*)['"]\s*[,)]"#,
-        )
-        .expect("fastapi APIRouter regex");
-        let re_include = regex::Regex::new(
-            r#"include_router\s*\(\s*(\w+)(?:[^)]*prefix\s*=\s*['"]([^'"]*)['"]\s*)?[,)]"#,
-        )
-        .expect("fastapi include_router regex");
+fn _fastapi_routes_inner(conn: &Connection, project_root: &Path) -> Result<u32> {
+    let re_decorator = regex::Regex::new(
+        r#"@(\w+)\.(get|post|put|delete|patch|head|options)\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("fastapi decorator regex");
+    let re_apirouter =
+        regex::Regex::new(r#"(\w+)\s*=\s*APIRouter\s*\([^)]*prefix\s*=\s*['"]([^'"]*)['"]\s*[,)]"#)
+            .expect("fastapi APIRouter regex");
+    let re_include = regex::Regex::new(
+        r#"include_router\s*\(\s*(\w+)(?:[^)]*prefix\s*=\s*['"]([^'"]*)['"]\s*)?[,)]"#,
+    )
+    .expect("fastapi include_router regex");
 
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'python'")
-            .context("Failed to prepare Python files query")?;
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'python'")
+        .context("Failed to prepare Python files query")?;
 
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Python files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Python file rows")?;
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .context("Failed to query Python files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Python file rows")?;
 
-        let mut inserted: u32 = 0;
+    let mut inserted: u32 = 0;
 
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
 
-            let prefixes = collect_prefixes(&source, &re_apirouter, &re_include);
+        let prefixes = collect_prefixes(&source, &re_apirouter, &re_include);
 
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
+        for (line_idx, line_text) in source.lines().enumerate() {
+            let line_no = (line_idx + 1) as u32;
 
-                if let Some(cap) = re_decorator.captures(line_text) {
-                    let var_name = &cap[1];
-                    let http_method = cap[2].to_uppercase();
-                    let route_path = &cap[3];
+            if let Some(cap) = re_decorator.captures(line_text) {
+                let var_name = &cap[1];
+                let http_method = cap[2].to_uppercase();
+                let route_path = &cap[3];
 
-                    let prefix = prefixes.get(var_name).map(|s| s.as_str()).unwrap_or("");
-                    let resolved = join_prefix(prefix, route_path);
+                let prefix = prefixes.get(var_name).map(|s| s.as_str()).unwrap_or("");
+                let resolved = join_prefix(prefix, route_path);
 
-                    if insert_python_route(conn, file_id, None, &http_method, &resolved, line_no) {
-                        inserted += 1;
-                    }
+                if insert_python_route(conn, file_id, None, &http_method, &resolved, line_no) {
+                    inserted += 1;
                 }
             }
         }
+    }
 
     Ok(inserted)
 }
@@ -315,15 +305,17 @@ fn detect_django_models(
     conn: &rusqlite::Connection,
     project_root: &std::path::Path,
 ) -> anyhow::Result<u32> {
-    let re_model = regex::Regex::new(r"class\s+(\w+)\s*\(\s*models\.Model\s*\)")
-        .expect("django model regex");
+    let re_model =
+        regex::Regex::new(r"class\s+(\w+)\s*\(\s*models\.Model\s*\)").expect("django model regex");
 
     let mut stmt = conn
         .prepare("SELECT id, path FROM files WHERE language = 'python'")
         .context("prepare Python files for model scan")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("query Python files for model scan")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("collect Python file rows for model scan")?;
@@ -367,17 +359,18 @@ fn detect_django_views(
     conn: &rusqlite::Connection,
     project_root: &std::path::Path,
 ) -> anyhow::Result<u32> {
-    let re_cbv = regex::Regex::new(r"class\s+(\w+)\s*\([^)]*View[^)]*\)")
-        .expect("django cbv regex");
-    let re_fbv = regex::Regex::new(r"def\s+(\w+)\s*\(\s*request")
-        .expect("django fbv regex");
+    let re_cbv =
+        regex::Regex::new(r"class\s+(\w+)\s*\([^)]*View[^)]*\)").expect("django cbv regex");
+    let re_fbv = regex::Regex::new(r"def\s+(\w+)\s*\(\s*request").expect("django fbv regex");
 
     let mut stmt = conn
         .prepare("SELECT id, path FROM files WHERE language = 'python'")
         .context("prepare Python files for view scan")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("query Python files for view scan")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("collect Python file rows for view scan")?;
@@ -477,10 +470,9 @@ pub fn extract_python_graphql(
 ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
-    let re_ariadne = regex::Regex::new(
-        r#"@(?:query|mutation|subscription)\.field\s*\(\s*['"]([^'"]+)['"]"#,
-    )
-    .expect("python ariadne field regex");
+    let re_ariadne =
+        regex::Regex::new(r#"@(?:query|mutation|subscription)\.field\s*\(\s*['"]([^'"]+)['"]"#)
+            .expect("python ariadne field regex");
     let re_strawberry = regex::Regex::new(
         r#"@strawberry\.(?:field|mutation|query|subscription)\s*(?:\([^)]*\))?\s*$"#,
     )
@@ -547,4 +539,3 @@ pub fn extract_python_graphql(
 #[cfg(test)]
 #[path = "connectors_tests.rs"]
 mod tests;
-

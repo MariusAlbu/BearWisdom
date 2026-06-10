@@ -96,11 +96,11 @@ fn walk_node(
                 scope_path: None,
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             walk_children(node, src, symbols, refs, Some(idx));
         }
         "const_declaration" => {
@@ -136,7 +136,9 @@ fn walk_node(
             if let Some(ns_node) = node.child_by_field_name("namespace") {
                 let name = text(ns_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -145,9 +147,9 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             } else {
                 // Fallback: take full text of first child that looks like a namespace
@@ -161,7 +163,9 @@ fn walk_node(
                     .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
                     .collect();
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -170,9 +174,9 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -184,7 +188,9 @@ fn walk_node(
                 if child.is_named() {
                     let name = text(child, src);
                     if !name.is_empty() && name != "Inherits" {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Inherits,
@@ -193,9 +199,9 @@ fn walk_node(
                             module: None,
                             chain: None,
                             byte_offset: node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -206,10 +212,11 @@ fn walk_node(
                 let name = leaf_name(target, src);
                 // `NameOf`/`CType`/`GetType`/`TryCast`/… parse as invocations
                 // but are operators, not calls — they have no symbol target.
-                if !name.is_empty()
-                    && !super::keywords::OPERATOR_KEYWORDS.contains(&name.as_str())
+                if !name.is_empty() && !super::keywords::OPERATOR_KEYWORDS.contains(&name.as_str())
                 {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -218,9 +225,9 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -230,7 +237,9 @@ fn walk_node(
             if let Some(ty) = node.child_by_field_name("type") {
                 let name = text(ty, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Instantiates,
@@ -239,9 +248,9 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -253,7 +262,9 @@ fn walk_node(
         "field_declaration" => {
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(base) = inherits_base_from_field_decl(node, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: base,
                     kind: EdgeKind::Inherits,
@@ -262,9 +273,9 @@ fn walk_node(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             } else {
                 // Ordinary field: `Private _timeout As Integer`
                 // Name lives in the child variable_declarator's `name` field.
@@ -285,11 +296,11 @@ fn walk_node(
                         scope_path: None,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
                 walk_children(node, src, symbols, refs, parent_idx);
             }
@@ -347,11 +358,11 @@ fn push_named(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     idx
 }
 

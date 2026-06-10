@@ -18,7 +18,8 @@ impl ManifestReader for NpmManifest {
         }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         // Node builtins are appended by read_all per-entry; ensure present on
         // the unioned result as well (idempotent).
@@ -35,7 +36,9 @@ impl ManifestReader for NpmManifest {
 
         let mut out = Vec::new();
         for manifest_path in package_json_files {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
 
             let mut data = ManifestData::default();
             let (name, deps) = parse_package_json(&content);
@@ -99,7 +102,9 @@ impl ManifestReader for NpmManifest {
             let mut declares_at_alias = false;
             for file_name in JS_CONFIG_FILES {
                 let cfg_path = package_dir.join(file_name);
-                let Ok(cfg_content) = std::fs::read_to_string(&cfg_path) else { continue };
+                let Ok(cfg_content) = std::fs::read_to_string(&cfg_path) else {
+                    continue;
+                };
                 has_any_js_config = true;
                 let extra = super::js_config_aliases::parse_js_config_aliases(&cfg_content);
                 for entry in extra {
@@ -124,10 +129,7 @@ impl ManifestReader for NpmManifest {
                 // `import Foo from '@/Components/Foo.vue'` maps to
                 // `resources/js/Components/Foo.vue`. Monica, Jetstream,
                 // Breeze, and every Laravel + Inertia starter use this.
-                let has_laravel_vite = data
-                    .dependencies
-                    .iter()
-                    .any(|d| d == "laravel-vite-plugin");
+                let has_laravel_vite = data.dependencies.iter().any(|d| d == "laravel-vite-plugin");
                 if has_laravel_vite && package_dir.join("resources").join("js").is_dir() {
                     data.path_aliases
                         .push(("@/".to_string(), "resources/js/".to_string()));
@@ -175,7 +177,9 @@ pub fn parse_tsconfig_paths(content: &str) -> Vec<(String, String)> {
         let Some(alias_prefix) = key.strip_suffix('*') else {
             continue;
         };
-        let Some(arr) = targets.as_array() else { continue };
+        let Some(arr) = targets.as_array() else {
+            continue;
+        };
         let Some(first) = arr.first().and_then(|v| v.as_str()) else {
             continue;
         };
@@ -254,9 +258,10 @@ fn tsconfig_extends_targets(content: &str) -> Vec<String> {
     };
     match value.get("extends") {
         Some(serde_json::Value::String(s)) => vec![s.clone()],
-        Some(serde_json::Value::Array(a)) => {
-            a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
-        }
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -392,8 +397,17 @@ fn collect_package_json(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             let name = name.to_string_lossy();
             if matches!(
                 name.as_ref(),
-                "node_modules" | ".git" | "target" | "bin" | "obj" | ".next"
-                    | "dist" | "build" | ".cache" | "coverage" | ".turbo"
+                "node_modules"
+                    | ".git"
+                    | "target"
+                    | "bin"
+                    | "obj"
+                    | ".next"
+                    | "dist"
+                    | "build"
+                    | ".cache"
+                    | "coverage"
+                    | ".turbo"
             ) {
                 continue;
             }

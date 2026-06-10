@@ -59,10 +59,20 @@ pub(super) fn extract_body_variable_symbols(
             // a Function symbol then recurse into the body for nested lambdas/LINQ.
             "local_function_statement" => {
                 let local_idx = super::symbols::push_local_function_decl(
-                    &child, src, scope_tree, symbols, parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    parent_index,
                 );
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_body_variable_symbols(&body, src, scope_tree, symbols, local_idx.or(parent_index));
+                    extract_body_variable_symbols(
+                        &body,
+                        src,
+                        scope_tree,
+                        symbols,
+                        local_idx.or(parent_index),
+                    );
                 }
             }
             _ => {
@@ -239,7 +249,11 @@ fn extract_pattern_binding_variable(
             let has_implicit_type = (0..pattern.child_count())
                 .filter_map(|i| pattern.child(i))
                 .any(|ch| ch.kind() == "implicit_type");
-            if has_implicit_type { idents.first().copied() } else { None }
+            if has_implicit_type {
+                idents.first().copied()
+            } else {
+                None
+            }
         }
         _ => None,
     };
@@ -295,10 +309,10 @@ fn push_variable_symbol(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }

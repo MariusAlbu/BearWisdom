@@ -106,13 +106,13 @@ pub fn blast_radius(
     // query_row returns Err(QueryReturnedNoRows) if nothing is found.
     let center_result = conn.query_row(lookup_sql, [symbol_name], |row| {
         Ok((
-            row.get::<_, i64>(0)?,        // id
+            row.get::<_, i64>(0)?, // id
             SymbolSummary {
-                name:           row.get(1)?,
+                name: row.get(1)?,
                 qualified_name: row.get(2)?,
-                kind:           row.get(3)?,
-                file_path:      row.get(4)?,
-                line:           row.get(5)?,
+                kind: row.get(3)?,
+                file_path: row.get(4)?,
+                line: row.get(5)?,
             },
         ))
     });
@@ -120,7 +120,11 @@ pub fn blast_radius(
     let (center_id, center) = match center_result {
         Ok(pair) => pair,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
-        Err(e) => return Err(e).context("Failed to look up center symbol").map_err(Into::into),
+        Err(e) => {
+            return Err(e)
+                .context("Failed to look up center symbol")
+                .map_err(Into::into)
+        }
     };
 
     // --- Recursive CTE: walk backwards through the edge graph ---
@@ -170,20 +174,25 @@ pub fn blast_radius(
         LIMIT ?3
     ";
 
-    let mut stmt = conn.prepare(sql).context("Failed to prepare blast radius CTE")?;
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare blast radius CTE")?;
 
     let rows = stmt
-        .query_map(rusqlite::params![center_id, max_depth, max_results], |row| {
-            Ok(AffectedSymbol {
-                name:           row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind:           row.get(2)?,
-                file_path:      row.get(3)?,
-                depth:          row.get(4)?,
-                edge_kind:      row.get(5)?,
-                package:        row.get(6)?,
-            })
-        })
+        .query_map(
+            rusqlite::params![center_id, max_depth, max_results],
+            |row| {
+                Ok(AffectedSymbol {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    depth: row.get(4)?,
+                    edge_kind: row.get(5)?,
+                    package: row.get(6)?,
+                })
+            },
+        )
         .context("Failed to execute blast radius query")?;
 
     let affected: Vec<AffectedSymbol> = rows

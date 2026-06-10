@@ -15,7 +15,10 @@ fn ecosystem_identity() {
 
 #[test]
 fn legacy_locator_tag() {
-    assert_eq!(ExternalSourceLocator::ecosystem(&TfRegistryEcosystem), "tf-registry");
+    assert_eq!(
+        ExternalSourceLocator::ecosystem(&TfRegistryEcosystem),
+        "tf-registry"
+    );
 }
 
 #[test]
@@ -92,7 +95,10 @@ output "vpc_id" {
 "#;
     let syms = scan_tf_top_level_resources(src);
     assert!(syms.contains(&"aws_vpc.this".to_string()), "{syms:?}");
-    assert!(syms.contains(&"data.aws_ami.latest".to_string()), "{syms:?}");
+    assert!(
+        syms.contains(&"data.aws_ami.latest".to_string()),
+        "{syms:?}"
+    );
     assert!(syms.contains(&"module.vpc".to_string()), "{syms:?}");
     assert!(syms.contains(&"output.vpc_id".to_string()), "{syms:?}");
 }
@@ -101,14 +107,28 @@ output "vpc_id" {
 fn synthesize_bundled_providers_covers_top3() {
     let files = _test_synthesize_bundled_providers();
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-    assert!(paths.iter().any(|p| p.contains(":aws/")), "aws provider missing: {paths:?}");
-    assert!(paths.iter().any(|p| p.contains(":google/")), "google provider missing: {paths:?}");
-    assert!(paths.iter().any(|p| p.contains(":azurerm/")), "azurerm provider missing: {paths:?}");
+    assert!(
+        paths.iter().any(|p| p.contains(":aws/")),
+        "aws provider missing: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| p.contains(":google/")),
+        "google provider missing: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| p.contains(":azurerm/")),
+        "azurerm provider missing: {paths:?}"
+    );
     let all_symbols: Vec<&str> = files
         .iter()
         .flat_map(|f| f.symbols.iter().map(|s| s.name.as_str()))
         .collect();
-    for expected in ["aws_vpc", "aws_s3_bucket", "google_compute_instance", "azurerm_resource_group"] {
+    for expected in [
+        "aws_vpc",
+        "aws_s3_bucket",
+        "google_compute_instance",
+        "azurerm_resource_group",
+    ] {
         assert!(
             all_symbols.contains(&expected),
             "symbol {expected} missing from bundled synthetics"
@@ -119,10 +139,19 @@ fn synthesize_bundled_providers_covers_top3() {
 #[test]
 fn bundled_providers_no_empty_symbols() {
     for pf in _test_synthesize_bundled_providers() {
-        assert!(!pf.symbols.is_empty(), "provider file {} has no symbols", pf.path);
+        assert!(
+            !pf.symbols.is_empty(),
+            "provider file {} has no symbols",
+            pf.path
+        );
         for sym in &pf.symbols {
             assert!(!sym.name.is_empty(), "empty symbol name in {}", pf.path);
-            assert_eq!(sym.kind, crate::types::SymbolKind::Class, "expected Class kind for {}", sym.name);
+            assert_eq!(
+                sym.kind,
+                crate::types::SymbolKind::Class,
+                "expected Class kind for {}",
+                sym.name
+            );
         }
     }
 }
@@ -137,7 +166,10 @@ fn parse_two_labels_handles_aligned_quotes() {
 
 #[test]
 fn extract_source_value_handles_extra_spaces() {
-    assert_eq!(_test_extract_source_value(r#"source  =  "hashicorp/aws""#), Some("hashicorp/aws"));
+    assert_eq!(
+        _test_extract_source_value(r#"source  =  "hashicorp/aws""#),
+        Some("hashicorp/aws")
+    );
     assert_eq!(_test_extract_source_value(r#"source = """#), None);
     assert_eq!(_test_extract_source_value(r#"version = "1.0""#), None);
 }
@@ -161,7 +193,8 @@ fn manifest_reader_unions_providers_and_module_sources() {
   }
 }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         tmp.join("main.tf"),
         r#"module "vpc" {
@@ -169,7 +202,8 @@ fn manifest_reader_unions_providers_and_module_sources() {
   version = "5.8.1"
 }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let data = TerraformManifest.read(&tmp).expect("manifest data present");
     assert!(data.dependencies.contains("hashicorp/aws"));
@@ -189,7 +223,8 @@ fn manifest_reader_returns_some_for_bare_tf_file_without_declarations() {
     std::fs::write(
         tmp.join("main.tf"),
         "resource \"aws_vpc\" \"this\" { cidr_block = \"10.0.0.0/16\" }\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let data = TerraformManifest.read(&tmp).expect("manifest data present");
     // No declarations to extract, but the .tf presence still activates.
@@ -220,7 +255,8 @@ fn manifest_reader_walks_subdirectories() {
   source = "terraform-aws-modules/vpc/aws"
 }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         tmp.join("modules/networking/versions.tf"),
         r#"terraform {
@@ -231,7 +267,8 @@ fn manifest_reader_walks_subdirectories() {
   }
 }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let data = TerraformManifest.read(&tmp).expect("manifest data present");
     assert!(data.dependencies.contains("hashicorp/aws"));
@@ -250,7 +287,8 @@ fn manifest_reader_skips_dot_terraform_dir() {
     std::fs::write(
         tmp.join(".terraform/modules/external/main.tf"),
         r#"terraform { required_providers { leaked = { source = "should/not/leak" } } }"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(tmp.join("main.tf"), "resource \"aws_vpc\" \"this\" {}\n").unwrap();
 
     let data = TerraformManifest.read(&tmp).expect("manifest data present");

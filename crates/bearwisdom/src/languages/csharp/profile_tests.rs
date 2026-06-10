@@ -20,7 +20,10 @@ fn chain_qualification_is_same_package_and_imports() {
 
 #[test]
 fn structural_choices() {
-    assert_eq!(CSHARP_PROFILE.supertype_discovery, SupertypeDiscovery::Explicit);
+    assert_eq!(
+        CSHARP_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Explicit
+    );
     assert_eq!(CSHARP_PROFILE.dispatch_axis, DispatchAxis::Receiver);
     assert!(CSHARP_PROFILE.has_generics);
     // Nullable<T> is a wrapper type with explicit unwrap; engine must not
@@ -47,6 +50,14 @@ fn delegate_appears_in_calls_and_typeref_tables() {
     use crate::type_checker::profile::language_profile::KindCompatibility;
     use crate::types::EdgeKind;
     let t = CSHARP_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Delegate));
-    assert!(KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Delegate));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Delegate
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Delegate
+    ));
 }

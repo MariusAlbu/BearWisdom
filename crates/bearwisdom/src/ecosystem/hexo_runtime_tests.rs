@@ -11,7 +11,11 @@ fn looks_like_hexo_via_node_modules() {
 #[test]
 fn looks_like_hexo_via_config_yml() {
     let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("_config.yml"), "# Hexo Configuration\ntitle: blog\n").unwrap();
+    fs::write(
+        dir.path().join("_config.yml"),
+        "# Hexo Configuration\ntitle: blog\n",
+    )
+    .unwrap();
     assert!(looks_like_hexo_project(dir.path()));
 }
 
@@ -84,7 +88,10 @@ fn synthesise_emits_symbols_for_core_helpers() {
     let names: Vec<&str> = parsed[0].symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"is_home"));
     assert!(names.contains(&"partial"));
-    assert!(parsed[0].symbols.iter().all(|s| s.kind == crate::types::SymbolKind::Function));
+    assert!(parsed[0]
+        .symbols
+        .iter()
+        .all(|s| s.kind == crate::types::SymbolKind::Function));
 }
 
 #[test]
@@ -129,7 +136,11 @@ fn helpers_emit_under_npm_globals_namespace() {
     let dir = tempfile::tempdir().unwrap();
     let helper_dir = dir.path().join("node_modules/hexo/dist/plugins/helper");
     fs::create_dir_all(&helper_dir).unwrap();
-    fs::write(helper_dir.join("index.js"), "helper.register('partial', x);\n").unwrap();
+    fs::write(
+        helper_dir.join("index.js"),
+        "helper.register('partial', x);\n",
+    )
+    .unwrap();
     let scripts = dir.path().join("themes/coo/scripts");
     fs::create_dir_all(&scripts).unwrap();
     fs::write(

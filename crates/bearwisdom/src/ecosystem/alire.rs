@@ -41,10 +41,18 @@ pub struct AlireEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for AlireEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("alire.toml", "ada")]
@@ -68,7 +76,9 @@ impl Ecosystem for AlireEcosystem {
         walk_alire_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
     // Eager walk: like gnat-stdlib, the Ada bare-name + use-clause shape
     // requires every public subprogram from a use'd package to live in
     // the symbol table. members_of() only sees indexed symbols, so
@@ -112,7 +122,9 @@ impl Ecosystem for AlireEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for AlireEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_alire_externals(project_root)
     }
@@ -140,7 +152,9 @@ impl crate::ecosystem::manifest::ManifestReader for AlireManifest {
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let deps = parse_alire_dependencies(project_root);
-        if deps.is_empty() { return None }
+        if deps.is_empty() {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
         Some(data)
@@ -158,24 +172,36 @@ pub fn discover_alire_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     // pulls in `trendy_test` while the main alire.toml doesn't, so a
     // root-only scan misses the entire test framework.
     let declared = collect_alire_dependencies_recursive(project_root);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let cache_roots = alire_cache_roots();
     let mut roots = Vec::new();
 
     for cache in &cache_roots {
-        if !cache.is_dir() { continue }
-        let Ok(entries) = std::fs::read_dir(cache) else { continue };
+        if !cache.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(cache) else {
+            continue;
+        };
         // Group cache entries by crate name → highest version wins.
         let mut by_crate: std::collections::HashMap<String, Vec<(String, PathBuf)>> =
             std::collections::HashMap::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() { continue }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             // Cache layout: `<crate>_<version>_<hash>`. The hash is hex —
             // the *last* underscore separates hash from version.
-            let Some((stem, _hash)) = name.rsplit_once('_') else { continue };
+            let Some((stem, _hash)) = name.rsplit_once('_') else {
+                continue;
+            };
             // Strip trailing version: `<crate>_<version>` → `(<crate>, <version>)`.
             let (crate_name, version) = match stem.rsplit_once('_') {
                 Some((c, v)) => (c, v),
@@ -190,7 +216,9 @@ pub fn discover_alire_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         for dep in &declared {
             let key = dep.replace('-', "_");
             let candidates = by_crate.get(&key).or_else(|| by_crate.get(dep));
-            let Some(candidates) = candidates else { continue };
+            let Some(candidates) = candidates else {
+                continue;
+            };
             // Pick the highest-version directory (lex sort works for the
             // typical SemVer-shaped values Alire publishes — `0.3.0`,
             // `1.1.0`, `26.0.0`, …).
@@ -277,7 +305,9 @@ fn alire_cache_roots() -> Vec<PathBuf> {
 /// sub-package manifests are picked up too.
 pub fn parse_alire_dependencies(project_root: &Path) -> Vec<String> {
     let manifest = project_root.join("alire.toml");
-    let Ok(content) = std::fs::read_to_string(&manifest) else { return Vec::new() };
+    let Ok(content) = std::fs::read_to_string(&manifest) else {
+        return Vec::new();
+    };
     parse_alire_dependencies_text(&content)
 }
 
@@ -294,7 +324,9 @@ pub fn collect_alire_dependencies_recursive(project_root: &Path) -> Vec<String> 
 }
 
 fn walk_alire_manifests(dir: &Path, deps: &mut HashSet<String>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
     let manifest = dir.join("alire.toml");
     if manifest.is_file() {
         if let Ok(content) = std::fs::read_to_string(&manifest) {
@@ -303,14 +335,20 @@ fn walk_alire_manifests(dir: &Path, deps: &mut HashSet<String>, depth: u32) {
             }
         }
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() { continue }
+        if !ft.is_dir() {
+            continue;
+        }
         let path = entry.path();
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if matches!(name, "obj" | "lib" | "alire" | ".git" | "node_modules" | "target" | ".bearwisdom")
-                || name.starts_with('.')
+            if matches!(
+                name,
+                "obj" | "lib" | "alire" | ".git" | "node_modules" | "target" | ".bearwisdom"
+            ) || name.starts_with('.')
             {
                 continue;
             }
@@ -366,7 +404,8 @@ fn is_depends_on_header(line: &str) -> bool {
 
 fn is_valid_dep_name(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn strip_toml_comment(line: &str) -> &str {
@@ -396,23 +435,33 @@ fn walk_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | "tests" | "test" | "examples")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | "tests" | "test" | "examples"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else { continue };
-            if ext != "ads" && ext != "adb" { continue }
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if ext != "ads" && ext != "adb" {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -439,31 +488,40 @@ fn resolve_package(dep: &ExternalDepRoot, package: &str) -> Option<WalkedFile> {
     Some(make_walked_file(dep, &path))
 }
 
-fn walk_for_package(
-    dir: &Path,
-    needle: &str,
-    hit: &mut Option<PathBuf>,
-    depth: u32,
-) {
-    if hit.is_some() { return }
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_for_package(dir: &Path, needle: &str, hit: &mut Option<PathBuf>, depth: u32) {
+    if hit.is_some() {
+        return;
+    }
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        if hit.is_some() { return }
+        if hit.is_some() {
+            return;
+        }
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | "tests" | "test" | "examples")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | "tests" | "test" | "examples"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
             }
             walk_for_package(&path, needle, hit, depth + 1);
         } else if ft.is_file() {
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else { continue };
-            if ext != "ads" { continue }
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if ext != "ads" {
+                continue;
+            }
             if let Some(decl) = scan_package_decl(&path) {
                 if decl.eq_ignore_ascii_case(needle) {
                     *hit = Some(path);
@@ -494,17 +552,13 @@ fn make_walked_file(dep: &ExternalDepRoot, path: &Path) -> WalkedFile {
 // Symbol index — scan each `.ads` for its `package <Name>` declaration
 // ---------------------------------------------------------------------------
 
-pub(crate) fn build_alire_symbol_index(
-    dep_roots: &[ExternalDepRoot],
-) -> SymbolLocationIndex {
+pub(crate) fn build_alire_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let work: Vec<(String, PathBuf)> = dep_roots
         .iter()
         .flat_map(|dep| {
             let mut found = Vec::new();
             collect_ads_files(&dep.root, &mut found, 0);
-            found
-                .into_iter()
-                .map(move |p| (dep.module_path.clone(), p))
+            found.into_iter().map(move |p| (dep.module_path.clone(), p))
         })
         .collect();
 
@@ -531,15 +585,21 @@ pub(crate) fn build_alire_symbol_index(
 }
 
 fn collect_ads_files(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | "tests" | "test" | "examples")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | "tests" | "test" | "examples"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
@@ -562,7 +622,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     for raw in content.lines() {
         let line = strip_ada_comment(raw).trim();
-        if line.is_empty() { continue }
+        if line.is_empty() {
+            continue;
+        }
         let mut tail = line;
         for prefix in ["private ", "generic "] {
             if let Some(rest) = tail.strip_prefix(prefix) {
@@ -580,7 +642,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
             .collect();
-        if qname.is_empty() { continue }
+        if qname.is_empty() {
+            continue;
+        }
         return Some(qname);
     }
     None

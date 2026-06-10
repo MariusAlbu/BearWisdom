@@ -44,13 +44,23 @@ implementation
 end.
 "#;
     let result = extract(src);
-    let names: Vec<(&str, SymbolKind)> = result.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    let names: Vec<(&str, SymbolKind)> = result
+        .symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect();
     // The {$ifdef FPC}object{$else}record{$endif} must not cascade-wipe earlier types.
-    for expected in &["TKraftForceMode", "TKraftInt32", "TKraftVector3", "TQuickHullFaceList"] {
+    for expected in &[
+        "TKraftForceMode",
+        "TKraftInt32",
+        "TKraftVector3",
+        "TQuickHullFaceList",
+    ] {
         assert!(
             result.symbols.iter().any(|s| &s.name == expected),
             "expected {} to be extracted after ifdef-type-kw normalisation; got: {:?}",
-            expected, names
+            expected,
+            names
         );
     }
 }
@@ -73,18 +83,25 @@ implementation
 end.
 "#;
     let result = extract(src);
-    let names: Vec<(&str, SymbolKind)> = result.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    let names: Vec<(&str, SymbolKind)> = result
+        .symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect();
     assert!(
         result.symbols.iter().any(|s| s.name == "TKraftVector3"),
-        "TKraftVector3 record not extracted; got: {:?}", names
+        "TKraftVector3 record not extracted; got: {:?}",
+        names
     );
     assert!(
         result.symbols.iter().any(|s| s.name == "TKraftInt32"),
-        "TKraftInt32 type alias not extracted; got: {:?}", names
+        "TKraftInt32 type alias not extracted; got: {:?}",
+        names
     );
     assert!(
         result.symbols.iter().any(|s| s.name == "TKraftScalar"),
-        "TKraftScalar type alias not extracted; got: {:?}", names
+        "TKraftScalar type alias not extracted; got: {:?}",
+        names
     );
 }
 
@@ -100,12 +117,21 @@ fn kraft_pas_fundamental_types_extracted() {
         Err(_) => return, // skip if test project not present
     };
     let result = extract(&src);
-    let missing: Vec<&str> = ["TKraftVector3", "TKraftInt32", "TKraftScalar", "TKraftForceMode"]
-        .iter()
-        .filter(|&&name| !result.symbols.iter().any(|s| s.name == name))
-        .copied()
-        .collect();
-    assert!(missing.is_empty(), "fundamental types missing from kraft.pas: {:?}", missing);
+    let missing: Vec<&str> = [
+        "TKraftVector3",
+        "TKraftInt32",
+        "TKraftScalar",
+        "TKraftForceMode",
+    ]
+    .iter()
+    .filter(|&&name| !result.symbols.iter().any(|s| s.name == name))
+    .copied()
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "fundamental types missing from kraft.pas: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +179,9 @@ end.
     for expected in &["PGSList", "TGSList", "TGDoubleIEEE754", "TGDir"] {
         assert!(
             result.symbols.iter().any(|s| &s.name == expected),
-            "expected {} to be extracted; got: {:?}", expected, names
+            "expected {} to be extracted; got: {:?}",
+            expected,
+            names
         );
     }
 }
@@ -167,12 +195,24 @@ fn glib2_fundamental_types_extracted() {
         Err(_) => return,
     };
     let result = extract(&src);
-    let missing: Vec<&str> = ["PGSList", "TGSList", "PGVariant", "PGString", "PGNode", "TGArray", "TGDir"]
-        .iter()
-        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n))
-        .copied()
-        .collect();
-    assert!(missing.is_empty(), "glib2 types missing after cascade fix: {:?}", missing);
+    let missing: Vec<&str> = [
+        "PGSList",
+        "TGSList",
+        "PGVariant",
+        "PGString",
+        "PGNode",
+        "TGArray",
+        "TGDir",
+    ]
+    .iter()
+    .filter(|&&n| !result.symbols.iter().any(|s| s.name == n))
+    .copied()
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "glib2 types missing after cascade fix: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -188,12 +228,26 @@ fn x3dnodes_standard_core_classes_extracted() {
         Err(_) => return,
     };
     let result = extract(&src);
-    let missing: Vec<&str> = ["TAbstractNode", "TAbstractMetadataNode", "TAbstractChildNode", "TAbstractBindableNode"]
-        .iter()
-        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
-        .copied()
-        .collect();
-    assert!(missing.is_empty(), "class symbols missing from x3dnodes_standard_core.inc: {:?}", missing);
+    let missing: Vec<&str> = [
+        "TAbstractNode",
+        "TAbstractMetadataNode",
+        "TAbstractChildNode",
+        "TAbstractBindableNode",
+    ]
+    .iter()
+    .filter(|&&n| {
+        !result
+            .symbols
+            .iter()
+            .any(|s| s.name == n && s.kind == SymbolKind::Class)
+    })
+    .copied()
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "class symbols missing from x3dnodes_standard_core.inc: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -211,10 +265,19 @@ fn castlefields_x3dsingle_classes_extracted() {
     let result = extract(&src);
     let missing: Vec<&str> = ["TSFBitMask", "TSFBool", "TSFFloat"]
         .iter()
-        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .filter(|&&n| {
+            !result
+                .symbols
+                .iter()
+                .any(|s| s.name == n && s.kind == SymbolKind::Class)
+        })
         .copied()
         .collect();
-    assert!(missing.is_empty(), "class symbols missing from castlefields inc: {:?}", missing);
+    assert!(
+        missing.is_empty(),
+        "class symbols missing from castlefields inc: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -257,8 +320,13 @@ fn inc_fragment_multiple_full_class_definitions_extracted() {
     let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
     for expected in &["TSFBitMask", "TSFBool", "TSFFloat"] {
         assert!(
-            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
-            "expected class {} to be extracted; got: {:?}", expected, names
+            result
+                .symbols
+                .iter()
+                .any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted; got: {:?}",
+            expected,
+            names
         );
     }
 }
@@ -280,9 +348,17 @@ fn inc_fragment_multiple_forward_declarations() {
 "#;
     let result = extract(source);
     let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
-    for expected in &["TX3DNodeList", "TX3DNode", "TAbstractGeometryNode", "TSFNode"] {
+    for expected in &[
+        "TX3DNodeList",
+        "TX3DNode",
+        "TAbstractGeometryNode",
+        "TSFNode",
+    ] {
         assert!(
-            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            result
+                .symbols
+                .iter()
+                .any(|s| &s.name == expected && s.kind == SymbolKind::Class),
             "expected class {} to be extracted; got: {:?}",
             expected,
             names
@@ -308,9 +384,16 @@ fn inc_fragment_class_extracted_without_type_keyword() {
 "#;
     let result = extract(source);
     assert!(
-        result.symbols.iter().any(|s| s.name == "TSoundAllocator" && s.kind == SymbolKind::Class),
+        result
+            .symbols
+            .iter()
+            .any(|s| s.name == "TSoundAllocator" && s.kind == SymbolKind::Class),
         "TSoundAllocator class should be extracted from .inc-style fragment; got: {:?}",
-        result.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        result
+            .symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -324,9 +407,16 @@ fn inc_fragment_interface_extracted_without_type_keyword() {
 "#;
     let result = extract(source);
     assert!(
-        result.symbols.iter().any(|s| s.name == "IJSObject" && s.kind == SymbolKind::Interface),
+        result
+            .symbols
+            .iter()
+            .any(|s| s.name == "IJSObject" && s.kind == SymbolKind::Interface),
         "IJSObject interface should be extracted from .inc-style fragment; got: {:?}",
-        result.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        result
+            .symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -342,9 +432,16 @@ fn class_with_type_keyword_extracted_normally() {
 "#;
     let result = extract(source);
     assert!(
-        result.symbols.iter().any(|s| s.name == "TSoundAllocator" && s.kind == SymbolKind::Class),
+        result
+            .symbols
+            .iter()
+            .any(|s| s.name == "TSoundAllocator" && s.kind == SymbolKind::Class),
         "TSoundAllocator should be extracted with 'type' keyword present; got: {:?}",
-        result.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        result
+            .symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -381,9 +478,16 @@ fn inc_fragment_with_preprocessor_directives() {
 "#;
     let result = extract(source);
     assert!(
-        result.symbols.iter().any(|s| s.name == "TCastleUserInterface" && s.kind == SymbolKind::Class),
+        result
+            .symbols
+            .iter()
+            .any(|s| s.name == "TCastleUserInterface" && s.kind == SymbolKind::Class),
         "TCastleUserInterface should be extracted through preprocessor guards; got: {:?}",
-        result.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        result
+            .symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -409,8 +513,12 @@ fn class_of_metaclass_followed_by_class_both_extracted() {
     let result = extract(source);
     for expected in &["TCastleBehaviorClass", "TCastleBehavior"] {
         assert!(
-            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
-            "expected class {} to be extracted", expected
+            result
+                .symbols
+                .iter()
+                .any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted",
+            expected
         );
     }
 }
@@ -430,10 +538,19 @@ fn castletransform_behavior_classes_extracted() {
     let result = extract(&src);
     let missing: Vec<&str> = ["TCastleBehaviorClass", "TCastleBehavior"]
         .iter()
-        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
+        .filter(|&&n| {
+            !result
+                .symbols
+                .iter()
+                .any(|s| s.name == n && s.kind == SymbolKind::Class)
+        })
         .copied()
         .collect();
-    assert!(missing.is_empty(), "classes missing from castletransform_behavior.inc: {:?}", missing);
+    assert!(
+        missing.is_empty(),
+        "classes missing from castletransform_behavior.inc: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -480,8 +597,12 @@ fn inc_fragment_two_generic_classes_both_extracted() {
     let result = extract(source);
     for expected in &["TMFMatrix3f", "TMFMatrix3d"] {
         assert!(
-            result.symbols.iter().any(|s| &s.name == expected && s.kind == SymbolKind::Class),
-            "expected class {} to be extracted", expected
+            result
+                .symbols
+                .iter()
+                .any(|s| &s.name == expected && s.kind == SymbolKind::Class),
+            "expected class {} to be extracted",
+            expected
         );
     }
 }
@@ -499,12 +620,30 @@ fn castlefields_simplemult_classes_extracted() {
         Err(_) => return,
     };
     let result = extract(&src);
-    let missing: Vec<&str> = ["TMFBool", "TMFLong", "TMFInt32", "TMFVec3f", "TMFFloat", "TMFString", "TMFTime", "TMFColor"]
-        .iter()
-        .filter(|&&n| !result.symbols.iter().any(|s| s.name == n && s.kind == SymbolKind::Class))
-        .copied()
-        .collect();
-    assert!(missing.is_empty(), "classes missing from simplemultfield_descendants.inc: {:?}", missing);
+    let missing: Vec<&str> = [
+        "TMFBool",
+        "TMFLong",
+        "TMFInt32",
+        "TMFVec3f",
+        "TMFFloat",
+        "TMFString",
+        "TMFTime",
+        "TMFColor",
+    ]
+    .iter()
+    .filter(|&&n| {
+        !result
+            .symbols
+            .iter()
+            .any(|s| s.name == n && s.kind == SymbolKind::Class)
+    })
+    .copied()
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "classes missing from simplemultfield_descendants.inc: {:?}",
+        missing
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -533,7 +672,16 @@ fn normalised_source_strips_specialize_and_generic_params() {
 {$endif read_interface}
 "#;
     let normalised = normalise_source_for_test(source);
-    assert!(!normalised.contains('<'), "normalised source still contains '<'");
-    assert!(!normalised.contains('>'), "normalised source still contains '>'");
-    assert!(!normalised.contains("specialize"), "normalised source still contains 'specialize'");
+    assert!(
+        !normalised.contains('<'),
+        "normalised source still contains '<'"
+    );
+    assert!(
+        !normalised.contains('>'),
+        "normalised source still contains '>'"
+    );
+    assert!(
+        !normalised.contains("specialize"),
+        "normalised source still contains 'specialize'"
+    );
 }

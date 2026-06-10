@@ -23,12 +23,7 @@ fn resolve_engine(
     .resolve_all_with_profile(&RUBY_PROFILE)
 }
 
-fn make_symbol(
-    name: &str,
-    qname: &str,
-    kind: SymbolKind,
-    scope: Option<&str>,
-) -> ExtractedSymbol {
+fn make_symbol(name: &str, qname: &str, kind: SymbolKind, scope: Option<&str>) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -43,15 +38,17 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -65,7 +62,9 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
     }
 }
 fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: name.to_string(),
         kind: EdgeKind::Imports,
@@ -156,7 +155,12 @@ fn test_scope_chain_resolution() {
         vec![
             make_symbol("Order", "Order", SymbolKind::Class, None),
             make_symbol("create", "Order.create", SymbolKind::Method, Some("Order")),
-            make_symbol("validate!", "Order.validate!", SymbolKind::Method, Some("Order")),
+            make_symbol(
+                "validate!",
+                "Order.validate!",
+                SymbolKind::Method,
+                Some("Order"),
+            ),
         ],
         vec![make_ref(1, "validate!", EdgeKind::Calls)],
     );
@@ -168,7 +172,7 @@ fn test_scope_chain_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let result = resolve_engine(&file_ctx, &ref_ctx, &index);
@@ -177,7 +181,12 @@ fn test_scope_chain_resolution() {
     assert_eq!(res.strategy, "default_scope_visible");
     assert_eq!(
         res.target_symbol_id,
-        *id_map.get(&("app/models/order.rb".to_string(), "Order.validate!".to_string())).unwrap()
+        *id_map
+            .get(&(
+                "app/models/order.rb".to_string(),
+                "Order.validate!".to_string()
+            ))
+            .unwrap()
     );
 }
 
@@ -206,7 +215,7 @@ fn test_same_file_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let result = resolve_engine(&file_ctx, &ref_ctx, &index);
@@ -215,7 +224,12 @@ fn test_same_file_resolution() {
     assert_eq!(res.strategy, "default_same_file");
     assert_eq!(
         res.target_symbol_id,
-        *id_map.get(&("app/services/user_service.rb".to_string(), "UserHelper".to_string())).unwrap()
+        *id_map
+            .get(&(
+                "app/services/user_service.rb".to_string(),
+                "UserHelper".to_string()
+            ))
+            .unwrap()
     );
 }
 
@@ -226,8 +240,18 @@ fn test_same_module_resolution() {
         vec![
             // Ruby modules use SymbolKind::Namespace in the index.
             make_symbol("MyApp", "MyApp", SymbolKind::Namespace, None),
-            make_symbol("Presenter", "MyApp.Presenter", SymbolKind::Class, Some("MyApp")),
-            make_symbol("Formatter", "MyApp.Formatter", SymbolKind::Class, Some("MyApp")),
+            make_symbol(
+                "Presenter",
+                "MyApp.Presenter",
+                SymbolKind::Class,
+                Some("MyApp"),
+            ),
+            make_symbol(
+                "Formatter",
+                "MyApp.Formatter",
+                SymbolKind::Class,
+                Some("MyApp"),
+            ),
         ],
         vec![make_ref(1, "Formatter", EdgeKind::TypeRef)],
     );
@@ -239,7 +263,7 @@ fn test_same_module_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let result = resolve_engine(&file_ctx, &ref_ctx, &index);
@@ -250,7 +274,12 @@ fn test_same_module_resolution() {
     assert_eq!(res.strategy, "default_scope_visible");
     assert_eq!(
         res.target_symbol_id,
-        *id_map.get(&("lib/myapp/presenter.rb".to_string(), "MyApp.Formatter".to_string())).unwrap()
+        *id_map
+            .get(&(
+                "lib/myapp/presenter.rb".to_string(),
+                "MyApp.Formatter".to_string()
+            ))
+            .unwrap()
     );
 }
 
@@ -269,7 +298,7 @@ fn test_falls_back_for_unknown() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     assert!(
@@ -293,10 +322,18 @@ fn test_require_builds_imports() {
     let ctx = resolver.build_file_context(&file, None);
     assert_eq!(ctx.imports.len(), 2);
 
-    let json_import = ctx.imports.iter().find(|i| i.imported_name == "json").unwrap();
+    let json_import = ctx
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "json")
+        .unwrap();
     assert_eq!(json_import.module_path.as_deref(), Some("json"));
 
-    let bar_import = ctx.imports.iter().find(|i| i.imported_name == "bar").unwrap();
+    let bar_import = ctx
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "bar")
+        .unwrap();
     assert_eq!(bar_import.module_path.as_deref(), Some("./bar"));
 }
 
@@ -310,7 +347,9 @@ fn test_stdlib_require_is_external() {
 
     let resolver = RubyResolver;
     let file_ctx = resolver.build_file_context(&file, None);
-    let import_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let import_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "json".to_string(),
         kind: EdgeKind::Imports,
@@ -319,26 +358,33 @@ fn test_stdlib_require_is_external() {
         module: None,
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-};
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
 
     let sym = make_symbol("Foo", "Foo", SymbolKind::Class, None);
     let ref_ctx = RefContext {
         extracted_ref: &import_ref,
         source_symbol: &sym,
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::ruby::hooks::RubyHooks.classify_external(
-            &ref_ctx, &file_ctx, None, &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
         )
     };
-    assert_eq!(ns, Some("json".to_string()), "json stdlib require should be external");
+    assert_eq!(
+        ns,
+        Some("json".to_string()),
+        "json stdlib require should be external"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -352,29 +398,40 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .enumerate()
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
-                node_kind: if i == 0 { "constant".to_string() } else { "identifier".to_string() },
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                node_kind: if i == 0 {
+                    "constant".to_string()
+                } else {
+                    "identifier".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
 
 #[test]
 fn test_ruby_activerecord_where_emits_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["User", "where"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -384,12 +441,15 @@ fn test_ruby_activerecord_where_emits_select() {
 
 #[test]
 fn test_ruby_activerecord_find_by_emits_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["Post", "find_by"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.Post");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -399,12 +459,15 @@ fn test_ruby_activerecord_find_by_emits_select() {
 
 #[test]
 fn test_ruby_activerecord_create_emits_insert() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["Article", "create"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.Article");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -414,12 +477,15 @@ fn test_ruby_activerecord_create_emits_insert() {
 
 #[test]
 fn test_ruby_activerecord_destroy_all_emits_delete() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["Comment", "destroy_all"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.Comment");
             assert_eq!(operation, DbQueryOp::Delete);
         }
@@ -429,12 +495,15 @@ fn test_ruby_activerecord_destroy_all_emits_delete() {
 
 #[test]
 fn test_ruby_activerecord_chained_includes_emits_on_leaf() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["Poll", "includes", "where", "first"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.Poll");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -444,12 +513,15 @@ fn test_ruby_activerecord_chained_includes_emits_on_leaf() {
 
 #[test]
 fn test_ruby_activerecord_find_or_create_emits_upsert() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_ruby_activerecord_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["User", "find_or_create_by"]);
     match detect_ruby_activerecord_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rb.User");
             assert_eq!(operation, DbQueryOp::Upsert);
         }
@@ -475,10 +547,12 @@ fn test_ruby_activerecord_no_emit_for_unknown_leaf() {
 
 #[test]
 fn test_ruby_actioncable_channel_inheritance_emits_ws_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_ruby_actioncable_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_ruby_actioncable_emission("ApplicationCable::Channel").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "rb.actioncable");

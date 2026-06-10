@@ -39,8 +39,10 @@ pub const BUILTINS: &[&str] = &[
     "where",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(signature name: (variable)) @local.definition\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(signature name: (variable)) @local.definition\n\
 (function name: (variable)) @local.definition\n\
 (pattern/variable) @local.definition\n\
 (expression/variable) @local.reference\n\
-");
+",
+);

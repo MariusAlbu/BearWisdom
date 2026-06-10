@@ -1,5 +1,5 @@
-use super::extract::extract;
 use super::expr::scan_expression;
+use super::extract::extract;
 use crate::types::EdgeKind;
 
 #[test]
@@ -13,7 +13,10 @@ fn block_directive_becomes_field_symbol() {
 fn extends_becomes_imports_ref() {
     let src = "{% extends \"base.j2\" %}";
     let r = extract(src, "page.j2");
-    assert!(r.refs.iter().any(|r| r.kind == EdgeKind::Imports && r.target_name == "base"));
+    assert!(r
+        .refs
+        .iter()
+        .any(|r| r.kind == EdgeKind::Imports && r.target_name == "base"));
 }
 
 #[test]
@@ -113,12 +116,19 @@ fn for_loop_tuple_binding_introduces_each_name() {
 // identifiers and contains `()`.
 #[test]
 fn for_loop_tuple_with_method_call_iterable() {
-    let src =
-        "{% for key, value in some.nested.path.items() %}{{ key }}{{ value }}{% endfor %}";
+    let src = "{% for key, value in some.nested.path.items() %}{{ key }}{{ value }}{% endfor %}";
     let r = extract(src, "p.j2");
     let symbol_names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
-    assert!(symbol_names.contains(&"key"), "expected `key` symbol, got {:?}", symbol_names);
-    assert!(symbol_names.contains(&"value"), "expected `value` symbol, got {:?}", symbol_names);
+    assert!(
+        symbol_names.contains(&"key"),
+        "expected `key` symbol, got {:?}",
+        symbol_names
+    );
+    assert!(
+        symbol_names.contains(&"value"),
+        "expected `value` symbol, got {:?}",
+        symbol_names
+    );
 }
 
 #[test]
@@ -176,8 +186,14 @@ fn raw_block_content_is_not_scanned() {
     );
     let r = extract(src, "tpl.j2");
     let names: Vec<_> = r.refs.iter().map(|r| r.target_name.as_str()).collect();
-    assert!(names.contains(&"real_var"), "before-raw ref should be emitted");
-    assert!(names.contains(&"also_real"), "after-raw ref should be emitted");
+    assert!(
+        names.contains(&"real_var"),
+        "before-raw ref should be emitted"
+    );
+    assert!(
+        names.contains(&"also_real"),
+        "after-raw ref should be emitted"
+    );
     assert!(
         !names.contains(&"Sender"),
         "Go template field inside raw block must be suppressed"
@@ -206,11 +222,23 @@ fn nested_pipe_filter_in_parens_is_suppressed() {
     // `([ x ] | flatten)` — `flatten` follows `|` inside parens and must not
     // be emitted as a TypeRef.
     let mut refs = Vec::new();
-    scan_expression("([ mirror_list ] | flatten) | join(',')", 0, 0, 0, &mut refs);
+    scan_expression(
+        "([ mirror_list ] | flatten) | join(',')",
+        0,
+        0,
+        0,
+        &mut refs,
+    );
     let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
     assert!(names.contains(&"mirror_list"));
-    assert!(!names.contains(&"flatten"), "filter after nested `|` must be suppressed");
-    assert!(!names.contains(&"join"), "filter after top-level `|` must be suppressed");
+    assert!(
+        !names.contains(&"flatten"),
+        "filter after nested `|` must be suppressed"
+    );
+    assert!(
+        !names.contains(&"join"),
+        "filter after top-level `|` must be suppressed"
+    );
 }
 
 #[test]
@@ -226,8 +254,14 @@ fn paren_filter_chain_like_matrix_synapse() {
     );
     let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
     assert!(names.contains(&"cache_size"));
-    assert!(!names.contains(&"int"), "`int` is a filter name here, not a variable");
-    assert!(!names.contains(&"to_json"), "`to_json` is a filter name here, not a variable");
+    assert!(
+        !names.contains(&"int"),
+        "`int` is a filter name here, not a variable"
+    );
+    assert!(
+        !names.contains(&"to_json"),
+        "`to_json` is a filter name here, not a variable"
+    );
 }
 
 #[test]
@@ -254,6 +288,12 @@ fn multiple_subscript_levels_emit_head_only() {
     // `data` is the head; `key` is the first subscript arg (separate expr),
     // `value` and `sub` are chain continuations after the second `]`.
     assert!(names.contains(&"data"));
-    assert!(!names.contains(&"value"), "chain member after subscript must not be emitted");
-    assert!(!names.contains(&"sub"), "chain member after subscript must not be emitted");
+    assert!(
+        !names.contains(&"value"),
+        "chain member after subscript must not be emitted"
+    );
+    assert!(
+        !names.contains(&"sub"),
+        "chain member after subscript must not be emitted"
+    );
 }

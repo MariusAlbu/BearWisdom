@@ -15,16 +15,20 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
                 node_kind: "test".to_string(),
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
@@ -85,7 +89,9 @@ fn test_vbnet_efcore_savechanges_emits_dbquery() {
 fn test_vbnet_dapper_execute_emits_other_op() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["conn", "Execute"]);
-    let args = vec![CallArg::StringLit("INSERT INTO Items (a) VALUES (1)".to_string())];
+    let args = vec![CallArg::StringLit(
+        "INSERT INTO Items (a) VALUES (1)".to_string(),
+    )];
     match detect_csharp_db_query_emission(&chain, &args).unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Insert),
         _ => panic!("expected DbQuery"),
@@ -96,12 +102,7 @@ fn test_vbnet_dapper_execute_emits_other_op() {
 // External-namespace classification (.NET parity with C#)
 // ---------------------------------------------------------------------------
 
-fn make_symbol(
-    name: &str,
-    qname: &str,
-    kind: SymbolKind,
-    scope: Option<&str>,
-) -> ExtractedSymbol {
+fn make_symbol(name: &str, qname: &str, kind: SymbolKind, scope: Option<&str>) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -170,14 +171,18 @@ fn make_nuget_ctx() -> crate::indexer::project_context::ProjectContext {
     use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = crate::indexer::project_context::ProjectContext::default();
     let mut nuget = ManifestData::default();
-    nuget.dependencies.insert("CommunityToolkit.Mvvm".to_string());
+    nuget
+        .dependencies
+        .insert("CommunityToolkit.Mvvm".to_string());
     ctx.manifests.insert(ManifestKind::NuGet, nuget);
     ctx
 }
 
 #[test]
 fn test_vbnet_bcl_import_classified_external() {
-    use crate::indexer::resolve::engine::{build_scope_chain, FileContext, RefContext, SymbolIndex};
+    use crate::indexer::resolve::engine::{
+        build_scope_chain, FileContext, RefContext, SymbolIndex,
+    };
     use crate::type_checker::profile::hooks::LanguageEngineHooks;
     use std::collections::HashMap;
 

@@ -14,7 +14,9 @@ static RSPEC: TfDescriptor = TfDescriptor {
     config_files: &[".rspec", "spec/spec_helper.rb"],
     config_content_match: None,
     package_json_dep: None,
-    discovery_cmd: Some(ShellCommands::same("bundle exec rspec --dry-run --format json")),
+    discovery_cmd: Some(ShellCommands::same(
+        "bundle exec rspec --dry-run --format json",
+    )),
     run_cmd: ShellCommands::same("bundle exec rspec"),
     run_single_cmd: ShellCommands::same("bundle exec rspec {file}"),
 };

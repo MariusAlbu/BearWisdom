@@ -8,8 +8,8 @@ use crate::indexer::resolve::engine::{
 };
 use crate::type_checker::profile::language_profile::{AliasDecode, NameNormalization, NormSpec};
 use crate::types::{
-    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
-    SymbolKind, Visibility,
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
 };
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -78,7 +78,8 @@ impl Lookup {
         self
     }
     fn with_selector(mut self, raw: &str, class_qname: &str) -> Self {
-        self.selectors.insert(raw.to_string(), class_qname.to_string());
+        self.selectors
+            .insert(raw.to_string(), class_qname.to_string());
         self
     }
     fn with_workspace_pkg(mut self, declared: &str, id: i64) -> Self {
@@ -101,8 +102,10 @@ impl Lookup {
         self
     }
     fn with_generics(mut self, qname: &str, params: &[&str]) -> Self {
-        self.generics
-            .insert(qname.to_string(), params.iter().map(|s| s.to_string()).collect());
+        self.generics.insert(
+            qname.to_string(),
+            params.iter().map(|s| s.to_string()).collect(),
+        );
         self
     }
     fn with_in_file(mut self, file: &str, sym: SymbolInfo) -> Self {
@@ -137,13 +140,7 @@ impl Lookup {
         self.ambient_paths.push(path.to_string());
         self
     }
-    fn with_reexport(
-        mut self,
-        target: &str,
-        prefix: &str,
-        module: &str,
-        sym_id: i64,
-    ) -> Self {
+    fn with_reexport(mut self, target: &str, prefix: &str, module: &str, sym_id: i64) -> Self {
         self.reexport.insert(
             (target.to_string(), prefix.to_string(), module.to_string()),
             sym_id,
@@ -320,7 +317,9 @@ fn file_ctx(imports: Vec<ImportEntry>, ns: Option<&str>) -> FileContext {
 }
 
 fn extracted_call(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -419,7 +418,9 @@ fn ref_module_matches_qname_form() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ref_module(&accept_any).expect("module-qualified resolves");
+    let resolved = d
+        .resolve_via_ref_module(&accept_any)
+        .expect("module-qualified resolves");
     assert_eq!(resolved.target_symbol_id, 7);
     assert_eq!(resolved.strategy, "default_ref_module");
     assert_eq!(resolved.confidence, 1.0);
@@ -438,7 +439,9 @@ fn ref_module_falls_back_to_file_stem() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ref_module(&accept_any).expect("file-stem match resolves");
+    let resolved = d
+        .resolve_via_ref_module(&accept_any)
+        .expect("file-stem match resolves");
     assert_eq!(resolved.target_symbol_id, 11);
 }
 
@@ -460,8 +463,13 @@ fn ref_module_returns_none_without_module_field() {
 
 #[test]
 fn qname_exact_resolves_dotted_target() {
-    let lookup =
-        Lookup::new().with(sym(3, "List", "Catalog.Services.List", "function", "src/svc.cs"));
+    let lookup = Lookup::new().with(sym(
+        3,
+        "List",
+        "Catalog.Services.List",
+        "function",
+        "src/svc.cs",
+    ));
     let r = extracted_call("Catalog.Services.List");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -510,7 +518,9 @@ fn file_import_matches_relative_specifier() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_file_import(&accept_any).expect("import resolves");
+    let resolved = d
+        .resolve_via_file_import(&accept_any)
+        .expect("import resolves");
     assert_eq!(resolved.target_symbol_id, 9);
     assert_eq!(resolved.strategy, "default_file_import");
 }
@@ -528,8 +538,76 @@ fn file_import_uses_alias_to_find_original_name() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_file_import(&accept_any).expect("alias maps to original");
+    let resolved = d
+        .resolve_via_file_import(&accept_any)
+        .expect("alias maps to original");
     assert_eq!(resolved.target_symbol_id, 12);
+}
+
+#[test]
+fn component_import_binds_default_renamed_vue_component() {
+    let lookup = Lookup::new()
+        .with_module_file("./Button.vue", "src/Button.vue")
+        .with_in_file(
+            "src/Button.vue",
+            sym(23, "Button", "Button", "class", "src/Button.vue"),
+        );
+    let r = extracted_call("NextButton");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("NextButton", Some("./Button.vue"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_component_import(&accept_any)
+        .expect("renamed component import resolves through module file");
+    assert_eq!(resolved.target_symbol_id, 23);
+    assert_eq!(resolved.strategy, "default_component_import");
+}
+
+#[test]
+fn component_import_binds_dotted_namespace_head() {
+    let lookup = Lookup::new().with(sym(24, "Card", "Card", "class", "src/card.ts"));
+    let r = extracted_call("Card.Root");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("Card", Some("./card"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_component_import(&accept_any)
+        .expect("dotted component tag resolves through imported head");
+    assert_eq!(resolved.target_symbol_id, 24);
+    assert_eq!(resolved.strategy, "default_component_import");
+}
+
+#[test]
+fn component_import_declines_non_component_file_rename() {
+    let lookup = Lookup::new()
+        .with_module_file("./factory", "src/factory.ts")
+        .with_in_file(
+            "src/factory.ts",
+            sym(25, "Factory", "Factory", "class", "src/factory.ts"),
+        );
+    let r = extracted_call("RenamedFactory");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![import("RenamedFactory", Some("./factory"))], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_component_import(&accept_any).is_none());
 }
 
 #[test]
@@ -544,7 +622,10 @@ fn namespace_import_expands_dotted_namespace() {
     let r = extracted_call("CatalogItem");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![import("eShop.Catalog.API.Model", Some("eShop.Catalog.API.Model"))],
+        vec![import(
+            "eShop.Catalog.API.Model",
+            Some("eShop.Catalog.API.Model"),
+        )],
         None,
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -688,7 +769,9 @@ fn chain_prefix_uses_second_to_last_segment_against_imports() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_chain_prefix(&accept_any).expect("chain prefix resolves");
+    let resolved = d
+        .resolve_via_chain_prefix(&accept_any)
+        .expect("chain prefix resolves");
     assert_eq!(resolved.target_symbol_id, 50);
     assert_eq!(resolved.strategy, "default_chain_prefix");
 }
@@ -696,7 +779,13 @@ fn chain_prefix_uses_second_to_last_segment_against_imports() {
 #[test]
 fn scope_visible_resolves_against_innermost_scope_first() {
     let lookup = Lookup::new()
-        .with(sym(60, "helper", "outer.helper", "function", "src/outer.rs"))
+        .with(sym(
+            60,
+            "helper",
+            "outer.helper",
+            "function",
+            "src/outer.rs",
+        ))
         .with(sym(
             61,
             "helper",
@@ -707,11 +796,7 @@ fn scope_visible_resolves_against_innermost_scope_first() {
     let r = extracted_call("helper");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
-    let rc = ref_ctx(
-        &r,
-        &s,
-        vec!["outer.inner".to_string(), "outer".to_string()],
-    );
+    let rc = ref_ctx(&r, &s, vec!["outer.inner".to_string(), "outer".to_string()]);
     let d = DefaultResolver {
         file_ctx: &fc,
         ref_ctx: &rc,
@@ -728,13 +813,7 @@ fn scope_visible_resolves_against_innermost_scope_first() {
 #[test]
 fn scope_visible_resolves_with_profile_separator() {
     // A `::`-keyed scope member resolves when the profile separator is `::`.
-    let lookup = Lookup::new().with(sym(
-        90,
-        "baz",
-        "Foo::Bar::baz",
-        "function",
-        "src/foo.cpp",
-    ));
+    let lookup = Lookup::new().with(sym(90, "baz", "Foo::Bar::baz", "function", "src/foo.cpp"));
     let r = extracted_call("baz");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -796,8 +875,7 @@ fn kind_compatible_filter_rejects_class_for_calls_when_strict() {
             _ => true,
         }
     }
-    let lookup =
-        Lookup::new().with(sym(70, "Foo", "Foo", "class", "src/foo.ts"));
+    let lookup = Lookup::new().with(sym(70, "Foo", "Foo", "class", "src/foo.ts"));
     let r = extracted_call("Foo");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![import("Foo", Some("./foo"))], None);
@@ -819,7 +897,13 @@ fn resolve_all_prefers_innermost_scope_over_imports() {
     // Two viable targets: one in the innermost scope, one via file import.
     // Canonical order says scope wins.
     let lookup = Lookup::new()
-        .with(sym(80, "helper", "outer.helper", "function", "src/outer.rs"))
+        .with(sym(
+            80,
+            "helper",
+            "outer.helper",
+            "function",
+            "src/outer.rs",
+        ))
         .with(sym(81, "helper", "Foo", "function", "ext:helper.ts"));
     let r = extracted_call("helper");
     let s = source_symbol("caller");
@@ -901,7 +985,13 @@ fn unique_internal_name_refuses_when_multiple_candidates() {
 
 #[test]
 fn unique_internal_name_ignores_external_candidates() {
-    let mut ext_sym = sym(203, "load", "vendor.load", "function", "ext:vendor/lib.d.ts");
+    let mut ext_sym = sym(
+        203,
+        "load",
+        "vendor.load",
+        "function",
+        "ext:vendor/lib.d.ts",
+    );
     ext_sym.file_path = Arc::from("ext:vendor/lib.d.ts");
     let lookup = Lookup::new()
         .with(sym(204, "load", "App.load", "function", "src/app.ts"))
@@ -952,14 +1042,12 @@ fn reexport_chain_resolves_direct_shape() {
         "namespace",
         "ext:node_modules/@typescript-eslint/types/dist/index.d.ts",
     );
-    let lookup = Lookup::new()
-        .with(sym.clone())
-        .with_reexport(
-            "TSESTree",
-            "TSESTree",
-            "@typescript-eslint/utils",
-            90,
-        );
+    let lookup = Lookup::new().with(sym.clone()).with_reexport(
+        "TSESTree",
+        "TSESTree",
+        "@typescript-eslint/utils",
+        90,
+    );
     let r = extracted_call("TSESTree");
     let s = source_symbol("caller");
     let fc = file_ctx(
@@ -989,14 +1077,12 @@ fn reexport_chain_resolves_dotted_shape() {
         "interface",
         "ext:node_modules/@typescript-eslint/types/dist/index.d.ts",
     );
-    let lookup = Lookup::new()
-        .with(sym_inner)
-        .with_reexport(
-            "Node",
-            "TSESTree",
-            "@typescript-eslint/utils",
-            91,
-        );
+    let lookup = Lookup::new().with(sym_inner).with_reexport(
+        "Node",
+        "TSESTree",
+        "@typescript-eslint/utils",
+        91,
+    );
     let r = extracted_call("TSESTree.Node");
     let s = source_symbol("caller");
     let fc = file_ctx(
@@ -1058,6 +1144,54 @@ fn reexport_following_resolves_pub_use_hop() {
         .expect("pub-use re-export hop resolves");
     assert_eq!(resolved.target_symbol_id, 1);
     assert_eq!(resolved.strategy, "reexport_chain");
+}
+
+#[test]
+fn reexport_following_resolves_wildcard_import_hop() {
+    // Nim-style persisted shape: consumer `import foo` is stored as
+    // `imported_name="*", module_path="foo"`; foo has `export results`;
+    // results defines ok. The `*` convention carries wildcard semantics even
+    // if a persistence path did not preserve the boolean flag.
+    let lookup = Lookup::new()
+        .with(sym(
+            7,
+            "ok",
+            "ok",
+            "function",
+            "ext:nim:results/results.nim",
+        ))
+        .with_in_file(
+            "ext:nim:results/results.nim",
+            sym(7, "ok", "ok", "function", "ext:nim:results/results.nim"),
+        )
+        .with_reexport_entry("foo.nim", "*", "results")
+        .with_module_file("foo", "foo.nim")
+        .with_module_file("results", "ext:nim:results/results.nim");
+    let r = extracted_call("ok");
+    let s = source_symbol("caller");
+    let fc = FileContext {
+        file_path: "caller.nim".to_string(),
+        language: "nim".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "*".to_string(),
+            module_path: Some("foo".to_string()),
+            alias: None,
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_reexport_following()
+        .expect("wildcard import follows module re-export");
+    assert_eq!(resolved.target_symbol_id, 7);
+    assert_eq!(resolved.strategy, "reexport_star");
 }
 
 #[test]
@@ -1349,7 +1483,13 @@ fn enclosing_member_none_outside_a_type() {
 #[test]
 fn aliased_import_resolves_via_path_alias() {
     let lookup = Lookup::new()
-        .with(sym(330, "helper", "helper", "function", "src/utils/helper.ts"))
+        .with(sym(
+            330,
+            "helper",
+            "helper",
+            "function",
+            "src/utils/helper.ts",
+        ))
         .with_path_alias("@/utils/helper", "src/utils/helper");
     let r = extracted_call("helper");
     let s = source_symbol("caller");
@@ -1372,8 +1512,13 @@ fn aliased_import_resolves_via_path_alias() {
 fn aliased_import_none_without_rewrite() {
     // No alias registered → resolve_path_alias returns None → stay out,
     // leaving the raw-path case to resolve_via_file_import.
-    let lookup =
-        Lookup::new().with(sym(331, "helper", "helper", "function", "src/utils/helper.ts"));
+    let lookup = Lookup::new().with(sym(
+        331,
+        "helper",
+        "helper",
+        "function",
+        "src/utils/helper.ts",
+    ));
     let r = extracted_call("helper");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![import("helper", Some("@/utils/helper"))], None);
@@ -1449,7 +1594,10 @@ struct WorkspaceLookup {
 
 impl WorkspaceLookup {
     fn new(lookup: Lookup) -> Self {
-        Self { inner: lookup, workspace_packages: Default::default() }
+        Self {
+            inner: lookup,
+            workspace_packages: Default::default(),
+        }
     }
     fn with_workspace_package(mut self, specifier: &str, id: i64) -> Self {
         self.workspace_packages.insert(specifier.to_string(), id);
@@ -1458,20 +1606,48 @@ impl WorkspaceLookup {
 }
 
 impl SymbolLookup for WorkspaceLookup {
-    fn by_name(&self, n: &str) -> &[SymbolInfo] { self.inner.by_name(n) }
-    fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> { self.inner.by_qualified_name(q) }
-    fn members_of(&self, p: &str) -> &[SymbolInfo] { self.inner.members_of(p) }
-    fn types_by_name(&self, n: &str) -> &[SymbolInfo] { self.inner.types_by_name(n) }
-    fn in_namespace(&self, n: &str) -> Vec<&SymbolInfo> { self.inner.in_namespace(n) }
-    fn has_in_namespace(&self, n: &str) -> bool { self.inner.has_in_namespace(n) }
-    fn in_file(&self, p: &str) -> &[SymbolInfo] { self.inner.in_file(p) }
-    fn field_type_name(&self, q: &str) -> Option<&str> { self.inner.field_type_name(q) }
-    fn return_type_name(&self, q: &str) -> Option<&str> { self.inner.return_type_name(q) }
-    fn field_type_args(&self, q: &str) -> Option<&[String]> { self.inner.field_type_args(q) }
-    fn generic_params(&self, q: &str) -> Option<&[String]> { self.inner.generic_params(q) }
-    fn reexports_from(&self, p: &str) -> &[(String, String)] { self.inner.reexports_from(p) }
-    fn is_external_name(&self, n: &str, l: &str) -> bool { self.inner.is_external_name(n, l) }
-    fn is_ambient_path(&self, p: &str) -> bool { self.inner.is_ambient_path(p) }
+    fn by_name(&self, n: &str) -> &[SymbolInfo] {
+        self.inner.by_name(n)
+    }
+    fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> {
+        self.inner.by_qualified_name(q)
+    }
+    fn members_of(&self, p: &str) -> &[SymbolInfo] {
+        self.inner.members_of(p)
+    }
+    fn types_by_name(&self, n: &str) -> &[SymbolInfo] {
+        self.inner.types_by_name(n)
+    }
+    fn in_namespace(&self, n: &str) -> Vec<&SymbolInfo> {
+        self.inner.in_namespace(n)
+    }
+    fn has_in_namespace(&self, n: &str) -> bool {
+        self.inner.has_in_namespace(n)
+    }
+    fn in_file(&self, p: &str) -> &[SymbolInfo] {
+        self.inner.in_file(p)
+    }
+    fn field_type_name(&self, q: &str) -> Option<&str> {
+        self.inner.field_type_name(q)
+    }
+    fn return_type_name(&self, q: &str) -> Option<&str> {
+        self.inner.return_type_name(q)
+    }
+    fn field_type_args(&self, q: &str) -> Option<&[String]> {
+        self.inner.field_type_args(q)
+    }
+    fn generic_params(&self, q: &str) -> Option<&[String]> {
+        self.inner.generic_params(q)
+    }
+    fn reexports_from(&self, p: &str) -> &[(String, String)] {
+        self.inner.reexports_from(p)
+    }
+    fn is_external_name(&self, n: &str, l: &str) -> bool {
+        self.inner.is_external_name(n, l)
+    }
+    fn is_ambient_path(&self, p: &str) -> bool {
+        self.inner.is_ambient_path(p)
+    }
     fn resolve_external_reexport(&self, t: &str, c: &str, m: &str) -> Option<i64> {
         self.inner.resolve_external_reexport(t, c, m)
     }
@@ -1517,8 +1693,24 @@ fn ranked_picks_same_workspace_package_over_external() {
     // Two `Foo` candidates: one internal (workspace pkg 42), one external.
     // The same-package bonus (+1000) dominates everything else.
     let lookup = Lookup::new()
-        .with(sym_full(11, "Foo", "internal.Foo", "class", "src/internal/foo.ts", Some("public"), Some(42)))
-        .with(sym_full(22, "Foo", "ext.Foo", "class", "ext:idx:/cache/somelib/foo.d.ts", Some("public"), None));
+        .with(sym_full(
+            11,
+            "Foo",
+            "internal.Foo",
+            "class",
+            "src/internal/foo.ts",
+            Some("public"),
+            Some(42),
+        ))
+        .with(sym_full(
+            22,
+            "Foo",
+            "ext.Foo",
+            "class",
+            "ext:idx:/cache/somelib/foo.d.ts",
+            Some("public"),
+            None,
+        ));
     let r = extracted_call("Foo");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -1529,7 +1721,9 @@ fn ranked_picks_same_workspace_package_over_external() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks workspace match");
+    let resolved = d
+        .resolve_via_ranked_candidates(&accept_any)
+        .expect("ranked picks workspace match");
     assert_eq!(resolved.target_symbol_id, 11);
     assert_eq!(resolved.strategy, "default_ranked_candidate");
 }
@@ -1540,11 +1734,34 @@ fn ranked_picks_imported_package_over_random_externals() {
     // imports from `@types/jest` — workspace_package_id resolves that to id=7.
     // Only the jest-attributed candidate has package_id=7, so it wins.
     let inner = Lookup::new()
-        .with(sym_full(1, "expect", "expect", "function", "ext:/cache/@types/jest/index.d.ts", Some("public"), Some(7)))
-        .with(sym_full(2, "expect", "expect", "function", "ext:/cache/@types/vitest/dist/index.d.ts", Some("public"), Some(8)))
-        .with(sym_full(3, "expect", "expect", "function", "ext:/cache/@types/chai/index.d.ts", Some("public"), Some(9)));
-    let lookup = WorkspaceLookup::new(inner)
-        .with_workspace_package("@types/jest", 7);
+        .with(sym_full(
+            1,
+            "expect",
+            "expect",
+            "function",
+            "ext:/cache/@types/jest/index.d.ts",
+            Some("public"),
+            Some(7),
+        ))
+        .with(sym_full(
+            2,
+            "expect",
+            "expect",
+            "function",
+            "ext:/cache/@types/vitest/dist/index.d.ts",
+            Some("public"),
+            Some(8),
+        ))
+        .with(sym_full(
+            3,
+            "expect",
+            "expect",
+            "function",
+            "ext:/cache/@types/chai/index.d.ts",
+            Some("public"),
+            Some(9),
+        ));
+    let lookup = WorkspaceLookup::new(inner).with_workspace_package("@types/jest", 7);
 
     let r = extracted_call("expect");
     let s = source_symbol("caller");
@@ -1556,7 +1773,9 @@ fn ranked_picks_imported_package_over_random_externals() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks imported package");
+    let resolved = d
+        .resolve_via_ranked_candidates(&accept_any)
+        .expect("ranked picks imported package");
     assert_eq!(resolved.target_symbol_id, 1);
 }
 
@@ -1565,8 +1784,24 @@ fn ranked_returns_none_when_top_two_tie() {
     // Two indistinguishable external candidates — both public, same depth,
     // neither imported, no package match. Margin not met → stay None.
     let lookup = Lookup::new()
-        .with(sym_full(101, "Foo", "Foo", "class", "ext:/cache/a/foo.d.ts", Some("public"), None))
-        .with(sym_full(102, "Foo", "Foo", "class", "ext:/cache/b/foo.d.ts", Some("public"), None));
+        .with(sym_full(
+            101,
+            "Foo",
+            "Foo",
+            "class",
+            "ext:/cache/a/foo.d.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            102,
+            "Foo",
+            "Foo",
+            "class",
+            "ext:/cache/b/foo.d.ts",
+            Some("public"),
+            None,
+        ));
     let r = extracted_call("Foo");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -1587,8 +1822,24 @@ fn ranked_prefers_ambient_path() {
     // One ambient candidate (TS @types-style), one non-ambient. Ambient
     // bonus (+200) plus public-visibility tilts the win to the ambient one.
     let lookup = Lookup::new()
-        .with(sym_full(50, "expect", "expect", "function", "ext:/cache/@types/jest/index.d.ts", Some("public"), None))
-        .with(sym_full(51, "expect", "expect", "function", "ext:/cache/some-other/expect.d.ts", Some("public"), None))
+        .with(sym_full(
+            50,
+            "expect",
+            "expect",
+            "function",
+            "ext:/cache/@types/jest/index.d.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            51,
+            "expect",
+            "expect",
+            "function",
+            "ext:/cache/some-other/expect.d.ts",
+            Some("public"),
+            None,
+        ))
         .with_ambient("ext:/cache/@types/jest/index.d.ts");
     let r = extracted_call("expect");
     let s = source_symbol("caller");
@@ -1600,7 +1851,9 @@ fn ranked_prefers_ambient_path() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks ambient");
+    let resolved = d
+        .resolve_via_ranked_candidates(&accept_any)
+        .expect("ranked picks ambient");
     assert_eq!(resolved.target_symbol_id, 50);
 }
 
@@ -1609,8 +1862,24 @@ fn ranked_penalises_private_external_candidates() {
     // One private external, one public external. The public one wins despite
     // identical paths — public+50 minus private-200 = 250-point gap.
     let lookup = Lookup::new()
-        .with(sym_full(70, "Foo", "Foo", "class", "ext:/cache/somepkg/foo.d.ts", Some("private"), None))
-        .with(sym_full(71, "Foo", "Foo", "class", "ext:/cache/somepkg/bar.d.ts", Some("public"), None));
+        .with(sym_full(
+            70,
+            "Foo",
+            "Foo",
+            "class",
+            "ext:/cache/somepkg/foo.d.ts",
+            Some("private"),
+            None,
+        ))
+        .with(sym_full(
+            71,
+            "Foo",
+            "Foo",
+            "class",
+            "ext:/cache/somepkg/bar.d.ts",
+            Some("public"),
+            None,
+        ));
     let r = extracted_call("Foo");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -1621,7 +1890,9 @@ fn ranked_penalises_private_external_candidates() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked picks public");
+    let resolved = d
+        .resolve_via_ranked_candidates(&accept_any)
+        .expect("ranked picks public");
     assert_eq!(resolved.target_symbol_id, 71);
 }
 
@@ -1631,9 +1902,33 @@ fn ranked_picks_via_qname_prefix_when_import_module_matches() {
     // qname paths. The one whose qname literally starts with `lodash.` wins
     // via the +300 prefix bonus.
     let lookup = Lookup::new()
-        .with(sym_full(200, "map", "lodash.map", "function", "ext:/cache/@types/lodash/index.d.ts", Some("public"), None))
-        .with(sym_full(201, "map", "rxjs.operators.map", "function", "ext:/cache/rxjs/operators.d.ts", Some("public"), None))
-        .with(sym_full(202, "map", "other.helper.map", "function", "ext:/cache/other/helper.d.ts", Some("public"), None));
+        .with(sym_full(
+            200,
+            "map",
+            "lodash.map",
+            "function",
+            "ext:/cache/@types/lodash/index.d.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            201,
+            "map",
+            "rxjs.operators.map",
+            "function",
+            "ext:/cache/rxjs/operators.d.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            202,
+            "map",
+            "other.helper.map",
+            "function",
+            "ext:/cache/other/helper.d.ts",
+            Some("public"),
+            None,
+        ));
     let r = extracted_call("map");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![import("lodash", Some("lodash"))], None);
@@ -1644,7 +1939,9 @@ fn ranked_picks_via_qname_prefix_when_import_module_matches() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    let resolved = d.resolve_via_ranked_candidates(&accept_any).expect("ranked follows import");
+    let resolved = d
+        .resolve_via_ranked_candidates(&accept_any)
+        .expect("ranked follows import");
     assert_eq!(resolved.target_symbol_id, 200);
 }
 
@@ -1659,7 +1956,10 @@ fn confidence_is_always_one_point_oh() {
             extracted_call_with_module("map", "List"),
             file_ctx(vec![], None),
         ),
-        (extracted_call("Foo"), file_ctx(vec![import("Foo", Some("./foo"))], None)),
+        (
+            extracted_call("Foo"),
+            file_ctx(vec![import("Foo", Some("./foo"))], None),
+        ),
     ] {
         let s = source_symbol("caller");
         let rc = ref_ctx(&r, &s, vec![]);
@@ -1682,8 +1982,13 @@ fn package_short_name_resolves_under_import_short_name() {
     // Go-shaped: `import "github.com/gin-gonic/gin"` brings short name `gin`,
     // and the member is keyed `gin.NewRouter`. A bare `NewRouter` ref whose
     // qualifier the extractor dropped resolves under `{imported_name}.{target}`.
-    let lookup =
-        Lookup::new().with(sym(5, "NewRouter", "gin.NewRouter", "function", "ext:go:gin/gin.go"));
+    let lookup = Lookup::new().with(sym(
+        5,
+        "NewRouter",
+        "gin.NewRouter",
+        "function",
+        "ext:go:gin/gin.go",
+    ));
     let r = extracted_call("NewRouter");
     let s = source_symbol("caller");
     let fc = file_ctx(
@@ -1743,12 +2048,21 @@ fn package_short_name_joins_with_profile_separator() {
 fn package_short_name_resolves_aliased_import_via_last_segment() {
     // `import mygin "github.com/gin-gonic/gin"; mygin.Default()` — the symbol
     // stays keyed under the path's last segment (`gin.Default`), not the alias.
-    let lookup =
-        Lookup::new().with(sym(6, "Default", "gin.Default", "function", "ext:go:gin/gin.go"));
+    let lookup = Lookup::new().with(sym(
+        6,
+        "Default",
+        "gin.Default",
+        "function",
+        "ext:go:gin/gin.go",
+    ));
     let r = extracted_call("Default");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![aliased_import("mygin", "mygin", Some("github.com/gin-gonic/gin"))],
+        vec![aliased_import(
+            "mygin",
+            "mygin",
+            Some("github.com/gin-gonic/gin"),
+        )],
         Some("main"),
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -1769,8 +2083,13 @@ fn package_short_name_off_under_default_ladder() {
     // The strategy is gated by ChainQualification::PackageShortName in the
     // ladder. The fn-pointer `resolve_all` path passes None, so the same fixture
     // does NOT resolve `gin.NewRouter` from a bare `NewRouter` through it.
-    let lookup =
-        Lookup::new().with(sym(5, "NewRouter", "gin.NewRouter", "function", "ext:go:gin/gin.go"));
+    let lookup = Lookup::new().with(sym(
+        5,
+        "NewRouter",
+        "gin.NewRouter",
+        "function",
+        "ext:go:gin/gin.go",
+    ));
     let r = extracted_call("NewRouter");
     let s = source_symbol("caller");
     let fc = file_ctx(
@@ -1794,9 +2113,7 @@ fn package_short_name_off_under_default_ladder() {
 // resolve_via_import_path — template-include resolution (data-driven)
 // ---------------------------------------------------------------------------
 
-use crate::type_checker::profile::language_profile::{
-    CandidateDirs, ImportResolution, StemMatch,
-};
+use crate::type_checker::profile::language_profile::{CandidateDirs, ImportResolution, StemMatch};
 
 /// A `FileContext` rooted at an arbitrary path (the `file_ctx` helper hardcodes
 /// `src/main.ts`, which has no meaningful template directory).
@@ -1853,7 +2170,13 @@ fn import_path_stem_exact_with_appended_extension() {
     // `partial` from `views/page.tmpl` → `views/partial.tmpl`, bound by stem.
     let lookup = Lookup::new().with_in_file(
         "views/partial.tmpl",
-        sym(42, "partial", "views/partial.tmpl::partial", "class", "views/partial.tmpl"),
+        sym(
+            42,
+            "partial",
+            "views/partial.tmpl::partial",
+            "class",
+            "views/partial.tmpl",
+        ),
     );
     let fc = file_ctx_at("views/page.tmpl");
     let r = extracted_import("partial");
@@ -1942,10 +2265,8 @@ fn import_path_any_class_in_file_match() {
 
 #[test]
 fn import_path_decline_leading_slash() {
-    let lookup = Lookup::new().with_in_file(
-        "views/_x.gsp",
-        sym(1, "x", "q", "class", "views/_x.gsp"),
-    );
+    let lookup =
+        Lookup::new().with_in_file("views/_x.gsp", sym(1, "x", "q", "class", "views/_x.gsp"));
     let fc = file_ctx_at("views/show.gsp");
     let r = extracted_import("/shared/x");
     let mut ir = base_ir();
@@ -2052,7 +2373,13 @@ fn module_anchor_name_exact_kind_binds_via_in_module_from() {
         .with_module_file("./helpers", "myapp/services/helpers.py")
         .with_in_file(
             "myapp/services/helpers.py",
-            sym(7, "do_work", "helpers.do_work", "function", "myapp/services/helpers.py"),
+            sym(
+                7,
+                "do_work",
+                "helpers.do_work",
+                "function",
+                "myapp/services/helpers.py",
+            ),
         );
     let r = extracted_call_with_module("do_work", "./helpers");
     let s = source_symbol("caller");
@@ -2148,7 +2475,13 @@ fn module_anchor_prefer_named_else_first_picks_same_named() {
         )
         .with_in_file(
             "vendor/sidekiq/api.rb",
-            sym(2, "Api", "Sidekiq.Api", "namespace", "vendor/sidekiq/api.rb"),
+            sym(
+                2,
+                "Api",
+                "Sidekiq.Api",
+                "namespace",
+                "vendor/sidekiq/api.rb",
+            ),
         );
     let r = {
         let mut r = extracted_call_with_module("api", "sidekiq/api");
@@ -2254,13 +2587,7 @@ fn module_anchor_by_name_under_module_dir_for_absolute_python() {
 #[test]
 fn module_anchor_by_name_under_module_dir_qname_probe() {
     // The `{module}.{target}` qname probe — `models.User` keyed directly.
-    let lookup = Lookup::new().with(sym(
-        10,
-        "User",
-        "models.User",
-        "class",
-        "app/models.py",
-    ));
+    let lookup = Lookup::new().with(sym(10, "User", "models.User", "class", "app/models.py"));
     let r = extracted_call_with_module("User", "models");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2322,8 +2649,13 @@ fn module_anchor_by_name_under_module_dir_colon_qname_probe() {
     // When a `::`-keyed qname IS in the index (`{module}::{target}`), the probe
     // matches it directly — the `::` separator is tried alongside the universal
     // `.` join.
-    let lookup =
-        Lookup::new().with(sym(12, "read", "lemmy::source::read", "function", "ext/lemmy.rs"));
+    let lookup = Lookup::new().with(sym(
+        12,
+        "read",
+        "lemmy::source::read",
+        "function",
+        "ext/lemmy.rs",
+    ));
     let r = extracted_call_with_module("read", "lemmy::source");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2477,7 +2809,13 @@ fn module_anchor_member_of_module_type_folds_case() {
     // `GetVal` member declared on type `Particle`.
     let lookup = Lookup::new().with_member(
         "Particle",
-        sym(60, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+        sym(
+            60,
+            "GetVal",
+            "Particle.GetVal",
+            "method",
+            "src/particle.f90",
+        ),
     );
     let r = extracted_call_with_module("getval", "Particle");
     let s = source_symbol("caller");
@@ -2515,7 +2853,13 @@ fn module_anchor_member_of_module_type_declines_unknown_member() {
     // No member of the type matches the target → no bind.
     let lookup = Lookup::new().with_member(
         "Particle",
-        sym(61, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+        sym(
+            61,
+            "GetVal",
+            "Particle.GetVal",
+            "method",
+            "src/particle.f90",
+        ),
     );
     let r = extracted_call_with_module("missing", "Particle");
     let s = source_symbol("caller");
@@ -2554,7 +2898,13 @@ fn module_anchor_member_of_module_type_declines_unknown_member() {
 fn same_dir_binds_sibling_in_same_directory() {
     // Odin: the source file's parent dir `game` is the package; a bare target
     // declared in a sibling file of the same dir resolves.
-    let lookup = Lookup::new().with(sym(70, "update", "update", "function", "src/game/player.odin"));
+    let lookup = Lookup::new().with(sym(
+        70,
+        "update",
+        "update",
+        "function",
+        "src/game/player.odin",
+    ));
     let r = extracted_call("update");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2580,7 +2930,13 @@ fn same_dir_binds_sibling_in_same_directory() {
 #[test]
 fn same_dir_declines_candidate_in_other_directory() {
     // A candidate in a DIFFERENT directory is a different package → no bind.
-    let lookup = Lookup::new().with(sym(71, "update", "update", "function", "src/render/gpu.odin"));
+    let lookup = Lookup::new().with(sym(
+        71,
+        "update",
+        "update",
+        "function",
+        "src/render/gpu.odin",
+    ));
     let r = extracted_call("update");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2635,7 +2991,13 @@ fn ocaml_profile_resolves_dotted_module_via_file_stem() {
 fn fortran_profile_resolves_derived_type_member_case_insensitively() {
     let lookup = Lookup::new().with_member(
         "Particle",
-        sym(81, "GetVal", "Particle.GetVal", "method", "src/particle.f90"),
+        sym(
+            81,
+            "GetVal",
+            "Particle.GetVal",
+            "method",
+            "src/particle.f90",
+        ),
     );
     let r = extracted_call_with_module("getval", "Particle");
     let s = source_symbol("caller");
@@ -2691,7 +3053,13 @@ fn fortran_profile_folds_case_in_same_file_step() {
 
 #[test]
 fn odin_profile_resolves_same_package_directory_sibling() {
-    let lookup = Lookup::new().with(sym(83, "update", "update", "function", "src/game/player.odin"));
+    let lookup = Lookup::new().with(sym(
+        83,
+        "update",
+        "update",
+        "function",
+        "src/game/player.odin",
+    ));
     let r = extracted_call("update");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2748,7 +3116,10 @@ fn run_ladder_terminal_declines_local_homonym_on_anchor_miss() {
     // must NOT bind to a same-named local symbol — the ladder terminates.
     let lookup = Lookup::new()
         .with(sym(20, "Value", "Value", "class", "src/local.dart"))
-        .with_in_file("src/local.dart", sym(20, "Value", "Value", "class", "src/local.dart"));
+        .with_in_file(
+            "src/local.dart",
+            sym(20, "Value", "Value", "class", "src/local.dart"),
+        );
     // module is set but resolves to no project file (external library prefix).
     // TypeRef so a `class` candidate is kind-compatible — the terminal guard,
     // not the kind table, is what must decline the local homonym.
@@ -2835,11 +3206,7 @@ fn external_by_import_binds_gem_family() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_external_by_import(
-            &ExternalByImport,
-            ExtMatch::PkgSegment,
-            &accept_any,
-        )
+        .resolve_via_external_by_import(&ExternalByImport, ExtMatch::PkgSegment, &accept_any)
         .expect("gem-family external resolves");
     assert_eq!(resolved.target_symbol_id, 40);
     assert_eq!(resolved.strategy, "default_external_by_import");
@@ -2867,24 +3234,14 @@ fn external_by_import_declines_unimported_gem() {
         kind_compatible: accept_any,
     };
     assert!(d
-        .resolve_via_external_by_import(
-            &ExternalByImport,
-            ExtMatch::PkgSegment,
-            &accept_any,
-        )
+        .resolve_via_external_by_import(&ExternalByImport, ExtMatch::PkgSegment, &accept_any,)
         .is_none());
 }
 
 #[test]
 fn external_by_import_ignores_internal_symbols() {
     // A same-named INTERNAL symbol must not be picked by the external strategy.
-    let lookup = Lookup::new().with(sym(
-        42,
-        "Client",
-        "app.Client",
-        "class",
-        "app/client.rb",
-    ));
+    let lookup = Lookup::new().with(sym(42, "Client", "app.Client", "class", "app/client.rb"));
     let r = extracted_call("Client");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
@@ -2896,11 +3253,7 @@ fn external_by_import_ignores_internal_symbols() {
         kind_compatible: accept_any,
     };
     assert!(d
-        .resolve_via_external_by_import(
-            &ExternalByImport,
-            ExtMatch::PkgSegment,
-            &accept_any,
-        )
+        .resolve_via_external_by_import(&ExternalByImport, ExtMatch::PkgSegment, &accept_any,)
         .is_none());
 }
 
@@ -2911,13 +3264,7 @@ fn external_by_import_ignores_internal_symbols() {
 #[test]
 fn scope_visible_strips_leading_self_keyword() {
     // `self.method` → strip `self.`, probe `{scope}.method`.
-    let lookup = Lookup::new().with(sym(
-        50,
-        "method",
-        "MyClass.method",
-        "function",
-        "app/m.py",
-    ));
+    let lookup = Lookup::new().with(sym(50, "method", "MyClass.method", "function", "app/m.py"));
     let r = extracted_call("self.method");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec!["MyClass".to_string()]);
@@ -2929,7 +3276,12 @@ fn scope_visible_strips_leading_self_keyword() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."], &["self", "cls"], NameNormalization::None)
+        .resolve_via_scope_visible(
+            &accept_any,
+            &["."],
+            &["self", "cls"],
+            NameNormalization::None,
+        )
         .expect("self.-stripped scope probe resolves");
     assert_eq!(resolved.target_symbol_id, 50);
 }
@@ -2938,13 +3290,7 @@ fn scope_visible_strips_leading_self_keyword() {
 fn scope_visible_empty_self_keywords_does_not_strip() {
     // With no self keywords (default), `self.method` is probed verbatim and
     // does not match the bare `method` member — byte-identical to before.
-    let lookup = Lookup::new().with(sym(
-        51,
-        "method",
-        "MyClass.method",
-        "function",
-        "app/m.py",
-    ));
+    let lookup = Lookup::new().with(sym(51, "method", "MyClass.method", "function", "app/m.py"));
     let r = extracted_call("self.method");
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec!["MyClass".to_string()]);
@@ -3286,7 +3632,12 @@ fn scope_visible_case_insensitive_binds_scope_member_via_fallback() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::Spec(CASE_FOLD_SPEC))
+        .resolve_via_scope_visible(
+            &accept_any,
+            &["."],
+            &[],
+            NameNormalization::Spec(CASE_FOLD_SPEC),
+        )
         .expect("case-insensitive spec binds the scope member via the fallback");
     assert_eq!(resolved.target_symbol_id, 131);
     assert_eq!(resolved.strategy, "default_scope_visible");
@@ -3315,7 +3666,12 @@ fn scope_visible_exact_qname_probe_still_runs_under_spec() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_scope_visible(&accept_any, &["."], &[], NameNormalization::Spec(CASE_FOLD_SPEC))
+        .resolve_via_scope_visible(
+            &accept_any,
+            &["."],
+            &[],
+            NameNormalization::Spec(CASE_FOLD_SPEC),
+        )
         .expect("exact qname probe binds even under a spec");
     assert_eq!(resolved.target_symbol_id, 132);
 }
@@ -3378,7 +3734,13 @@ fn same_namespace_and_imported_namespace_fold_case_when_ci() {
     // `Alr.Commands.Run` keyed; the file's namespace is `Alr.Commands`; the ref
     // target `run` (lowercase) resolves via same_namespace under the CI spec and
     // declines under None.
-    let member = sym(141, "Run", "Alr.Commands.Run", "function", "src/alr-commands.adb");
+    let member = sym(
+        141,
+        "Run",
+        "Alr.Commands.Run",
+        "function",
+        "src/alr-commands.adb",
+    );
     let lookup = Lookup::new().with(member);
     let r = extracted_call("run"); // lowercase, member is `Run`
     let s = source_symbol("caller");
@@ -3730,11 +4092,7 @@ fn ext_match_file_stem_binds_on_import_leaf() {
         lookup: &lookup,
         kind_compatible: accept_any,
     })
-    .resolve_via_external_by_import(
-        &ExternalByImport,
-        ExtMatch::FileStemOrDir,
-        &accept_any,
-    )
+    .resolve_via_external_by_import(&ExternalByImport, ExtMatch::FileStemOrDir, &accept_any)
     .expect("external binds via httpclient.nim file stem");
     assert_eq!(resolved.target_symbol_id, 50);
     assert_eq!(resolved.confidence, 1.0);
@@ -3763,11 +4121,7 @@ fn ext_match_file_stem_declines_unimported_module() {
             lookup: &lookup,
             kind_compatible: accept_any,
         })
-        .resolve_via_external_by_import(
-            &ExternalByImport,
-            ExtMatch::FileStemOrDir,
-            &accept_any,
-        )
+        .resolve_via_external_by_import(&ExternalByImport, ExtMatch::FileStemOrDir, &accept_any,)
         .is_none(),
         "an external not named by any import leaf/package must not bind"
     );
@@ -3820,7 +4174,9 @@ fn head_alias_off_is_inert() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_head_alias(HeadAliasBind::Off, &accept_any).is_none());
+    assert!(d
+        .resolve_via_head_alias(HeadAliasBind::Off, &accept_any)
+        .is_none());
 }
 
 #[test]
@@ -3841,7 +4197,9 @@ fn head_alias_binds_in_file_head_of_required_kind() {
     };
     let resolved = d
         .resolve_via_head_alias(
-            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            HeadAliasBind::OnSameFile {
+                require_kind: Some("class"),
+            },
             &accept_any,
         )
         .expect("dotted target head binds to the in-file class declaration");
@@ -3870,7 +4228,9 @@ fn head_alias_declines_underscore_head() {
     };
     assert!(
         d.resolve_via_head_alias(
-            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            HeadAliasBind::OnSameFile {
+                require_kind: Some("class")
+            },
             &accept_any,
         )
         .is_none(),
@@ -3895,13 +4255,14 @@ fn head_alias_declines_bare_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(
-        d.resolve_via_head_alias(
-            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+    assert!(d
+        .resolve_via_head_alias(
+            HeadAliasBind::OnSameFile {
+                require_kind: Some("class")
+            },
             &accept_any,
         )
-        .is_none()
-    );
+        .is_none());
 }
 
 #[test]
@@ -3924,7 +4285,9 @@ fn head_alias_require_kind_filters_wrong_kind() {
     };
     assert!(
         d.resolve_via_head_alias(
-            HeadAliasBind::OnSameFile { require_kind: Some("class") },
+            HeadAliasBind::OnSameFile {
+                require_kind: Some("class")
+            },
             &accept_any,
         )
         .is_none(),
@@ -3966,7 +4329,13 @@ fn head_alias_none_kind_accepts_any() {
 fn file_scoped_import_off_is_inert() {
     let lookup = Lookup::new().with_in_file(
         "common.robot",
-        sym(70, "Open Browser", "Open Browser", "function", "common.robot"),
+        sym(
+            70,
+            "Open Browser",
+            "Open Browser",
+            "function",
+            "common.robot",
+        ),
     );
     let r = extracted_call("Open Browser");
     let s = source_symbol("caller");
@@ -3978,21 +4347,26 @@ fn file_scoped_import_off_is_inert() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(
-        d.resolve_via_file_scoped_import(
+    assert!(d
+        .resolve_via_file_scoped_import(
             FileScopedImports::Off,
             NameNormalization::None,
             &accept_any,
         )
-        .is_none()
-    );
+        .is_none());
 }
 
 #[test]
 fn file_scoped_import_binds_symbol_in_imported_file() {
     let lookup = Lookup::new().with_in_file(
         "common.robot",
-        sym(71, "Open Browser", "Open Browser", "function", "common.robot"),
+        sym(
+            71,
+            "Open Browser",
+            "Open Browser",
+            "function",
+            "common.robot",
+        ),
     );
     let r = extracted_call("Open Browser");
     let s = source_symbol("caller");
@@ -4006,7 +4380,10 @@ fn file_scoped_import_binds_symbol_in_imported_file() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: true,
+                alias_decode: None,
+            },
             NameNormalization::None,
             &accept_any,
         )
@@ -4033,7 +4410,10 @@ fn file_scoped_import_resolves() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: true,
+                alias_decode: None,
+            },
             NameNormalization::None,
             &accept_any,
         )
@@ -4047,7 +4427,13 @@ fn file_scoped_import_wildcard_only_skips_non_wildcard() {
     // wildcard_only the import is skipped.
     let lookup = Lookup::new().with_in_file(
         "common.robot",
-        sym(73, "Open Browser", "Open Browser", "function", "common.robot"),
+        sym(
+            73,
+            "Open Browser",
+            "Open Browser",
+            "function",
+            "common.robot",
+        ),
     );
     let r = extracted_call("Open Browser");
     let s = source_symbol("caller");
@@ -4061,7 +4447,10 @@ fn file_scoped_import_wildcard_only_skips_non_wildcard() {
     };
     assert!(
         d.resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: true,
+                alias_decode: None
+            },
             NameNormalization::None,
             &accept_any,
         )
@@ -4075,7 +4464,13 @@ fn file_scoped_import_scans_non_wildcard_when_not_restricted() {
     // wildcard_only: false scans every file-naming import.
     let lookup = Lookup::new().with_in_file(
         "common.robot",
-        sym(74, "Open Browser", "Open Browser", "function", "common.robot"),
+        sym(
+            74,
+            "Open Browser",
+            "Open Browser",
+            "function",
+            "common.robot",
+        ),
     );
     let r = extracted_call("Open Browser");
     let s = source_symbol("caller");
@@ -4089,7 +4484,10 @@ fn file_scoped_import_scans_non_wildcard_when_not_restricted() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: false, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: false,
+                alias_decode: None,
+            },
             NameNormalization::None,
             &accept_any,
         )
@@ -4110,7 +4508,13 @@ fn file_scoped_import_matches_under_normalization() {
     };
     let lookup = Lookup::new().with_in_file(
         "common.robot",
-        sym(75, "Open Browser", "Open Browser", "function", "common.robot"),
+        sym(
+            75,
+            "Open Browser",
+            "Open Browser",
+            "function",
+            "common.robot",
+        ),
     );
     let r = extracted_call("openbrowser");
     let s = source_symbol("caller");
@@ -4124,7 +4528,10 @@ fn file_scoped_import_matches_under_normalization() {
     };
     let resolved = d
         .resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: true,
+                alias_decode: None,
+            },
             NameNormalization::Spec(spec),
             &accept_any,
         )
@@ -4159,7 +4566,11 @@ fn alias_decode_binds_named_member() {
     let r = extracted_call("Buy ${item}");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![wildcard_alias_import("buy${item}", Some("Lib::add_to_cart"), "lib/cart.py")],
+        vec![wildcard_alias_import(
+            "buy${item}",
+            Some("Lib::add_to_cart"),
+            "lib/cart.py",
+        )],
         None,
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -4194,7 +4605,11 @@ fn alias_decode_binds_named_type() {
     let r = extracted_call("Async Keyword");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![wildcard_alias_import("asynckeyword", Some("AsyncLib"), "lib/async.py")],
+        vec![wildcard_alias_import(
+            "asynckeyword",
+            Some("AsyncLib"),
+            "lib/async.py",
+        )],
         None,
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -4265,7 +4680,11 @@ fn alias_decode_off_does_not_match_imported_name() {
     let r = extracted_call("Async Keyword");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![wildcard_alias_import("asynckeyword", Some("AsyncLib"), "lib/async.py")],
+        vec![wildcard_alias_import(
+            "asynckeyword",
+            Some("AsyncLib"),
+            "lib/async.py",
+        )],
         None,
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -4277,7 +4696,10 @@ fn alias_decode_off_does_not_match_imported_name() {
     };
     assert!(
         d.resolve_via_file_scoped_import(
-            FileScopedImports::On { wildcard_only: true, alias_decode: None },
+            FileScopedImports::On {
+                wildcard_only: true,
+                alias_decode: None
+            },
             NameNormalization::Spec(ROBOT_KW_SPEC),
             &accept_any,
         )
@@ -4290,14 +4712,16 @@ fn alias_decode_off_does_not_match_imported_name() {
 fn alias_decode_member_missing_falls_through_to_type_then_fallback() {
     // The decoded member name isn't a symbol in the file, but the type is —
     // bind the type rather than failing.
-    let lookup = Lookup::new().with_in_file(
-        "lib/cart.py",
-        sym(85, "Lib", "Lib", "class", "lib/cart.py"),
-    );
+    let lookup =
+        Lookup::new().with_in_file("lib/cart.py", sym(85, "Lib", "Lib", "class", "lib/cart.py"));
     let r = extracted_call("Add To Cart");
     let s = source_symbol("caller");
     let fc = file_ctx(
-        vec![wildcard_alias_import("addtocart", Some("Lib::missing_method"), "lib/cart.py")],
+        vec![wildcard_alias_import(
+            "addtocart",
+            Some("Lib::missing_method"),
+            "lib/cart.py",
+        )],
         None,
     );
     let rc = ref_ctx(&r, &s, vec![]);
@@ -4344,7 +4768,9 @@ fn alias_module_qname_off_is_inert() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_alias_module_qname(false, &accept_any).is_none());
+    assert!(d
+        .resolve_via_alias_module_qname(false, &accept_any)
+        .is_none());
 }
 
 #[test]
@@ -4381,7 +4807,9 @@ fn alias_module_qname_declines_when_no_import_matches_target() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_alias_module_qname(true, &accept_any).is_none());
+    assert!(d
+        .resolve_via_alias_module_qname(true, &accept_any)
+        .is_none());
 }
 
 #[test]
@@ -4399,7 +4827,9 @@ fn alias_module_qname_declines_kind_incompatible() {
         lookup: &lookup,
         kind_compatible: accept_any,
     };
-    assert!(d.resolve_via_alias_module_qname(true, &reject_module).is_none());
+    assert!(d
+        .resolve_via_alias_module_qname(true, &reject_module)
+        .is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -4446,7 +4876,7 @@ fn namespaceless_global_binds_first_match_by_name() {
         "two candidates — the unique rung must decline"
     );
     let resolved = d
-        .resolve_via_namespaceless_global(&accept_any)
+        .resolve_via_namespaceless_global(&accept_any, &[])
         .expect("first-match binds among duplicate names");
     assert_eq!(resolved.target_symbol_id, 1, "binds the first candidate");
     assert_eq!(resolved.confidence, 1.0);
@@ -4471,8 +4901,37 @@ fn namespaceless_global_skips_external_only_name() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_namespaceless_global(&accept_any).is_none(),
+        d.resolve_via_namespaceless_global(&accept_any, &[])
+            .is_none(),
         "external-only candidate must not bind"
+    );
+}
+
+#[test]
+fn namespaceless_global_strips_self_keyword_sigil() {
+    // Flat-namespace sigil languages (Terraform `var.X`/`local.X`) keep the
+    // sigil in the ref but declare the symbol bare; the rung retries the
+    // self-keyword-stripped leaf.
+    let lookup = Lookup::new().with(sym(7, "defaults", "defaults", "variable", "variables.tf"));
+    let r = extracted_typeref("var.defaults");
+    let s = source_symbol("main");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_namespaceless_global(&accept_any, &["var", "local"])
+        .expect("`var.defaults` binds to bare `defaults` after sigil strip");
+    assert_eq!(resolved.target_symbol_id, 7);
+    // Without the self keyword, the sigil'd target must NOT bind.
+    assert!(
+        d.resolve_via_namespaceless_global(&accept_any, &[])
+            .is_none(),
+        "no self keyword — sigil'd target stays unresolved"
     );
 }
 
@@ -4661,8 +5120,15 @@ fn run_implicit_prelude(
 #[test]
 fn implicit_prelude_binds_direct_member() {
     // Bare `String` binds to the direct member `java.lang.String`.
-    let lookup = Lookup::new().with(sym(7, "String", "java.lang.String", "class", "ext:/java.lang/String.java"));
-    let res = run_implicit_prelude(&lookup, "String", &["java.lang"], ".").expect("direct member binds");
+    let lookup = Lookup::new().with(sym(
+        7,
+        "String",
+        "java.lang.String",
+        "class",
+        "ext:/java.lang/String.java",
+    ));
+    let res =
+        run_implicit_prelude(&lookup, "String", &["java.lang"], ".").expect("direct member binds");
     assert_eq!(res.target_symbol_id, 7);
     assert_eq!(res.strategy, "implicit_prelude");
 }
@@ -4672,9 +5138,21 @@ fn implicit_prelude_rejects_nested_method_and_subnamespace() {
     // Nested type, method, and sub-namespace all carry a further `.` segment
     // after `java.lang.` and must NOT bind to a bare name.
     let lookup = Lookup::new()
-        .with(sym(1, "Controller", "java.lang.ModuleLayer.Controller", "class", "x"))
+        .with(sym(
+            1,
+            "Controller",
+            "java.lang.ModuleLayer.Controller",
+            "class",
+            "x",
+        ))
         .with(sym(2, "get", "java.lang.ClassValue.get", "method", "x"))
-        .with(sym(3, "Configuration", "java.lang.module.Configuration", "class", "x"));
+        .with(sym(
+            3,
+            "Configuration",
+            "java.lang.module.Configuration",
+            "class",
+            "x",
+        ));
     assert!(run_implicit_prelude(&lookup, "Controller", &["java.lang"], ".").is_none());
     assert!(run_implicit_prelude(&lookup, "get", &["java.lang"], ".").is_none());
     assert!(run_implicit_prelude(&lookup, "Configuration", &["java.lang"], ".").is_none());
@@ -4702,8 +5180,20 @@ fn implicit_prelude_dedups_duplicate_qname_rows() {
     // A hydrated stdlib often ships several rows for one symbol (declaration
     // merging / multiple jars). Same qname → same symbol, not ambiguity.
     let lookup = Lookup::new()
-        .with(sym(20, "Map", "kotlin.collections.Map", "interface", "ext:/k/Map.kt"))
-        .with_overload(sym(21, "Map", "kotlin.collections.Map", "interface", "ext:/k/Map2.kt"));
+        .with(sym(
+            20,
+            "Map",
+            "kotlin.collections.Map",
+            "interface",
+            "ext:/k/Map.kt",
+        ))
+        .with_overload(sym(
+            21,
+            "Map",
+            "kotlin.collections.Map",
+            "interface",
+            "ext:/k/Map2.kt",
+        ));
     let res = run_implicit_prelude(&lookup, "Map", &["kotlin.collections"], ".")
         .expect("duplicate-qname rows are one symbol, must bind");
     assert_eq!(res.target_symbol_id, 20);

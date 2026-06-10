@@ -56,8 +56,12 @@ fn init_vec_on_connection(conn: &Connection) {
 /// Creates the `.bearwisdom` directory if it doesn't exist.
 pub fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
     let dir = project_root.join(".bearwisdom");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Cannot create .bearwisdom dir in {}", project_root.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| {
+        format!(
+            "Cannot create .bearwisdom dir in {}",
+            project_root.display()
+        )
+    })?;
     Ok(dir.join("index.db"))
 }
 
@@ -104,11 +108,9 @@ impl Database {
 
         init_vec_on_connection(&conn);
 
-        schema::apply_pragmas(&conn, is_new)
-            .context("Failed to apply SQLite PRAGMAs")?;
+        schema::apply_pragmas(&conn, is_new).context("Failed to apply SQLite PRAGMAs")?;
 
-        schema::create_schema(&conn)
-            .context("Failed to create schema")?;
+        schema::create_schema(&conn).context("Failed to create schema")?;
 
         Ok(Self {
             conn,
@@ -214,8 +216,7 @@ impl Database {
 
     /// Open an in-memory database — used in unit tests.
     pub fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .context("Failed to open in-memory database")?;
+        let conn = Connection::open_in_memory().context("Failed to open in-memory database")?;
 
         init_vec_on_connection(&conn);
 
@@ -511,9 +512,7 @@ mod pool_tests {
 
         // All four should work.
         for db in [&db1, &db2, &db3, &db4] {
-            let _: i64 = db
-                .query_row("SELECT 1", [], |r| r.get(0))
-                .unwrap();
+            let _: i64 = db.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
         }
 
         // Return all four — only 2 should be kept (max_size).
@@ -524,9 +523,7 @@ mod pool_tests {
 
         // Verify pool still works after returns.
         let db = pool.get().unwrap();
-        let _: i64 = db
-            .query_row("SELECT 1", [], |r| r.get(0))
-            .unwrap();
+        let _: i64 = db.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
     }
 
     #[test]

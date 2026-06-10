@@ -39,9 +39,15 @@ const EXTRA_FLUTTER_PACKAGES: &[&str] = &["flutter_test", "flutter_localizations
 pub struct FlutterSdkEcosystem;
 
 impl Ecosystem for FlutterSdkEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // A Dart project is a Flutter project iff its pubspec.yaml lists
@@ -64,9 +70,13 @@ impl Ecosystem for FlutterSdkEcosystem {
         walk_flutter_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::dart_sdk::build_dart_symbol_index(dep_roots)
@@ -84,10 +94,7 @@ impl Ecosystem for FlutterSdkEcosystem {
     /// Cost: ~700 files across `flutter`/`flutter_test`/
     /// `flutter_localizations` libs. Well under the walker budget; the
     /// indexer's parallel pipeline parses them in a few seconds.
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         let mut out = Vec::new();
         for dep in dep_roots {
             out.extend(walk_flutter_root(dep));
@@ -97,7 +104,9 @@ impl Ecosystem for FlutterSdkEcosystem {
 }
 
 impl ExternalSourceLocator for FlutterSdkEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_flutter_sdk()
     }
@@ -204,7 +213,9 @@ fn flutter_bin_root(bin: &str) -> Option<PathBuf> {
     let Ok(output) = Command::new(which_cmd).arg(bin).output() else {
         return None;
     };
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let s = String::from_utf8(output.stdout).ok()?;
     let binary_path = PathBuf::from(s.lines().next()?.trim());
     // <flutter_root>/bin/flutter → parent = <flutter_root>/bin → parent = <flutter_root>
@@ -217,7 +228,13 @@ fn well_known_flutter_paths() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     if let Some(home) = home {
         out.push(PathBuf::from(&home).join("flutter"));
-        out.push(PathBuf::from(&home).join("snap").join("flutter").join("common").join("flutter"));
+        out.push(
+            PathBuf::from(&home)
+                .join("snap")
+                .join("flutter")
+                .join("common")
+                .join("flutter"),
+        );
     }
     out.push(PathBuf::from("/opt/flutter"));
     out.push(PathBuf::from("/usr/local/flutter"));
@@ -244,13 +261,23 @@ fn walk_flutter_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_sdk_dir(&src_dir, &dep.root, dep, &mut out, 0);
     }
     // Barrel files at lib/*.dart
-    let Ok(entries) = std::fs::read_dir(&dep.root) else { return out; };
+    let Ok(entries) = std::fs::read_dir(&dep.root) else {
+        return out;
+    };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue; };
-        if !ft.is_file() { continue; }
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if !ft.is_file() {
+            continue;
+        }
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
-        if !name.ends_with(".dart") { continue; }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".dart") {
+            continue;
+        }
         let rel = match path.strip_prefix(&dep.root) {
             Ok(p) => p.to_string_lossy().replace('\\', "/"),
             Err(_) => continue,
@@ -271,20 +298,34 @@ fn walk_sdk_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= 8 { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    if depth >= 8 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue; };
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') { continue; }
-                if matches!(name, "test" | "tests") { continue; }
+                if name.starts_with('.') {
+                    continue;
+                }
+                if matches!(name, "test" | "tests") {
+                    continue;
+                }
             }
             walk_sdk_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
-            if !name.ends_with(".dart") { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".dart") {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

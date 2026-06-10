@@ -24,7 +24,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "api/users")),
         "expected StringLit(\"api/users\"), got: {args:?}"
     );
 }
@@ -38,7 +39,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -52,7 +54,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Literal(s) if s == "1000")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Literal(s) if s == "1000")),
         "expected Literal(\"1000\"), got: {args:?}"
     );
 }
@@ -80,7 +83,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array arg, got: {args:?}"
     );
 }
@@ -94,7 +98,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for subscript arg, got: {args:?}"
     );
 }
@@ -108,7 +113,8 @@ class Caller {
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }

@@ -37,7 +37,9 @@ pub(super) fn extract_dart_call_args(call_node: &Node, src: &str) -> Vec<CallArg
             }
         }
     }
-    let Some(args) = args_node else { return Vec::new() };
+    let Some(args) = args_node else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     let mut ac = args.walk();
     for child in args.named_children(&mut ac) {
@@ -128,7 +130,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Await { expr: Box::new(inner) }
+            CallArg::Await {
+                expr: Box::new(inner),
+            }
         }
 
         // `...expr` / `...?expr` — the operand is the `value` field.
@@ -137,7 +141,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 .child_by_field_name("value")
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
 
         // Binary expressions carry no operand fields — the operator is an
@@ -157,7 +163,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         // `(u) => u.name`, `(a, b) => f(a, b)` — capture the closure's own
         // positional parameter names so the chain walker can type them from the
         // higher-order method's callback-parameter signature.
-        "function_expression" => CallArg::Lambda { params: dart_lambda_param_names(node, src) },
+        "function_expression" => CallArg::Lambda {
+            params: dart_lambda_param_names(node, src),
+        },
 
         _ => CallArg::Other,
     }
@@ -286,7 +294,9 @@ pub(super) fn emit_dart_type_ref(
         }
     };
     if !name.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -349,10 +359,17 @@ pub(super) fn extract_dart_calls(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| dart_callee_name(callee_node, src));
 
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee_node, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &callee_node,
+                        refs,
+                    );
                     if !target_name.is_empty() {
                         let call_args = extract_dart_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -406,7 +423,8 @@ pub(super) fn extract_dart_calls(
                             let mut found = String::new();
                             let mut c = type_node.walk();
                             for inner in type_node.named_children(&mut c) {
-                                if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
+                                if inner.kind() == "type_identifier" || inner.kind() == "identifier"
+                                {
                                     found = node_text(inner, src);
                                     break;
                                 }
@@ -415,7 +433,9 @@ pub(super) fn extract_dart_calls(
                         }
                     };
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -445,7 +465,9 @@ pub(super) fn extract_dart_calls(
                         // Walk type_cast for type_identifier.
                         let mut ic = inner.walk();
                         for grandchild in inner.named_children(&mut ic) {
-                            if grandchild.kind() == "type_identifier" || grandchild.kind() == "identifier" {
+                            if grandchild.kind() == "type_identifier"
+                                || grandchild.kind() == "identifier"
+                            {
                                 emit_dart_type_ref(grandchild, src, source_symbol_index, refs);
                                 emitted = true;
                                 break;
@@ -527,7 +549,9 @@ fn extract_postfix_call(
                 let mut sc = child.walk();
                 child.children(&mut sc).collect::<Vec<_>>()
             };
-            grandchildren.iter().any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
+            grandchildren
+                .iter()
+                .any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
         } else {
             false
         }
@@ -573,7 +597,9 @@ fn extract_postfix_call(
 
     let target = last_member.or(callee_from_base).unwrap_or_default();
     if !target.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -622,7 +648,9 @@ fn extract_inline_call_from_statement(
                 let mut sc = child.walk();
                 child.children(&mut sc).collect::<Vec<_>>()
             };
-            grandchildren.iter().any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
+            grandchildren
+                .iter()
+                .any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
         } else {
             false
         }
@@ -679,7 +707,9 @@ fn extract_inline_call_from_statement(
     let target = last_member.or(callee_ident).unwrap_or_default();
     if !target.is_empty() {
         let call_args = extract_dart_call_args(node, src);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -749,7 +779,9 @@ fn extract_new_expression_ref(
             }
         };
         if !name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -770,7 +802,9 @@ fn extract_new_expression_ref(
         if child.kind() == "type_identifier" || child.kind() == "identifier" {
             let name = node_text(child, src);
             if !name.is_empty() && name != "new" {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -834,11 +868,11 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -851,11 +885,11 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -868,11 +902,11 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -902,11 +936,11 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -931,11 +965,11 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -1010,7 +1044,9 @@ pub(super) fn extract_type_test_refs(
                             // Walk into type_not_void for the type_identifier.
                             let mut vc = inner.walk();
                             for vchild in inner.children(&mut vc) {
-                                if vchild.kind() == "type_identifier" || vchild.kind() == "identifier" {
+                                if vchild.kind() == "type_identifier"
+                                    || vchild.kind() == "identifier"
+                                {
                                     emit_dart_type_ref(vchild, src, source_symbol_index, refs);
                                 }
                             }
@@ -1042,7 +1078,9 @@ pub(super) fn extract_const_object_refs(
             "type_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() && name != "const" {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Instantiates,

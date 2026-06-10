@@ -70,7 +70,8 @@ pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
         }),
     },
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

@@ -3,7 +3,10 @@
 // =============================================================================
 
 use super::helpers::{get_call_method_name, node_text};
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
+    SymbolKind,
+};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
@@ -82,9 +85,7 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         return CallArg::Other;
     }
     match node.kind() {
-        "string" | "string_literal" => {
-            CallArg::StringLit(strip_ruby_string(&node_text(node, src)))
-        }
+        "string" | "string_literal" => CallArg::StringLit(strip_ruby_string(&node_text(node, src))),
         // `:symbol` — emit as Ident so symbol-keyed lookups work the
         // same as identifiers.
         "simple_symbol" | "symbol" => {
@@ -127,7 +128,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
         // `container[index]` — `object` field is the container; the index is
         // the first named child that is neither the object nor a trailing
@@ -141,7 +144,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             let mut cursor = node.walk();
             let index = node
                 .named_children(&mut cursor)
-                .find(|c| Some(c.id()) != object_id && c.kind() != "block" && c.kind() != "do_block")
+                .find(|c| {
+                    Some(c.id()) != object_id && c.kind() != "block" && c.kind() != "do_block"
+                })
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
             CallArg::IndexAccess {
@@ -208,7 +213,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         // Emit Instantiates for `ClassName.new`
                         if let Some(recv) = child.child_by_field_name("receiver") {
                             let recv_text = node_text(&recv, src);
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: recv_text,
                                 kind: EdgeKind::Instantiates,
@@ -217,13 +224,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                             // Don't also emit a Calls edge for `.new`.
                             // Recurse into arguments but not the receiver again.
                             if let Some(syms) = symbols.as_deref_mut() {
-                                extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                                extract_calls_from_body_with_symbols(
+                                    &child,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                    Some(syms),
+                                );
                             } else {
                                 extract_calls_from_body(&child, src, source_symbol_index, refs);
                             }
@@ -232,9 +245,16 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     }
 
                     let chain = build_chain(&child, src);
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &child,
+                        refs,
+                    );
                     let call_args = extract_call_args(&child, src);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: mname,
                         kind: EdgeKind::Calls,
@@ -243,12 +263,18 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args,
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -262,7 +288,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: mname,
                             kind: EdgeKind::Calls,
@@ -271,9 +299,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: method_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 } else {
                     // Bare command: first identifier is the method name.
@@ -282,7 +310,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         if gc.kind() == "identifier" || gc.kind() == "constant" {
                             let mname = node_text(&gc, src);
                             if !mname.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: mname,
                                     kind: EdgeKind::Calls,
@@ -291,9 +321,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                     module: None,
                                     chain: None,
                                     byte_offset: gc.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                             break;
                         }
@@ -301,7 +331,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
                 // Recurse into arguments for nested calls.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -314,7 +350,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !mname.is_empty() {
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: mname,
                             kind: EdgeKind::Calls,
@@ -323,13 +361,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: method_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -350,7 +394,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
                 // Recurse into block body.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -358,18 +408,36 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             // `"Hello #{user.get_name()}"` — extract calls from string interpolations.
             "string" | "subshell" => {
-                extract_string_interpolation_calls(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+                extract_string_interpolation_calls(
+                    &child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                    symbols.as_deref_mut(),
+                );
             }
 
             // `case x; when A then ...; when B then ...; end`
             "case" => {
-                extract_case_calls(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+                extract_case_calls(
+                    &child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                    symbols.as_deref_mut(),
+                );
             }
 
             // `begin; ...; end` blocks — recurse into body.
             "begin_block" | "begin" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -378,7 +446,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // `ensure` clause — recurse.
             "ensure" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -387,7 +461,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // `hash` / `array` — recurse for calls in values/elements.
             "hash" | "array" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -399,7 +479,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "scope_resolution" => {
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -408,9 +490,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // Do NOT recurse further — constituent parts are captured above.
             }
@@ -419,7 +501,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "constant" => {
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -428,15 +512,21 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -473,11 +563,11 @@ fn extract_block_params(
                 scope_path: None,
                 parent_index: Some(parent_index),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -508,7 +598,13 @@ fn extract_string_interpolation_calls(
             // named children would mean the function sees the *inside* of the
             // call (identifiers, argument_list) rather than the call itself.
             if let Some(syms) = symbols.as_deref_mut() {
-                extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                extract_calls_from_body_with_symbols(
+                    &child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                    Some(syms),
+                );
             } else {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
@@ -530,7 +626,13 @@ fn extract_case_calls(
             // Recurse into the subject expression.
             "value" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -539,7 +641,13 @@ fn extract_case_calls(
             "when" => {
                 // The body of a `when` clause is everything after the pattern.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -547,14 +655,26 @@ fn extract_case_calls(
             // `else` branch.
             "else" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
             }
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -583,11 +703,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -600,11 +720,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -621,11 +741,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                         type_args: vec![],
                         optional_chaining: false,
                         byte_offset: 0,
-                                            declared_type_id: None,
+                        declared_type_id: None,
                         is_call: false,
                         call_args: Vec::new(),
                         type_arg_ids: Vec::new(),
-});
+                    });
                 }
                 Some(())
             } else {
@@ -639,11 +759,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                         type_args: vec![],
                         optional_chaining: false,
                         byte_offset: 0,
-                                            declared_type_id: None,
+                        declared_type_id: None,
                         is_call: false,
                         call_args: Vec::new(),
                         type_arg_ids: Vec::new(),
-});
+                    });
                     Some(())
                 } else {
                     None

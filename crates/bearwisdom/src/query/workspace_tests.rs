@@ -367,8 +367,12 @@ fn workspace_graph_keeps_two_same_named_packages_distinct() {
     for e in &edges {
         by_kind.insert(e.target_package_kind.clone(), e);
     }
-    let ts_row = by_kind.get(&Some("npm".to_string())).expect("npm row present");
-    let rs_row = by_kind.get(&Some("cargo".to_string())).expect("cargo row present");
+    let ts_row = by_kind
+        .get(&Some("npm".to_string()))
+        .expect("npm row present");
+    let rs_row = by_kind
+        .get(&Some("cargo".to_string()))
+        .expect("cargo row present");
     assert_eq!(ts_row.source_package, "web");
     assert_eq!(ts_row.target_package_path, "apps/core");
     assert_eq!(rs_row.source_package, "cli");

@@ -13,9 +13,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, ExternalDepRoot, ExternalSourceLocator,
 };
@@ -28,9 +26,15 @@ const LANGUAGES: &[&str] = &["kotlin", "java"];
 pub struct AndroidSdkEcosystem;
 
 impl Ecosystem for AndroidSdkEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Android is a project dep, not a JVM substrate. The wide
@@ -80,9 +84,13 @@ impl Ecosystem for AndroidSdkEcosystem {
         super::maven::walk_generic_jvm_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -93,7 +101,9 @@ impl Ecosystem for AndroidSdkEcosystem {
 }
 
 impl ExternalSourceLocator for AndroidSdkEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_android_sdk_roots()
     }
@@ -103,7 +113,9 @@ impl ExternalSourceLocator for AndroidSdkEcosystem {
 }
 
 pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
-    let Some(sdk_root) = android_home() else { return Vec::new() };
+    let Some(sdk_root) = android_home() else {
+        return Vec::new();
+    };
 
     // Prefer pre-extracted sources from `sdkmanager "sources;android-<N>"`,
     // which ships as a ready-made tree of .java files under
@@ -117,7 +129,10 @@ pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
     if let Some(api_level) = highest_api_level(&sources_dir) {
         let root = sources_dir.join(format!("android-{api_level}"));
         if root.is_dir() {
-            debug!("Android SDK sources API {api_level} registered at {}", root.display());
+            debug!(
+                "Android SDK sources API {api_level} registered at {}",
+                root.display()
+            );
             return vec![ExternalDepRoot {
                 module_path: format!("android-sdk:{api_level}"),
                 version: api_level.to_string(),
@@ -130,7 +145,9 @@ pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
     }
 
     let platforms_dir = sdk_root.join("platforms");
-    if !platforms_dir.is_dir() { return Vec::new() }
+    if !platforms_dir.is_dir() {
+        return Vec::new();
+    }
 
     let api_level = match highest_api_level(&platforms_dir) {
         Some(v) => v,
@@ -139,7 +156,9 @@ pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
 
     let platform_dir = platforms_dir.join(format!("android-{api_level}"));
     let jar_path = platform_dir.join("android.jar");
-    if !jar_path.is_file() { return Vec::new() }
+    if !jar_path.is_file() {
+        return Vec::new();
+    }
 
     let cache_base = sdk_root.join("bearwisdom-android-cache");
     let cache_dir = cache_base.join(format!("android-{api_level}"));
@@ -150,7 +169,10 @@ pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
         }
     }
 
-    debug!("Android SDK API {api_level} registered at {}", cache_dir.display());
+    debug!(
+        "Android SDK API {api_level} registered at {}",
+        cache_dir.display()
+    );
     vec![ExternalDepRoot {
         module_path: format!("android-sdk:{api_level}"),
         version: api_level.to_string(),
@@ -165,7 +187,9 @@ fn android_home() -> Option<PathBuf> {
     for var in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
         if let Ok(val) = std::env::var(var) {
             let p = PathBuf::from(val);
-            if p.is_dir() { return Some(p) }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
@@ -179,7 +203,11 @@ fn highest_api_level(platforms_dir: &Path) -> Option<u32> {
             let name = e.file_name();
             let s = name.to_str()?;
             let n: u32 = s.strip_prefix("android-")?.parse().ok()?;
-            if e.path().is_dir() { Some(n) } else { None }
+            if e.path().is_dir() {
+                Some(n)
+            } else {
+                None
+            }
         })
         .max()
 }
@@ -187,5 +215,7 @@ fn highest_api_level(platforms_dir: &Path) -> Option<u32> {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<AndroidSdkEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(AndroidSdkEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(AndroidSdkEcosystem))
+        .clone()
 }

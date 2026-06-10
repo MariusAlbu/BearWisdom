@@ -1,7 +1,7 @@
 use super::*;
 use crate::types::{
-    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta,
-    MemberChain, ParsedFile, SegmentKind, SymbolKind, Visibility,
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain,
+    ParsedFile, SegmentKind, SymbolKind, Visibility,
 };
 
 // ---------------------------------------------------------------------------
@@ -49,15 +49,17 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -84,11 +86,11 @@ fn seg_at(name: &str, kind: SegmentKind, byte_offset: u32) -> ChainSegment {
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset,
-            declared_type_id: None,
+        declared_type_id: None,
         is_call: false,
         call_args: Vec::new(),
         type_arg_ids: Vec::new(),
-}
+    }
 }
 
 fn codes(violations: &[ContractViolation]) -> Vec<&'static str> {
@@ -165,7 +167,10 @@ fn sym_001_accepts_known_separators() {
         let sym = make_sym("Foo", qname, SymbolKind::Class);
         let pf = make_pf(vec![sym], Vec::new());
         let v = validate(&pf);
-        assert!(v.is_empty(), "qname '{qname}' should be accepted, got {v:?}");
+        assert!(
+            v.is_empty(),
+            "qname '{qname}' should be accepted, got {v:?}"
+        );
     }
 }
 
@@ -353,7 +358,9 @@ fn ref_005_allows_call_args_on_calls() {
 fn chain_001_flags_empty_segments() {
     let sym = make_sym("foo", "foo", SymbolKind::Function);
     let mut r = make_ref(0, "bar", EdgeKind::Calls);
-    r.chain = Some(MemberChain { segments: Vec::new() });
+    r.chain = Some(MemberChain {
+        segments: Vec::new(),
+    });
     let pf = make_pf(vec![sym], vec![r]);
     let v = codes(&validate(&pf));
     assert!(v.contains(&"CHAIN-001"), "expected CHAIN-001 in {v:?}");
@@ -378,9 +385,7 @@ fn chain_002_flags_computed_first_segment() {
     let sym = make_sym("foo", "foo", SymbolKind::Function);
     let mut r = make_ref(0, "bar", EdgeKind::Calls);
     r.chain = Some(MemberChain {
-        segments: vec![
-            seg("bar", SegmentKind::ComputedAccess),
-        ],
+        segments: vec![seg("bar", SegmentKind::ComputedAccess)],
     });
     let pf = make_pf(vec![sym], vec![r]);
     let v = codes(&validate(&pf));

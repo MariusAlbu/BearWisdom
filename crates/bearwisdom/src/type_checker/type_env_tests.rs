@@ -66,7 +66,7 @@ fn test_pop_scope_never_pops_root() {
     env.bind("T", "User");
     env.pop_scope(); // at root — should be a no-op
     env.pop_scope(); // again — still safe
-    // The root binding should still be there.
+                     // The root binding should still be there.
     assert_eq!(env.resolve("T"), "User");
 }
 
@@ -92,17 +92,13 @@ fn test_enter_generic_context_no_params() {
 #[test]
 fn test_enter_generic_context_binds_params() {
     let mut env = TypeEnvironment::new();
-    let pushed = env.enter_generic_context(
-        "Repository",
-        &["User".to_string()],
-        |name| {
-            if name == "Repository" {
-                Some(vec!["T".to_string()])
-            } else {
-                None
-            }
-        },
-    );
+    let pushed = env.enter_generic_context("Repository", &["User".to_string()], |name| {
+        if name == "Repository" {
+            Some(vec!["T".to_string()])
+        } else {
+            None
+        }
+    });
     assert!(pushed);
     assert_eq!(env.resolve("T"), "User");
     env.pop_scope();
@@ -117,32 +113,26 @@ fn test_nested_generic_context() {
     let mut env = TypeEnvironment::new();
 
     // Enter Repository<Map<string, User>>
-    let pushed1 = env.enter_generic_context(
-        "Repository",
-        &["Map<string, User>".to_string()],
-        |name| {
+    let pushed1 =
+        env.enter_generic_context("Repository", &["Map<string, User>".to_string()], |name| {
             if name == "Repository" {
                 Some(vec!["T".to_string()])
             } else {
                 None
             }
-        },
-    );
+        });
     assert!(pushed1);
     assert_eq!(env.resolve("T"), "Map<string, User>");
 
     // Enter Map<string, User>
-    let pushed2 = env.enter_generic_context(
-        "Map",
-        &["string".to_string(), "User".to_string()],
-        |name| {
+    let pushed2 =
+        env.enter_generic_context("Map", &["string".to_string(), "User".to_string()], |name| {
             if name == "Map" {
                 Some(vec!["K".to_string(), "V".to_string()])
             } else {
                 None
             }
-        },
-    );
+        });
     assert!(pushed2);
     assert_eq!(env.resolve("K"), "string");
     assert_eq!(env.resolve("V"), "User");

@@ -153,7 +153,11 @@ fn build_symbol_index_indexes_packages_lowercase_and_canonical() {
         "g-os_lib.ads",
         "package GNAT.OS_Lib is\nend GNAT.OS_Lib;\n",
     );
-    write_ads(&adainclude, "system.ads", "package System is\nend System;\n");
+    write_ads(
+        &adainclude,
+        "system.ads",
+        "package System is\nend System;\n",
+    );
 
     let dep = ExternalDepRoot {
         module_path: "gnat-stdlib".to_string(),

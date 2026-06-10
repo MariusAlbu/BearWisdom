@@ -12,27 +12,43 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .enumerate()
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
-                node_kind: if i == 0 { "identifier".to_string() } else { "navigation_suffix".to_string() },
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                node_kind: if i == 0 {
+                    "identifier".to_string()
+                } else {
+                    "navigation_suffix".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
 
 #[test]
 fn test_kotlin_ktor_get_route_emits_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_kotlin_ktor_route_emission("get", &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/api/users");
@@ -60,11 +76,19 @@ fn test_kotlin_ktor_route_rejects_non_url() {
 
 #[test]
 fn test_kotlin_ktor_client_get_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let chain = make_chain(&["client", "get"]);
     let args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_kotlin_ktor_client_emission(&chain, &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users");
@@ -79,7 +103,10 @@ fn test_kotlin_exposed_users_select_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["Users", "select"]);
     match detect_kotlin_exposed_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "kt.Users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -108,7 +135,9 @@ fn test_kotlin_grpc_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["UserServiceGrpc", "newBlockingStub", "getUser"]);
     match detect_kotlin_grpc_stub_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "UserService.getUser");
@@ -128,7 +157,9 @@ fn test_kotlin_akka_actor_tell_emits_bgjob() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["UserActor", "tell"]);
     match detect_kotlin_akka_tell_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::BgJob));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "kt.akka.UserActor");

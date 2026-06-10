@@ -53,7 +53,13 @@ fn reach_row(db: &Database, sym: i64) -> Option<(u32, f64, Option<String>)> {
             "SELECT min_distance, path_confidence, via_kind \
              FROM reachability WHERE symbol_id = ?1",
             [sym],
-            |r| Ok((r.get::<_, u32>(0)?, r.get::<_, f64>(1)?, r.get::<_, Option<String>>(2)?)),
+            |r| {
+                Ok((
+                    r.get::<_, u32>(0)?,
+                    r.get::<_, f64>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
         .ok()
 }
@@ -79,7 +85,11 @@ fn entry_point_is_reachable_at_distance_zero() {
     materialize_reachability(&db).unwrap();
     let r = reach_row(&db, main).expect("entry point must appear in reachability");
     assert_eq!(r.0, 0);
-    assert!((r.1 - 1.0).abs() < 1e-9, "entry-point conf must be 1.0, got {}", r.1);
+    assert!(
+        (r.1 - 1.0).abs() < 1e-9,
+        "entry-point conf must be 1.0, got {}",
+        r.1
+    );
     assert!(r.2.is_none(), "entry-point via_kind must be NULL");
 }
 
@@ -147,7 +157,11 @@ fn path_confidence_takes_min_along_path() {
 
     materialize_reachability(&db).unwrap();
     let rc = reach_row(&db, c).unwrap();
-    assert!((rc.1 - 0.6).abs() < 1e-9, "c's path_confidence must be min(0.9, 0.6) = 0.6, got {}", rc.1);
+    assert!(
+        (rc.1 - 0.6).abs() < 1e-9,
+        "c's path_confidence must be min(0.9, 0.6) = 0.6, got {}",
+        rc.1
+    );
     assert_eq!(rc.2.as_deref(), Some("dispatch"));
 }
 
@@ -161,12 +175,16 @@ fn convergent_paths_prefer_higher_confidence_at_same_distance() {
     insert_entry_point(&db, ep1);
     insert_entry_point(&db, ep2);
     insert_edge(&db, ep1, target, 0.5, "heuristic"); // distance 1, conf 0.5
-    insert_edge(&db, ep2, target, 1.0, "calls");      // distance 1, conf 1.0
+    insert_edge(&db, ep2, target, 1.0, "calls"); // distance 1, conf 1.0
 
     materialize_reachability(&db).unwrap();
     let r = reach_row(&db, target).unwrap();
     assert_eq!(r.0, 1);
-    assert!((r.1 - 1.0).abs() < 1e-9, "tied-distance paths must keep highest conf, got {}", r.1);
+    assert!(
+        (r.1 - 1.0).abs() < 1e-9,
+        "tied-distance paths must keep highest conf, got {}",
+        r.1
+    );
     assert_eq!(r.2.as_deref(), Some("calls"));
 }
 
@@ -193,7 +211,10 @@ fn idempotent_rebuild_clears_stale_rows() {
         .conn()
         .query_row("SELECT COUNT(*) FROM reachability", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(second, 1, "after dropping edges, only the entry point should remain");
+    assert_eq!(
+        second, 1,
+        "after dropping edges, only the entry point should remain"
+    );
 }
 
 #[test]

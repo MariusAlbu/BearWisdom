@@ -31,10 +31,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "r";
 pub struct CranEcosystem;
 
 impl Ecosystem for CranEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // R packages declare metadata in DESCRIPTION (case-sensitive,
@@ -64,26 +72,29 @@ impl Ecosystem for CranEcosystem {
         walk_r_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn resolve_import(
-        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
-    ) -> Vec<WalkedFile> { walk_r_narrowed(dep) }
-    fn resolve_symbol(
-        &self, dep: &ExternalDepRoot, _f: &str,
-    ) -> Vec<WalkedFile> { walk_r_narrowed(dep) }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn resolve_import(&self, dep: &ExternalDepRoot, _p: &str, _s: &[&str]) -> Vec<WalkedFile> {
+        walk_r_narrowed(dep)
+    }
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _f: &str) -> Vec<WalkedFile> {
+        walk_r_narrowed(dep)
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_r_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for CranEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_r_externals(project_root)
     }
@@ -105,11 +116,15 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 pub struct DescriptionManifest;
 
 impl ManifestReader for DescriptionManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Description }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Description
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let description_path = project_root.join("DESCRIPTION");
-        if !description_path.is_file() { return None }
+        if !description_path.is_file() {
+            return None;
+        }
         let content = std::fs::read_to_string(&description_path).ok()?;
         let mut data = ManifestData::default();
         for name in parse_description_runtime_deps(&content) {
@@ -133,8 +148,12 @@ fn parse_description_fields(content: &str, field_names: &[&str]) -> Vec<String> 
     for field in field_names {
         if let Some(value) = read_field(content, field) {
             for pkg in split_package_list(&value) {
-                if pkg == "R" { continue }
-                if seen.insert(pkg.clone()) { out.push(pkg) }
+                if pkg == "R" {
+                    continue;
+                }
+                if seen.insert(pkg.clone()) {
+                    out.push(pkg)
+                }
             }
         }
     }
@@ -198,7 +217,9 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             }
         }
     };
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let candidates = r_candidate_library_paths(project_root);
     if candidates.is_empty() {
@@ -213,16 +234,16 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         "R: using library search paths"
     );
 
-    let user_uses: Vec<String> = collect_r_user_uses(project_root)
-        .into_iter()
-        .collect();
+    let user_uses: Vec<String> = collect_r_user_uses(project_root).into_iter().collect();
 
     let mut result = Vec::with_capacity(declared.len());
     let mut seen = std::collections::HashSet::new();
     let mut not_found: Vec<&str> = Vec::new();
 
     for pkg_name in &declared {
-        if !seen.insert(pkg_name.clone()) { continue }
+        if !seen.insert(pkg_name.clone()) {
+            continue;
+        }
         let mut found = false;
         for lib_path in &candidates {
             let pkg_dir = lib_path.join(pkg_name);
@@ -240,7 +261,9 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 break;
             }
         }
-        if !found { not_found.push(pkg_name.as_str()) }
+        if !found {
+            not_found.push(pkg_name.as_str())
+        }
     }
 
     info!(
@@ -259,9 +282,13 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
         let sep = if cfg!(windows) { ';' } else { ':' };
         for entry in override_libs.split(sep) {
             let p = PathBuf::from(entry);
-            if p.is_dir() { candidates.push(p) }
+            if p.is_dir() {
+                candidates.push(p)
+            }
         }
-        if !candidates.is_empty() { return candidates }
+        if !candidates.is_empty() {
+            return candidates;
+        }
     }
 
     let renv = project_root.join("renv").join("library");
@@ -273,7 +300,9 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
                     if let Ok(version_entries) = std::fs::read_dir(&ppath) {
                         for ver in version_entries.flatten() {
                             let vpath = ver.path();
-                            if vpath.is_dir() { candidates.push(vpath) }
+                            if vpath.is_dir() {
+                                candidates.push(vpath)
+                            }
                         }
                     }
                 }
@@ -285,16 +314,24 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
         let sep = if cfg!(windows) { ';' } else { ':' };
         for entry in user_libs.split(sep) {
             let p = PathBuf::from(entry);
-            if p.is_dir() { candidates.push(p) }
+            if p.is_dir() {
+                candidates.push(p)
+            }
         }
     }
 
     if let Some(home) = dirs::home_dir() {
         if let Some(local_app_data) = dirs::data_local_dir() {
-            push_r_version_subdirs(&local_app_data.join("R").join("win-library"), &mut candidates);
+            push_r_version_subdirs(
+                &local_app_data.join("R").join("win-library"),
+                &mut candidates,
+            );
         }
         push_r_version_subdirs(&home.join("R").join("win-library"), &mut candidates);
-        push_r_version_subdirs(&home.join("Documents").join("R").join("win-library"), &mut candidates);
+        push_r_version_subdirs(
+            &home.join("Documents").join("R").join("win-library"),
+            &mut candidates,
+        );
 
         let r_dir = home.join("R");
         if r_dir.is_dir() {
@@ -314,7 +351,9 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
     {
         if let Some(r_home) = read_r_home_from_registry() {
             let lib = PathBuf::from(&r_home).join("library");
-            if lib.is_dir() { candidates.push(lib) }
+            if lib.is_dir() {
+                candidates.push(lib)
+            }
         }
         for root in ["C:/Program Files/R", "C:/Program Files (x86)/R"] {
             let base = PathBuf::from(root);
@@ -322,7 +361,9 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
                 if let Ok(entries) = std::fs::read_dir(&base) {
                     for entry in entries.flatten() {
                         let lib = entry.path().join("library");
-                        if lib.is_dir() { candidates.push(lib) }
+                        if lib.is_dir() {
+                            candidates.push(lib)
+                        }
                     }
                 }
             }
@@ -331,9 +372,15 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
 
     #[cfg(target_os = "linux")]
     {
-        for p in ["/usr/lib/R/library", "/usr/local/lib/R/library", "/usr/lib/R/site-library"] {
+        for p in [
+            "/usr/lib/R/library",
+            "/usr/local/lib/R/library",
+            "/usr/lib/R/site-library",
+        ] {
             let path = PathBuf::from(p);
-            if path.is_dir() { candidates.push(path) }
+            if path.is_dir() {
+                candidates.push(path)
+            }
         }
     }
     #[cfg(target_os = "macos")]
@@ -344,7 +391,9 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
             "/opt/local/lib/R/library",
         ] {
             let path = PathBuf::from(p);
-            if path.is_dir() { candidates.push(path) }
+            if path.is_dir() {
+                candidates.push(path)
+            }
         }
     }
 
@@ -354,11 +403,15 @@ fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
 }
 
 fn push_r_version_subdirs(parent: &Path, out: &mut Vec<PathBuf>) {
-    if !parent.is_dir() { return }
+    if !parent.is_dir() {
+        return;
+    }
     if let Ok(entries) = std::fs::read_dir(parent) {
         for entry in entries.flatten() {
             let vpath = entry.path();
-            if vpath.is_dir() { out.push(vpath) }
+            if vpath.is_dir() {
+                out.push(vpath)
+            }
         }
     }
 }
@@ -367,7 +420,12 @@ fn push_r_version_subdirs(parent: &Path, out: &mut Vec<PathBuf>) {
 fn read_r_home_from_registry() -> Option<String> {
     use std::process::Command;
     let result = Command::new("reg")
-        .args(["query", r"HKEY_LOCAL_MACHINE\SOFTWARE\R-core\R", "/v", "InstallPath"])
+        .args([
+            "query",
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\R-core\R",
+            "/v",
+            "InstallPath",
+        ])
         .output()
         .ok()
         .filter(|o| o.status.success());
@@ -376,8 +434,10 @@ fn read_r_home_from_registry() -> Option<String> {
     }
     let result32 = Command::new("reg")
         .args([
-            "query", r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\R-core\R",
-            "/v", "InstallPath",
+            "query",
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\R-core\R",
+            "/v",
+            "InstallPath",
         ])
         .output()
         .ok()
@@ -396,7 +456,9 @@ fn parse_reg_install_path(output: &str) -> Option<String> {
             let parts: Vec<&str> = line.splitn(3, "REG_SZ").collect();
             if let Some(value) = parts.get(1) {
                 let path = value.trim().to_string();
-                if !path.is_empty() { return Some(path) }
+                if !path.is_empty() {
+                    return Some(path);
+                }
             }
         }
     }
@@ -416,7 +478,9 @@ fn read_r_package_version(pkg_root: &Path) -> Option<String> {
 
 fn walk_r_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let namespace_path = dep.root.join("NAMESPACE");
-    if !namespace_path.is_file() { return Vec::new() }
+    if !namespace_path.is_file() {
+        return Vec::new();
+    }
     let virtual_path = format!("ext:r:{}/NAMESPACE", dep.module_path);
     vec![WalkedFile {
         relative_path: virtual_path,
@@ -437,22 +501,36 @@ fn collect_r_user_uses(project_root: &Path) -> std::collections::HashSet<String>
 }
 
 fn scan_r_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, ".git" | "renv" | "packrat" | "tests") || name.starts_with('.') { continue }
+                if matches!(name, ".git" | "renv" | "packrat" | "tests") || name.starts_with('.') {
+                    continue;
+                }
             }
             scan_r_uses(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".R") || name.ends_with(".r")
-                || name.ends_with(".Rmd") || name.ends_with(".rmd"))
-            { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".R")
+                || name.ends_with(".r")
+                || name.ends_with(".Rmd")
+                || name.ends_with(".rmd"))
+            {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_r_uses(&content, out);
         }
     }
@@ -463,16 +541,32 @@ fn extract_r_uses(content: &str, out: &mut std::collections::HashSet<String>) {
         let line = raw.trim();
         // `library(pkg)` / `library("pkg")`
         if let Some(rest) = line.strip_prefix("library(") {
-            let arg = rest.split(')').next().unwrap_or("").trim()
+            let arg = rest
+                .split(')')
+                .next()
+                .unwrap_or("")
+                .trim()
                 .trim_matches(|c: char| c == '"' || c == '\'');
-            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_') {
+            if !arg.is_empty()
+                && arg
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+            {
                 out.insert(arg.to_string());
             }
         }
         if let Some(rest) = line.strip_prefix("require(") {
-            let arg = rest.split(')').next().unwrap_or("").trim()
+            let arg = rest
+                .split(')')
+                .next()
+                .unwrap_or("")
+                .trim()
                 .trim_matches(|c: char| c == '"' || c == '\'');
-            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_') {
+            if !arg.is_empty()
+                && arg
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+            {
                 out.insert(arg.to_string());
             }
         }
@@ -482,7 +576,9 @@ fn extract_r_uses(content: &str, out: &mut std::collections::HashSet<String>) {
         while i < bytes.len() {
             if bytes[i].is_ascii_alphabetic() {
                 let start = i;
-                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'.' || bytes[i] == b'_') {
+                while i < bytes.len()
+                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'.' || bytes[i] == b'_')
+                {
                     i += 1;
                 }
                 if i + 1 < bytes.len() && bytes[i] == b':' && bytes[i + 1] == b':' {
@@ -499,7 +595,9 @@ fn extract_r_uses(content: &str, out: &mut std::collections::HashSet<String>) {
 }
 
 fn walk_r_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    if dep.requested_imports.is_empty() { return walk_r_root(dep); }
+    if dep.requested_imports.is_empty() {
+        return walk_r_root(dep);
+    }
     if !dep.requested_imports.iter().any(|m| m == &dep.module_path) {
         return Vec::new();
     }
@@ -576,8 +674,8 @@ fn scan_r_header(source: &str) -> Vec<String> {
 
 fn collect_r_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
     match node.kind() {
-        "left_assignment" | "equals_assignment" | "super_assignment"
-        | "binary_operator" | "assignment" => {
+        "left_assignment" | "equals_assignment" | "super_assignment" | "binary_operator"
+        | "assignment" => {
             // LHS is an identifier / string / dollar; RHS is the value. We
             // only care about the LHS identifier.
             let lhs = node
@@ -671,7 +769,8 @@ mod tests {
         std::fs::write(
             &lock,
             r#"{"Packages":{"rlang":{"Package":"rlang"},"vctrs":{"Package":"vctrs"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let names = parse_renv_lock_packages(&lock).unwrap();
         assert!(names.contains(&"rlang".to_string()));
         assert!(names.contains(&"vctrs".to_string()));

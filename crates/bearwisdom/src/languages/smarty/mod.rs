@@ -17,16 +17,30 @@ use crate::types::ExtractionResult;
 pub struct SmartyPlugin;
 
 impl LanguagePlugin for SmartyPlugin {
-    fn id(&self) -> &str { "smarty" }
-    fn language_ids(&self) -> &[&str] { &["smarty"] }
-    fn extensions(&self) -> &[&str] { &[".smarty", ".smarty.tpl"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "smarty"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["smarty"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".smarty", ".smarty.tpl"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, s: &str, p: &str, _l: &str) -> ExtractionResult {
         extract::extract(s, p)
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

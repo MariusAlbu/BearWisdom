@@ -16,9 +16,8 @@ use super::flow_detectors::{
     detect_python_channels_path_emission, detect_python_cursor_execute_emission,
     detect_python_db_query_emission, detect_python_django_path_emission,
     detect_python_graphql_decorator_emission, detect_python_grpc_stub_emission,
-    detect_python_http_chain_emission, detect_python_mailer_emission,
-    detect_python_redis_lookup, detect_python_route_decorator_emission,
-    detect_python_sqlalchemy_select_call,
+    detect_python_http_chain_emission, detect_python_mailer_emission, detect_python_redis_lookup,
+    detect_python_route_decorator_emission, detect_python_sqlalchemy_select_call,
 };
 #[cfg(test)]
 use super::predicates;
@@ -81,16 +80,14 @@ pub(crate) fn detect_flow_inner(
     let r = &ref_ctx.extracted_ref;
 
     if r.kind == EdgeKind::TypeRef {
-        if let Some(emission) = detect_python_route_decorator_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_python_route_decorator_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
         // Django Channels: `class XConsumer(AsyncWebsocketConsumer)`.
-        if let Some(emission) = detect_python_channels_consumer_inheritance(
-            r.target_name.as_str(),
-        ) {
+        if let Some(emission) = detect_python_channels_consumer_inheritance(r.target_name.as_str())
+        {
             return vec![emission];
         }
         // Strawberry / Graphene GraphQL decorators.
@@ -112,25 +109,19 @@ pub(crate) fn detect_flow_inner(
     if r.chain.is_none() {
         // Channels routing first: when the file imports `channels`,
         // `path("ws/x", X.as_asgi())` is a WS route, not HTTP.
-        if let Some(emission) = detect_python_channels_path_emission(
-            r.target_name.as_str(),
-            &r.call_args,
-            file_ctx,
-        ) {
+        if let Some(emission) =
+            detect_python_channels_path_emission(r.target_name.as_str(), &r.call_args, file_ctx)
+        {
             return vec![emission];
         }
-        if let Some(emission) = detect_python_django_path_emission(
-            r.target_name.as_str(),
-            &r.call_args,
-            file_ctx,
-        ) {
+        if let Some(emission) =
+            detect_python_django_path_emission(r.target_name.as_str(), &r.call_args, file_ctx)
+        {
             return vec![emission];
         }
-        if let Some(emission) = detect_python_sqlalchemy_select_call(
-            r.target_name.as_str(),
-            &r.call_args,
-            file_ctx,
-        ) {
+        if let Some(emission) =
+            detect_python_sqlalchemy_select_call(r.target_name.as_str(), &r.call_args, file_ctx)
+        {
             return vec![emission];
         }
         return Vec::new();
@@ -171,8 +162,12 @@ pub(crate) fn detect_flow_inner_with_lookup(
     }
     // Let-binding propagation: `stub = UserServiceStub(channel); stub.GetUser(req)`.
     let r = &ref_ctx.extracted_ref;
-    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+    let Some(root_seg) = chain.segments.first() else {
+        return Vec::new();
+    };
     if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
         return Vec::new();
     }
@@ -201,7 +196,9 @@ pub(crate) fn detect_flow_inner_with_lookup(
         type_arg_ids: Vec::new(),
     }];
     new_segments.extend(chain.segments.iter().skip(1).cloned());
-    let rewritten = crate::types::MemberChain { segments: new_segments };
+    let rewritten = crate::types::MemberChain {
+        segments: new_segments,
+    };
     if let Some(em) = detect_python_grpc_stub_emission(&rewritten) {
         return vec![em];
     }

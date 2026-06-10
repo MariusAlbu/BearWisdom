@@ -12,6 +12,7 @@ pub mod dart_mod;
 pub mod dotnet;
 pub mod go_mod;
 pub mod jvm;
+pub mod nim_mod;
 pub mod node;
 pub mod php_mod;
 pub mod python_mod;
@@ -54,8 +55,7 @@ impl FilePathIndex {
         let mut normalized: Vec<String> = Vec::with_capacity(file_paths.len());
         let mut suffix_to_first: rustc_hash::FxHashMap<String, usize> =
             rustc_hash::FxHashMap::default();
-        let mut exact: rustc_hash::FxHashMap<String, usize> =
-            rustc_hash::FxHashMap::default();
+        let mut exact: rustc_hash::FxHashMap<String, usize> = rustc_hash::FxHashMap::default();
 
         for &raw in file_paths {
             let norm: String = raw.replace('\\', "/");
@@ -201,8 +201,11 @@ pub fn all_resolvers_with_manifest_data(
         Box::new(node::NodeModuleResolver),
         Box::new(rust_mod::RustModuleResolver),
         Box::new(python_mod::PythonModuleResolver),
-        Box::new(go_mod::GoModuleResolver::new(go_module_path.map(str::to_string))),
+        Box::new(go_mod::GoModuleResolver::new(
+            go_module_path.map(str::to_string),
+        )),
         Box::new(jvm::JvmModuleResolver),
+        Box::new(nim_mod::NimModuleResolver),
         Box::new(dotnet::DotNetModuleResolver),
         Box::new(php_mod::PhpModuleResolver),
         Box::new(ruby_mod::RubyModuleResolver),

@@ -37,12 +37,12 @@ pub(super) fn push_package(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -90,12 +90,12 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -132,12 +132,12 @@ pub(super) fn push_enum_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -178,19 +178,31 @@ pub(super) fn extract_enum_body(
                         end_col: child.end_position().column as u32,
                         signature: None,
                         doc_comment: extract_doc_comment(&child, src),
-                        scope_path: if enum_qname.is_empty() { None } else { Some(enum_qname.clone()) },
+                        scope_path: if enum_qname.is_empty() {
+                            None
+                        } else {
+                            Some(enum_qname.clone())
+                        },
                         parent_index: enum_parent_index,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
             // Enum body can also contain class_body declarations.
             _ => {
-                super::extract::extract_node(child, src, scope_tree, package, symbols, refs, enum_parent_index);
+                super::extract::extract_node(
+                    child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    refs,
+                    enum_parent_index,
+                );
             }
         }
     }
@@ -235,15 +247,14 @@ pub(super) fn push_method_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
-
 
 /// Push a Method symbol for `annotation_type_element_declaration` inside an `@interface` body.
 pub(super) fn push_annotation_element_decl(
@@ -265,7 +276,9 @@ pub(super) fn push_annotation_element_decl(
                 break;
             }
         }
-        if found.is_empty() { return None; }
+        if found.is_empty() {
+            return None;
+        }
         found
     };
     let parent_scope = if node.start_byte() > 0 {
@@ -275,7 +288,10 @@ pub(super) fn push_annotation_element_decl(
     };
     let qualified_name = qualify_with_package(&name, parent_scope, package);
     let scope_path = scope_path_with_package(parent_scope, package);
-    let ret_type = node.child_by_field_name("type").map(|t| node_text(t, src)).unwrap_or_default();
+    let ret_type = node
+        .child_by_field_name("type")
+        .map(|t| node_text(t, src))
+        .unwrap_or_default();
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -290,12 +306,12 @@ pub(super) fn push_annotation_element_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -319,7 +335,9 @@ pub(super) fn push_compact_constructor_decl(
                 break;
             }
         }
-        if found.is_empty() { return None; }
+        if found.is_empty() {
+            return None;
+        }
         found
     };
     let parent_scope = if node.start_byte() > 0 {
@@ -343,12 +361,12 @@ pub(super) fn push_compact_constructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -398,12 +416,12 @@ pub(super) fn push_constructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -461,12 +479,12 @@ pub(super) fn push_field_decl(
                     doc_comment: doc_comment.clone(),
                     scope_path: scope_path.clone(),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
         }
     }
@@ -501,7 +519,9 @@ pub(super) fn extract_type_refs_recursive(
         "type_identifier" => {
             let name = node_text(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -510,9 +530,9 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "generic_type" => {
@@ -523,7 +543,9 @@ pub(super) fn extract_type_refs_recursive(
                     "type_identifier" | "scoped_type_identifier" => {
                         let name = type_node_simple_name(child, src);
                         if !name.is_empty() && !is_java_primitive(&name) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -532,9 +554,9 @@ pub(super) fn extract_type_refs_recursive(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "type_arguments" => {
@@ -556,7 +578,9 @@ pub(super) fn extract_type_refs_recursive(
         "scoped_type_identifier" => {
             let name = type_node_simple_name(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -565,9 +589,9 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "array_type" => {
@@ -616,7 +640,9 @@ pub(super) fn push_import(
                 let full = node_text(child, src);
                 if has_wildcard {
                     // `import com.foo.*;` — wildcard: target_name = "*", module = package path.
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: "*".to_string(),
                         kind: EdgeKind::Imports,
@@ -625,13 +651,15 @@ pub(super) fn push_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 } else {
                     // `import com.foo.Bar;` — exact import.
                     let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: imported,
                         kind: EdgeKind::Imports,
@@ -640,15 +668,17 @@ pub(super) fn push_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 return;
             }
             "identifier" => {
                 let name = node_text(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
@@ -657,9 +687,9 @@ pub(super) fn push_import(
                     module: Some(name),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
             _ => {}
@@ -684,7 +714,9 @@ pub(super) fn extract_class_inheritance(
         for child in superclass_node.children(&mut cursor) {
             let name = type_node_simple_name(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Inherits,
@@ -693,9 +725,9 @@ pub(super) fn extract_class_inheritance(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 break;
             }
         }
@@ -750,7 +782,9 @@ fn extract_type_list_as_implements(
             for type_node in child.children(&mut cursor) {
                 let name = type_node_simple_name(type_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Implements,
@@ -759,9 +793,9 @@ fn extract_type_list_as_implements(
                         module: None,
                         chain: None,
                         byte_offset: type_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -840,14 +874,16 @@ pub(super) fn extract_java_typed_params_as_symbols(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: param_idx,
             target_name: type_name,
             kind: EdgeKind::TypeRef,
@@ -856,8 +892,8 @@ pub(super) fn extract_java_typed_params_as_symbols(
             module: None,
             chain: None,
             byte_offset: type_node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }

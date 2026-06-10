@@ -3,9 +3,9 @@
 //! Grammar: tree-sitter-lua (in Cargo.toml).
 //! Extraction covers top-level functions, table-based OOP, require imports, and calls.
 
-pub mod keywords;
 pub mod extract;
 pub mod flow;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -28,11 +28,17 @@ mod coverage_tests;
 pub struct LuaPlugin;
 
 impl LanguagePlugin for LuaPlugin {
-    fn id(&self) -> &str { "lua" }
+    fn id(&self) -> &str {
+        "lua"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["lua"] }
+    fn language_ids(&self) -> &[&str] {
+        &["lua"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".lua"] }
+    fn extensions(&self) -> &[&str] {
+        &[".lua"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_lua::LANGUAGE.into())
@@ -57,12 +63,12 @@ impl LanguagePlugin for LuaPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "function_call",
-        ]
+        &["function_call"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -70,14 +76,12 @@ impl LanguagePlugin for LuaPlugin {
         Some(&profile::LUA_PROFILE)
     }
 
-    
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::LUA_HOOKS)
     }
-fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::LUA_FLOW_CONFIG)
     }
 }

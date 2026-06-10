@@ -17,10 +17,8 @@ use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo, SymbolLook
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
+use crate::type_checker::profile::language_profile::{KindCompatibility, LanguageProfile};
 use crate::type_checker::subtype::args_assignable;
-use crate::type_checker::profile::language_profile::{
-    KindCompatibility, LanguageProfile,
-};
 use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::str::FromStr;
@@ -143,11 +141,14 @@ impl MembersIndex {
                 // extension has no scope. Detect the receiver before the scope
                 // gate below so both shapes register.
                 if extension_receiver_in_signature(&pf.language) {
-                    if let Some(ext_type) =
-                        sym.signature.as_deref().and_then(this_extension_target)
+                    if let Some(ext_type) = sym.signature.as_deref().and_then(this_extension_target)
                     {
                         let ext_ty = arena.class(ext_type);
-                        index.extensions.entry(ext_ty).or_default().push(info.clone());
+                        index
+                            .extensions
+                            .entry(ext_ty)
+                            .or_default()
+                            .push(info.clone());
                     }
                 }
 
@@ -171,8 +172,8 @@ impl MembersIndex {
                 // yield step, `class("IndexWriter")`). Key the member under the
                 // bare base too so both receiver shapes find it.
                 let bare_scope = strip_generic_args(scope);
-                let bare_parent_ty = (bare_scope.as_str() != scope.as_str())
-                    .then(|| arena.class(&bare_scope));
+                let bare_parent_ty =
+                    (bare_scope.as_str() != scope.as_str()).then(|| arena.class(&bare_scope));
                 if let Some(bare_ty) = bare_parent_ty {
                     index.direct.entry(bare_ty).or_default().push(info.clone());
                 }
@@ -258,8 +259,17 @@ impl MembersIndex {
         arena: &TypeArena,
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
-        self.lookup_with_binding(ty, name, kind_filter, supertypes, arena, profile, None, None)
-            .map(|(sym, _, _)| sym)
+        self.lookup_with_binding(
+            ty,
+            name,
+            kind_filter,
+            supertypes,
+            arena,
+            profile,
+            None,
+            None,
+        )
+        .map(|(sym, _, _)| sym)
     }
 
     /// Like `lookup`, but also returns the ancestor TypeId the member was
@@ -284,9 +294,16 @@ impl MembersIndex {
         types: Option<ArgTypes>,
     ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
         match arena.get(ty) {
-            Type::Apply { base, .. } => {
-                self.lookup_with_binding(base, name, kind_filter, supertypes, arena, profile, arg_count, types)
-            }
+            Type::Apply { base, .. } => self.lookup_with_binding(
+                base,
+                name,
+                kind_filter,
+                supertypes,
+                arena,
+                profile,
+                arg_count,
+                types,
+            ),
             Type::Union(branches) => {
                 // Every branch must carry the member — partial union members
                 // are unsafe to resolve since the runtime value could land
@@ -294,7 +311,16 @@ impl MembersIndex {
                 // match; the walker does not yet select a branch by a guard.
                 let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
-                    match self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count, types) {
+                    match self.lookup_with_binding(
+                        b,
+                        name,
+                        kind_filter,
+                        supertypes,
+                        arena,
+                        profile,
+                        arg_count,
+                        types,
+                    ) {
                         Some(s) => {
                             if first.is_none() {
                                 first = Some(s);
@@ -307,34 +333,76 @@ impl MembersIndex {
             }
             Type::Intersection(branches) => {
                 for b in branches {
-                    if let Some(s) =
-                        self.lookup_with_binding(b, name, kind_filter, supertypes, arena, profile, arg_count, types)
-                    {
+                    if let Some(s) = self.lookup_with_binding(
+                        b,
+                        name,
+                        kind_filter,
+                        supertypes,
+                        arena,
+                        profile,
+                        arg_count,
+                        types,
+                    ) {
                         return Some(s);
                     }
                 }
                 None
             }
-            Type::Optional(inner) if profile.look_through_optional => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
-            }
-            Type::AsyncWrapper(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
-            }
-            Type::Iterator(inner) => {
-                self.lookup_with_binding(inner, name, kind_filter, supertypes, arena, profile, arg_count, types)
-            }
-            Type::Class(_) | Type::Primitive(_) => {
-                self.find_on_chain(ty, name, kind_filter, supertypes, arena, profile, arg_count, types)
-            }
+            Type::Optional(inner) if profile.look_through_optional => self.lookup_with_binding(
+                inner,
+                name,
+                kind_filter,
+                supertypes,
+                arena,
+                profile,
+                arg_count,
+                types,
+            ),
+            Type::AsyncWrapper(inner) => self.lookup_with_binding(
+                inner,
+                name,
+                kind_filter,
+                supertypes,
+                arena,
+                profile,
+                arg_count,
+                types,
+            ),
+            Type::Iterator(inner) => self.lookup_with_binding(
+                inner,
+                name,
+                kind_filter,
+                supertypes,
+                arena,
+                profile,
+                arg_count,
+                types,
+            ),
+            Type::Class(_) | Type::Primitive(_) => self.find_on_chain(
+                ty,
+                name,
+                kind_filter,
+                supertypes,
+                arena,
+                profile,
+                arg_count,
+                types,
+            ),
             // A bare generic parameter carries members only through its
             // declared upper bound: `T: Animal` resolves `T`'s members on
             // Animal. Recursion terminates because a bound is a Class/Apply
             // in every realistic declaration; an unbounded `T` has no members.
             Type::Generic { param } => match arena.generic_param(param).bound {
-                Some(bound) => {
-                    self.lookup_with_binding(bound, name, kind_filter, supertypes, arena, profile, arg_count, types)
-                }
+                Some(bound) => self.lookup_with_binding(
+                    bound,
+                    name,
+                    kind_filter,
+                    supertypes,
+                    arena,
+                    profile,
+                    arg_count,
+                    types,
+                ),
                 None => None,
             },
             Type::Function { .. }
@@ -464,8 +532,7 @@ fn this_extension_target(signature: &str) -> Option<&str> {
     let open = signature.find('(')?;
     let body = signature[open + 1..].trim_start();
     let rest = body.strip_prefix("this ")?.trim_start();
-    let end = rest
-        .find(|c: char| c.is_whitespace() || c == '<' || c == ',' || c == ')')?;
+    let end = rest.find(|c: char| c.is_whitespace() || c == '<' || c == ',' || c == ')')?;
     let target = &rest[..end];
     if target.is_empty() {
         None

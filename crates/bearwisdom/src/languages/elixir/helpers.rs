@@ -17,7 +17,11 @@ pub(super) fn qualify(name: &str, prefix: &str) -> String {
 }
 
 pub(super) fn scope_from_prefix(prefix: &str) -> Option<String> {
-    if prefix.is_empty() { None } else { Some(prefix.to_string()) }
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix.to_string())
+    }
 }
 
 /// Return the identifier/alias name that is the callee of a `call` node.
@@ -42,7 +46,11 @@ pub(super) fn call_identifier(node: &Node, src: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if first_word.is_empty() { None } else { Some(first_word) }
+    if first_word.is_empty() {
+        None
+    } else {
+        Some(first_word)
+    }
 }
 
 /// Like `call_identifier`, but for `dot` callees returns the full
@@ -125,7 +133,10 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
         if !past_def {
             if child.kind() == "identifier" {
                 let t = node_text(child, src);
-                if matches!(t.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defguard" | "defguardp") {
+                if matches!(
+                    t.as_str(),
+                    "def" | "defp" | "defmacro" | "defmacrop" | "defguard" | "defguardp"
+                ) {
                     past_def = true;
                     continue;
                 }
@@ -141,11 +152,14 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
                         .map(|n| node_text(n, src))
                         .or_else(|| first_child_text_of_kind(&child, src, "identifier"));
                     if let Some(name) = name_text {
-                        let arity = child.child_by_field_name("arguments")
+                        let arity = child
+                            .child_by_field_name("arguments")
                             .map(|args| {
                                 let mut ac = args.walk();
                                 args.children(&mut ac)
-                                    .filter(|n| n.kind() != "," && n.kind() != "(" && n.kind() != ")")
+                                    .filter(|n| {
+                                        n.kind() != "," && n.kind() != "(" && n.kind() != ")"
+                                    })
                                     .count()
                             })
                             .unwrap_or(0);
@@ -159,7 +173,8 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
                             return (node_text(arg, src), 0);
                         }
                         if arg.kind() == "call" {
-                            let nn_text = arg.child_by_field_name("name")
+                            let nn_text = arg
+                                .child_by_field_name("name")
                                 .map(|n| node_text(n, src))
                                 .or_else(|| first_child_text_of_kind(&arg, src, "identifier"));
                             if let Some(name) = nn_text {
@@ -173,15 +188,19 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
                             // Check if this is a `when` guard.
                             let is_when = {
                                 let mut bc = arg.walk();
-                                let found = arg.children(&mut bc).any(|c| node_text(c, src) == "when");
+                                let found =
+                                    arg.children(&mut bc).any(|c| node_text(c, src) == "when");
                                 found
                             };
                             if is_when {
                                 if let Some(left) = arg.child_by_field_name("left") {
                                     if left.kind() == "call" {
-                                        let nn_text = left.child_by_field_name("target")
+                                        let nn_text = left
+                                            .child_by_field_name("target")
                                             .map(|n| node_text(n, src))
-                                            .or_else(|| first_child_text_of_kind(&left, src, "identifier"));
+                                            .or_else(|| {
+                                                first_child_text_of_kind(&left, src, "identifier")
+                                            });
                                         if let Some(name) = nn_text {
                                             return (name, 0);
                                         }

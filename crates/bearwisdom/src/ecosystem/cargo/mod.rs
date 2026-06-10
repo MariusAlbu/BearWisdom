@@ -39,10 +39,18 @@ pub struct CargoEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for CargoEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("Cargo.toml", "cargo")]
@@ -69,7 +77,9 @@ impl Ecosystem for CargoEcosystem {
         walk_cargo_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -85,25 +95,20 @@ impl Ecosystem for CargoEcosystem {
         resolve_crate_entry(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         // Same entry as resolve_import — the crate surface is fully defined
         // by `src/lib.rs` plus its module tree; fqn-specific walking is a
         // later optimization.
         resolve_crate_entry(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_cargo_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +116,9 @@ impl Ecosystem for CargoEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for CargoEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_cargo_roots(project_root)
@@ -166,7 +173,9 @@ pub(crate) fn walk_cargo_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     }
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for r in &roots {
-        if !seen.insert(r.clone()) { continue }
+        if !seen.insert(r.clone()) {
+            continue;
+        }
         walk_dir_bounded(r, &dep.root, dep, &mut out, 0);
     }
     out
@@ -179,21 +188,33 @@ fn walk_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(name, "tests" | "test" | "benches" | "examples" | "target")
                     || name.starts_with('.')
-                { continue }
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".rs") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".rs") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

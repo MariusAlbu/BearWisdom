@@ -11,14 +11,34 @@ fn swift_profile_identity() {
 #[test]
 fn swift_instantiates_accepts_class_struct_enum() {
     let t = SWIFT_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Class));
-    assert!(KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Struct));
-    assert!(KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Enum));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Instantiates,
+        SymbolKind::Class
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Instantiates,
+        SymbolKind::Struct
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Instantiates,
+        SymbolKind::Enum
+    ));
 }
 
 #[test]
 fn swift_implements_accepts_protocol_kinds() {
     let t = SWIFT_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Interface));
-    assert!(KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Trait));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Interface
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Trait
+    ));
 }

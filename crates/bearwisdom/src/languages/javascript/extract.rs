@@ -12,18 +12,19 @@
 //                   post-traversal type-identifier scan
 // =============================================================================
 
-
-use super::helpers::{detect_visibility, extract_jsdoc, node_text};
-use super::calls::{emit_call_ref_js, emit_new_ref_js, extract_calls, is_enclosing_function_parameter};
+use super::calls::{
+    emit_call_ref_js, emit_new_ref_js, extract_calls, is_enclosing_function_parameter,
+};
 use super::globals::{harvest_top_level_globals, scan_all_type_identifiers};
+use super::helpers::{detect_visibility, extract_jsdoc, node_text};
 use super::imports::{
     extract_module_exports, extract_prototype_method, push_export_refs, push_import,
     try_emit_require,
 };
 
 use crate::parser::scope_tree::ScopeTree;
-use crate::types::{EdgeKind, ExtractedRef as Ref, ExtractedSymbol as Sym, SymbolKind};
 use crate::types::ExtractedSymbol;
+use crate::types::{EdgeKind, ExtractedRef as Ref, ExtractedSymbol as Sym, SymbolKind};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -92,8 +93,14 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     use crate::parser::scope_tree::{self, ScopeKind};
 
     pub(crate) static JS_SCOPE_KINDS: &[ScopeKind] = &[
-        ScopeKind { node_kind: "class_declaration", name_field: "name" },
-        ScopeKind { node_kind: "function_declaration", name_field: "name" },
+        ScopeKind {
+            node_kind: "class_declaration",
+            name_field: "name",
+        },
+        ScopeKind {
+            node_kind: "function_declaration",
+            name_field: "name",
+        },
     ];
 
     let root = tree.root_node();
@@ -306,12 +313,12 @@ fn push_class(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -353,12 +360,12 @@ fn push_function(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -401,12 +408,12 @@ fn push_method(
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -445,12 +452,12 @@ fn push_field(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 fn push_variable_decl(
@@ -492,11 +499,13 @@ fn push_variable_decl(
                     "arrow_function" => {
                         let params = init
                             .as_ref()
-                            .and_then(|n| n.child_by_field_name("parameters").or_else(|| {
-                                // Single-param shorthand: `x => x` — the param is the
-                                // `identifier` child with field name "parameter".
-                                n.child_by_field_name("parameter")
-                            }))
+                            .and_then(|n| {
+                                n.child_by_field_name("parameters").or_else(|| {
+                                    // Single-param shorthand: `x => x` — the param is the
+                                    // `identifier` child with field name "parameter".
+                                    n.child_by_field_name("parameter")
+                                })
+                            })
                             .map(|p| node_text(p, src))
                             .unwrap_or_default();
                         let idx = symbols.len();
@@ -513,12 +522,12 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                                byte_offset: 0,
-                                                            declared_type: None,
-                                return_type: None,
-                                param_types: Vec::new(),
-                                generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                         // Extract calls and nested declarations from arrow body.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
@@ -553,12 +562,12 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                                byte_offset: 0,
-                                                            declared_type: None,
-                                return_type: None,
-                                param_types: Vec::new(),
-                                generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
                                 extract_calls(&body, src, idx, refs);
@@ -584,16 +593,23 @@ fn push_variable_decl(
                             doc_comment: extract_jsdoc(node, src),
                             scope_path: scope_path.clone(),
                             parent_index,
-                                byte_offset: 0,
-                                                            declared_type: None,
-                                return_type: None,
-                                param_types: Vec::new(),
-                                generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                         // Recurse into the class body for methods/fields.
                         if let Some(init_node) = &init {
                             if let Some(body) = init_node.child_by_field_name("body") {
-                                extract_js_node_inner(body, src, scope_tree, symbols, refs, Some(idx));
+                                extract_js_node_inner(
+                                    body,
+                                    src,
+                                    scope_tree,
+                                    symbols,
+                                    refs,
+                                    Some(idx),
+                                );
                             }
                         }
                     }
@@ -614,12 +630,12 @@ fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                                byte_offset: 0,
-                                                            declared_type: None,
-                                return_type: None,
-                                param_types: Vec::new(),
-                                generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                         if let Some(init_node) = &init {
                             match init_node.kind() {
                                 // `const x = new Foo()` → Calls edge (JS convention)
@@ -636,14 +652,28 @@ fn push_variable_decl(
                                     emit_call_ref_js(init_node, src, idx, refs);
                                     // Recurse into call arguments and body for nested decls.
                                     extract_calls(init_node, src, idx, refs);
-                                    extract_js_node(*init_node, src, scope_tree, symbols, refs, Some(idx));
+                                    extract_js_node(
+                                        *init_node,
+                                        src,
+                                        scope_tree,
+                                        symbols,
+                                        refs,
+                                        Some(idx),
+                                    );
                                 }
                                 // Objects, arrays, template literals, etc. — recurse to
                                 // find nested calls, declarations, and class bodies.
                                 _ => {
                                     try_emit_require(init_node, src, idx, refs);
                                     extract_calls(init_node, src, idx, refs);
-                                    extract_js_node(*init_node, src, scope_tree, symbols, refs, Some(idx));
+                                    extract_js_node(
+                                        *init_node,
+                                        src,
+                                        scope_tree,
+                                        symbols,
+                                        refs,
+                                        Some(idx),
+                                    );
                                 }
                             }
                         }
@@ -661,7 +691,12 @@ fn push_variable_decl(
                             let prop_name = node_text(prop, src);
                             if !prop_name.is_empty() {
                                 push_destructured_var(
-                                    &prop_name, &prop, src, scope_tree, symbols, parent_index,
+                                    &prop_name,
+                                    &prop,
+                                    src,
+                                    scope_tree,
+                                    symbols,
+                                    parent_index,
                                     &scope_path,
                                 );
                             }
@@ -673,8 +708,13 @@ fn push_variable_decl(
                                     let prop_name = node_text(val, src);
                                     if !prop_name.is_empty() {
                                         push_destructured_var(
-                                            &prop_name, &val, src, scope_tree, symbols,
-                                            parent_index, &scope_path,
+                                            &prop_name,
+                                            &val,
+                                            src,
+                                            scope_tree,
+                                            symbols,
+                                            parent_index,
+                                            &scope_path,
                                         );
                                     }
                                 }
@@ -689,8 +729,13 @@ fn push_variable_decl(
                                     let rest_name = node_text(rest_child, src);
                                     if !rest_name.is_empty() {
                                         push_destructured_var(
-                                            &rest_name, &rest_child, src, scope_tree, symbols,
-                                            parent_index, &scope_path,
+                                            &rest_name,
+                                            &rest_child,
+                                            src,
+                                            scope_tree,
+                                            symbols,
+                                            parent_index,
+                                            &scope_path,
                                         );
                                     }
                                     break;
@@ -710,7 +755,12 @@ fn push_variable_decl(
                         let elem_name = node_text(elem, src);
                         if !elem_name.is_empty() {
                             push_destructured_var(
-                                &elem_name, &elem, src, scope_tree, symbols, parent_index,
+                                &elem_name,
+                                &elem,
+                                src,
+                                scope_tree,
+                                symbols,
+                                parent_index,
                                 &scope_path,
                             );
                         }
@@ -721,8 +771,13 @@ fn push_variable_decl(
                                 let rest_name = node_text(rest_child, src);
                                 if !rest_name.is_empty() {
                                     push_destructured_var(
-                                        &rest_name, &rest_child, src, scope_tree, symbols,
-                                        parent_index, &scope_path,
+                                        &rest_name,
+                                        &rest_child,
+                                        src,
+                                        scope_tree,
+                                        symbols,
+                                        parent_index,
+                                        &scope_path,
                                     );
                                 }
                                 break;
@@ -767,12 +822,12 @@ fn push_destructured_var(
         doc_comment: None,
         scope_path: scope_path.clone(),
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Inner recursion for class bodies (method_definition, field_definition only).
@@ -837,7 +892,9 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
             for n in child.children(&mut hc) {
                 match n.kind() {
                     "identifier" => {
-                        refs.push(Ref { is_import_binding: false, is_reexport: false,
+                        refs.push(Ref {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: node_text(n, src),
                             kind: EdgeKind::Inherits,
@@ -847,14 +904,16 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             byte_offset: n.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                col: 0,
-                            });
+                            col: 0,
+                        });
                     }
                     "extends_clause" => {
                         let mut ec = n.walk();
                         for type_node in n.children(&mut ec) {
                             if type_node.kind() == "identifier" {
-                                refs.push(Ref { is_import_binding: false, is_reexport: false,
+                                refs.push(Ref {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: node_text(type_node, src),
                                     kind: EdgeKind::Inherits,
@@ -864,8 +923,8 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     byte_offset: type_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
-                                        col: 0,
-                                    });
+                                    col: 0,
+                                });
                             }
                         }
                     }
@@ -942,12 +1001,12 @@ fn extract_for_loop_var(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit a TypeRef to the iterable so the index builder can infer element type.
     if let Some(right) = node.child_by_field_name("right") {
@@ -958,10 +1017,10 @@ fn extract_for_loop_var(
             // parameter — the iterable binds to the parameter value at
             // runtime, not to any declared symbol, so the TypeRef only
             // pollutes unresolved_refs with no possible resolution target.
-            if !target.is_empty()
-                && !is_enclosing_function_parameter(right, src, &target)
-            {
-                refs.push(Ref { is_import_binding: false, is_reexport: false,
+            if !target.is_empty() && !is_enclosing_function_parameter(right, src, &target) {
+                refs.push(Ref {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: idx,
                     target_name: target,
                     kind: EdgeKind::TypeRef,
@@ -971,8 +1030,8 @@ fn extract_for_loop_var(
                     byte_offset: right.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                        col: 0,
-                    });
+                    col: 0,
+                });
             }
         }
     }
@@ -1050,12 +1109,12 @@ fn extract_catch_variable(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // build_import_map moved to crate::ecosystem::ecmascript_imports — both TS

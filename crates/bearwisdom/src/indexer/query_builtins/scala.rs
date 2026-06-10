@@ -26,7 +26,8 @@ pub const BUILTINS: &[&str] = &[
     "with",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(template_body) @local.scope\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(template_body) @local.scope\n\
 (lambda_expression) @local.scope\n\
 \n\
 \n\
@@ -56,4 +57,5 @@ pub const LOCALS_SCM: Option<&str> = Some("(template_body) @local.scope\n\
 \n\
 (identifier) @local.reference\n\
 \n\
-");
+",
+);

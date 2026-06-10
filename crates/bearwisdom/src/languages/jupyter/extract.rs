@@ -25,11 +25,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let Some(nb) = cell_scanner::parse_notebook(source) else {
@@ -64,11 +64,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     ExtractionResult {
@@ -107,12 +107,7 @@ mod tests {
  "metadata": {"kernelspec": {"language": "python"}}
 }"##;
         let r = extract(src, "nb.ipynb");
-        let anchors: Vec<&str> = r
-            .symbols
-            .iter()
-            .skip(1)
-            .map(|s| s.name.as_str())
-            .collect();
+        let anchors: Vec<&str> = r.symbols.iter().skip(1).map(|s| s.name.as_str()).collect();
         assert_eq!(anchors, vec!["python#0", "python#2"]);
     }
 

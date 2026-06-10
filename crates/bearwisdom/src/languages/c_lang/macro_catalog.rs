@@ -50,6 +50,14 @@ impl MacroCatalog {
 /// directory walk hits real on-disk headers regardless of what shape the
 /// path takes.
 pub(crate) fn catalog_for_file(file_path: &str) -> Arc<MacroCatalog> {
+    // In a real index session the project root is known: build one bounded
+    // project-wide catalog so macros defined in deep include trees (nginx
+    // `src/core`/`src/os`, redis, curl) reach every translation unit, not just
+    // the file's own directory. Tests / direct callers (no session) fall back
+    // to the per-directory walk below.
+    if let Some(root) = current_project_root() {
+        return project_macro_catalog(&root);
+    }
     let Some(dir) = resolve_file_dir(file_path) else {
         return Arc::new(MacroCatalog::default());
     };
@@ -67,7 +75,9 @@ pub(crate) fn catalog_for_file(file_path: &str) -> Arc<MacroCatalog> {
 }
 
 fn resolve_file_dir(file_path: &str) -> Option<PathBuf> {
-    if file_path.is_empty() { return None }
+    if file_path.is_empty() {
+        return None;
+    }
     let path = PathBuf::from(file_path);
     let resolved: PathBuf = if path.is_absolute() {
         path
@@ -112,6 +122,9 @@ pub fn begin_index_session(root: &std::path::Path) {
     if let Ok(mut w) = global_cache().write() {
         w.clear();
     }
+    if let Ok(mut w) = project_cache().write() {
+        w.clear();
+    }
 }
 
 /// Clear the indexing-session state. Called at the end of an index pass.
@@ -123,6 +136,78 @@ pub fn end_index_session() {
 
 fn current_project_root() -> Option<PathBuf> {
     project_root_lock().read().ok().and_then(|r| r.clone())
+}
+
+/// Upper bound on headers parsed for the project-wide catalog. Caps the cost
+/// on trees that vendor a full libc/SDK (zig-compiler, perl). Real C/C++ apps
+/// have far fewer headers; the bound only bites on vendored monsters.
+const MAX_PROJECT_HEADERS: usize = 20_000;
+
+fn project_cache() -> &'static RwLock<HashMap<PathBuf, Arc<MacroCatalog>>> {
+    static CACHE: OnceLock<RwLock<HashMap<PathBuf, Arc<MacroCatalog>>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// One bounded `#define` catalog over every header under the project root,
+/// cached per root for the index session. Recovers macro-defined callees whose
+/// definition lives outside the translation unit's own directory subtree.
+fn project_macro_catalog(root: &Path) -> Arc<MacroCatalog> {
+    if let Ok(read) = project_cache().read() {
+        if let Some(c) = read.get(root) {
+            return c.clone();
+        }
+    }
+    let mut headers: Vec<PathBuf> = Vec::new();
+    collect_headers_recursive(root, &mut headers, MAX_PROJECT_HEADERS);
+    let mut catalog = MacroCatalog::default();
+    for h in headers {
+        let Ok(content) = std::fs::read_to_string(&h) else {
+            continue;
+        };
+        for (name, def) in parse_defines(&content) {
+            catalog.by_name.entry(name).or_insert(def);
+        }
+    }
+    let arc = Arc::new(catalog);
+    if let Ok(mut w) = project_cache().write() {
+        w.entry(root.to_path_buf()).or_insert_with(|| arc.clone());
+    }
+    arc
+}
+
+/// Depth-first header collection bounded by `cap`. Does not follow directory
+/// symlinks (`entry.file_type()` reports the link, not its target), so symlink
+/// loops cannot occur.
+fn collect_headers_recursive(dir: &Path, out: &mut Vec<PathBuf>, cap: usize) {
+    if out.len() >= cap {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if out.len() >= cap {
+            return;
+        }
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            collect_headers_recursive(&path, out, cap);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let lower = name.to_ascii_lowercase();
+            if lower.ends_with(".h")
+                || lower.ends_with(".hpp")
+                || lower.ends_with(".hxx")
+                || lower.ends_with(".hh")
+                || lower.ends_with(".inl")
+            {
+                out.push(path);
+            }
+        }
+    }
 }
 
 /// Reset the cache. Used by tests to ensure a clean catalog per test.
@@ -147,7 +232,9 @@ fn build_catalog(dir: &Path) -> MacroCatalog {
 
     let mut catalog = MacroCatalog::default();
     for h in header_files {
-        let Ok(content) = std::fs::read_to_string(&h) else { continue };
+        let Ok(content) = std::fs::read_to_string(&h) else {
+            continue;
+        };
         for (name, def) in parse_defines(&content) {
             catalog.by_name.entry(name).or_insert(def);
         }
@@ -156,12 +243,18 @@ fn build_catalog(dir: &Path) -> MacroCatalog {
 }
 
 fn collect_header_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_file() { continue }
+        if !ft.is_file() {
+            continue;
+        }
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         let lower = name.to_ascii_lowercase();
         if lower.ends_with(".h")
             || lower.ends_with(".hpp")
@@ -191,15 +284,19 @@ fn parse_defines(source: &str) -> Vec<(String, MacroDef)> {
     let mut out = Vec::new();
     for line in logical.lines() {
         let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("#define") else { continue };
+        let Some(rest) = trimmed.strip_prefix("#define") else {
+            continue;
+        };
         let rest = rest.trim_start();
-        if rest.is_empty() { continue }
+        if rest.is_empty() {
+            continue;
+        }
 
         // Read identifier.
-        let name_end = rest
-            .find(|c: char| !is_ident_char(c))
-            .unwrap_or(rest.len());
-        if name_end == 0 { continue }
+        let name_end = rest.find(|c: char| !is_ident_char(c)).unwrap_or(rest.len());
+        if name_end == 0 {
+            continue;
+        }
         let name = rest[..name_end].to_string();
         let after_name = &rest[name_end..];
 
@@ -218,7 +315,9 @@ fn parse_defines(source: &str) -> Vec<(String, MacroDef)> {
             (Vec::new(), 0)
         };
 
-        let body = strip_comments(after_name[body_start..].trim()).trim().to_string();
+        let body = strip_comments(after_name[body_start..].trim())
+            .trim()
+            .to_string();
         out.push((name, MacroDef { args, body }));
     }
     out
@@ -232,10 +331,16 @@ fn join_continuations(source: &str) -> String {
             // Line continuation: `\<EOL>` collapses into a single space.
             // Trailing whitespace before `\` is preserved.
             match chars.peek() {
-                Some('\n') => { chars.next(); out.push(' '); continue; }
+                Some('\n') => {
+                    chars.next();
+                    out.push(' ');
+                    continue;
+                }
                 Some('\r') => {
                     chars.next();
-                    if chars.peek() == Some(&'\n') { chars.next(); }
+                    if chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
                     out.push(' ');
                     continue;
                 }
@@ -265,7 +370,9 @@ fn strip_comments(s: &str) -> String {
             while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
                 i += 1;
             }
-            if i + 1 < bytes.len() { i += 2; }
+            if i + 1 < bytes.len() {
+                i += 2;
+            }
             continue;
         }
         out.push(bytes[i] as char);
@@ -282,7 +389,9 @@ fn is_ident_char(c: char) -> bool {
 /// substring inside the matching `)` plus the index just past it.
 fn collect_balanced_parens(s: &str, open_idx: usize) -> Option<(String, usize)> {
     let bytes = s.as_bytes();
-    if bytes.get(open_idx).copied() != Some(b'(') { return None }
+    if bytes.get(open_idx).copied() != Some(b'(') {
+        return None;
+    }
     let mut depth = 1usize;
     let args_start = open_idx + 1;
     let mut i = args_start;
@@ -326,15 +435,21 @@ pub(crate) fn expand(def: &MacroDef, args: &[&str]) -> String {
         // `##` token paste — strip surrounding whitespace.
         if i + 1 < bytes.len() && bytes[i] == b'#' && bytes[i + 1] == b'#' {
             // Drop whitespace already pushed onto out.
-            while out.ends_with(' ') || out.ends_with('\t') { out.pop(); }
+            while out.ends_with(' ') || out.ends_with('\t') {
+                out.pop();
+            }
             i += 2;
-            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                i += 1;
+            }
             continue;
         }
         // `#arg` stringify — only when followed by an argument identifier.
         if bytes[i] == b'#' {
             let mut j = i + 1;
-            while j < bytes.len() && is_ident_byte(bytes[j]) { j += 1; }
+            while j < bytes.len() && is_ident_byte(bytes[j]) {
+                j += 1;
+            }
             if j > i + 1 {
                 let ident = &def.body[i + 1..j];
                 if let Some(idx) = def.args.iter().position(|a| a == ident) {
@@ -349,7 +464,9 @@ pub(crate) fn expand(def: &MacroDef, args: &[&str]) -> String {
         // Identifier substitution.
         if is_ident_byte(bytes[i]) && (i == 0 || !is_ident_byte(bytes[i - 1])) {
             let mut j = i + 1;
-            while j < bytes.len() && is_ident_byte(bytes[j]) { j += 1; }
+            while j < bytes.len() && is_ident_byte(bytes[j]) {
+                j += 1;
+            }
             let ident = &def.body[i..j];
             if let Some(idx) = def.args.iter().position(|a| a == ident) {
                 out.push_str(args[idx]);

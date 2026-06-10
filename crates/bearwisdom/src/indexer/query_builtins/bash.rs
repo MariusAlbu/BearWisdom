@@ -2,23 +2,8 @@
 // Builtins and locals.scm content for `bash` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "case",
-    "do",
-    "done",
-    "elif",
-    "else",
-    "esac",
-    "export",
-    "fi",
-    "for",
-    "function",
-    "if",
-    "in",
-    "select",
-    "then",
-    "unset",
-    "until",
-    "while",
+    "case", "do", "done", "elif", "else", "esac", "export", "fi", "for", "function", "if", "in",
+    "select", "then", "unset", "until", "while",
 ];
 
 pub const LOCALS_SCM: Option<&str> = None;

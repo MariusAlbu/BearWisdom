@@ -69,20 +69,26 @@ pub(crate) fn scan_cs_header(source: &str) -> Vec<CsDecl> {
             || (!line.contains("private ")
                 && !line.contains("protected ")
                 && !line.contains("internal "));
-        if !is_public { continue; }
+        if !is_public {
+            continue;
+        }
 
         // Type declarations.
         let type_kw: Option<(&str, SymbolKind)> = [
             ("interface ", SymbolKind::Interface),
-            ("class ",     SymbolKind::Class),
-            ("struct ",    SymbolKind::Struct),
-            ("enum ",      SymbolKind::Enum),
-            ("record ",    SymbolKind::Class),
-            ("delegate ",  SymbolKind::Function),
+            ("class ", SymbolKind::Class),
+            ("struct ", SymbolKind::Struct),
+            ("enum ", SymbolKind::Enum),
+            ("record ", SymbolKind::Class),
+            ("delegate ", SymbolKind::Function),
         ]
         .iter()
         .find_map(|(kw, kind)| {
-            if line.contains(kw) { Some((*kw, *kind)) } else { None }
+            if line.contains(kw) {
+                Some((*kw, *kind))
+            } else {
+                None
+            }
         });
 
         if let Some((kw, kind)) = type_kw {
@@ -107,8 +113,12 @@ pub(crate) fn scan_cs_header(source: &str) -> Vec<CsDecl> {
 
         // Method declarations — only emit if directly inside a type scope.
         let inside_type = scope_stack.last().map(|(_, k)| *k == 't').unwrap_or(false);
-        if !inside_type { continue; }
-        if line.contains("operator ") { continue; }
+        if !inside_type {
+            continue;
+        }
+        if line.contains("operator ") {
+            continue;
+        }
 
         if line.contains('(') {
             let method_name = extract_cs_method_name(line);
@@ -167,7 +177,10 @@ fn cs_namespace_name(s: &str) -> String {
 /// Extract the method name from a line like
 /// `public async Task<T> MyMethod(...)` — last identifier before `(`.
 fn extract_cs_method_name(line: &str) -> String {
-    let paren = match line.find('(') { Some(p) => p, None => return String::new() };
+    let paren = match line.find('(') {
+        Some(p) => p,
+        None => return String::new(),
+    };
     let before_paren = line[..paren].trim_end();
     // Strip trailing generic suffix `<T>` before the paren.
     let before_paren = if before_paren.ends_with('>') {
@@ -191,17 +204,39 @@ fn extract_cs_method_name(line: &str) -> String {
 
 /// Truncate a line to `max_len` chars but keep up to the first `)`.
 fn truncate_to_paren(line: &str, max_len: usize) -> String {
-    let end = line.find(')').map(|p| (p + 1).min(line.len())).unwrap_or(line.len());
+    let end = line
+        .find(')')
+        .map(|p| (p + 1).min(line.len()))
+        .unwrap_or(line.len());
     let s = &line[..end.min(line.len())];
-    if s.len() > max_len { s[..max_len].to_string() } else { s.to_string() }
+    if s.len() > max_len {
+        s[..max_len].to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 /// True for C# keywords and noise identifiers that can never be method names.
 fn is_cs_noise_ident(name: &str) -> bool {
     matches!(
         name,
-        "if" | "else" | "for" | "foreach" | "while" | "do" | "switch"
-            | "catch" | "finally" | "using" | "return" | "new" | "throw"
-            | "var" | "get" | "set" | "init" | "add" | "remove"
+        "if" | "else"
+            | "for"
+            | "foreach"
+            | "while"
+            | "do"
+            | "switch"
+            | "catch"
+            | "finally"
+            | "using"
+            | "return"
+            | "new"
+            | "throw"
+            | "var"
+            | "get"
+            | "set"
+            | "init"
+            | "add"
+            | "remove"
     ) || name.starts_with('<')
 }

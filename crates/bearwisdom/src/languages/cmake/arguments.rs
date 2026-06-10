@@ -53,9 +53,7 @@ pub(super) fn collect_raw_arguments(node: &Node, src: &str) -> Vec<String> {
                         "unquoted_argument" | "argument" | "identifier" | "word" => {
                             node_text(arg, src).trim().to_string()
                         }
-                        "quoted_argument" => {
-                            node_text(arg, src).trim_matches('"').to_string()
-                        }
+                        "quoted_argument" => node_text(arg, src).trim_matches('"').to_string(),
                         _ => String::new(),
                     };
                     if !text.is_empty() {

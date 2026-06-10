@@ -36,7 +36,7 @@ pub(crate) fn detect_rust_axum_ws_consumer(
         name: "rs.axum.ws".to_string(),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn detect_rust_apalis_bgjob(
         name: "rs.apalis".to_string(),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -86,7 +86,7 @@ pub(crate) fn detect_rust_rdkafka_mq(
             name: "rs.amqp".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     if leaf == "send" && matches!(root, "producer" | "kafka_producer" | "kproducer") {
@@ -95,7 +95,7 @@ pub(crate) fn detect_rust_rdkafka_mq(
             name: "rs.kafka".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     None
@@ -116,8 +116,10 @@ pub(crate) fn detect_rust_redis_config_lookup(
         return None;
     }
     let root = segs[0].name.as_str();
-    if !matches!(root, "con" | "conn" | "redis" | "rdb" | "client" | "AsyncCommands")
-        && !chain.segments.iter().any(|s| s.name == "AsyncCommands")
+    if !matches!(
+        root,
+        "con" | "conn" | "redis" | "rdb" | "client" | "AsyncCommands"
+    ) && !chain.segments.iter().any(|s| s.name == "AsyncCommands")
     {
         return None;
     }
@@ -158,7 +160,7 @@ pub(crate) fn detect_rust_uds_emission(
         name: path,
         role,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -183,10 +185,9 @@ pub(crate) fn detect_rust_lettre_mailer(
         name: "rs.lettre".to_string(),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
-
 
 /// HTTP-verb route attribute (`#[get("/x")]`) emitted by the Rust decorator
 /// extractor as a TypeRef with `target_name` = verb and `module` = URL.
@@ -220,7 +221,7 @@ pub(crate) fn detect_rust_route_attribute_emission(
         name,
         role: ChannelRole::Consumer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -281,8 +282,14 @@ pub(crate) fn detect_rust_sqlx_macro_emission(
 
 fn parse_sqlx_macro_verb(name: &str) -> Option<()> {
     match name {
-        "query" | "query_as" | "query_scalar" | "query_file" | "query_file_as"
-        | "query_file_scalar" | "query_unchecked" | "query_as_unchecked"
+        "query"
+        | "query_as"
+        | "query_scalar"
+        | "query_file"
+        | "query_file_as"
+        | "query_file_scalar"
+        | "query_unchecked"
+        | "query_as_unchecked"
         | "query_scalar_unchecked" => Some(()),
         _ => None,
     }
@@ -358,17 +365,20 @@ pub(crate) fn detect_rust_axum_route_emission(
         return None;
     }
     // Try to read the HTTP verb from the second arg (`get(handler)` etc.).
-    let method = call_args.get(1).and_then(|a| match a {
-        CallArg::Ident(s) => parse_http_verb_word(s.as_str()),
-        _ => None,
-    }).unwrap_or(HttpMethod::Any);
+    let method = call_args
+        .get(1)
+        .and_then(|a| match a {
+            CallArg::Ident(s) => parse_http_verb_word(s.as_str()),
+            _ => None,
+        })
+        .unwrap_or(HttpMethod::Any);
     let name = crate::connectors::url_pattern::normalize(url);
     Some(FlowEmission::NamedChannel {
         kind: NamedChannelKind::HttpCall,
         name,
         role: ChannelRole::Consumer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -424,7 +434,7 @@ pub(crate) fn detect_rust_actix_resource_emission(
         name,
         role: ChannelRole::Consumer,
         method: Some(HttpMethod::Any),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -490,7 +500,7 @@ pub(crate) fn detect_rust_reqwest_emission(
         name,
         role: ChannelRole::Producer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -532,11 +542,10 @@ fn parse_diesel_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQ
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
         // Read operations.
-        "first" | "first_async" | "load" | "load_async" | "get_result"
-        | "get_result_async" | "get_results" | "get_results_async" | "select"
-        | "filter" | "find" | "order" | "order_by" | "limit" | "offset"
-        | "count" | "count_async" | "single_value" | "execute_returning"
-        | "filter_by" | "distinct" => DbQueryOp::Select,
+        "first" | "first_async" | "load" | "load_async" | "get_result" | "get_result_async"
+        | "get_results" | "get_results_async" | "select" | "filter" | "find" | "order"
+        | "order_by" | "limit" | "offset" | "count" | "count_async" | "single_value"
+        | "execute_returning" | "filter_by" | "distinct" => DbQueryOp::Select,
         // Mutations.
         "insert_into" | "values" | "do_update" | "do_nothing" => DbQueryOp::Insert,
         "set" | "update" => DbQueryOp::Update,
@@ -597,7 +606,9 @@ pub(crate) fn detect_rust_tonic_emission(
 }
 
 fn is_pascal_case_first_rust(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 /// `#[tauri::command]` on a Rust function — Consumer IpcCall. Emits with
@@ -616,7 +627,7 @@ pub(crate) fn detect_rust_tauri_command_attribute(
         name: "tauri.*".to_string(),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -640,6 +651,6 @@ pub(crate) fn detect_rust_async_graphql_attribute(
         name: format!("rs.graphql.{}", kind),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }

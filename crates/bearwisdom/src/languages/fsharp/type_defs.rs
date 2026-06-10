@@ -62,12 +62,12 @@ pub(super) fn extract_type_def(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Walk members — emit child symbols for compound types and scan for refs
         match child.kind() {
@@ -109,7 +109,9 @@ fn extract_union_cases(
     collect_named_descendants(node, "union_type_case", |child| {
         // union_type_case: `| <identifier> [of <type>]`
         let name = first_identifier_text(child, src);
-        if name.is_empty() { return; }
+        if name.is_empty() {
+            return;
+        }
         let qualified_name = qualify_with_parent(&name, parent_index, symbols);
         let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
@@ -125,12 +127,12 @@ fn extract_union_cases(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
     });
 }
 
@@ -145,7 +147,9 @@ fn extract_enum_cases(
     collect_named_descendants(node, "enum_type_case", |child| {
         // enum_type_case: `| <identifier> = <int>`
         let name = first_identifier_text(child, src);
-        if name.is_empty() { return; }
+        if name.is_empty() {
+            return;
+        }
         let qualified_name = qualify_with_parent(&name, parent_index, symbols);
         let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
@@ -161,12 +165,12 @@ fn extract_enum_cases(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
     });
 }
 
@@ -181,7 +185,9 @@ fn extract_record_fields(
     collect_named_descendants(node, "record_field", |child| {
         // record_field: `[mutable] <identifier> : <type>`
         let name = first_identifier_text(child, src);
-        if name.is_empty() { return; }
+        if name.is_empty() {
+            return;
+        }
         let qualified_name = qualify_with_parent(&name, parent_index, symbols);
         let scope_path = scope_path_from_parent(parent_index, symbols);
         symbols.push(ExtractedSymbol {
@@ -197,12 +203,12 @@ fn extract_record_fields(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
     });
 }
 

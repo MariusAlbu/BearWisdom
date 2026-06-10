@@ -1,9 +1,9 @@
 //! GraphQL language plugin.
 
 pub mod connectors;
-pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::GRAPHQL_HOOKS;
@@ -64,16 +64,11 @@ impl LanguagePlugin for GraphQlPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "named_type",
-            "implements_interfaces",
-        ]
+        &["named_type", "implements_interfaces"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "String", "Int", "Float", "Boolean", "ID",
-        ]
+        &["String", "Int", "Float", "Boolean", "ID"]
     }
 
     fn profile(
@@ -84,8 +79,7 @@ impl LanguagePlugin for GraphQlPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::GRAPHQL_HOOKS)
     }
 }

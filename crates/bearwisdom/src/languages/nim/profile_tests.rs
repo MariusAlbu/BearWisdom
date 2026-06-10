@@ -1,5 +1,39 @@
 use super::NIM_PROFILE;
-use crate::type_checker::profile::language_profile::ExtMatch;
+use crate::type_checker::profile::language_profile::{ExtMatch, KindCompatibility};
+use crate::types::{EdgeKind, SymbolKind};
+
+#[test]
+fn nim_calls_row_accepts_object_construction_without_dropping_procs() {
+    let t = NIM_PROFILE.kind_compatible_table;
+    // `Foo(field: x)` object construction and `Slot(x)` distinct/type conversion
+    // bind to the type declaration (struct / type_alias).
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Struct
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::TypeAlias
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Enum
+    ));
+    // A real proc call still resolves to the proc (no regression).
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
+}
 
 #[test]
 fn nim_profile_identity_and_shadow_mode() {

@@ -162,8 +162,13 @@ pub(crate) fn detect_ruby_bgjob_emission(
     }
     if !matches!(
         leaf,
-        "perform_async" | "perform_later" | "perform_in" | "perform_at"
-            | "enqueue" | "set" | "deliver_later"
+        "perform_async"
+            | "perform_later"
+            | "perform_in"
+            | "perform_at"
+            | "enqueue"
+            | "set"
+            | "deliver_later"
     ) {
         return None;
     }
@@ -235,15 +240,16 @@ pub(crate) fn detect_ruby_activerecord_emission(
 fn parse_activerecord_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
-        "where" | "find" | "find_by" | "find_by!" | "find_each" | "first" | "last"
-        | "all" | "count" | "exists?" | "pluck" | "select" | "includes" | "joins"
-        | "left_joins" | "preload" | "eager_load" | "order" | "group" | "having"
-        | "limit" | "offset" | "distinct" | "none" | "unscoped" | "merge" | "take"
-        | "take!" | "any?" | "many?" | "average" | "minimum" | "maximum" | "sum"
-        | "ids" | "size" | "length" | "to_a" => DbQueryOp::Select,
+        "where" | "find" | "find_by" | "find_by!" | "find_each" | "first" | "last" | "all"
+        | "count" | "exists?" | "pluck" | "select" | "includes" | "joins" | "left_joins"
+        | "preload" | "eager_load" | "order" | "group" | "having" | "limit" | "offset"
+        | "distinct" | "none" | "unscoped" | "merge" | "take" | "take!" | "any?" | "many?"
+        | "average" | "minimum" | "maximum" | "sum" | "ids" | "size" | "length" | "to_a" => {
+            DbQueryOp::Select
+        }
         "create" | "create!" | "insert" | "insert_all" | "insert_all!" => DbQueryOp::Insert,
-        "update" | "update!" | "update_all" | "update_attributes" | "save" | "save!"
-        | "upsert" | "upsert_all" | "touch" | "increment!" | "decrement!" => DbQueryOp::Update,
+        "update" | "update!" | "update_all" | "update_attributes" | "save" | "save!" | "upsert"
+        | "upsert_all" | "touch" | "increment!" | "decrement!" => DbQueryOp::Update,
         "destroy" | "destroy!" | "destroy_all" | "delete" | "delete_all" => DbQueryOp::Delete,
         "find_or_create_by" | "find_or_create_by!" | "find_or_initialize_by" => DbQueryOp::Upsert,
         _ => return None,
@@ -251,7 +257,9 @@ fn parse_activerecord_op(name: &str) -> Option<crate::indexer::resolve::flow_emi
 }
 
 fn is_pascal_case_first_rb(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 pub(crate) fn infer_external_inner(
@@ -265,7 +273,10 @@ pub(crate) fn infer_external_inner(
         let require_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
 
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Gemfile)
+            {
                 let gem_root = require_path.split('/').next().unwrap_or(require_path);
                 if manifest.dependencies.contains(gem_root)
                     || manifest.dependencies.contains(require_path)
@@ -292,7 +303,10 @@ pub(crate) fn infer_external_inner(
         }
 
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Gemfile)
+            {
                 let gem_root = module_path.split('/').next().unwrap_or(module_path);
                 if manifest.dependencies.contains(gem_root)
                     || manifest.dependencies.contains(module_path.as_str())
@@ -373,7 +387,10 @@ pub(crate) fn build_file_context_inner(
             for dep in &manifest.dependencies {
                 let gem_root = dep.split('/').next().unwrap_or(dep.as_str());
                 if !imports.iter().any(|i| {
-                    i.module_path.as_deref().map(|m| m.split('/').next().unwrap_or(m)) == Some(gem_root)
+                    i.module_path
+                        .as_deref()
+                        .map(|m| m.split('/').next().unwrap_or(m))
+                        == Some(gem_root)
                 }) {
                     imports.push(ImportEntry {
                         imported_name: gem_root.to_string(),

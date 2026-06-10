@@ -36,7 +36,8 @@ class C { void M(int x, int y) { F(new int[] { x, y }); } }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
         "expected ArrayLiteral with two elements, got: {args:?}"
     );
 }
@@ -48,7 +49,8 @@ class C { void M(int x, int y) { F(new[] { x, y }); } }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
         "expected ArrayLiteral with two elements, got: {args:?}"
     );
 }
@@ -89,7 +91,8 @@ class C { void M(int a, int b) { F(a + b); } }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with `+` operator, got: {args:?}"
     );
 }
@@ -102,19 +105,23 @@ class C { void M(string url) { F("/api/users", url, 42, true); } }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\"), got: {args:?}"
     );
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Literal(s) if s == "42")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Literal(s) if s == "42")),
         "expected Literal(\"42\"), got: {args:?}"
     );
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Literal(s) if s == "true")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Literal(s) if s == "true")),
         "expected Literal(\"true\"), got: {args:?}"
     );
 }

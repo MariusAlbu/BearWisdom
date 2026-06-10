@@ -9,9 +9,7 @@ fn call_args_for(src: &str, target: &str) -> Vec<CallArg> {
     extract::extract(src)
         .refs
         .into_iter()
-        .find(|r| {
-            r.kind == EdgeKind::Calls && r.target_name == target && !r.call_args.is_empty()
-        })
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == target && !r.call_args.is_empty())
         .map(|r| r.call_args)
         .unwrap_or_default()
 }
@@ -25,7 +23,8 @@ class C {
 "#;
     let args = call_args_for(src, "f");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit, got: {args:?}"
     );
 }
@@ -39,7 +38,8 @@ class C {
 "#;
     let args = call_args_for(src, "f");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -67,7 +67,8 @@ class C {
 "#;
     let args = call_args_for(src, "f");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array arg, got: {args:?}"
     );
 }
@@ -81,7 +82,8 @@ class C {
 "#;
     let args = call_args_for(src, "f");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for array-access arg, got: {args:?}"
     );
 }
@@ -95,7 +97,8 @@ class C {
 "#;
     let args = call_args_for(src, "f");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\", got: {args:?}"
     );
 }

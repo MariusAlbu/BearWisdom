@@ -46,25 +46,105 @@ struct DeriveMethod {
 /// derive→method shape is fixed by the standard library's derivable traits.
 fn methods_for(derive: &str) -> &'static [DeriveMethod] {
     match derive {
-        "Clone" => &[DeriveMethod { name: "clone", kind: SymbolKind::Method, signature: "fn clone(&self) -> {ret}", returns_self: true }],
-        "Default" => &[DeriveMethod { name: "default", kind: SymbolKind::Function, signature: "fn default() -> {ret}", returns_self: true }],
-        "From" => &[DeriveMethod { name: "from", kind: SymbolKind::Function, signature: "fn from(value: T) -> {ret}", returns_self: true }],
-        "Into" => &[DeriveMethod { name: "into", kind: SymbolKind::Method, signature: "fn into(self) -> T", returns_self: false }],
-        "Debug" | "Display" => &[DeriveMethod { name: "fmt", kind: SymbolKind::Method, signature: "fn fmt(&self, f: &mut Formatter) -> Result", returns_self: false }],
+        "Clone" => &[DeriveMethod {
+            name: "clone",
+            kind: SymbolKind::Method,
+            signature: "fn clone(&self) -> {ret}",
+            returns_self: true,
+        }],
+        "Default" => &[DeriveMethod {
+            name: "default",
+            kind: SymbolKind::Function,
+            signature: "fn default() -> {ret}",
+            returns_self: true,
+        }],
+        "From" => &[DeriveMethod {
+            name: "from",
+            kind: SymbolKind::Function,
+            signature: "fn from(value: T) -> {ret}",
+            returns_self: true,
+        }],
+        "Into" => &[DeriveMethod {
+            name: "into",
+            kind: SymbolKind::Method,
+            signature: "fn into(self) -> T",
+            returns_self: false,
+        }],
+        "Debug" | "Display" => &[DeriveMethod {
+            name: "fmt",
+            kind: SymbolKind::Method,
+            signature: "fn fmt(&self, f: &mut Formatter) -> Result",
+            returns_self: false,
+        }],
         "PartialEq" => &[
-            DeriveMethod { name: "eq", kind: SymbolKind::Method, signature: "fn eq(&self, other: &{ret}) -> bool", returns_self: false },
-            DeriveMethod { name: "ne", kind: SymbolKind::Method, signature: "fn ne(&self, other: &{ret}) -> bool", returns_self: false },
+            DeriveMethod {
+                name: "eq",
+                kind: SymbolKind::Method,
+                signature: "fn eq(&self, other: &{ret}) -> bool",
+                returns_self: false,
+            },
+            DeriveMethod {
+                name: "ne",
+                kind: SymbolKind::Method,
+                signature: "fn ne(&self, other: &{ret}) -> bool",
+                returns_self: false,
+            },
         ],
-        "PartialOrd" => &[DeriveMethod { name: "partial_cmp", kind: SymbolKind::Method, signature: "fn partial_cmp(&self, other: &{ret}) -> Option", returns_self: false }],
-        "Ord" => &[DeriveMethod { name: "cmp", kind: SymbolKind::Method, signature: "fn cmp(&self, other: &{ret}) -> Ordering", returns_self: false }],
-        "Hash" => &[DeriveMethod { name: "hash", kind: SymbolKind::Method, signature: "fn hash(&self, state: &mut H)", returns_self: false }],
-        "Serialize" => &[DeriveMethod { name: "serialize", kind: SymbolKind::Method, signature: "fn serialize(&self, serializer: S) -> Result", returns_self: false }],
-        "Deserialize" => &[DeriveMethod { name: "deserialize", kind: SymbolKind::Function, signature: "fn deserialize(deserializer: D) -> Result", returns_self: false }],
-        "AsRef" => &[DeriveMethod { name: "as_ref", kind: SymbolKind::Method, signature: "fn as_ref(&self) -> &T", returns_self: false }],
-        "AsMut" => &[DeriveMethod { name: "as_mut", kind: SymbolKind::Method, signature: "fn as_mut(&mut self) -> &mut T", returns_self: false }],
+        "PartialOrd" => &[DeriveMethod {
+            name: "partial_cmp",
+            kind: SymbolKind::Method,
+            signature: "fn partial_cmp(&self, other: &{ret}) -> Option",
+            returns_self: false,
+        }],
+        "Ord" => &[DeriveMethod {
+            name: "cmp",
+            kind: SymbolKind::Method,
+            signature: "fn cmp(&self, other: &{ret}) -> Ordering",
+            returns_self: false,
+        }],
+        "Hash" => &[DeriveMethod {
+            name: "hash",
+            kind: SymbolKind::Method,
+            signature: "fn hash(&self, state: &mut H)",
+            returns_self: false,
+        }],
+        "Serialize" => &[DeriveMethod {
+            name: "serialize",
+            kind: SymbolKind::Method,
+            signature: "fn serialize(&self, serializer: S) -> Result",
+            returns_self: false,
+        }],
+        "Deserialize" => &[DeriveMethod {
+            name: "deserialize",
+            kind: SymbolKind::Function,
+            signature: "fn deserialize(deserializer: D) -> Result",
+            returns_self: false,
+        }],
+        "AsRef" => &[DeriveMethod {
+            name: "as_ref",
+            kind: SymbolKind::Method,
+            signature: "fn as_ref(&self) -> &T",
+            returns_self: false,
+        }],
+        "AsMut" => &[DeriveMethod {
+            name: "as_mut",
+            kind: SymbolKind::Method,
+            signature: "fn as_mut(&mut self) -> &mut T",
+            returns_self: false,
+        }],
         "Error" => &[
-            DeriveMethod { name: "source", kind: SymbolKind::Method, signature: "fn source(&self) -> Option", returns_self: false },
-            DeriveMethod { name: "description", kind: SymbolKind::Method, signature: "fn description(&self) -> &str", returns_self: false },
+            DeriveMethod {
+                name: "source",
+                kind: SymbolKind::Method,
+                signature: "fn source(&self) -> Option",
+                returns_self: false,
+            },
+            DeriveMethod {
+                name: "description",
+                kind: SymbolKind::Method,
+                signature: "fn description(&self) -> &str",
+                returns_self: false,
+            },
         ],
         _ => &[],
     }
@@ -88,7 +168,11 @@ pub(super) fn synthesize_derive_members(
         if !is_type_decl(sym.kind) {
             continue;
         }
-        let bare = r.target_name.rsplit("::").next().unwrap_or(r.target_name.as_str());
+        let bare = r
+            .target_name
+            .rsplit("::")
+            .next()
+            .unwrap_or(r.target_name.as_str());
         if methods_for(bare).is_empty() {
             continue;
         }
@@ -128,7 +212,10 @@ pub(super) fn synthesize_derive_members(
         }
     }
 
-    Synthesized { symbols: out_symbols, refs: out_refs }
+    Synthesized {
+        symbols: out_symbols,
+        refs: out_refs,
+    }
 }
 
 fn is_type_decl(kind: SymbolKind) -> bool {
@@ -136,7 +223,13 @@ fn is_type_decl(kind: SymbolKind) -> bool {
 }
 
 /// Build a synthesized member named `name` under `scope_qname`.
-fn make_synth(name: &str, kind: SymbolKind, signature: String, scope_qname: &str, line: u32) -> ExtractedSymbol {
+fn make_synth(
+    name: &str,
+    kind: SymbolKind,
+    signature: String,
+    scope_qname: &str,
+    line: u32,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: format!("{scope_qname}.{name}"),

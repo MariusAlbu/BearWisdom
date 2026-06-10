@@ -41,7 +41,10 @@ fn intern_type_str_parses_function_type() {
         Type::Function { .. }
     ));
     // A plain nominal type is unaffected.
-    assert!(matches!(arena.get(arena.intern_type_str("User")), Type::Class(_)));
+    assert!(matches!(
+        arena.get(arena.intern_type_str("User")),
+        Type::Class(_)
+    ));
 }
 
 #[test]
@@ -279,7 +282,11 @@ fn intern_type_str_handles_nested_generics() {
     };
     assert_eq!(arena.get(base), Type::Class("Promise".to_string()));
     assert_eq!(args.len(), 1);
-    let Type::Apply { base: inner_base, args: inner_args } = arena.get(args[0]) else {
+    let Type::Apply {
+        base: inner_base,
+        args: inner_args,
+    } = arena.get(args[0])
+    else {
         panic!("expected inner Apply");
     };
     assert_eq!(arena.get(inner_base), Type::Class("Result".to_string()));
@@ -388,7 +395,10 @@ fn intern_type_str_strips_reference_sigil() {
     assert_eq!(arena.intern_type_str("&'a C"), c);
     assert_eq!(arena.intern_type_str("& 'a mut C"), c);
     // A reference to a generic application strips the sigil and keeps the Apply.
-    assert_eq!(arena.intern_type_str("&Box<C>"), arena.intern_type_str("Box<C>"));
+    assert_eq!(
+        arena.intern_type_str("&Box<C>"),
+        arena.intern_type_str("Box<C>")
+    );
 }
 
 #[test]
@@ -403,13 +413,20 @@ fn intern_type_str_drops_leading_lifetime_arg() {
     match arena.get(cow_str) {
         Type::Apply { base, args } => {
             assert!(matches!(arena.get(base), Type::Class(q) if q == "Cow"));
-            assert_eq!(args, vec![str_ty], "lifetime arg dropped, only `str` remains");
+            assert_eq!(
+                args,
+                vec![str_ty],
+                "lifetime arg dropped, only `str` remains"
+            );
         }
         other => panic!("expected Apply, got {other:?}"),
     }
     // A `'static` lifetime is dropped the same way.
     let cow_static = arena.intern_type_str("Cow<'static, str>");
-    assert_eq!(cow_static, cow_str, "any lifetime arg is dropped identically");
+    assert_eq!(
+        cow_static, cow_str,
+        "any lifetime arg is dropped identically"
+    );
     // An all-lifetime arg list collapses to the bare base class (no type args).
     let only_life = arena.intern_type_str("Ref<'a>");
     assert!(matches!(arena.get(only_life), Type::Class(q) if q == "Ref"));
@@ -452,7 +469,11 @@ fn intern_type_str_does_not_strip_some_any_as_type_name_prefix() {
     // whitespace then a type). A class whose NAME begins with those letters but
     // is not the bare keyword (`Something`, `anyOf`, `SomeType`) is untouched —
     // no word boundary, no strip.
-    assert!(matches!(arena.get(arena.intern_type_str("Something")), Type::Class(q) if q == "Something"));
+    assert!(
+        matches!(arena.get(arena.intern_type_str("Something")), Type::Class(q) if q == "Something")
+    );
     assert!(matches!(arena.get(arena.intern_type_str("anyOf")), Type::Class(q) if q == "anyOf"));
-    assert!(matches!(arena.get(arena.intern_type_str("SomeType")), Type::Class(q) if q == "SomeType"));
+    assert!(
+        matches!(arena.get(arena.intern_type_str("SomeType")), Type::Class(q) if q == "SomeType")
+    );
 }

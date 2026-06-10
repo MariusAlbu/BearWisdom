@@ -3,7 +3,6 @@
 //! Each test indexes a fixture project, then exercises one or more query
 //! functions against the populated database.
 
-use bearwisdom::{full_index, Database};
 use bearwisdom::query::{
     architecture::get_overview,
     blast_radius::blast_radius,
@@ -15,6 +14,7 @@ use bearwisdom::query::{
     subgraph::{export_graph, export_graph_json},
     symbol_info::symbol_info,
 };
+use bearwisdom::{full_index, Database};
 use bearwisdom_tests::TestProject;
 
 /// Index the C# fixture and return a ready-to-query database.
@@ -34,7 +34,10 @@ fn overview_returns_language_stats() {
 
     assert!(overview.total_files > 0);
     assert!(overview.total_symbols > 0);
-    assert!(!overview.languages.is_empty(), "should detect at least one language");
+    assert!(
+        !overview.languages.is_empty(),
+        "should detect at least one language"
+    );
 
     let csharp = overview.languages.iter().find(|l| l.language == "csharp");
     assert!(csharp.is_some(), "C# should appear in language stats");
@@ -78,7 +81,10 @@ fn find_references_for_interface() {
     let refs = find_references(&db, "IProductRepository", 0).unwrap();
 
     // ProductRepository implements it and ProductService uses it.
-    assert!(!refs.is_empty(), "IProductRepository should have references");
+    assert!(
+        !refs.is_empty(),
+        "IProductRepository should have references"
+    );
 }
 
 // ── symbol search ───────────────────────────────────────────────────────
@@ -86,11 +92,18 @@ fn find_references_for_interface() {
 #[test]
 fn search_symbols_finds_class() {
     let db = indexed_csharp_db();
-    let results = search_symbols(&db, "Product", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
+    let results =
+        search_symbols(&db, "Product", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
 
-    assert!(!results.is_empty(), "search for 'Product' should return results");
+    assert!(
+        !results.is_empty(),
+        "search for 'Product' should return results"
+    );
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"Product"), "Product class should be in results");
+    assert!(
+        names.contains(&"Product"),
+        "Product class should be in results"
+    );
 }
 
 #[test]
@@ -106,7 +119,12 @@ fn search_symbols_empty_query() {
 #[test]
 fn symbol_info_returns_detail() {
     let db = indexed_csharp_db();
-    let details = symbol_info(&db, "ProductService", &bearwisdom::query::QueryOptions::full()).unwrap();
+    let details = symbol_info(
+        &db,
+        "ProductService",
+        &bearwisdom::query::QueryOptions::full(),
+    )
+    .unwrap();
 
     assert!(!details.is_empty(), "should find ProductService");
     let detail = &details[0];
@@ -209,5 +227,8 @@ fn query_multi_lang_overview() {
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let overview = get_overview(&db).unwrap();
-    assert!(overview.languages.len() >= 2, "should detect multiple languages");
+    assert!(
+        overview.languages.len() >= 2,
+        "should detect multiple languages"
+    );
 }

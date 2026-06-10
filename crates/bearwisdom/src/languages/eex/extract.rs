@@ -3,20 +3,40 @@ use crate::types::{ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
 pub fn extract(_s: &str, file_path: &str) -> ExtractionResult {
     let norm = file_path.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    let stem = if let Some(x) = name.strip_suffix(".html.eex") { x.to_string() }
-        else { std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string() };
+    let stem = if let Some(x) = name.strip_suffix(".html.eex") {
+        x.to_string()
+    } else {
+        std::path::Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+            .to_string()
+    };
     let symbols = vec![ExtractedSymbol {
-        name: stem.clone(), qualified_name: stem,
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: stem.clone(),
+        qualified_name: stem,
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}];
-    ExtractionResult { symbols, refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+    }];
+    ExtractionResult {
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
     }

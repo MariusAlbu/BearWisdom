@@ -15,9 +15,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, maven_local_repo, ExternalDepRoot,
     ExternalSourceLocator,
@@ -31,9 +29,15 @@ const LANGUAGES: &[&str] = &["kotlin"];
 pub struct KotlinStdlibEcosystem;
 
 impl Ecosystem for KotlinStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("kotlin")
@@ -47,9 +51,13 @@ impl Ecosystem for KotlinStdlibEcosystem {
         super::maven::walk_generic_jvm_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -60,7 +68,9 @@ impl Ecosystem for KotlinStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for KotlinStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_kotlin_stdlib_roots()
     }
@@ -78,7 +88,9 @@ fn discover_kotlin_stdlib_roots() -> Vec<ExternalDepRoot> {
 
     if let Some(explicit) = std::env::var_os("BEARWISDOM_KOTLIN_STDLIB_JAR") {
         let p = PathBuf::from(explicit);
-        if p.is_file() { jars.push(p); }
+        if p.is_file() {
+            jars.push(p);
+        }
     }
 
     if let Some(home) = kotlin_home() {
@@ -86,10 +98,10 @@ fn discover_kotlin_stdlib_roots() -> Vec<ExternalDepRoot> {
         if let Ok(entries) = std::fs::read_dir(&lib) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                if name.starts_with("kotlin-stdlib")
-                    && name.ends_with("-sources.jar")
-                {
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if name.starts_with("kotlin-stdlib") && name.ends_with("-sources.jar") {
                     jars.push(path);
                 }
             }
@@ -100,7 +112,9 @@ fn discover_kotlin_stdlib_roots() -> Vec<ExternalDepRoot> {
         jars.extend(maven_resolved_kotlin_stdlib_jars());
     }
 
-    if jars.is_empty() { return Vec::new() }
+    if jars.is_empty() {
+        return Vec::new();
+    }
 
     let cache_base = cache_base_for(&jars[0]);
     let _ = std::fs::create_dir_all(&cache_base);
@@ -134,29 +148,41 @@ fn kotlin_home() -> Option<PathBuf> {
     for var in ["KOTLIN_HOME", "KOTLINC_HOME", "KOTLIN_ROOT"] {
         if let Ok(val) = std::env::var(var) {
             let p = PathBuf::from(val);
-            if p.is_dir() { return Some(p) }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
 }
 
 fn maven_resolved_kotlin_stdlib_jars() -> Vec<PathBuf> {
-    let Some(repo) = maven_local_repo() else { return Vec::new() };
+    let Some(repo) = maven_local_repo() else {
+        return Vec::new();
+    };
     let base = repo.join("org").join("jetbrains").join("kotlin");
     let candidates = ["kotlin-stdlib", "kotlin-stdlib-jdk7", "kotlin-stdlib-jdk8"];
     let mut out = Vec::new();
     for artifact in candidates {
         let art_dir = base.join(artifact);
-        if !art_dir.is_dir() { continue }
-        let Ok(entries) = std::fs::read_dir(&art_dir) else { continue };
+        if !art_dir.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&art_dir) else {
+            continue;
+        };
         let mut versions: Vec<PathBuf> = entries
             .flatten()
             .filter(|e| e.path().is_dir())
             .map(|e| e.path())
             .collect();
         versions.sort();
-        let Some(v_dir) = versions.into_iter().next_back() else { continue };
-        let Ok(files) = std::fs::read_dir(&v_dir) else { continue };
+        let Some(v_dir) = versions.into_iter().next_back() else {
+            continue;
+        };
+        let Ok(files) = std::fs::read_dir(&v_dir) else {
+            continue;
+        };
         for f in files.flatten() {
             let p = f.path();
             if p.file_name()
@@ -181,5 +207,7 @@ fn cache_base_for(primary_jar: &Path) -> PathBuf {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<KotlinStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(KotlinStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(KotlinStdlibEcosystem))
+        .clone()
 }

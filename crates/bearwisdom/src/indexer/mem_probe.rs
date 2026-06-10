@@ -20,7 +20,9 @@ thread_local! {
 
 fn enabled() -> bool {
     ENABLED.with(|slot| {
-        if let Some(v) = slot.get() { return v; }
+        if let Some(v) = slot.get() {
+            return v;
+        }
         let v = std::env::var("BEARWISDOM_MEM_PROBE").is_ok();
         slot.set(Some(v));
         v
@@ -32,7 +34,9 @@ fn enabled() -> bool {
 /// previous sample so the log localizes allocation surges without the reader
 /// having to subtract pairs by hand.
 pub fn probe(phase: &str) {
-    if !enabled() { return; }
+    if !enabled() {
+        return;
+    }
     let (ws, priv_bytes) = read_process_memory();
     let prev_ws = PREV_WS.swap(ws, Ordering::Relaxed);
     let prev_priv = PREV_PRIV.swap(priv_bytes, Ordering::Relaxed);

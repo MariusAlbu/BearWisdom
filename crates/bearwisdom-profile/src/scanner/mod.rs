@@ -45,11 +45,8 @@ pub fn scan_with_manifest(root: &Path, options: ScanOptions) -> ScanResult {
         .filter_map(|id| {
             let lang = crate::registry::find_language(id)?;
             let file_count = *counts.get(id).unwrap_or(&0);
-            let entry_points = entry_points::find_entry_points(
-                root,
-                lang.entry_point_files,
-                options.max_depth,
-            );
+            let entry_points =
+                entry_points::find_entry_points(root, lang.entry_point_files, options.max_depth);
             Some(LanguageStats {
                 language_id: id.clone(),
                 display_name: lang.display_name.to_owned(),
@@ -101,7 +98,10 @@ pub fn scan_with_manifest(root: &Path, options: ScanOptions) -> ScanResult {
         meta: HashMap::new(),
     };
 
-    ScanResult { profile, file_manifest }
+    ScanResult {
+        profile,
+        file_manifest,
+    }
 }
 
 fn collect_restore_steps(
@@ -117,7 +117,9 @@ fn collect_restore_steps(
     }
 
     for id in language_ids {
-        let Some(lang) = crate::registry::find_language(id) else { continue };
+        let Some(lang) = crate::registry::find_language(id) else {
+            continue;
+        };
 
         for step in lang.restore_steps {
             let triggered = match step.trigger {
@@ -129,9 +131,7 @@ fn collect_restore_steps(
                     let f = root.join(step.watch_path);
                     !f.exists()
                 }
-                RestoreTrigger::FileExists => {
-                    root.join(step.watch_path).exists()
-                }
+                RestoreTrigger::FileExists => root.join(step.watch_path).exists(),
                 RestoreTrigger::SdkVersionMismatch => {
                     // Evaluated by the sdks module; we skip it here.
                     false

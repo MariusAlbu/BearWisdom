@@ -1,11 +1,11 @@
 //! CMake language plugin.
 
-pub mod embedded;
-pub mod keywords;
-pub mod extract;
 mod arguments;
 mod commands;
+pub mod embedded;
+pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::CMAKE_HOOKS;
@@ -59,18 +59,11 @@ impl LanguagePlugin for CMakePlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "function_def",
-            "macro_def",
-            "normal_command",
-        ]
+        &["function_def", "macro_def", "normal_command"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "normal_command",
-            "variable_ref",
-        ]
+        &["normal_command", "variable_ref"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -85,8 +78,7 @@ impl LanguagePlugin for CMakePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::CMAKE_HOOKS)
     }
 }

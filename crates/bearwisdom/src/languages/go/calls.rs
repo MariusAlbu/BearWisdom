@@ -62,9 +62,7 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         // type name so gorm `db.First(&user)` style detection can
         // resolve to the model.
         "unary_expression" => {
-            if let Some(operand) = (0..node.named_child_count())
-                .find_map(|i| node.named_child(i))
-            {
+            if let Some(operand) = (0..node.named_child_count()).find_map(|i| node.named_child(i)) {
                 match operand.kind() {
                     "composite_literal" => {
                         if let Some(type_node) = operand.child_by_field_name("type") {
@@ -101,7 +99,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
         // `m[k]` — subscript / index access. Recurse on operand and index.
         "index_expression" => {
@@ -142,7 +142,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         // `func(x int) { ... }` — function literal. Capture the closure's own
         // positional parameter names so the chain walker can type them from the
         // higher-order function's callback-parameter signature.
-        "func_literal" => CallArg::Lambda { params: func_literal_param_names(node, src) },
+        "func_literal" => CallArg::Lambda {
+            params: func_literal_param_names(node, src),
+        },
         _ => CallArg::Other,
     }
 }
@@ -292,13 +294,25 @@ fn extract_body_with_symbols_inner(
 
             // `for i, v := range slice { ... }`
             "for_statement" => {
-                extract_for_range_vars(&child, source, enclosing_idx, qualified_prefix, symbols, refs);
+                extract_for_range_vars(
+                    &child,
+                    source,
+                    enclosing_idx,
+                    qualified_prefix,
+                    symbols,
+                    refs,
+                );
                 // Recurse into the body block.
                 let mut fc = child.walk();
                 for fc_child in child.children(&mut fc) {
                     if fc_child.kind() == "block" {
                         extract_body_with_symbols_inner(
-                            &fc_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                            &fc_child,
+                            source,
+                            enclosing_idx,
+                            qualified_prefix,
+                            symbols,
+                            refs,
                         );
                     }
                 }
@@ -328,11 +342,21 @@ fn extract_body_with_symbols_inner(
                         }
                         // Recurse into case body.
                         extract_body_with_symbols_inner(
-                            &case_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                            &case_child,
+                            source,
+                            enclosing_idx,
+                            qualified_prefix,
+                            symbols,
+                            refs,
                         );
                     } else if case_child.kind() == "default_case" {
                         extract_body_with_symbols_inner(
-                            &case_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                            &case_child,
+                            source,
+                            enclosing_idx,
+                            qualified_prefix,
+                            symbols,
+                            refs,
                         );
                     }
                 }
@@ -344,7 +368,12 @@ fn extract_body_with_symbols_inner(
             _ => {
                 extract_refs_from_body(&child, source, enclosing_idx, refs);
                 extract_body_with_symbols_inner(
-                    &child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                    &child,
+                    source,
+                    enclosing_idx,
+                    qualified_prefix,
+                    symbols,
+                    refs,
                 );
             }
         }
@@ -411,11 +440,11 @@ fn extract_for_range_vars(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index: Some(enclosing_idx),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
 
         // Extract refs from the right-hand side (the range expression).

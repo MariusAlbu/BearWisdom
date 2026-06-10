@@ -194,7 +194,14 @@ fn typed_identity_is_yes() {
     let user = arena.class("User");
     let lookup = SubtypeFixture::new();
     assert_eq!(
-        is_assignable_to_typed(user, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            user,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -208,11 +215,25 @@ fn typed_anything_assignable_to_any_or_unknown() {
     let lookup = SubtypeFixture::new();
 
     assert_eq!(
-        is_assignable_to_typed(user, any, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            user,
+            any,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
     assert_eq!(
-        is_assignable_to_typed(user, unknown, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            user,
+            unknown,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -226,11 +247,25 @@ fn typed_never_assignable_to_anything() {
     let lookup = SubtypeFixture::new();
 
     assert_eq!(
-        is_assignable_to_typed(never_prim, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            never_prim,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
     assert_eq!(
-        is_assignable_to_typed(never_class, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            never_class,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -246,11 +281,25 @@ fn typed_inheritance_walk_one_and_multi_hop() {
         .with_parent("SuperAdmin", "Admin");
 
     assert_eq!(
-        is_assignable_to_typed(admin, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            admin,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
     assert_eq!(
-        is_assignable_to_typed(super_admin, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            super_admin,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -290,7 +339,14 @@ fn typed_equal_primitives_are_assignable() {
     // Interning ensures identity.
     assert_eq!(s1, s2);
     assert_eq!(
-        is_assignable_to_typed(s1, s2, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            s1,
+            s2,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -302,7 +358,14 @@ fn typed_optional_target_peels_one_layer() {
     let opt_user = arena.intern(Type::Optional(user));
     let lookup = SubtypeFixture::new();
     assert_eq!(
-        is_assignable_to_typed(user, opt_user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            user,
+            opt_user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -316,7 +379,14 @@ fn typed_union_source_assignable_when_all_branches_are() {
     let lookup = SubtypeFixture::new().with_parent("Admin", "User");
     // Admin → User; User → User by identity; union → User.
     assert_eq!(
-        is_assignable_to_typed(union, user, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            union,
+            user,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -332,7 +402,14 @@ fn typed_union_source_fails_when_any_branch_fails() {
     let union = arena.intern(Type::Union(vec![string_ty, number_ty]));
     let lookup = SubtypeFixture::new();
     assert_eq!(
-        is_assignable_to_typed(union, string_ty, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            union,
+            string_ty,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::No
     );
 }
@@ -346,7 +423,14 @@ fn typed_union_target_assignable_when_any_branch_matches() {
     let union = arena.intern(Type::Union(vec![user, order]));
     let lookup = SubtypeFixture::new().with_parent("Admin", "User");
     assert_eq!(
-        is_assignable_to_typed(admin, union, &arena, &lookup, &MembersIndex::new(), &empty_types()),
+        is_assignable_to_typed(
+            admin,
+            union,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types()
+        ),
         SubtypeResult::Yes
     );
 }
@@ -361,7 +445,15 @@ fn typed_nominal_primitive_names_disjoint_with_prims() {
     let lookup = SubtypeFixture::new();
     let prims: &[(&str, PrimKind)] = &[("string", PrimKind::Str), ("number", PrimKind::Int)];
     assert_eq!(
-        is_assignable_to_typed_with(s, n, &arena, &lookup, &MembersIndex::new(), &empty_types(), prims),
+        is_assignable_to_typed_with(
+            s,
+            n,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types(),
+            prims
+        ),
         SubtypeResult::No
     );
 }
@@ -391,11 +483,27 @@ fn typed_bridge_primitive_value_vs_nominal_param() {
     let lookup = SubtypeFixture::new();
     let prims: &[(&str, PrimKind)] = &[("string", PrimKind::Str), ("number", PrimKind::Int)];
     assert_eq!(
-        is_assignable_to_typed_with(str_val, number_param, &arena, &lookup, &MembersIndex::new(), &empty_types(), prims),
+        is_assignable_to_typed_with(
+            str_val,
+            number_param,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types(),
+            prims
+        ),
         SubtypeResult::No
     );
     assert_eq!(
-        is_assignable_to_typed_with(str_val, string_param, &arena, &lookup, &MembersIndex::new(), &empty_types(), prims),
+        is_assignable_to_typed_with(
+            str_val,
+            string_param,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types(),
+            prims
+        ),
         SubtypeResult::Yes
     );
 }
@@ -410,7 +518,15 @@ fn typed_same_kind_different_primitive_names_assignable() {
     let lookup = SubtypeFixture::new();
     let prims: &[(&str, PrimKind)] = &[("int", PrimKind::Int), ("Int32", PrimKind::Int)];
     assert_eq!(
-        is_assignable_to_typed_with(int_name, int32_name, &arena, &lookup, &MembersIndex::new(), &empty_types(), prims),
+        is_assignable_to_typed_with(
+            int_name,
+            int32_name,
+            &arena,
+            &lookup,
+            &MembersIndex::new(),
+            &empty_types(),
+            prims
+        ),
         SubtypeResult::Yes
     );
 }

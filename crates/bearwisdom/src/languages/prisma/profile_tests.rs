@@ -18,6 +18,14 @@ fn prisma_type_ref_accepts_model_kinds_rejects_others() {
     ] {
         assert!(KindCompatibility::check(t, EdgeKind::TypeRef, k));
     }
-    assert!(!KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Function));
-    assert!(!KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Variable));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Function
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Variable
+    ));
 }

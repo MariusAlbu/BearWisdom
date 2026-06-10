@@ -2,15 +2,15 @@
 //!
 //! Grammar: tree-sitter-pascal 0.10.2 — real grammar, LANGUAGE constant available.
 
-pub mod keywords;
-pub mod extract;
 mod decls;
-mod refs;
-mod normalise;
 mod error_recovery;
+pub mod extract;
+pub mod keywords;
+mod normalise;
+mod refs;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -69,11 +69,7 @@ impl LanguagePlugin for PascalPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "exprCall",
-            "declUses",
-            "typeref",
-        ]
+        &["exprCall", "declUses", "typeref"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -88,8 +84,7 @@ impl LanguagePlugin for PascalPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PASCAL_HOOKS)
     }
 }

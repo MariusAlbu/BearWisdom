@@ -6,8 +6,8 @@
 pub mod extract;
 pub mod keywords;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::PROLOG_HOOKS;
@@ -49,21 +49,16 @@ impl LanguagePlugin for PrologPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "predicate_definition",
-            "module_declaration",
-            "use_module",
-        ]
+        &["predicate_definition", "module_declaration", "use_module"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "use_module",
-            "goal",
-        ]
+        &["use_module", "goal"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -73,8 +68,7 @@ impl LanguagePlugin for PrologPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PROLOG_HOOKS)
     }
 }

@@ -16,9 +16,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
-use crate::ecosystem::{
-    self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
-};
+use crate::ecosystem::{self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform};
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::types::PackageInfo;
 
@@ -28,7 +26,6 @@ use crate::types::PackageInfo;
 
 pub use crate::ecosystem::cargo::parse_cargo_dependencies;
 pub use crate::ecosystem::composer::parse_composer_json_deps;
-pub use crate::ecosystem::rubygems::parse_gemfile_gems;
 pub use crate::ecosystem::go_mod::{find_go_mod, parse_go_mod, GoModData};
 pub use crate::ecosystem::manifest::gradle::parse_gradle_dependencies;
 pub use crate::ecosystem::manifest::maven::{extract_xml_text, parse_pom_xml_dependencies};
@@ -40,6 +37,7 @@ pub use crate::ecosystem::nuget::{
 pub use crate::ecosystem::pypi::{
     parse_pipfile_deps, parse_pyproject_deps, parse_requirements_txt,
 };
+pub use crate::ecosystem::rubygems::parse_gemfile_gems;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -222,7 +220,9 @@ pub fn build_project_context_with_packages(
                 // package — prevents a parent directory's manifest from
                 // leaking down into a child package's context.
                 let entry = pkg_manifests.entry(pm.kind).or_default();
-                entry.dependencies.extend(pm.data.dependencies.iter().cloned());
+                entry
+                    .dependencies
+                    .extend(pm.data.dependencies.iter().cloned());
                 if pm.data.module_path.is_some() {
                     entry.module_path = pm.data.module_path.clone();
                 }
@@ -264,7 +264,9 @@ pub fn build_project_context_with_packages(
     for pkg in packages {
         let Some(id) = pkg.id else { continue };
         workspace_pkg_paths.insert(id, pkg.path.clone());
-        let Some(declared) = &pkg.declared_name else { continue };
+        let Some(declared) = &pkg.declared_name else {
+            continue;
+        };
         if declared.is_empty() {
             continue;
         }
@@ -318,8 +320,12 @@ pub fn build_project_context_with_packages(
 /// composite to activate.
 pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [ManifestKind] {
     match id.as_str() {
-        "maven" => &[ManifestKind::Maven, ManifestKind::Gradle,
-                     ManifestKind::Sbt, ManifestKind::Clojure],
+        "maven" => &[
+            ManifestKind::Maven,
+            ManifestKind::Gradle,
+            ManifestKind::Sbt,
+            ManifestKind::Clojure,
+        ],
         "npm" => &[ManifestKind::Npm],
         "pypi" => &[ManifestKind::PyProject],
         "cargo" => &[ManifestKind::Cargo],
@@ -403,10 +409,8 @@ impl ProjectContext {
         } else {
             ctx.active_ecosystems_by_package =
                 evaluate_active_ecosystems_per_package(&ctx, ecosystems, packages);
-            ctx.active_ecosystems = union_per_package_actives(
-                &ctx.active_ecosystems_by_package,
-                ecosystems,
-            );
+            ctx.active_ecosystems =
+                union_per_package_actives(&ctx.active_ecosystems_by_package, ecosystems);
         }
         if !ctx.active_ecosystems.is_empty() {
             info!(
@@ -448,10 +452,7 @@ impl ProjectContext {
 /// Walk every registered ecosystem, evaluate its `activation()` predicate
 /// against the given project context, and return the active ids in
 /// registration order.
-fn evaluate_active_ecosystems(
-    ctx: &ProjectContext,
-    reg: &EcosystemRegistry,
-) -> Vec<EcosystemId> {
+fn evaluate_active_ecosystems(ctx: &ProjectContext, reg: &EcosystemRegistry) -> Vec<EcosystemId> {
     let mut active: Vec<EcosystemId> = Vec::new();
     // Two passes to handle `TransitiveOn(other)` without depending on
     // registration order: pass 1 resolves everything non-transitive, pass 2
@@ -522,7 +523,9 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
         for eco in reg.all() {
             // Workspace-global ecosystems bypass the per-package scope —
             // they are evaluated below against the workspace-wide view.
-            if eco.is_workspace_global() { continue; }
+            if eco.is_workspace_global() {
+                continue;
+            }
             if is_transitive_only(&eco.activation()) {
                 continue;
             }
@@ -531,7 +534,9 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
             }
         }
         for eco in reg.all() {
-            if eco.is_workspace_global() { continue; }
+            if eco.is_workspace_global() {
+                continue;
+            }
             if !is_transitive_only(&eco.activation()) {
                 continue;
             }
@@ -564,8 +569,12 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
     };
     let mut workspace_global_active: Vec<EcosystemId> = Vec::new();
     for eco in reg.all() {
-        if !eco.is_workspace_global() { continue; }
-        if is_transitive_only(&eco.activation()) { continue; }
+        if !eco.is_workspace_global() {
+            continue;
+        }
+        if is_transitive_only(&eco.activation()) {
+            continue;
+        }
         if evaluate_activation_scoped(
             &eco.activation(),
             eco.id(),
@@ -600,7 +609,11 @@ fn union_per_package_actives(
             seen.insert(*id);
         }
     }
-    reg.all().iter().map(|e| e.id()).filter(|id| seen.contains(id)).collect()
+    reg.all()
+        .iter()
+        .map(|e| e.id())
+        .filter(|id| seen.contains(id))
+        .collect()
 }
 
 /// Scoped view of the project (or one of its packages) that the
@@ -638,12 +651,8 @@ fn evaluate_activation_scoped(
     match act {
         EcosystemActivation::Always => true,
         EcosystemActivation::Never => false,
-        EcosystemActivation::ManifestMatch => {
-            ecosystem_manifest_present_scoped(eco_id, scope)
-        }
-        EcosystemActivation::LanguagePresent(lang) => {
-            scope.language_presence.contains(*lang)
-        }
+        EcosystemActivation::ManifestMatch => ecosystem_manifest_present_scoped(eco_id, scope),
+        EcosystemActivation::LanguagePresent(lang) => scope.language_presence.contains(*lang),
         EcosystemActivation::ManifestFieldContains {
             manifest_glob,
             field_path,
@@ -735,7 +744,9 @@ fn find_manifests_matching(project_root: &Path, glob: &str) -> Vec<PathBuf> {
 }
 
 fn manifest_file_field_contains(path: &Path, field_path: &str, value: &str) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -755,7 +766,10 @@ fn manifest_file_field_contains(path: &Path, field_path: &str, value: &str) -> b
     field_value_contains(target, value)
 }
 
-fn traverse_field_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+fn traverse_field_path<'a>(
+    root: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
     let mut cur = root;
     for segment in path.split('.') {
         cur = cur.get(segment)?;
@@ -793,7 +807,9 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
     let mut out: HashMap<ManifestKind, ManifestData> = HashMap::new();
     for pm in per_package {
         let entry = out.entry(pm.kind).or_default();
-        entry.dependencies.extend(pm.data.dependencies.iter().cloned());
+        entry
+            .dependencies
+            .extend(pm.data.dependencies.iter().cloned());
         if pm.data.module_path.is_some() {
             entry.module_path = pm.data.module_path.clone();
         }
@@ -876,10 +892,7 @@ impl ProjectContext {
     ///
     /// This is the primary entry point for per-package classification
     /// in the resolver's external-ref pipeline.
-    pub fn manifests_for(
-        &self,
-        package_id: Option<i64>,
-    ) -> &HashMap<ManifestKind, ManifestData> {
+    pub fn manifests_for(&self, package_id: Option<i64>) -> &HashMap<ManifestKind, ManifestData> {
         if let Some(id) = package_id {
             if let Some(pkg_manifests) = self.by_package.get(&id) {
                 return pkg_manifests;
@@ -915,11 +928,7 @@ impl ProjectContext {
     /// stripped), so `@/utils` with alias `@/ -> src/` becomes `src/utils`.
     /// Consumers typically drop the result into `SymbolLookup::in_file`
     /// (via the module_to_file map) or use it as a filename-stem match.
-    pub fn resolve_path_alias(
-        &self,
-        package_id: Option<i64>,
-        specifier: &str,
-    ) -> Option<String> {
+    pub fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
         let manifests = self.manifests_for(package_id);
         let npm = manifests.get(&ManifestKind::Npm)?;
         // Prefer the longest matching alias to handle nested aliases like
@@ -979,12 +988,15 @@ impl ProjectContext {
         let under = crate_name.replace('-', "_");
         let matches = |s: &str| s == crate_name || s == hyphen || s == under;
 
-        if self.workspace_pkg_by_declared_name.keys().any(|k| matches(k)) {
+        if self
+            .workspace_pkg_by_declared_name
+            .keys()
+            .any(|k| matches(k))
+        {
             return true;
         }
         self.manifests.values().any(|m| {
-            m.project_refs.iter().any(|p| matches(p))
-                || m.package_names.iter().any(|n| matches(n))
+            m.project_refs.iter().any(|p| matches(p)) || m.package_names.iter().any(|n| matches(n))
         })
     }
 }

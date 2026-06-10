@@ -37,10 +37,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "powershell";
 pub struct PsGalleryEcosystem;
 
 impl Ecosystem for PsGalleryEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Project deps via `*.psd1` `RequiredModules`. A bare directory
@@ -58,7 +66,9 @@ impl Ecosystem for PsGalleryEcosystem {
         walk_ps_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -69,11 +79,7 @@ impl Ecosystem for PsGalleryEcosystem {
         walk_ps_root(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         walk_ps_root(dep)
     }
 
@@ -81,11 +87,15 @@ impl Ecosystem for PsGalleryEcosystem {
         build_powershell_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for PsGalleryEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ps_externals(project_root)
     }
@@ -115,7 +125,9 @@ impl crate::ecosystem::manifest::ManifestReader for Psd1Manifest {
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let deps = parse_psd1_required_modules(project_root);
-        if deps.is_empty() { return None }
+        if deps.is_empty() {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
         Some(data)
@@ -134,7 +146,10 @@ pub fn discover_ps_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 
     let cache_dirs = find_ps_module_dirs();
     if cache_dirs.is_empty() {
-        debug!("psgallery: no module dirs found; {} deps unresolvable", declared.len());
+        debug!(
+            "psgallery: no module dirs found; {} deps unresolvable",
+            declared.len()
+        );
         return Vec::new();
     }
 
@@ -163,13 +178,17 @@ pub fn discover_ps_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 fn resolve_module_root(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     let name_lower = name.to_lowercase();
     for base in dirs {
-        let Ok(entries) = std::fs::read_dir(base) else { continue };
+        let Ok(entries) = std::fs::read_dir(base) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if dir_name.to_lowercase() != name_lower {
                 continue;
             }
@@ -185,7 +204,9 @@ fn resolve_module_root(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 
 /// If a module dir contains numeric version subdirs, pick the latest lexicographically.
 fn latest_version_subdir(module_dir: &Path) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(module_dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(module_dir) else {
+        return None;
+    };
     let mut versions: Vec<PathBuf> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
@@ -246,7 +267,11 @@ fn find_ps_module_dirs() -> Vec<PathBuf> {
 
     // 3. XDG user dir (Linux / macOS).
     if let Some(home) = dirs::home_dir() {
-        let xdg = home.join(".local").join("share").join("powershell").join("Modules");
+        let xdg = home
+            .join(".local")
+            .join("share")
+            .join("powershell")
+            .join("Modules");
         if xdg.is_dir() {
             dirs.push(xdg);
         }
@@ -321,22 +346,30 @@ fn scan_psd1_dir(dir: &Path, out: &mut Vec<String>, depth: usize) {
     if depth > 4 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if matches!(name, ".git" | "node_modules" | "vendor") || name.starts_with('.') {
                 continue;
             }
             scan_psd1_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if !name.ends_with(".psd1") {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_required_modules(&content, out);
         }
     }
@@ -359,7 +392,8 @@ pub fn extract_required_modules(content: &str, out: &mut Vec<String>) {
             let lower = trimmed.to_lowercase();
             if let Some(pos) = lower.find("requiredmodules") {
                 let after = &trimmed[pos + "requiredmodules".len()..];
-                let after = after.trim_start_matches(char::is_whitespace)
+                let after = after
+                    .trim_start_matches(char::is_whitespace)
                     .trim_start_matches('=')
                     .trim_start();
                 if after.starts_with("@(") {
@@ -412,14 +446,16 @@ fn parse_psd1_array_line(line: &str, out: &mut Vec<String>, depth: &mut i32) {
                 let s = &line[start..i];
                 i += 1; // consume closing quote
                 let s = s.trim();
-                if !s.is_empty() && !s.eq_ignore_ascii_case("requiredversion")
+                if !s.is_empty()
+                    && !s.eq_ignore_ascii_case("requiredversion")
                     && !s.eq_ignore_ascii_case("modulename")
                     && !s.eq_ignore_ascii_case("guid")
                     && !s.chars().next().is_some_and(|c| c.is_ascii_digit())
                     && !s.contains('/')
                     && !s.contains('\\')
                     && !s.contains('{')
-                    && !s.contains('-') // skip version strings like "1.0.0-beta"
+                    && !s.contains('-')
+                // skip version strings like "1.0.0-beta"
                 {
                     if looks_like_module_name(s) && !out.contains(&s.to_string()) {
                         out.push(s.to_string());
@@ -431,7 +467,12 @@ fn parse_psd1_array_line(line: &str, out: &mut Vec<String>, depth: &mut i32) {
                 // Skip identifier = value by advancing to next delimiter.
                 if bytes[i].is_ascii_alphabetic() {
                     let start = i;
-                    while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'.' || bytes[i] == b'-') {
+                    while i < len
+                        && (bytes[i].is_ascii_alphanumeric()
+                            || bytes[i] == b'_'
+                            || bytes[i] == b'.'
+                            || bytes[i] == b'-')
+                    {
                         i += 1;
                     }
                     let ident = &line[start..i];
@@ -472,7 +513,8 @@ fn looks_like_module_name(s: &str) -> bool {
     if s.len() == 36 && s.chars().filter(|&c| c == '-').count() == 4 {
         return false;
     }
-    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 // ===========================================================================
@@ -495,7 +537,9 @@ fn walk_ps_dir(
     if depth >= MAX_WALK_DEPTH {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
@@ -507,7 +551,9 @@ fn walk_ps_dir(
             }
             walk_ps_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if !name.ends_with(".psm1") && !name.ends_with(".ps1") {
                 continue;
             }
@@ -535,7 +581,11 @@ fn walk_ps_dir(
 pub fn build_powershell_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let work: Vec<(String, WalkedFile)> = dep_roots
         .iter()
-        .flat_map(|dep| walk_ps_root(dep).into_iter().map(move |wf| (dep.module_path.clone(), wf)))
+        .flat_map(|dep| {
+            walk_ps_root(dep)
+                .into_iter()
+                .map(move |wf| (dep.module_path.clone(), wf))
+        })
         .collect();
 
     if work.is_empty() {
@@ -634,7 +684,10 @@ mod tests {
 
     #[test]
     fn legacy_locator_tag() {
-        assert_eq!(ExternalSourceLocator::ecosystem(&PsGalleryEcosystem), "powershell");
+        assert_eq!(
+            ExternalSourceLocator::ecosystem(&PsGalleryEcosystem),
+            "powershell"
+        );
     }
 
     #[test]
@@ -647,7 +700,10 @@ mod tests {
 "#;
         let mut out = Vec::new();
         extract_required_modules(content, &mut out);
-        assert!(out.contains(&"Pester".to_string()), "expected Pester, got {out:?}");
+        assert!(
+            out.contains(&"Pester".to_string()),
+            "expected Pester, got {out:?}"
+        );
         assert!(out.contains(&"PSScriptAnalyzer".to_string()));
         assert!(out.contains(&"platyPS".to_string()));
     }
@@ -718,7 +774,9 @@ mod tests {
     fn looks_like_module_name_rejects_invalid() {
         assert!(!looks_like_module_name(""));
         assert!(!looks_like_module_name("1.0.0"));
-        assert!(!looks_like_module_name("12345678-1234-1234-1234-123456789abc"));
+        assert!(!looks_like_module_name(
+            "12345678-1234-1234-1234-123456789abc"
+        ));
     }
 
     #[test]

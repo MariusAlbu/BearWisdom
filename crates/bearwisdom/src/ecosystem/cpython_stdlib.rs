@@ -15,9 +15,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -28,9 +26,15 @@ const LANGUAGES: &[&str] = &["python"];
 pub struct CpythonStdlibEcosystem;
 
 impl Ecosystem for CpythonStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("python")
@@ -44,14 +48,15 @@ impl Ecosystem for CpythonStdlibEcosystem {
         walk_python_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         // Eagerly walk a small set of stdlib subtrees that virtually every
         // Python project transitively depends on. The package-entry
         // re-export chain (`unittest/__init__.py` → `from .case import
@@ -100,20 +105,32 @@ fn walk_specific_stdlib_subtree(
 }
 
 fn walk_dir_unfiltered(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "__pycache__" | "test" | "tests") { continue }
-                if name.starts_with('.') { continue }
+                if matches!(name, "__pycache__" | "test" | "tests") {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir_unfiltered(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".py") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".py") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:python:{}", display),
@@ -125,7 +142,9 @@ fn walk_dir_unfiltered(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 }
 
 impl ExternalSourceLocator for CpythonStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_cpython_stdlib()
     }
@@ -153,7 +172,9 @@ fn discover_cpython_stdlib() -> Vec<ExternalDepRoot> {
 fn probe_stdlib_dir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_CPYTHON_STDLIB") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(sys_prefix) = python_sys_prefix() {
         if let Some(stdlib) = stdlib_under_prefix(&sys_prefix) {
@@ -173,7 +194,9 @@ fn probe_stdlib_dir() -> Option<PathBuf> {
         "C:/Python310/Lib",
     ] {
         let p = PathBuf::from(candidate);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }
@@ -186,12 +209,18 @@ fn python_sys_prefix() -> Option<PathBuf> {
         else {
             continue;
         };
-        if !output.status.success() { continue }
+        if !output.status.success() {
+            continue;
+        }
         let s = String::from_utf8(output.stdout).ok()?;
         let trimmed = s.trim();
-        if trimmed.is_empty() { continue }
+        if trimmed.is_empty() {
+            continue;
+        }
         let p = PathBuf::from(trimmed);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }
@@ -201,7 +230,9 @@ fn stdlib_under_prefix(prefix: &Path) -> Option<PathBuf> {
     if let Ok(lib_entries) = std::fs::read_dir(prefix.join("lib")) {
         for entry in lib_entries.flatten() {
             let path = entry.path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if name.starts_with("python3") && path.is_dir() {
                 return Some(path);
             }
@@ -209,7 +240,9 @@ fn stdlib_under_prefix(prefix: &Path) -> Option<PathBuf> {
     }
     // Windows: {prefix}/Lib
     let win = prefix.join("Lib");
-    if win.is_dir() { return Some(win); }
+    if win.is_dir() {
+        return Some(win);
+    }
     None
 }
 
@@ -220,8 +253,12 @@ fn walk_python_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 14 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 14 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -229,13 +266,22 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    "test" | "tests" | "__pycache__" | "site-packages"
-                        | "ensurepip" | "turtledemo" | "idlelib" | "tkinter"
-                        | "dist-packages" | "unittest"
+                    "test"
+                        | "tests"
+                        | "__pycache__"
+                        | "site-packages"
+                        | "ensurepip"
+                        | "turtledemo"
+                        | "idlelib"
+                        | "tkinter"
+                        | "dist-packages"
+                        | "unittest"
                 ) {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
                 // Skip `Lib/test/` on Windows which is huge and CI-style.
                 if name == "Lib" && depth == 0 {
                     // fine — keep going
@@ -243,8 +289,12 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".py") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".py") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:python:{}", display),
@@ -258,5 +308,7 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<CpythonStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(CpythonStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(CpythonStdlibEcosystem))
+        .clone()
 }

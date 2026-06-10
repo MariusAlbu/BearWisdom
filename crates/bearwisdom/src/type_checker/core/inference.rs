@@ -103,7 +103,9 @@ fn infer_from_call_args(expr_ref: &ExtractedRef, arena: &TypeArena) -> Option<Ty
     let arg = expr_ref.call_args.first()?;
     match arg {
         CallArg::StringLit(s) => Some(arena.intern(Type::Literal(LitValue::Str(s.clone())))),
-        CallArg::Literal(src) => parse_simple_literal(src).map(|lv| arena.intern(Type::Literal(lv))),
+        CallArg::Literal(src) => {
+            parse_simple_literal(src).map(|lv| arena.intern(Type::Literal(lv)))
+        }
         _ => None,
     }
 }

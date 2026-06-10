@@ -33,8 +33,7 @@ mod tests;
 ///    indexed; when it isn't they fall to `unresolved_refs`. Document
 ///    cross-references are not code-resolution failures and must not
 ///    drag the rate down (Plan 01 — Resolution Gate).
-pub(crate) const CODE_REF_FILTER: &str =
-    "u.from_snippet = 0 \
+pub(crate) const CODE_REF_FILTER: &str = "u.from_snippet = 0 \
      AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')";
 
 /// Read index statistics from the database.
@@ -82,10 +81,8 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         db_mapping_count,
         flow_edge_count,
         package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
-        &combined_sql,
-        [],
-        |r| {
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) =
+        conn.query_row(&combined_sql, [], |r| {
             Ok((
                 r.get(0)?,
                 r.get(1)?,
@@ -98,8 +95,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
                 r.get(8)?,
                 r.get(9)?,
             ))
-        },
-    )?;
+        })?;
 
     Ok(IndexStats {
         file_count,
@@ -310,9 +306,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              GROUP BY language
              ORDER BY language",
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
         for row in rows {
             let (lang, count) = row?;
             languages.insert(lang, count);
@@ -363,9 +357,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              ORDER BY ol"
         );
         let mut stmt = conn.prepare(&by_origin_lang_sql)?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
         for row in rows {
             let (ol, count) = row?;
             unresolved_by_origin_language.insert(ol, count);
@@ -385,9 +377,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              ORDER BY pkg"
         );
         let mut stmt = conn.prepare(&by_package_sql)?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
         for row in rows {
             let (pkg, count) = row?;
             unresolved_by_package.insert(pkg, count);
@@ -406,9 +396,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              GROUP BY strat
              ORDER BY strat",
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
         for row in rows {
             let (strat, count) = row?;
             resolved_by_strategy.insert(strat, count);
@@ -472,8 +460,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     let resolution_rate = if internal_edges + internal_unresolved == 0 {
         100.0
     } else {
-        (internal_edges as f64) * 100.0
-            / (internal_edges as f64 + internal_unresolved as f64)
+        (internal_edges as f64) * 100.0 / (internal_edges as f64 + internal_unresolved as f64)
     };
     let resolution_rate = (resolution_rate * 100.0).round() / 100.0;
 
@@ -599,22 +586,27 @@ pub fn flow_edges_data(db: &Database, limit: usize) -> QueryResult<FlowEdgesData
     let edges = stmt
         .query_map([limit as i64], |row| {
             Ok(FlowEdgeRow {
-                source_file:     row.get(0)?,
-                source_line:     row.get(1)?,
-                source_symbol:   row.get(2)?,
+                source_file: row.get(0)?,
+                source_line: row.get(1)?,
+                source_symbol: row.get(2)?,
                 source_language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                target_file:     row.get(4)?,
-                target_line:     row.get(5)?,
-                target_symbol:   row.get(6)?,
+                target_file: row.get(4)?,
+                target_line: row.get(5)?,
+                target_symbol: row.get(6)?,
                 target_language: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-                edge_type:       row.get(8)?,
-                protocol:        row.get(9)?,
-                url_pattern:     row.get(10)?,
+                edge_type: row.get(8)?,
+                protocol: row.get(9)?,
+                url_pattern: row.get(10)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    Ok(FlowEdgesData { edges, total, by_edge_type, by_language_pair })
+    Ok(FlowEdgesData {
+        edges,
+        total,
+        by_edge_type,
+        by_language_pair,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -740,7 +732,10 @@ pub fn flow_diagnostics(db: &Database) -> QueryResult<FlowDiagnostics> {
             paired_total += paired;
             single_total += single_ended;
             total += paired + single_ended;
-            let pairing = FlowPairing { paired, single_ended };
+            let pairing = FlowPairing {
+                paired,
+                single_ended,
+            };
             by_edge_type.push(FlowEdgeTypeBucket {
                 edge_type,
                 protocol,
@@ -780,7 +775,13 @@ pub fn flow_diagnostics(db: &Database) -> QueryResult<FlowDiagnostics> {
             let lang: String = row.get(0)?;
             let paired: u32 = row.get::<_, i64>(1)? as u32;
             let single_ended: u32 = row.get::<_, i64>(2)? as u32;
-            by_source_language.insert(lang, FlowPairing { paired, single_ended });
+            by_source_language.insert(
+                lang,
+                FlowPairing {
+                    paired,
+                    single_ended,
+                },
+            );
         }
     }
 

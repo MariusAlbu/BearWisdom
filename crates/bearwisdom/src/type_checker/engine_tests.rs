@@ -5,14 +5,15 @@
 use super::*;
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::languages::typescript::extract;
-use crate::type_checker::core::{SymbolIdMap, TypeArena};
 use crate::languages::typescript::TYPESCRIPT_PROFILE;
+use crate::type_checker::core::{SymbolIdMap, TypeArena};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{
     AliasTarget, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, ParsedFile,
     SegmentKind, SymbolKind, Visibility,
 };
 use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn ts_parsed_file(path: &str, source: &str) -> ParsedFile {
@@ -37,6 +38,92 @@ fn ts_parsed_file(path: &str, source: &str) -> ParsedFile {
         flow: Default::default(),
         demand_contributions: extraction.demand_contributions,
         alias_targets: extraction.alias_targets,
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+fn nim_test_symbol(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn nim_import_ref(source_symbol_index: usize, module: &str, is_reexport: bool) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index,
+        target_name: "*".to_string(),
+        kind: EdgeKind::Imports,
+        line: 1,
+        col: 0,
+        module: Some(module.to_string()),
+        namespace_segments: Vec::new(),
+        is_import_binding: false,
+        is_reexport,
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+    }
+}
+
+fn nim_call_ref(source_symbol_index: usize, target: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index,
+        target_name: target.to_string(),
+        kind: EdgeKind::Calls,
+        line: 10,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        is_import_binding: false,
+        is_reexport: false,
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+    }
+}
+
+fn nim_parsed_file(
+    path: &str,
+    symbols: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+) -> ParsedFile {
+    ParsedFile {
+        path: path.to_string(),
+        language: "nim".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
     }
@@ -194,10 +281,7 @@ fn engine_is_send_and_sync() {
 
 #[test]
 fn engine_resolve_returns_none_when_ref_has_no_chain() {
-    let pf = ts_parsed_file(
-        "src/u.ts",
-        "export class User { name: string = \"\"; }",
-    );
+    let pf = ts_parsed_file("src/u.ts", "export class User { name: string = \"\"; }");
     let sym_ids = deterministic_ids(&pf);
     let lookup = EmptyLookup::from(&pf, &sym_ids);
 
@@ -207,7 +291,9 @@ fn engine_resolve_returns_none_when_ref_has_no_chain() {
     let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
 
     let source = dummy_source();
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "x".to_string(),
         kind: EdgeKind::Reads,
@@ -250,7 +336,9 @@ fn engine_resolve_returns_none_for_unregistered_language() {
         }],
     };
     let source = dummy_source();
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -330,7 +418,9 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
         }],
     };
     let source = dummy_source();
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "User".to_string(),
         kind: EdgeKind::TypeRef,
@@ -345,7 +435,9 @@ fn engine_resolve_walks_single_segment_chain_to_self_yielding_class() {
     let rc = ref_ctx_for(&r, &source);
     let fc = file_ctx_ts("src/u.ts");
 
-    let resolution = engine.resolve(&rc, &fc, &lookup).expect("engine resolves User");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("engine resolves User");
     assert_eq!(resolution.target_symbol_id, user_id);
     let user_ty = engine.arena().class("User");
     assert_eq!(resolution.resolved_yield_type, Some(user_ty));
@@ -405,7 +497,9 @@ fn engine_yields_none_when_last_segment_has_no_type() {
         ],
     };
     let source = dummy_source();
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "bar".to_string(),
         kind: EdgeKind::Calls,
@@ -420,7 +514,9 @@ fn engine_yields_none_when_last_segment_has_no_type() {
     let rc = ref_ctx_for(&r, &source);
     let fc = file_ctx_ts("src/u.ts");
 
-    let resolution = engine.resolve(&rc, &fc, &lookup).expect("engine resolves bar");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("engine resolves bar");
     assert_eq!(resolution.target_symbol_id, bar_id);
     assert_eq!(resolution.resolved_yield_type, None);
 }
@@ -639,7 +735,9 @@ fn bare_name_call_overload_selected_by_arity() {
     let rc = ref_ctx_for(&r, &source);
     let fc = file_ctx_ts("src/f.ts");
 
-    let resolution = engine.resolve(&rc, &fc, &lookup).expect("bare foo resolves");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("bare foo resolves");
     assert_eq!(
         resolution.target_symbol_id, 2,
         "2-arg call must select the 2-arg foo, not the first-indexed foo"
@@ -673,7 +771,9 @@ fn bare_name_call_same_arity_both_assignable_keeps_first_match() {
     let rc = ref_ctx_for(&r, &source);
     let fc = file_ctx_ts("src/f.ts");
 
-    let resolution = engine.resolve(&rc, &fc, &lookup).expect("bare foo resolves");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("bare foo resolves");
     assert_eq!(
         resolution.target_symbol_id, 1,
         "two same-arity assignable overloads stay ambiguous → first-match kept"
@@ -710,7 +810,9 @@ fn bare_name_call_overload_ignores_out_of_scope_homonym() {
     let rc = ref_ctx_for(&r, &source);
     let fc = file_ctx_ts("src/f.ts");
 
-    let resolution = engine.resolve(&rc, &fc, &lookup).expect("bare foo resolves");
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("bare foo resolves");
     assert_eq!(
         resolution.target_symbol_id, 1,
         "out-of-scope 2-arg homonym must NOT hijack the in-scope first-match"
@@ -728,7 +830,9 @@ fn engine_infer_yield_returns_class_typeid_for_instantiates() {
     profiles.insert("typescript", &DEFAULT_PROFILE);
 
     let mut engine = Engine::build(std::slice::from_ref(&pf), &sym_ids, profiles, &lookup);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "Foo".to_string(),
         kind: EdgeKind::Instantiates,
@@ -752,9 +856,7 @@ fn engine_infer_yield_returns_class_typeid_for_instantiates() {
 /// `wildcard` names a sibling function in `src/f.ts`, so the generic ladder's
 /// same-file strategy would bind it. Returns the engine resolution for a bare
 /// `Calls` ref to it under `profile`.
-fn resolve_sibling_named(
-    profile: &'static LanguageProfile,
-) -> Option<Resolution> {
+fn resolve_sibling_named(profile: &'static LanguageProfile) -> Option<Resolution> {
     let arena = Arc::new(TypeArena::new());
     let (mut pf, mut sym_ids, mut infos) = foo_overloads(&arena, Vec::new(), Vec::new());
     // Reshape the first `foo` into a single `wildcard` callable; drop the
@@ -767,7 +869,11 @@ fn resolve_sibling_named(
     infos.truncate(1);
     infos[0].name = "wildcard".to_string();
     infos[0].qualified_name = "wildcard".to_string();
-    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+    let lookup = SiblingLookup {
+        sib: infos,
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
 
     let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
     profiles.insert("typescript", profile);
@@ -881,7 +987,11 @@ fn builtin_skip_none_leaves_other_targets_resolvable() {
     infos.truncate(1);
     infos[0].name = "helper".to_string();
     infos[0].qualified_name = "helper".to_string();
-    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+    let lookup = SiblingLookup {
+        sib: infos,
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
 
     let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
     profiles.insert("typescript", &SKIP_WILDCARD_PROFILE);
@@ -922,7 +1032,11 @@ fn resolve_sibling_in_namespace(
     infos.truncate(1);
     infos[0].name = target.to_string();
     infos[0].qualified_name = target.to_string();
-    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+    let lookup = SiblingLookup {
+        sib: infos,
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
 
     let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
     profiles.insert("typescript", profile);
@@ -968,16 +1082,14 @@ fn namespace_decline_gates_on_both_keys() {
 
     // Reserved name but the file is in a different namespace → the second key
     // is absent, so the ladder still binds the sibling.
-    let bound =
-        resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "reserved", Some("other-ns"))
-            .expect("a different namespace must not arm the decline");
+    let bound = resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "reserved", Some("other-ns"))
+        .expect("a different namespace must not arm the decline");
     assert_eq!(bound.target_symbol_id, 1);
 
     // Armed namespace but a non-reserved name → the first key is absent, so the
     // ladder still binds the sibling. Proves the gate is per-target.
-    let bound =
-        resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "ordinary", Some("ns-sentinel"))
-            .expect("a non-reserved name in the armed namespace must still resolve");
+    let bound = resolve_sibling_in_namespace(&NS_DECLINE_PROFILE, "ordinary", Some("ns-sentinel"))
+        .expect("a non-reserved name in the armed namespace must still resolve");
     assert_eq!(bound.target_symbol_id, 1);
 }
 
@@ -999,7 +1111,11 @@ fn resolve_qualified_sibling_with_import(
     infos.truncate(1);
     infos[0].name = target.to_string();
     infos[0].qualified_name = target.to_string();
-    let lookup = SiblingLookup { sib: infos, empty: Vec::new(), empty_reexports: Vec::new() };
+    let lookup = SiblingLookup {
+        sib: infos,
+        empty: Vec::new(),
+        empty_reexports: Vec::new(),
+    };
 
     let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
     profiles.insert("typescript", profile);
@@ -1017,12 +1133,13 @@ fn resolve_qualified_sibling_with_import(
     r.target_name = target.to_string();
     let rc = ref_ctx_for(&r, &source);
     let mut fc = file_ctx_ts("src/f.ts");
-    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
-        imported_name: import_module.to_string(),
-        module_path: Some(import_module.to_string()),
-        alias: None,
-        is_wildcard: true,
-    });
+    fc.imports
+        .push(crate::indexer::resolve::engine::ImportEntry {
+            imported_name: import_module.to_string(),
+            module_path: Some(import_module.to_string()),
+            alias: None,
+            is_wildcard: true,
+        });
     engine.resolve(&rc, &fc, &lookup)
 }
 
@@ -1311,7 +1428,13 @@ fn ext2_pf(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -
     }
 }
 
-fn ext2_sym(name: &str, qname: &str, kind: SymbolKind, scope: Option<&str>, sig: Option<&str>) -> ExtractedSymbol {
+fn ext2_sym(
+    name: &str,
+    qname: &str,
+    kind: SymbolKind,
+    scope: Option<&str>,
+    sig: Option<&str>,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -1384,7 +1507,13 @@ fn augment_engine_resolves_identically_to_full_build() {
         vec![
             ext2_sym("Foo", "Foo", SymbolKind::Class, None, Some("class Foo")),
             ext2_sym("use", "use", SymbolKind::Function, None, None),
-            ext2_sym("bar", "Foo.bar", SymbolKind::Method, Some("Foo"), Some("bar(): Baz")),
+            ext2_sym(
+                "bar",
+                "Foo.bar",
+                SymbolKind::Method,
+                Some("Foo"),
+                Some("bar(): Baz"),
+            ),
         ],
         vec![chain_ref],
     );
@@ -1392,7 +1521,13 @@ fn augment_engine_resolves_identically_to_full_build() {
         "b.ts",
         vec![
             ext2_sym("Baz", "Baz", SymbolKind::Class, None, Some("class Baz")),
-            ext2_sym("qux", "Baz.qux", SymbolKind::Method, Some("Baz"), Some("qux(): void")),
+            ext2_sym(
+                "qux",
+                "Baz.qux",
+                SymbolKind::Method,
+                Some("Baz"),
+                Some("qux(): void"),
+            ),
         ],
         vec![],
     );
@@ -1430,7 +1565,9 @@ fn augment_engine_resolves_identically_to_full_build() {
             scope_chain: build_scope_chain(files[0].symbols[1].scope_path.as_deref()),
             file_package_id: None,
         };
-        engine.resolve(&rc, &fc, &index).map(|res| res.target_symbol_id)
+        engine
+            .resolve(&rc, &fc, &index)
+            .map(|res| res.target_symbol_id)
     };
     // The Engine's own members are what `augment` mutates; resolution is masked
     // by the SymbolIndex by-qname fallback (built over the full set), so compare
@@ -1467,7 +1604,11 @@ fn augment_engine_resolves_identically_to_full_build() {
         baz_members(&full),
         "augment([B]) must produce Baz's member set identical to a full build over [A, B]"
     );
-    assert_eq!(after, vec![("qux".to_string(), qux_id)], "Baz gains its qux member");
+    assert_eq!(
+        after,
+        vec![("qux".to_string(), qux_id)],
+        "Baz gains its qux member"
+    );
     assert_eq!(
         resolve_with(&augmented),
         resolve_with(&full),
@@ -1485,10 +1626,28 @@ fn ext2_external_class_method_chain_resolves_end_to_end() {
     let ext = ext2_pf(
         "ext:ts:orm/index.d.ts",
         vec![
-            ext2_sym("Repository", "Repository", SymbolKind::Class, None, Some("class Repository")),
-            ext2_sym("get", "Repository.get", SymbolKind::Method, Some("Repository"), Some("get(): User")),
+            ext2_sym(
+                "Repository",
+                "Repository",
+                SymbolKind::Class,
+                None,
+                Some("class Repository"),
+            ),
+            ext2_sym(
+                "get",
+                "Repository.get",
+                SymbolKind::Method,
+                Some("Repository"),
+                Some("get(): User"),
+            ),
             ext2_sym("User", "User", SymbolKind::Class, None, Some("class User")),
-            ext2_sym("greet", "User.greet", SymbolKind::Method, Some("User"), Some("greet(): void")),
+            ext2_sym(
+                "greet",
+                "User.greet",
+                SymbolKind::Method,
+                Some("User"),
+                Some("greet(): void"),
+            ),
         ],
         vec![],
     );
@@ -1519,7 +1678,13 @@ fn ext2_external_class_method_chain_resolves_end_to_end() {
     };
     let app = ext2_pf(
         "app.ts",
-        vec![ext2_sym("useRepo", "useRepo", SymbolKind::Function, None, None)],
+        vec![ext2_sym(
+            "useRepo",
+            "useRepo",
+            SymbolKind::Function,
+            None,
+            None,
+        )],
         vec![chain_ref],
     );
 
@@ -1559,12 +1724,158 @@ fn ext2_external_class_method_chain_resolves_end_to_end() {
     };
 
     let resolution = engine.resolve(&rc, &fc, &index);
-    let greet_id = id_map[&("ext:ts:orm/index.d.ts".to_string(), "User.greet".to_string())];
+    let greet_id = id_map[&(
+        "ext:ts:orm/index.d.ts".to_string(),
+        "User.greet".to_string(),
+    )];
     let misses = index.take_chain_misses();
     assert_eq!(
         resolution.map(|r| r.target_symbol_id),
         Some(greet_id),
         "repo.get().greet() should bind greet on the external return type User; chain misses: {:?}",
-        misses.iter().map(|m| (&m.current_type, &m.target_name)).collect::<Vec<_>>()
+        misses
+            .iter()
+            .map(|m| (&m.current_type, &m.target_name))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn nim_reexported_external_helper_resolves_through_module_chain() {
+    let api = nim_parsed_file(
+        "beacon_chain/validator_client/api.nim",
+        vec![nim_test_symbol(
+            "ApiResponse",
+            "ApiResponse",
+            SymbolKind::TypeAlias,
+        )],
+        vec![
+            nim_import_ref(0, "\".\"/common", false),
+            nim_import_ref(0, "common", true),
+            nim_call_ref(0, "err"),
+        ],
+    );
+    let common = nim_parsed_file(
+        "beacon_chain/validator_client/common.nim",
+        vec![nim_test_symbol("Common", "Common", SymbolKind::Module)],
+        vec![nim_import_ref(0, "results", true)],
+    );
+    let results = nim_parsed_file(
+        "ext:submodule:vendor/nim-results/results.nim",
+        vec![nim_test_symbol("err", "err", SymbolKind::Function)],
+        Vec::new(),
+    );
+    let files = vec![api, common, results];
+
+    let mut qname_ids: HashMap<(String, String), i64> = HashMap::new();
+    let mut engine_ids = SymbolIdMap::default();
+    let mut next = 1i64;
+    for pf in &files {
+        for (idx, sym) in pf.symbols.iter().enumerate() {
+            qname_ids.insert((pf.path.clone(), sym.qualified_name.clone()), next);
+            engine_ids.insert((pf.path.clone(), idx), next);
+            next += 1;
+        }
+    }
+
+    let index = crate::indexer::resolve::engine::SymbolIndex::build(&files, &qname_ids);
+    let engine = Engine::build_from_registry(&files, &engine_ids, &index, index.type_arena_arc());
+    let api_file = &files[0];
+    let file_ctx = engine
+        .build_file_context("nim", api_file, None)
+        .expect("Nim hooks should build file context");
+    let ref_ctx = RefContext {
+        extracted_ref: &api_file.refs[2],
+        source_symbol: &api_file.symbols[0],
+        scope_chain: crate::indexer::resolve::engine::build_scope_chain(
+            api_file.symbols[0].scope_path.as_deref(),
+        ),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&ref_ctx, &file_ctx, &index);
+    let err_id = qname_ids[&(
+        "ext:submodule:vendor/nim-results/results.nim".to_string(),
+        "err".to_string(),
+    )];
+    assert_eq!(
+        resolution.map(|r| r.target_symbol_id),
+        Some(err_id),
+        "Nim bare call should follow api export common -> common export results -> indexed external results.err"
+    );
+}
+
+#[test]
+fn nim_named_export_resolves_through_file_imports_and_transitive_reexports() {
+    let consumer = nim_parsed_file(
+        "tests/consumer.nim",
+        vec![nim_test_symbol("runTest", "runTest", SymbolKind::Function)],
+        vec![
+            nim_import_ref(0, "./os_ops", false),
+            nim_call_ref(0, "walkDir"),
+        ],
+    );
+    let os_ops = nim_parsed_file(
+        "tests/os_ops.nim",
+        vec![nim_test_symbol(
+            "fileExists",
+            "fileExists",
+            SymbolKind::Function,
+        )],
+        vec![
+            nim_import_ref(0, "std/os", false),
+            nim_import_ref(0, "walkDir", true),
+        ],
+    );
+    let std_os = nim_parsed_file(
+        "ext:nim:nim-stdlib/pure/os.nim",
+        vec![nim_test_symbol("os", "os", SymbolKind::Module)],
+        vec![
+            nim_import_ref(0, "std/private/osdirs", false),
+            nim_import_ref(0, "osdirs", true),
+        ],
+    );
+    let osdirs = nim_parsed_file(
+        "ext:nim:nim-stdlib/std/private/osdirs.nim",
+        vec![nim_test_symbol("walkDir", "walkDir", SymbolKind::Function)],
+        Vec::new(),
+    );
+    let files = vec![consumer, os_ops, std_os, osdirs];
+
+    let mut qname_ids: HashMap<(String, String), i64> = HashMap::new();
+    let mut engine_ids = SymbolIdMap::default();
+    let mut next = 1i64;
+    for pf in &files {
+        for (idx, sym) in pf.symbols.iter().enumerate() {
+            qname_ids.insert((pf.path.clone(), sym.qualified_name.clone()), next);
+            engine_ids.insert((pf.path.clone(), idx), next);
+            next += 1;
+        }
+    }
+
+    let index = crate::indexer::resolve::engine::SymbolIndex::build(&files, &qname_ids);
+    let engine = Engine::build_from_registry(&files, &engine_ids, &index, index.type_arena_arc());
+    let consumer_file = &files[0];
+    let file_ctx = engine
+        .build_file_context("nim", consumer_file, None)
+        .expect("Nim hooks should build file context");
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[1],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: crate::indexer::resolve::engine::build_scope_chain(
+            consumer_file.symbols[0].scope_path.as_deref(),
+        ),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&ref_ctx, &file_ctx, &index);
+    let walk_dir_id = qname_ids[&(
+        "ext:nim:nim-stdlib/std/private/osdirs.nim".to_string(),
+        "walkDir".to_string(),
+    )];
+    assert_eq!(
+        resolution.map(|r| r.target_symbol_id),
+        Some(walk_dir_id),
+        "named export should expand through file imports, then follow transitive stdlib re-exports"
     );
 }

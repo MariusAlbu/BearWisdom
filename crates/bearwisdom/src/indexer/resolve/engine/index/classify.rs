@@ -60,9 +60,7 @@ impl SymbolIndex {
         //    component: `/@types/` for on-disk node_modules paths AND
         //    `:@types/` for the externals-index form `ext:ts:@types/jest/...`
         //    (no leading slash — the `ext:<lang>:` prefix sits before it).
-        if lower.contains("/@types/")
-            || lower.contains(":@types/")
-            || lower.starts_with("@types/")
+        if lower.contains("/@types/") || lower.contains(":@types/") || lower.starts_with("@types/")
         {
             return true;
         }
@@ -114,7 +112,9 @@ impl SymbolIndex {
         module_path: &str,
         _heuristic_candidates: &[(String, String, String, i64)],
     ) -> Option<i64> {
-        if module_path.is_empty() { return None; }
+        if module_path.is_empty() {
+            return None;
+        }
         let importing_pkg = npm_package_from_specifier(module_path)?;
         // We query SymbolIndex's full by_name index here rather than the
         // heuristic's name_to_ids — the heuristic filters out most
@@ -123,7 +123,9 @@ impl SymbolIndex {
         // would be invisible to it. The chain walker needs the complete
         // external symbol set.
         let candidates = self.by_name(suffix);
-        if candidates.is_empty() { return None; }
+        if candidates.is_empty() {
+            return None;
+        }
         let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut frontier: Vec<String> = vec![importing_pkg.clone()];
         visited.insert(importing_pkg);
@@ -137,18 +139,25 @@ impl SymbolIndex {
             }
             let mut next: Vec<String> = Vec::new();
             for pkg in &frontier {
-                let Some(reexports) = self.pkg_reexports.get(pkg) else { continue };
+                let Some(reexports) = self.pkg_reexports.get(pkg) else {
+                    continue;
+                };
                 for (name, target_pkg) in reexports {
-                    if name != "*" && name != prefix { continue }
+                    if name != "*" && name != prefix {
+                        continue;
+                    }
                     if visited.insert(target_pkg.clone()) {
                         next.push(target_pkg.clone());
                     }
                 }
             }
-            if next.is_empty() { break }
+            if next.is_empty() {
+                break;
+            }
             frontier = next;
         }
-        let _ = suffix; let _ = prefix; // silence if unused
+        let _ = suffix;
+        let _ = prefix; // silence if unused
         None
     }
     /// Classify an external name with its specific namespace category.
@@ -163,8 +172,7 @@ impl SymbolIndex {
             if all_externals.contains(name) {
                 // Distinguish: plugin.keywords() are "primitive", everything
                 // else (query builtins) is "builtin".
-                let plugin_keywords =
-                    crate::indexer::keywords::keywords_for_language(language);
+                let plugin_keywords = crate::indexer::keywords::keywords_for_language(language);
                 if plugin_keywords.contains(&name) {
                     return Some("primitive");
                 }

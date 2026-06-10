@@ -24,7 +24,12 @@ use tree_sitter::Node;
 /// - `export const/function/class ...` — the inner decl handles symbols;
 ///   here we emit an Imports ref using the decl's name so the line is covered
 /// - `export default { ... }` / `export default function() {}` — fallback ref
-pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut Vec<Ref>) {
+pub(super) fn push_export_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<Ref>,
+) {
     let line = node.start_position().row as u32;
     let initial_ref_count = refs.len();
 
@@ -50,7 +55,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                             .map(|n| node_text(n, src))
                             .unwrap_or_default();
                         if !exported.is_empty() {
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: exported,
                                 kind: EdgeKind::Imports,
@@ -60,8 +67,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: spec.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                 }
@@ -70,7 +77,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             // `export * from './mod'` — the `*` child is a namespace_export or literal
             "namespace_export" => {
                 if let Some(mod_path) = &module_path {
-                    refs.push(Ref { is_import_binding: false, is_reexport: false,
+                    refs.push(Ref {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: mod_path.clone(),
                         kind: EdgeKind::Imports,
@@ -80,8 +89,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
-                            col: 0,
-                        });
+                        col: 0,
+                    });
                 }
             }
 
@@ -89,7 +98,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             "identifier" => {
                 let name = node_text(child, src);
                 if name != "default" && name != "export" && !name.is_empty() {
-                    refs.push(Ref { is_import_binding: false, is_reexport: false,
+                    refs.push(Ref {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -99,8 +110,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
-                            col: 0,
-                        });
+                        col: 0,
+                    });
                 }
             }
 
@@ -123,7 +134,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                         if let Some(name_node) = decl.child_by_field_name("name") {
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
-                                refs.push(Ref { is_import_binding: false, is_reexport: false,
+                                refs.push(Ref {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::Imports,
@@ -133,8 +146,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                     byte_offset: child.start_byte() as u32,
                                     namespace_segments: Vec::new(),
                                     call_args: Vec::new(),
-                                        col: 0,
-                                    });
+                                    col: 0,
+                                });
                                 break 'outer_lex;
                             }
                         }
@@ -162,7 +175,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                     if let Some(name_node) = child.child_by_field_name("name") {
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -172,8 +187,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                 }
@@ -187,7 +202,9 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                     if let Some(name_node) = child.child_by_field_name("name") {
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -197,8 +214,8 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                 }
@@ -212,10 +229,10 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
     // namespace_export child, `export default {}`, `export default function() {}`),
     // emit an Imports ref at the export line using the module path or a placeholder.
     if refs.len() == initial_ref_count {
-        let target = module_path
-            .clone()
-            .unwrap_or_else(|| "default".to_string());
-        refs.push(Ref { is_import_binding: false, is_reexport: false,
+        let target = module_path.clone().unwrap_or_else(|| "default".to_string());
+        refs.push(Ref {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target.clone(),
             kind: EdgeKind::Imports,
@@ -225,12 +242,17 @@ pub(super) fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usi
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                col: 0,
-            });
+            col: 0,
+        });
     }
 }
 
-pub(super) fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut Vec<Ref>) {
+pub(super) fn push_import(
+    node: &Node,
+    src: &[u8],
+    current_symbol_count: usize,
+    refs: &mut Vec<Ref>,
+) {
     crate::ecosystem::ecmascript_imports::push_import_refs(
         node,
         src,
@@ -298,8 +320,7 @@ pub(super) fn extract_module_exports(
         };
 
         let lhs = node_text(left, src);
-        let is_module_exports =
-            lhs == "module.exports" || lhs.starts_with("exports.");
+        let is_module_exports = lhs == "module.exports" || lhs.starts_with("exports.");
 
         if !is_module_exports {
             continue;
@@ -323,7 +344,9 @@ pub(super) fn extract_module_exports(
                 .unwrap_or_else(|| lhs.clone())
         };
 
-        refs.push(Ref { is_import_binding: false, is_reexport: false,
+        refs.push(Ref {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: export_name,
             kind: EdgeKind::Imports,
@@ -333,8 +356,8 @@ pub(super) fn extract_module_exports(
             byte_offset: child.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                col: 0,
-            });
+            col: 0,
+        });
     }
 }
 
@@ -364,26 +387,36 @@ pub(super) fn extract_prototype_method(
         if child.kind() != "assignment_expression" {
             continue;
         }
-        let Some(left) = child.child_by_field_name("left") else { continue };
-        let Some(right) = child.child_by_field_name("right") else { continue };
+        let Some(left) = child.child_by_field_name("left") else {
+            continue;
+        };
+        let Some(right) = child.child_by_field_name("right") else {
+            continue;
+        };
 
         // Left must be a member_expression: {object: member_expression, property: identifier}.
         if left.kind() != "member_expression" {
             continue;
         }
-        let Some(outer_object) = left.child_by_field_name("object") else { continue };
-        let Some(outer_property) = left.child_by_field_name("property") else { continue };
-        if outer_property.kind() != "property_identifier"
-            && outer_property.kind() != "identifier"
-        {
+        let Some(outer_object) = left.child_by_field_name("object") else {
+            continue;
+        };
+        let Some(outer_property) = left.child_by_field_name("property") else {
+            continue;
+        };
+        if outer_property.kind() != "property_identifier" && outer_property.kind() != "identifier" {
             continue;
         }
         if outer_object.kind() != "member_expression" {
             continue;
         }
         // Inner member's property must be "prototype" and its object a plain identifier.
-        let Some(inner_object) = outer_object.child_by_field_name("object") else { continue };
-        let Some(inner_property) = outer_object.child_by_field_name("property") else { continue };
+        let Some(inner_object) = outer_object.child_by_field_name("object") else {
+            continue;
+        };
+        let Some(inner_property) = outer_object.child_by_field_name("property") else {
+            continue;
+        };
         if inner_object.kind() != "identifier" {
             continue;
         }
@@ -434,12 +467,12 @@ pub(super) fn extract_prototype_method(
             doc_comment: extract_jsdoc(stmt_node, src),
             scope_path,
             parent_index,
-                byte_offset: 0,
-                            declared_type: None,
-                return_type: None,
-                param_types: Vec::new(),
-                generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Harvest calls inside the function body so in-method refs attach
         // to the method symbol rather than the enclosing scope.
@@ -472,7 +505,9 @@ pub(super) fn try_emit_require(
         return;
     }
     if let Some(module) = extract_require_path(init_node, src) {
-        refs.push(Ref { is_import_binding: false, is_reexport: false,
+        refs.push(Ref {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: module.clone(),
             kind: EdgeKind::Imports,
@@ -482,7 +517,7 @@ pub(super) fn try_emit_require(
             byte_offset: init_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                col: 0,
-            });
+            col: 0,
+        });
     }
 }

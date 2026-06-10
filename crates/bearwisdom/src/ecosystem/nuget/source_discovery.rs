@@ -28,10 +28,16 @@ pub(crate) fn discover_nuget_source_files(version_dir: &Path) -> Vec<PathBuf> {
     let content_files_cs = version_dir.join("contentFiles").join("cs");
     if content_files_cs.is_dir() {
         let preferred_tfms = [
-            "net9.0", "net8.0", "net7.0", "net6.0",
-            "netstandard2.1", "netstandard2.0", "any",
+            "net9.0",
+            "net8.0",
+            "net7.0",
+            "net6.0",
+            "netstandard2.1",
+            "netstandard2.0",
+            "any",
         ];
-        let tfm_dir = preferred_tfms.iter()
+        let tfm_dir = preferred_tfms
+            .iter()
             .map(|tfm| content_files_cs.join(tfm))
             .find(|p| p.is_dir())
             .or_else(|| largest_subdir(&content_files_cs));
@@ -44,10 +50,15 @@ pub(crate) fn discover_nuget_source_files(version_dir: &Path) -> Vec<PathBuf> {
     let lib_dir = version_dir.join("lib");
     if lib_dir.is_dir() {
         let preferred_tfms = [
-            "net9.0", "net8.0", "net7.0", "net6.0",
-            "netstandard2.1", "netstandard2.0",
+            "net9.0",
+            "net8.0",
+            "net7.0",
+            "net6.0",
+            "netstandard2.1",
+            "netstandard2.0",
         ];
-        let tfm_dir = preferred_tfms.iter()
+        let tfm_dir = preferred_tfms
+            .iter()
             .map(|tfm| lib_dir.join(tfm))
             .find(|p| p.is_dir())
             .or_else(|| largest_subdir(&lib_dir));
@@ -67,7 +78,9 @@ pub(crate) fn discover_nuget_source_files(version_dir: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "cs") {
-                if seen.insert(path.clone()) { out.push(path); }
+                if seen.insert(path.clone()) {
+                    out.push(path);
+                }
             }
         }
     }
@@ -83,8 +96,12 @@ fn collect_cs_files(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: usize,
 ) {
-    if depth > 8 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 8 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
@@ -93,11 +110,15 @@ fn collect_cs_files(
                 if matches!(
                     name,
                     "obj" | "bin" | "test" | "tests" | "samples" | "examples" | ".git"
-                ) { continue; }
+                ) {
+                    continue;
+                }
             }
             collect_cs_files(&path, out, seen, depth + 1);
         } else if ft.is_file() && path.extension().is_some_and(|e| e == "cs") {
-            if seen.insert(path.clone()) { out.push(path); }
+            if seen.insert(path.clone()) {
+                out.push(path);
+            }
         }
     }
 }
@@ -149,14 +170,18 @@ pub(crate) fn parse_cs_source_file(
             end_col: 0,
             signature: sym.signature,
             doc_comment: None,
-            scope_path: if sym.scope.is_empty() { None } else { Some(sym.scope) },
+            scope_path: if sym.scope.is_empty() {
+                None
+            } else {
+                Some(sym.scope)
+            },
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-})
+        })
         .collect();
 
     Ok(ParsedFile {

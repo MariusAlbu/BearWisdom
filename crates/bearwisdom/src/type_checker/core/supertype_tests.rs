@@ -173,7 +173,9 @@ fn parsed_lang(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>) -> ParsedF
 }
 
 fn inherits_ref(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Inherits,
@@ -188,7 +190,9 @@ fn inherits_ref(source_idx: usize, target: &str) -> ExtractedRef {
 }
 
 fn implements_ref(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Implements,
@@ -207,7 +211,9 @@ fn implements_ref(source_idx: usize, target: &str) -> ExtractedRef {
 /// the raw implementing-type node text (`C` or `C<T>`), the structural carrier
 /// the supertype builder reads to reroute the inheritance edge to `C`.
 fn impl_typeref(source_idx: usize, impl_type: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: impl_type.to_string(),
         kind: EdgeKind::TypeRef,
@@ -288,7 +294,14 @@ fn build_explicit_creates_edges_from_inherits_refs() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin_id = arena.class("myapp.Admin");
     let user_id = arena.class("myapp.User");
@@ -309,7 +322,14 @@ fn build_explicit_falls_back_to_target_name_when_lookup_misses() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin_id = arena.class("Admin");
     let external_id = arena.class("ExternalBase");
@@ -346,7 +366,14 @@ fn build_explicit_includes_pulled_external_base_edges() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     // The external base's OWN supertype edge is now in the graph.
     let repo_id = arena.class("pkg.Repository");
@@ -385,7 +412,14 @@ fn build_explicit_handles_multi_inherit_and_implements() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin = arena.class("Admin");
     let parents: Vec<String> = graph
@@ -410,7 +444,9 @@ fn build_explicit_ignores_non_inheritance_refs() {
     let parsed = vec![parsed_with_refs(
         "x.rs",
         vec![class_sym("Admin", "Admin")],
-        vec![ExtractedRef { is_import_binding: false, is_reexport: false,
+        vec![ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: "doStuff".to_string(),
             kind: EdgeKind::Calls,
@@ -427,7 +463,14 @@ fn build_explicit_ignores_non_inheritance_refs() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin = arena.class("Admin");
     assert!(graph.parents_of(admin).is_empty());
@@ -482,7 +525,14 @@ fn build_explicit_reroutes_impl_container_edge_to_implementing_type() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let greet = arena.class("Greet");
@@ -522,7 +572,14 @@ fn impl_container_reroute_makes_trait_default_method_reachable() {
 
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let hit = members
@@ -558,7 +615,14 @@ fn build_explicit_reroutes_generic_impl_container_to_base_type() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let wrapper = arena.class("Wrapper");
     let display = arena.class("Display");
@@ -587,7 +651,14 @@ fn build_explicit_keeps_non_namespace_source_unchanged() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin = arena.class("myapp.Admin");
     let user = arena.class("myapp.User");
@@ -681,14 +752,23 @@ fn swift_protocol_extension_default_method_reachable_from_conforming_type() {
 
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let hit = members
         .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &profile)
         .expect("dog.hello() resolves to the protocol-extension default method");
-    assert_eq!(hit.id, 42, "resolved symbol is the protocol-extension default `hello`");
+    assert_eq!(
+        hit.id, 42,
+        "resolved symbol is the protocol-extension default `hello`"
+    );
 }
 
 #[test]
@@ -725,8 +805,14 @@ fn swift_extension_member_not_reachable_without_conformance() {
 
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let cat = arena.class("Cat");
     assert!(
@@ -773,8 +859,14 @@ fn swift_extension_retroactive_conformance_reroutes_to_implementing_type() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let greet = arena.class("Greet");
@@ -1068,7 +1160,14 @@ fn build_both_combines_explicit_and_structural() {
         supertype_discovery: SupertypeDiscovery::Both,
         ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
     };
-    let graph = SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let admin_id = arena.class("myapp.Admin");
     assert!(graph.parents_of(admin_id).contains(&writer));
@@ -1165,8 +1264,14 @@ fn blanket_impl_binds_trait_default_when_bound_satisfied() {
 
     let symbol_types = SymbolTypeMap::new();
     let profile = rust_blanket_profile();
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     assert!(
@@ -1204,8 +1309,14 @@ fn blanket_impl_declines_when_bound_not_satisfied() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = rust_blanket_profile();
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let cat = arena.class("Cat");
     let greet = arena.class("Greet");
@@ -1241,8 +1352,14 @@ fn blanket_impl_inert_under_default_profile() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let greet = arena.class("Greet");
@@ -1309,8 +1426,14 @@ fn blanket_impl_chain_resolves_transitively_to_fixpoint() {
 
     let symbol_types = SymbolTypeMap::new();
     let profile = rust_blanket_profile();
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let greet = arena.class("Greet");
@@ -1355,8 +1478,14 @@ fn blanket_impl_chain_declines_when_root_bound_unsatisfied() {
     let members = MembersIndex::new();
     let symbol_types = SymbolTypeMap::new();
     let profile = rust_blanket_profile();
-    let graph =
-        SupertypeGraph::build(&parsed, &mut arena, &profile, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &parsed,
+        &mut arena,
+        &profile,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let cat = arena.class("Cat");
     let greet = arena.class("Greet");

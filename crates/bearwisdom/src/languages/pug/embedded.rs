@@ -36,8 +36,7 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
             // char) is the JS expression.
             regions.push(make_js(expr, line_no, indent as u32, idx, true));
             idx += 1;
-        } else if trimmed == "script." || trimmed.starts_with("script(") && trimmed.ends_with('.')
-        {
+        } else if trimmed == "script." || trimmed.starts_with("script(") && trimmed.ends_with('.') {
             if let Some(block) = capture_indented_block(&lines, line_idx + 1, indent) {
                 regions.push(EmbeddedRegion {
                     language_id: "javascript".to_string(),

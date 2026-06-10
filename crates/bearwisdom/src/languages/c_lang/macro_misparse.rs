@@ -28,9 +28,8 @@ pub(super) fn detect_macro_class_misparse(node: &Node, src: &[u8]) -> Option<Str
         return None;
     }
     let inner_name_node = type_node.child_by_field_name("name")?;
-    let inner_name = std::str::from_utf8(
-        &src[inner_name_node.start_byte()..inner_name_node.end_byte()],
-    ).ok()?;
+    let inner_name =
+        std::str::from_utf8(&src[inner_name_node.start_byte()..inner_name_node.end_byte()]).ok()?;
     if !is_screaming_snake_case(inner_name) {
         return None;
     }
@@ -41,10 +40,15 @@ pub(super) fn detect_macro_class_misparse(node: &Node, src: &[u8]) -> Option<Str
     let mut after_type = false;
     for child in node.children(&mut cursor) {
         if !after_type {
-            if child.id() == type_node.id() { after_type = true; }
+            if child.id() == type_node.id() {
+                after_type = true;
+            }
             continue;
         }
-        if matches!(child.kind(), "identifier" | "type_identifier" | "qualified_identifier") {
+        if matches!(
+            child.kind(),
+            "identifier" | "type_identifier" | "qualified_identifier"
+        ) {
             let text = std::str::from_utf8(&src[child.start_byte()..child.end_byte()]).ok()?;
             if !text.is_empty() && !is_screaming_snake_case(text) {
                 return Some(text.to_string());
@@ -59,11 +63,18 @@ pub(super) fn detect_macro_class_misparse(node: &Node, src: &[u8]) -> Option<Str
 }
 
 fn is_screaming_snake_case(name: &str) -> bool {
-    if name.is_empty() { return false }
+    if name.is_empty() {
+        return false;
+    }
     let mut has_underscore = false;
     for ch in name.chars() {
-        if ch == '_' { has_underscore = true; continue; }
-        if !(ch.is_ascii_uppercase() || ch.is_ascii_digit()) { return false; }
+        if ch == '_' {
+            has_underscore = true;
+            continue;
+        }
+        if !(ch.is_ascii_uppercase() || ch.is_ascii_digit()) {
+            return false;
+        }
     }
     has_underscore
 }
@@ -97,12 +108,12 @@ pub(super) fn push_misparsed_class(
         doc_comment: super::helpers::extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -118,23 +129,26 @@ pub(super) fn emit_misparsed_base_class_refs(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() != "ERROR" { continue }
+        if child.kind() != "ERROR" {
+            continue;
+        }
         let mut ec = child.walk();
         for inner in child.children(&mut ec) {
             if matches!(
                 inner.kind(),
                 "identifier" | "type_identifier" | "qualified_identifier"
             ) {
-                let text = match std::str::from_utf8(
-                    &src[inner.start_byte()..inner.end_byte()],
-                ) {
+                let text = match std::str::from_utf8(&src[inner.start_byte()..inner.end_byte()]) {
                     Ok(t) => t,
                     Err(_) => continue,
                 };
-                if text.is_empty() || matches!(text, "public" | "private" | "protected" | "virtual") {
+                if text.is_empty() || matches!(text, "public" | "private" | "protected" | "virtual")
+                {
                     continue;
                 }
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: text.to_string(),
                     kind: EdgeKind::Inherits,

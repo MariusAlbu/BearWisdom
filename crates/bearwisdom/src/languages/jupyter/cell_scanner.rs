@@ -83,10 +83,7 @@ pub fn parse_notebook(source: &str) -> Option<Notebook> {
                 Some("raw") => CellKind::Raw,
                 _ => CellKind::Other,
             };
-            let body = cell
-                .get("source")
-                .map(concat_source)
-                .unwrap_or_default();
+            let body = cell.get("source").map(concat_source).unwrap_or_default();
             (kind, body)
         })
         .collect();
@@ -211,7 +208,8 @@ fn find_key_value_start(bytes: &[u8], key: &[u8]) -> Option<usize> {
             }
             if bytes.get(j).copied() == Some(b':') {
                 j += 1;
-                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n')
+                while j < bytes.len()
+                    && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n')
                 {
                     j += 1;
                 }

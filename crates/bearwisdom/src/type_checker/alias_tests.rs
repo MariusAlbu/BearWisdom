@@ -62,17 +62,20 @@ impl AliasFixture {
     }
 
     fn with_member(mut self, owner: &str, member: &str) -> Self {
-        self.members.entry(owner.to_string()).or_default().push(SymbolInfo {
-            id: 0,
-            name: member.to_string(),
-            qualified_name: format!("{owner}.{member}"),
-            kind: "property".to_string(),
-            visibility: None,
-            file_path: std::sync::Arc::from("t.ts"),
-            scope_path: Some(owner.to_string()),
-            package_id: None,
-            signature: None,
-        });
+        self.members
+            .entry(owner.to_string())
+            .or_default()
+            .push(SymbolInfo {
+                id: 0,
+                name: member.to_string(),
+                qualified_name: format!("{owner}.{member}"),
+                kind: "property".to_string(),
+                visibility: None,
+                file_path: std::sync::Arc::from("t.ts"),
+                scope_path: Some(owner.to_string()),
+                package_id: None,
+                signature: None,
+            });
         self
     }
 
@@ -103,7 +106,10 @@ impl SymbolLookup for AliasFixture {
         None
     }
     fn members_of(&self, name: &str) -> &[SymbolInfo] {
-        self.members.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        self.members
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
     fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
@@ -365,8 +371,7 @@ fn transparent_mapped_partial_collapses_to_source_arg() {
         )
         .with_generic("Partial", &["T"]);
     let mut env = TypeEnvironment::new();
-    let (root, args) =
-        expand_alias("Partial", &s(&["User"]), &lookup, &mut env).expect("expanded");
+    let (root, args) = expand_alias("Partial", &s(&["User"]), &lookup, &mut env).expect("expanded");
     assert_eq!(root, "User");
     assert!(args.is_empty());
 }
@@ -582,8 +587,7 @@ fn indexed_access_unknown_member_returns_none() {
 #[test]
 fn keyof_alias_returns_none() {
     // `type Keys = keyof User` — produces a string union, not a chain head.
-    let lookup = AliasFixture::new()
-        .with_alias("Keys", AliasTarget::Keyof("User".to_string()));
+    let lookup = AliasFixture::new().with_alias("Keys", AliasTarget::Keyof("User".to_string()));
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("Keys", &[], &lookup, &mut env), None);
 }
@@ -593,8 +597,8 @@ fn typeof_unknown_value_returns_none() {
     // type X = typeof neverDeclared
     //   → expand("X") = None (the chain walker should miss against X, not
     //     against some made-up head).
-    let lookup = AliasFixture::new()
-        .with_alias("X", AliasTarget::Typeof("neverDeclared".to_string()));
+    let lookup =
+        AliasFixture::new().with_alias("X", AliasTarget::Typeof("neverDeclared".to_string()));
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("X", &[], &lookup, &mut env), None);
 }
@@ -660,7 +664,17 @@ fn typed_unknown_alias_returns_none() {
     let lookup = AliasFixture::new();
     let aliases = build_alias_index(&[], &mut arena);
     let cls = arena.class("Nope");
-    assert_eq!(expand_alias_typed(cls, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(
+        expand_alias_typed(
+            cls,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -677,7 +691,15 @@ fn typed_application_no_args_returns_root_class() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let id_ty = arena.class("Id");
-    let out = expand_alias_typed(id_ty, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        id_ty,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
@@ -696,7 +718,15 @@ fn typed_application_with_args_builds_apply() {
     let aliases = build_alias_index(&pairs, &mut arena);
     let usermap_ty = arena.class("UserMap");
 
-    let out = expand_alias_typed(usermap_ty, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        usermap_ty,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     let map_ty = arena.class("Map");
     let string_ty = arena.class("string");
     let user_ty = arena.class("User");
@@ -713,13 +743,18 @@ fn typed_application_with_args_builds_apply() {
 fn typed_union_builds_union_type() {
     let mut arena = TypeArena::new();
     let lookup = AliasFixture::new();
-    let pairs = vec![(
-        "Status".to_string(),
-        AliasTarget::Union(s(&["Ok", "Err"])),
-    )];
+    let pairs = vec![("Status".to_string(), AliasTarget::Union(s(&["Ok", "Err"])))];
     let aliases = build_alias_index(&pairs, &mut arena);
     let status = arena.class("Status");
-    let out = expand_alias_typed(status, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        status,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     let ok_ty = arena.class("Ok");
     let err_ty = arena.class("Err");
     assert_eq!(arena.get(out), Type::Union(vec![ok_ty, err_ty]));
@@ -729,13 +764,18 @@ fn typed_union_builds_union_type() {
 fn typed_intersection_builds_intersection_type() {
     let mut arena = TypeArena::new();
     let lookup = AliasFixture::new();
-    let pairs = vec![(
-        "Mix".to_string(),
-        AliasTarget::Intersection(s(&["A", "B"])),
-    )];
+    let pairs = vec![("Mix".to_string(), AliasTarget::Intersection(s(&["A", "B"])))];
     let aliases = build_alias_index(&pairs, &mut arena);
     let mix = arena.class("Mix");
-    let out = expand_alias_typed(mix, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        mix,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     let a = arena.class("A");
     let b = arena.class("B");
     assert_eq!(arena.get(out), Type::Intersection(vec![a, b]));
@@ -752,7 +792,15 @@ fn typed_typeof_uses_field_type_lookup() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        foo,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
@@ -760,13 +808,18 @@ fn typed_typeof_uses_field_type_lookup() {
 fn typed_typeof_falls_back_to_return_type() {
     let mut arena = TypeArena::new();
     let lookup = AliasFixture::new().with_return_type("someFn", "Result");
-    let pairs = vec![(
-        "Foo".to_string(),
-        AliasTarget::Typeof("someFn".to_string()),
-    )];
+    let pairs = vec![("Foo".to_string(), AliasTarget::Typeof("someFn".to_string()))];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        foo,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("Result".into()));
 }
 
@@ -780,7 +833,17 @@ fn typed_typeof_misses_when_value_unknown() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(
+        expand_alias_typed(
+            foo,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -797,7 +860,15 @@ fn typed_indexed_access_uses_dotted_field_lookup() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        foo,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("string".into()));
 }
 
@@ -815,7 +886,15 @@ fn typed_transparent_mapped_returns_source() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    let out = expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        foo,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("User".into()));
 }
 
@@ -832,7 +911,17 @@ fn typed_non_transparent_mapped_returns_none() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let foo = arena.class("Foo");
-    assert_eq!(expand_alias_typed(foo, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(
+        expand_alias_typed(
+            foo,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -851,7 +940,15 @@ fn typed_conditional_picks_true_branch_on_assignable() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let c = arena.class("C");
-    let out = expand_alias_typed(c, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("expanded");
+    let out = expand_alias_typed(
+        c,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
     assert_eq!(arena.get(out), Type::Class("Yes".into()));
 }
 
@@ -872,7 +969,17 @@ fn typed_conditional_returns_none_when_undecidable() {
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
     let c = arena.class("C");
-    assert_eq!(expand_alias_typed(c, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(
+        expand_alias_typed(
+            c,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -888,9 +995,39 @@ fn typed_keyof_object_other_return_none() {
     let k1 = arena.class("K1");
     let k2 = arena.class("K2");
     let k3 = arena.class("K3");
-    assert_eq!(expand_alias_typed(k1, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
-    assert_eq!(expand_alias_typed(k2, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
-    assert_eq!(expand_alias_typed(k3, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()), None);
+    assert_eq!(
+        expand_alias_typed(
+            k1,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
+    assert_eq!(
+        expand_alias_typed(
+            k2,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
+    assert_eq!(
+        expand_alias_typed(
+            k3,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -903,7 +1040,15 @@ fn typed_keyof_expands_to_string_literal_union() {
     let pairs = vec![("Keys".to_string(), AliasTarget::Keyof("User".to_string()))];
     let aliases = build_alias_index(&pairs, &mut arena);
     let keys = arena.class("Keys");
-    let out = expand_alias_typed(keys, &mut arena, &aliases, &lookup, &empty_members(), &empty_symbol_types()).expect("keyof expands");
+    let out = expand_alias_typed(
+        keys,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("keyof expands");
     match arena.get(out) {
         Type::Union(branches) => {
             let lits: Vec<String> = branches

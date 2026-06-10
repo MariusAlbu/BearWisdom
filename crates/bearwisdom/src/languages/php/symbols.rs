@@ -41,15 +41,23 @@ pub(super) fn extract_namespace(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, &ns_prefix);
+        super::extract::extract_from_node(
+            body,
+            src,
+            symbols,
+            refs,
+            Some(idx),
+            &new_prefix,
+            &ns_prefix,
+        );
     }
 }
 
@@ -85,12 +93,12 @@ pub(super) fn extract_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Scan children for inheritance/implements (tree-sitter-php 0.24 unnamed children)
     let mut cc = node.walk();
@@ -103,7 +111,9 @@ pub(super) fn extract_class(
                         || base_child.kind() == "name"
                         || base_child.kind() == "identifier"
                     {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: idx,
                             target_name: node_text(&base_child, src),
                             kind: EdgeKind::Inherits,
@@ -126,12 +136,18 @@ pub(super) fn extract_class(
     }
 
     // Legacy field-based fallback for older grammar versions
-    if refs.iter().all(|r| r.source_symbol_index != idx || r.kind != EdgeKind::Inherits) {
+    if refs
+        .iter()
+        .all(|r| r.source_symbol_index != idx || r.kind != EdgeKind::Inherits)
+    {
         if let Some(base) = node.child_by_field_name("base_clause") {
             let mut c = base.walk();
             for bc in base.children(&mut c) {
-                if bc.kind() == "qualified_name" || bc.kind() == "name" || bc.kind() == "identifier" {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                if bc.kind() == "qualified_name" || bc.kind() == "name" || bc.kind() == "identifier"
+                {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: idx,
                         target_name: node_text(&bc, src),
                         kind: EdgeKind::Inherits,
@@ -155,7 +171,15 @@ pub(super) fn extract_class(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "declaration_list" {
-            extract_class_body(&child, src, symbols, refs, Some(idx), &new_prefix, namespace_prefix);
+            extract_class_body(
+                &child,
+                src,
+                symbols,
+                refs,
+                Some(idx),
+                &new_prefix,
+                namespace_prefix,
+            );
         }
     }
 }
@@ -169,8 +193,13 @@ pub(super) fn extract_interface_list(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "qualified_name" || child.kind() == "name" || child.kind() == "identifier" {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        if child.kind() == "qualified_name"
+            || child.kind() == "name"
+            || child.kind() == "identifier"
+        {
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: class_idx,
                 target_name: node_text(&child, src),
                 kind: edge_kind,
@@ -204,7 +233,14 @@ pub(super) fn extract_class_body(
                 extract_method(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "property_declaration" => {
-                extract_property_declaration(&child, src, symbols, refs, parent_index, qualified_prefix);
+                extract_property_declaration(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
             }
             "use_declaration" => {
                 extract_trait_use(&child, src, refs, symbols.len());
@@ -213,7 +249,15 @@ pub(super) fn extract_class_body(
                 extract_const_declaration(&child, src, symbols, parent_index, qualified_prefix);
             }
             "enum_declaration" => {
-                extract_enum(&child, src, symbols, refs, parent_index, qualified_prefix, namespace_prefix);
+                extract_enum(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    namespace_prefix,
+                );
             }
             _ => {}
         }
@@ -258,12 +302,12 @@ pub(super) fn extract_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     super::decorators::extract_decorators(node, src, idx, refs);
 
@@ -323,7 +367,9 @@ fn extract_promoted_params(
             None => {
                 // Fallback: find a variable_name child.
                 let mut cc = child.walk();
-                let found = child.children(&mut cc).find(|c| c.kind() == "variable_name");
+                let found = child
+                    .children(&mut cc)
+                    .find(|c| c.kind() == "variable_name");
                 match found {
                     Some(n) => n,
                     None => continue,
@@ -353,12 +399,12 @@ fn extract_promoted_params(
             doc_comment: None,
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         if let Some(type_node) = type_node_opt {
             extract_type_refs_from_php_type(&type_node, src, refs, prop_idx);
@@ -390,9 +436,17 @@ pub(super) fn extract_param_type_refs(
                     let mut p_cursor = child.walk();
                     for p_child in child.children(&mut p_cursor) {
                         match p_child.kind() {
-                            "named_type" | "nullable_type" | "union_type"
-                            | "intersection_type" | "disjunctive_normal_form_type" => {
-                                extract_type_refs_from_php_type(&p_child, src, refs, source_symbol_index);
+                            "named_type"
+                            | "nullable_type"
+                            | "union_type"
+                            | "intersection_type"
+                            | "disjunctive_normal_form_type" => {
+                                extract_type_refs_from_php_type(
+                                    &p_child,
+                                    src,
+                                    refs,
+                                    source_symbol_index,
+                                );
                             }
                             _ => {}
                         }
@@ -436,12 +490,12 @@ pub(super) fn extract_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract TypeRefs from typed parameters.
     if let Some(params) = node.child_by_field_name("parameters") {
@@ -473,7 +527,10 @@ fn extract_php_return_type_refs(
     // The return_type field may directly be a named_type or may contain the
     // type as a child (grammar version dependent).
     match ret_node.kind() {
-        "named_type" | "nullable_type" | "union_type" | "intersection_type"
+        "named_type"
+        | "nullable_type"
+        | "union_type"
+        | "intersection_type"
         | "disjunctive_normal_form_type" => {
             extract_type_refs_from_php_type(ret_node, src, refs, source_symbol_index);
         }
@@ -482,7 +539,10 @@ fn extract_php_return_type_refs(
             let mut cursor = ret_node.walk();
             for child in ret_node.children(&mut cursor) {
                 match child.kind() {
-                    "named_type" | "nullable_type" | "union_type" | "intersection_type"
+                    "named_type"
+                    | "nullable_type"
+                    | "union_type"
+                    | "intersection_type"
                     | "disjunctive_normal_form_type" => {
                         extract_type_refs_from_php_type(&child, src, refs, source_symbol_index);
                     }
@@ -512,7 +572,10 @@ pub(super) fn extract_property_declaration(
         let mut found = None;
         for child in node.children(&mut cc) {
             match child.kind() {
-                "named_type" | "nullable_type" | "union_type" | "intersection_type"
+                "named_type"
+                | "nullable_type"
+                | "union_type"
+                | "intersection_type"
                 | "disjunctive_normal_form_type" => {
                     found = Some(child);
                     break;
@@ -546,12 +609,12 @@ pub(super) fn extract_property_declaration(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                     // Emit TypeRef for the property type hint.
                     if let Some(tn) = type_node_opt {
                         extract_type_refs_from_php_type(&tn, src, refs, prop_idx);
@@ -601,12 +664,12 @@ pub(super) fn extract_const_declaration(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
         }
     }
@@ -642,12 +705,12 @@ pub(super) fn extract_global_static_vars(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
         }
         // `static $cache = []` — static_variable_declaration wraps a `variable_name`.
@@ -669,12 +732,12 @@ pub(super) fn extract_global_static_vars(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                 }
             }
         }
@@ -774,12 +837,12 @@ pub(super) fn extract_enum(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // PHP grammar: class_interface_clause is an unnamed child of enum_declaration,
     // not a named field — child_by_field_name("class_implements") always returns None.
@@ -817,11 +880,11 @@ pub(super) fn extract_enum(
                                 scope_path: Some(new_prefix.clone()),
                                 parent_index: Some(idx),
                                 byte_offset: 0,
-                                                            declared_type: None,
+                                declared_type: None,
                                 return_type: None,
                                 param_types: Vec::new(),
                                 generic_params: Vec::new(),
-});
+                            });
                         }
                     }
                     "method_declaration" => {

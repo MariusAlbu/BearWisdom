@@ -8,9 +8,7 @@ use super::calls_narrowing::{
 };
 use super::helpers::node_text;
 use super::types::simple_type_name;
-use crate::types::{
-    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind,
-};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
@@ -139,7 +137,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Await { expr: Box::new(inner) }
+            CallArg::Await {
+                expr: Box::new(inner),
+            }
         }
         // `container[index]` — `expression` is the container, `subscript` is a
         // `bracketed_argument_list` whose first `argument` wraps the index.
@@ -184,9 +184,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // capture the lambda's own positional parameter names so the chain
         // walker can type them from the higher-order method's callback-
         // parameter signature.
-        "lambda_expression" | "anonymous_method_expression" => {
-            CallArg::Lambda { params: lambda_param_names(node, src) }
-        }
+        "lambda_expression" | "anonymous_method_expression" => CallArg::Lambda {
+            params: lambda_param_names(node, src),
+        },
         _ => CallArg::Other,
     }
 }
@@ -265,10 +265,17 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name(callee, src));
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &callee,
+                        refs,
+                    );
                     if !name.is_empty() && !is_csharp_keyword(&name) {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -277,9 +284,9 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 // Recurse into arguments and method chain — calls may be nested.
@@ -289,7 +296,9 @@ pub(super) fn extract_calls_from_body(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let name = simple_type_name(type_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Instantiates,
@@ -298,12 +307,17 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                     // Also emit TypeRefs for type arguments: `new Dictionary<string, Foo>()`
-                    super::types::extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
+                    super::types::extract_type_refs_from_type_node(
+                        type_node,
+                        src,
+                        source_symbol_index,
+                        refs,
+                    );
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
@@ -315,8 +329,16 @@ pub(super) fn extract_calls_from_body(
                 // with types. Extract type refs from initializers.
                 let mut cursor2 = child.walk();
                 for c in child.children(&mut cursor2) {
-                    if matches!(c.kind(), "object_initializer" | "collection_initializer" | "array_initializer") {
-                        super::types::extract_type_refs_from_type_node(c, src, source_symbol_index, refs);
+                    if matches!(
+                        c.kind(),
+                        "object_initializer" | "collection_initializer" | "array_initializer"
+                    ) {
+                        super::types::extract_type_refs_from_type_node(
+                            c,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -324,14 +346,24 @@ pub(super) fn extract_calls_from_body(
             // `generic_name` in expression position (e.g. method type arguments `Method<Foo>()`,
             // type constraint expressions, etc.) — emit TypeRef for both the name and its args.
             "generic_name" => {
-                super::types::extract_type_refs_from_type_node(child, src, source_symbol_index, refs);
+                super::types::extract_type_refs_from_type_node(
+                    child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                );
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             // `type_argument_list` in expression position — emit TypeRef for each argument.
             "type_argument_list" => {
                 let mut cursor2 = child.walk();
                 for arg in child.children(&mut cursor2) {
-                    super::types::extract_type_refs_from_type_node(arg, src, source_symbol_index, refs);
+                    super::types::extract_type_refs_from_type_node(
+                        arg,
+                        src,
+                        source_symbol_index,
+                        refs,
+                    );
                 }
             }
             // `user is Admin admin` / `user is Admin` — is_expression or
@@ -394,7 +426,9 @@ pub(super) fn extract_calls_from_body(
                             }
                         };
                         if !name.is_empty() && !is_csharp_keyword(&name) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -403,9 +437,9 @@ pub(super) fn extract_calls_from_body(
                                 module: None,
                                 chain: None,
                                 byte_offset: c.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -428,7 +462,12 @@ pub(super) fn extract_calls_from_body(
                 for catch_child in child.children(&mut catch_cursor) {
                     if catch_child.kind() == "catch_declaration" {
                         if let Some(type_node) = catch_child.child_by_field_name("type") {
-                            extract_type_ref_from_cast_type(type_node, src, source_symbol_index, refs);
+                            extract_type_ref_from_cast_type(
+                                type_node,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
                         }
                         break;
                     }
@@ -460,7 +499,8 @@ pub(super) fn extract_calls_from_body(
             }
             // `obj?.Property?.Method()` — null-conditional chain.
             // Recurse to find all calls in the chain.
-            "null_conditional_member_access_expression" | "null_conditional_invocation_expression" => {
+            "null_conditional_member_access_expression"
+            | "null_conditional_invocation_expression" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             _ => {
@@ -478,9 +518,26 @@ pub(super) fn extract_calls_from_body(
 pub(super) fn is_csharp_keyword(name: &str) -> bool {
     matches!(
         name,
-        "nameof" | "typeof" | "sizeof" | "default" | "checked" | "unchecked"
-        | "stackalloc" | "await" | "throw" | "yield" | "var" | "is" | "as"
-        | "new" | "this" | "base" | "null" | "true" | "false" | "value"
+        "nameof"
+            | "typeof"
+            | "sizeof"
+            | "default"
+            | "checked"
+            | "unchecked"
+            | "stackalloc"
+            | "await"
+            | "throw"
+            | "yield"
+            | "var"
+            | "is"
+            | "as"
+            | "new"
+            | "this"
+            | "base"
+            | "null"
+            | "true"
+            | "false"
+            | "value"
     )
 }
 
@@ -552,11 +609,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -569,11 +626,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -586,11 +643,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -614,11 +671,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -651,11 +708,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -676,11 +733,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: true,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 

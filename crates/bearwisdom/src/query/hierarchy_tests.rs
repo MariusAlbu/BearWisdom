@@ -43,7 +43,8 @@ fn setup_two_package_repo(db: &Database) -> (i64, i64, i64, i64, i64, i64) {
     conn.execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'calls', 1.0)",
         rusqlite::params![sym_a, sym_b],
-    ).unwrap();
+    )
+    .unwrap();
 
     (pkg_a, pkg_b, file_a, file_b, sym_a, sym_b)
 }
@@ -112,7 +113,10 @@ fn files_level_scoped_to_package() {
     let result = hierarchical_graph(&db, "files", Some("packages/a"), 500).unwrap();
     assert_eq!(result.level, "files");
     assert_eq!(result.nodes.len(), 1);
-    assert_eq!(result.nodes[0].file_path.as_deref(), Some("packages/a/lib.rs"));
+    assert_eq!(
+        result.nodes[0].file_path.as_deref(),
+        Some("packages/a/lib.rs")
+    );
     // One cross-package file edge exists: packages/a/lib.rs → packages/b/lib.rs.
     // The files level shows outbound edges even when the target file is in another package.
     assert_eq!(result.edges.len(), 1);

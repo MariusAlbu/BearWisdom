@@ -5,7 +5,9 @@ use crate::types::*;
 #[test]
 fn test_hare_http_emit() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -18,24 +20,47 @@ fn test_hare_http_emit() {
         call_args: vec![CallArg::StringLit("https://api.example.com/x".to_string())],
     };
     let sym = ExtractedSymbol {
-        name: "main".to_string(), qualified_name: "main".to_string(),
-        kind: SymbolKind::Function, visibility: Some(Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: "main".to_string(),
+        qualified_name: "main".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
-    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
-    assert!(matches!(super::hooks::detect_flow_inner(&fc, &rc).first(), Some(FlowEmission::NamedChannel { .. })));
+    };
+    let rc = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let fc = FileContext {
+        file_path: "x.ha".to_string(),
+        language: "hare".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    assert!(matches!(
+        super::hooks::detect_flow_inner(&fc, &rc).first(),
+        Some(FlowEmission::NamedChannel { .. })
+    ));
 }
 
 #[test]
 fn test_hare_no_emit_for_non_http_module() {
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -48,24 +73,44 @@ fn test_hare_no_emit_for_non_http_module() {
         call_args: vec![CallArg::StringLit("/x".to_string())],
     };
     let sym = ExtractedSymbol {
-        name: "main".to_string(), qualified_name: "main".to_string(),
-        kind: SymbolKind::Function, visibility: Some(Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: "main".to_string(),
+        qualified_name: "main".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
-    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
+    };
+    let rc = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let fc = FileContext {
+        file_path: "x.ha".to_string(),
+        language: "hare".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
     assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }
 
 #[test]
 fn test_hare_no_emit_for_non_url_arg() {
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "get".to_string(),
         kind: EdgeKind::Calls,
@@ -78,17 +123,35 @@ fn test_hare_no_emit_for_non_url_arg() {
         call_args: vec![CallArg::StringLit("notaurl".to_string())],
     };
     let sym = ExtractedSymbol {
-        name: "main".to_string(), qualified_name: "main".to_string(),
-        kind: SymbolKind::Function, visibility: Some(Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: "main".to_string(),
+        qualified_name: "main".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
-    let rc = RefContext { extracted_ref: &r, source_symbol: &sym, scope_chain: vec![], file_package_id: None };
-    let fc = FileContext { file_path: "x.ha".to_string(), language: "hare".to_string(), imports: vec![], file_namespace: None };
+    };
+    let rc = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let fc = FileContext {
+        file_path: "x.ha".to_string(),
+        language: "hare".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
     assert!(super::hooks::detect_flow_inner(&fc, &rc).is_empty());
 }

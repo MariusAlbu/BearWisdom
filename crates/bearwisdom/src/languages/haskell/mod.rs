@@ -4,11 +4,11 @@
 //! Extraction covers top-level functions, data/newtype, type classes, instances,
 //! type synonyms, imports, and function-application calls.
 
-mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
-pub mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
+pub mod keywords;
+mod predicates;
+pub(crate) mod profile;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -35,11 +35,17 @@ mod probe_test;
 pub struct HaskellPlugin;
 
 impl LanguagePlugin for HaskellPlugin {
-    fn id(&self) -> &str { "haskell" }
+    fn id(&self) -> &str {
+        "haskell"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["haskell"] }
+    fn language_ids(&self) -> &[&str] {
+        &["haskell"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".hs", ".lhs"] }
+    fn extensions(&self) -> &[&str] {
+        &[".hs", ".lhs"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_haskell::LANGUAGE.into())
@@ -68,20 +74,14 @@ impl LanguagePlugin for HaskellPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "import",
-            "apply",
-            "infix",
-        ]
+        &["import", "apply", "infix"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
         &[
-            "Int", "Integer", "Float", "Double", "Bool", "Char", "String",
-            "IO", "Maybe", "Either", "List", "Ordering", "Word",
-            "Int8", "Int16", "Int32", "Int64",
-            "Word8", "Word16", "Word32", "Word64",
-            "Natural", "Rational", "Complex",
+            "Int", "Integer", "Float", "Double", "Bool", "Char", "String", "IO", "Maybe", "Either",
+            "List", "Ordering", "Word", "Int8", "Int16", "Int32", "Int64", "Word8", "Word16",
+            "Word32", "Word64", "Natural", "Rational", "Complex",
         ]
     }
 
@@ -93,8 +93,7 @@ impl LanguagePlugin for HaskellPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::HASKELL_HOOKS)
     }
 }

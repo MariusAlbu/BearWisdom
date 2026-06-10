@@ -24,11 +24,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
     let line_starts: Vec<u32> = std::iter::once(0)
         .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
@@ -59,16 +59,18 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     scope_path: Some(file_name.clone()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         } else if let Some(rest) = trimmed.strip_prefix("include ") {
             let target = normalize_template_path(rest.trim());
             if !target.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -78,13 +80,15 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         } else if let Some(rest) = trimmed.strip_prefix("extends ") {
             let target = normalize_template_path(rest.trim());
             if !target.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -94,8 +98,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
     }
@@ -119,7 +123,10 @@ fn normalize_template_path(raw: &str) -> String {
     if let Some(rest) = s.strip_prefix("./") {
         s = rest.to_string();
     }
-    if let Some(stem) = std::path::Path::new(&s).file_stem().and_then(|x| x.to_str()) {
+    if let Some(stem) = std::path::Path::new(&s)
+        .file_stem()
+        .and_then(|x| x.to_str())
+    {
         let parent = std::path::Path::new(&s)
             .parent()
             .and_then(|p| p.to_str())
@@ -159,8 +166,10 @@ mod tests {
     fn include_becomes_imports_ref() {
         let src = "doctype html\nhtml\n  include ./head.pug\n";
         let r = extract(src, "layout.pug");
-        assert!(r.refs.iter().any(|r| r.target_name == "head"
-            && r.kind == EdgeKind::Imports));
+        assert!(r
+            .refs
+            .iter()
+            .any(|r| r.target_name == "head" && r.kind == EdgeKind::Imports));
     }
 
     #[test]

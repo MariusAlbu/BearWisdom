@@ -58,26 +58,34 @@ fn dotted_jsx_becomes_calls_ref() {
         .iter()
         .filter(|r| r.kind == EdgeKind::Calls && r.chain.is_some())
         .collect();
-    let leaf_names: Vec<&str> = dotted_calls.iter().map(|r| r.target_name.as_str()).collect();
-    assert!(leaf_names.contains(&"Root"), "expected 'Root' leaf, got {leaf_names:?}");
-    assert!(leaf_names.contains(&"Item"), "expected 'Item' leaf, got {leaf_names:?}");
+    let leaf_names: Vec<&str> = dotted_calls
+        .iter()
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        leaf_names.contains(&"Root"),
+        "expected 'Root' leaf, got {leaf_names:?}"
+    );
+    assert!(
+        leaf_names.contains(&"Item"),
+        "expected 'Item' leaf, got {leaf_names:?}"
+    );
     // Chain roots must be the namespace identifiers.
     let roots: Vec<&str> = dotted_calls
         .iter()
         .map(|r| r.chain.as_ref().unwrap().segments[0].name.as_str())
         .collect();
-    assert!(roots.contains(&"Tabs"), "expected 'Tabs' as chain root, got {roots:?}");
+    assert!(
+        roots.contains(&"Tabs"),
+        "expected 'Tabs' as chain root, got {roots:?}"
+    );
 }
 
 #[test]
 fn lowercase_html_tag_is_not_a_ref() {
     let src = "A paragraph with <div>inner</div>.\n";
     let r = extract(src, "page.mdx");
-    let calls_count = r
-        .refs
-        .iter()
-        .filter(|r| r.kind == EdgeKind::Calls)
-        .count();
+    let calls_count = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).count();
     assert_eq!(calls_count, 0);
 }
 
@@ -101,11 +109,7 @@ fn lowercase_dotted_accepted_motion_style() {
 fn fragment_tag_ignored() {
     let src = "<>\n<div />\n</>\n";
     let r = extract(src, "page.mdx");
-    let calls_count = r
-        .refs
-        .iter()
-        .filter(|r| r.kind == EdgeKind::Calls)
-        .count();
+    let calls_count = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).count();
     assert_eq!(calls_count, 0);
 }
 
@@ -143,11 +147,10 @@ fn jsx_inside_fence_not_extracted() {
 fn relative_link_still_becomes_imports_ref() {
     let src = "See [details](./info.md).\n";
     let r = extract(src, "page.mdx");
-    assert!(
-        r.refs
-            .iter()
-            .any(|r| r.kind == EdgeKind::Imports && r.target_name == "info")
-    );
+    assert!(r
+        .refs
+        .iter()
+        .any(|r| r.kind == EdgeKind::Imports && r.target_name == "info"));
 }
 
 #[test]

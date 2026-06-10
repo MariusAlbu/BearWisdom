@@ -62,7 +62,9 @@ pub(super) fn extract_is_expression_refs(
                         _ => String::new(),
                     };
                     if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -71,9 +73,9 @@ pub(super) fn extract_is_expression_refs(
                             module: None,
                             chain: None,
                             byte_offset: inner.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 return;
@@ -101,8 +103,8 @@ pub(super) fn extract_is_expression_refs(
                 }
                 return;
             }
-            "var_pattern" | "relational_pattern" | "list_pattern"
-            | "slice_pattern" | "recursive_pattern" => {
+            "var_pattern" | "relational_pattern" | "list_pattern" | "slice_pattern"
+            | "recursive_pattern" => {
                 // var/relational/list patterns carry no user type reference.
                 return;
             }
@@ -138,7 +140,9 @@ pub(super) fn extract_is_expression_refs(
             _ => String::new(),
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -147,9 +151,9 @@ pub(super) fn extract_is_expression_refs(
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         break;
     }
@@ -186,7 +190,9 @@ fn extract_pattern_type_refs_recursive(
                     _ => String::new(),
                 };
                 if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -195,14 +201,17 @@ fn extract_pattern_type_refs_recursive(
                         module: None,
                         chain: None,
                         byte_offset: inner.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
-        "or_pattern" | "and_pattern" | "binary_pattern"
-        | "negated_pattern" | "not_pattern"
+        "or_pattern"
+        | "and_pattern"
+        | "binary_pattern"
+        | "negated_pattern"
+        | "not_pattern"
         | "parenthesized_pattern" => {
             let mut cp = pattern.walk();
             for sub in pattern.children(&mut cp) {
@@ -248,7 +257,9 @@ fn emit_pattern_type_ref(
             _ => node_text(type_node, src),
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -257,9 +268,9 @@ fn emit_pattern_type_ref(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -309,4 +320,3 @@ pub(super) fn extract_type_ref_from_cast_type(
     use super::types::extract_type_refs_from_type_node;
     extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
 }
-

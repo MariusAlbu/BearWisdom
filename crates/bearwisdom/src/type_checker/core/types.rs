@@ -101,14 +101,9 @@ pub enum Type {
     Intersection(Vec<TypeId>),
     /// Generic application: `List<User>`, `Map<K, V>`, `Promise<Result>`.
     /// `base` resolves to a Class or TypeAlias.
-    Apply {
-        base: TypeId,
-        args: Vec<TypeId>,
-    },
+    Apply { base: TypeId, args: Vec<TypeId> },
     /// In-scope generic parameter.
-    Generic {
-        param: GenericParamId,
-    },
+    Generic { param: GenericParamId },
     /// Nullable wrapper. Engine looks through it for member resolution when
     /// `LanguageProfile::look_through_optional` is true.
     Optional(TypeId),
@@ -316,10 +311,7 @@ impl TypeArena {
             // Empty `Foo<>`, or only lifetime args — treat as plain class.
             return self.class(head);
         }
-        let args: Vec<TypeId> = arg_strs
-            .iter()
-            .map(|a| self.intern_type_str(a))
-            .collect();
+        let args: Vec<TypeId> = arg_strs.iter().map(|a| self.intern_type_str(a)).collect();
         let base = self.class(head);
         self.intern(Type::Apply { base, args })
     }
@@ -375,13 +367,19 @@ impl TypeArena {
                     .collect();
                 self.intern(Type::Intersection(branches))
             }
-            Type::Function { params: ps, return_ } => {
+            Type::Function {
+                params: ps,
+                return_,
+            } => {
                 let ps = ps
                     .iter()
                     .map(|&p| self.rebind_class_params(p, params))
                     .collect();
                 let return_ = self.rebind_class_params(return_, params);
-                self.intern(Type::Function { params: ps, return_ })
+                self.intern(Type::Function {
+                    params: ps,
+                    return_,
+                })
             }
             Type::Primitive(_) | Type::Generic { .. } | Type::Literal(_) | Type::Unknown => id,
         }
@@ -389,7 +387,12 @@ impl TypeArena {
 
     /// Look up the Class TypeId for `qname` without interning.
     pub fn class_lookup(&self, qname: &str) -> Option<TypeId> {
-        self.inner.read().unwrap().qname_to_class.get(qname).copied()
+        self.inner
+            .read()
+            .unwrap()
+            .qname_to_class
+            .get(qname)
+            .copied()
     }
 
     /// Intern a primitive type.

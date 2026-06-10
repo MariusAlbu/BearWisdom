@@ -1,8 +1,10 @@
 //! Tests for TypeScript decorator extraction, including the Angular
 //! `@Component` selector metadata path added in PR 18.
 
+use crate::languages::typescript::decorators::{
+    component_selectors_from_class, split_and_normalize_selectors,
+};
 use crate::languages::typescript::extract::extract;
-use crate::languages::typescript::decorators::{component_selectors_from_class, split_and_normalize_selectors};
 use crate::types::{EdgeKind, ExtractedRef};
 use tree_sitter::Parser;
 
@@ -53,8 +55,14 @@ class UserController {}"#;
 fn multiple_class_decorators() {
     let src = "@Injectable()\n@Controller('/users')\nclass C {}";
     let dr = decorator_refs(src);
-    assert!(dr.iter().any(|r| r.target_name == "Injectable"), "refs: {dr:?}");
-    assert!(dr.iter().any(|r| r.target_name == "Controller"), "refs: {dr:?}");
+    assert!(
+        dr.iter().any(|r| r.target_name == "Injectable"),
+        "refs: {dr:?}"
+    );
+    assert!(
+        dr.iter().any(|r| r.target_name == "Controller"),
+        "refs: {dr:?}"
+    );
 }
 
 #[test]
@@ -96,7 +104,8 @@ fn no_decorators_no_extra_refs() {
     let dr = decorator_refs(src);
     // Only heritage / type refs from the class itself — no decorator refs.
     assert!(
-        dr.iter().all(|r| r.target_name != "Injectable" && r.target_name != "Get"),
+        dr.iter()
+            .all(|r| r.target_name != "Injectable" && r.target_name != "Get"),
         "unexpected refs: {dr:?}"
     );
 }
@@ -129,7 +138,9 @@ fn selectors_from_first_class(source: &str) -> Vec<String> {
         None
     }
 
-    let Some(class_node) = find_class(root) else { return Vec::new() };
+    let Some(class_node) = find_class(root) else {
+        return Vec::new();
+    };
     component_selectors_from_class(&class_node, src)
 }
 

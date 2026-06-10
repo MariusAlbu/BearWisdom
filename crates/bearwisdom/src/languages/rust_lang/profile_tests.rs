@@ -14,12 +14,36 @@ fn rust_profile_identity() {
 #[test]
 fn rust_calls_accepts_function_method_constructor_closure_bindings() {
     let table = RUST_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Function));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Method));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Constructor));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Variable));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Parameter));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Test));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Method
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Constructor
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Parameter
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Test
+    ));
 }
 
 #[test]
@@ -28,31 +52,74 @@ fn rust_calls_accepts_enum_member_for_variant_construction() {
     // syntax — the bare prelude variant binds to its `enum_member` symbol on a
     // Calls edge, so the ambient-package strategy can resolve it.
     let table = RUST_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::EnumMember));
-    assert!(KindCompatibility::check(table, EdgeKind::Instantiates, SymbolKind::EnumMember));
-    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::EnumMember));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::EnumMember
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Instantiates,
+        SymbolKind::EnumMember
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::TypeRef,
+        SymbolKind::EnumMember
+    ));
 }
 
 #[test]
 fn rust_inherits_accepts_trait_only() {
     let table = RUST_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(table, EdgeKind::Inherits, SymbolKind::Trait));
-    assert!(!KindCompatibility::check(table, EdgeKind::Inherits, SymbolKind::Struct));
-    assert!(!KindCompatibility::check(table, EdgeKind::Inherits, SymbolKind::Class));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Inherits,
+        SymbolKind::Trait
+    ));
+    assert!(!KindCompatibility::check(
+        table,
+        EdgeKind::Inherits,
+        SymbolKind::Struct
+    ));
+    assert!(!KindCompatibility::check(
+        table,
+        EdgeKind::Inherits,
+        SymbolKind::Class
+    ));
 }
 
 #[test]
 fn rust_typeref_accepts_struct_enum_trait_alias() {
     let table = RUST_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Struct));
-    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Enum));
-    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::Trait));
-    assert!(KindCompatibility::check(table, EdgeKind::TypeRef, SymbolKind::TypeAlias));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::TypeRef,
+        SymbolKind::Struct
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::TypeRef,
+        SymbolKind::Enum
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::TypeRef,
+        SymbolKind::Trait
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::TypeRef,
+        SymbolKind::TypeAlias
+    ));
 }
 
 #[test]
 fn rust_supertype_discovery_is_explicit() {
-    assert_eq!(RUST_PROFILE.supertype_discovery, SupertypeDiscovery::Explicit);
+    assert_eq!(
+        RUST_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Explicit
+    );
 }
 
 #[test]

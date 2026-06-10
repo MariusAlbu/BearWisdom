@@ -2,7 +2,6 @@
 // ecosystem/maven/symbol_index.rs
 // =============================================================================
 
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -16,15 +15,13 @@ use super::{
 };
 use crate::ecosystem::externals::{
     collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
-    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
-    resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator,
-    MAX_WALK_DEPTH,
+    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar,
+    resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
+    ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
-    clojure as clojure_manifest,
-    gradle as gradle_manifest,
-    sbt as sbt_manifest,
+    clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
 };
 use crate::walker::WalkedFile;
 
@@ -80,8 +77,7 @@ pub(crate) fn build_maven_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolL
                 return Vec::new();
             }
             let java_package = java_package_from_rel_path(&wf.absolute_path, dep_root);
-            let mut rows: Vec<(String, String, PathBuf)> =
-                Vec::with_capacity(names.len() * 2);
+            let mut rows: Vec<(String, String, PathBuf)> = Vec::with_capacity(names.len() * 2);
             for name in names {
                 rows.push((module_path.clone(), name.clone(), wf.absolute_path.clone()));
                 if let Some(pkg) = java_package.as_ref() {
@@ -114,7 +110,9 @@ pub(crate) fn java_package_from_rel_path(file: &Path, dep_root: &Path) -> Option
             _ => None,
         })
         .collect();
-    if segs.len() < 2 { return None }
+    if segs.len() < 2 {
+        return None;
+    }
     segs.pop(); // drop the filename, keep directory segments.
     Some(segs.join("."))
 }
@@ -341,15 +339,21 @@ pub(crate) fn scan_clojure_header(source: &str) -> Vec<String> {
 }
 
 pub(crate) fn collect_clojure_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
-    if node.kind() != "list_lit" { return }
+    if node.kind() != "list_lit" {
+        return;
+    }
     // Find the first two `sym_lit` children. First is the form head (e.g.
     // `defn`), second is the declared name.
     let mut head: Option<String> = None;
     let mut name: Option<String> = None;
     let mut cursor = node.walk();
     for inner in node.children(&mut cursor) {
-        if inner.kind() != "sym_lit" { continue }
-        let Ok(text) = inner.utf8_text(bytes) else { continue };
+        if inner.kind() != "sym_lit" {
+            continue;
+        }
+        let Ok(text) = inner.utf8_text(bytes) else {
+            continue;
+        };
         if head.is_none() {
             head = Some(text.to_string());
         } else {
@@ -361,8 +365,17 @@ pub(crate) fn collect_clojure_top_level_name(node: &Node, bytes: &[u8], out: &mu
     let Some(name) = name else { return };
     if matches!(
         head.as_str(),
-        "def" | "defn" | "defn-" | "defmacro" | "defmulti" | "defmethod"
-            | "defprotocol" | "defrecord" | "deftype" | "definterface" | "defonce"
+        "def"
+            | "defn"
+            | "defn-"
+            | "defmacro"
+            | "defmulti"
+            | "defmethod"
+            | "defprotocol"
+            | "defrecord"
+            | "deftype"
+            | "definterface"
+            | "defonce"
     ) {
         out.push(name);
     }
@@ -392,7 +405,10 @@ pub(crate) fn scan_groovy_header(source: &str) -> Vec<String> {
 }
 
 pub(crate) fn collect_groovy_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
-    if !matches!(node.kind(), "class_declaration" | "interface_declaration" | "enum_declaration") {
+    if !matches!(
+        node.kind(),
+        "class_declaration" | "interface_declaration" | "enum_declaration"
+    ) {
         return;
     }
     if let Some(name_node) = node.child_by_field_name("name") {
@@ -405,4 +421,3 @@ pub(crate) fn collect_groovy_top_level_name(node: &Node, bytes: &[u8], out: &mut
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

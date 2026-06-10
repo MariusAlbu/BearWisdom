@@ -29,19 +29,17 @@ pub(super) fn classify_class(_node: &Node, _src: &[u8]) -> SymbolKind {
 pub(super) fn call_target_name(node: &Node, src: &[u8]) -> String {
     match node.kind() {
         "identifier" | "type_identifier" => node_text(*node, src),
-        "field_expression" | "select_expression" | "field_access" => {
-            node.child_by_field_name("field")
-                .or_else(|| node.child_by_field_name("name"))
-                .map(|n| node_text(n, src))
-                .unwrap_or_default()
-        }
+        "field_expression" | "select_expression" | "field_access" => node
+            .child_by_field_name("field")
+            .or_else(|| node.child_by_field_name("name"))
+            .map(|n| node_text(n, src))
+            .unwrap_or_default(),
         // `identity[String](...)` — generic_function wraps an identifier and type args.
         // The `function` field holds the base function name.
-        "generic_function" => {
-            node.child_by_field_name("function")
-                .map(|n| call_target_name(&n, src))
-                .unwrap_or_default()
-        }
+        "generic_function" => node
+            .child_by_field_name("function")
+            .map(|n| call_target_name(&n, src))
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }
@@ -51,9 +49,15 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
     for child in node.children(&mut cursor) {
         if child.kind() == "modifiers" {
             let text = node_text(child, src);
-            if text.contains("private")   { return Some(Visibility::Private);   }
-            if text.contains("protected") { return Some(Visibility::Protected); }
-            if text.contains("public")    { return Some(Visibility::Public);    }
+            if text.contains("private") {
+                return Some(Visibility::Private);
+            }
+            if text.contains("protected") {
+                return Some(Visibility::Protected);
+            }
+            if text.contains("public") {
+                return Some(Visibility::Public);
+            }
             // A `modifiers` block holding only non-visibility tokens
             // (`sealed`, `abstract`, `case`, `implicit`, `final`, …).
             // Scala's default visibility is public — emitting None would
@@ -101,7 +105,9 @@ pub(super) fn type_name_from_node(node: &Node, src: &[u8]) -> String {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 let n = type_name_from_node(&child, src);
-                if !n.is_empty() { return n; }
+                if !n.is_empty() {
+                    return n;
+                }
             }
             String::new()
         }

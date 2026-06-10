@@ -9,9 +9,9 @@
 // resolver entirely and land in `unresolved_refs`.
 // =============================================================================
 
-use crate::languages::LanguagePlugin;
 use crate::languages::javascript::JavascriptPlugin;
 use crate::languages::typescript::TYPESCRIPT_HOOKS;
+use crate::languages::LanguagePlugin;
 
 #[test]
 fn javascript_plugin_exposes_engine_hooks() {
@@ -32,8 +32,7 @@ fn javascript_plugin_shares_the_typescript_hook_instance() {
     // Two registrations of the same static pinpoint that JS and TS share
     // the engine surface, with separate plugins only for parsing/extraction
     // (different tree-sitter grammars + node kinds).
-    let ts_hooks: &dyn crate::type_checker::profile::hooks::LanguageEngineHooks =
-        &TYPESCRIPT_HOOKS;
+    let ts_hooks: &dyn crate::type_checker::profile::hooks::LanguageEngineHooks = &TYPESCRIPT_HOOKS;
     let js_ptr = js_hooks as *const _ as *const ();
     let ts_ptr = ts_hooks as *const _ as *const ();
     assert_eq!(

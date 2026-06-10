@@ -10,7 +10,10 @@ use crate::types::{EdgeKind, SymbolKind};
 // TypeRef target (`${VAR}` references).
 const CMAKE_KIND_TABLE: KindTable = &[
     (EdgeKind::Calls, &[SymbolKind::Function]),
-    (EdgeKind::TypeRef, &[SymbolKind::Variable, SymbolKind::Function]),
+    (
+        EdgeKind::TypeRef,
+        &[SymbolKind::Variable, SymbolKind::Function],
+    ),
 ];
 
 pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
@@ -51,7 +54,8 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
@@ -61,7 +65,9 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    // CMake variables/functions are project-global (they flow down
+    // `add_subdirectory`), so a `${VAR}` ref binds across the build tree.
+    namespaceless_global_type_lookup: true,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

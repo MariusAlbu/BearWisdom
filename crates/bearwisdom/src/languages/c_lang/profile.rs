@@ -8,13 +8,28 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
 const C_KIND_TABLE: KindTable = &[
-    (EdgeKind::Calls, &[SymbolKind::Function, SymbolKind::Method, SymbolKind::Constructor]),
+    (
+        EdgeKind::Calls,
+        &[
+            SymbolKind::Function,
+            SymbolKind::Method,
+            SymbolKind::Constructor,
+        ],
+    ),
     (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Struct]),
     (
         EdgeKind::TypeRef,
-        &[SymbolKind::Class, SymbolKind::Struct, SymbolKind::Enum, SymbolKind::TypeAlias],
+        &[
+            SymbolKind::Class,
+            SymbolKind::Struct,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+        ],
     ),
-    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Struct]),
+    (
+        EdgeKind::Instantiates,
+        &[SymbolKind::Class, SymbolKind::Struct],
+    ),
 ];
 
 const C_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -58,10 +73,12 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // not a same-named project symbol. Declined before the ladder only when
     // the file carries the R-package namespace; external classification then
     // brands it `r.c.api`.
-    namespace_decline: Some(crate::type_checker::profile::language_profile::NamespaceDecline {
-        file_namespace: super::hooks::R_PACKAGE_SENTINEL,
-        is_reserved: predicates::is_r_c_api_symbol,
-    }),
+    namespace_decline: Some(
+        crate::type_checker::profile::language_profile::NamespaceDecline {
+            file_namespace: super::hooks::R_PACKAGE_SENTINEL,
+            is_reserved: predicates::is_r_c_api_symbol,
+        },
+    ),
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
@@ -78,7 +95,8 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     // C++ argument-dependent lookup: a bare `swap(a, b)` resolves to a free
@@ -90,7 +108,10 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    // C/C++ functions are project-global (a cross-file call to a `static` is a
+    // compile error, so the dead-last rung only ever binds unique externs).
+    // Recovers cross-translation-unit calls (redis `sdsfree`, nginx `ngx_*`).
+    namespaceless_global_type_lookup: true,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

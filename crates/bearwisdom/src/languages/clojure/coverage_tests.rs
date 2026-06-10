@@ -20,9 +20,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_list_lit_ns() {
     let r = extract("(ns myapp.core (:require [clojure.string :as str]))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "myapp.core" && s.kind == SymbolKind::Module),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "myapp.core" && s.kind == SymbolKind::Module),
         "expected Module myapp.core; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -31,9 +36,14 @@ fn symbol_list_lit_ns() {
 fn symbol_list_lit_defn() {
     let r = extract("(defn foo [x] x)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -42,9 +52,14 @@ fn symbol_list_lit_defn() {
 fn symbol_list_lit_defn_private() {
     let r = extract("(defn- hidden [x] x)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "hidden" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "hidden" && s.kind == SymbolKind::Function),
         "expected Function hidden; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -53,9 +68,14 @@ fn symbol_list_lit_defn_private() {
 fn symbol_list_lit_defmacro() {
     let r = extract("(defmacro my-macro [x] x)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "my-macro" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "my-macro" && s.kind == SymbolKind::Function),
         "expected Function my-macro; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -64,9 +84,14 @@ fn symbol_list_lit_defmacro() {
 fn symbol_list_lit_def() {
     let r = extract("(def max-retries 3)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "max-retries" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "max-retries" && s.kind == SymbolKind::Variable),
         "expected Variable max-retries; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -75,9 +100,14 @@ fn symbol_list_lit_def() {
 fn symbol_list_lit_defrecord() {
     let r = extract("(defrecord Point [x y])");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
         "expected Struct Point; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -86,9 +116,14 @@ fn symbol_list_lit_defrecord() {
 fn symbol_list_lit_defprotocol() {
     let r = extract("(defprotocol Greet (greet [this]))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Greet" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Greet" && s.kind == SymbolKind::Interface),
         "expected Interface Greet; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -103,7 +138,10 @@ fn ref_list_lit_call() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected at least one Calls ref; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -114,7 +152,10 @@ fn ref_sym_lit_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from :require; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -130,7 +171,10 @@ fn ref_namespace_qualified_symbol() {
     assert!(
         !calls.is_empty(),
         "expected Calls ref with target_name='join' from str/join; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind, &rf.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind, &rf.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         calls[0].module.as_deref(),
@@ -144,19 +188,14 @@ fn ref_namespace_qualified_symbol() {
 #[test]
 fn ref_unqualified_symbol_no_module() {
     let r = extract("(defn foo [x] (inc x))");
-    let inc_refs: Vec<_> = r
-        .refs
-        .iter()
-        .filter(|rf| rf.target_name == "inc")
-        .collect();
+    let inc_refs: Vec<_> = r.refs.iter().filter(|rf| rf.target_name == "inc").collect();
     assert!(
         !inc_refs.is_empty(),
         "expected ref to 'inc'; got: {:?}",
         r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
     assert_eq!(
-        inc_refs[0].module,
-        None,
+        inc_refs[0].module, None,
         "expected module=None for unqualified 'inc'; got: {:?}",
         inc_refs[0].module
     );
@@ -171,9 +210,14 @@ fn ref_unqualified_symbol_no_module() {
 fn symbol_list_lit_defonce() {
     let r = extract("(defonce conn (atom nil))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "conn" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "conn" && s.kind == SymbolKind::Variable),
         "expected Variable conn from defonce; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -182,9 +226,14 @@ fn symbol_list_lit_defonce() {
 fn symbol_list_lit_deftype() {
     let r = extract("(deftype MyType [a b] Object)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyType" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyType" && s.kind == SymbolKind::Struct),
         "expected Struct MyType from deftype; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -193,9 +242,14 @@ fn symbol_list_lit_deftype() {
 fn symbol_list_lit_definterface() {
     let r = extract("(definterface ICounter (increment [this]) (value [this]))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "ICounter" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "ICounter" && s.kind == SymbolKind::Interface),
         "expected Interface ICounter from definterface; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -204,9 +258,14 @@ fn symbol_list_lit_definterface() {
 fn symbol_list_lit_defmulti() {
     let r = extract("(defmulti dispatch-fn :type)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
         "expected Function dispatch-fn from defmulti; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -215,9 +274,14 @@ fn symbol_list_lit_defmulti() {
 fn symbol_list_lit_defmethod() {
     let r = extract("(defmethod dispatch-fn :circle [shape] (* Math/PI (:radius shape)))");
     assert!(
-        r.symbols.iter().any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
         "expected Function dispatch-fn from defmethod; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -232,7 +296,10 @@ fn ref_ns_use_clause_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from :use clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -243,7 +310,10 @@ fn ref_ns_import_clause_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from :import clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -252,9 +322,14 @@ fn ref_ns_import_clause_imports() {
 fn ref_ns_require_with_refer() {
     let r = extract("(ns myapp.core (:require [clojure.set :refer [union difference]]))");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "clojure.set"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "clojure.set"),
         "expected Imports(clojure.set) from :require :refer; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -270,7 +345,10 @@ fn ref_ns_require_with_as_alias() {
     assert!(
         !imp.is_empty(),
         "expected Imports(clojure.string) from :require :as; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -281,9 +359,14 @@ fn ref_declaration_head_emitted_as_calls() {
     let r = extract("(defn my-fn [x] x)");
     // The `defn` sym_lit head is always emitted as a Calls ref.
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defn"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defn"),
         "expected Calls ref with target_name='defn'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -292,9 +375,14 @@ fn ref_declaration_head_emitted_as_calls() {
 fn ref_extend_protocol_emits_refs() {
     let r = extract("(extend-protocol IFoo MyRecord (do-thing [this] nil))");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "IFoo" || rf.target_name == "extend-protocol"),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "IFoo" || rf.target_name == "extend-protocol"),
         "expected ref to IFoo or extend-protocol; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -303,9 +391,14 @@ fn ref_extend_protocol_emits_refs() {
 fn ref_extend_type_emits_refs() {
     let r = extract("(extend-type String IShow (show [this] (str \"<\" this \">\")))");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "extend-type" || rf.target_name == "String"),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "extend-type" || rf.target_name == "String"),
         "expected ref to extend-type or String; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -318,48 +411,74 @@ fn ref_extend_type_emits_refs() {
 fn scope_defn_params_suppressed() {
     let r = extract("(defn handle [request respond raise] (handler request respond raise))");
     // request, respond, raise are params — should NOT appear as unqualified Calls refs
-    let leaked: Vec<_> = r.refs.iter()
-        .filter(|rf| matches!(rf.target_name.as_str(), "request" | "respond" | "raise") && rf.module.is_none())
+    let leaked: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            matches!(rf.target_name.as_str(), "request" | "respond" | "raise")
+                && rf.module.is_none()
+        })
         .collect();
-    assert!(leaked.is_empty(),
+    assert!(
+        leaked.is_empty(),
         "params leaked as refs: {:?}",
-        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
 }
 
 /// let bindings should be suppressed as Calls refs
 #[test]
 fn scope_let_bindings_suppressed() {
     let r = extract("(defn foo [x] (let [options {:a 1} result (bar x)] (use options result)))");
-    let leaked: Vec<_> = r.refs.iter()
+    let leaked: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| matches!(rf.target_name.as_str(), "options" | "result") && rf.module.is_none())
         .collect();
-    assert!(leaked.is_empty(),
+    assert!(
+        leaked.is_empty(),
         "let bindings leaked as refs: {:?}",
-        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
 }
 
 /// Map destructuring {:keys [a b]} should suppress a and b
 #[test]
 fn scope_map_destructuring_suppressed() {
     let r = extract("(defn foo [{:keys [decoder encoder]}] (use decoder encoder))");
-    let leaked: Vec<_> = r.refs.iter()
-        .filter(|rf| matches!(rf.target_name.as_str(), "decoder" | "encoder") && rf.module.is_none())
+    let leaked: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            matches!(rf.target_name.as_str(), "decoder" | "encoder") && rf.module.is_none()
+        })
         .collect();
-    assert!(leaked.is_empty(),
+    assert!(
+        leaked.is_empty(),
         "destructured keys leaked as refs: {:?}",
-        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
 }
 
 /// Multi-arity fn params in anonymous fn should be suppressed
 #[test]
 fn scope_anon_fn_params_suppressed() {
     let r = extract("(defn wrap [handler options] (fn ([request] (handler request)) ([request respond raise] (handler request respond raise))))");
-    let leaked: Vec<_> = r.refs.iter()
-        .filter(|rf| matches!(rf.target_name.as_str(), "request" | "respond" | "raise" | "options") && rf.module.is_none())
+    let leaked: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            matches!(
+                rf.target_name.as_str(),
+                "request" | "respond" | "raise" | "options"
+            ) && rf.module.is_none()
+        })
         .collect();
-    assert!(leaked.is_empty(),
+    assert!(
+        leaked.is_empty(),
         "fn params leaked as refs: {:?}",
-        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
 }
 
 /// Namespace-qualified refs (e.g. str/join) should still be emitted even if
@@ -369,9 +488,14 @@ fn scope_qualified_refs_not_suppressed() {
     let r = extract("(defn foo [str] (str/join \",\" str))");
     // str/join should still emit a ref with module="str"
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "join" && rf.module.as_deref() == Some("str")),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "join" && rf.module.as_deref() == Some("str")),
         "qualified str/join ref missing; got: {:?}",
-        r.refs.iter().filter(|rf| rf.target_name == "join").collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.target_name == "join")
+            .collect::<Vec<_>>()
     );
 }
 
@@ -386,10 +510,16 @@ fn scope_qualified_refs_not_suppressed() {
 fn defrecord_emits_positional_and_map_constructors() {
     let r = extract("(defrecord RV [x y])");
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"->RV"),
-        "expected positional constructor ->RV; got {:?}", names);
-    assert!(names.contains(&"map->RV"),
-        "expected map constructor map->RV; got {:?}", names);
+    assert!(
+        names.contains(&"->RV"),
+        "expected positional constructor ->RV; got {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"map->RV"),
+        "expected map constructor map->RV; got {:?}",
+        names
+    );
     let pos = r.symbols.iter().find(|s| s.name == "->RV").unwrap();
     assert_eq!(pos.kind, SymbolKind::Function);
     let map = r.symbols.iter().find(|s| s.name == "map->RV").unwrap();
@@ -402,10 +532,16 @@ fn defrecord_emits_positional_and_map_constructors() {
 fn deftype_emits_only_positional_constructor() {
     let r = extract("(deftype SimpleMap [m])");
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"->SimpleMap"),
-        "expected positional constructor ->SimpleMap; got {:?}", names);
-    assert!(!names.contains(&"map->SimpleMap"),
-        "deftype must not auto-generate map-> constructor; got {:?}", names);
+    assert!(
+        names.contains(&"->SimpleMap"),
+        "expected positional constructor ->SimpleMap; got {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"map->SimpleMap"),
+        "deftype must not auto-generate map-> constructor; got {:?}",
+        names
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -418,13 +554,18 @@ fn deftype_emits_only_positional_constructor() {
 #[test]
 fn logic_vars_never_emit_calls_refs() {
     let r = extract("(defn parse [tree] (match tree [?fname ?lname] ?fname))");
-    let leaked: Vec<&str> = r.refs.iter()
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .filter(|n| n.starts_with('?'))
         .collect();
-    assert!(leaked.is_empty(),
-        "logic vars leaked as Calls refs: {:?}", leaked);
+    assert!(
+        leaked.is_empty(),
+        "logic vars leaked as Calls refs: {:?}",
+        leaked
+    );
 }
 
 /// `name#` is a syntax-quote auto-gensym — `(defmacro m [] `(let [e# 1] e#))`
@@ -432,11 +573,16 @@ fn logic_vars_never_emit_calls_refs() {
 #[test]
 fn gensym_suffix_never_emits_calls_refs() {
     let r = extract("(defmacro try-or [body] `(try ~body (catch Exception e# (str e#))))");
-    let leaked: Vec<&str> = r.refs.iter()
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .filter(|n| n.ends_with('#'))
         .collect();
-    assert!(leaked.is_empty(),
-        "gensym-suffix names leaked as Calls refs: {:?}", leaked);
+    assert!(
+        leaked.is_empty(),
+        "gensym-suffix names leaked as Calls refs: {:?}",
+        leaked
+    );
 }

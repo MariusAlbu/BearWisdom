@@ -81,7 +81,10 @@ pub fn embed_chunks(
         embedded += pairs.len() as u32;
     }
 
-    info!("Embedded {embedded} chunks ({} already had vectors)", total.saturating_sub(embedded));
+    info!(
+        "Embedded {embedded} chunks ({} already had vectors)",
+        total.saturating_sub(embedded)
+    );
     Ok((embedded, 0))
 }
 

@@ -2,20 +2,8 @@
 // Builtins and locals.scm content for `proto` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "edition",
-    "enum",
-    "import",
-    "message",
-    "oneof",
-    "option",
-    "package",
-    "repeated",
-    "reserved",
-    "returns",
-    "rpc",
-    "service",
-    "syntax",
-    "to",
+    "edition", "enum", "import", "message", "oneof", "option", "package", "repeated", "reserved",
+    "returns", "rpc", "service", "syntax", "to",
 ];
 
 pub const LOCALS_SCM: Option<&str> = None;

@@ -21,12 +21,33 @@ pub(super) fn extract_calls_recursive(
         match child.kind() {
             "call" => {
                 if let Some(callee) = call_identifier(&child, src) {
-                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "defexception" | "defprotocol" | "defimpl" | "defguard" | "defguardp" | "alias" | "import" | "use" | "require") {
+                    if !matches!(
+                        callee.as_str(),
+                        "def"
+                            | "defp"
+                            | "defmacro"
+                            | "defmacrop"
+                            | "defmodule"
+                            | "defstruct"
+                            | "defexception"
+                            | "defprotocol"
+                            | "defimpl"
+                            | "defguard"
+                            | "defguardp"
+                            | "alias"
+                            | "import"
+                            | "use"
+                            | "require"
+                    ) {
                         // Use the qualified form so dotted calls carry the
                         // module prefix through to the resolver.
-                        let qualified = call_qualified_name(&child, src)
-                            .unwrap_or_else(|| callee.clone());
-                        let simple = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
+                        let qualified =
+                            call_qualified_name(&child, src).unwrap_or_else(|| callee.clone());
+                        let simple = qualified
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or(&qualified)
+                            .to_string();
                         let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
                         // Lowercase dot-call receivers (`session.acquisition_channel`,
                         // `email.html_body`) are struct/map field access, not function
@@ -34,12 +55,16 @@ pub(super) fn extract_calls_recursive(
                         // without parens, but no real function lookup applies. Skip
                         // emission to keep the unresolved table clean.
                         let receiver_is_module = match &module {
-                            Some(m) => m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
-                                || m.contains('.'),
+                            Some(m) => {
+                                m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                                    || m.contains('.')
+                            }
                             None => true, // bare call — keep
                         };
                         if receiver_is_module {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: EdgeKind::Calls,
@@ -48,9 +73,9 @@ pub(super) fn extract_calls_recursive(
                                 module,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                        namespace_segments: Vec::new(),
-                                                        call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                             // For dot calls like `Enum.map(...)`, also emit a TypeRef
                             // for the module part (the `alias` node before the dot).
                             extract_dot_call_module_ref(&child, src, source_symbol_index, refs);
@@ -72,7 +97,9 @@ pub(super) fn extract_calls_recursive(
                 let name = node_text(child, src);
                 if !name.is_empty() {
                     let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: simple,
                         kind: EdgeKind::TypeRef,
@@ -81,9 +108,9 @@ pub(super) fn extract_calls_recursive(
                         module: if name.contains('.') { Some(name) } else { None },
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -109,9 +136,8 @@ pub(super) fn extract_calls_recursive(
             }
 
             // Keyword lists, maps, tuples, lists can contain calls — recurse.
-            "keywords" | "keyword_list" | "map" | "tuple" | "list"
-            | "arguments" | "body" | "block" | "do_block"
-            | "access_call" | "unary_operator" => {
+            "keywords" | "keyword_list" | "map" | "tuple" | "list" | "arguments" | "body"
+            | "block" | "do_block" | "access_call" | "unary_operator" => {
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
             }
 
@@ -152,7 +178,9 @@ pub(super) fn extract_dot_call_module_ref(
                                 return;
                             }
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: EdgeKind::TypeRef,
@@ -161,9 +189,9 @@ pub(super) fn extract_dot_call_module_ref(
                                 module: if name.contains('.') { Some(name) } else { None },
                                 chain: None,
                                 byte_offset: dc_child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                         return; // only the receiver, not the function name
                     }
@@ -205,7 +233,9 @@ pub(super) fn extract_pipe_calls(
                     if !n.is_empty() {
                         let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
                         let module = n.rfind('.').map(|i| n[..i].to_string());
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: simple,
                             kind: EdgeKind::Calls,
@@ -214,9 +244,9 @@ pub(super) fn extract_pipe_calls(
                             module,
                             chain: None,
                             byte_offset: r.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         // Also emit TypeRef for module part of dot calls on the right side.
                         extract_dot_call_module_ref(&r, src, source_symbol_index, refs);
                     }
@@ -232,7 +262,9 @@ pub(super) fn extract_pipe_calls(
         if !n.is_empty() {
             let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
             let module = n.rfind('.').map(|i| n[..i].to_string());
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: simple,
                 kind: EdgeKind::Calls,
@@ -241,9 +273,9 @@ pub(super) fn extract_pipe_calls(
                 module,
                 chain: None,
                 byte_offset: right.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             // Also emit TypeRef for module part of dot calls (`Enum.map`, etc.).
             extract_dot_call_module_ref(right, src, source_symbol_index, refs);
         }
@@ -317,7 +349,8 @@ fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
                         child.children(&mut c).collect()
                     };
                     // Find `/` operator, take left side.
-                    if let Some(slash_pos) = children.iter().position(|c| node_text(*c, src) == "/") {
+                    if let Some(slash_pos) = children.iter().position(|c| node_text(*c, src) == "/")
+                    {
                         if let Some(left) = children.get(slash_pos.saturating_sub(1)) {
                             // `left` may be a `call` (dot call) or `identifier` or `dot`.
                             return extract_pipe_callee_name(left, src);

@@ -35,11 +35,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Directive scan — single pass over the source. Position for emitted
     // symbols and refs is the line where the `@directive(` token starts.
@@ -67,16 +67,18 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                                 scope_path: Some(template_name.clone()),
                                 parent_index: Some(host_index),
                                 byte_offset: 0,
-                                                            declared_type: None,
+                                declared_type: None,
                                 return_type: None,
                                 param_types: Vec::new(),
                                 generic_params: Vec::new(),
-});
+                            });
                             i = payload_end;
                             continue;
                         }
                         if REFERENCING_DIRECTIVES.contains(&name.as_str()) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: host_index,
                                 target_name: arg,
                                 kind: EdgeKind::Imports,
@@ -86,8 +88,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                                 byte_offset: i as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                                            col: 0,
-});
+                                col: 0,
+                            });
                             i = payload_end;
                             continue;
                         }
@@ -125,15 +127,23 @@ fn read_directive_name(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             break;
         }
     }
-    if end == start { return None; }
+    if end == start {
+        return None;
+    }
     let s = std::str::from_utf8(&bytes[start..end]).ok()?;
     Some((s.to_string(), end))
 }
 
 fn first_paren_after(bytes: &[u8], start: usize) -> Option<usize> {
     let mut i = start;
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') { i += 1; }
-    if bytes.get(i) == Some(&b'(') { Some(i + 1) } else { None }
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') {
+        i += 1;
+    }
+    if bytes.get(i) == Some(&b'(') {
+        Some(i + 1)
+    } else {
+        None
+    }
 }
 
 /// Read the first string-literal argument (single or double quoted) of
@@ -142,7 +152,9 @@ fn first_paren_after(bytes: &[u8], start: usize) -> Option<usize> {
 /// directives don't yield a graph-queryable symbol/ref.
 fn read_first_string_arg(bytes: &[u8], paren_start: usize) -> Option<(String, usize)> {
     let mut i = paren_start;
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') { i += 1; }
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+        i += 1;
+    }
     let quote = match bytes.get(i) {
         Some(b'"') => b'"',
         Some(b'\'') => b'\'',
@@ -157,7 +169,9 @@ fn read_first_string_arg(bytes: &[u8], paren_start: usize) -> Option<(String, us
             _ => j += 1,
         }
     }
-    if j >= bytes.len() { return None; }
+    if j >= bytes.len() {
+        return None;
+    }
     let arg = std::str::from_utf8(&bytes[arg_start..j]).ok()?.to_string();
     // Skip past close-quote and optional comma + remaining args; find matching `)`.
     let mut depth: i32 = 1;
@@ -189,7 +203,9 @@ fn skip_str_arg(bytes: &[u8], pos: usize, quote: u8) -> usize {
 fn line_at(bytes: &[u8], pos: usize) -> u32 {
     let mut line: u32 = 0;
     for b in bytes.iter().take(pos) {
-        if *b == b'\n' { line += 1; }
+        if *b == b'\n' {
+            line += 1;
+        }
     }
     line
 }
@@ -255,7 +271,10 @@ mod tests {
     fn section_emits_symbol_under_template() {
         let src = "@extends('base')\n@section('content')\n<h1>hi</h1>\n@endsection";
         let r = extract(src, "resources/views/users/show.blade.php");
-        let section = r.symbols.iter().find(|s| s.name == "content")
+        let section = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "content")
             .expect("content section symbol missing");
         assert_eq!(section.kind, SymbolKind::Method);
         assert_eq!(section.qualified_name, "users.show.content");
@@ -266,7 +285,9 @@ mod tests {
     fn include_emits_imports_ref() {
         let src = "@include('partials.header')\n@include('partials.footer')\n";
         let r = extract(src, "resources/views/layouts/app.blade.php");
-        let targets: Vec<&str> = r.refs.iter()
+        let targets: Vec<&str> = r
+            .refs
+            .iter()
             .filter(|rf| rf.kind == EdgeKind::Imports)
             .map(|rf| rf.target_name.as_str())
             .collect();

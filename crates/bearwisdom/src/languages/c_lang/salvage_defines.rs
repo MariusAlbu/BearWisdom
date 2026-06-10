@@ -15,8 +15,7 @@ use crate::types::{ExtractedSymbol, SymbolKind};
 /// no-op when tree-sitter already extracted everything. Cost: one
 /// lines() pass over the source, O(N) substring matching.
 pub(super) fn salvage_missed_defines(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
-    let mut existing: HashSet<String> =
-        symbols.iter().map(|s| s.name.clone()).collect();
+    let mut existing: HashSet<String> = symbols.iter().map(|s| s.name.clone()).collect();
 
     for (line_idx, line) in source.lines().enumerate() {
         let stripped = line.trim_start();
@@ -73,11 +72,11 @@ pub(super) fn salvage_missed_defines(source: &str, symbols: &mut Vec<ExtractedSy
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         existing.insert(name.to_string());
     }
 }

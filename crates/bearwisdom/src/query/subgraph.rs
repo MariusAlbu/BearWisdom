@@ -85,25 +85,30 @@ pub fn export_graph(
     let conn = db.conn();
 
     // Effective cap: never export more than 10 000 nodes unconditionally.
-    let cap = if max_nodes == 0 { 10_000 } else { max_nodes.min(10_000) };
+    let cap = if max_nodes == 0 {
+        10_000
+    } else {
+        max_nodes.min(10_000)
+    };
 
     // --- Step 1: Load nodes (symbols) ---
     let nodes: Vec<GraphNode> = {
         let sql = build_node_sql(filter, cap);
-        let mut stmt = conn.prepare(&sql)
+        let mut stmt = conn
+            .prepare(&sql)
             .context("Failed to prepare node export query")?;
 
         // Map a row to a GraphNode — used in all three query_map calls below.
         let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<GraphNode> {
             Ok(GraphNode {
-                id:             row.get(0)?,
-                name:           row.get(1)?,
+                id: row.get(0)?,
+                name: row.get(1)?,
                 qualified_name: row.get(2)?,
-                kind:           row.get(3)?,
-                file_path:      row.get(4)?,
-                concept:        row.get(5)?,
-                annotation:     row.get(6)?,
-                total_edges:    row.get(7)?,
+                kind: row.get(3)?,
+                file_path: row.get(4)?,
+                concept: row.get(5)?,
+                annotation: row.get(6)?,
+                total_edges: row.get(7)?,
             })
         };
 
@@ -113,18 +118,20 @@ pub fn export_graph(
         //   • Some(f) prefix  → WHERE … LIKE ?1 → 1 parameter (prefix string)
         let rows = match filter {
             None => stmt.query_map([], map_row),
-            Some(f) if f.starts_with('@') =>
-                stmt.query_map(rusqlite::params![&f[1..]], map_row),  // strip '@'
-            Some(f) =>
-                stmt.query_map(rusqlite::params![f], map_row),
-        }.context("Failed to execute node export query")?;
+            Some(f) if f.starts_with('@') => stmt.query_map(rusqlite::params![&f[1..]], map_row), // strip '@'
+            Some(f) => stmt.query_map(rusqlite::params![f], map_row),
+        }
+        .context("Failed to execute node export query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect graph nodes")?
     };
 
     if nodes.is_empty() {
-        return Ok(SubgraphResult { nodes, edges: vec![] });
+        return Ok(SubgraphResult {
+            nodes,
+            edges: vec![],
+        });
     }
 
     // Build a set of included node IDs for fast edge filtering.
@@ -136,18 +143,19 @@ pub fn export_graph(
     // scanning the entire edges table and filtering in Rust.
     let edges: Vec<GraphEdge> = {
         conn.execute_batch(
-            "CREATE TEMP TABLE IF NOT EXISTS _export_nodes (id INTEGER PRIMARY KEY)"
-        ).context("Failed to create temp table")?;
+            "CREATE TEMP TABLE IF NOT EXISTS _export_nodes (id INTEGER PRIMARY KEY)",
+        )
+        .context("Failed to create temp table")?;
         conn.execute("DELETE FROM _export_nodes", [])
             .context("Failed to clear temp table")?;
 
         // Batch-insert node IDs.
         {
-            let tx = conn.unchecked_transaction()
+            let tx = conn
+                .unchecked_transaction()
                 .context("Failed to begin temp insert transaction")?;
-            let mut ins = tx.prepare_cached(
-                "INSERT OR IGNORE INTO _export_nodes (id) VALUES (?1)"
-            )?;
+            let mut ins =
+                tx.prepare_cached("INSERT OR IGNORE INTO _export_nodes (id) VALUES (?1)")?;
             for &id in &node_ids {
                 ins.execute([id])?;
             }
@@ -155,23 +163,28 @@ pub fn export_graph(
             tx.commit().context("Failed to commit temp inserts")?;
         }
 
-        let mut stmt = conn.prepare(
-            "SELECT e.source_id, e.target_id, e.kind, e.confidence
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.source_id, e.target_id, e.kind, e.confidence
              FROM edges e
              JOIN _export_nodes ns ON e.source_id = ns.id
-             JOIN _export_nodes nt ON e.target_id = nt.id"
-        ).context("Failed to prepare edge export query")?;
+             JOIN _export_nodes nt ON e.target_id = nt.id",
+            )
+            .context("Failed to prepare edge export query")?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(GraphEdge {
-                source_id:  row.get(0)?,
-                target_id:  row.get(1)?,
-                kind:       row.get(2)?,
-                confidence: row.get(3)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(GraphEdge {
+                    source_id: row.get(0)?,
+                    target_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    confidence: row.get(3)?,
+                })
             })
-        }).context("Failed to execute edge export query")?;
+            .context("Failed to execute edge export query")?;
 
-        let result = rows.collect::<rusqlite::Result<Vec<_>>>()
+        let result = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect graph edges")?;
 
         // Clean up temp table.
@@ -222,21 +235,17 @@ fn build_node_sql(filter: Option<&str>, cap: usize) -> String {
     // Exclude symbol kinds that are structural/noise in a graph view.
     // Variables (let bindings, params) and namespaces (mod/package) clutter
     // the graph without adding meaningful relationship information.
-    let kind_filter =
-        "s.kind NOT IN ('variable', 'namespace')";
+    let kind_filter = "s.kind NOT IN ('variable', 'namespace')";
 
     // Only include nodes that participate in at least one edge (as source or
     // target).  Isolated symbols are noise in the graph visualization.
-    let connected_filter =
-        "(EXISTS (SELECT 1 FROM edges e WHERE e.source_id = s.id)
+    let connected_filter = "(EXISTS (SELECT 1 FROM edges e WHERE e.source_id = s.id)
        OR EXISTS (SELECT 1 FROM edges e WHERE e.target_id = s.id))";
 
     let group_and_limit = format!("GROUP BY s.id ORDER BY s.qualified_name LIMIT {cap}");
 
     match filter {
-        None => format!(
-            "{select} WHERE {kind_filter} AND {connected_filter} {group_and_limit}"
-        ),
+        None => format!("{select} WHERE {kind_filter} AND {connected_filter} {group_and_limit}"),
 
         Some(f) if f.starts_with('@') => {
             // Concept filter: symbols that are members of the named concept.

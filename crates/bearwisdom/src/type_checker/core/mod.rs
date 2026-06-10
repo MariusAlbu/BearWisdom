@@ -29,9 +29,7 @@ pub use members::MembersIndex;
 pub use pattern::{bind as bind_pattern, Pattern};
 pub use supertype::{SupertypeGraph, SupertypeWalk};
 pub use symbol_types::{SymbolIdMap, SymbolTypeData, SymbolTypeMap};
-pub use types::{
-    GenericParamData, GenericParamId, LitValue, PrimKind, Type, TypeArena, TypeId,
-};
+pub use types::{GenericParamData, GenericParamId, LitValue, PrimKind, Type, TypeArena, TypeId};
 
 #[cfg(test)]
 #[path = "foundation_gate_tests.rs"]

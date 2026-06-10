@@ -7,22 +7,31 @@ fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str, kind: &str,
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",
         [path],
-    ).unwrap();
-    let file_id: i64 = conn.query_row(
-        "SELECT id FROM files WHERE path = ?1", [path], |r| r.get(0)
-    ).unwrap();
+    )
+    .unwrap();
+    let file_id: i64 = conn
+        .query_row("SELECT id FROM files WHERE path = ?1", [path], |r| r.get(0))
+        .unwrap();
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, ?2, ?3, ?4, ?5, 0)",
         rusqlite::params![file_id, name, qname, kind, line],
-    ).unwrap();
+    )
+    .unwrap();
     conn.last_insert_rowid()
 }
 
 #[test]
 fn goto_definition_by_qualified_name() {
     let db = Database::open_in_memory().unwrap();
-    insert_symbol(&db, "Catalog.cs", "GetById", "Catalog.Service.GetById", "method", 10);
+    insert_symbol(
+        &db,
+        "Catalog.cs",
+        "GetById",
+        "Catalog.Service.GetById",
+        "method",
+        10,
+    );
 
     let results = goto_definition(&db, "Catalog.Service.GetById").unwrap();
     assert_eq!(results.len(), 1);
@@ -33,7 +42,14 @@ fn goto_definition_by_qualified_name() {
 #[test]
 fn goto_definition_by_simple_name() {
     let db = Database::open_in_memory().unwrap();
-    insert_symbol(&db, "Catalog.cs", "GetById", "Catalog.Service.GetById", "method", 10);
+    insert_symbol(
+        &db,
+        "Catalog.cs",
+        "GetById",
+        "Catalog.Service.GetById",
+        "method",
+        10,
+    );
 
     let results = goto_definition(&db, "GetById").unwrap();
     assert!(!results.is_empty());

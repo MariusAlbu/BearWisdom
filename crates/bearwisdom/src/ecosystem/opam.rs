@@ -28,10 +28,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "ocaml";
 pub struct OpamEcosystem;
 
 impl Ecosystem for OpamEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("dune-project", "ocaml")]
@@ -55,19 +63,20 @@ impl Ecosystem for OpamEcosystem {
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_ocaml_externals(ctx.project_root)
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_ocaml_root(dep) }
-    fn supports_reachability(&self) -> bool { true }
-    fn resolve_import(
-        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
-    ) -> Vec<WalkedFile> { walk_ocaml_narrowed(dep) }
-    fn resolve_symbol(
-        &self, dep: &ExternalDepRoot, _f: &str,
-    ) -> Vec<WalkedFile> { walk_ocaml_narrowed(dep) }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_ocaml_root(dep)
+    }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn resolve_import(&self, dep: &ExternalDepRoot, _p: &str, _s: &[&str]) -> Vec<WalkedFile> {
+        walk_ocaml_narrowed(dep)
+    }
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _f: &str) -> Vec<WalkedFile> {
+        walk_ocaml_narrowed(dep)
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_ocaml_symbol_index(dep_roots)
     }
 
@@ -81,10 +90,7 @@ impl Ecosystem for OpamEcosystem {
     /// cases. The narrowed walk limits what's pulled to the files that stem-
     /// match the demanded module names — no unrelated package files are
     /// traversed.
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         dep_roots
             .iter()
             .filter(|d| {
@@ -97,8 +103,7 @@ impl Ecosystem for OpamEcosystem {
                 // lowercase and may use hyphens instead of underscores.
                 d.requested_imports.iter().any(|m| {
                     let lower = m.to_lowercase();
-                    lower == d.module_path
-                        || lower.replace('_', "-") == d.module_path
+                    lower == d.module_path || lower.replace('_', "-") == d.module_path
                 })
             })
             .flat_map(|d| {
@@ -111,15 +116,21 @@ impl Ecosystem for OpamEcosystem {
             .collect()
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for OpamEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ocaml_externals(project_root)
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_ocaml_root(dep) }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_ocaml_root(dep)
+    }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
@@ -135,10 +146,14 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 pub struct OpamManifest;
 
 impl ManifestReader for OpamManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Opam }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Opam
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
-        let Ok(entries) = std::fs::read_dir(project_root) else { return None };
+        let Ok(entries) = std::fs::read_dir(project_root) else {
+            return None;
+        };
         let mut data = ManifestData::default();
         let mut any_opam = false;
         for e in entries.flatten() {
@@ -151,30 +166,49 @@ impl ManifestReader for OpamManifest {
                 }
             }
         }
-        if any_opam { Some(data) } else { None }
+        if any_opam {
+            Some(data)
+        } else {
+            None
+        }
     }
 }
 
 pub fn parse_opam_depends(content: &str) -> Vec<String> {
     let mut deps = Vec::new();
-    let Some(start) = content.find("depends:") else { return deps };
+    let Some(start) = content.find("depends:") else {
+        return deps;
+    };
     let rest = &content[start + "depends:".len()..];
-    let Some(bracket_start) = rest.find('[') else { return deps };
+    let Some(bracket_start) = rest.find('[') else {
+        return deps;
+    };
     let rest = &rest[bracket_start + 1..];
-    let Some(bracket_end) = rest.find(']') else { return deps };
+    let Some(bracket_end) = rest.find(']') else {
+        return deps;
+    };
     let block = &rest[..bracket_end];
 
     for line in block.lines() {
         let trimmed = line.trim().trim_start_matches('"');
-        if trimmed.is_empty() { continue }
-        let name = trimmed.split(|c: char| c == '"' || c == ' ' || c == '{')
-            .next().unwrap_or("").trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let name = trimmed
+            .split(|c: char| c == '"' || c == ' ' || c == '{')
+            .next()
+            .unwrap_or("")
+            .trim();
         if !name.is_empty()
             && name != "ocaml"
             && !name.starts_with("conf-")
-            && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
         {
-            if !deps.contains(&name.to_string()) { deps.push(name.to_string()) }
+            if !deps.contains(&name.to_string()) {
+                deps.push(name.to_string())
+            }
         }
     }
     deps
@@ -185,7 +219,9 @@ pub fn parse_opam_depends(content: &str) -> Vec<String> {
 // ===========================================================================
 
 pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return Vec::new();
+    };
     // Union deps from every *.opam file at the project root — monorepos
     // declare sub-package deps (cmdliner, ctypes, …) in individual package
     // files rather than the primary opam file.
@@ -203,7 +239,9 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             }
         }
     }
-    if !any_opam || declared.is_empty() { return Vec::new() }
+    if !any_opam || declared.is_empty() {
+        return Vec::new();
+    }
 
     let lib_dirs = ocaml_lib_dirs(project_root);
     let user_modules: Vec<String> = collect_ocaml_user_modules(project_root)
@@ -260,21 +298,36 @@ fn collect_ocaml_user_modules(project_root: &Path) -> std::collections::HashSet<
 }
 
 fn scan_ocaml_modules(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, ".git" | "_build" | "_opam" | "test" | "tests" | "bench")
-                    || name.starts_with('.') { continue }
+                if matches!(
+                    name,
+                    ".git" | "_build" | "_opam" | "test" | "tests" | "bench"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_ocaml_modules(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_ocaml_modules(&content, out);
         }
     }
@@ -319,18 +372,24 @@ fn extract_ocaml_modules(content: &str, out: &mut std::collections::HashSet<Stri
 
 fn ocaml_module_to_path_tail(module: &str) -> Option<String> {
     let cleaned = module.trim();
-    if cleaned.is_empty() { return None }
+    if cleaned.is_empty() {
+        return None;
+    }
     Some(format!("{}.ml", cleaned.to_ascii_lowercase()))
 }
 
 fn walk_ocaml_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    if dep.requested_imports.is_empty() { return walk_ocaml_root(dep); }
+    if dep.requested_imports.is_empty() {
+        return walk_ocaml_root(dep);
+    }
     let tails: std::collections::HashSet<String> = dep
         .requested_imports
         .iter()
         .filter_map(|m| ocaml_module_to_path_tail(m))
         .collect();
-    if tails.is_empty() { return walk_ocaml_root(dep); }
+    if tails.is_empty() {
+        return walk_ocaml_root(dep);
+    }
 
     let mut out = Vec::new();
     walk_ocaml_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
@@ -345,8 +404,12 @@ fn walk_ocaml_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
     let mut any_match = false;
@@ -356,12 +419,18 @@ fn walk_ocaml_narrowed_dir(
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') { continue }
+                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -370,7 +439,9 @@ fn walk_ocaml_narrowed_dir(
             // include both via basename comparison.
             let basename = rel_sub.rsplit('/').next().unwrap_or(&rel_sub);
             let stem = basename.trim_end_matches(".mli").trim_end_matches(".ml");
-            if tails.iter().any(|t| t.trim_end_matches(".ml") == stem) { any_match = true; }
+            if tails.iter().any(|t| t.trim_end_matches(".ml") == stem) {
+                any_match = true;
+            }
             dir_files.push((path, rel_sub));
         }
     }
@@ -392,10 +463,14 @@ fn walk_ocaml_narrowed_dir(
 fn ocaml_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let local_opam = project_root.join("_opam").join("lib");
-    if local_opam.is_dir() { dirs.push(local_opam) }
+    if local_opam.is_dir() {
+        dirs.push(local_opam)
+    }
     if let Ok(switch) = std::env::var("OPAM_SWITCH_PREFIX") {
         let lib = PathBuf::from(switch).join("lib");
-        if lib.is_dir() { dirs.push(lib) }
+        if lib.is_dir() {
+            dirs.push(lib)
+        }
     }
     let mut opam_roots: Vec<PathBuf> = Vec::new();
     if let Ok(root) = std::env::var("OPAMROOT") {
@@ -408,10 +483,14 @@ fn ocaml_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
         opam_roots.push(PathBuf::from(local).join("opam"));
     }
     for opam in opam_roots {
-        let Ok(entries) = std::fs::read_dir(&opam) else { continue };
+        let Ok(entries) = std::fs::read_dir(&opam) else {
+            continue;
+        };
         for e in entries.flatten() {
             let lib = e.path().join("lib");
-            if lib.is_dir() { dirs.push(lib) }
+            if lib.is_dir() {
+                dirs.push(lib)
+            }
         }
     }
     dirs
@@ -423,20 +502,38 @@ fn walk_ocaml_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') { continue }
+                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -508,9 +605,15 @@ fn scan_ocaml_header(source: &str) -> Vec<String> {
 
 fn collect_ocaml_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
     match node.kind() {
-        "value_definition" | "let_binding" | "module_definition"
-        | "module_binding" | "type_definition" | "type_binding"
-        | "external" | "exception_definition" | "class_definition"
+        "value_definition"
+        | "let_binding"
+        | "module_definition"
+        | "module_binding"
+        | "type_definition"
+        | "type_binding"
+        | "external"
+        | "exception_definition"
+        | "class_definition"
         | "class_binding" => {
             // Try common field names, then fall back to first identifier child.
             let name_node = node
@@ -549,4 +652,3 @@ fn first_identifier_child<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
 #[cfg(test)]
 #[path = "opam_tests.rs"]
 mod tests;
-

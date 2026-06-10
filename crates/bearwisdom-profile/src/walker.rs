@@ -12,12 +12,10 @@
 // =============================================================================
 
 use crate::detect::detect_language;
-use crate::exclusions::{
-    project_exclude_dirs, should_exclude_in_project_path, should_skip_file,
-};
+use crate::exclusions::{project_exclude_dirs, should_exclude_in_project_path, should_skip_file};
 use crate::types::ScannedFile;
-use std::io::Read;
 use ignore::WalkBuilder;
+use std::io::Read;
 use std::path::Path;
 
 /// Remove the Windows UNC extended-length prefix (`\\?\` or `//?/`) from a
@@ -79,7 +77,9 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
         let _ = overrides.add(&pattern);
     }
     let overrides = overrides.build().unwrap_or_else(|_| {
-        ignore::overrides::OverrideBuilder::new(root).build().unwrap()
+        ignore::overrides::OverrideBuilder::new(root)
+            .build()
+            .unwrap()
     });
 
     let walker = WalkBuilder::new(root)
@@ -138,25 +138,25 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
             } else {
                 Vec::new()
             };
-            should_exclude_in_project_path(&dir_comps, &project_excludes)
-                || {
-                    // Vendor lib dirs: parent in WEB_ROOT + child in
-                    // VENDOR_CHILD (`wwwroot/lib`, `public/vendor`).
-                    let pair_components: Vec<_> = rel.components().collect();
-                    pair_components.windows(2).any(|pair| {
-                        let parent = pair[0].as_os_str().to_str().unwrap_or("");
-                        let child = pair[1].as_os_str().to_str().unwrap_or("");
-                        super::exclusions::WEB_ROOT_DIRS.contains(&parent)
-                            && super::exclusions::VENDOR_CHILD_DIRS.contains(&child)
-                    })
-                }
+            should_exclude_in_project_path(&dir_comps, &project_excludes) || {
+                // Vendor lib dirs: parent in WEB_ROOT + child in
+                // VENDOR_CHILD (`wwwroot/lib`, `public/vendor`).
+                let pair_components: Vec<_> = rel.components().collect();
+                pair_components.windows(2).any(|pair| {
+                    let parent = pair[0].as_os_str().to_str().unwrap_or("");
+                    let child = pair[1].as_os_str().to_str().unwrap_or("");
+                    super::exclusions::WEB_ROOT_DIRS.contains(&parent)
+                        && super::exclusions::VENDOR_CHILD_DIRS.contains(&child)
+                })
+            }
         };
         if should_skip {
             continue;
         }
 
         // Skip minified/bundled files (.min.js, .min.css, .bundle.js).
-        if abs_path.file_name()
+        if abs_path
+            .file_name()
             .and_then(|n| n.to_str())
             .is_some_and(should_skip_file)
         {
@@ -221,7 +221,9 @@ fn path_is_dot_h(path: &std::path::Path) -> bool {
 }
 
 fn file_looks_like_prolog(path: &std::path::Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     // 4 KiB head — large enough to clear typical multi-line license
     // headers (SWI-Prolog's BSD-3 boilerplate is ~1.7 KiB) before the
     // first `:- module(...)` directive.
@@ -233,9 +235,7 @@ fn file_looks_like_prolog(path: &std::path::Path) -> bool {
     let text = String::from_utf8_lossy(&head[..n]);
 
     // Strong Perl indicator — bail out fast.
-    if text.starts_with("#!")
-        && text[..text.find('\n').unwrap_or(text.len())].contains("perl")
-    {
+    if text.starts_with("#!") && text[..text.find('\n').unwrap_or(text.len())].contains("perl") {
         return false;
     }
     if text.contains("\nuse strict;")
@@ -316,7 +316,9 @@ fn file_looks_like_prolog(path: &std::path::Path) -> bool {
 /// The markers checked here are not valid C — finding any one is a
 /// reliable signal that the file must be parsed as C++.
 pub fn file_looks_like_cpp(path: &std::path::Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     let mut head = [0u8; 8192];
     let n = match (&file).take(8192).read(&mut head) {
         Ok(n) => n,
@@ -350,12 +352,16 @@ pub fn file_looks_like_cpp(path: &std::path::Path) -> bool {
     // `int class_name(...)` doesn't match.
     for line in text.lines() {
         let t = line.trim_start();
-        let rest = t.strip_prefix("class ").or_else(|| t.strip_prefix("struct class "));
+        let rest = t
+            .strip_prefix("class ")
+            .or_else(|| t.strip_prefix("struct class "));
         if let Some(rest) = rest {
             let id_end = rest
                 .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
                 .unwrap_or(rest.len());
-            if id_end == 0 { continue; }
+            if id_end == 0 {
+                continue;
+            }
             let after = rest[id_end..].trim_start();
             if after.starts_with('{')
                 || after.starts_with(':')

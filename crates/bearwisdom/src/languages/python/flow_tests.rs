@@ -23,17 +23,25 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .enumerate()
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
-                node_kind: if i == 0 { "identifier".to_string() } else { "property_identifier".to_string() },
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                node_kind: if i == 0 {
+                    "identifier".to_string()
+                } else {
+                    "property_identifier".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
@@ -57,9 +65,17 @@ fn make_file_ctx_with_imports(libs: &[&str]) -> FileContext {
 
 #[test]
 fn fastapi_get_decorator_emits_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     match detect_python_route_decorator_emission("app.get", Some("/users/{id}")).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/users/{}");
@@ -101,12 +117,20 @@ fn route_decorator_no_emit_for_unrelated_decorator() {
 
 #[test]
 fn requests_get_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let chain = make_chain(&["requests", "get"]);
     let call_args = vec![CallArg::StringLit("/api/users".to_string())];
     let ctx = make_file_ctx_with_imports(&["requests"]);
     match detect_python_http_chain_emission(&chain, &call_args, &ctx).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users");
@@ -153,7 +177,10 @@ fn sqlalchemy_entity_query_filter_emits_dbquery() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["User", "query", "filter"]);
     match detect_python_db_query_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -166,7 +193,10 @@ fn django_entity_objects_create_emits_dbquery_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["User", "objects", "create"]);
     match detect_python_db_query_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.User");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -179,7 +209,10 @@ fn django_entity_objects_filter_emits_dbquery_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["Poll", "objects", "filter"]);
     match detect_python_db_query_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.Poll");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -201,11 +234,19 @@ fn db_query_no_emit_for_unrelated_chain() {
 
 #[test]
 fn django_path_emits_consumer_http() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let args = vec![CallArg::StringLit("users/".to_string()), CallArg::Other];
     let ctx = make_file_ctx_with_imports(&["django"]);
     match detect_python_django_path_emission("path", &args, &ctx).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/users");
@@ -263,7 +304,9 @@ fn channels_path_emits_ws_when_channels_imported() {
     let args = vec![CallArg::StringLit("ws/chat/".to_string())];
     let ctx = make_file_ctx_with_imports(&["channels"]);
     match detect_python_channels_path_emission("path", &args, &ctx).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/ws/chat");
@@ -283,7 +326,9 @@ fn channels_path_requires_channels_import() {
 fn strawberry_field_emits_graphql_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_python_graphql_decorator_emission("strawberry.field", "users").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::GraphQLOp));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "field:users");
@@ -294,9 +339,7 @@ fn strawberry_field_emits_graphql_consumer() {
 
 #[test]
 fn graphene_mutation_recognised() {
-    assert!(
-        detect_python_graphql_decorator_emission("graphene.mutation", "createUser").is_some()
-    );
+    assert!(detect_python_graphql_decorator_emission("graphene.mutation", "createUser").is_some());
 }
 
 #[test]
@@ -313,12 +356,16 @@ fn graphql_rejects_unrelated_decorator() {
 
 #[test]
 fn urllib_urlopen_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let chain = make_chain(&["urllib", "request", "urlopen"]);
     let args = vec![CallArg::StringLit("https://api.example.com/x".to_string())];
     let ctx = make_file_ctx_with_imports(&["urllib"]);
     match detect_python_http_chain_emission(&chain, &args, &ctx).unwrap() {
-        FlowEmission::NamedChannel { kind, role, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, method, ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(method, Some(HttpMethod::Any));
@@ -333,7 +380,10 @@ fn sqlalchemy_select_call_emits_db_query() {
     let args = vec![CallArg::Ident("User".to_string())];
     let ctx = make_file_ctx_with_imports(&["sqlalchemy"]);
     match detect_python_sqlalchemy_select_call("select", &args, &ctx).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -352,9 +402,14 @@ fn sqlalchemy_select_requires_sqlalchemy_import() {
 fn cursor_execute_select_emits_db_query() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["cursor", "execute"]);
-    let args = vec![CallArg::StringLit("SELECT id FROM users WHERE active = 1".to_string())];
+    let args = vec![CallArg::StringLit(
+        "SELECT id FROM users WHERE active = 1".to_string(),
+    )];
     match detect_python_cursor_execute_emission(&chain, &args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -366,9 +421,14 @@ fn cursor_execute_select_emits_db_query() {
 fn cursor_execute_insert_emits_op() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["cursor", "execute"]);
-    let args = vec![CallArg::StringLit("INSERT INTO items (a) VALUES (1)".to_string())];
+    let args = vec![CallArg::StringLit(
+        "INSERT INTO items (a) VALUES (1)".to_string(),
+    )];
     match detect_python_cursor_execute_emission(&chain, &args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "py.items");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -381,7 +441,9 @@ fn grpc_stub_method_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["UserServiceStub", "GetUser"]);
     match detect_python_grpc_stub_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "UserService.GetUser");

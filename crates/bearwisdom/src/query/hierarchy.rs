@@ -103,7 +103,11 @@ pub fn hierarchical_graph(
     max_nodes: usize,
 ) -> QueryResult<HierarchyResult> {
     let _timer = db.timer("hierarchical_graph");
-    let cap = if max_nodes == 0 { 500 } else { max_nodes.min(5_000) };
+    let cap = if max_nodes == 0 {
+        500
+    } else {
+        max_nodes.min(5_000)
+    };
 
     // Strip node-ID prefixes that the frontend sends as scope values.
     // Node IDs use "pkg:<path>" and "file:<path>" format, but backend
@@ -133,8 +137,8 @@ pub fn hierarchical_graph(
                 Ok(result)
             }
         }
-        "files"    => files_level(db, scope, cap),
-        "symbols"  => symbols_level(db, scope, cap),
+        "files" => files_level(db, scope, cap),
+        "symbols" => symbols_level(db, scope, cap),
         other => Err(anyhow::anyhow!(
             "Unknown hierarchy level '{other}'. Expected: services, packages, files, symbols"
         )
@@ -154,15 +158,12 @@ pub(super) fn workspace_breadcrumb(current_level: &str) -> Vec<Breadcrumb> {
     }]
 }
 
-
 pub(super) fn files_breadcrumbs(scope: Option<&str>) -> Vec<Breadcrumb> {
-    let mut crumbs = vec![
-        Breadcrumb {
-            label: "Workspace".to_string(),
-            level: "packages".to_string(),
-            scope: None,
-        },
-    ];
+    let mut crumbs = vec![Breadcrumb {
+        label: "Workspace".to_string(),
+        level: "packages".to_string(),
+        scope: None,
+    }];
     if let Some(pkg_path) = scope {
         // Last segment of the package path as label.
         let label = pkg_path.rsplit('/').next().unwrap_or(pkg_path).to_string();
@@ -176,13 +177,11 @@ pub(super) fn files_breadcrumbs(scope: Option<&str>) -> Vec<Breadcrumb> {
 }
 
 pub(super) fn symbols_breadcrumbs(scope: Option<&str>, package: Option<&str>) -> Vec<Breadcrumb> {
-    let mut crumbs = vec![
-        Breadcrumb {
-            label: "Workspace".to_string(),
-            level: "packages".to_string(),
-            scope: None,
-        },
-    ];
+    let mut crumbs = vec![Breadcrumb {
+        label: "Workspace".to_string(),
+        level: "packages".to_string(),
+        scope: None,
+    }];
     if let Some(pkg_path) = package {
         let label = pkg_path.rsplit('/').next().unwrap_or(pkg_path).to_string();
         crumbs.push(Breadcrumb {
@@ -192,7 +191,11 @@ pub(super) fn symbols_breadcrumbs(scope: Option<&str>, package: Option<&str>) ->
         });
     }
     if let Some(file_path) = scope {
-        let label = file_path.rsplit('/').next().unwrap_or(file_path).to_string();
+        let label = file_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(file_path)
+            .to_string();
         crumbs.push(Breadcrumb {
             label,
             level: "symbols".to_string(),

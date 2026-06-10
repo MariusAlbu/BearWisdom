@@ -5,18 +5,30 @@ use crate::types::{
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let norm = file_path.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    let stem = std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
+    let stem = std::path::Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string();
     let symbols = vec![ExtractedSymbol {
-        name: stem.clone(), qualified_name: stem.clone(),
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: stem.clone(),
+        qualified_name: stem.clone(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}];
+    }];
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let line_starts: Vec<u32> = std::iter::once(0)
         .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
@@ -30,14 +42,21 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     if let Some(end_rel) = rest[start..].find('"') {
                         let file = &rest[start..start + end_rel];
                         let p = std::path::Path::new(file);
-                        let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        let target = p
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(file)
+                            .to_string();
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: 0,
                             target_name: target,
                             kind: EdgeKind::Imports,
                             line: line_no as u32,
                             col: 0,
-                            module: None, chain: None,
+                            module: None,
+                            chain: None,
                             byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
@@ -47,7 +66,12 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             }
         }
     }
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+    ExtractionResult {
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
     }

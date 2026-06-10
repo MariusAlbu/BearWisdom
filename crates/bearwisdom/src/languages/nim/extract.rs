@@ -29,18 +29,23 @@
 // their syntactic start lines; call extraction runs over every non-comment byte.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 
 pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
+    let mut alias_targets: Vec<(String, AliasTarget)> = Vec::new();
 
     let line_starts: Vec<u32> = {
         let mut offsets = vec![0u32];
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -97,8 +102,26 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // Extract calls from the signature line and every body line.
                 // Body lines are not visited by the main loop (we jump past
                 // them with i = end + 1), so we scan them here explicitly.
+                // Also surface nested proc/template declarations so local
+                // helper calls inside the same file can bind through the
+                // generic same-file strategy.
                 for body_line_idx in i..=end as usize {
-                    extract_calls(lines[body_line_idx].trim(), body_line_idx as u32, &mut refs);
+                    let body_trimmed = lines[body_line_idx].trim();
+                    if body_line_idx != i {
+                        if let Some((nested_name, nested_kind, nested_vis)) =
+                            parse_proc_line(body_trimmed)
+                        {
+                            let line = body_line_idx as u32;
+                            symbols.push(make_sym(
+                                nested_name,
+                                nested_kind,
+                                nested_vis,
+                                line,
+                                line,
+                            ));
+                        }
+                    }
+                    extract_calls(body_trimmed, body_line_idx as u32, &mut refs);
                 }
                 i = end as usize + 1;
                 continue;
@@ -107,7 +130,8 @@ pub fn extract(source: &str) -> ExtractionResult {
             // import / from ... import — may span multiple lines when the list
             // is indented under a bare `import` keyword.  Consume continuation
             // lines before advancing.
-            if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ") {
+            if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ")
+            {
                 let byte_off = line_starts.get(i).copied().unwrap_or(0);
                 let (import_refs, consumed) = parse_import_block(&lines, i, byte_off);
                 refs.extend(import_refs);
@@ -115,21 +139,63 @@ pub fn extract(source: &str) -> ExtractionResult {
                 continue;
             }
 
+            // export module — Nim exports forward an imported module's public
+            // surface. Emit generic re-export refs so DefaultResolver's
+            // re-export walker, not a Nim-specific resolver, owns the bind.
+            if trimmed == "export" || trimmed.starts_with("export ") {
+                let byte_off = line_starts.get(i).copied().unwrap_or(0);
+                let (export_refs, consumed) = parse_export_block(&lines, i, byte_off);
+                refs.extend(export_refs);
+                i += consumed;
+                continue;
+            }
+
             // include file
-            if let Some(inc_ref) = parse_include_line(trimmed, i as u32, line_starts.get(i).copied().unwrap_or(0)) {
+            if let Some(inc_ref) =
+                parse_include_line(trimmed, i as u32, line_starts.get(i).copied().unwrap_or(0))
+            {
                 refs.push(inc_ref);
                 i += 1;
                 continue;
             }
 
             // Single-line type declaration: `type Name = ...`
-            if let Some((tname, tkind)) = parse_type_decl_line(trimmed) {
+            if let Some(decl) = parse_type_decl_line(trimmed) {
                 let line = i as u32;
-                symbols.push(make_sym(tname, tkind, Visibility::Public, line, line));
+                let sym = make_type_sym(&decl, Visibility::Public, line, line);
+                if let Some(target) = decl.alias_target {
+                    alias_targets.push((decl.name.clone(), target));
+                }
+                symbols.push(sym);
                 i += 1;
                 continue;
             }
         } else if indent == 2 && !in_type_section {
+            if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ")
+            {
+                let byte_off = line_starts.get(i).copied().unwrap_or(0);
+                let (import_refs, consumed) = parse_import_block(&lines, i, byte_off);
+                refs.extend(import_refs);
+                i += consumed;
+                continue;
+            }
+
+            if trimmed == "export" || trimmed.starts_with("export ") {
+                let byte_off = line_starts.get(i).copied().unwrap_or(0);
+                let (export_refs, consumed) = parse_export_block(&lines, i, byte_off);
+                refs.extend(export_refs);
+                i += consumed;
+                continue;
+            }
+
+            if let Some(inc_ref) =
+                parse_include_line(trimmed, i as u32, line_starts.get(i).copied().unwrap_or(0))
+            {
+                refs.push(inc_ref);
+                i += 1;
+                continue;
+            }
+
             // Proc/func/template/etc. declarations at one level of indentation
             // are module-level routines inside conditional compilation blocks
             // (`when defined(...)`, `when not weirdTarget`, etc.).  These are
@@ -143,13 +209,17 @@ pub fn extract(source: &str) -> ExtractionResult {
             }
         } else if in_type_section && indent >= type_section_indent && type_section_indent > 0 {
             // Inside a `type` section body — each indented `Name = ...` is a type.
-            if let Some((tname, tkind)) = parse_type_section_entry(trimmed) {
+            if let Some(decl) = parse_type_section_entry(trimmed) {
                 let line = i as u32;
                 let end = find_type_block_end(&lines, i, indent);
-                symbols.push(make_sym(tname.clone(), tkind, Visibility::Public, line, end));
+                let sym = make_type_sym(&decl, Visibility::Public, line, end);
+                if let Some(target) = decl.alias_target {
+                    alias_targets.push((decl.name.clone(), target));
+                }
+                symbols.push(sym);
                 // For enum types, also extract individual members so that
                 // enum-value call patterns (`memberName(...)`) resolve correctly.
-                if tkind == SymbolKind::Enum {
+                if decl.kind == SymbolKind::Enum {
                     extract_enum_members(&lines, i + 1, end, &mut symbols);
                 }
                 i = end as usize + 1;
@@ -166,7 +236,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         i += 1;
     }
 
-    ExtractionResult::new(symbols, refs, false)
+    let mut result = ExtractionResult::new(symbols, refs, false);
+    result.alias_targets = alias_targets;
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +278,10 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
             while pos < n {
                 match bytes[pos] {
                     b'\\' => pos += 2, // escape
-                    b'"' => { pos += 1; break; }
+                    b'"' => {
+                        pos += 1;
+                        break;
+                    }
                     _ => pos += 1,
                 }
             }
@@ -216,10 +291,14 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
             // Skip char literal.
             pos += 1;
             while pos < n && bytes[pos] != b'\'' {
-                if bytes[pos] == b'\\' { pos += 1; }
+                if bytes[pos] == b'\\' {
+                    pos += 1;
+                }
                 pos += 1;
             }
-            if pos < n { pos += 1; }
+            if pos < n {
+                pos += 1;
+            }
             continue;
         }
 
@@ -257,10 +336,16 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
             // For a bare call `foo(...)`, `ident` is the callee directly.
             let target = ident.to_string();
 
-            out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            out.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target,
-                kind: if is_method_call { EdgeKind::Calls } else { EdgeKind::Calls },
+                kind: if is_method_call {
+                    EdgeKind::Calls
+                } else {
+                    EdgeKind::Calls
+                },
                 line: line_num,
                 col: 0,
                 module: None,
@@ -289,11 +374,16 @@ fn skip_generic_params(bytes: &[u8], mut pos: usize) -> usize {
     let mut depth = 0i32;
     while pos < n {
         match bytes[pos] {
-            b'[' => { depth += 1; pos += 1; }
+            b'[' => {
+                depth += 1;
+                pos += 1;
+            }
             b']' => {
                 depth -= 1;
                 pos += 1;
-                if depth == 0 { break; }
+                if depth == 0 {
+                    break;
+                }
             }
             _ => pos += 1,
         }
@@ -313,7 +403,10 @@ fn strip_comment(line: &str) -> &str {
                 while pos < n {
                     match bytes[pos] {
                         b'\\' => pos += 2,
-                        b'"' => { pos += 1; break; }
+                        b'"' => {
+                            pos += 1;
+                            break;
+                        }
                         _ => pos += 1,
                     }
                 }
@@ -321,10 +414,14 @@ fn strip_comment(line: &str) -> &str {
             b'\'' => {
                 pos += 1;
                 while pos < n && bytes[pos] != b'\'' {
-                    if bytes[pos] == b'\\' { pos += 1; }
+                    if bytes[pos] == b'\\' {
+                        pos += 1;
+                    }
                     pos += 1;
                 }
-                if pos < n { pos += 1; }
+                if pos < n {
+                    pos += 1;
+                }
             }
             b'#' => return &line[..pos],
             _ => pos += 1,
@@ -338,14 +435,51 @@ fn strip_comment(line: &str) -> &str {
 fn is_nim_control_keyword(s: &str) -> bool {
     matches!(
         s,
-        "if" | "when" | "while" | "for" | "case" | "of" | "elif" | "else"
-            | "try" | "except" | "finally" | "return" | "yield" | "break"
-            | "continue" | "discard" | "raise" | "await" | "defer"
-            | "and" | "or" | "not" | "in" | "notin" | "is" | "isnot"
-            | "let" | "var" | "const" | "type" | "proc" | "func" | "method"
-            | "template" | "macro" | "iterator" | "converter" | "import"
-            | "from" | "include" | "export" | "block" | "do" | "bind"
-            | "mixin" | "static"
+        "if" | "when"
+            | "while"
+            | "for"
+            | "case"
+            | "of"
+            | "elif"
+            | "else"
+            | "try"
+            | "except"
+            | "finally"
+            | "return"
+            | "yield"
+            | "break"
+            | "continue"
+            | "discard"
+            | "raise"
+            | "await"
+            | "defer"
+            | "and"
+            | "or"
+            | "not"
+            | "in"
+            | "notin"
+            | "is"
+            | "isnot"
+            | "let"
+            | "var"
+            | "const"
+            | "type"
+            | "proc"
+            | "func"
+            | "method"
+            | "template"
+            | "macro"
+            | "iterator"
+            | "converter"
+            | "import"
+            | "from"
+            | "include"
+            | "export"
+            | "block"
+            | "do"
+            | "bind"
+            | "mixin"
+            | "static"
     )
 }
 
@@ -386,20 +520,31 @@ fn parse_proc_line(line: &str) -> Option<(String, SymbolKind, Visibility)> {
         return None;
     }
 
-    let vis = if is_pub { Visibility::Public } else { Visibility::Private };
+    let vis = if is_pub {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     Some((name, kind, vis))
 }
 
+#[derive(Debug, Clone)]
+struct NimTypeDecl {
+    name: String,
+    kind: SymbolKind,
+    signature: Option<String>,
+    alias_target: Option<AliasTarget>,
+}
+
 /// Parse top-level `type Name = ...` (single line, no section).
-/// Returns (name, kind).
-fn parse_type_decl_line(line: &str) -> Option<(String, SymbolKind)> {
+fn parse_type_decl_line(line: &str) -> Option<NimTypeDecl> {
     let rest = line.strip_prefix("type ")?;
     let rest = rest.trim_start();
     parse_type_rhs(rest)
 }
 
 /// Parse an entry inside a `type` section (indented `Name = ...`).
-fn parse_type_section_entry(trimmed: &str) -> Option<(String, SymbolKind)> {
+fn parse_type_section_entry(trimmed: &str) -> Option<NimTypeDecl> {
     // Skip lines that are continuations of a previous definition (start with `|` or whitespace).
     if trimmed.starts_with('|') || trimmed.starts_with('#') {
         return None;
@@ -407,11 +552,11 @@ fn parse_type_section_entry(trimmed: &str) -> Option<(String, SymbolKind)> {
     parse_type_rhs(trimmed)
 }
 
-/// Parse `Name = rhs` → (name, kind).
+/// Parse `Name = rhs` into a type declaration.
 ///
 /// Accepts `Name* = rhs`, `Name[T] = rhs`, and `Name* {.pragma.} = rhs`
 /// where `*` is Nim's export marker and `{. ... .}` is a pragma annotation.
-fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
+fn parse_type_rhs(s: &str) -> Option<NimTypeDecl> {
     // Name may have generic params: `Name[T]` or `Name`
     let name: String = s
         .chars()
@@ -422,8 +567,11 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
     }
     // Strip optional export marker `*` then optional generic params `[...]`.
     let after_name = s[name.len()..].trim_start();
-    let after_name = after_name.strip_prefix('*').unwrap_or(after_name).trim_start();
-    let after_name = if after_name.starts_with('[') {
+    let after_name = after_name
+        .strip_prefix('*')
+        .unwrap_or(after_name)
+        .trim_start();
+    let (generic_clause, after_name) = if after_name.starts_with('[') {
         // Skip to matching `]`
         let mut depth = 0usize;
         let mut end = 0;
@@ -440,12 +588,18 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
                 _ => {}
             }
         }
-        after_name[end..].trim_start()
+        (
+            Some(after_name[..end].to_string()),
+            after_name[end..].trim_start(),
+        )
     } else {
-        after_name
+        (None, after_name)
     };
     // Strip another optional `*` that can follow generic params: `Name[T]* = ...`
-    let after_name = after_name.strip_prefix('*').unwrap_or(after_name).trim_start();
+    let after_name = after_name
+        .strip_prefix('*')
+        .unwrap_or(after_name)
+        .trim_start();
     // Strip optional pragma annotation `{. ... .}` — present in C-interop types
     // such as `cint* {.importc: "int", nodecl.} = int32`.
     let after_name = if after_name.starts_with("{.") {
@@ -459,7 +613,10 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
 
     let rhs = after_name.strip_prefix('=')?.trim_start();
 
-    let kind = if rhs.starts_with("object") || rhs.starts_with("ref object") || rhs.starts_with("ptr object") {
+    let kind = if rhs.starts_with("object")
+        || rhs.starts_with("ref object")
+        || rhs.starts_with("ptr object")
+    {
         SymbolKind::Struct
     } else if rhs.starts_with("enum") {
         SymbolKind::Enum
@@ -471,7 +628,98 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
         SymbolKind::TypeAlias
     };
 
-    Some((name, kind))
+    let alias_target = (kind == SymbolKind::TypeAlias)
+        .then(|| parse_alias_target(rhs))
+        .flatten();
+    let signature = generic_clause.map(|g| format!("{name}{g}"));
+
+    Some(NimTypeDecl {
+        name,
+        kind,
+        signature,
+        alias_target,
+    })
+}
+
+fn parse_alias_target(rhs: &str) -> Option<AliasTarget> {
+    let rhs = rhs.trim();
+    if rhs.is_empty()
+        || rhs.starts_with("proc")
+        || rhs.starts_with("iterator")
+        || rhs.starts_with("tuple")
+        || rhs.starts_with("object")
+        || rhs.starts_with("enum")
+        || rhs.starts_with("concept")
+    {
+        return None;
+    }
+
+    let (root, args) = parse_type_application(rhs)?;
+    Some(AliasTarget::Application { root, args })
+}
+
+fn parse_type_application(s: &str) -> Option<(String, Vec<String>)> {
+    let s = s.trim();
+    let mut end = 0usize;
+    for (idx, ch) in s.char_indices() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '.' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 {
+        return None;
+    }
+    let root = s[..end].to_string();
+    let rest = s[end..].trim_start();
+    if !rest.starts_with('[') {
+        return Some((root, Vec::new()));
+    }
+    let close = find_matching_bracket(rest, '[', ']')?;
+    let inner = &rest[1..close];
+    let args = split_top_level_args(inner);
+    Some((root, args))
+}
+
+fn find_matching_bracket(s: &str, open: char, close: char) -> Option<usize> {
+    let mut depth = 0usize;
+    for (idx, ch) in s.char_indices() {
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+fn split_top_level_args(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    for (idx, ch) in s.char_indices() {
+        match ch {
+            '[' | '(' | '<' => depth += 1,
+            ']' | ')' | '>' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let arg = s[start..idx].trim();
+                if !arg.is_empty() {
+                    out.push(arg.to_string());
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    let arg = s[start..].trim();
+    if !arg.is_empty() {
+        out.push(arg.to_string());
+    }
+    out
 }
 
 /// Parse an `import` or `from ... import` block that may span multiple lines.
@@ -487,7 +735,11 @@ fn parse_type_rhs(s: &str) -> Option<(String, SymbolKind)> {
 ///   `import other as O`
 ///   `import\n  blscurve,\n  stew/byteutils`     ← bare keyword + indented list
 ///   `import foo/[\n  bar,\n  baz\n]`            ← bracket spanning lines
-fn parse_import_block(lines: &[&str], start: usize, byte_offset: u32) -> (Vec<ExtractedRef>, usize) {
+fn parse_import_block(
+    lines: &[&str],
+    start: usize,
+    byte_offset: u32,
+) -> (Vec<ExtractedRef>, usize) {
     let line_num = start as u32;
     let (raw_text, consumed) = collect_import_block(lines, start);
     let refs = parse_collected_import(&raw_text, line_num, byte_offset);
@@ -510,13 +762,24 @@ fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
     let mut consumed = 1usize;
 
     loop {
-        let depth: i32 = buf.chars().map(|c| match c { '[' => 1, ']' => -1, _ => 0 }).sum();
-        let trailing_comma = buf.trim_end_matches(|c: char| c == ' ' || c == '\t').ends_with(',');
-        let is_bare_keyword = buf == "import" || buf == "from";
+        let depth: i32 = buf
+            .chars()
+            .map(|c| match c {
+                '[' => 1,
+                ']' => -1,
+                _ => 0,
+            })
+            .sum();
+        let trailing_comma = buf
+            .trim_end_matches(|c: char| c == ' ' || c == '\t')
+            .ends_with(',');
+        let is_bare_keyword = buf == "import" || buf == "from" || buf == "export";
         if !is_bare_keyword && depth <= 0 && !trailing_comma {
             break;
         }
-        if start + consumed >= lines.len() { break; }
+        if start + consumed >= lines.len() {
+            break;
+        }
         let next = lines[start + consumed];
         let next_t = next.trim();
         // Skip blank lines and comment lines inside the block.
@@ -544,13 +807,15 @@ fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
 
 /// Parse a fully-collected import statement string into ExtractedRefs.
 fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<ExtractedRef> {
-    let make_ref = |name: String| ExtractedRef { is_import_binding: false, is_reexport: false,
+    let make_ref = |name: String| ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
-        target_name: name,
+        target_name: "*".to_string(),
         kind: EdgeKind::Imports,
         line: line_num,
         col: 0,
-        module: None,
+        module: Some(name),
         chain: None,
         byte_offset,
         namespace_segments: Vec::new(),
@@ -573,12 +838,54 @@ fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<Ex
             Some(idx) => rest[..idx].trim(),
             None => rest.split_whitespace().next().unwrap_or(""),
         };
-        if module_part.is_empty() { return Vec::new(); }
+        if module_part.is_empty() {
+            return Vec::new();
+        }
         let names = expand_nim_imports(module_part);
         return names.into_iter().map(make_ref).collect();
     }
 
     Vec::new()
+}
+
+fn parse_export_block(
+    lines: &[&str],
+    start: usize,
+    byte_offset: u32,
+) -> (Vec<ExtractedRef>, usize) {
+    let (text, consumed) = collect_import_block(lines, start);
+    (
+        parse_collected_export(&text, start as u32, byte_offset),
+        consumed,
+    )
+}
+
+fn parse_collected_export(text: &str, line_num: u32, byte_offset: u32) -> Vec<ExtractedRef> {
+    let rest = match text.strip_prefix("export ") {
+        Some(r) => r.trim(),
+        None if text == "export" => "",
+        None => return Vec::new(),
+    };
+    if rest.is_empty() {
+        return Vec::new();
+    }
+    expand_nim_imports(rest)
+        .into_iter()
+        .map(|module| ExtractedRef {
+            is_import_binding: false,
+            is_reexport: true,
+            source_symbol_index: 0,
+            target_name: "*".to_string(),
+            kind: EdgeKind::Imports,
+            line: line_num,
+            col: 0,
+            module: Some(module),
+            chain: None,
+            byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        })
+        .collect()
 }
 
 /// Parse `include file` lines → single `Imports` ref per included path.
@@ -589,8 +896,12 @@ fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<Ex
 fn parse_include_line(line: &str, line_num: u32, byte_offset: u32) -> Option<ExtractedRef> {
     let rest = line.strip_prefix("include ")?;
     let name = rest.trim().split_whitespace().next()?.to_string();
-    if name.is_empty() { return None; }
-    Some(ExtractedRef { is_import_binding: false, is_reexport: false,
+    if name.is_empty() {
+        return None;
+    }
+    Some(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: name,
         kind: EdgeKind::Imports,
@@ -613,8 +924,14 @@ fn expand_nim_imports(rest: &str) -> Vec<String> {
     let mut buf = String::new();
     for ch in rest.chars() {
         match ch {
-            '[' => { depth += 1; buf.push(ch); }
-            ']' => { depth -= 1; buf.push(ch); }
+            '[' => {
+                depth += 1;
+                buf.push(ch);
+            }
+            ']' => {
+                depth -= 1;
+                buf.push(ch);
+            }
             ',' if depth == 0 => {
                 expand_one_import(buf.trim(), &mut out);
                 buf.clear();
@@ -628,7 +945,9 @@ fn expand_nim_imports(rest: &str) -> Vec<String> {
 
 fn expand_one_import(item: &str, out: &mut Vec<String>) {
     let item = item.trim();
-    if item.is_empty() { return; }
+    if item.is_empty() {
+        return;
+    }
     // Strip `as alias` suffix.
     let item = item.split(" as ").next().unwrap_or(item).trim();
     // Bracket-group form: `prefix/[a, b]` — also handles `prefix / [a, b]`
@@ -642,7 +961,9 @@ fn expand_one_import(item: &str, out: &mut Vec<String>) {
             let inside = &item[open + 1..close];
             for sub in inside.split(',') {
                 let sub = sub.trim();
-                if sub.is_empty() { continue; }
+                if sub.is_empty() {
+                    continue;
+                }
                 let sub = sub.split(" as ").next().unwrap_or(sub).trim();
                 if prefix.is_empty() {
                     out.push(sub.to_string());
@@ -662,7 +983,11 @@ fn normalize_nim_path(s: &str) -> String {
     if !s.contains(" /") && !s.contains("/ ") {
         return s.to_string();
     }
-    s.split('/').map(str::trim).filter(|p| !p.is_empty()).collect::<Vec<_>>().join("/")
+    s.split('/')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 // ---------------------------------------------------------------------------
@@ -678,7 +1003,13 @@ fn strip_pub(s: &str) -> (bool, &str) {
     (false, s)
 }
 
-fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u32) -> ExtractedSymbol {
+fn make_sym(
+    name: String,
+    kind: SymbolKind,
+    vis: Visibility,
+    start: u32,
+    end: u32,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         qualified_name: name.clone(),
         name,
@@ -693,11 +1024,17 @@ fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u3
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
+    }
 }
+
+fn make_type_sym(decl: &NimTypeDecl, vis: Visibility, start: u32, end: u32) -> ExtractedSymbol {
+    let mut sym = make_sym(decl.name.clone(), decl.kind, vis, start, end);
+    sym.signature = decl.signature.clone();
+    sym
 }
 
 fn leading_spaces(line: &str) -> usize {
@@ -731,24 +1068,38 @@ fn extract_enum_members(
         // Split on commas.
         for token in effective.split(',') {
             let token = token.trim();
-            if token.is_empty() { continue; }
+            if token.is_empty() {
+                continue;
+            }
             // Strip explicit value: `name = expr` → `name`
             let name_part = token.split('=').next().unwrap_or("").trim();
             // Handle backtick-quoted identifiers: `` `var` `` → `var`
-            let name = if name_part.starts_with('`') && name_part.ends_with('`') && name_part.len() > 2 {
-                &name_part[1..name_part.len() - 1]
-            } else {
-                name_part
-            };
+            let name =
+                if name_part.starts_with('`') && name_part.ends_with('`') && name_part.len() > 2 {
+                    &name_part[1..name_part.len() - 1]
+                } else {
+                    name_part
+                };
             // Validate: must be a non-empty identifier (alphanumeric + underscore,
             // starting with a letter or underscore), not a string literal.
-            if name.is_empty() || name.starts_with('"') { continue; }
-            if !name.chars().next().map(|c| c.is_alphabetic() || c == '_').unwrap_or(false) {
+            if name.is_empty() || name.starts_with('"') {
                 continue;
             }
-            if !name.chars().all(|c| c.is_alphanumeric() || c == '_') { continue; }
+            if !name
+                .chars()
+                .next()
+                .map(|c| c.is_alphabetic() || c == '_')
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                continue;
+            }
             // Skip enum members that are too short to be meaningful call targets.
-            if name.len() < 2 { continue; }
+            if name.len() < 2 {
+                continue;
+            }
             out.push(make_sym(
                 name.to_string(),
                 SymbolKind::EnumMember,

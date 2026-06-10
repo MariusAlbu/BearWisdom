@@ -40,7 +40,12 @@ pub(super) fn extract_method_params(
             "identifier" => {
                 let name = node_text(&child, src);
                 if !name.is_empty() {
-                    symbols.push(make_param_variable(name, &child, parent_index, qualified_prefix));
+                    symbols.push(make_param_variable(
+                        name,
+                        &child,
+                        parent_index,
+                        qualified_prefix,
+                    ));
                 }
             }
 
@@ -49,7 +54,12 @@ pub(super) fn extract_method_params(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, src);
                     if !name.is_empty() {
-                        symbols.push(make_param_variable(name, &name_node, parent_index, qualified_prefix));
+                        symbols.push(make_param_variable(
+                            name,
+                            &name_node,
+                            parent_index,
+                            qualified_prefix,
+                        ));
                     }
                 }
             }
@@ -59,7 +69,12 @@ pub(super) fn extract_method_params(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, src);
                     if !name.is_empty() {
-                        symbols.push(make_param_variable(name, &name_node, parent_index, qualified_prefix));
+                        symbols.push(make_param_variable(
+                            name,
+                            &name_node,
+                            parent_index,
+                            qualified_prefix,
+                        ));
                     }
                 }
             }
@@ -69,7 +84,12 @@ pub(super) fn extract_method_params(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, src);
                     if !name.is_empty() {
-                        symbols.push(make_param_variable(name, &name_node, parent_index, qualified_prefix));
+                        symbols.push(make_param_variable(
+                            name,
+                            &name_node,
+                            parent_index,
+                            qualified_prefix,
+                        ));
                     }
                 } else {
                     // Fallback: grab the first identifier child after `&`
@@ -78,7 +98,12 @@ pub(super) fn extract_method_params(
                         if c.kind() == "identifier" {
                             let name = node_text(&c, src);
                             if !name.is_empty() {
-                                symbols.push(make_param_variable(name, &c, parent_index, qualified_prefix));
+                                symbols.push(make_param_variable(
+                                    name,
+                                    &c,
+                                    parent_index,
+                                    qualified_prefix,
+                                ));
                                 break;
                             }
                         }
@@ -91,7 +116,12 @@ pub(super) fn extract_method_params(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, src);
                     if !name.is_empty() {
-                        symbols.push(make_param_variable(name, &name_node, parent_index, qualified_prefix));
+                        symbols.push(make_param_variable(
+                            name,
+                            &name_node,
+                            parent_index,
+                            qualified_prefix,
+                        ));
                     }
                 }
             }
@@ -101,7 +131,12 @@ pub(super) fn extract_method_params(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = node_text(&name_node, src);
                     if !name.is_empty() {
-                        symbols.push(make_param_variable(name, &name_node, parent_index, qualified_prefix));
+                        symbols.push(make_param_variable(
+                            name,
+                            &name_node,
+                            parent_index,
+                            qualified_prefix,
+                        ));
                     }
                 }
             }
@@ -128,7 +163,12 @@ fn extract_destructured_param(
         if child.kind() == "identifier" {
             let name = node_text(&child, src);
             if !name.is_empty() {
-                symbols.push(make_param_variable(name, &child, parent_index, qualified_prefix));
+                symbols.push(make_param_variable(
+                    name,
+                    &child,
+                    parent_index,
+                    qualified_prefix,
+                ));
             }
         } else if child.kind() == "destructured_parameter" {
             extract_destructured_param(&child, src, parent_index, qualified_prefix, symbols);
@@ -166,7 +206,9 @@ pub(super) fn extract_rescue(
                         "constant" | "scope_resolution" => {
                             let type_name = node_text(&exc, src);
                             if !type_name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
@@ -175,9 +217,9 @@ pub(super) fn extract_rescue(
                                     module: None,
                                     chain: None,
                                     byte_offset: exc.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         _ => {}
@@ -193,7 +235,12 @@ pub(super) fn extract_rescue(
                     if v_child.kind() == "identifier" {
                         let name = node_text(&v_child, src);
                         if !name.is_empty() {
-                            symbols.push(make_param_variable(name, &v_child, source_symbol_index, qualified_prefix));
+                            symbols.push(make_param_variable(
+                                name,
+                                &v_child,
+                                source_symbol_index,
+                                qualified_prefix,
+                            ));
                         }
                     }
                 }
@@ -228,9 +275,9 @@ fn make_param_variable(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

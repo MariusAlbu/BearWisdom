@@ -15,7 +15,13 @@ class Foo {
     let result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
-    let meta = run_flow_queries(src, &language, &GROOVY_FLOW_CONFIG, &result.symbols, &mut refs);
+    let meta = run_flow_queries(
+        src,
+        &language,
+        &GROOVY_FLOW_CONFIG,
+        &result.symbols,
+        &mut refs,
+    );
     // At least one flow binding must be produced for the `client =` declaration.
     assert!(
         !meta.flow_binding_lhs.is_empty(),
@@ -38,7 +44,13 @@ class Bar {
     let result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
-    let meta = run_flow_queries(src, &language, &GROOVY_FLOW_CONFIG, &result.symbols, &mut refs);
+    let meta = run_flow_queries(
+        src,
+        &language,
+        &GROOVY_FLOW_CONFIG,
+        &result.symbols,
+        &mut refs,
+    );
     assert!(
         !meta.flow_binding_lhs.is_empty(),
         "expected flow binding for def-local with chain RHS"
@@ -61,7 +73,13 @@ class Baz {
     let result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
-    let meta = run_flow_queries(src, &language, &GROOVY_FLOW_CONFIG, &result.symbols, &mut refs);
+    let meta = run_flow_queries(
+        src,
+        &language,
+        &GROOVY_FLOW_CONFIG,
+        &result.symbols,
+        &mut refs,
+    );
     assert!(
         !meta.flow_binding_lhs.is_empty(),
         "expected flow binding for bare assignment with chain RHS"

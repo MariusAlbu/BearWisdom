@@ -166,7 +166,9 @@ fn collect_spec_names(spec: &Node, bytes: &[u8], out: &mut Vec<String>) {
             }
             continue;
         }
-        if past_names { break }
+        if past_names {
+            break;
+        }
         if cc.kind() == "identifier" {
             if let Ok(name) = cc.utf8_text(bytes) {
                 out.push(name.to_string());
@@ -186,7 +188,9 @@ fn method_decl_names(node: &Node, source: &str) -> (Option<String>, Option<Strin
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if !child.is_named() { continue }
+        if !child.is_named() {
+            continue;
+        }
         match child.kind() {
             "parameter_list" if !seen_receiver_list => {
                 seen_receiver_list = true;
@@ -207,10 +211,14 @@ fn extract_receiver_type(param_list: &Node, source: &str) -> Option<String> {
     let bytes = source.as_bytes();
     let mut cursor = param_list.walk();
     for child in param_list.children(&mut cursor) {
-        if child.kind() != "parameter_declaration" { continue }
+        if child.kind() != "parameter_declaration" {
+            continue;
+        }
         let mut ccursor = child.walk();
         for cc in child.children(&mut ccursor) {
-            if !cc.is_named() { continue }
+            if !cc.is_named() {
+                continue;
+            }
             match cc.kind() {
                 "type_identifier" => {
                     return cc.utf8_text(bytes).ok().map(String::from);

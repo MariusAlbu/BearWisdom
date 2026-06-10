@@ -30,7 +30,10 @@ fn cov_resource_block_produces_class() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Class),
         "resource block should produce Class symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -41,9 +44,14 @@ fn cov_variable_block_produces_variable() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name.contains("region")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name.contains("region")),
         "variable block should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -86,9 +94,14 @@ fn cov_data_block_produces_class() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name.contains("ubuntu")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name.contains("ubuntu")),
         "data block should produce Class symbol with instance name; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -99,9 +112,14 @@ fn cov_output_block_produces_variable() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name.contains("instance_ip")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name.contains("instance_ip")),
         "output block should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -112,14 +130,22 @@ fn cov_module_block_produces_namespace_and_imports() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace && s.name.contains("vpc")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Namespace && s.name.contains("vpc")),
         "module block should produce Namespace symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "module block should produce Imports ref for source path; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -130,9 +156,14 @@ fn cov_provider_block_produces_class() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name.contains("aws")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name.contains("aws")),
         "provider block should produce Class symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -143,9 +174,14 @@ fn cov_terraform_block_produces_namespace() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace && s.name == "terraform"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Namespace && s.name == "terraform"),
         "terraform block should produce Namespace symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -157,9 +193,14 @@ fn cov_locals_block_attributes_produce_variables() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "env"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "env"),
         "locals block attributes should produce Variable symbols; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -174,9 +215,14 @@ fn cov_function_call_produces_calls_ref() {
 }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "jsonencode"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "jsonencode"),
         "function_call should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -193,7 +239,10 @@ fn cov_variable_expr_produces_typeref() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef),
         "variable_expr should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -210,7 +259,10 @@ fn cov_get_attr_produces_typeref() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef),
         "get_attr chain should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -359,9 +411,14 @@ fn res_function_call_still_emits_calls() {
     let src = r#"locals { out = tostring(var.count) }"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "tostring"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "tostring"),
         "tostring() should still emit Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
     // var.count should also be emitted
     let type_refs: Vec<&str> = r
@@ -386,8 +443,13 @@ fn cov_top_level_attribute_produces_variable() {
     let src = r#"target_scope = "subscription""#;
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "target_scope"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "target_scope"),
         "top-level attribute should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

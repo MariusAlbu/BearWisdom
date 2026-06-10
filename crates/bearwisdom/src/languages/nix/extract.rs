@@ -22,7 +22,9 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
-use super::bindings::{binding_name, binding_value, extract_inherit, extract_inherit_from, is_function_expr};
+use super::bindings::{
+    binding_name, binding_value, extract_inherit, extract_inherit_from, is_function_expr,
+};
 use super::calls::{extract_apply, extract_with, resolve_call_name, visit_formal_defaults};
 
 // ---------------------------------------------------------------------------
@@ -51,7 +53,14 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 
     // The root of a Nix file is typically a single expression.
     // We walk the whole tree to capture top-level and let-bound symbols.
-    visit_expr(tree.root_node(), source, &mut symbols, &mut refs, None, true);
+    visit_expr(
+        tree.root_node(),
+        source,
+        &mut symbols,
+        &mut refs,
+        None,
+        true,
+    );
 
     crate::types::ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -99,10 +108,11 @@ fn visit_expr(
         "select_expression" => {
             // Emit a Calls ref for every select_expression
             let source_idx = symbols.len().saturating_sub(1);
-            let name = resolve_call_name(node, src)
-                .unwrap_or_else(|| node_text(node, src));
+            let name = resolve_call_name(node, src).unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -111,9 +121,9 @@ fn visit_expr(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Recurse into sub-expressions
             let mut cursor = node.walk();
@@ -299,12 +309,12 @@ fn extract_binding(
             doc_comment: None,
             scope_path: None,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
         i
     } else {
         // Name not statically extractable (interpolated attrpath).
@@ -342,10 +352,11 @@ pub(super) fn extract_value_refs(
         "select_expression" => {
             // Emit a Calls ref for every select_expression (attribute access).
             // This covers both `pkgs.hello` as a value AND as a function in an apply.
-            let name = resolve_call_name(node, src)
-                .unwrap_or_else(|| node_text(node, src));
+            let name = resolve_call_name(node, src).unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -354,9 +365,9 @@ pub(super) fn extract_value_refs(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Recurse into sub-expressions (but not the attrpath — avoid double-emit)
             let mut cursor = node.walk();

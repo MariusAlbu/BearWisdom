@@ -5,10 +5,12 @@
 // add_executable, find_package, …) and emits symbols + refs accordingly.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
-use super::arguments::{collect_arguments, collect_raw_arguments, command_identifier, nth_argument};
+use super::arguments::{
+    collect_arguments, collect_raw_arguments, command_identifier, nth_argument,
+};
 use super::extract::make_symbol;
 use super::hooks::is_cmake_builtin;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -42,7 +44,9 @@ pub(super) fn extract_normal_command(
     // Builtin commands are resolved to external automatically; emitting Calls refs
     // for them produces unresolved noise against the project symbol index.
     if !is_cmake_builtin(&cmd) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: cmd.clone(),
             kind: EdgeKind::Calls,
@@ -51,9 +55,9 @@ pub(super) fn extract_normal_command(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     let cmd_lower = cmd.to_lowercase();
@@ -88,12 +92,10 @@ pub(super) fn extract_normal_command(
 // foreach(<loop_var> ...) — first arg is the loop variable
 // ---------------------------------------------------------------------------
 
-pub(super) fn extract_foreach_loop_var(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
-    let Some(name) = nth_argument(node, src, 0) else { return };
+pub(super) fn extract_foreach_loop_var(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    let Some(name) = nth_argument(node, src, 0) else {
+        return;
+    };
     if name.is_empty() || name.starts_with('$') {
         return;
     }
@@ -111,13 +113,11 @@ pub(super) fn extract_foreach_loop_var(
 // string(<MODE> ...) — output variable position depends on mode
 // ---------------------------------------------------------------------------
 
-fn extract_string_output_var(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_string_output_var(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let args = collect_arguments(node, src);
-    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else { return };
+    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else {
+        return;
+    };
     // For most string() modes, the output variable is either the second arg
     // (TOLOWER, TOUPPER, LENGTH, STRIP, ...) or the last arg (SUBSTRING, REGEX MATCH, ...).
     // Capture both candidate positions so we don't miss either pattern.
@@ -132,26 +132,16 @@ fn extract_string_output_var(
         }
         // string(APPEND <var> ...) and string(PREPEND <var> ...) modify <var> in-place;
         // the variable name is always the second arg (index 1 after mode).
-        "APPEND" | "PREPEND" => {
-            args.get(1).into_iter().collect()
-        }
+        "APPEND" | "PREPEND" => args.get(1).into_iter().collect(),
         // string(REPLACE <match> <replace> <out_var> <input...>) — out_var at index 3
         // string(FIND <str> <sub> <out_var> [REVERSE]) — out_var at index 3
-        "REPLACE" | "FIND" => {
-            args.get(3).into_iter().collect()
-        }
+        "REPLACE" | "FIND" => args.get(3).into_iter().collect(),
         // string(CONCAT <out_var> [<input>...]) — out_var at index 1
-        "CONCAT" => {
-            args.get(1).into_iter().collect()
-        }
+        "CONCAT" => args.get(1).into_iter().collect(),
         // string(JOIN <glue> <out_var> <input...>) — out_var at index 2
-        "JOIN" => {
-            args.get(2).into_iter().collect()
-        }
+        "JOIN" => args.get(2).into_iter().collect(),
         // string(SUBSTRING/REPEAT/REGEX/GENEX_STRIP ...) — out_var is the last arg
-        "SUBSTRING" | "REPEAT" | "REGEX" | "GENEX_STRIP" => {
-            args.last().into_iter().collect()
-        }
+        "SUBSTRING" | "REPEAT" | "REGEX" | "GENEX_STRIP" => args.last().into_iter().collect(),
         _ => return,
     };
     for cand in candidates {
@@ -184,7 +174,9 @@ fn extract_first_arg_output_var(
     let args = collect_arguments(node, src);
     // get_filename_component: arg 0 is output. cmake_path: arg 0 is MODE, arg 1 is output.
     let out_idx = if cmd == "cmake_path" { 1 } else { 0 };
-    let Some(name) = args.get(out_idx) else { return };
+    let Some(name) = args.get(out_idx) else {
+        return;
+    };
     if name.is_empty() || name.starts_with('$') {
         return;
     }
@@ -203,11 +195,7 @@ fn extract_first_arg_output_var(
 // math(EXPR <out_var> "<expression>") — output variable is arg 1 (after EXPR)
 // ---------------------------------------------------------------------------
 
-fn extract_math_output_var(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_math_output_var(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let args = collect_arguments(node, src);
     if args.first().map(|s| s.eq_ignore_ascii_case("EXPR")) != Some(true) {
         return;
@@ -240,21 +228,20 @@ fn extract_math_output_var(
 //   TO_NATIVE_PATH <path> <out>: arg 2
 // ---------------------------------------------------------------------------
 
-fn extract_file_output_var(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_file_output_var(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let args = collect_arguments(node, src);
-    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else { return };
+    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else {
+        return;
+    };
     let out_idx = match mode.as_str() {
         "GLOB" | "GLOB_RECURSE" | "RELATIVE_PATH" => 1,
-        "READ" | "STRINGS" | "TIMESTAMP" | "SIZE" | "MD5"
-        | "SHA1" | "SHA224" | "SHA256" | "SHA384" | "SHA512"
-        | "REAL_PATH" | "TO_CMAKE_PATH" | "TO_NATIVE_PATH" => 2,
+        "READ" | "STRINGS" | "TIMESTAMP" | "SIZE" | "MD5" | "SHA1" | "SHA224" | "SHA256"
+        | "SHA384" | "SHA512" | "REAL_PATH" | "TO_CMAKE_PATH" | "TO_NATIVE_PATH" => 2,
         _ => return,
     };
-    let Some(name) = args.get(out_idx) else { return };
+    let Some(name) = args.get(out_idx) else {
+        return;
+    };
     if name.is_empty() || name.starts_with('$') {
         return;
     }
@@ -279,19 +266,16 @@ fn extract_file_output_var(
 // cases are skipped.
 // ---------------------------------------------------------------------------
 
-fn extract_cmake_parse_arguments(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_cmake_parse_arguments(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let args = collect_arguments(node, src);
-    let (prefix, opts_idx) = if args.first().map(|s| s.eq_ignore_ascii_case("PARSE_ARGV")) == Some(true) {
-        // PARSE_ARGV form: prefix is arg 2
-        (args.get(2).cloned(), 3)
-    } else {
-        // Plain form: prefix is arg 0
-        (args.first().cloned(), 1)
-    };
+    let (prefix, opts_idx) =
+        if args.first().map(|s| s.eq_ignore_ascii_case("PARSE_ARGV")) == Some(true) {
+            // PARSE_ARGV form: prefix is arg 2
+            (args.get(2).cloned(), 3)
+        } else {
+            // Plain form: prefix is arg 0
+            (args.first().cloned(), 1)
+        };
     let Some(prefix) = prefix else { return };
     if prefix.is_empty() || prefix.starts_with('$') {
         return;
@@ -308,7 +292,9 @@ fn extract_cmake_parse_arguments(
     ));
     // Parse options/oneval/multival keyword lists at indices opts_idx..opts_idx+3.
     for offset in 0..3 {
-        let Some(kw_list) = args.get(opts_idx + offset) else { continue };
+        let Some(kw_list) = args.get(opts_idx + offset) else {
+            continue;
+        };
         // Strip surrounding quotes — `argument` nodes wrapping a quoted_argument
         // include the quote characters in their text.
         let kw_list = kw_list.trim().trim_matches('"').trim_matches('\'');
@@ -338,11 +324,7 @@ fn extract_cmake_parse_arguments(
 //                     [RESULT_VARIABLE <var>] [RESULTS_VARIABLE <var>])
 // ---------------------------------------------------------------------------
 
-fn extract_execute_process_outputs(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_execute_process_outputs(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let args = collect_arguments(node, src);
     let mut i = 0;
     while i < args.len() {
@@ -375,11 +357,7 @@ fn extract_execute_process_outputs(
 // set(<name> ...) → Variable
 // ---------------------------------------------------------------------------
 
-fn extract_set_command(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_set_command(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match nth_argument(node, src, 0) {
         Some(n) => n,
         None => return,
@@ -399,11 +377,7 @@ fn extract_set_command(
 // option(<name> "description" <default>) → Variable
 // ---------------------------------------------------------------------------
 
-fn extract_option_command(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_option_command(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match nth_argument(node, src, 0) {
         Some(n) => n,
         None => return,
@@ -454,11 +428,7 @@ fn extract_target_command(
 // project(<name> ...) → Namespace
 // ---------------------------------------------------------------------------
 
-fn extract_project_command(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_project_command(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match nth_argument(node, src, 0) {
         Some(n) => n,
         None => return,
@@ -478,16 +448,14 @@ fn extract_project_command(
 // include(<path>) → Imports
 // ---------------------------------------------------------------------------
 
-fn extract_include_command(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_include_command(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     let path = match nth_argument(node, src, 0) {
         Some(p) => p,
         None => return,
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: path.clone(),
         kind: EdgeKind::Imports,
@@ -496,9 +464,9 @@ fn extract_include_command(
         module: Some(path),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -520,7 +488,9 @@ fn extract_find_package_command(
         Some(p) => p,
         None => return,
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: pkg.clone(),
         kind: EdgeKind::Imports,
@@ -540,15 +510,18 @@ fn extract_find_package_command(
 /// Covers both the original-case form (Protobuf_FOUND, Git_EXECUTABLE) and
 /// the all-uppercase form (PROTOBUF_FOUND, GIT_EXECUTABLE) used by older CMake
 /// Find modules.
-fn emit_find_package_vars(
-    node: &Node,
-    pkg: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn emit_find_package_vars(node: &Node, pkg: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let upper = pkg.to_ascii_uppercase();
     let suffixes = [
-        "_FOUND", "_LIBRARIES", "_LIBRARY", "_INCLUDE_DIRS", "_INCLUDE_DIR",
-        "_EXECUTABLE", "_VERSION", "_DIRS", "_DIR",
+        "_FOUND",
+        "_LIBRARIES",
+        "_LIBRARY",
+        "_INCLUDE_DIRS",
+        "_INCLUDE_DIR",
+        "_EXECUTABLE",
+        "_VERSION",
+        "_DIRS",
+        "_DIR",
     ];
     for &suffix in &suffixes {
         let mixed_name = format!("{pkg}{suffix}");
@@ -579,16 +552,14 @@ fn emit_find_package_vars(
 // add_subdirectory(<dir>) → Imports + Calls
 // ---------------------------------------------------------------------------
 
-fn extract_add_subdirectory_command(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_add_subdirectory_command(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     let dir = match nth_argument(node, src, 0) {
         Some(d) => d,
         None => return,
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: dir.clone(),
         kind: EdgeKind::Imports,
@@ -597,9 +568,9 @@ fn extract_add_subdirectory_command(
         module: Some(dir),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -645,8 +616,14 @@ fn extract_target_link_libraries(
         let was_var_ref = raw.trim_start().starts_with("${")
             || raw.trim_start().starts_with("$ENV{")
             || raw.trim_start().starts_with("$CACHE{");
-        let kind = if was_var_ref { EdgeKind::TypeRef } else { EdgeKind::Calls };
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        let kind = if was_var_ref {
+            EdgeKind::TypeRef
+        } else {
+            EdgeKind::Calls
+        };
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: target_idx,
             target_name: norm.clone(),
             kind,
@@ -655,9 +632,9 @@ fn extract_target_link_libraries(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -733,12 +710,32 @@ pub(super) fn collect_all_normal_commands(
                     let subcommand = args.first().map(|s| s.to_ascii_uppercase());
                     if matches!(
                         subcommand.as_deref(),
-                        Some("APPEND") | Some("PREPEND") | Some("INSERT") | Some("REMOVE_DUPLICATES") | Some("SORT") | Some("REVERSE") | Some("FILTER") | Some("TRANSFORM") | Some("GET") | Some("JOIN")
+                        Some("APPEND")
+                            | Some("PREPEND")
+                            | Some("INSERT")
+                            | Some("REMOVE_DUPLICATES")
+                            | Some("SORT")
+                            | Some("REVERSE")
+                            | Some("FILTER")
+                            | Some("TRANSFORM")
+                            | Some("GET")
+                            | Some("JOIN")
                     ) {
                         if let Some(var_name) = args.get(1) {
                             if !var_name.is_empty() && !var_name.starts_with('$') {
-                                let sig = format!("list({} {} ...)", subcommand.as_deref().unwrap_or(""), var_name);
-                                symbols.push(make_symbol(var_name.clone(), var_name.clone(), SymbolKind::Variable, &node, Some(sig), None));
+                                let sig = format!(
+                                    "list({} {} ...)",
+                                    subcommand.as_deref().unwrap_or(""),
+                                    var_name
+                                );
+                                symbols.push(make_symbol(
+                                    var_name.clone(),
+                                    var_name.clone(),
+                                    SymbolKind::Variable,
+                                    &node,
+                                    Some(sig),
+                                    None,
+                                ));
                             }
                         }
                     }
@@ -748,7 +745,14 @@ pub(super) fn collect_all_normal_commands(
                     for var_name in collect_arguments(&node, src) {
                         if !var_name.is_empty() && !var_name.starts_with('$') {
                             let sig = format!("mark_as_advanced({})", var_name);
-                            symbols.push(make_symbol(var_name.clone(), var_name, SymbolKind::Variable, &node, Some(sig), None));
+                            symbols.push(make_symbol(
+                                var_name.clone(),
+                                var_name,
+                                SymbolKind::Variable,
+                                &node,
+                                Some(sig),
+                                None,
+                            ));
                         }
                     }
                 }
@@ -766,7 +770,9 @@ pub(super) fn collect_all_normal_commands(
             ));
             // Only emit Calls ref for user-defined (non-builtin) commands.
             if !is_cmake_builtin(&cmd) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: cmd,
                     kind: EdgeKind::Calls,
@@ -774,10 +780,10 @@ pub(super) fn collect_all_normal_commands(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-    col: 0,
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
             }
         }
         return; // Don't recurse inside normal_command

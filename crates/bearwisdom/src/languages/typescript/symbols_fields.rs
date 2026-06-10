@@ -44,12 +44,12 @@ pub(super) fn push_ts_field(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract TypeRef from field type annotation: `db: DatabaseRepository`
     if let Some(type_ann) = node.child_by_field_name("type") {
@@ -106,7 +106,9 @@ fn infer_field_type_from_initializer(
 
     match node.kind() {
         "new_expression" => {
-            let Some(constructor) = node.child_by_field_name("constructor") else { return };
+            let Some(constructor) = node.child_by_field_name("constructor") else {
+                return;
+            };
             let type_name = match constructor.kind() {
                 "identifier" | "type_identifier" => node_text(constructor, src),
                 _ => return,
@@ -114,7 +116,9 @@ fn infer_field_type_from_initializer(
             if type_name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: field_idx,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -123,9 +127,9 @@ fn infer_field_type_from_initializer(
                 module: None,
                 chain: None,
                 byte_offset: constructor.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             // `new Foo<Bar, Baz>()` — emit each generic arg as an extra
             // TypeRef so the field_type_args map picks them up (mirrors
             // what extract_type_ref_from_annotation does for annotated
@@ -141,7 +145,9 @@ fn infer_field_type_from_initializer(
                         if arg_name.is_empty() {
                             continue;
                         }
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: field_idx,
                             target_name: arg_name,
                             kind: EdgeKind::TypeRef,
@@ -150,9 +156,9 @@ fn infer_field_type_from_initializer(
                             module: None,
                             chain: None,
                             byte_offset: arg.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }

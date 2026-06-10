@@ -65,10 +65,18 @@ pub struct NpmEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for NpmEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("package.json", "npm")]
@@ -77,8 +85,15 @@ impl Ecosystem for NpmEcosystem {
     fn pruned_dir_names(&self) -> &'static [&'static str] {
         // Cache + framework build outputs that nest under user packages and
         // should never be treated as workspace package roots themselves.
-        &["node_modules", "bower_components", ".next", ".nuxt",
-          ".svelte-kit", ".turbo", ".nyc_output"]
+        &[
+            "node_modules",
+            "bower_components",
+            ".next",
+            ".nuxt",
+            ".svelte-kit",
+            ".turbo",
+            ".nyc_output",
+        ]
     }
 
     fn activation(&self) -> EcosystemActivation {
@@ -98,7 +113,9 @@ impl Ecosystem for NpmEcosystem {
         walk_ts_external_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -116,11 +133,7 @@ impl Ecosystem for NpmEcosystem {
         resolve_package_entry(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
         // R4: chain walker asks for the file(s) defining a specific FQN
         // (e.g., "chai.Assertion"). Scan the dep's source tree for files
         // declaring the FQN's last segment as a class/interface/type.
@@ -139,21 +152,17 @@ impl Ecosystem for NpmEcosystem {
         ts_post_process_external(parsed);
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_npm_symbol_index(dep_roots)
     }
 
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<crate::walker::WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
         demand_pre_pull_test_globals(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 /// Probe whether a package's entry .d.ts contributes runtime globals.
@@ -179,7 +188,9 @@ impl Ecosystem for NpmEcosystem {
 /// candidates.
 pub(crate) fn package_declares_globals(pkg_root: &Path) -> bool {
     for entry in candidate_globals_entry_files(pkg_root) {
-        let Ok(content) = std::fs::read_to_string(&entry) else { continue };
+        let Ok(content) = std::fs::read_to_string(&entry) else {
+            continue;
+        };
         if file_contributes_globals(&content) {
             return true;
         }
@@ -197,14 +208,19 @@ pub(crate) fn package_ships_scss(pkg_root: &Path) -> bool {
 }
 
 fn package_ships_scss_bounded(dir: &Path, depth: u32) -> bool {
-    if depth >= 2 { return false }
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    if depth >= 2 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" || name.starts_with('.')
+                if name == "node_modules"
+                    || name.starts_with('.')
                     || matches!(name, "test" | "tests" | "__tests__" | "docs" | "examples")
                 {
                     continue;
@@ -214,7 +230,9 @@ fn package_ships_scss_bounded(dir: &Path, depth: u32) -> bool {
                 return true;
             }
         } else if ft.is_file() {
-            if path.extension().and_then(|e| e.to_str())
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
                 .map(|e| e.eq_ignore_ascii_case("scss"))
                 .unwrap_or(false)
             {
@@ -383,8 +401,7 @@ fn project_uses_scss_via_dep_root(dep_root: &Path) -> bool {
     // Walk up until we leave node_modules.
     let mut cur = root.parent();
     while let Some(p) = cur {
-        if p
-            .file_name()
+        if p.file_name()
             .and_then(|n| n.to_str())
             .map(|n| n != "node_modules" && !n.starts_with('@'))
             .unwrap_or(true)
@@ -402,7 +419,9 @@ pub(super) fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
     if depth >= 6 {
         return false;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -462,26 +481,51 @@ fn walk_scss_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" { continue }
-                if name.starts_with('.') { continue }
+                if name == "node_modules" {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
                 if matches!(
                     name,
-                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
-                        | "example" | "examples" | "_examples" | "fixtures"
-                ) { continue }
+                    "__tests__"
+                        | "__mocks__"
+                        | "test"
+                        | "tests"
+                        | "docs"
+                        | "example"
+                        | "examples"
+                        | "_examples"
+                        | "fixtures"
+                ) {
+                    continue;
+                }
             }
             walk_scss_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".scss") { continue }
-            if is_test_or_story_file(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".scss") {
+                continue;
+            }
+            if is_test_or_story_file(name) {
+                continue;
+            }
 
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
@@ -503,7 +547,9 @@ fn walk_scss_dir_bounded(
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for NpmEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ts_externals(project_root)
@@ -583,8 +629,12 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 /// dedupe + symbol prefixing.
 pub(crate) fn normalize_virtual_rel(rel: &str) -> String {
     let mut s = rel.replace('\\', "/");
-    while s.contains("/./") { s = s.replace("/./", "/"); }
-    if let Some(rest) = s.strip_prefix("./") { s = rest.to_string(); }
+    while s.contains("/./") {
+        s = s.replace("/./", "/");
+    }
+    if let Some(rest) = s.strip_prefix("./") {
+        s = rest.to_string();
+    }
     s
 }
 
@@ -626,17 +676,33 @@ pub(crate) fn npm_package_name_from_spec(spec: &str) -> &str {
 /// Used at every `ExternalDepRoot { module_path: … }` construction site to
 /// gate which paths get into the index in the first place.
 pub(crate) fn is_valid_npm_module_path(name: &str) -> bool {
-    if name.is_empty() { return false; }
-    if name.starts_with('.') { return false; }       // ./, ../, .ignored_, .pnpm
-    if name.contains(':') { return false; }          // F:/Work/...
-    if name.contains('\\') { return false; }         // windows path leak
+    if name.is_empty() {
+        return false;
+    }
+    if name.starts_with('.') {
+        return false;
+    } // ./, ../, .ignored_, .pnpm
+    if name.contains(':') {
+        return false;
+    } // F:/Work/...
+    if name.contains('\\') {
+        return false;
+    } // windows path leak
     if name.starts_with('@') {
         // Scoped: must be exactly `@scope/name`.
         let rest = &name[1..];
-        let Some((scope, pkg)) = rest.split_once('/') else { return false };
-        if scope.is_empty() || pkg.is_empty() { return false }
-        if scope.starts_with('.') || pkg.starts_with('.') { return false }
-        if pkg.contains('/') { return false }        // no nested paths under @scope
+        let Some((scope, pkg)) = rest.split_once('/') else {
+            return false;
+        };
+        if scope.is_empty() || pkg.is_empty() {
+            return false;
+        }
+        if scope.starts_with('.') || pkg.starts_with('.') {
+            return false;
+        }
+        if pkg.contains('/') {
+            return false;
+        } // no nested paths under @scope
         true
     } else {
         // Unscoped: single segment, no slashes.
@@ -651,12 +717,45 @@ pub(crate) fn is_valid_npm_module_path(name: &str) -> bool {
 
 fn node_builtins() -> std::collections::HashSet<&'static str> {
     [
-        "assert", "buffer", "child_process", "cluster", "console", "crypto",
-        "dgram", "dns", "domain", "events", "fs", "http", "http2", "https",
-        "inspector", "module", "net", "node", "os", "path", "perf_hooks",
-        "process", "punycode", "querystring", "readline", "repl", "stream",
-        "string_decoder", "timers", "tls", "trace_events", "tty", "url",
-        "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+        "assert",
+        "buffer",
+        "child_process",
+        "cluster",
+        "console",
+        "crypto",
+        "dgram",
+        "dns",
+        "domain",
+        "events",
+        "fs",
+        "http",
+        "http2",
+        "https",
+        "inspector",
+        "module",
+        "net",
+        "node",
+        "os",
+        "path",
+        "perf_hooks",
+        "process",
+        "punycode",
+        "querystring",
+        "readline",
+        "repl",
+        "stream",
+        "string_decoder",
+        "timers",
+        "tls",
+        "trace_events",
+        "tty",
+        "url",
+        "util",
+        "v8",
+        "vm",
+        "wasi",
+        "worker_threads",
+        "zlib",
     ]
     .into_iter()
     .collect()
@@ -665,20 +764,19 @@ fn node_builtins() -> std::collections::HashSet<&'static str> {
 mod externals;
 mod externals_imports;
 mod externals_node_modules;
-mod walk;
 mod post_process;
 mod symbol_index;
 mod ts_scan;
+mod walk;
 
 pub(crate) use externals::*;
 pub(crate) use externals_imports::*;
 pub(crate) use externals_node_modules::*;
-pub(crate) use walk::*;
 pub(crate) use post_process::*;
 pub(crate) use symbol_index::*;
 pub(crate) use ts_scan::*;
+pub(crate) use walk::*;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
-

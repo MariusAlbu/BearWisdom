@@ -70,7 +70,10 @@ fn test_cmd_architecture_languages() {
 
     assert!(overview.total_files > 0);
     assert!(overview.total_symbols > 0);
-    assert!(!overview.languages.is_empty(), "should detect at least one language");
+    assert!(
+        !overview.languages.is_empty(),
+        "should detect at least one language"
+    );
 
     let csharp = overview.languages.iter().find(|l| l.language == "csharp");
     assert!(csharp.is_some(), "C# should appear in language stats");
@@ -83,7 +86,10 @@ fn test_cmd_architecture_hotspots() {
 
     // Hotspots list may be empty on small fixtures — just assert the field is present.
     let _ = &overview.hotspots;
-    assert!(overview.total_symbols > 0, "at least some symbols must be indexed");
+    assert!(
+        overview.total_symbols > 0,
+        "at least some symbols must be indexed"
+    );
 }
 
 #[test]
@@ -108,9 +114,15 @@ fn test_cmd_search_symbols_known_class() {
     let db = csharp_db();
     let results = search_symbols(&db, "Product", 10, &QueryOptions::full()).unwrap();
 
-    assert!(!results.is_empty(), "search for 'Product' should return results");
+    assert!(
+        !results.is_empty(),
+        "search for 'Product' should return results"
+    );
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-    assert!(names.contains(&"Product"), "Product class should appear in results");
+    assert!(
+        names.contains(&"Product"),
+        "Product class should appear in results"
+    );
 }
 
 #[test]
@@ -168,7 +180,10 @@ fn test_cmd_find_references_interface() {
     let refs = find_references(&db, "IProductRepository", 0).unwrap();
 
     // ProductRepository implements it; ProductService uses it.
-    assert!(!refs.is_empty(), "IProductRepository should have at least one reference");
+    assert!(
+        !refs.is_empty(),
+        "IProductRepository should have at least one reference"
+    );
 }
 
 #[test]
@@ -224,7 +239,10 @@ fn test_cmd_file_symbols_outline() {
 
     assert!(!syms.is_empty(), "ProductService.cs should contain symbols");
     let has_service = syms.iter().any(|s| s.name == "ProductService");
-    assert!(has_service, "ProductService class should appear in file symbols");
+    assert!(
+        has_service,
+        "ProductService class should appear in file symbols"
+    );
 }
 
 #[test]
@@ -246,7 +264,10 @@ fn test_cmd_blast_radius_model() {
     if let Some(br) = result {
         assert_eq!(br.center.name, "Product");
         // Repositories and services depend on Product, so affected list is non-empty.
-        assert!(!br.affected.is_empty(), "Product should have at least one dependent");
+        assert!(
+            !br.affected.is_empty(),
+            "Product should have at least one dependent"
+        );
         assert!(br.total_affected > 0);
     }
     // None is acceptable if extractor qualified-names differ — not a hard failure.
@@ -323,7 +344,10 @@ fn test_cmd_export_graph_nodes() {
     let db = csharp_db();
     let graph = export_graph(&db, None, 100).unwrap();
 
-    assert!(!graph.nodes.is_empty(), "graph should contain nodes from indexed symbols");
+    assert!(
+        !graph.nodes.is_empty(),
+        "graph should contain nodes from indexed symbols"
+    );
     for node in &graph.nodes {
         assert!(!node.name.is_empty());
         assert!(!node.qualified_name.is_empty());
@@ -338,8 +362,8 @@ fn test_cmd_export_graph_json_valid() {
     assert!(json.contains("nodes"), "JSON must contain a 'nodes' key");
     assert!(json.contains("edges"), "JSON must contain an 'edges' key");
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("export_graph_json should produce valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("export_graph_json should produce valid JSON");
     assert!(parsed["nodes"].is_array());
     assert!(parsed["edges"].is_array());
 }
@@ -357,12 +381,21 @@ fn test_cmd_smart_context_symbol_name() {
     // It may be empty if the FTS index is not warm — treat both as valid.
     assert_eq!(result.task, "ProductService");
     if !result.symbols.is_empty() {
-        assert!(result.token_estimate > 0, "token_estimate should be positive when symbols are returned");
-        assert!(!result.files.is_empty(), "files should be populated when symbols are returned");
+        assert!(
+            result.token_estimate > 0,
+            "token_estimate should be positive when symbols are returned"
+        );
+        assert!(
+            !result.files.is_empty(),
+            "files should be populated when symbols are returned"
+        );
         for sym in &result.symbols {
             assert!(!sym.name.is_empty());
             assert!(!sym.file_path.is_empty());
-            assert!(sym.score >= 0.0 && sym.score <= 1.5, "score should be in a reasonable range");
+            assert!(
+                sym.score >= 0.0 && sym.score <= 1.5,
+                "score should be in a reasonable range"
+            );
         }
     }
 }
@@ -375,10 +408,16 @@ fn test_cmd_smart_context_natural_language_task() {
 
     assert_eq!(result.task, "get product by id from repository");
     // Files list is always a subset of (or equal to) the file paths in symbols.
-    let sym_files: std::collections::HashSet<&str> =
-        result.symbols.iter().map(|s| s.file_path.as_str()).collect();
+    let sym_files: std::collections::HashSet<&str> = result
+        .symbols
+        .iter()
+        .map(|s| s.file_path.as_str())
+        .collect();
     for f in &result.files {
-        assert!(sym_files.contains(f.as_str()), "every file in result.files must be referenced by a symbol");
+        assert!(
+            sym_files.contains(f.as_str()),
+            "every file in result.files must be referenced by a symbol"
+        );
     }
 }
 
@@ -493,14 +532,20 @@ fn test_cmd_investigate_known_symbol() {
 #[test]
 fn test_cmd_investigate_includes_blast_radius() {
     let db = csharp_db();
-    let opts = InvestigateOptions { blast_depth: 2, ..Default::default() };
+    let opts = InvestigateOptions {
+        blast_depth: 2,
+        ..Default::default()
+    };
     let result = investigate(&db, "Product", &opts).unwrap();
 
     // Result may be None if the symbol is not found; blast_radius may be None
     // if there are no dependents.  Only validate when both are present.
     if let Some(r) = result {
         if let Some(br) = &r.blast_radius {
-            assert!(br.total_affected > 0, "blast radius should report at least one affected symbol");
+            assert!(
+                br.total_affected > 0,
+                "blast radius should report at least one affected symbol"
+            );
             assert!(!br.affected.is_empty());
         }
     }
@@ -530,7 +575,10 @@ fn test_cmd_grep_literal_match() {
     )
     .unwrap();
 
-    assert!(!results.is_empty(), "should find IProductRepository in multiple files");
+    assert!(
+        !results.is_empty(),
+        "should find IProductRepository in multiple files"
+    );
     for m in &results {
         assert!(!m.file_path.is_empty());
         assert!(m.line_number > 0);
@@ -543,10 +591,16 @@ fn test_cmd_grep_case_insensitive() {
     let project = TestProject::csharp_service();
     let cancel = cancel_never();
 
-    let opts = GrepOptions { case_sensitive: false, ..Default::default() };
+    let opts = GrepOptions {
+        case_sensitive: false,
+        ..Default::default()
+    };
     let results = grep_search(project.path(), "productservice", &opts, &cancel).unwrap();
 
-    assert!(!results.is_empty(), "case-insensitive grep should match 'ProductService'");
+    assert!(
+        !results.is_empty(),
+        "case-insensitive grep should match 'ProductService'"
+    );
 }
 
 #[test]
@@ -589,7 +643,10 @@ fn test_cmd_fuzzy_match_files() {
 fn test_cmd_fuzzy_match_files_empty_pattern() {
     let db = csharp_db();
     let index = FuzzyIndex::from_db(&db).unwrap();
-    assert!(index.match_files("", 10).is_empty(), "empty pattern should return no results");
+    assert!(
+        index.match_files("", 10).is_empty(),
+        "empty pattern should return no results"
+    );
 }
 
 // ============================================================================
@@ -602,7 +659,10 @@ fn test_cmd_fuzzy_match_symbols() {
     let index = FuzzyIndex::from_db(&db).unwrap();
 
     let matches = index.match_symbols("GetById", 10);
-    assert!(!matches.is_empty(), "fuzzy symbol search should find GetById");
+    assert!(
+        !matches.is_empty(),
+        "fuzzy symbol search should find GetById"
+    );
     for m in &matches {
         assert!(!m.text.is_empty());
     }
@@ -615,7 +675,10 @@ fn test_cmd_fuzzy_match_symbols_partial() {
 
     // "ProdRepo" should fuzzy-match ProductRepository.
     let matches = index.match_symbols("ProdRepo", 10);
-    assert!(!matches.is_empty(), "fuzzy 'ProdRepo' should match ProductRepository");
+    assert!(
+        !matches.is_empty(),
+        "fuzzy 'ProdRepo' should match ProductRepository"
+    );
 }
 
 // ============================================================================
@@ -667,5 +730,8 @@ fn test_cmd_content_search_returns_ranked_results() {
     let scores: Vec<f64> = results.iter().map(|r| r.score).collect();
     let mut sorted = scores.clone();
     sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());
-    assert_eq!(scores, sorted, "results should be ordered by score descending");
+    assert_eq!(
+        scores, sorted,
+        "results should be ordered by score descending"
+    );
 }

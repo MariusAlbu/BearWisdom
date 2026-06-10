@@ -31,15 +31,6 @@ pub(super) fn is_java_class_ref(name: &str) -> bool {
     let check = name.trim_end_matches('.');
     matches!(
         check.split('.').next().unwrap_or(""),
-        "java"
-            | "javax"
-            | "org"
-            | "com"
-            | "sun"
-            | "io"
-            | "net"
-            | "edu"
-            | "gov"
-            | "mil"
+        "java" | "javax" | "org" | "com" | "sun" | "io" | "net" | "edu" | "gov" | "mil"
     )
 }

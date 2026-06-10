@@ -83,21 +83,40 @@ fn positional_record_synthesizes_deconstruct() {
 
 #[test]
 fn deconstruct_signature_carries_out_params_with_types() {
-    let sig = signature_for("namespace App { public record Point(int X, int Y); }", "App.Point.Deconstruct")
-        .expect("Deconstruct must be synthesized");
-    assert!(sig.contains("out int X"), "Deconstruct sig must carry `out int X`; got {sig}");
-    assert!(sig.contains("out int Y"), "Deconstruct sig must carry `out int Y`; got {sig}");
+    let sig = signature_for(
+        "namespace App { public record Point(int X, int Y); }",
+        "App.Point.Deconstruct",
+    )
+    .expect("Deconstruct must be synthesized");
+    assert!(
+        sig.contains("out int X"),
+        "Deconstruct sig must carry `out int X`; got {sig}"
+    );
+    assert!(
+        sig.contains("out int Y"),
+        "Deconstruct sig must carry `out int Y`; got {sig}"
+    );
 }
 
 #[test]
 fn deconstruct_is_method_kind_void_return() {
     let s = _test_synthesize("namespace App { public record Point(int X, int Y); }");
-    let dc = s.symbols.iter().find(|s| s.name == "Deconstruct").expect("Deconstruct synthesized");
+    let dc = s
+        .symbols
+        .iter()
+        .find(|s| s.name == "Deconstruct")
+        .expect("Deconstruct synthesized");
     assert_eq!(dc.kind, SymbolKind::Method, "Deconstruct must be a Method");
     // Deconstruct returns void — no return-type ref points at it.
-    let idx = s.symbols.iter().position(|sy| sy.qualified_name == "App.Point.Deconstruct").unwrap();
+    let idx = s
+        .symbols
+        .iter()
+        .position(|sy| sy.qualified_name == "App.Point.Deconstruct")
+        .unwrap();
     assert!(
-        !s.refs.iter().any(|rf| rf.source_symbol_index == idx && rf.kind == EdgeKind::TypeRef),
+        !s.refs
+            .iter()
+            .any(|rf| rf.source_symbol_index == idx && rf.kind == EdgeKind::TypeRef),
         "void Deconstruct must emit no return-type ref"
     );
 }
@@ -119,8 +138,14 @@ fn positional_record_with_body_excludes_body_property() {
     // are the POSITIONAL ones only — the body `Extra` must not appear.
     let src = "namespace App {\n  public record Point(int X, int Y) {\n    public string Extra { get; init; }\n  }\n}";
     let sig = signature_for(src, "App.Point.Deconstruct").expect("Deconstruct synthesized");
-    assert!(sig.contains("out int X") && sig.contains("out int Y"), "positional params must be present; got {sig}");
-    assert!(!sig.contains("Extra"), "body property must not appear in Deconstruct; got {sig}");
+    assert!(
+        sig.contains("out int X") && sig.contains("out int Y"),
+        "positional params must be present; got {sig}"
+    );
+    assert!(
+        !sig.contains("Extra"),
+        "body property must not appear in Deconstruct; got {sig}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +157,11 @@ fn hand_written_deconstruct_not_duplicated() {
     let src = "namespace App { public record Point(int X, int Y) {\n    public void Deconstruct(out int x, out int y) { x = X; y = Y; }\n} }";
     let q = qnames(src);
     let dcs: Vec<_> = q.iter().filter(|n| n.ends_with(".Deconstruct")).collect();
-    assert_eq!(dcs.len(), 0, "hand-written Deconstruct must suppress synthesis; got {q:?}");
+    assert_eq!(
+        dcs.len(),
+        0,
+        "hand-written Deconstruct must suppress synthesis; got {q:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +189,11 @@ fn derived_record_base_inherits_edge_emitted() {
             && rf.kind == EdgeKind::Inherits
             && rf.target_name == "Base"),
         "a derived record `: Base(X)` must emit an Inherits edge to Base; got {:?}",
-        r.refs.iter().filter(|rf| rf.source_symbol_index == derived_idx).map(|rf| (&rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == derived_idx)
+            .map(|rf| (&rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -172,10 +205,14 @@ fn derived_record_deconstruct_includes_base_positional_params_first() {
     // the base ctor; the derived positional list here is `(int X, int Z)`, but
     // the synthesized Deconstruct must reflect base-then-derived ordering and
     // not double the shared `X`.)
-    let src = "namespace App { public record Base(int X); public record Derived(int Z) : Base(0); }";
-    let sig = signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
+    let src =
+        "namespace App { public record Base(int X); public record Derived(int Z) : Base(0); }";
+    let sig =
+        signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
     let x_at = sig.find("out int X").expect("base param X must be present");
-    let z_at = sig.find("out int Z").expect("derived param Z must be present");
+    let z_at = sig
+        .find("out int Z")
+        .expect("derived param Z must be present");
     assert!(
         x_at < z_at,
         "base positional member X must precede derived Z in Deconstruct; got {sig}"
@@ -188,8 +225,12 @@ fn derived_record_with_external_base_uses_derived_params_only() {
     // is absent / external), the Deconstruct soundly carries only the derived
     // positional members — no over-reach, no manufactured base params.
     let src = "namespace App { public record Derived(int Z) : SomeExternalBase(0); }";
-    let sig = signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
-    assert!(sig.contains("out int Z"), "derived param Z must be present; got {sig}");
+    let sig =
+        signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
+    assert!(
+        sig.contains("out int Z"),
+        "derived param Z must be present; got {sig}"
+    );
     assert!(
         !sig.contains("SomeExternalBase"),
         "an unresolved base must not contribute params; got {sig}"
@@ -201,7 +242,8 @@ fn derived_record_skips_non_record_base() {
     // A derived record whose base is a plain (non-positional) class contributes
     // no base params — only a base that is itself a positional record does.
     let src = "namespace App { public class Plain { } public record Derived(int Z) : Plain; }";
-    let sig = signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
+    let sig =
+        signature_for(src, "App.Derived.Deconstruct").expect("derived Deconstruct synthesized");
     assert_eq!(
         sig, "void Deconstruct(out int Z)",
         "a non-record base must contribute no positional params; got {sig}"
@@ -225,14 +267,20 @@ fn positional_property_exists_with_typed_signature() {
         .expect("positional property App.UserDto.Category must be extracted");
     assert_eq!(prop.kind, SymbolKind::Property);
     let sig = prop.signature.as_deref().unwrap_or("");
-    assert!(sig.contains("Category"), "property signature must carry its `Category` type; got {sig}");
+    assert!(
+        sig.contains("Category"),
+        "property signature must carry its `Category` type; got {sig}"
+    );
 }
 
 #[test]
 fn deconstruct_carries_complex_property_type() {
     let src = "namespace App { public record UserDto(string Name, Category Category); }";
     let sig = signature_for(src, "App.UserDto.Deconstruct").expect("Deconstruct synthesized");
-    assert!(sig.contains("out Category Category"), "Deconstruct must carry `out Category Category`; got {sig}");
+    assert!(
+        sig.contains("out Category Category"),
+        "Deconstruct must carry `out Category Category`; got {sig}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +333,10 @@ fn deconstruct_resolves_through_index() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/Point.cs".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/Point.cs".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);
@@ -318,14 +369,24 @@ fn observable_property_synthesizes_public_property() {
         "[ObservableProperty] field `_firstName` must synthesize property `FirstName`; got {q:?}"
     );
     let s = _test_synthesize("namespace App { public partial class VM { [ObservableProperty] private string _firstName; } }");
-    let prop = s.symbols.iter().find(|s| s.qualified_name == "App.VM.FirstName").expect("FirstName synthesized");
-    assert_eq!(prop.kind, SymbolKind::Property, "generated FirstName must be a Property");
+    let prop = s
+        .symbols
+        .iter()
+        .find(|s| s.qualified_name == "App.VM.FirstName")
+        .expect("FirstName synthesized");
+    assert_eq!(
+        prop.kind,
+        SymbolKind::Property,
+        "generated FirstName must be a Property"
+    );
 }
 
 #[test]
 fn observable_property_no_underscore_capitalizes() {
     // A field with no leading underscore (`name`) → property `Name`.
-    let q = qnames("namespace App { public partial class VM { [ObservableProperty] private string name; } }");
+    let q = qnames(
+        "namespace App { public partial class VM { [ObservableProperty] private string name; } }",
+    );
     assert!(
         q.contains(&"App.VM.Name".to_string()),
         "[ObservableProperty] field `name` must synthesize property `Name`; got {q:?}"
@@ -402,7 +463,9 @@ fn plain_field_below_inline_attributed_field_does_not_leak() {
 fn field_named_observableproperty_substring_rejected() {
     // A field whose declared TYPE merely contains the attribute text as a
     // substring must not be treated as attributed — whole-token match only.
-    let q = qnames("namespace App { public partial class VM { private ObservablePropertyHolder _holder; } }");
+    let q = qnames(
+        "namespace App { public partial class VM { private ObservablePropertyHolder _holder; } }",
+    );
     assert!(
         q.is_empty() || !q.iter().any(|n| n.starts_with("App.VM.Holder")),
         "a field whose type contains `ObservableProperty` as a substring must not synthesize; got {q:?}"
@@ -419,7 +482,10 @@ fn hand_written_property_wins() {
         .iter()
         .filter(|s| s.qualified_name == "App.VM.FirstName")
         .count();
-    assert_eq!(count, 0, "hand-written FirstName must suppress the synthesized property");
+    assert_eq!(
+        count, 0,
+        "hand-written FirstName must suppress the synthesized property"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -429,22 +495,34 @@ fn hand_written_property_wins() {
 #[test]
 fn relay_command_synthesizes_command_property() {
     // `[RelayCommand] private void Save() {}` → `public IRelayCommand SaveCommand { get; }`.
-    let src = "namespace App { public partial class VM { [RelayCommand] private void Save() { } } }";
+    let src =
+        "namespace App { public partial class VM { [RelayCommand] private void Save() { } } }";
     let q = qnames(src);
     assert!(
         q.contains(&"App.VM.SaveCommand".to_string()),
         "[RelayCommand] method `Save` must synthesize `SaveCommand`; got {q:?}"
     );
     let sig = signature_for(src, "App.VM.SaveCommand").expect("SaveCommand synthesized");
-    assert!(sig.contains("IRelayCommand"), "SaveCommand sig must carry `IRelayCommand`; got {sig}");
+    assert!(
+        sig.contains("IRelayCommand"),
+        "SaveCommand sig must carry `IRelayCommand`; got {sig}"
+    );
     assert_eq!(
         return_ref_for(src, "App.VM.SaveCommand"),
         Some("IRelayCommand".to_string()),
         "SaveCommand must carry a return-type ref to IRelayCommand"
     );
     let s = _test_synthesize(src);
-    let prop = s.symbols.iter().find(|s| s.qualified_name == "App.VM.SaveCommand").unwrap();
-    assert_eq!(prop.kind, SymbolKind::Property, "SaveCommand must be a Property");
+    let prop = s
+        .symbols
+        .iter()
+        .find(|s| s.qualified_name == "App.VM.SaveCommand")
+        .unwrap();
+    assert_eq!(
+        prop.kind,
+        SymbolKind::Property,
+        "SaveCommand must be a Property"
+    );
 }
 
 #[test]
@@ -457,7 +535,10 @@ fn relay_command_async_synthesizes_async_command() {
         "[RelayCommand] async method must synthesize `{{Name}}Command`; got {q:?}"
     );
     let sig = signature_for(src, "App.VM.SaveAsyncCommand").expect("SaveAsyncCommand synthesized");
-    assert!(sig.contains("IAsyncRelayCommand"), "async command sig must carry `IAsyncRelayCommand`; got {sig}");
+    assert!(
+        sig.contains("IAsyncRelayCommand"),
+        "async command sig must carry `IAsyncRelayCommand`; got {sig}"
+    );
     assert_eq!(
         return_ref_for(src, "App.VM.SaveAsyncCommand"),
         Some("IAsyncRelayCommand".to_string()),
@@ -482,7 +563,10 @@ fn hand_written_command_property_wins() {
         .iter()
         .filter(|s| s.qualified_name == "App.VM.SaveCommand")
         .count();
-    assert_eq!(count, 0, "hand-written SaveCommand must suppress the synthesized command property");
+    assert_eq!(
+        count, 0,
+        "hand-written SaveCommand must suppress the synthesized command property"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -554,14 +638,27 @@ fn inotify_property_changed_attribute_synthesizes_surface() {
 fn set_property_signature_and_kind() {
     let src = "namespace App { [ObservableObject] public partial class VM { } }";
     let s = _test_synthesize(src);
-    let sp = s.symbols.iter().find(|s| s.qualified_name == "App.VM.SetProperty").expect("SetProperty synthesized");
+    let sp = s
+        .symbols
+        .iter()
+        .find(|s| s.qualified_name == "App.VM.SetProperty")
+        .expect("SetProperty synthesized");
     assert_eq!(sp.kind, SymbolKind::Method, "SetProperty must be a Method");
     let sig = sp.signature.as_deref().unwrap_or("");
-    assert!(sig.starts_with("bool SetProperty"), "SetProperty must return bool; got {sig}");
-    // bool return → no return-type ref (the void/primitive convention).
-    let idx = s.symbols.iter().position(|sy| sy.qualified_name == "App.VM.SetProperty").unwrap();
     assert!(
-        !s.refs.iter().any(|r| r.source_symbol_index == idx && r.kind == EdgeKind::TypeRef),
+        sig.starts_with("bool SetProperty"),
+        "SetProperty must return bool; got {sig}"
+    );
+    // bool return → no return-type ref (the void/primitive convention).
+    let idx = s
+        .symbols
+        .iter()
+        .position(|sy| sy.qualified_name == "App.VM.SetProperty")
+        .unwrap();
+    assert!(
+        !s.refs
+            .iter()
+            .any(|r| r.source_symbol_index == idx && r.kind == EdgeKind::TypeRef),
         "bool-returning SetProperty must emit no return-type ref"
     );
 }
@@ -572,7 +669,8 @@ fn plain_class_synthesizes_no_change_notification_surface() {
     let src = "namespace App { public class VM { } }";
     let q = qnames(src);
     assert!(
-        !q.iter().any(|n| n == "App.VM.SetProperty" || n == "App.VM.OnPropertyChanged"),
+        !q.iter()
+            .any(|n| n == "App.VM.SetProperty" || n == "App.VM.OnPropertyChanged"),
         "a plain class must not synthesize the change-notification surface; got {q:?}"
     );
 }
@@ -639,7 +737,8 @@ fn observable_object_does_not_synthesize_validation_surface() {
     let src = "namespace App { public partial class VM : ObservableObject { } }";
     let q = qnames(src);
     assert!(
-        !q.iter().any(|n| n == "App.VM.ValidateAllProperties" || n == "App.VM.HasErrors"),
+        !q.iter()
+            .any(|n| n == "App.VM.ValidateAllProperties" || n == "App.VM.HasErrors"),
         "an ObservableObject host must not gain the validator surface; got {q:?}"
     );
 }
@@ -648,9 +747,16 @@ fn observable_object_does_not_synthesize_validation_surface() {
 fn has_errors_is_bool_and_carries_no_return_ref() {
     let src = "namespace App { public partial class VM : ObservableValidator { } }";
     let s = _test_synthesize(src);
-    let he = s.symbols.iter().find(|s| s.qualified_name == "App.VM.HasErrors").expect("HasErrors synthesized");
+    let he = s
+        .symbols
+        .iter()
+        .find(|s| s.qualified_name == "App.VM.HasErrors")
+        .expect("HasErrors synthesized");
     let sig = he.signature.as_deref().unwrap_or("");
-    assert!(sig.starts_with("bool HasErrors"), "HasErrors must return bool; got {sig}");
+    assert!(
+        sig.starts_with("bool HasErrors"),
+        "HasErrors must return bool; got {sig}"
+    );
     assert_eq!(
         return_ref_for(src, "App.VM.HasErrors"),
         None,
@@ -699,7 +805,11 @@ fn messenger_property_carries_imessenger_return_ref() {
         "Messenger must carry a return-type ref to IMessenger"
     );
     let s = _test_synthesize(src);
-    let m = s.symbols.iter().find(|s| s.qualified_name == "App.VM.Messenger").expect("Messenger synthesized");
+    let m = s
+        .symbols
+        .iter()
+        .find(|s| s.qualified_name == "App.VM.Messenger")
+        .expect("Messenger synthesized");
     assert_eq!(m.kind, SymbolKind::Property, "Messenger must be a Property");
 }
 
@@ -708,7 +818,8 @@ fn observable_object_does_not_synthesize_messaging_surface() {
     let src = "namespace App { public partial class VM : ObservableObject { } }";
     let q = qnames(src);
     assert!(
-        !q.iter().any(|n| n == "App.VM.Messenger" || n == "App.VM.Broadcast"),
+        !q.iter()
+            .any(|n| n == "App.VM.Messenger" || n == "App.VM.Broadcast"),
         "an ObservableObject host must not gain the messaging surface; got {q:?}"
     );
 }
@@ -722,7 +833,10 @@ fn hand_written_validator_member_wins() {
         .iter()
         .filter(|s| s.qualified_name == "App.VM.ValidateAllProperties")
         .count();
-    assert_eq!(count, 0, "hand-written ValidateAllProperties must suppress synthesis");
+    assert_eq!(
+        count, 0,
+        "hand-written ValidateAllProperties must suppress synthesis"
+    );
 }
 
 #[test]
@@ -770,7 +884,10 @@ fn observable_recipient_resolves_messenger_through_index() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/VM.cs".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/VM.cs".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);
@@ -831,7 +948,10 @@ fn observable_object_resolves_set_property_through_index() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/VM.cs".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/VM.cs".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);
@@ -888,7 +1008,10 @@ fn observable_property_resolves_through_index() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/VM.cs".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/VM.cs".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);
@@ -976,7 +1099,8 @@ fn non_context_partial_class_synthesizes_no_json_members() {
     let src = "namespace App { public class User { public int Id { get; set; } } [JsonSerializable(typeof(User))] public partial class Plain {} }";
     let q = qnames(src);
     assert!(
-        !q.iter().any(|n| n == "App.Plain.Default" || n == "App.Plain.User"),
+        !q.iter()
+            .any(|n| n == "App.Plain.Default" || n == "App.Plain.User"),
         "a non-JsonSerializerContext class must synthesize no STJ members; got {q:?}"
     );
 }
@@ -986,6 +1110,12 @@ fn json_serializer_context_multiple_serializable_types() {
     // Two [JsonSerializable] attributes → one property per type, deduped.
     let src = "namespace App { public class User {} public class Order {} [JsonSerializable(typeof(User))] [JsonSerializable(typeof(Order))] public partial class AppJsonContext : JsonSerializerContext {} }";
     let q = qnames(src);
-    assert!(q.contains(&"App.AppJsonContext.User".to_string()), "User prop missing; got {q:?}");
-    assert!(q.contains(&"App.AppJsonContext.Order".to_string()), "Order prop missing; got {q:?}");
+    assert!(
+        q.contains(&"App.AppJsonContext.User".to_string()),
+        "User prop missing; got {q:?}"
+    );
+    assert!(
+        q.contains(&"App.AppJsonContext.Order".to_string()),
+        "Order prop missing; got {q:?}"
+    );
 }

@@ -24,7 +24,9 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                     let up = rest_trim.to_ascii_uppercase();
                     if let Some(idx) = up.find("CMD ") {
                         (rest_trim[idx + 4..].to_string(), i as u32)
-                    } else { (String::new(), i as u32) }
+                    } else {
+                        (String::new(), i as u32)
+                    }
                 } else {
                     (rest_trim.to_string(), i as u32)
                 };
@@ -32,14 +34,18 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                     // Exec form — skip.
                     break;
                 }
-                if cmd_body.is_empty() { break; }
+                if cmd_body.is_empty() {
+                    break;
+                }
                 // Fold line continuations.
                 let mut body = cmd_body.clone();
                 let mut j = i;
                 while body.trim_end().ends_with('\\') {
                     body = body.trim_end().trim_end_matches('\\').to_string();
                     j += 1;
-                    if j >= lines.len() { break; }
+                    if j >= lines.len() {
+                        break;
+                    }
                     body.push('\n');
                     body.push_str(lines[j]);
                 }
@@ -69,7 +75,9 @@ mod tests {
     fn run_line_becomes_bash() {
         let src = "FROM alpine\nRUN apk add curl\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.language_id == "bash" && r.text.contains("apk add curl")));
+        assert!(regions
+            .iter()
+            .any(|r| r.language_id == "bash" && r.text.contains("apk add curl")));
     }
 
     #[test]

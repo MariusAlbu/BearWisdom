@@ -58,7 +58,10 @@ fn route_attribute_with_string_arg_emitted_for_flow() {
 fn users() {}"#;
     let dr = decorator_refs(src);
     let found = dr.iter().find(|(n, _)| n == "route");
-    assert!(found.is_some(), "route attribute should be emitted; refs: {dr:?}");
+    assert!(
+        found.is_some(),
+        "route attribute should be emitted; refs: {dr:?}"
+    );
     assert_eq!(found.unwrap().1.as_deref(), Some("/api/users"));
 }
 
@@ -105,7 +108,8 @@ struct X {
     );
     // The scoped `prost::Message` derive trait should still produce a TypeRef.
     assert!(
-        dr.iter().any(|(n, _)| n == "prost::Message" || n == "Message"),
+        dr.iter()
+            .any(|(n, _)| n == "prost::Message" || n == "Message"),
         "expected derive trait `prost::Message`; refs: {dr:?}"
     );
 }

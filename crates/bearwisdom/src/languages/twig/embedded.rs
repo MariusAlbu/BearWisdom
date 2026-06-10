@@ -34,7 +34,9 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                     if let Some(content) = source.get(bs..be) {
                         if !content.is_empty() {
                             regions.push(make_region(
-                                source, bs, content,
+                                source,
+                                bs,
+                                content,
                                 lang.unwrap_or("javascript"),
                                 EmbeddedOrigin::ScriptBlock,
                             ));
@@ -49,7 +51,9 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                     if let Some(content) = source.get(bs..be) {
                         if !content.is_empty() {
                             regions.push(make_region(
-                                source, bs, content,
+                                source,
+                                bs,
+                                content,
                                 lang.unwrap_or("css"),
                                 EmbeddedOrigin::StyleBlock,
                             ));
@@ -66,8 +70,11 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
 }
 
 fn make_region(
-    source: &str, byte_start: usize, content: &str,
-    language_id: &'static str, origin: EmbeddedOrigin,
+    source: &str,
+    byte_start: usize,
+    content: &str,
+    language_id: &'static str,
+    origin: EmbeddedOrigin,
 ) -> EmbeddedRegion {
     let (line, col) = line_col_at(source.as_bytes(), byte_start);
     EmbeddedRegion {
@@ -82,25 +89,29 @@ fn make_region(
 }
 
 fn match_html_block(
-    bytes: &[u8], tag_start: usize, tag: &[u8],
+    bytes: &[u8],
+    tag_start: usize,
+    tag: &[u8],
 ) -> Option<(usize, usize, usize, Option<&'static str>)> {
-    if !has_prefix_ci(bytes, tag_start + 1, tag) { return None; }
-    let tag_end = (tag_start + 1 + tag.len()..bytes.len())
-        .find(|&i| bytes[i] == b'>')?;
-    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') { return None; }
+    if !has_prefix_ci(bytes, tag_start + 1, tag) {
+        return None;
+    }
+    let tag_end = (tag_start + 1 + tag.len()..bytes.len()).find(|&i| bytes[i] == b'>')?;
+    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') {
+        return None;
+    }
     let attrs = &bytes[tag_start..tag_end];
     let lang = if tag == b"script" {
         Some(script_lang(attrs))
     } else if tag == b"style" {
         Some(style_lang(attrs))
-    } else { None };
+    } else {
+        None
+    };
     let body_start = tag_end + 1;
     let mut i = body_start;
     while i < bytes.len() {
-        if bytes[i] == b'<'
-            && bytes.get(i + 1) == Some(&b'/')
-            && has_prefix_ci(bytes, i + 2, tag)
-        {
+        if bytes[i] == b'<' && bytes.get(i + 1) == Some(&b'/') && has_prefix_ci(bytes, i + 2, tag) {
             let after_name = i + 2 + tag.len();
             if let Some(gt) = (after_name..bytes.len()).find(|&j| bytes[j] == b'>') {
                 return Some((body_start, i, gt + 1, lang));
@@ -112,24 +123,42 @@ fn match_html_block(
 }
 
 fn script_lang(attrs: &[u8]) -> &'static str {
-    let s = std::str::from_utf8(attrs).unwrap_or("").to_ascii_lowercase();
-    if s.contains("lang=\"ts\"") || s.contains("lang='ts'")
-        || s.contains("lang=\"typescript\"") || s.contains("lang='typescript'")
-    { "typescript" } else { "javascript" }
+    let s = std::str::from_utf8(attrs)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if s.contains("lang=\"ts\"")
+        || s.contains("lang='ts'")
+        || s.contains("lang=\"typescript\"")
+        || s.contains("lang='typescript'")
+    {
+        "typescript"
+    } else {
+        "javascript"
+    }
 }
 
 fn style_lang(attrs: &[u8]) -> &'static str {
-    let s = std::str::from_utf8(attrs).unwrap_or("").to_ascii_lowercase();
-    if s.contains("lang=\"scss\"") || s.contains("lang='scss'") { "scss" } else { "css" }
+    let s = std::str::from_utf8(attrs)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if s.contains("lang=\"scss\"") || s.contains("lang='scss'") {
+        "scss"
+    } else {
+        "css"
+    }
 }
 
 fn has_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     &bytes[start..start + needle.len()] == needle
 }
 
 fn has_prefix_ci(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     bytes[start..start + needle.len()]
         .iter()
         .zip(needle.iter())
@@ -137,7 +166,9 @@ fn has_prefix_ci(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
 }
 
 fn find_subseq(bytes: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || start > bytes.len() { return None; }
+    if needle.is_empty() || start > bytes.len() {
+        return None;
+    }
     let end = bytes.len().saturating_sub(needle.len()) + 1;
     (start..end).find(|&i| bytes[i..].starts_with(needle))
 }

@@ -244,7 +244,11 @@ mod exclusions_tests {
         let mut sorted = dirs.clone();
         sorted.sort_unstable();
         sorted.dedup();
-        assert_eq!(dirs.len(), sorted.len(), "canonical_exclude_dirs contains duplicates");
+        assert_eq!(
+            dirs.len(),
+            sorted.len(),
+            "canonical_exclude_dirs contains duplicates"
+        );
     }
 }
 
@@ -270,9 +274,18 @@ mod project_exclusion_tests {
         assert!(active.contains(&"rust"), "got: {active:?}");
 
         let excludes = project_exclude_dirs(dir.path());
-        assert!(excludes.contains(&"target"), "Rust target/ should be excluded");
-        assert!(!excludes.contains(&"build"), "Rust-only project must NOT exclude build/");
-        assert!(excludes.contains(&"node_modules"), "common dirs always excluded");
+        assert!(
+            excludes.contains(&"target"),
+            "Rust target/ should be excluded"
+        );
+        assert!(
+            !excludes.contains(&"build"),
+            "Rust-only project must NOT exclude build/"
+        );
+        assert!(
+            excludes.contains(&"node_modules"),
+            "common dirs always excluded"
+        );
     }
 
     #[test]
@@ -468,7 +481,10 @@ mod scanner_tests {
     use tempfile::TempDir;
 
     fn options_no_sdk() -> ScanOptions {
-        ScanOptions { check_sdks: false, max_depth: 3 }
+        ScanOptions {
+            check_sdks: false,
+            max_depth: 3,
+        }
     }
 
     fn write(dir: &TempDir, rel: &str, content: &str) {
@@ -511,7 +527,10 @@ mod scanner_tests {
         write(&tmp, "src/app.tsx", "export const App = () => null;");
 
         let profile = scan(tmp.path(), options_no_sdk());
-        let ts = profile.languages.iter().find(|l| l.language_id == "typescript");
+        let ts = profile
+            .languages
+            .iter()
+            .find(|l| l.language_id == "typescript");
         assert!(ts.is_some(), "typescript should be detected");
         let ts = ts.unwrap();
         assert!(ts.file_count >= 2);
@@ -529,10 +548,7 @@ mod scanner_tests {
         write(&tmp, "src/index.ts", "export {};");
 
         let profile = scan(tmp.path(), options_no_sdk());
-        let npm = profile
-            .package_managers
-            .iter()
-            .find(|pm| pm.name == "npm");
+        let npm = profile.package_managers.iter().find(|pm| pm.name == "npm");
         assert!(npm.is_some(), "npm should be detected");
         assert!(npm.unwrap().has_lock_file, "lock file should be present");
     }
@@ -550,7 +566,10 @@ mod scanner_tests {
             .restore_steps
             .iter()
             .any(|s| s.contains("npm") || s.contains("deps"));
-        assert!(has_restore, "missing node_modules should produce a restore step");
+        assert!(
+            has_restore,
+            "missing node_modules should produce a restore step"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -560,7 +579,11 @@ mod scanner_tests {
     fn csharp_project_detected() {
         let tmp = TempDir::new().unwrap();
         write(&tmp, "MyApp.sln", "Microsoft Visual Studio Solution File");
-        write(&tmp, "MyApp/MyApp.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>");
+        write(
+            &tmp,
+            "MyApp/MyApp.csproj",
+            "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>",
+        );
         write(&tmp, "MyApp/Program.cs", "Console.WriteLine(\"hello\");");
 
         let profile = scan(tmp.path(), options_no_sdk());
@@ -574,7 +597,11 @@ mod scanner_tests {
     #[test]
     fn python_project_detected() {
         let tmp = TempDir::new().unwrap();
-        write(&tmp, "requirements.txt", "requests==2.28.0\npytest==7.0.0\n");
+        write(
+            &tmp,
+            "requirements.txt",
+            "requests==2.28.0\npytest==7.0.0\n",
+        );
         write(&tmp, "main.py", "print('hello')");
         write(&tmp, "tests/test_main.py", "def test_hello(): pass");
 
@@ -584,7 +611,9 @@ mod scanner_tests {
         let py = py.unwrap();
         assert!(py.file_count >= 2);
         assert!(
-            py.entry_points.iter().any(|ep| ep.contains("requirements.txt")),
+            py.entry_points
+                .iter()
+                .any(|ep| ep.contains("requirements.txt")),
             "requirements.txt should be an entry point"
         );
     }
@@ -611,7 +640,11 @@ mod scanner_tests {
     fn mixed_project_multiple_languages() {
         let tmp = TempDir::new().unwrap();
         // Rust backend
-        write(&tmp, "src-tauri/Cargo.toml", "[package]\nname=\"backend\"\n");
+        write(
+            &tmp,
+            "src-tauri/Cargo.toml",
+            "[package]\nname=\"backend\"\n",
+        );
         write(&tmp, "src-tauri/src/main.rs", "fn main() {}");
         // TypeScript frontend
         write(&tmp, "package.json", r#"{"name":"frontend"}"#);
@@ -620,7 +653,10 @@ mod scanner_tests {
 
         let profile = scan(tmp.path(), options_no_sdk());
         let has_rust = profile.languages.iter().any(|l| l.language_id == "rust");
-        let has_ts = profile.languages.iter().any(|l| l.language_id == "typescript");
+        let has_ts = profile
+            .languages
+            .iter()
+            .any(|l| l.language_id == "typescript");
         assert!(has_rust, "rust should be detected in mixed project");
         assert!(has_ts, "typescript should be detected in mixed project");
     }
@@ -634,7 +670,11 @@ mod scanner_tests {
         write(&tmp, "package.json", r#"{"name":"app"}"#);
         write(&tmp, "src/index.ts", "export {};");
         // A large "file" inside node_modules — should NOT be counted
-        write(&tmp, "node_modules/big-library/index.js", "module.exports = {};");
+        write(
+            &tmp,
+            "node_modules/big-library/index.js",
+            "module.exports = {};",
+        );
         // Also put a fake .rs in target/
         write(&tmp, "Cargo.toml", "[package]\nname=\"test\"\n");
         write(&tmp, "target/debug/build/some.rs", "fn main() {}");
@@ -642,12 +682,19 @@ mod scanner_tests {
         let profile = scan(tmp.path(), options_no_sdk());
 
         // TypeScript count should be 1 (only src/index.ts), not counting node_modules.
-        let ts = profile.languages.iter().find(|l| l.language_id == "typescript");
+        let ts = profile
+            .languages
+            .iter()
+            .find(|l| l.language_id == "typescript");
         // We don't assert exact count because the walker may also pick up package.json → json,
         // but the JS file inside node_modules must NOT be counted.
         // Indirect check: language stats should not contain "javascript" driven purely
         // by the node_modules file.
-        if let Some(js) = profile.languages.iter().find(|l| l.language_id == "javascript") {
+        if let Some(js) = profile
+            .languages
+            .iter()
+            .find(|l| l.language_id == "javascript")
+        {
             assert_eq!(
                 js.file_count, 0,
                 "node_modules/big-library/index.js must not be counted"
@@ -670,7 +717,11 @@ mod scanner_tests {
     #[test]
     fn env_example_without_env_flagged() {
         let tmp = TempDir::new().unwrap();
-        write(&tmp, ".env.example", "DATABASE_URL=postgres://localhost/dev");
+        write(
+            &tmp,
+            ".env.example",
+            "DATABASE_URL=postgres://localhost/dev",
+        );
         write(&tmp, "package.json", r#"{"name":"app"}"#);
         write(&tmp, "src/index.ts", "export {};");
 
@@ -688,7 +739,11 @@ mod scanner_tests {
     #[test]
     fn docker_compose_detected() {
         let tmp = TempDir::new().unwrap();
-        write(&tmp, "docker-compose.yml", "version: '3'\nservices:\n  app:\n    image: nginx\n");
+        write(
+            &tmp,
+            "docker-compose.yml",
+            "version: '3'\nservices:\n  app:\n    image: nginx\n",
+        );
         write(&tmp, "Dockerfile", "FROM nginx");
         write(&tmp, "src/main.rs", "fn main() {}");
 
@@ -711,7 +766,10 @@ mod scanner_tests {
         write(&tmp, "crates/core/src/lib.rs", "pub fn hello() {}");
 
         let profile = scan(tmp.path(), options_no_sdk());
-        assert!(profile.monorepo.is_some(), "cargo workspace should be detected");
+        assert!(
+            profile.monorepo.is_some(),
+            "cargo workspace should be detected"
+        );
         assert_eq!(profile.monorepo.as_ref().unwrap().kind, "cargo-workspace");
     }
 
@@ -727,7 +785,10 @@ mod scanner_tests {
         write(&tmp, "packages/ui/src/index.ts", "export {};");
 
         let profile = scan(tmp.path(), options_no_sdk());
-        assert!(profile.monorepo.is_some(), "npm workspace should be detected");
+        assert!(
+            profile.monorepo.is_some(),
+            "npm workspace should be detected"
+        );
         assert_eq!(profile.monorepo.as_ref().unwrap().kind, "npm-workspaces");
     }
 
@@ -742,7 +803,11 @@ mod scanner_tests {
             "vite.config.ts",
             r#"import { defineConfig } from "vite"; export default defineConfig({ test: { vitest: true } });"#,
         );
-        write(&tmp, "package.json", r#"{"name":"app","devDependencies":{"vitest":"^1.0"}}"#);
+        write(
+            &tmp,
+            "package.json",
+            r#"{"name":"app","devDependencies":{"vitest":"^1.0"}}"#,
+        );
         write(&tmp, "src/app.ts", "export const x = 1;");
 
         let profile = scan(tmp.path(), options_no_sdk());
@@ -750,13 +815,20 @@ mod scanner_tests {
             .test_frameworks
             .iter()
             .find(|tf| tf.name == "vitest");
-        assert!(vitest.is_some(), "vitest should be detected from vite.config.ts");
+        assert!(
+            vitest.is_some(),
+            "vitest should be detected from vite.config.ts"
+        );
     }
 
     #[test]
     fn pytest_detected_from_config() {
         let tmp = TempDir::new().unwrap();
-        write(&tmp, "pyproject.toml", "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n");
+        write(
+            &tmp,
+            "pyproject.toml",
+            "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n",
+        );
         write(&tmp, "main.py", "print('hello')");
         write(&tmp, "tests/test_foo.py", "def test_foo(): pass");
 
@@ -765,7 +837,10 @@ mod scanner_tests {
             .test_frameworks
             .iter()
             .find(|tf| tf.name == "pytest");
-        assert!(pytest.is_some(), "pytest should be detected from pyproject.toml");
+        assert!(
+            pytest.is_some(),
+            "pytest should be detected from pyproject.toml"
+        );
     }
 }
 

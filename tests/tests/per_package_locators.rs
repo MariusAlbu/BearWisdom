@@ -237,5 +237,8 @@ export const X = Component;
     let pd_count: i64 = db
         .query_row("SELECT COUNT(*) FROM package_deps", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(pd_count, 0, "single-project should not populate package_deps");
+    assert_eq!(
+        pd_count, 0,
+        "single-project should not populate package_deps"
+    );
 }

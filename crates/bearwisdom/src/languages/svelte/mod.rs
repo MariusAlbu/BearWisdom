@@ -16,11 +16,11 @@
 //! The `<script>` block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
-pub(crate) mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
 pub mod connectors;
 pub mod extract;
+pub(crate) mod hooks;
+pub(crate) mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::SVELTE_HOOKS;
 pub use profile::SVELTE_PROFILE;
@@ -93,8 +93,7 @@ impl LanguagePlugin for SveltePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::SVELTE_HOOKS)
     }
 }

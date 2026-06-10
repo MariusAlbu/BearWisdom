@@ -14,9 +14,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_function_statement() {
     let r = extract("function Run { Write-Host 'hello' }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Run" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Run" && s.kind == SymbolKind::Function),
         "expected Function Run; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25,9 +30,14 @@ fn symbol_function_statement() {
 fn symbol_class_statement() {
     let r = extract("class Animal {\n    [string]$Name\n    Speak() { Write-Host $this.Name }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
         "expected Class Animal; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -36,9 +46,14 @@ fn symbol_class_statement() {
 fn symbol_enum_statement() {
     let r = extract("enum Color {\n    Red\n    Green\n    Blue\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
         "expected Enum Color; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -49,7 +64,10 @@ fn symbol_class_method_definition() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Method),
         "expected Method inside Dog; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -60,7 +78,10 @@ fn symbol_class_property_definition() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Property),
         "expected Property inside Config; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -73,9 +94,14 @@ fn symbol_class_property_definition() {
 fn ref_command() {
     let r = extract("function Run { Write-Host 'hello' }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Write-Host" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Write-Host" && rf.kind == EdgeKind::Calls),
         "expected Calls Write-Host; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -103,9 +129,14 @@ fn ref_command_inside_scriptblock_arg() {
 fn ref_invokation_expression() {
     let r = extract("$obj.Method()");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Method" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Method" && rf.kind == EdgeKind::Calls),
         "expected Calls Method; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -115,9 +146,14 @@ fn ref_invokation_expression() {
 fn ref_invokation_inside_scriptblock_arg() {
     let r = extract("$list | ForEach-Object { $_.Compute() }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Compute" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Compute" && rf.kind == EdgeKind::Calls),
         "expected Calls Compute inside ForEach-Object script block; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -133,7 +169,10 @@ fn ref_static_dotnet_method_call() {
     assert!(
         rf.is_some(),
         "expected Calls Round; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -155,7 +194,10 @@ fn ref_static_dotnet_method_call_dotted_type() {
     assert!(
         rf.is_some(),
         "expected Calls ReadAllText; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -177,7 +219,10 @@ fn ref_member_method_call() {
     assert!(
         rf.is_some(),
         "expected Calls Method; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -204,16 +249,26 @@ fn ref_using_statement() {
 fn symbol_enum_member() {
     let r = extract("enum Direction {\n    North\n    South\n    East\n    West\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Direction" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Direction" && s.kind == SymbolKind::Enum),
         "expected Enum Direction; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     for member in &["North", "South", "East", "West"] {
         assert!(
-            r.symbols.iter().any(|s| s.name == *member && s.kind == SymbolKind::EnumMember),
+            r.symbols
+                .iter()
+                .any(|s| s.name == *member && s.kind == SymbolKind::EnumMember),
             "expected EnumMember {}; got {:?}",
             member,
-            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+            r.symbols
+                .iter()
+                .map(|s| (&s.name, s.kind))
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -223,9 +278,14 @@ fn symbol_enum_member() {
 fn symbol_assignment_expression_top_level() {
     let r = extract("$Global = 'value'");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Global" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Global" && s.kind == SymbolKind::Variable),
         "expected Variable Global from top-level assignment; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -234,14 +294,24 @@ fn symbol_assignment_expression_top_level() {
 fn symbol_script_parameter() {
     let r = extract("param(\n    [string]$Name,\n    [int]$Count = 0\n)\nWrite-Host $Name");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Name" && s.kind == SymbolKind::Variable),
         "expected Variable Name from param block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Count" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Count" && s.kind == SymbolKind::Variable),
         "expected Variable Count from param block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -251,9 +321,14 @@ fn symbol_script_parameter() {
 fn ref_import_module_command() {
     let r = extract("Import-Module Az");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("Az")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("Az")),
         "expected Imports ref to 'Az' from Import-Module; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -262,9 +337,14 @@ fn ref_import_module_command() {
 fn ref_class_inherits() {
     let r = extract("class Dog : Animal {\n    Bark() { Write-Host 'Woof' }\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
         "expected Inherits edge from Dog to Animal; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -276,9 +356,14 @@ fn ref_class_inherits() {
 fn ref_member_access_static_type() {
     let r = extract("$max = [int]::MaxValue");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "MaxValue" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "MaxValue" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef ref to MaxValue from [int]::MaxValue; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -288,6 +373,9 @@ fn ref_member_access_runtime_var_is_skipped() {
     assert!(
         !r.refs.iter().any(|rf| rf.target_name == "Length"),
         "did not expect a ref to Length from $str.Length; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }

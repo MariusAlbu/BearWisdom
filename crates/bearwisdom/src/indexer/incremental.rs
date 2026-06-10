@@ -64,7 +64,10 @@ pub fn incremental_index(
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
-    info!("Starting incremental index (HashDiff) of {}", project_root.display());
+    info!(
+        "Starting incremental index (HashDiff) of {}",
+        project_root.display()
+    );
 
     crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
     let _macro_session_guard = MacroSessionGuard;
@@ -84,7 +87,10 @@ pub fn git_reindex(
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
-    info!("Starting incremental index (GitDiff) of {}", project_root.display());
+    info!(
+        "Starting incremental index (GitDiff) of {}",
+        project_root.display()
+    );
 
     crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
     let _macro_session_guard = MacroSessionGuard;
@@ -178,8 +184,14 @@ fn run_incremental_pipeline(
     // workspace graph queries all see the new layout. This is the same
     // detection pass `full_index` runs at step 3b.
     const MANIFEST_NAMES: &[&str] = &[
-        "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
-        "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pyproject.toml",
+        "pubspec.yaml",
+        "mix.exs",
+        "Package.swift",
+        "composer.json",
     ];
     let manifest_changed = changed_paths.iter().any(|p| {
         std::path::Path::new(p)
@@ -196,8 +208,7 @@ fn run_incremental_pipeline(
     // step, which silently degraded monorepo-aware resolution after any
     // incremental save.
     let packages: Vec<crate::types::PackageInfo> = if manifest_changed {
-        let (fresh, workspace_kind) =
-            crate::indexer::stage_discover::detect_packages(project_root);
+        let (fresh, workspace_kind) = crate::indexer::stage_discover::detect_packages(project_root);
         let written = if fresh.is_empty() {
             // Manifest removed: clear the table so stale packages don't bleed
             // through. Stamping `package_id` to NULL for orphaned files is
@@ -270,12 +281,12 @@ fn run_incremental_pipeline(
     // Workspace TypeArena shared across the parse phase and the resolve
     // pass so extractor-populated TypeIds remain valid through to
     // SymbolIndex::build_with_context_and_arena.
-    let workspace_arena = std::sync::Arc::new(
-        crate::type_checker::core::types::TypeArena::new(),
-    );
+    let workspace_arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
     let parse_results: Vec<Result<ParsedFile>> = files_to_parse
         .par_iter()
-        .map(|w| full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref()))
+        .map(|w| {
+            full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref())
+        })
         .collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
@@ -377,7 +388,9 @@ fn run_incremental_pipeline(
 
         let affected_results: Vec<Result<ParsedFile>> = affected_walked
             .par_iter()
-            .map(|w| full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref()))
+            .map(|w| {
+                full::parse_file_with_arena_and_demand(w, registry, None, workspace_arena.as_ref())
+            })
             .collect();
 
         let mut affected_parsed: Vec<ParsedFile> = Vec::new();
@@ -396,8 +409,7 @@ fn run_incremental_pipeline(
             )?;
             db.conn().execute("DELETE FROM _affected_paths", [])?;
 
-            let mut ins = db
-                .prepare("INSERT OR IGNORE INTO _affected_paths (path) VALUES (?1)")?;
+            let mut ins = db.prepare("INSERT OR IGNORE INTO _affected_paths (path) VALUES (?1)")?;
             for pf in &affected_parsed {
                 ins.execute([&pf.path])?;
             }
@@ -434,8 +446,7 @@ fn run_incremental_pipeline(
     // lookup, declared-name workspace map, alias resolution) need this to
     // produce the same answers as the full pipeline; passing an empty slice
     // silently strips sibling-package resolution.
-    let distinct_langs: HashSet<String> =
-        parsed.iter().map(|pf| pf.language.clone()).collect();
+    let distinct_langs: HashSet<String> = parsed.iter().map(|pf| pf.language.clone()).collect();
     let mut project_ctx = super::project_context::ProjectContext::initialize(
         project_root,
         &packages,
@@ -455,12 +466,7 @@ fn run_incremental_pipeline(
             if !project_ctx.language_presence.contains(plugin.id()) {
                 continue;
             }
-            plugin.populate_project_state(
-                &mut plugin_state,
-                &parsed,
-                project_root,
-                &project_ctx,
-            );
+            plugin.populate_project_state(&mut plugin_state, &parsed, project_root, &project_ctx);
         }
         project_ctx.plugin_state = plugin_state;
     }
@@ -494,9 +500,7 @@ fn run_incremental_pipeline(
             .prepare("SELECT path, id FROM files")
             .context("Failed to prepare files-id query")?;
         let rows = stmt
-            .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-            })
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .context("Failed to query files table")?;
         let mut map = std::collections::HashMap::new();
         for row in rows.flatten() {
@@ -513,15 +517,44 @@ fn run_incremental_pipeline(
     {
         let conn = db.conn();
         let _ = crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
-        let _ = crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
+        let _ =
+            crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
         let _ = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
-        let _ = crate::languages::php::connectors::discover_laravel_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::python::connectors::discover_django_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::python::connectors::discover_fastapi_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::ruby::connectors::discover_rails_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::typescript::connectors::discover_nestjs_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::typescript::connectors::discover_nextjs_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::groovy::connectors::discover_groovy_routes(conn, project_root, &project_ctx);
+        let _ = crate::languages::php::connectors::discover_laravel_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::python::connectors::discover_django_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::python::connectors::discover_fastapi_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::ruby::connectors::discover_rails_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::typescript::connectors::discover_nestjs_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::typescript::connectors::discover_nextjs_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let _ = crate::languages::groovy::connectors::discover_groovy_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
     }
 
     for plugin in registry.all() {
@@ -641,8 +674,7 @@ fn find_newly_resolvable_files(
     db.conn().execute("DELETE FROM _changed_names", [])?;
 
     {
-        let mut ins = db
-            .prepare("INSERT OR IGNORE INTO _changed_names (name) VALUES (?1)")?;
+        let mut ins = db.prepare("INSERT OR IGNORE INTO _changed_names (name) VALUES (?1)")?;
         for name in symbol_names {
             ins.execute([name.as_str()])?;
         }
@@ -656,8 +688,7 @@ fn find_newly_resolvable_files(
     db.conn().execute("DELETE FROM _exclude_paths", [])?;
 
     {
-        let mut ins = db
-            .prepare("INSERT OR IGNORE INTO _exclude_paths (path) VALUES (?1)")?;
+        let mut ins = db.prepare("INSERT OR IGNORE INTO _exclude_paths (path) VALUES (?1)")?;
         for path in exclude_paths {
             ins.execute([path.as_str()])?;
         }

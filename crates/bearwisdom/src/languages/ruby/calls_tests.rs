@@ -25,7 +25,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\"), got: {args:?}"
     );
 }
@@ -39,7 +40,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -53,7 +55,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Lambda { params } if params == &["x".to_string()])),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params == &["x".to_string()])),
         "expected Lambda {{ params: [x] }} from a brace block, got: {args:?}"
     );
 }
@@ -69,7 +72,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Lambda { params } if params == &["y".to_string()])),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params == &["y".to_string()])),
         "expected Lambda {{ params: [y] }} from a do block, got: {args:?}"
     );
 }
@@ -97,7 +101,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array arg, got: {args:?}"
     );
 }
@@ -125,7 +130,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for element_reference arg, got: {args:?}"
     );
 }
@@ -139,7 +145,8 @@ end
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }

@@ -7,7 +7,10 @@ use super::calls_macros::extract_calls_from_macro_args;
 use super::helpers::node_text;
 use super::patterns;
 use super::symbols::{extract_method_from_fn, is_rust_primitive};
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
+    SymbolKind,
+};
 use tree_sitter::Node;
 
 // Re-export so external siblings (`extract.rs`) keep calling
@@ -81,15 +84,17 @@ pub(super) fn extract_impl(
             scope_path: scope_from_prefix(outer_prefix),
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
 
         // TypeRef to the implementing type — coverage signal for ref_node_kinds.
         if !is_rust_primitive(&type_name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: impl_sym_idx,
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,
@@ -98,9 +103,9 @@ pub(super) fn extract_impl(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -112,7 +117,9 @@ pub(super) fn extract_impl(
     if let Some(trait_node) = node.child_by_field_name("trait") {
         let trait_name = rust_type_node_name(&trait_node, source);
         if !trait_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: impl_sym_idx,
                 target_name: trait_name,
                 kind: EdgeKind::Implements,
@@ -121,9 +128,9 @@ pub(super) fn extract_impl(
                 module: None,
                 chain: None,
                 byte_offset: trait_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -172,7 +179,11 @@ pub(super) fn extract_impl(
                     // Same rationale as in extract.rs's `function_item` arm —
                     // see `extract_callable_fn_params` doc.
                     super::symbols::extract_callable_fn_params(
-                        &child, source, idx, &method_qname, symbols,
+                        &child,
+                        source,
+                        idx,
+                        &method_qname,
+                        symbols,
                     );
                     {
                         let mut wc = child.walk();
@@ -189,7 +200,13 @@ pub(super) fn extract_impl(
                         }
                     }
                     if let Some(fn_body) = child.child_by_field_name("body") {
-                        extract_calls_from_body_with_symbols(&fn_body, source, idx, refs, Some(symbols));
+                        extract_calls_from_body_with_symbols(
+                            &fn_body,
+                            source,
+                            idx,
+                            refs,
+                            Some(symbols),
+                        );
                     }
                 }
             }
@@ -219,16 +236,18 @@ pub(super) fn extract_impl(
                             scope_path: scope_from_prefix(&impl_prefix),
                             parent_index: None,
                             byte_offset: 0,
-                                                    declared_type: None,
+                            declared_type: None,
                             return_type: None,
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
-});
+                        });
                         // Emit TypeRef if the RHS type is a named type.
                         if let Some(ty_node) = child.child_by_field_name("type") {
                             let type_name = rust_type_node_name(&ty_node, source);
                             if !type_name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
@@ -237,9 +256,9 @@ pub(super) fn extract_impl(
                                     module: None,
                                     chain: None,
                                     byte_offset: ty_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -280,11 +299,29 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // Match arms: extract patterns (TypeRef for variants, Variable for bindings)
             "match_expression" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    patterns::extract_match_patterns(&child, source, source_symbol_index, syms, refs);
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    patterns::extract_match_patterns(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        syms,
+                        refs,
+                    );
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     let mut tmp: Vec<ExtractedSymbol> = Vec::new();
-                    patterns::extract_match_patterns(&child, source, source_symbol_index, &mut tmp, refs);
+                    patterns::extract_match_patterns(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        &mut tmp,
+                        refs,
+                    );
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
             }
@@ -346,9 +383,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // call ref.
             "macro_definition" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_macro_rules(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_macro_rules(&child, source, None, "")
+                    {
                         syms.push(sym);
                     }
                 }
@@ -363,18 +399,14 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // subsequent `LOCATOR.get_or_init(…)` reference can't resolve.
             "static_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_static(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_static(&child, source, None, "") {
                         syms.push(sym);
                     }
                 }
             }
             "const_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_const(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_const(&child, source, None, "") {
                         syms.push(sym);
                     }
                 }
@@ -395,18 +427,14 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // emitted via the symbols extractor).
             "struct_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_struct(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_struct(&child, source, None, "") {
                         syms.push(sym);
                     }
                 }
             }
             "enum_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_enum(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_enum(&child, source, None, "") {
                         let enum_idx = syms.len();
                         let enum_name = sym.name.clone();
                         syms.push(sym);
@@ -429,9 +457,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
             }
             "type_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_type_alias(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_type_alias(&child, source, None, "")
+                    {
                         syms.push(sym);
                     }
                 }
@@ -456,9 +483,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // module-scope extractor uses.
             "function_item" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_function(
-                        &child, source, None, "",
-                    ) {
+                    if let Some(sym) = super::symbols::extract_function(&child, source, None, "") {
                         let nested_idx = syms.len();
                         syms.push(sym);
                         super::symbols::extract_fn_signature_type_refs(
@@ -466,7 +491,11 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         );
                         if let Some(body) = child.child_by_field_name("body") {
                             extract_calls_from_body_with_symbols(
-                                &body, source, nested_idx, refs, Some(syms),
+                                &body,
+                                source,
+                                nested_idx,
+                                refs,
+                                Some(syms),
                             );
                         }
                     }
@@ -493,7 +522,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     };
                     if !target.is_empty() {
                         let call_args = extract_macro_string_args(&child, source);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -509,7 +540,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
                 // Recurse into the token-tree arguments for nested calls inside the macro.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -530,7 +567,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let type_name = rust_type_node_name(&type_node, source);
                     if !type_name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -539,14 +578,20 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 // Recurse into the value expression for nested calls.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -592,7 +637,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         }
                     }
 
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     // No symbol tracking — just handle explicit type refs and recurse.
                     if let Some(type_node) = child.child_by_field_name("type") {
@@ -613,7 +664,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let name = rust_type_node_name(&name_node, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name.clone(),
                             kind: EdgeKind::Calls,
@@ -622,11 +675,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         // Also emit TypeRef so the type graph is connected.
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -635,13 +690,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -695,7 +756,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     // legitimate (if rare) function name, so it is NOT dropped here.
                     if !target_name.is_empty() && !target_name.starts_with('<') {
                         let call_args = extract_call_args(&child, source);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -712,7 +775,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 // Recurse into the entire call node (function + arguments) so that
                 // nested calls in the callee chain and closure arguments are all found.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -722,7 +791,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 // Emit Variable symbols for closure parameters, then recurse into body.
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_closure_params(&child, source, source_symbol_index, syms);
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -736,7 +811,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     && !is_rust_primitive(&name)
                     && !super::symbols::is_generic_param_noise(&name)
                 {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -745,9 +822,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -771,7 +848,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     } else {
                         None
                     };
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: target,
                         kind: EdgeKind::TypeRef,
@@ -788,7 +867,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
@@ -855,11 +940,11 @@ fn make_closure_variable(name: String, node: &Node, parent_index: usize) -> Extr
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 /// A 2-segment `Self`-rooted member chain `[SelfRef("Self"), Property(member)]`.
@@ -925,11 +1010,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -942,11 +1027,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -962,11 +1047,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -982,11 +1067,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                     type_args: vec![],
                     optional_chaining: false,
                     byte_offset: 0,
-                                    declared_type_id: None,
+                    declared_type_id: None,
                     is_call: false,
                     call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
-});
+                });
             } else {
                 for (i, part) in parts.iter().enumerate() {
                     let trimmed = part.trim();
@@ -1011,11 +1096,11 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                         type_args: vec![],
                         optional_chaining: false,
                         byte_offset: 0,
-                                            declared_type_id: None,
+                        declared_type_id: None,
                         is_call: false,
                         call_args: Vec::new(),
                         type_arg_ids: Vec::new(),
-});
+                    });
                 }
             }
             Some(())
@@ -1048,11 +1133,9 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Type name extraction helper (for type_cast_expression targets)
 // ---------------------------------------------------------------------------
-
 
 /// Extract a simple type name from a Rust type node, unwrapping references and
 /// generic wrappers to their base name.
@@ -1176,7 +1259,9 @@ fn infer_rust_variable_type(
             if let Some(name_node) = value_node.child_by_field_name("name") {
                 let type_name = rust_type_node_name(&name_node, source);
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -1185,9 +1270,9 @@ fn infer_rust_variable_type(
                         module: None,
                         chain: None,
                         byte_offset: name_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -1203,7 +1288,12 @@ fn infer_rust_variable_type(
                             .map(|n| node_text(&n, source))
                             .unwrap_or_default();
                         // Only treat as constructor if the path segment starts uppercase.
-                        if path.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                        if path
+                            .chars()
+                            .next()
+                            .map(|c| c.is_uppercase())
+                            .unwrap_or(false)
+                        {
                             // Take just the type name (first segment before `::`)
                             path.split("::").next().unwrap_or(&path).to_string()
                         } else {
@@ -1213,7 +1303,12 @@ fn infer_rust_variable_type(
                     // `Foo(a, b)` — bare uppercase identifier (tuple struct constructor)
                     "identifier" => {
                         let name = node_text(&func, source);
-                        if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                        if name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_uppercase())
+                            .unwrap_or(false)
+                        {
                             name
                         } else {
                             String::new()
@@ -1222,7 +1317,9 @@ fn infer_rust_variable_type(
                     _ => String::new(),
                 };
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: type_name,
                         kind: EdgeKind::TypeRef,
@@ -1231,16 +1328,17 @@ fn infer_rust_variable_type(
                         module: None,
                         chain: None,
                         byte_offset: func.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
 
         // `await expr` — unwrap and recurse once
         "await_expression" => {
-            if let Some(inner) = value_node.child_by_field_name("value")
+            if let Some(inner) = value_node
+                .child_by_field_name("value")
                 .or_else(|| value_node.named_child(0))
             {
                 infer_rust_variable_type(inner, source, var_sym_idx, refs);
@@ -1252,10 +1350,11 @@ fn infer_rust_variable_type(
         // build-time chain inference can hop receiver → return type and
         // bind the variable. Catches the `let searcher = index.searcher();`
         // / `let it = collection.iter();` / builder-chain pattern.
-        "call_expression" if value_node
-            .child_by_field_name("function")
-            .map(|f| f.kind() == "field_expression")
-            .unwrap_or(false) =>
+        "call_expression"
+            if value_node
+                .child_by_field_name("function")
+                .map(|f| f.kind() == "field_expression")
+                .unwrap_or(false) =>
         {
             if let Some(func) = value_node.child_by_field_name("function") {
                 let chain = build_field_expression_chain(&func, source);
@@ -1263,7 +1362,9 @@ fn infer_rust_variable_type(
                     let leaf_name = chain.segments.last().unwrap().name.clone();
                     let byte_offset = func.start_byte() as u32;
                     let line = func.start_position().row as u32;
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: var_sym_idx,
                         target_name: leaf_name,
                         kind: EdgeKind::TypeRef,
@@ -1297,7 +1398,9 @@ fn build_field_expression_chain(
         match current.kind() {
             "field_expression" => {
                 let Some(field) = current.child_by_field_name("field") else {
-                    return MemberChain { segments: Vec::new() };
+                    return MemberChain {
+                        segments: Vec::new(),
+                    };
                 };
                 segments_rev.push(ChainSegment {
                     name: node_text(&field, source),
@@ -1314,7 +1417,11 @@ fn build_field_expression_chain(
                 });
                 match current.child_by_field_name("value") {
                     Some(next) => current = next,
-                    None => return MemberChain { segments: Vec::new() },
+                    None => {
+                        return MemberChain {
+                            segments: Vec::new(),
+                        }
+                    }
                 }
             }
             "identifier" | "self" => {
@@ -1337,10 +1444,15 @@ fn build_field_expression_chain(
                 });
                 break;
             }
-            _ => return MemberChain { segments: Vec::new() },
+            _ => {
+                return MemberChain {
+                    segments: Vec::new(),
+                }
+            }
         }
     }
     segments_rev.reverse();
-    crate::types::MemberChain { segments: segments_rev }
+    crate::types::MemberChain {
+        segments: segments_rev,
+    }
 }
-

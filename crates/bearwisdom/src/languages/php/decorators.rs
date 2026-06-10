@@ -71,7 +71,9 @@ fn extract_from_attribute_group(
     for child in group.children(&mut cursor) {
         if child.kind() == "attribute" {
             if let Some((name, first_arg)) = parse_attribute(&child, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -143,7 +145,11 @@ fn try_extract_php_string(node: &Node, src: &[u8]) -> Option<String> {
             let raw = node_text(node, src);
             // Strip surrounding quotes.
             let stripped = raw.trim_matches('"').trim_matches('\'').to_string();
-            if stripped.is_empty() { None } else { Some(stripped) }
+            if stripped.is_empty() {
+                None
+            } else {
+                Some(stripped)
+            }
         }
         _ => None,
     }

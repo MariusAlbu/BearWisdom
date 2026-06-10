@@ -33,7 +33,9 @@ pub(super) fn extract_extern_crate(
     if name.is_empty() || name == "self" {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name: name,
         kind: EdgeKind::Imports,
@@ -42,9 +44,9 @@ pub(super) fn extract_extern_crate(
         module: None,
         chain: None,
         byte_offset: name_node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -68,12 +70,8 @@ pub(super) fn extract_use_names(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "scoped_identifier"
-            | "scoped_use_list"
-            | "use_as_clause"
-            | "use_wildcard"
-            | "identifier"
-            | "use_list" => {
+            "scoped_identifier" | "scoped_use_list" | "use_as_clause" | "use_wildcard"
+            | "identifier" | "use_list" => {
                 walk_use_tree(&child, source, refs, current_symbol_count, "", is_reexport);
             }
             _ => {}
@@ -105,18 +103,24 @@ fn walk_use_tree(
             }
 
             let module = build_module_path(prefix, &path);
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 col: 0,
-                module: if module.is_empty() { None } else { Some(module) },
+                module: if module.is_empty() {
+                    None
+                } else {
+                    Some(module)
+                },
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
 
         "scoped_use_list" => {
@@ -127,7 +131,14 @@ fn walk_use_tree(
             let new_prefix = build_module_path(prefix, &path);
 
             if let Some(list) = node.child_by_field_name("list") {
-                walk_use_tree(&list, source, refs, current_symbol_count, &new_prefix, is_reexport);
+                walk_use_tree(
+                    &list,
+                    source,
+                    refs,
+                    current_symbol_count,
+                    &new_prefix,
+                    is_reexport,
+                );
             }
         }
 
@@ -136,7 +147,14 @@ fn walk_use_tree(
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "{" | "}" | "," => {}
-                    _ => walk_use_tree(&child, source, refs, current_symbol_count, prefix, is_reexport),
+                    _ => walk_use_tree(
+                        &child,
+                        source,
+                        refs,
+                        current_symbol_count,
+                        prefix,
+                        is_reexport,
+                    ),
                 }
             }
         }
@@ -202,7 +220,9 @@ fn walk_use_tree(
                 None
             };
 
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -211,9 +231,9 @@ fn walk_use_tree(
                 module,
                 chain,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
 
         "use_wildcard" => {
@@ -222,7 +242,9 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: "*".to_string(),
                 kind: EdgeKind::Imports,
@@ -231,9 +253,9 @@ fn walk_use_tree(
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
 
         "identifier" => {
@@ -246,7 +268,9 @@ fn walk_use_tree(
             } else {
                 Some(prefix.to_string())
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport,
                 source_symbol_index: current_symbol_count,
                 target_name: name,
                 kind: EdgeKind::Imports,
@@ -255,15 +279,22 @@ fn walk_use_tree(
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
 
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                walk_use_tree(&child, source, refs, current_symbol_count, prefix, is_reexport);
+                walk_use_tree(
+                    &child,
+                    source,
+                    refs,
+                    current_symbol_count,
+                    prefix,
+                    is_reexport,
+                );
             }
         }
     }

@@ -13,7 +13,9 @@ fn run_version_command(sdk: &SdkDescriptor) -> Option<String> {
     };
 
     #[cfg(not(windows))]
-    let output = Command::new(sdk.version_command).args(sdk.version_args).output();
+    let output = Command::new(sdk.version_command)
+        .args(sdk.version_args)
+        .output();
 
     match output {
         Ok(out) if out.status.success() => {
@@ -21,7 +23,11 @@ fn run_version_command(sdk: &SdkDescriptor) -> Option<String> {
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
             // Some tools (e.g. java -version) print to stderr.
             let raw = if !stdout.is_empty() { stdout } else { stderr };
-            if raw.is_empty() { None } else { Some(raw) }
+            if raw.is_empty() {
+                None
+            } else {
+                Some(raw)
+            }
         }
         _ => None,
     }
@@ -48,15 +54,14 @@ fn read_pinned_version(root: &Path, sdk: &SdkDescriptor) -> Option<String> {
     }
 
     // Plain text version file (e.g. .nvmrc, .ruby-version) — first non-empty line.
-    content.lines().find(|l| !l.trim().is_empty()).map(|l| l.trim().to_owned())
+    content
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_owned())
 }
 
 /// Check all SDKs for detected languages and return `DetectedSdk` entries.
-pub fn check_sdks(
-    root: &Path,
-    language_ids: &[String],
-    check_sdks: bool,
-) -> Vec<DetectedSdk> {
+pub fn check_sdks(root: &Path, language_ids: &[String], check_sdks: bool) -> Vec<DetectedSdk> {
     language_ids
         .iter()
         .filter_map(|id| crate::registry::find_language(id))

@@ -3,9 +3,7 @@
 // =============================================================================
 
 use super::calls::{build_chain, extract_calls_from_body};
-use super::helpers::{
-    detect_python_visibility, node_text, qualify, scope_from_prefix,
-};
+use super::helpers::{detect_python_visibility, node_text, qualify, scope_from_prefix};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -160,7 +158,12 @@ fn infer_python_variable_type(
         // `Foo(args)` — direct constructor call
         "identifier" => {
             let name = node_text(&func_node, source);
-            if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            if name
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+            {
                 name
             } else {
                 return;
@@ -179,7 +182,12 @@ fn infer_python_variable_type(
             let resolved_obj = inner_call_function_name(&object, source);
             let obj = resolved_obj.unwrap_or_else(|| node_text(&object, source));
             // Only emit if the object name starts uppercase (class factory pattern).
-            if obj.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            if obj
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+            {
                 obj
             } else {
                 return;
@@ -188,7 +196,9 @@ fn infer_python_variable_type(
         _ => return,
     };
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: var_sym_idx,
         target_name: type_name,
         kind: EdgeKind::TypeRef,
@@ -197,9 +207,9 @@ fn infer_python_variable_type(
         module: None,
         chain: None,
         byte_offset: rhs.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 fn classify_assignment_name(name: &str, _inside_class: bool) -> SymbolKind {
@@ -233,12 +243,12 @@ pub(super) fn push_variable_symbol(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 pub(super) fn extract_augmented_assignment(
@@ -255,9 +265,15 @@ pub(super) fn extract_augmented_assignment(
     if let Some(left) = node.child_by_field_name("left") {
         if left.kind() == "attribute" {
             if let Some(chain) = build_chain(&left, source) {
-                let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
+                let target = chain
+                    .segments
+                    .last()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
                 if !target.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -266,12 +282,11 @@ pub(super) fn extract_augmented_assignment(
                         module: None,
                         chain: Some(chain),
                         byte_offset: left.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
     }
 }
-

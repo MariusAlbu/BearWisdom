@@ -48,10 +48,7 @@ const ALWAYS_EXTERNAL: &[&str] = &[
 ];
 
 /// Check whether a Scala namespace or import path is external.
-pub(super) fn is_external_scala_namespace(
-    ns: &str,
-    project_ctx: Option<&ProjectContext>,
-) -> bool {
+pub(super) fn is_external_scala_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
     for prefix in ALWAYS_EXTERNAL {
         if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
             return true;
@@ -116,7 +113,19 @@ pub(super) fn effective_target_is_external(
 pub(super) fn is_scala_primitive_type(name: &str) -> bool {
     matches!(
         name,
-        "Boolean" | "Byte" | "Short" | "Int" | "Long" | "Float" | "Double"
-        | "Char" | "Unit" | "Null" | "Nothing" | "Any" | "AnyRef" | "AnyVal"
+        "Boolean"
+            | "Byte"
+            | "Short"
+            | "Int"
+            | "Long"
+            | "Float"
+            | "Double"
+            | "Char"
+            | "Unit"
+            | "Null"
+            | "Nothing"
+            | "Any"
+            | "AnyRef"
+            | "AnyVal"
     )
 }

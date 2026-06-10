@@ -1,26 +1,26 @@
 //! python language plugin.
 
+mod assignments;
 mod calls;
 pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
-mod symbols;
-mod assignments;
 mod statements;
+mod symbols;
 mod types;
-pub mod extract;
 
+mod externals;
+mod flow_detectors;
 pub mod hooks;
 mod predicates;
 pub mod profile;
-mod externals;
-mod flow_detectors;
 
-pub use hooks::PYTHON_HOOKS;
 pub use hooks::PythonResolver;
+pub use hooks::PYTHON_HOOKS;
 pub use profile::PYTHON_PROFILE;
 
 #[cfg(test)]
@@ -49,24 +49,32 @@ mod flow_tests;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct PythonPlugin;
 
 impl LanguagePlugin for PythonPlugin {
-    fn id(&self) -> &str { "python" }
+    fn id(&self) -> &str {
+        "python"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["python"] }
+    fn language_ids(&self) -> &[&str] {
+        &["python"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".py", ".pyi"] }
+    fn extensions(&self) -> &[&str] {
+        &[".py", ".pyi"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_python::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -120,8 +128,7 @@ impl LanguagePlugin for PythonPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&PYTHON_HOOKS)
     }
 

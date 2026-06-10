@@ -25,8 +25,7 @@ pub(super) fn salvage_missed_template_class_decls(
     symbols: &mut Vec<ExtractedSymbol>,
 ) {
     use std::collections::HashSet;
-    let mut existing: HashSet<String> =
-        symbols.iter().map(|s| s.name.clone()).collect();
+    let mut existing: HashSet<String> = symbols.iter().map(|s| s.name.clone()).collect();
 
     let lines: Vec<&str> = source.lines().collect();
     for (line_idx, line) in lines.iter().enumerate() {
@@ -50,10 +49,14 @@ pub(super) fn salvage_missed_template_class_decls(
             }
             let mut j = line_idx;
             let prev_end_angle = loop {
-                if j == 0 { break false; }
+                if j == 0 {
+                    break false;
+                }
                 j -= 1;
                 let prev = lines[j].trim_end();
-                if prev.is_empty() { continue; }
+                if prev.is_empty() {
+                    continue;
+                }
                 break prev.ends_with('>');
             };
             if prev_end_angle {
@@ -82,17 +85,21 @@ fn push_salvaged_class(
         end_col: name.len() as u32,
         signature: Some(format!(
             "{} {name}",
-            if matches!(kind, SymbolKind::Struct) { "struct" } else { "class" }
+            if matches!(kind, SymbolKind::Struct) {
+                "struct"
+            } else {
+                "class"
+            }
         )),
         doc_comment: None,
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     existing.insert(name.to_string());
 }
 
@@ -106,7 +113,9 @@ fn scan_template_class_decl(line: &str) -> Option<(&str, SymbolKind)> {
     while i < bytes.len() && bytes[i].is_ascii_whitespace() {
         i += 1;
     }
-    if i >= bytes.len() || bytes[i] != b'<' { return None }
+    if i >= bytes.len() || bytes[i] != b'<' {
+        return None;
+    }
     // Walk balanced angle brackets.
     let mut depth = 1usize;
     i += 1;
@@ -118,14 +127,20 @@ fn scan_template_class_decl(line: &str) -> Option<(&str, SymbolKind)> {
         }
         i += 1;
     }
-    if depth != 0 { return None }
+    if depth != 0 {
+        return None;
+    }
     while i < bytes.len() && bytes[i].is_ascii_whitespace() {
         i += 1;
     }
-    let kind = if line[i..].starts_with("class") && bytes.get(i + 5).map(|b| !is_ident_byte(*b)).unwrap_or(true) {
+    let kind = if line[i..].starts_with("class")
+        && bytes.get(i + 5).map(|b| !is_ident_byte(*b)).unwrap_or(true)
+    {
         i += 5;
         SymbolKind::Class
-    } else if line[i..].starts_with("struct") && bytes.get(i + 6).map(|b| !is_ident_byte(*b)).unwrap_or(true) {
+    } else if line[i..].starts_with("struct")
+        && bytes.get(i + 6).map(|b| !is_ident_byte(*b)).unwrap_or(true)
+    {
         i += 6;
         SymbolKind::Struct
     } else {
@@ -153,10 +168,14 @@ fn scan_class_decl_only(line: &str) -> Option<(&str, SymbolKind)> {
     while i < bytes.len() && bytes[i].is_ascii_whitespace() {
         i += 1;
     }
-    let kind = if line[i..].starts_with("class") && bytes.get(i + 5).map(|b| !is_ident_byte(*b)).unwrap_or(true) {
+    let kind = if line[i..].starts_with("class")
+        && bytes.get(i + 5).map(|b| !is_ident_byte(*b)).unwrap_or(true)
+    {
         i += 5;
         SymbolKind::Class
-    } else if line[i..].starts_with("struct") && bytes.get(i + 6).map(|b| !is_ident_byte(*b)).unwrap_or(true) {
+    } else if line[i..].starts_with("struct")
+        && bytes.get(i + 6).map(|b| !is_ident_byte(*b)).unwrap_or(true)
+    {
         i += 6;
         SymbolKind::Struct
     } else {
@@ -173,7 +192,9 @@ fn scan_class_decl_only(line: &str) -> Option<(&str, SymbolKind)> {
         i += 1;
     }
     let name_end = i;
-    if name_end == name_start { return None }
+    if name_end == name_start {
+        return None;
+    }
     Some((&line[name_start..name_end], kind))
 }
 

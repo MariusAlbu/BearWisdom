@@ -8,7 +8,6 @@
 // import specifiers.
 // =============================================================================
 
-
 /// Detect an ambient-global TypeScript declaration file — `lib.*.d.ts` shipped
 /// with the TypeScript compiler, or any file under `@types/node/`. Methods
 /// declared in these files are the JS/DOM/ES runtime surface and need no
@@ -50,7 +49,10 @@ pub(crate) fn is_type_like_kind(kind: &str) -> bool {
 }
 
 pub(crate) fn common_prefix_len(a: &str, b: &str) -> usize {
-    a.split('.').zip(b.split('.')).take_while(|(x, y)| x == y).count()
+    a.split('.')
+        .zip(b.split('.'))
+        .take_while(|(x, y)| x == y)
+        .count()
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +163,11 @@ pub fn npm_package_from_external_path(path: &str) -> Option<String> {
         }
     } else {
         let pkg = rest.split('/').next().unwrap_or("");
-        if pkg.is_empty() { None } else { Some(pkg.to_string()) }
+        if pkg.is_empty() {
+            None
+        } else {
+            Some(pkg.to_string())
+        }
     }
 }
 
@@ -185,7 +191,11 @@ pub fn npm_package_from_specifier(spec: &str) -> Option<String> {
         }
     } else {
         let pkg = spec.split('/').next().unwrap_or("");
-        if pkg.is_empty() { None } else { Some(pkg.to_string()) }
+        if pkg.is_empty() {
+            None
+        } else {
+            Some(pkg.to_string())
+        }
     }
 }
 
@@ -201,7 +211,6 @@ pub fn file_belongs_to_npm_package(file_path: &str, pkg: &str) -> bool {
     let needle_nm = format!("node_modules/{pkg}/");
     file_path.contains(&needle_nm)
 }
-
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

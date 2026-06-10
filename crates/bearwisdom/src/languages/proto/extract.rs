@@ -28,9 +28,8 @@ use tree_sitter::{Node, Parser};
 
 // Proto primitive types that should not generate TypeRef edges.
 const PRIMITIVE_TYPES: &[&str] = &[
-    "double", "float", "int32", "int64", "uint32", "uint64",
-    "sint32", "sint64", "fixed32", "fixed64", "sfixed32", "sfixed64",
-    "bool", "string", "bytes",
+    "double", "float", "int32", "int64", "uint32", "uint64", "sint32", "sint64", "fixed32",
+    "fixed64", "sfixed32", "sfixed64", "bool", "string", "bytes",
 ];
 
 // ---------------------------------------------------------------------------
@@ -181,7 +180,9 @@ fn extract_import(
             Some(format!("import \"{}\"", stripped)),
             None,
         ));
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: stripped.clone(),
             kind: EdgeKind::Imports,
@@ -190,9 +191,9 @@ fn extract_import(
             module: Some(stripped),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -248,7 +249,9 @@ fn extract_message_body(
             "field" => extract_field(&child, src, parent_index, symbols, refs),
             "map_field" => extract_map_field(&child, src, parent_index, symbols, refs),
             "oneof" => extract_oneof(&child, src, parent_index, symbols, refs),
-            "message" => extract_message(&child, src, symbols, refs, Some(parent_index), qname_prefix),
+            "message" => {
+                extract_message(&child, src, symbols, refs, Some(parent_index), qname_prefix)
+            }
             "enum" => extract_enum(&child, src, symbols, refs, Some(parent_index), qname_prefix),
             "extend" => extract_extend(&child, src, symbols, refs),
             _ => {}
@@ -332,7 +335,9 @@ fn extract_rpc(
 
     // TypeRef to request type
     if !req_type.is_empty() && !is_primitive(&req_type) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: req_type,
             kind: EdgeKind::TypeRef,
@@ -341,14 +346,16 @@ fn extract_rpc(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // TypeRef to response type
     if !resp_type.is_empty() && !is_primitive(&resp_type) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: resp_type,
             kind: EdgeKind::TypeRef,
@@ -357,9 +364,9 @@ fn extract_rpc(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -467,7 +474,9 @@ fn extract_field(
     // TypeRef to field type (non-primitive message/enum types only)
     if let Some(t) = type_name {
         if !is_primitive(&t) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: t,
                 kind: EdgeKind::TypeRef,
@@ -476,9 +485,9 @@ fn extract_field(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -518,7 +527,9 @@ fn extract_map_field(
     // TypeRef to value type if it's a message/enum type
     if let Some(t) = val_type {
         if !is_primitive(&t) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: t,
                 kind: EdgeKind::TypeRef,
@@ -527,9 +538,9 @@ fn extract_map_field(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -596,7 +607,9 @@ fn extract_extend(
         None,
     ));
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: idx,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -605,9 +618,9 @@ fn extract_extend(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -615,18 +628,15 @@ fn extract_extend(
 // ---------------------------------------------------------------------------
 
 fn message_name(node: &Node, src: &str) -> Option<String> {
-    find_child_of_kind(node, "message_name")
-        .and_then(|n| first_identifier_text(&n, src))
+    find_child_of_kind(node, "message_name").and_then(|n| first_identifier_text(&n, src))
 }
 
 fn service_name(node: &Node, src: &str) -> Option<String> {
-    find_child_of_kind(node, "service_name")
-        .and_then(|n| first_identifier_text(&n, src))
+    find_child_of_kind(node, "service_name").and_then(|n| first_identifier_text(&n, src))
 }
 
 fn enum_name(node: &Node, src: &str) -> Option<String> {
-    find_child_of_kind(node, "enum_name")
-        .and_then(|n| first_identifier_text(&n, src))
+    find_child_of_kind(node, "enum_name").and_then(|n| first_identifier_text(&n, src))
 }
 
 /// Get field name: the identifier that appears just before `= <number>`.
@@ -781,12 +791,12 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn node_text(node: Node, src: &str) -> String {

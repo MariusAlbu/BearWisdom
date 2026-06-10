@@ -101,7 +101,10 @@ fn return_and_declared_type_passthrough() {
     let m = sym(3, "f", "f", "function");
     let field = sym(4, "name", "User.name", "field");
     assert_eq!(SymbolView::new(&m, &types).return_type(), Some(int_ty));
-    assert_eq!(SymbolView::new(&field, &types).declared_type(), Some(str_ty));
+    assert_eq!(
+        SymbolView::new(&field, &types).declared_type(),
+        Some(str_ty)
+    );
 
     // Cross-checks: a method with no declared_type, a field with no return_type.
     assert_eq!(SymbolView::new(&m, &types).declared_type(), None);
@@ -141,4 +144,3 @@ fn type_data_some_when_recorded_none_when_absent() {
         "an unrecorded id has no record — the distinction the per-field accessors collapse"
     );
 }
-

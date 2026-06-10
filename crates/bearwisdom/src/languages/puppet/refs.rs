@@ -40,7 +40,9 @@ pub(super) fn extract_resource_declaration(
     ));
 
     // Calls edge to the resource type.
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: idx,
         target_name: res_type,
         kind: EdgeKind::Calls,
@@ -49,9 +51,9 @@ pub(super) fn extract_resource_declaration(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 fn find_resource_type(node: &Node, src: &str) -> Option<String> {
@@ -103,7 +105,9 @@ pub(super) fn extract_include_or_require(
         if matches!(child.kind(), "class_identifier" | "identifier") {
             let name = node_text(child, src);
             // Imports edge.
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name.clone(),
                 kind: EdgeKind::Imports,
@@ -112,11 +116,13 @@ pub(super) fn extract_include_or_require(
                 module: Some(name.clone()),
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             // Calls edge.
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -125,9 +131,9 @@ pub(super) fn extract_include_or_require(
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -153,7 +159,10 @@ pub(super) fn extract_function_call(
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let k = child.kind();
-            if matches!(k, "identifier" | "class_identifier" | "variable" | "qualified_name" | "name") {
+            if matches!(
+                k,
+                "identifier" | "class_identifier" | "variable" | "qualified_name" | "name"
+            ) {
                 found = node_text(child, src);
                 break;
             }
@@ -161,24 +170,37 @@ pub(super) fn extract_function_call(
         if found.is_empty() {
             // Fallback: take the first-line text of the node itself (before `(`)
             let raw = node_text(*node, src);
-            raw.lines().next().unwrap_or("").split('(').next().unwrap_or("").trim().to_string()
+            raw.lines()
+                .next()
+                .unwrap_or("")
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
         } else {
             found
         }
     };
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
-        target_name: if name.is_empty() { "fn".to_string() } else { name },
+        target_name: if name.is_empty() {
+            "fn".to_string()
+        } else {
+            name
+        },
         kind: EdgeKind::Calls,
         line,
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-    col: 0,
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+        col: 0,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -187,38 +209,51 @@ pub(super) fn extract_function_call(
 
 /// Walk the entire tree and emit a Calls ref for every `function_call` node.
 /// This second pass catches function_calls not visited by dispatch_node.
-pub(super) fn collect_all_function_calls(
-    node: Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+pub(super) fn collect_all_function_calls(node: Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if node.kind() == "function_call" {
         let line = node.start_position().row as u32;
         let mut name = String::new();
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let k = child.kind();
-            if matches!(k, "identifier" | "class_identifier" | "variable" | "qualified_name") {
+            if matches!(
+                k,
+                "identifier" | "class_identifier" | "variable" | "qualified_name"
+            ) {
                 name = node_text(child, src);
                 break;
             }
         }
         if name.is_empty() {
             let raw = node_text(node, src);
-            name = raw.lines().next().unwrap_or("").split('(').next().unwrap_or("fn").trim().to_string();
+            name = raw
+                .lines()
+                .next()
+                .unwrap_or("")
+                .split('(')
+                .next()
+                .unwrap_or("fn")
+                .trim()
+                .to_string();
         }
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
-            target_name: if name.is_empty() { "fn".to_string() } else { name },
+            target_name: if name.is_empty() {
+                "fn".to_string()
+            } else {
+                name
+            },
             kind: EdgeKind::Calls,
             line,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
         // Recurse into function_call children to find nested calls
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -233,11 +268,7 @@ pub(super) fn collect_all_function_calls(
 }
 
 /// Walk the entire tree and emit a Calls ref for every `resource_reference` node.
-pub(super) fn collect_resource_references(
-    node: Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+pub(super) fn collect_resource_references(node: Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if node.kind() == "resource_reference" {
         // resource_reference: Type['title'] — always emit at the node's line
         let line = node.start_position().row as u32;
@@ -255,18 +286,24 @@ pub(super) fn collect_resource_references(
             let raw = node_text(node, src);
             name = raw.split('[').next().unwrap_or("").trim().to_string();
         }
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
-            target_name: if name.is_empty() { "Resource".to_string() } else { name },
+            target_name: if name.is_empty() {
+                "Resource".to_string()
+            } else {
+                name
+            },
             kind: EdgeKind::TypeRef,
             line,
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
         // Still recurse to find nested resource_references
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

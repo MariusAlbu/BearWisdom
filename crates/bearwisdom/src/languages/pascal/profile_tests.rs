@@ -1,5 +1,41 @@
 use super::PASCAL_PROFILE;
-use crate::type_checker::profile::language_profile::{NameNormalization, WildcardMatch};
+use crate::type_checker::profile::language_profile::{
+    KindCompatibility, NameNormalization, WildcardMatch,
+};
+use crate::types::{EdgeKind, SymbolKind};
+
+#[test]
+fn pascal_calls_row_accepts_type_constructors_without_dropping_functions() {
+    let t = PASCAL_PROFILE.kind_compatible_table;
+    // `TFoo(x)` type-cast / record-constructor binds to the type declaration.
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::TypeAlias
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Struct
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Class
+    ));
+    // A real function call still resolves to the function (no regression).
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    // A Calls ref must still not bind to a value.
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
+}
 
 #[test]
 fn pascal_profile_identity_and_shadow_mode() {
@@ -18,6 +54,8 @@ fn pascal_case_folds_and_matches_units_by_file_stem() {
     ));
     assert!(matches!(
         PASCAL_PROFILE.wildcard_match,
-        WildcardMatch::FileStem { underscore_prefix: true }
+        WildcardMatch::FileStem {
+            underscore_prefix: true
+        }
     ));
 }

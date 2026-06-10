@@ -4,7 +4,9 @@
 //! to `MyWidget`). Also emits `Calls` refs for attribute-based
 //! directives (`[appHighlight]`, `*ngFor`, `[(ngModel)]`).
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 /// Decide whether a template tag is a standard HTML element (and thus not
@@ -26,7 +28,8 @@ pub(crate) fn is_standard_html_element(tag: &str) -> bool {
         return true;
     }
     // HTML5: lowercase, no `-`. Anything else is a component-looking tag.
-    tag.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    tag.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
@@ -48,11 +51,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let language: tree_sitter::Language = tree_sitter_html::LANGUAGE.into();
@@ -120,7 +123,9 @@ fn collect_component_refs(
                     // lookup time, so leaving it None here keeps the
                     // engine's generic module-based external classifier
                     // from mis-treating "app-avatar" as an npm package.
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: host_index,
                         target_name: normalized,
                         kind: EdgeKind::Calls,
@@ -188,7 +193,9 @@ fn collect_attribute_directive_refs(
                 }
             };
             if let Some(selector) = normalize_attribute_as_directive(raw_attr) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: selector,
                     kind: EdgeKind::Calls,
@@ -273,7 +280,9 @@ fn element_tag_name(node: &Node, src: &str) -> Option<String> {
                 }
             }
             "tag_name" => {
-                return src.get(child.start_byte()..child.end_byte()).map(str::to_string);
+                return src
+                    .get(child.start_byte()..child.end_byte())
+                    .map(str::to_string);
             }
             _ => {}
         }

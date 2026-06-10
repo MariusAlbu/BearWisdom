@@ -76,12 +76,18 @@ fn walk_for_alias(node: &Node, src: &[u8], out: &mut Vec<(String, String)>) {
             if child.kind() != "pair" {
                 continue;
             }
-            let Some(key_node) = child.child_by_field_name("key") else { continue };
-            let Some(key) = key_name(&key_node, src) else { continue };
+            let Some(key_node) = child.child_by_field_name("key") else {
+                continue;
+            };
+            let Some(key) = key_name(&key_node, src) else {
+                continue;
+            };
             if key != "alias" {
                 continue;
             }
-            let Some(value_node) = child.child_by_field_name("value") else { continue };
+            let Some(value_node) = child.child_by_field_name("value") else {
+                continue;
+            };
             if value_node.kind() == "object" {
                 extract_alias_entries(&value_node, src, out);
             }
@@ -101,14 +107,22 @@ fn extract_alias_entries(obj: &Node, src: &[u8], out: &mut Vec<(String, String)>
         if child.kind() != "pair" {
             continue;
         }
-        let Some(key_node) = child.child_by_field_name("key") else { continue };
-        let Some(value_node) = child.child_by_field_name("value") else { continue };
-        let Some(key) = key_name(&key_node, src) else { continue };
+        let Some(key_node) = child.child_by_field_name("key") else {
+            continue;
+        };
+        let Some(value_node) = child.child_by_field_name("value") else {
+            continue;
+        };
+        let Some(key) = key_name(&key_node, src) else {
+            continue;
+        };
         // Webpack exact-match alias (`vue$`) isn't a prefix mapping — skip.
         if key.ends_with('$') {
             continue;
         }
-        let Some(value) = evaluate_string_value(&value_node, src) else { continue };
+        let Some(value) = evaluate_string_value(&value_node, src) else {
+            continue;
+        };
         // Empty values would create catch-all rewrites. Skip.
         if value.is_empty() {
             continue;
@@ -214,8 +228,10 @@ fn string_literal_contents(node: &Node, src: &[u8]) -> Option<String> {
     }
     let raw = node_text(node, src);
     let trimmed = raw
-        .strip_prefix('"').or_else(|| raw.strip_prefix('\''))?
-        .strip_suffix('"').or_else(|| raw.strip_suffix('\''))?;
+        .strip_prefix('"')
+        .or_else(|| raw.strip_prefix('\''))?
+        .strip_suffix('"')
+        .or_else(|| raw.strip_suffix('\''))?;
     Some(trimmed.to_string())
 }
 
@@ -231,7 +247,11 @@ fn template_string_literal_contents(node: &Node, src: &[u8]) -> Option<String> {
             _ => {}
         }
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 // ---------------------------------------------------------------------------

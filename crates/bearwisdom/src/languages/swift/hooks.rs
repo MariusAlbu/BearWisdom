@@ -61,9 +61,7 @@ pub(crate) fn detect_swift_http_chain(
     if leaf == "request" {
         let url = call_args.iter().find_map(|a| match a {
             CallArg::StringLit(s)
-                if s.starts_with('/')
-                    || s.starts_with("http://")
-                    || s.starts_with("https://") =>
+                if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
             {
                 Some(s.as_str())
             }
@@ -93,7 +91,11 @@ pub(crate) fn detect_swift_grdb_emission(
     }
     let root = chain.segments[0].name.as_str();
     let leaf = chain.segments.last()?.name.as_str();
-    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+    if !root
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
+    {
         return None;
     }
     let op = match leaf {
@@ -114,7 +116,9 @@ pub(crate) fn detect_swift_grdb_emission(
 pub(crate) fn detect_swift_grpc_emission(
     chain: &crate::types::MemberChain,
 ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind, StreamKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, NamedChannelKind, StreamKind,
+    };
     if chain.segments.len() < 2 {
         return None;
     }

@@ -108,7 +108,11 @@ fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
 #[test]
 fn relative_link_appends_md_extension() {
     // `[overview](./overview)` → `docs/overview.md`.
-    let target = make_file("docs/overview.md", vec![make_class_symbol("overview")], vec![]);
+    let target = make_file(
+        "docs/overview.md",
+        vec![make_class_symbol("overview")],
+        vec![],
+    );
     let source = make_file(
         "docs/index.md",
         vec![make_class_symbol("index")],
@@ -128,7 +132,11 @@ fn relative_link_appends_md_extension() {
 #[test]
 fn relative_link_with_extension_resolves_verbatim() {
     // `[changelog](./CHANGELOG.md)` binds the file directly without re-extending.
-    let target = make_file("docs/CHANGELOG.md", vec![make_class_symbol("CHANGELOG")], vec![]);
+    let target = make_file(
+        "docs/CHANGELOG.md",
+        vec![make_class_symbol("CHANGELOG")],
+        vec![],
+    );
     let source = make_file(
         "docs/index.md",
         vec![make_class_symbol("index")],
@@ -142,7 +150,11 @@ fn relative_link_with_extension_resolves_verbatim() {
 #[test]
 fn directory_link_resolves_via_index_entry() {
     // `[guide](./guide)` where `guide/` holds `index.md`.
-    let target = make_file("docs/guide/index.md", vec![make_class_symbol("index")], vec![]);
+    let target = make_file(
+        "docs/guide/index.md",
+        vec![make_class_symbol("index")],
+        vec![],
+    );
     let source = make_file(
         "docs/home.md",
         vec![make_class_symbol("home")],
@@ -155,7 +167,11 @@ fn directory_link_resolves_via_index_entry() {
 
 #[test]
 fn directory_link_resolves_via_readme_entry() {
-    let target = make_file("docs/api/README.md", vec![make_class_symbol("README")], vec![]);
+    let target = make_file(
+        "docs/api/README.md",
+        vec![make_class_symbol("README")],
+        vec![],
+    );
     let source = make_file(
         "docs/home.md",
         vec![make_class_symbol("home")],
@@ -189,7 +205,11 @@ fn translation_suffix_appends_md_not_replaces() {
 
 #[test]
 fn link_ascends_with_dotdot() {
-    let target = make_file("docs/shared/glossary.md", vec![make_class_symbol("glossary")], vec![]);
+    let target = make_file(
+        "docs/shared/glossary.md",
+        vec![make_class_symbol("glossary")],
+        vec![],
+    );
     let source = make_file(
         "docs/guide/intro.md",
         vec![make_class_symbol("intro")],

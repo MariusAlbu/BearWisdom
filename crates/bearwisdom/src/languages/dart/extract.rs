@@ -2,17 +2,16 @@
 // parser/extractors/dart/mod.rs  —  Dart symbol and reference extractor
 // =============================================================================
 
-
-use super::predicates;
 use super::calls::extract_dart_calls;
 use super::decorators::{extract_cascade_calls, extract_decorators};
+use super::helpers::node_text;
+use super::predicates;
 use super::symbols::{
     extract_class, extract_enum, extract_extension, extract_import_directive, extract_mixin,
     extract_part_directive, extract_top_level_function, extract_typedef, extract_variable,
 };
-use super::helpers::node_text;
 
-use crate::types::{ExtractedRef, ExtractedSymbol, EdgeKind};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -228,13 +227,22 @@ fn visit(
             "function_signature" | "function_declaration" => {
                 if parent_index.is_none() {
                     let pre_len = symbols.len();
-                    extract_top_level_function(&child, src, symbols, parent_index, qualified_prefix);
+                    extract_top_level_function(
+                        &child,
+                        src,
+                        symbols,
+                        parent_index,
+                        qualified_prefix,
+                    );
                     if symbols.len() > pre_len {
                         extract_decorators(&child, src, pre_len, refs);
                         // Extract calls from the sibling function_body (top-level function).
                         let fn_idx = pre_len;
                         if let Some(body) = child.next_sibling() {
-                            if body.kind() == "function_body" || body.kind() == "function_expression_body" || body.kind() == "block" {
+                            if body.kind() == "function_body"
+                                || body.kind() == "function_expression_body"
+                                || body.kind() == "block"
+                            {
                                 extract_dart_calls(&body, src, fn_idx, refs);
                             }
                         }
@@ -287,7 +295,9 @@ fn visit(
                 let name = node_text(child, src);
                 if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                     if let Some(sym_idx) = parent_index {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -306,8 +316,12 @@ fn visit(
 
             // Type-bearing nodes that may contain nested type_identifiers.
             // Scan immediate children for type_identifier AND recurse.
-            "type_arguments" | "type_bound" | "function_type" | "type_not_void"
-            | "type_not_void_not_function" | "declared_type" => {
+            "type_arguments"
+            | "type_bound"
+            | "function_type"
+            | "type_not_void"
+            | "type_not_void_not_function"
+            | "declared_type" => {
                 // Scan immediate children for type_identifier to catch generic args.
                 let mut tc = child.walk();
                 for grandchild in child.children(&mut tc) {
@@ -315,7 +329,9 @@ fn visit(
                         let name = node_text(grandchild, src);
                         if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                             if let Some(idx) = parent_index {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -337,7 +353,14 @@ fn visit(
             // factory_constructor_signature at top-level visit (e.g. inside class body
             // nodes that bypass extract_class_body).
             "factory_constructor_signature" => {
-                extract_factory_constructor_at_visit(&child, src, symbols, refs, parent_index, qualified_prefix);
+                extract_factory_constructor_at_visit(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
             }
 
             "ERROR" | "MISSING" => {}
@@ -368,9 +391,9 @@ fn extract_factory_constructor_at_visit(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
+    use super::helpers::scope_from_prefix;
     use super::helpers::{node_text as nt, qualify};
     use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
-    use super::helpers::scope_from_prefix;
 
     // Walk children: find the constructor name (type_identifier / qualified_name).
     let mut name: Option<String> = None;
@@ -423,12 +446,12 @@ fn extract_factory_constructor_at_visit(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     // Also emit TypeRef for type_identifier children (return type annotations, params).
     let idx = symbols.len() - 1;
     let mut tc = node.walk();
@@ -436,7 +459,9 @@ fn extract_factory_constructor_at_visit(
         if child.kind() == "type_identifier" && child.is_named() {
             let t = nt(child, src);
             if !t.is_empty() && !predicates::is_dart_primitive_type(&t) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: idx,
                     target_name: t,
                     kind: EdgeKind::TypeRef,
@@ -467,7 +492,9 @@ fn scan_all_type_identifiers(
         if child.kind() == "type_identifier" && child.is_named() {
             let name = node_text(child, src);
             if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -489,4 +516,3 @@ fn scan_all_type_identifiers(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

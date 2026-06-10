@@ -64,10 +64,7 @@ impl Embedder {
         let tokenizer_path = self.model_dir.join("tokenizer.json");
 
         if !tokenizer_path.exists() {
-            bail!(
-                "tokenizer.json not found at {}",
-                tokenizer_path.display()
-            );
+            bail!("tokenizer.json not found at {}", tokenizer_path.display());
         }
 
         info!(model = %model_path.display(), "loading ONNX model");
@@ -82,9 +79,8 @@ impl Embedder {
             .commit_from_file(&model_path)
             .map_err(|e| anyhow::anyhow!("Load model {}: {e}", model_path.display()))?;
 
-        let tokenizer =
-            tokenizers::Tokenizer::from_file(&tokenizer_path)
-                .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
+        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
 
         self.session = Some(session);
         self.tokenizer = Some(tokenizer);
@@ -145,7 +141,10 @@ impl Embedder {
             return Some(workspace_model);
         }
         if let Some(home) = dirs::home_dir() {
-            let home_model = home.join(".bearwisdom").join("models").join("CodeRankEmbed");
+            let home_model = home
+                .join(".bearwisdom")
+                .join("models")
+                .join("CodeRankEmbed");
             if home_model.join("tokenizer.json").exists() {
                 return Some(home_model);
             }
@@ -238,8 +237,7 @@ impl Embedder {
         for (i, (ids, mask)) in all_ids.iter().zip(all_masks.iter()).enumerate() {
             let actual_len = ids.len().min(seq_len);
             let row_start = i * seq_len;
-            input_ids_flat[row_start..row_start + actual_len]
-                .copy_from_slice(&ids[..actual_len]);
+            input_ids_flat[row_start..row_start + actual_len].copy_from_slice(&ids[..actual_len]);
             attention_mask_flat[row_start..row_start + actual_len]
                 .copy_from_slice(&mask[..actual_len]);
         }
@@ -252,19 +250,15 @@ impl Embedder {
         let _ = shape;
 
         // Build ort Values using (shape, vec) tuples — avoids ndarray version conflicts.
-        let input_ids_val = ort::value::Value::from_array(
-            ([batch_size, seq_len], input_ids_flat),
-        )
-        .map_err(|e| anyhow::anyhow!("input_ids tensor: {e}"))?;
+        let input_ids_val = ort::value::Value::from_array(([batch_size, seq_len], input_ids_flat))
+            .map_err(|e| anyhow::anyhow!("input_ids tensor: {e}"))?;
 
         // Keep a copy before moving into the tensor — needed for mean pooling weights.
-        let attention_mask_f32: Vec<f32> =
-            attention_mask_flat.iter().map(|&m| m as f32).collect();
+        let attention_mask_f32: Vec<f32> = attention_mask_flat.iter().map(|&m| m as f32).collect();
 
-        let attention_mask_val = ort::value::Value::from_array(
-            ([batch_size, seq_len], attention_mask_flat),
-        )
-        .map_err(|e| anyhow::anyhow!("attention_mask tensor: {e}"))?;
+        let attention_mask_val =
+            ort::value::Value::from_array(([batch_size, seq_len], attention_mask_flat))
+                .map_err(|e| anyhow::anyhow!("attention_mask tensor: {e}"))?;
 
         let outputs = session
             .run(ort::inputs![

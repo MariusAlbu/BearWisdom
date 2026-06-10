@@ -50,9 +50,15 @@ const LANGUAGES: &[&str] = &["prolog"];
 pub struct PrologRuntimeEcosystem;
 
 impl Ecosystem for PrologRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("prolog")
@@ -71,11 +77,15 @@ impl Ecosystem for PrologRuntimeEcosystem {
     // requirement out of scope. Demand-driven parsing was a copy-paste
     // from the bicep_runtime template that doesn't fit the .pl walk
     // shape.
-    fn uses_demand_driven_parse(&self) -> bool { false }
+    fn uses_demand_driven_parse(&self) -> bool {
+        false
+    }
 }
 
 impl ExternalSourceLocator for PrologRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_swipl_roots()
@@ -99,7 +109,9 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // ---------------------------------------------------------------------------
 
 fn discover_swipl_roots() -> Vec<ExternalDepRoot> {
-    let Some(root) = find_swipl_source() else { return Vec::new() };
+    let Some(root) = find_swipl_source() else {
+        return Vec::new();
+    };
     let mut roots: Vec<ExternalDepRoot> = Vec::new();
 
     let library = root.join("library");
@@ -168,10 +180,7 @@ pub(crate) fn find_swipl_source() -> Option<PathBuf> {
     // not vendored copies, and parsing them is the canonical resolution
     // path for any Prolog project on the machine.
     let install_candidates: &[&str] = if cfg!(target_os = "windows") {
-        &[
-            "C:/Program Files/swipl",
-            "C:/Program Files (x86)/swipl",
-        ]
+        &["C:/Program Files/swipl", "C:/Program Files (x86)/swipl"]
     } else if cfg!(target_os = "macos") {
         &[
             "/opt/homebrew/lib/swipl",
@@ -257,11 +266,15 @@ fn parse_pllibdir(text: &str) -> Option<String> {
 fn home_dir() -> Option<PathBuf> {
     if let Some(h) = std::env::var_os("HOME") {
         let p = PathBuf::from(h);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(h) = std::env::var_os("USERPROFILE") {
         let p = PathBuf::from(h);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }
@@ -280,7 +293,9 @@ fn walk_dir(dir: &Path, module_prefix: &str, out: &mut Vec<WalkedFile>, depth: u
     if depth >= 16 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -288,14 +303,20 @@ fn walk_dir(dir: &Path, module_prefix: &str, out: &mut Vec<WalkedFile>, depth: u
             // SWI-Prolog has a few subdirectories (`clp/`, `http/`, `dialect/`,
             // `unicode/`, ...). Walk them; skip `.git` and other dotdirs.
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
                 // Skip the `pldoc/` test fixtures — they're contrived
                 // documentation samples, not real predicates.
-                if matches!(name, "pldoc_test" | "test") { continue }
+                if matches!(name, "pldoc_test" | "test") {
+                    continue;
+                }
             }
             walk_dir(&path, module_prefix, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             // SWI uses `.pl` for source; some boot files are `.pl` too. We
             // skip `.qlf` (compiled), `.so`/`.dll` (foreign), and `.html`/
             // `.md` (documentation).

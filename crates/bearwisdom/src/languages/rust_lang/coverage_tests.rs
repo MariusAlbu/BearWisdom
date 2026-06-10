@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // rust_lang/coverage_tests.rs  —  Per-node-kind coverage for the Rust extractor
 //
 // For every kind listed in RustLangPlugin::symbol_node_kinds() and
@@ -56,9 +56,9 @@ fn coverage_enum_variant_emits_enum_member_symbols() {
         .filter(|s| s.kind == SymbolKind::EnumMember)
         .map(|s| s.name.as_str())
         .collect();
-    assert!(members.contains(&"Red"),   "missing Red:   {members:?}");
+    assert!(members.contains(&"Red"), "missing Red:   {members:?}");
     assert!(members.contains(&"Green"), "missing Green: {members:?}");
-    assert!(members.contains(&"Blue"),  "missing Blue:  {members:?}");
+    assert!(members.contains(&"Blue"), "missing Blue:  {members:?}");
 }
 
 // ---- trait_item ------------------------------------------------------------
@@ -102,9 +102,16 @@ fn coverage_impl_item_emits_namespace_symbol_at_impl_line() {
     assert!(
         ns.is_some(),
         "expected `<impl S@N>` Namespace marker; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
-    assert_eq!(ns.unwrap().start_line, 1, "Namespace symbol should be at impl line (1)");
+    assert_eq!(
+        ns.unwrap().start_line,
+        1,
+        "Namespace symbol should be at impl line (1)"
+    );
 }
 
 #[test]
@@ -130,7 +137,10 @@ fn coverage_impl_item_for_trait_emits_method_under_struct() {
     // `impl Trait for Struct` — methods qualify under Struct, not Trait.
     let src = "struct MyRepo;\ntrait Repository { fn find(&self); }\nimpl Repository for MyRepo { fn find(&self) {} }";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "find" && s.kind == SymbolKind::Method);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "find" && s.kind == SymbolKind::Method);
     assert!(sym.is_some(), "expected Method 'find' from impl block");
 }
 
@@ -156,7 +166,10 @@ fn coverage_function_signature_item_in_trait_emits_function_symbol() {
     assert!(
         sym.is_some(),
         "expected symbol 'sound' from function_signature_item; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         matches!(sym.unwrap().kind, SymbolKind::Method | SymbolKind::Function),
@@ -208,7 +221,10 @@ fn coverage_associated_type_in_impl_emits_type_alias() {
     assert!(
         sym.is_some(),
         "expected TypeAlias 'Item' from associated type; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
@@ -221,7 +237,10 @@ fn coverage_associated_type_in_trait_emits_type_alias() {
     assert!(
         sym.is_some(),
         "expected TypeAlias 'Output' from associated type in trait; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -248,8 +267,18 @@ fn coverage_field_declaration_emits_field_symbols() {
         .filter(|s| s.kind == SymbolKind::Field)
         .map(|s| s.name.as_str())
         .collect();
-    assert!(field_names.contains(&"x"), "missing field 'x'; symbols: {:?}", r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>());
-    assert!(field_names.contains(&"y"), "missing field 'y'; symbols: {field_names:?}");
+    assert!(
+        field_names.contains(&"x"),
+        "missing field 'x'; symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        field_names.contains(&"y"),
+        "missing field 'y'; symbols: {field_names:?}"
+    );
 }
 
 #[test]
@@ -277,7 +306,10 @@ fn coverage_field_declaration_named_type_emits_type_ref() {
 fn coverage_field_declaration_qualified_name() {
     let src = "struct Config { host: String, port: u16 }";
     let r = extract::extract(src);
-    let host = r.symbols.iter().find(|s| s.name == "host" && s.kind == SymbolKind::Field);
+    let host = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "host" && s.kind == SymbolKind::Field);
     assert!(host.is_some(), "expected Field 'host'");
     assert_eq!(host.unwrap().qualified_name, "Config.host");
 }
@@ -300,7 +332,10 @@ fn coverage_macro_definition_emits_function_symbol() {
     let src = "macro_rules! my_assert { ($x:expr) => { assert!($x); }; }";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "my_assert");
-    assert!(sym.is_some(), "expected Function symbol 'my_assert' from macro_definition");
+    assert!(
+        sym.is_some(),
+        "expected Function symbol 'my_assert' from macro_definition"
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -320,7 +355,10 @@ fn coverage_call_expression_emits_calls_edge() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"bar"), "expected Calls edge to bar; calls: {calls:?}");
+    assert!(
+        calls.contains(&"bar"),
+        "expected Calls edge to bar; calls: {calls:?}"
+    );
 }
 
 // ---- macro_invocation -------------------------------------------------------
@@ -391,8 +429,14 @@ fn coverage_call_inside_assert_eq_emits_both_args() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"compute_a"), "missing compute_a; got: {calls:?}");
-    assert!(calls.contains(&"compute_b"), "missing compute_b; got: {calls:?}");
+    assert!(
+        calls.contains(&"compute_a"),
+        "missing compute_a; got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"compute_b"),
+        "missing compute_b; got: {calls:?}"
+    );
 }
 
 #[test]
@@ -407,7 +451,10 @@ fn coverage_macro_arg_scoped_path_call_records_module() {
         .iter()
         .find(|r| r.kind == EdgeKind::Calls && r.target_name == "helper");
     let Some(call) = scoped_call else {
-        panic!("expected Calls edge for `helper` from inside dbg!(...); refs: {:?}", r.refs);
+        panic!(
+            "expected Calls edge for `helper` from inside dbg!(...); refs: {:?}",
+            r.refs
+        );
     };
     assert_eq!(
         call.module.as_deref(),
@@ -494,7 +541,7 @@ fn coverage_impl_item_trait_emits_type_ref() {
     // The impl block references `Display` (or its scoped form) as a TypeRef.
     // At minimum the formatter/result TypeRefs should appear.
     let _ = type_refs; // existence check: no panic
-    // Confirm no parse errors
+                       // Confirm no parse errors
     assert!(!r.has_errors, "unexpected parse errors");
 }
 
@@ -590,8 +637,14 @@ fn coverage_trait_bounds_in_where_clause_emits_type_refs() {
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(type_refs.contains(&"Clone"), "missing Clone from trait_bounds; refs: {type_refs:?}");
-    assert!(type_refs.contains(&"Send"),  "missing Send from trait_bounds;  refs: {type_refs:?}");
+    assert!(
+        type_refs.contains(&"Clone"),
+        "missing Clone from trait_bounds; refs: {type_refs:?}"
+    );
+    assert!(
+        type_refs.contains(&"Send"),
+        "missing Send from trait_bounds;  refs: {type_refs:?}"
+    );
 }
 
 #[test]
@@ -761,7 +814,8 @@ fn coverage_abstract_type_emits_ref_at_abstract_type_node_line() {
 #[test]
 fn coverage_impl_item_trait_for_type_emits_implements_edge() {
     // `impl Display for Foo` — should emit an Implements edge to Display.
-    let src = "struct Foo;\ntrait Display { fn fmt(&self); }\nimpl Display for Foo { fn fmt(&self) {} }";
+    let src =
+        "struct Foo;\ntrait Display { fn fmt(&self); }\nimpl Display for Foo { fn fmt(&self) {} }";
     let r = extract::extract(src);
     let implements: Vec<&str> = r
         .refs
@@ -845,7 +899,8 @@ fn coverage_attribute_item_on_impl_method_no_extra_type_ref() {
     // The impl block and method should be present as symbols.
     assert!(
         r.symbols.iter().any(|s| s.name == "test_run"),
-        "expected method symbol test_run; symbols: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        "expected method symbol test_run; symbols: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
     );
     // "test" from #[tokio::test] should NOT appear as a TypeRef from the full-tree
     // attribute scan (it may still appear from extract_decorators on the fn item,
@@ -862,7 +917,8 @@ fn coverage_attribute_item_on_enum_variant_no_extra_type_ref() {
     // The enum symbol should be present.
     assert!(
         r.symbols.iter().any(|s| s.name == "Color"),
-        "expected enum symbol Color; symbols: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        "expected enum symbol Color; symbols: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
     );
 }
 
@@ -875,10 +931,16 @@ fn debug_measure_rust_coverage() {
         "F:/Work/Projects/TestProjects/rust-ast-grep",
         "F:/Work/Projects/TestProjects/rust-tantivy",
     ];
-    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = projects
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied();
     let project_path = match project_path {
         Some(p) => p,
-        None => { eprintln!("No Rust test project found"); return; }
+        None => {
+            eprintln!("No Rust test project found");
+            return;
+        }
     };
     eprintln!("Using project: {}", project_path);
     let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
@@ -886,13 +948,30 @@ fn debug_measure_rust_coverage() {
         if cov.language == "rust" {
             eprintln!("=== Rust ===");
             eprintln!("  files: {}", cov.file_count);
-            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
-            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!(
+                "  sym: {:.1}% ({}/{})",
+                cov.symbol_coverage.percent,
+                cov.symbol_coverage.matched_nodes,
+                cov.symbol_coverage.expected_nodes
+            );
+            eprintln!(
+                "  ref: {:.1}% ({}/{})",
+                cov.ref_coverage.percent,
+                cov.ref_coverage.matched_nodes,
+                cov.ref_coverage.expected_nodes
+            );
             eprintln!("  --- ref kinds (worst first) ---");
             let mut ref_kinds = cov.ref_kinds.clone();
             ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in ref_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
         }
     }
@@ -915,8 +994,14 @@ fn coverage_trait_item_supertrait_bounds_emits_inherits() {
         .filter(|r| r.kind == EdgeKind::Inherits)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(inherits.contains(&"Bar"), "expected Inherits to Bar from supertrait bound; refs: {inherits:?}");
-    assert!(inherits.contains(&"Baz"), "expected Inherits to Baz from supertrait bound; refs: {inherits:?}");
+    assert!(
+        inherits.contains(&"Bar"),
+        "expected Inherits to Bar from supertrait bound; refs: {inherits:?}"
+    );
+    assert!(
+        inherits.contains(&"Baz"),
+        "expected Inherits to Baz from supertrait bound; refs: {inherits:?}"
+    );
 }
 
 // ---- extern_crate_declaration → Imports edge --------------------------------
@@ -1077,8 +1162,14 @@ fn coverage_foreign_mod_item_emits_function_symbols() {
         .filter(|s| s.kind == SymbolKind::Function)
         .map(|s| s.name.as_str())
         .collect();
-    assert!(fns.contains(&"malloc"), "expected Function 'malloc' from foreign_mod_item; symbols: {fns:?}");
-    assert!(fns.contains(&"free"),   "expected Function 'free' from foreign_mod_item; symbols: {fns:?}");
+    assert!(
+        fns.contains(&"malloc"),
+        "expected Function 'malloc' from foreign_mod_item; symbols: {fns:?}"
+    );
+    assert!(
+        fns.contains(&"free"),
+        "expected Function 'free' from foreign_mod_item; symbols: {fns:?}"
+    );
 }
 
 // ---- type_item with generic RHS → TypeRef -----------------------------------
@@ -1131,7 +1222,11 @@ fn coverage_use_declaration_wildcard_emits_imports_edge() {
     // module path (target_name = "*" or the module name).
     let src = "use std::io::*;";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert!(
         !imports.is_empty(),
         "expected at least one Imports edge from use_wildcard; got none"
@@ -1172,8 +1267,14 @@ fn coverage_use_declaration_use_list_emits_multiple_imports_edges() {
         .filter(|r| r.kind == EdgeKind::Imports)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(imports.contains(&"Read"),  "expected Imports edge to Read; imports: {imports:?}");
-    assert!(imports.contains(&"Write"), "expected Imports edge to Write; imports: {imports:?}");
+    assert!(
+        imports.contains(&"Read"),
+        "expected Imports edge to Read; imports: {imports:?}"
+    );
+    assert!(
+        imports.contains(&"Write"),
+        "expected Imports edge to Write; imports: {imports:?}"
+    );
 }
 
 // ---- closure_expression parameter → Variable symbol ------------------------
@@ -1187,7 +1288,10 @@ fn coverage_closure_expression_param_emits_variable_symbol() {
     // Closure params may or may not be extracted as Variable symbols depending
     // on implementation depth — assert at minimum the enclosing function is present
     // and no parse errors occurred.
-    assert!(!r.has_errors, "unexpected parse errors in closure param test");
+    assert!(
+        !r.has_errors,
+        "unexpected parse errors in closure param test"
+    );
     assert!(
         r.symbols.iter().any(|s| s.name == "outer"),
         "expected function symbol 'outer'"
@@ -1208,8 +1312,13 @@ fn coverage_macro_invocation_at_module_level_no_panic() {
     let src = "lazy_static! { static ref POOL: Vec<u8> = vec![]; }";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "lazy_static" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "lazy_static" && rf.kind == EdgeKind::Calls),
         "module-level macro_invocation should emit Calls(lazy_static); got refs: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }

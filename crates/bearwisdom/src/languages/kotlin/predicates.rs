@@ -42,10 +42,7 @@ const ALWAYS_EXTERNAL: &[&str] = &[
 ];
 
 /// Check whether a Kotlin namespace or import path is external.
-pub(super) fn is_external_kotlin_namespace(
-    ns: &str,
-    project_ctx: Option<&ProjectContext>,
-) -> bool {
+pub(super) fn is_external_kotlin_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
     for prefix in ALWAYS_EXTERNAL {
         if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
             return true;

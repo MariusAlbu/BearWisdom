@@ -9,8 +9,8 @@
 //!
 //! MATLAB files are typically one function or class per `.m` file.
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -33,34 +33,36 @@ use crate::types::ExtractionResult;
 pub struct MatlabPlugin;
 
 impl LanguagePlugin for MatlabPlugin {
-    fn id(&self) -> &str { "matlab" }
+    fn id(&self) -> &str {
+        "matlab"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["matlab"] }
+    fn language_ids(&self) -> &[&str] {
+        &["matlab"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".m", ".mat"] }
+    fn extensions(&self) -> &[&str] {
+        &[".m", ".mat"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_matlab::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "function_definition",
-            "class_definition",
-            "assignment",
-        ]
+        &["function_definition", "class_definition", "assignment"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "function_call",
-        ]
+        &["function_call"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -75,8 +77,7 @@ impl LanguagePlugin for MatlabPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::MATLAB_HOOKS)
     }
 }

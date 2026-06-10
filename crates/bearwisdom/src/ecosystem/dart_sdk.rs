@@ -47,9 +47,15 @@ const DART_SDK_LIBS: &[&str] = &[
 pub struct DartSdkEcosystem;
 
 impl Ecosystem for DartSdkEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("dart")
@@ -63,9 +69,13 @@ impl Ecosystem for DartSdkEcosystem {
         walk_dart_sdk(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_dart_symbol_index(dep_roots)
@@ -73,7 +83,9 @@ impl Ecosystem for DartSdkEcosystem {
 }
 
 impl ExternalSourceLocator for DartSdkEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_dart_sdk()
     }
@@ -106,13 +118,17 @@ fn probe_dart_sdk_lib() -> Option<PathBuf> {
     // 1. Explicit override
     if let Some(raw) = std::env::var_os("BEARWISDOM_DART_SDK") {
         let p = PathBuf::from(raw).join("lib");
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // 2. DART_SDK env var (points to sdk root, not lib/)
     if let Some(raw) = std::env::var_os("DART_SDK") {
         let p = PathBuf::from(raw).join("lib");
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // 3. FLUTTER_ROOT bundled dart-sdk
@@ -122,19 +138,25 @@ fn probe_dart_sdk_lib() -> Option<PathBuf> {
             .join("cache")
             .join("dart-sdk")
             .join("lib");
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // 4. `dart` binary on PATH → resolve symlinks and walk up
     if let Some(sdk_root) = dart_bin_sdk_root("dart") {
         let p = sdk_root.join("lib");
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // 5. Well-known install paths
     for candidate in well_known_dart_sdk_paths() {
         let p = candidate.join("lib");
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     None
@@ -150,7 +172,9 @@ fn dart_bin_sdk_root(bin: &str) -> Option<PathBuf> {
             let trimmed = s.trim();
             if !trimmed.is_empty() {
                 let p = PathBuf::from(trimmed);
-                if p.is_dir() { return Some(p); }
+                if p.is_dir() {
+                    return Some(p);
+                }
             }
         }
     }
@@ -160,7 +184,9 @@ fn dart_bin_sdk_root(bin: &str) -> Option<PathBuf> {
     let Ok(output) = Command::new(which_cmd).arg(bin).output() else {
         return None;
     };
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let s = String::from_utf8(output.stdout).ok()?;
     let binary_path = PathBuf::from(s.lines().next()?.trim());
     let resolved = binary_path.canonicalize().unwrap_or(binary_path);
@@ -206,20 +232,34 @@ fn walk_sdk_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= 6 { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    if depth >= 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue; };
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') { continue; }
-                if matches!(name, "test" | "tests") { continue; }
+                if name.starts_with('.') {
+                    continue;
+                }
+                if matches!(name, "test" | "tests") {
+                    continue;
+                }
             }
             walk_sdk_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
-            if !name.ends_with(".dart") { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".dart") {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -274,9 +314,13 @@ fn collect_dart_files_recursive(
     dep: &ExternalDepRoot,
     out: &mut Vec<(String, WalkedFile)>,
 ) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue; };
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -286,8 +330,12 @@ fn collect_dart_files_recursive(
             }
             collect_dart_files_recursive(&path, dep, out);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
-            if !name.ends_with(".dart") { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".dart") {
+                continue;
+            }
             let rel = path.to_string_lossy().replace('\\', "/");
             out.push((
                 dep.module_path.clone(),
@@ -392,11 +440,14 @@ mod tests {
     fn locate_roots_empty_on_missing_sdk() {
         // Must not panic when Dart SDK is absent.
         let e = DartSdkEcosystem;
-        let _ = Ecosystem::locate_roots(&e, &LocateContext {
-            project_root: std::path::Path::new("."),
-            manifests: &Default::default(),
-            active_ecosystems: &[],
-        });
+        let _ = Ecosystem::locate_roots(
+            &e,
+            &LocateContext {
+                project_root: std::path::Path::new("."),
+                manifests: &Default::default(),
+                active_ecosystems: &[],
+            },
+        );
     }
 
     #[test]
@@ -432,9 +483,15 @@ void myFunction() {}
 int get myGetter => 0;
 "#;
         let names = scan_dart_top_level(src);
-        assert!(names.contains(&"MyClass".to_string()), "should find MyClass");
+        assert!(
+            names.contains(&"MyClass".to_string()),
+            "should find MyClass"
+        );
         assert!(names.contains(&"Base".to_string()), "should find Base");
-        assert!(names.contains(&"Mixable".to_string()), "should find Mixable");
+        assert!(
+            names.contains(&"Mixable".to_string()),
+            "should find Mixable"
+        );
         assert!(names.contains(&"Color".to_string()), "should find Color");
     }
 

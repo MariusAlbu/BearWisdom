@@ -5,11 +5,13 @@
 use super::*;
 use crate::indexer::resolve::engine::Resolution;
 use crate::type_checker::core::types::{LitValue, PrimKind, Type, TypeArena};
-use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{CallArg, EdgeKind, ExtractedRef};
 
 fn bare_ref(kind: EdgeKind, target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind,
@@ -113,11 +115,7 @@ fn infer_parses_numeric_literal_when_narrowing_enabled() {
         literal_narrowing: true,
         ..DEFAULT_PROFILE
     };
-    let r = ref_with_args(
-        EdgeKind::Calls,
-        "foo",
-        vec![CallArg::Literal("42".into())],
-    );
+    let r = ref_with_args(EdgeKind::Calls, "foo", vec![CallArg::Literal("42".into())]);
     let out = infer_expression_type(&r, None, &mut arena, &profile).expect("numeric inferred");
     assert_eq!(arena.get(out), Type::Literal(LitValue::Int(42)));
 }
@@ -205,7 +203,10 @@ fn unwrap_iterator_is_identity_when_axis_unset() {
     let mut arena = TypeArena::new();
     let user = arena.class("User");
     let iter_user = arena.intern(Type::Iterator(user));
-    assert_eq!(unwrap_iterator(iter_user, &arena, &DEFAULT_PROFILE), iter_user);
+    assert_eq!(
+        unwrap_iterator(iter_user, &arena, &DEFAULT_PROFILE),
+        iter_user
+    );
 }
 
 #[test]

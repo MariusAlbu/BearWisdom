@@ -14,7 +14,11 @@ fn r_language() -> Language {
 fn assignment_query_is_valid() {
     let lang = r_language();
     let result = Query::new(&lang, R_FLOW_CONFIG.assignment_query);
-    assert!(result.is_ok(), "assignment_query parse error: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "assignment_query parse error: {:?}",
+        result.err()
+    );
 }
 
 /// The config exposes both required capture names.

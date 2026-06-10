@@ -216,7 +216,10 @@ mod tests {
             blank_file("csharp", vec![]),
         ];
         let langs = LanguageRegistry::detected_languages(&files);
-        assert_eq!(langs, HashSet::from(["csharp".to_string(), "typescript".to_string()]));
+        assert_eq!(
+            langs,
+            HashSet::from(["csharp".to_string(), "typescript".to_string()])
+        );
     }
 
     #[test]
@@ -257,12 +260,20 @@ mod tests {
         override_ext: Option<(&'static str, &'static str)>,
     }
     impl LanguagePlugin for FakePlugin {
-        fn id(&self) -> &str { self.id }
-        fn language_ids(&self) -> &[&str] { self.lang_ids }
-        fn extensions(&self) -> &[&str] { self.exts }
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn language_ids(&self) -> &[&str] {
+            self.lang_ids
+        }
+        fn extensions(&self) -> &[&str] {
+            self.exts
+        }
         fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
             if let Some((e, id)) = self.override_ext {
-                if ext.eq_ignore_ascii_case(e) { return Some(id) }
+                if ext.eq_ignore_ascii_case(e) {
+                    return Some(id);
+                }
             }
             if self.exts.iter().any(|x| x.eq_ignore_ascii_case(ext)) {
                 Some(self.id)
@@ -270,8 +281,12 @@ mod tests {
                 None
             }
         }
-        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> { None }
-        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] { &[] }
+        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> {
+            None
+        }
+        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
+            &[]
+        }
         fn extract(&self, _: &str, _: &str, _: &str) -> crate::types::ExtractionResult {
             crate::types::ExtractionResult::default()
         }

@@ -44,8 +44,8 @@ pub(super) fn list_second_name_with_line(node: Node, src: &[u8]) -> (String, u32
         if child.kind() == "sym_lit" {
             if count == 1 {
                 let name = sym_lit_name(child, src);
-                let line = sym_name_line(child)
-                    .unwrap_or_else(|| child.start_position().row as u32);
+                let line =
+                    sym_name_line(child).unwrap_or_else(|| child.start_position().row as u32);
                 return (name, line);
             }
             count += 1;
@@ -146,9 +146,7 @@ pub(super) fn is_clojure_non_callable_token(name: &str) -> bool {
 ///
 /// Used at every sym_lit Calls-ref emission site.
 pub(super) fn is_clojure_skippable_symbol(name: &str) -> bool {
-    is_clojure_non_callable_token(name)
-        || name.starts_with('?')
-        || name.ends_with('#')
+    is_clojure_non_callable_token(name) || name.starts_with('?') || name.ends_with('#')
 }
 
 /// Returns true if `name` is a local binding (unqualified symbol in the locals set).
@@ -186,7 +184,7 @@ pub(super) fn collect_binding_names(node: Node, src: &[u8], names: &mut HashSet<
                 && name != "&"
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_non_callable_token(&name)
+                && !is_clojure_non_callable_token(&name)
                 && !name.starts_with('"')
             {
                 names.insert(name);
@@ -297,7 +295,10 @@ pub(super) fn collect_let_bindings(vec_node: Node, src: &[u8]) -> HashSet<String
 }
 
 /// Merge a new scope into a cloned set (so the parent scope is unaffected).
-pub(super) fn extend_scope(parent: &HashSet<String>, new_names: HashSet<String>) -> HashSet<String> {
+pub(super) fn extend_scope(
+    parent: &HashSet<String>,
+    new_names: HashSet<String>,
+) -> HashSet<String> {
     if new_names.is_empty() {
         return parent.clone();
     }
@@ -312,7 +313,11 @@ pub(super) fn extend_scope(parent: &HashSet<String>, new_names: HashSet<String>)
 
 /// Collect params for `defn`/`defmacro`/`defrecord`/`deftype` — the `vec_lit`
 /// immediately following the name (3rd child of the list).
-pub(super) fn collect_defn_params(node: Node, src: &[u8], parent_locals: &HashSet<String>) -> HashSet<String> {
+pub(super) fn collect_defn_params(
+    node: Node,
+    src: &[u8],
+    parent_locals: &HashSet<String>,
+) -> HashSet<String> {
     // Children: ( defn name [params...] body... )
     // We want the first vec_lit child after the head+name.
     let mut cursor = node.walk();
@@ -333,7 +338,11 @@ pub(super) fn collect_defn_params(node: Node, src: &[u8], parent_locals: &HashSe
 }
 
 /// Collect params for `fn` — handles both `(fn [x] body)` and `(fn name [x] body)`.
-pub(super) fn collect_fn_params(node: Node, src: &[u8], parent_locals: &HashSet<String>) -> HashSet<String> {
+pub(super) fn collect_fn_params(
+    node: Node,
+    src: &[u8],
+    parent_locals: &HashSet<String>,
+) -> HashSet<String> {
     let mut cursor = node.walk();
     let mut past_head = false;
     for child in node.children(&mut cursor) {

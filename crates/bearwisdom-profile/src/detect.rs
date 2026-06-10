@@ -30,7 +30,9 @@ pub fn detect_language(path: &Path) -> Option<&'static LanguageDescriptor> {
                 // Only consider compound extensions here (those with
                 // more than one dot inside) — single-dot extensions
                 // are handled by the single-extension match below.
-                if ext.matches('.').count() < 2 { continue; }
+                if ext.matches('.').count() < 2 {
+                    continue;
+                }
                 let lext = ext.to_ascii_lowercase();
                 if lname.ends_with(&lext) {
                     let len = lext.len();

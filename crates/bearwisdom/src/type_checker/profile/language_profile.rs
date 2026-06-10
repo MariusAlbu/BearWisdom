@@ -917,9 +917,7 @@ pub enum ConstructorPattern {
     LuaColonNew,
     /// Free-function call returning a known type. Pattern matched against
     /// the callee name.
-    NamedFactory {
-        fn_name_pattern: &'static str,
-    },
+    NamedFactory { fn_name_pattern: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -34,9 +34,20 @@ fn pattern_search_finds_function_definitions_in_rust_file() {
         pattern_search(&db, root, "rust", query, 10).expect("pattern_search ok");
 
     let names: Vec<&str> = results.iter().map(|m| m.snippet.as_str()).collect();
-    assert!(names.contains(&"alpha"), "expected `alpha` capture, got {names:?}");
-    assert!(names.contains(&"beta"), "expected `beta` capture, got {names:?}");
-    assert_eq!(results.len(), 2, "expected exactly 2 fn captures, got {}", results.len());
+    assert!(
+        names.contains(&"alpha"),
+        "expected `alpha` capture, got {names:?}"
+    );
+    assert!(
+        names.contains(&"beta"),
+        "expected `beta` capture, got {names:?}"
+    );
+    assert_eq!(
+        results.len(),
+        2,
+        "expected exactly 2 fn captures, got {}",
+        results.len()
+    );
     for m in &results {
         assert_eq!(m.capture_name, "fn");
         assert_eq!(m.file_path, rel);

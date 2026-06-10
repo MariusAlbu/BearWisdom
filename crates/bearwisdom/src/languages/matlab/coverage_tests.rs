@@ -14,9 +14,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_function_definition() {
     let r = extract("function y = foo(x)\ny = x + 1;\nend");
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -27,9 +32,14 @@ fn symbol_class_definition() {
         "classdef Animal\n  methods\n    function speak(obj)\n      disp('hello');\n    end\n  end\nend",
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
         "expected Class Animal; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -38,9 +48,14 @@ fn symbol_class_definition() {
 fn symbol_assignment_top_level() {
     let r = extract("threshold = 42;");
     assert!(
-        r.symbols.iter().any(|s| s.name == "threshold" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "threshold" && s.kind == SymbolKind::Variable),
         "expected Variable threshold from top-level assignment; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -53,9 +68,14 @@ fn symbol_assignment_top_level() {
 fn ref_function_call() {
     let r = extract("function y = foo(x)\ny = bar(x);\nend");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
         "expected Calls bar; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -71,7 +91,10 @@ fn ref_field_expression_method_call() {
     assert!(
         rf.is_some(),
         "expected Calls predict; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -92,7 +115,10 @@ fn ref_field_expression_pkg_call() {
     assert!(
         rf.is_some(),
         "expected Calls helper; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -113,7 +139,10 @@ fn ref_postfix_operator() {
     assert!(
         r.symbols.iter().any(|s| s.name == "transpose_it"),
         "expected Function transpose_it; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -126,9 +155,14 @@ fn ref_postfix_operator() {
 fn symbol_assignment_field_lhs() {
     let r = extract("obj.value = 99;");
     assert!(
-        r.symbols.iter().any(|s| s.name == "value" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "value" && s.kind == SymbolKind::Variable),
         "expected Variable 'value' from field-expression assignment; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -136,12 +170,21 @@ fn symbol_assignment_field_lhs() {
 #[test]
 fn symbol_assignment_multioutput_lhs() {
     let r = extract("[rows, cols] = size(A);");
-    let has_rows = r.symbols.iter().any(|s| s.name == "rows" && s.kind == SymbolKind::Variable);
-    let has_cols = r.symbols.iter().any(|s| s.name == "cols" && s.kind == SymbolKind::Variable);
+    let has_rows = r
+        .symbols
+        .iter()
+        .any(|s| s.name == "rows" && s.kind == SymbolKind::Variable);
+    let has_cols = r
+        .symbols
+        .iter()
+        .any(|s| s.name == "cols" && s.kind == SymbolKind::Variable);
     assert!(
         has_rows && has_cols,
         "expected Variable 'rows' and Variable 'cols' from multioutput assignment; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -151,9 +194,14 @@ fn symbol_assignment_indexed_lhs() {
     let r = extract("function fill(arr, n)\narr(1) = n;\nend");
     // The LHS function_call's name field gives the array variable "arr"
     assert!(
-        r.symbols.iter().any(|s| s.name == "arr" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "arr" && s.kind == SymbolKind::Variable),
         "expected Variable 'arr' from indexed assignment; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -172,13 +220,23 @@ fn symbol_methods_block_extracts_methods() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Dog" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Dog" && s.kind == SymbolKind::Class),
         "expected Class Dog; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "bark" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "bark" && s.kind == SymbolKind::Method),
         "expected Method bark from methods block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

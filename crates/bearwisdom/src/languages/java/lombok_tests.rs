@@ -61,15 +61,17 @@ fn qnames(source: &str) -> Vec<String> {
 
 #[test]
 fn data_synthesizes_getters_and_setters() {
-    let got = synth(
-        "@Data\npublic class User {\n    private String name;\n    private int age;\n}",
-    );
+    let got =
+        synth("@Data\npublic class User {\n    private String name;\n    private int age;\n}");
     assert!(
         got.contains(&("User.getName".to_string(), "String getName()".to_string())),
         "{got:?}"
     );
     assert!(
-        got.contains(&("User.setName".to_string(), "void setName(String name)".to_string())),
+        got.contains(&(
+            "User.setName".to_string(),
+            "void setName(String name)".to_string()
+        )),
         "{got:?}"
     );
     assert!(
@@ -77,7 +79,10 @@ fn data_synthesizes_getters_and_setters() {
         "{got:?}"
     );
     assert!(
-        got.contains(&("User.setAge".to_string(), "void setAge(int age)".to_string())),
+        got.contains(&(
+            "User.setAge".to_string(),
+            "void setAge(int age)".to_string()
+        )),
         "{got:?}"
     );
     assert_eq!(got.len(), 4, "exactly four accessors expected: {got:?}");
@@ -142,11 +147,15 @@ fn combined_getter_and_setter_annotations() {
 
 #[test]
 fn synthesized_accessors_carry_package_qname() {
-    let q = qnames(
-        "package com.example.model;\n@Data public class User { private String name; }",
+    let q = qnames("package com.example.model;\n@Data public class User { private String name; }");
+    assert!(
+        q.contains(&"com.example.model.User.getName".to_string()),
+        "{q:?}"
     );
-    assert!(q.contains(&"com.example.model.User.getName".to_string()), "{q:?}");
-    assert!(q.contains(&"com.example.model.User.setName".to_string()), "{q:?}");
+    assert!(
+        q.contains(&"com.example.model.User.setName".to_string()),
+        "{q:?}"
+    );
 }
 
 #[test]
@@ -213,7 +222,8 @@ fn builder_class_kind_and_fluent_signatures() {
 fn builder_alone_yields_no_getters() {
     let q = qnames("@Builder public class User { private String name; }");
     assert!(
-        !q.iter().any(|n| n.starts_with("User.get") || n.starts_with("User.set")),
+        !q.iter()
+            .any(|n| n.starts_with("User.get") || n.starts_with("User.set")),
         "@Builder alone must not synthesize getters/setters: {q:?}"
     );
 }
@@ -230,7 +240,10 @@ fn data_and_builder_compose() {
 #[test]
 fn getter_emits_field_type_return_ref_setter_emits_none() {
     let src = "@Data public class User { private String name; }";
-    assert_eq!(return_ref_for(src, "User.getName"), Some("String".to_string()));
+    assert_eq!(
+        return_ref_for(src, "User.getName"),
+        Some("String".to_string())
+    );
     // Lombok setters return void → no return-type ref.
     assert_eq!(return_ref_for(src, "User.setName"), None);
 }
@@ -247,9 +260,18 @@ fn primitive_getter_emits_no_return_ref() {
 fn builder_methods_emit_return_type_refs() {
     let src = "@Builder public class User { private String name; }";
     // builder() and the fluent setter return the builder; build() returns the class.
-    assert_eq!(return_ref_for(src, "User.builder"), Some("User.UserBuilder".to_string()));
-    assert_eq!(return_ref_for(src, "User.UserBuilder.name"), Some("User.UserBuilder".to_string()));
-    assert_eq!(return_ref_for(src, "User.UserBuilder.build"), Some("User".to_string()));
+    assert_eq!(
+        return_ref_for(src, "User.builder"),
+        Some("User.UserBuilder".to_string())
+    );
+    assert_eq!(
+        return_ref_for(src, "User.UserBuilder.name"),
+        Some("User.UserBuilder".to_string())
+    );
+    assert_eq!(
+        return_ref_for(src, "User.UserBuilder.build"),
+        Some("User".to_string())
+    );
 }
 
 #[test]

@@ -103,7 +103,9 @@ pub fn trace_flow(
         ORDER BY ft.depth, f.path
     ";
 
-    let mut stmt = conn.prepare(sql).context("Failed to prepare trace_flow CTE")?;
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare trace_flow CTE")?;
 
     let steps = stmt
         .query_map(
@@ -309,8 +311,8 @@ pub fn cross_language_paths(
         String, // source_path
         Option<u32>,
         Option<String>,
-        String, // source_language
-        String, // edge_type
+        String,         // source_language
+        String,         // edge_type
         Option<String>, // protocol
         Option<String>, // url_pattern
         Option<String>, // target_path

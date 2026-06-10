@@ -18,9 +18,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -34,8 +32,8 @@ pub(crate) fn detect_elixir_ecto_emission(
         return None;
     }
     let op = match target {
-        "get" | "get!" | "get_by" | "get_by!" | "one" | "one!" | "all" | "stream"
-        | "exists?" | "aggregate" | "preload" => DbQueryOp::Select,
+        "get" | "get!" | "get_by" | "get_by!" | "one" | "one!" | "all" | "stream" | "exists?"
+        | "aggregate" | "preload" => DbQueryOp::Select,
         "insert" | "insert!" | "insert_all" | "insert_or_update" | "insert_or_update!" => {
             DbQueryOp::Insert
         }
@@ -193,10 +191,7 @@ pub(crate) fn detect_elixir_mailer_emission(
 // CamelCase Elixir module root ↔ snake_case mix.exs dep atom.
 // Direct lowercase match ("Phoenix" → "phoenix") plus first-segment prefix
 // ("ecto_sql" matches "Ecto").
-fn is_mix_dep_match(
-    module_root: &str,
-    deps: &std::collections::HashSet<String>,
-) -> bool {
+fn is_mix_dep_match(module_root: &str, deps: &std::collections::HashSet<String>) -> bool {
     let root_lower = module_root.to_lowercase();
     for dep in deps {
         if dep == &root_lower {
@@ -223,7 +218,10 @@ pub(crate) fn infer_external_inner(
         let root = module.split('.').next().unwrap_or(module);
 
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
                 if is_mix_dep_match(root, &manifest.dependencies) {
                     return Some(root.to_string());
                 }
@@ -240,7 +238,10 @@ pub(crate) fn infer_external_inner(
     if let Some(module) = &ref_ctx.extracted_ref.module {
         let root = module.split('.').next().unwrap_or(module);
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
                 if is_mix_dep_match(root, &manifest.dependencies) {
                     return Some(root.to_string());
                 }
@@ -260,7 +261,10 @@ pub(crate) fn infer_external_inner(
         let root = module.split('.').next().unwrap_or(module);
 
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
                 if is_mix_dep_match(root, &manifest.dependencies) {
                     return Some(root.to_string());
                 }
@@ -276,7 +280,10 @@ pub(crate) fn infer_external_inner(
         let root = target.split('.').next().unwrap_or(target);
 
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
                 if is_mix_dep_match(root, &manifest.dependencies) {
                     return Some(root.to_string());
                 }
@@ -288,7 +295,10 @@ pub(crate) fn infer_external_inner(
         }
     } else {
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
+            {
                 if is_mix_dep_match(target, &manifest.dependencies) {
                     return Some(target.clone());
                 }
@@ -329,8 +339,9 @@ pub(crate) fn infer_external_inner(
         let has_internal_use = file_ctx.imports.iter().any(|imp| {
             imp.module_path
                 .as_deref()
-                .map(|m| !m.is_empty()
-                    && m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false))
+                .map(|m| {
+                    !m.is_empty() && m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                })
                 .unwrap_or(false)
         });
         if phoenix_in_mix && has_internal_use {
@@ -353,11 +364,14 @@ pub(crate) fn infer_external_inner(
             .unwrap_or(false)
     {
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) =
-                ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix)
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Mix)
             {
                 for import in &file_ctx.imports {
-                    let Some(module_path) = import.module_path.as_deref() else { continue };
+                    let Some(module_path) = import.module_path.as_deref() else {
+                        continue;
+                    };
                     let last_segment = module_path.split('.').last().unwrap_or(module_path);
                     // Skip alias-with-as: imported_name differs from
                     // last_segment when `as: X` was used.
@@ -433,10 +447,9 @@ pub(crate) fn detect_flow_inner(
     let r = &ref_ctx.extracted_ref;
     // Phoenix Channel macro: `use Phoenix.Channel` lands as Imports.
     if r.kind == EdgeKind::Imports {
-        if let Some(em) = detect_elixir_phoenix_channel_use(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(em) =
+            detect_elixir_phoenix_channel_use(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![em];
         }
         return Vec::new();

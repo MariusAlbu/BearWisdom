@@ -56,8 +56,11 @@ fn missing_project_returns_structured_error() {
         Ok(_) => panic!("expected error opening missing project"),
     };
     assert_eq!(err.0, "PROJECT_NOT_FOUND");
-    assert!(err.1.contains("does not exist") || err.1.contains("not a directory"),
-        "got message: {}", err.1);
+    assert!(
+        err.1.contains("does not exist") || err.1.contains("not a directory"),
+        "got message: {}",
+        err.1
+    );
     assert_eq!(cache.len(), 0, "failed open must not pollute the cache");
 }
 
@@ -78,7 +81,10 @@ fn cache_evicts_lru_at_capacity() {
 
     // Verify: opening 1 again creates a fresh service, opening 0 reuses.
     let still_a = cache.get_or_open(dirs[0].path()).expect("reuse 0");
-    assert!(Arc::ptr_eq(&_a, &still_a), "0 must still be cached after eviction");
+    assert!(
+        Arc::ptr_eq(&_a, &still_a),
+        "0 must still be cached after eviction"
+    );
 }
 
 #[test]
@@ -86,13 +92,14 @@ fn insert_seeds_default_project_without_lazy_open() {
     let cache = ServiceCache::new(4, opts());
     let dir = make_project_dir();
     let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();
-    let svc = Arc::new(
-        bearwisdom::IndexService::open(&db_path, dir.path(), opts()).expect("open"),
-    );
+    let svc = Arc::new(bearwisdom::IndexService::open(&db_path, dir.path(), opts()).expect("open"));
 
     cache.insert(dir.path().to_path_buf(), svc.clone());
     assert_eq!(cache.len(), 1);
 
     let fetched = cache.get_or_open(dir.path()).expect("lookup");
-    assert!(Arc::ptr_eq(&svc, &fetched), "insert must seed the entry the resolver returns");
+    assert!(
+        Arc::ptr_eq(&svc, &fetched),
+        "insert must seed the entry the resolver returns"
+    );
 }

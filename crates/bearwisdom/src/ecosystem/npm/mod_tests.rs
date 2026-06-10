@@ -93,16 +93,8 @@ fn user_imports_recursive_scan_finds_imports_across_files() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
     std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(
-        root.join("src/index.ts"),
-        "import React from 'react';\n",
-    )
-    .unwrap();
-    std::fs::write(
-        root.join("src/util.tsx"),
-        "import _ from 'lodash';\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("src/index.ts"), "import React from 'react';\n").unwrap();
+    std::fs::write(root.join("src/util.tsx"), "import _ from 'lodash';\n").unwrap();
     // node_modules contents must not contribute imports.
     std::fs::create_dir_all(root.join("node_modules/something")).unwrap();
     std::fs::write(
@@ -155,16 +147,18 @@ fn discover_ts_externals_excludes_unused_declared_dep() {
     )
     .unwrap();
     std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(
-        root.join("src/index.ts"),
-        "import x from 'imported-pkg';\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("src/index.ts"), "import x from 'imported-pkg';\n").unwrap();
 
     let roots = discover_ts_externals(root);
     let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
-    assert!(ids.contains(&"imported-pkg"), "imported-pkg expected: {ids:?}");
-    assert!(!ids.contains(&"unused-pkg"), "unused-pkg should be gated out: {ids:?}");
+    assert!(
+        ids.contains(&"imported-pkg"),
+        "imported-pkg expected: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"unused-pkg"),
+        "unused-pkg should be gated out: {ids:?}"
+    );
 }
 
 #[test]
@@ -269,11 +263,7 @@ fn discover_ts_externals_keeps_at_types_when_runtime_pkg_is_imported() {
     )
     .unwrap();
     std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(
-        root.join("src/index.ts"),
-        "import _ from 'lodash';\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("src/index.ts"), "import _ from 'lodash';\n").unwrap();
 
     let roots = discover_ts_externals(root);
     let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
@@ -281,9 +271,7 @@ fn discover_ts_externals_keeps_at_types_when_runtime_pkg_is_imported() {
     // @types/lodash either appears under its own dep label OR as the
     // companion-types fallback discovered alongside lodash. Either is
     // acceptable; the assertion is that it's present.
-    let any_at_types_lodash = ids
-        .iter()
-        .any(|m| *m == "@types/lodash");
+    let any_at_types_lodash = ids.iter().any(|m| *m == "@types/lodash");
     assert!(
         any_at_types_lodash,
         "@types/lodash must survive when lodash is imported: {ids:?}"
@@ -411,7 +399,10 @@ fn demand_pre_pull_test_globals_skips_scss_walk_on_ts_only_project() {
     // skip it without reading.
     std::fs::create_dir_all(vitest_root.join("dist").join("noise_deep")).unwrap();
     std::fs::write(
-        vitest_root.join("dist").join("noise_deep").join("noise.d.ts"),
+        vitest_root
+            .join("dist")
+            .join("noise_deep")
+            .join("noise.d.ts"),
         "export const noise = 1;\n",
     )
     .unwrap();
@@ -475,12 +466,12 @@ fn is_valid_npm_module_path_rejects_pnpm_shadows_and_drives() {
 
 #[test]
 fn is_valid_npm_module_path_rejects_malformed_scoped() {
-    assert!(!is_valid_npm_module_path("@types"));            // scope only
-    assert!(!is_valid_npm_module_path("@types/"));           // empty pkg
-    assert!(!is_valid_npm_module_path("@/foo"));             // empty scope
-    assert!(!is_valid_npm_module_path("@./foo"));            // dot-scope
-    assert!(!is_valid_npm_module_path("@types/./node"));     // dot-pkg
-    assert!(!is_valid_npm_module_path("@types/node/sub"));   // nested under scope
+    assert!(!is_valid_npm_module_path("@types")); // scope only
+    assert!(!is_valid_npm_module_path("@types/")); // empty pkg
+    assert!(!is_valid_npm_module_path("@/foo")); // empty scope
+    assert!(!is_valid_npm_module_path("@./foo")); // dot-scope
+    assert!(!is_valid_npm_module_path("@types/./node")); // dot-pkg
+    assert!(!is_valid_npm_module_path("@types/node/sub")); // nested under scope
 }
 
 #[test]
@@ -642,7 +633,10 @@ declare module 'vue' {
 }
 "#;
     let names = scan_vue_global_components(src);
-    assert!(names.is_empty(), "extends-only shape yields no explicit names");
+    assert!(
+        names.is_empty(),
+        "extends-only shape yields no explicit names"
+    );
 }
 
 #[test]
@@ -679,14 +673,8 @@ declare global {
         names.iter().any(|n| n == "$localize"),
         "expected $localize in {names:?}"
     );
-    assert!(
-        names.iter().any(|n| n == "$"),
-        "expected $ in {names:?}"
-    );
-    assert!(
-        names.iter().any(|n| n == "$$"),
-        "expected $$ in {names:?}"
-    );
+    assert!(names.iter().any(|n| n == "$"), "expected $ in {names:?}");
+    assert!(names.iter().any(|n| n == "$$"), "expected $$ in {names:?}");
     assert!(
         names.iter().any(|n| n == "_LodashWrapper"),
         "expected _LodashWrapper in {names:?}"
@@ -745,7 +733,10 @@ fn ecosystem_identity() {
 #[test]
 fn legacy_locator_string_unchanged() {
     // Keep "typescript" to avoid schema/test churn in Phase 2.
-    assert_eq!(ExternalSourceLocator::ecosystem(&NpmEcosystem), "typescript");
+    assert_eq!(
+        ExternalSourceLocator::ecosystem(&NpmEcosystem),
+        "typescript"
+    );
 }
 
 #[test]
@@ -817,10 +808,14 @@ fn m3_find_node_modules_prefers_package_local() {
     let roots = find_node_modules_with_ancestors(&pkg, ws);
     let local_idx = roots.iter().position(|p| p == &pkg.join("node_modules"));
     let hoisted_idx = roots.iter().position(|p| p == &ws.join("node_modules"));
-    assert!(local_idx.is_some() && hoisted_idx.is_some(),
-        "expected both node_modules discovered: {roots:?}");
-    assert!(local_idx.unwrap() < hoisted_idx.unwrap(),
-        "package-local should precede hoisted: {roots:?}");
+    assert!(
+        local_idx.is_some() && hoisted_idx.is_some(),
+        "expected both node_modules discovered: {roots:?}"
+    );
+    assert!(
+        local_idx.unwrap() < hoisted_idx.unwrap(),
+        "package-local should precede hoisted: {roots:?}"
+    );
 }
 
 #[test]
@@ -830,17 +825,22 @@ fn m3_read_single_package_json_scoped_to_dir() {
     std::fs::write(
         dir.join("package.json"),
         r#"{"dependencies":{"react":"18"},"devDependencies":{"vitest":"1"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     std::fs::write(
         dir.join("sub").join("package.json"),
         r#"{"dependencies":{"axios":"1"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let deps = read_single_package_json_deps(dir).unwrap();
     assert!(deps.contains("react"));
     assert!(deps.contains("vitest"));
-    assert!(!deps.contains("axios"), "scoped reader must not recurse into sub/");
+    assert!(
+        !deps.contains("axios"),
+        "scoped reader must not recurse into sub/"
+    );
 }
 
 #[test]
@@ -852,19 +852,23 @@ fn m3_discover_ts_externals_scoped_uses_hoisted_node_modules() {
     std::fs::write(
         pkg.join("package.json"),
         r#"{"name":"web","dependencies":{"react":"18"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let react_dir = ws.join("node_modules").join("react");
     std::fs::create_dir_all(&react_dir).unwrap();
     std::fs::write(
         react_dir.join("index.d.ts"),
         "export function Component(): any;",
-    ).unwrap();
+    )
+    .unwrap();
     std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
     let roots = discover_ts_externals_scoped(ws, &pkg);
     assert!(
-        roots.iter().any(|r| r.module_path == "react" && r.root == react_dir),
+        roots
+            .iter()
+            .any(|r| r.module_path == "react" && r.root == react_dir),
         "expected react root from hoisted node_modules"
     );
 }
@@ -879,19 +883,29 @@ fn m3_discover_ts_externals_scoped_merges_workspace_root_deps() {
     std::fs::write(
         ws.join("package.json"),
         r#"{"name":"preact","devDependencies":{"chai":"5","vitest":"2"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         pkg.join("package.json"),
         r#"{"name":"preact-hooks","dependencies":{"preact":"*"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let chai_dir = ws.join("node_modules").join("@types").join("chai");
     std::fs::create_dir_all(&chai_dir).unwrap();
-    std::fs::write(chai_dir.join("index.d.ts"), "export function assert(x: any): void;").unwrap();
+    std::fs::write(
+        chai_dir.join("index.d.ts"),
+        "export function assert(x: any): void;",
+    )
+    .unwrap();
 
     let vitest_dir = ws.join("node_modules").join("vitest");
     std::fs::create_dir_all(&vitest_dir).unwrap();
-    std::fs::write(vitest_dir.join("index.d.ts"), "export function describe(n: string, f: () => void): void;").unwrap();
+    std::fs::write(
+        vitest_dir.join("index.d.ts"),
+        "export function describe(n: string, f: () => void): void;",
+    )
+    .unwrap();
 
     let preact_dir = ws.join("node_modules").join("preact");
     std::fs::create_dir_all(&preact_dir).unwrap();
@@ -905,12 +919,18 @@ fn m3_discover_ts_externals_scoped_merges_workspace_root_deps() {
     // module_path so DefinitelyTyped content keeps its `@types/`
     // prefix. The TS resolver retries `import from 'chai'` against
     // `@types/chai.*` qnames via `ts_import_definitely_typed`.
-    assert!(roots.iter().any(|r| r.module_path == "@types/chai"),
-        "expected @types/chai from workspace root devDeps");
-    assert!(roots.iter().any(|r| r.module_path == "vitest"),
-        "expected vitest from workspace root devDeps");
-    assert!(roots.iter().any(|r| r.module_path == "preact"),
-        "expected preact from sub-package deps");
+    assert!(
+        roots.iter().any(|r| r.module_path == "@types/chai"),
+        "expected @types/chai from workspace root devDeps"
+    );
+    assert!(
+        roots.iter().any(|r| r.module_path == "vitest"),
+        "expected vitest from workspace root devDeps"
+    );
+    assert!(
+        roots.iter().any(|r| r.module_path == "preact"),
+        "expected preact from sub-package deps"
+    );
 }
 
 /// Regression: when both `jest` and `@types/jest` are declared, the
@@ -925,7 +945,8 @@ fn discover_ts_externals_scoped_labels_at_types_canonically() {
     std::fs::write(
         ws.join("package.json"),
         r#"{"name":"app","devDependencies":{"jest":"25","@types/jest":"25"}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Only the @types/jest tree exists on disk — jest 25 ships no
     // bundled types, which is the realistic setup that triggered the
@@ -935,7 +956,8 @@ fn discover_ts_externals_scoped_labels_at_types_canonically() {
     std::fs::write(
         types_jest.join("index.d.ts"),
         "declare var describe: any; declare const expect: any;",
-    ).unwrap();
+    )
+    .unwrap();
 
     std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
@@ -980,11 +1002,13 @@ fn resolve_import_prefers_types_field() {
     std::fs::write(
         root.join("package.json"),
         r#"{"name":"vitest","types":"./dist/index.d.ts","main":"./dist/index.js"}"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         root.join("dist").join("index.d.ts"),
         "export declare function describe(name: string, fn: () => void): void;",
-    ).unwrap();
+    )
+    .unwrap();
 
     let dep = mkdep(root.clone(), "vitest");
     let files = NpmEcosystem.resolve_import(&dep, "vitest", &["describe"]);
@@ -1002,7 +1026,8 @@ fn resolve_import_rewrites_main_to_dts_sibling() {
     std::fs::write(
         root.join("package.json"),
         r#"{"name":"react","main":"./index.js"}"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(root.join("index.d.ts"), "export function Component(): any;").unwrap();
 
     let dep = mkdep(root.clone(), "react");
@@ -1093,9 +1118,14 @@ fn resolve_package_entry_path_prefers_exports_over_legacy_types() {
           "types":"./legacy.d.ts",
           "exports":{".":{"types":"./dist/modern.d.ts"}}
         }"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(root.join("legacy.d.ts"), "export const legacy: 1;").unwrap();
-    std::fs::write(root.join("dist").join("modern.d.ts"), "export const modern: 1;").unwrap();
+    std::fs::write(
+        root.join("dist").join("modern.d.ts"),
+        "export const modern: 1;",
+    )
+    .unwrap();
 
     let dep = mkdep(root.clone(), "modern-pkg");
     let entry = resolve_package_entry_path(&dep).unwrap();
@@ -1164,11 +1194,13 @@ fn resolve_symbol_returns_same_entry_as_import() {
     std::fs::write(
         root.join("package.json"),
         r#"{"name":"vitest","types":"./dist/index.d.ts"}"#,
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         root.join("dist").join("index.d.ts"),
         "export interface Assertion {}",
-    ).unwrap();
+    )
+    .unwrap();
 
     let dep = mkdep(root.clone(), "vitest");
     let a = NpmEcosystem.resolve_import(&dep, "vitest", &["Assertion"]);
@@ -1190,7 +1222,10 @@ fn file_declares_type_matches_decl_keywords() {
     assert!(file_declares_type("export type Foo = string;\n", "Foo"));
     assert!(file_declares_type("export enum Foo { A, B }\n", "Foo"));
     assert!(file_declares_type("declare class Foo {}\n", "Foo"));
-    assert!(file_declares_type("export declare interface Foo {}\n", "Foo"));
+    assert!(file_declares_type(
+        "export declare interface Foo {}\n",
+        "Foo"
+    ));
     assert!(file_declares_type("export abstract class Foo {}\n", "Foo"));
     assert!(file_declares_type("export function Foo() {}\n", "Foo"));
     assert!(file_declares_type("export const Foo = 1;\n", "Foo"));
@@ -1201,7 +1236,10 @@ fn file_declares_type_rejects_partial_matches() {
     assert!(!file_declares_type("class FooBar {}\n", "Foo"));
     assert!(!file_declares_type("// uses Foo somewhere\n", "Foo"));
     assert!(!file_declares_type("import { Foo } from 'x';\n", "Foo"));
-    assert!(!file_declares_type("export interface Bar { f: Foo; }\n", "Foo"));
+    assert!(!file_declares_type(
+        "export interface Bar { f: Foo; }\n",
+        "Foo"
+    ));
     assert!(!file_declares_type("", "Foo"));
 }
 
@@ -1357,17 +1395,9 @@ fn build_index_follows_relative_reexports_from_entry() {
     )
     .unwrap();
     let entry = root.join("dist").join("index.d.ts");
-    std::fs::write(
-        &entry,
-        "export { Inner } from './inner';\n",
-    )
-    .unwrap();
+    std::fs::write(&entry, "export { Inner } from './inner';\n").unwrap();
     let inner = root.join("dist").join("inner.d.ts");
-    std::fs::write(
-        &inner,
-        "export class Inner { method(): void {} }\n",
-    )
-    .unwrap();
+    std::fs::write(&inner, "export class Inner { method(): void {} }\n").unwrap();
 
     let dep = mkdep(root, "barrel-pkg");
     let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
@@ -1520,15 +1550,14 @@ fn find_files_declaring_type_returns_definition_only() {
     std::fs::write(
         root.join("src").join("foo.d.ts"),
         "export interface Foo { method(): string }\n",
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(
         root.join("src").join("bar.d.ts"),
         "import { Foo } from './foo';\nexport interface Bar { f: Foo }\n",
-    ).unwrap();
-    std::fs::write(
-        root.join("src").join("baz.d.ts"),
-        "export class Baz {}\n",
-    ).unwrap();
+    )
+    .unwrap();
+    std::fs::write(root.join("src").join("baz.d.ts"), "export class Baz {}\n").unwrap();
 
     let dep = mkdep(root, "synthetic-pkg");
     let files = find_files_declaring_type(&dep, "Foo");
@@ -1536,7 +1565,11 @@ fn find_files_declaring_type_returns_definition_only() {
 
     // Only foo.d.ts (declares Foo) should match. bar.d.ts uses Foo, baz
     // declares Baz — both excluded.
-    assert_eq!(paths.len(), 1, "expected only the file declaring Foo: {paths:?}");
+    assert_eq!(
+        paths.len(),
+        1,
+        "expected only the file declaring Foo: {paths:?}"
+    );
     assert!(paths[0].ends_with("foo.d.ts"));
 }
 
@@ -1545,7 +1578,10 @@ fn package_ships_scss_returns_true_when_scss_at_root() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let pkg = tmp.path();
     std::fs::write(pkg.join("_index.scss"), "@mixin assert() {}\n").unwrap();
-    assert!(package_ships_scss(pkg), "package with .scss at root should return true");
+    assert!(
+        package_ships_scss(pkg),
+        "package with .scss at root should return true"
+    );
 }
 
 #[test]
@@ -1554,7 +1590,10 @@ fn package_ships_scss_returns_true_when_scss_in_subdir() {
     let pkg = tmp.path();
     std::fs::create_dir_all(pkg.join("sass")).unwrap();
     std::fs::write(pkg.join("sass/_output.scss"), "@mixin output() {}\n").unwrap();
-    assert!(package_ships_scss(pkg), "package with .scss in sass/ subdir should return true");
+    assert!(
+        package_ships_scss(pkg),
+        "package with .scss in sass/ subdir should return true"
+    );
 }
 
 #[test]
@@ -1562,7 +1601,10 @@ fn package_ships_scss_returns_false_when_no_scss() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let pkg = tmp.path();
     std::fs::write(pkg.join("index.d.ts"), "export const x: number;\n").unwrap();
-    assert!(!package_ships_scss(pkg), "TS-only package should return false");
+    assert!(
+        !package_ships_scss(pkg),
+        "TS-only package should return false"
+    );
 }
 
 #[test]
@@ -1621,15 +1663,20 @@ fn discover_ts_externals_keeps_scss_shipping_packages_in_scss_project() {
         "import x from 'imported-ts-pkg';\n",
     )
     .unwrap();
-    std::fs::write(
-        root.join("src/styles.scss"),
-        ".button { color: red; }\n",
-    )
-    .unwrap();
+    std::fs::write(root.join("src/styles.scss"), ".button { color: red; }\n").unwrap();
 
     let roots = discover_ts_externals(root);
     let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
-    assert!(ids.contains(&"imported-ts-pkg"), "imported TS pkg expected: {ids:?}");
-    assert!(ids.contains(&"sass-test-pkg"), "scss-shipping pkg expected even without @use: {ids:?}");
-    assert!(!ids.contains(&"unused-pkg"), "unused non-scss pkg should be gated out: {ids:?}");
+    assert!(
+        ids.contains(&"imported-ts-pkg"),
+        "imported TS pkg expected: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"sass-test-pkg"),
+        "scss-shipping pkg expected even without @use: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"unused-pkg"),
+        "unused non-scss pkg should be gated out: {ids:?}"
+    );
 }

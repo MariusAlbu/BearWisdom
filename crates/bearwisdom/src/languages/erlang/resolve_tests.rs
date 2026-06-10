@@ -3,10 +3,17 @@ use crate::types::*;
 
 #[test]
 fn test_erlang_httpc_request_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
-    let args = vec![CallArg::Ident("get".to_string()), CallArg::StringLit("https://api.example.com/x".to_string())];
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
+    let args = vec![
+        CallArg::Ident("get".to_string()),
+        CallArg::StringLit("https://api.example.com/x".to_string()),
+    ];
     match detect_erlang_http_emission("httpc", "request", &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, method, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(method, Some(HttpMethod::Any));

@@ -50,7 +50,11 @@ fn incremental_detects_modified_file() {
     crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Modify the file.
-    fs::write(dir.path().join("a.cs"), "namespace App { class Foo { void Bar() {} } }").unwrap();
+    fs::write(
+        dir.path().join("a.cs"),
+        "namespace App { class Foo { void Bar() {} } }",
+    )
+    .unwrap();
 
     let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_modified, 1);
@@ -162,7 +166,10 @@ fn reindex_files_handles_modify() {
         .conn()
         .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
         .unwrap();
-    assert!(sym_count >= 2, "Expected at least Foo + Bar, got {sym_count}");
+    assert!(
+        sym_count >= 2,
+        "Expected at least Foo + Bar, got {sym_count}"
+    );
 }
 
 #[test]
@@ -332,7 +339,9 @@ fn body_only_change_does_not_reresolve_dependents() {
 
     let dowork_before: i64 = db
         .conn()
-        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| r.get(0))
+        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
 
     // Edit only DoWork's body — same name, params, return type ⇒ same key.
@@ -358,7 +367,9 @@ fn body_only_change_does_not_reresolve_dependents() {
     // DoWork kept its id, and B's edge into it survived untouched.
     let dowork_after: i64 = db
         .conn()
-        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| r.get(0))
+        .query_row("SELECT id FROM symbols WHERE name = 'DoWork'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(dowork_after, dowork_before, "survivor kept its id");
     let inbound: u32 = db
@@ -519,7 +530,11 @@ fn incremental_rewrites_packages_when_manifest_added() {
         r#"{"name":"@org/web","version":"0.1.0"}"#,
     )
     .unwrap();
-    fs::write(dir.path().join("packages/web/src/index.ts"), "export const x = 1;").unwrap();
+    fs::write(
+        dir.path().join("packages/web/src/index.ts"),
+        "export const x = 1;",
+    )
+    .unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
     crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();

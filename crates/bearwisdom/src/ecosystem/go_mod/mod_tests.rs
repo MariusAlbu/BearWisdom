@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::*;
 use super::discovery::{collect_module_imports, escape_module_path};
 use super::reachability::resolve_go_requested_packages;
 use super::symbol_index::scan_go_header;
+use super::*;
 
 #[test]
 fn ecosystem_identity() {
@@ -65,9 +65,18 @@ require github.com/other/pkg v1.0.0
     let data = parse_go_mod(content);
     assert_eq!(data.module_path.as_deref(), Some("foo.example/bar"));
     assert_eq!(data.require_deps.len(), 3);
-    assert!(data.require_deps.iter().any(|d| d.path == "github.com/gin-gonic/gin" && !d.indirect));
-    assert!(data.require_deps.iter().any(|d| d.path == "github.com/stretchr/testify" && d.indirect));
-    assert!(data.require_deps.iter().any(|d| d.path == "github.com/other/pkg"));
+    assert!(data
+        .require_deps
+        .iter()
+        .any(|d| d.path == "github.com/gin-gonic/gin" && !d.indirect));
+    assert!(data
+        .require_deps
+        .iter()
+        .any(|d| d.path == "github.com/stretchr/testify" && d.indirect));
+    assert!(data
+        .require_deps
+        .iter()
+        .any(|d| d.path == "github.com/other/pkg"));
 }
 
 #[allow(dead_code)]
@@ -105,8 +114,14 @@ func (d *DB) Query(q string) (*Rows, error) {
 }
 "#;
     let names = scan_go_header(src);
-    assert!(names.contains(&"DB".to_string()), "types missing: {names:?}");
-    assert!(names.contains(&"DB.Query".to_string()), "method missing: {names:?}");
+    assert!(
+        names.contains(&"DB".to_string()),
+        "types missing: {names:?}"
+    );
+    assert!(
+        names.contains(&"DB.Query".to_string()),
+        "method missing: {names:?}"
+    );
 }
 
 #[test]
@@ -188,7 +203,10 @@ func (c *Cache[K, V]) Get(k K) V { var zero V; return zero }
 "#;
     let names = scan_go_header(src);
     assert!(names.contains(&"Cache".to_string()), "type: {names:?}");
-    assert!(names.contains(&"Cache.Get".to_string()), "method: {names:?}");
+    assert!(
+        names.contains(&"Cache.Get".to_string()),
+        "method: {names:?}"
+    );
 }
 
 #[test]
@@ -329,7 +347,8 @@ fn resolve_follows_within_module_transitive_imports() {
     std::fs::write(
         a.join("a.go"),
         "package a\nimport \"my.example/myMod/b\"\nvar _ = b.X\n",
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(b.join("b.go"), "package b\nvar X = 1\n").unwrap();
 
     let dep = mkdep(
@@ -341,8 +360,10 @@ fn resolve_follows_within_module_transitive_imports() {
     let paths: std::collections::HashSet<_> =
         files.iter().map(|f| f.absolute_path.clone()).collect();
     assert!(paths.contains(&a.join("a.go")));
-    assert!(paths.contains(&b.join("b.go")),
-        "transitive within-module import should be followed: {paths:?}");
+    assert!(
+        paths.contains(&b.join("b.go")),
+        "transitive within-module import should be followed: {paths:?}"
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
 

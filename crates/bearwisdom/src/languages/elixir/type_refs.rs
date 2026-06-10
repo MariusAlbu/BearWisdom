@@ -24,7 +24,9 @@ pub(super) fn extract_attribute_type_refs(
         if child.kind() == "alias" {
             let name = node_text(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -33,9 +35,9 @@ pub(super) fn extract_attribute_type_refs(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         extract_attribute_type_refs(&child, src, source_symbol_index, refs);
@@ -102,7 +104,11 @@ pub(super) fn extract_behaviour_target(node: &Node, src: &str) -> Option<String>
 /// appear as direct children of the nodes it explicitly handles.
 ///
 /// No primitives to skip in Elixir — all alias nodes are module names.
-pub(super) fn scan_all_type_refs(node: tree_sitter::Node<'_>, src: &str, refs: &mut Vec<ExtractedRef>) {
+pub(super) fn scan_all_type_refs(
+    node: tree_sitter::Node<'_>,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+) {
     scan_type_refs_inner(node, src, 0, refs);
 }
 
@@ -117,7 +123,9 @@ fn scan_type_refs_inner(
             let name = node_text(node, src);
             if !name.is_empty() {
                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -126,9 +134,9 @@ fn scan_type_refs_inner(
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // alias is a leaf — no children to recurse into.
         }
@@ -144,7 +152,9 @@ fn scan_type_refs_inner(
                             let first_char = name.chars().next().unwrap_or('_');
                             if first_char.is_uppercase() || name.contains('.') {
                                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: simple,
                                     kind: EdgeKind::TypeRef,
@@ -153,9 +163,9 @@ fn scan_type_refs_inner(
                                     module: if name.contains('.') { Some(name) } else { None },
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         break; // only the receiver (first child), not the function name

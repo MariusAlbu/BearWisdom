@@ -93,7 +93,9 @@ impl ExternalSourceLocator for NuxtRuntimeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<NuxtRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(NuxtRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(NuxtRuntimeEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------

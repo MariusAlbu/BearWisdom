@@ -70,7 +70,9 @@ fn read_triple_quoted(
     first_line_value: &str,
 ) -> (String, usize) {
     // Strip the opening `'''` from the first line.
-    let first_rest = first_line_value.strip_prefix("'''").unwrap_or(first_line_value);
+    let first_rest = first_line_value
+        .strip_prefix("'''")
+        .unwrap_or(first_line_value);
     // If the closing `'''` is also on the same line, return the slice.
     if let Some(closing_idx) = first_rest.find("'''") {
         let body = &first_rest[..closing_idx];
@@ -111,7 +113,8 @@ mod tests {
 
     #[test]
     fn bicep_inline_single_quoted_script_content() {
-        let src = "resource s '...' = {\n  properties: {\n    scriptContent: 'echo hello'\n  }\n}\n";
+        let src =
+            "resource s '...' = {\n  properties: {\n    scriptContent: 'echo hello'\n  }\n}\n";
         let regions = detect_regions(src);
         assert_eq!(regions.len(), 1);
         assert!(regions[0].text.contains("echo hello"));

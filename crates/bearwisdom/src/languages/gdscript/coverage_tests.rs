@@ -18,9 +18,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_class_name_statement() {
     let r = extract("class_name Player\nfunc move():\n\tpass");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Player" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Player" && s.kind == SymbolKind::Class),
         "expected Class Player; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -29,9 +34,14 @@ fn symbol_class_name_statement() {
 fn symbol_class_definition() {
     let r = extract("class_name Outer\nclass Inner:\n\tpass");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Inner" && s.kind == SymbolKind::Class),
         "expected Class Inner; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -40,9 +50,14 @@ fn symbol_class_definition() {
 fn symbol_function_definition() {
     let r = extract("class_name Player\nfunc move():\n\tpass");
     assert!(
-        r.symbols.iter().any(|s| s.name == "move" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "move" && s.kind == SymbolKind::Function),
         "expected Function move; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,9 +67,14 @@ fn symbol_constructor_definition() {
     let r = extract("class_name Entity\nfunc _init():\n\tpass");
     // constructor_definition or function_definition — either gives _init or Constructor.
     assert!(
-        r.symbols.iter().any(|s| s.name == "_init" || s.kind == SymbolKind::Constructor),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "_init" || s.kind == SymbolKind::Constructor),
         "expected Constructor/_init symbol; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -63,9 +83,14 @@ fn symbol_constructor_definition() {
 fn symbol_signal_statement() {
     let r = extract("signal health_changed(new_health)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "health_changed" && s.kind == SymbolKind::Event),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "health_changed" && s.kind == SymbolKind::Event),
         "expected Event health_changed; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -76,9 +101,14 @@ fn symbol_signal_statement() {
 fn symbol_export_variable_statement() {
     let r = extract("@export var speed: float = 5.0");
     assert!(
-        r.symbols.iter().any(|s| s.name == "speed" && s.kind == SymbolKind::Property),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "speed" && s.kind == SymbolKind::Property),
         "expected Property 'speed' from @export var; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,7 +119,10 @@ fn symbol_variable_statement() {
     assert!(
         r.symbols.iter().any(|s| s.name == "score"),
         "expected variable score; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -100,7 +133,10 @@ fn symbol_const_statement() {
     assert!(
         r.symbols.iter().any(|s| s.name == "MAX_SPEED"),
         "expected constant MAX_SPEED; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -109,9 +145,14 @@ fn symbol_const_statement() {
 fn symbol_enum_definition() {
     let r = extract("enum State { IDLE, RUNNING, DEAD }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "State" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "State" && s.kind == SymbolKind::Enum),
         "expected Enum State; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -124,9 +165,14 @@ fn symbol_enum_definition() {
 fn ref_call() {
     let r = extract("class_name Player\nfunc move():\n\tprint(\"moving\")");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "print" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "print" && rf.kind == EdgeKind::Calls),
         "expected Calls print; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -135,9 +181,14 @@ fn ref_call() {
 fn ref_extends_statement() {
     let r = extract("extends Node2D\nfunc _ready():\n\tpass");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Node2D" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Node2D" && rf.kind == EdgeKind::Inherits),
         "expected Inherits Node2D from extends_statement; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -152,9 +203,14 @@ fn ref_extends_statement() {
 fn ref_class_name_statement_inherits() {
     let r = extract("class_name Player extends CharacterBody2D");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name.contains("CharacterBody2D") && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name.contains("CharacterBody2D") && rf.kind == EdgeKind::Inherits),
         "expected Inherits edge with target containing 'CharacterBody2D'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -163,9 +219,14 @@ fn ref_class_name_statement_inherits() {
 fn ref_class_definition_inherits() {
     let r = extract("class_name Outer\nclass Inner extends Node:\n\tpass");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Node" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Node" && rf.kind == EdgeKind::Inherits),
         "expected Inherits Node from inner class_definition extends; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -175,9 +236,14 @@ fn ref_class_definition_inherits() {
 fn symbol_variable_statement_as_field_inside_class() {
     let r = extract("class_name Actor\nclass Inner:\n\tvar hp: int = 100");
     assert!(
-        r.symbols.iter().any(|s| s.name == "hp" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "hp" && s.kind == SymbolKind::Field),
         "expected Field hp inside inner class; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -186,9 +252,14 @@ fn symbol_variable_statement_as_field_inside_class() {
 fn symbol_function_definition_as_method_inside_class() {
     let r = extract("class_name Actor\nclass Inner:\n\tfunc attack():\n\t\tpass");
     assert!(
-        r.symbols.iter().any(|s| s.name == "attack" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "attack" && s.kind == SymbolKind::Method),
         "expected Method attack inside inner class; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -202,7 +273,10 @@ fn symbol_onready_variable_statement() {
     assert!(
         r.symbols.iter().any(|s| s.name == "node_ref"),
         "expected symbol node_ref from @onready var; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -213,7 +287,10 @@ fn symbol_anonymous_enum_definition() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Enum),
         "expected an Enum symbol for anonymous enum; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 

@@ -22,7 +22,9 @@ pub(crate) fn svelte_store_base(name: &str) -> Option<&str> {
         return None;
     }
     let mut chars = rest.chars();
-    let first_ok = chars.next().map_or(false, |c| c.is_alphabetic() || c == '_');
+    let first_ok = chars
+        .next()
+        .map_or(false, |c| c.is_alphabetic() || c == '_');
     if !first_ok || !rest.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return None;
     }
@@ -59,7 +61,10 @@ impl LanguageEngineHooks for SvelteHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         crate::languages::typescript::hooks::infer_external_inner_with_lookup(
-            file_ctx, ref_ctx, project_ctx, lookup,
+            file_ctx,
+            ref_ctx,
+            project_ctx,
+            lookup,
         )
     }
 
@@ -73,9 +78,7 @@ impl LanguageEngineHooks for SvelteHooks {
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(crate::languages::typescript::hooks::build_file_context_inner(
-            file, project_ctx,
-        ))
+        Some(crate::languages::typescript::hooks::build_file_context_inner(file, project_ctx))
     }
 }
 

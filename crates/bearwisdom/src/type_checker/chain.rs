@@ -17,8 +17,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo,
-    SymbolLookup, RESOLVED_CONFIDENCE,
+    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::alias::expand_alias;
 use crate::type_checker::type_env::TypeEnvironment;
@@ -120,7 +120,6 @@ pub struct ChainExtensions {
     /// same-name scan. For languages whose members are keyed under
     /// package-qualified qnames (Java) while the receiver type is a bare name.
     pub qualify_via_imports: bool,
-
 }
 
 impl ChainExtensions {
@@ -191,15 +190,13 @@ pub fn resolve_via_chain(
     let mut initial_generic_args: Vec<String> = Vec::new();
 
     let root_type = match segments[0].kind {
-        SegmentKind::SelfRef if config.has_self_ref => {
-            find_enclosing_type(
-                &ref_ctx.source_symbol.qualified_name,
-                &ref_ctx.scope_chain,
-                lookup,
-                config.enclosing_type_kinds,
-            )
-            .map(|t| (config.normalize_type)(&t))
-        }
+        SegmentKind::SelfRef if config.has_self_ref => find_enclosing_type(
+            &ref_ctx.source_symbol.qualified_name,
+            &ref_ctx.scope_chain,
+            lookup,
+            config.enclosing_type_kinds,
+        )
+        .map(|t| (config.normalize_type)(&t)),
         SegmentKind::TypeAccess if config.extensions.root_type_access => {
             // `ClassName::method()` — the static-access root names a type.
             // Resolve to that type's qualified name so members key under the
@@ -218,9 +215,10 @@ pub fn resolve_via_chain(
             // when it names a known type; otherwise fall back to the segment's
             // declared type (synthetic constructor roots carry one).
             let name = &segments[0].name;
-            let is_type = lookup.types_by_name(name).iter().any(|s| {
-                config.static_type_kinds.iter().any(|&k| s.kind == k)
-            });
+            let is_type = lookup
+                .types_by_name(name)
+                .iter()
+                .any(|s| config.static_type_kinds.iter().any(|&k| s.kind == k));
             if is_type {
                 Some((config.normalize_type)(name))
             } else {
@@ -242,7 +240,11 @@ pub fn resolve_via_chain(
             } else if let Some(member_type) = lookup
                 .members_of(&ref_ctx.source_symbol.qualified_name)
                 .iter()
-                .find_map(|m| (m.name == *name).then(|| lookup.field_type_str(&m.qualified_name)).flatten())
+                .find_map(|m| {
+                    (m.name == *name)
+                        .then(|| lookup.field_type_str(&m.qualified_name))
+                        .flatten()
+                })
             {
                 // A parameter or local of the enclosing symbol roots the chain.
                 // Resolved structurally — members_by_parent is keyed by
@@ -255,12 +257,10 @@ pub fn resolve_via_chain(
                 // by_name — with externals indexed, common names like "Error" or
                 // "Context" collect tens of thousands of non-type candidates that
                 // .any() would scan in the worst case.
-                let is_type = lookup.types_by_name(name).iter().any(|s| {
-                    config
-                        .static_type_kinds
-                        .iter()
-                        .any(|&k| s.kind == k)
-                });
+                let is_type = lookup
+                    .types_by_name(name)
+                    .iter()
+                    .any(|s| config.static_type_kinds.iter().any(|&k| s.kind == k));
                 if is_type {
                     Some((config.normalize_type)(name))
                 } else {
@@ -270,9 +270,8 @@ pub fn resolve_via_chain(
                         let field_qname = format!("{scope}.{name}");
                         if let Some(type_name) = lookup.field_type_str(&field_qname) {
                             if config.use_generics {
-                                initial_generic_args = lookup
-                                    .field_type_arg_strs(&field_qname)
-                                    .unwrap_or_default();
+                                initial_generic_args =
+                                    lookup.field_type_arg_strs(&field_qname).unwrap_or_default();
                             }
                             found = Some((config.normalize_type)(&type_name));
                             break;
@@ -291,9 +290,14 @@ pub fn resolve_via_chain(
                                 .as_ref()
                                 .map(|t| (config.normalize_type)(t))
                         })
-                        .or_else(|| resolve_import_root_type(name, file_ctx, ref_ctx, config, lookup))
                         .or_else(|| {
-                            config.extensions.root_fallback.and_then(|f| f(name, lookup))
+                            resolve_import_root_type(name, file_ctx, ref_ctx, config, lookup)
+                        })
+                        .or_else(|| {
+                            config
+                                .extensions
+                                .root_fallback
+                                .and_then(|f| f(name, lookup))
                         })
                 }
             }
@@ -322,7 +326,13 @@ pub fn resolve_via_chain(
 
     // Alias-aware root: a value typed as a type-alias name has no members of
     // its own — walk to the alias's concrete head first.
-    expand_current_type(config, &mut current_type, &initial_generic_args, lookup, env.as_mut());
+    expand_current_type(
+        config,
+        &mut current_type,
+        &initial_generic_args,
+        lookup,
+        env.as_mut(),
+    );
 
     // The qualified type the current bare `current_type` was yielded from, used
     // by `qualify_current_type` for same-package promotion of a method's return
@@ -337,7 +347,13 @@ pub fn resolve_via_chain(
         // `com.fakeext.data.Repository`, or a same-package return type
         // `Entity` → `com.fakeext.data.Entity`). Deterministic — same-package
         // scope first, then the file's explicit imports.
-        qualify_current_type(config, &mut current_type, prev_scope.as_deref(), file_ctx, lookup);
+        qualify_current_type(
+            config,
+            &mut current_type,
+            prev_scope.as_deref(),
+            file_ctx,
+            lookup,
+        );
         let member_qname = format!("{current_type}.{}", seg.name);
         // This receiver scopes the next yielded type for same-package qualify.
         prev_scope = Some(current_type.clone());
@@ -446,13 +462,25 @@ pub fn resolve_via_chain(
                 let ext_member = format!("{ext_qname}.{}", seg.name);
                 if let Some(ft) = lookup.field_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &ft, &ext_member, config, lookup, env.as_mut(), true, &ext_qname,
+                        &ft,
+                        &ext_member,
+                        config,
+                        lookup,
+                        env.as_mut(),
+                        true,
+                        &ext_qname,
                     );
                     continue;
                 }
                 if let Some(rt) = lookup.return_type_str(&ext_member) {
                     current_type = resolve_and_enter_generics(
-                        &rt, &ext_member, config, lookup, env.as_mut(), false, &ext_qname,
+                        &rt,
+                        &ext_member,
+                        config,
+                        lookup,
+                        env.as_mut(),
+                        false,
+                        &ext_qname,
                     );
                     continue;
                 }
@@ -499,7 +527,13 @@ pub fn resolve_via_chain(
     // Alias-aware final hop, then promote a short receiver to its external
     // package qname. With extensions off, `effective_type == current_type`.
     expand_current_type(config, &mut current_type, &[], lookup, env.as_mut());
-    qualify_current_type(config, &mut current_type, prev_scope.as_deref(), file_ctx, lookup);
+    qualify_current_type(
+        config,
+        &mut current_type,
+        prev_scope.as_deref(),
+        file_ctx,
+        lookup,
+    );
     let effective_type = if config.extensions.promote_external_qname {
         external_type_qname(&current_type, lookup).unwrap_or_else(|| current_type.clone())
     } else {
@@ -518,9 +552,7 @@ pub fn resolve_via_chain(
                 target = %last.name,
                 "resolved"
             );
-            let yield_type = compute_yield_type(
-                sym, &last.type_args, config, lookup, env.as_mut(),
-            );
+            let yield_type = compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 1.0,
@@ -535,7 +567,12 @@ pub fn resolve_via_chain(
     if config.namespace_lookup != NamespaceLookup::None {
         if let Some(file_ctx) = file_ctx {
             if let Some(res) = resolve_final_via_namespace(
-                config, file_ctx, &effective_type, &last.name, edge_kind, lookup,
+                config,
+                file_ctx,
+                &effective_type,
+                &last.name,
+                edge_kind,
+                lookup,
             ) {
                 return Some(res);
             }
@@ -554,17 +591,15 @@ pub fn resolve_via_chain(
         .by_name(&last.name)
         .iter()
         .filter(|sym| {
-            (sym.qualified_name == effective_type
-                || sym.qualified_name.starts_with(&type_prefix))
+            (sym.qualified_name == effective_type || sym.qualified_name.starts_with(&type_prefix))
                 && (config.kind_compatible)(edge_kind, &sym.kind)
         })
         .collect();
     match matches.len() {
         0 => {}
         1 => {
-            let yield_type = compute_yield_type(
-                matches[0], &last.type_args, config, lookup, env.as_mut(),
-            );
+            let yield_type =
+                compute_yield_type(matches[0], &last.type_args, config, lookup, env.as_mut());
             return Some(Resolution {
                 target_symbol_id: matches[0].id,
                 confidence: 1.0,
@@ -591,9 +626,8 @@ pub fn resolve_via_chain(
     if config.extensions.walk_inheritance {
         for sym in lookup.members_of(&effective_type) {
             if sym.name == last.name && (config.kind_compatible)(edge_kind, &sym.kind) {
-                let yield_type = compute_yield_type(
-                    sym, &last.type_args, config, lookup, env.as_mut(),
-                );
+                let yield_type =
+                    compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: RESOLVED_CONFIDENCE,
@@ -616,9 +650,8 @@ pub fn resolve_via_chain(
             let cand = format!("{parent}.{}", last.name);
             if let Some(sym) = lookup.by_qualified_name(&cand) {
                 if (config.kind_compatible)(edge_kind, &sym.kind) {
-                    let yield_type = compute_yield_type(
-                        sym, &last.type_args, config, lookup, env.as_mut(),
-                    );
+                    let yield_type =
+                        compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: RESOLVED_CONFIDENCE,
@@ -630,9 +663,8 @@ pub fn resolve_via_chain(
             }
             for sym in lookup.members_of(parent) {
                 if sym.name == last.name && (config.kind_compatible)(edge_kind, &sym.kind) {
-                    let yield_type = compute_yield_type(
-                        sym, &last.type_args, config, lookup, env.as_mut(),
-                    );
+                    let yield_type =
+                        compute_yield_type(sym, &last.type_args, config, lookup, env.as_mut());
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: RESOLVED_CONFIDENCE,
@@ -688,7 +720,9 @@ pub fn resolve_via_chain(
 /// Returns false on a malformed/absent signature.
 fn signature_is_extension_on(sig: Option<&str>, receiver_type: &str) -> bool {
     let Some(sig) = sig else { return false };
-    let Some(open) = sig.find('(') else { return false };
+    let Some(open) = sig.find('(') else {
+        return false;
+    };
     let Some(after_this) = sig[open + 1..].trim_start().strip_prefix("this ") else {
         return false;
     };
@@ -844,7 +878,9 @@ fn qualify_current_type(
             if import.imported_name.as_str() != current_type.as_str() {
                 continue;
             }
-            let Some(module) = import.module_path.as_deref() else { continue };
+            let Some(module) = import.module_path.as_deref() else {
+                continue;
+            };
             if keys_a_type_or_member(module, lookup) {
                 *current_type = (config.normalize_type)(module);
                 return;
@@ -883,12 +919,12 @@ fn resolve_import_root_type(
 ) -> Option<String> {
     let fc = file_ctx?;
     for import in &fc.imports {
-        if import.imported_name.as_str() != name
-            && import.alias.as_deref() != Some(name)
-        {
+        if import.imported_name.as_str() != name && import.alias.as_deref() != Some(name) {
             continue;
         }
-        let Some(module) = import.module_path.as_deref() else { continue };
+        let Some(module) = import.module_path.as_deref() else {
+            continue;
+        };
         if module.starts_with('.') || module.starts_with('/') {
             continue;
         }
@@ -998,7 +1034,6 @@ fn expand_current_type(
     }
 }
 
-
 /// Climb `parent_class_qname` from `current_type` (depth-10, cycle-guarded)
 /// retrying the member on each ancestor. Returns the next chain type when an
 /// inherited field/method matches, advancing `env` for any new generic args.
@@ -1014,9 +1049,15 @@ fn walk_inheritance_for_member(
         let parent = lookup.parent_class_qname(&ancestor)?.to_string();
         let parent_member = format!("{parent}.{member_name}");
         if let Some(next) = lookup.field_type_str(&parent_member) {
-            let new_args = lookup.field_type_arg_strs(&parent_member).unwrap_or_default();
+            let new_args = lookup
+                .field_type_arg_strs(&parent_member)
+                .unwrap_or_default();
             let resolved = resolve_and_enter_generics_args(
-                &next, &new_args, config, lookup, env.as_deref_mut(),
+                &next,
+                &new_args,
+                config,
+                lookup,
+                env.as_deref_mut(),
             );
             return Some(resolved);
         }
@@ -1025,7 +1066,13 @@ fn walk_inheritance_for_member(
             // binds back to the subclass (`current_type`), not the declaring
             // parent — the expected polymorphic-self semantics.
             let resolved = resolve_and_enter_generics(
-                &next, &parent_member, config, lookup, env.as_deref_mut(), false, current_type,
+                &next,
+                &parent_member,
+                config,
+                lookup,
+                env.as_deref_mut(),
+                false,
+                current_type,
             );
             return Some(resolved);
         }
@@ -1035,12 +1082,24 @@ fn walk_inheritance_for_member(
             }
             if let Some(ft) = lookup.field_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &ft, &sym.qualified_name, config, lookup, env.as_deref_mut(), true, current_type,
+                    &ft,
+                    &sym.qualified_name,
+                    config,
+                    lookup,
+                    env.as_deref_mut(),
+                    true,
+                    current_type,
                 ));
             }
             if let Some(rt) = lookup.return_type_str(&sym.qualified_name) {
                 return Some(resolve_and_enter_generics(
-                    &rt, &sym.qualified_name, config, lookup, env.as_deref_mut(), false, current_type,
+                    &rt,
+                    &sym.qualified_name,
+                    config,
+                    lookup,
+                    env.as_deref_mut(),
+                    false,
+                    current_type,
                 ));
             }
         }

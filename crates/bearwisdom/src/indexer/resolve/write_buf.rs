@@ -23,7 +23,15 @@ pub(super) struct FileWriteBuf {
     /// (source_id, target_name, kind, source_line, namespace, package_id)
     pub(super) externals: Vec<(i64, String, &'static str, u32, String, Option<i64>)>,
     /// (source_id, target_name, kind, source_line, module, package_id, from_snippet)
-    pub(super) unresolved: Vec<(i64, String, &'static str, u32, Option<String>, Option<i64>, bool)>,
+    pub(super) unresolved: Vec<(
+        i64,
+        String,
+        &'static str,
+        u32,
+        Option<String>,
+        Option<i64>,
+        bool,
+    )>,
     /// Flow-edge emissions from resolver-detected patterns.
     /// Each entry: (file_path, source_line, emission).
     /// The file_path is resolved to a DB file_id during flush.
@@ -112,10 +120,14 @@ pub(super) fn flush_resolve_buf(
     fn placeholders(rows: usize, cols: usize) -> String {
         let mut s = String::with_capacity(rows * (cols * 2 + 4));
         for i in 0..rows {
-            if i > 0 { s.push(','); }
+            if i > 0 {
+                s.push(',');
+            }
             s.push('(');
             for j in 0..cols {
-                if j > 0 { s.push(','); }
+                if j > 0 {
+                    s.push(',');
+                }
                 s.push('?');
             }
             s.push(')');

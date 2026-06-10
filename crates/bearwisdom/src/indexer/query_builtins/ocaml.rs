@@ -67,7 +67,8 @@ pub const BUILTINS: &[&str] = &[
     "with",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 ;-------\n\
 \n\
 [\n\
@@ -91,4 +92,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
 ;-----------\n\
 \n\
 (value_path . (value_name) @local.reference)\n\
-");
+",
+);

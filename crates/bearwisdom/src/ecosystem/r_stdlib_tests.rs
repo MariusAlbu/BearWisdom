@@ -46,7 +46,10 @@ fn walk_yields_r_files_per_base_package() {
     assert!(names.contains(&"zzz.R"));
     assert!(names.contains(&"library.R"));
     assert!(names.contains(&"lm.R"));
-    assert!(!names.contains(&"filter.R"), "non-base package must be skipped");
+    assert!(
+        !names.contains(&"filter.R"),
+        "non-base package must be skipped"
+    );
     for w in &walked {
         assert_eq!(w.language, "r");
         assert!(w.relative_path.starts_with("ext:r-stdlib:"));
@@ -140,10 +143,22 @@ fn parse_namespace_export_operator_backtick_names() {
     parse_namespace(BASE_NAMESPACE, "base", &mut out);
 
     let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"["), "backtick-quoted `[` must be extracted");
-    assert!(names.contains(&"[["), "backtick-quoted `[[` must be extracted");
-    assert!(names.contains(&"$"), "backtick-quoted `$` must be extracted");
-    assert!(names.contains(&"+"), "backtick-quoted `+` must be extracted");
+    assert!(
+        names.contains(&"["),
+        "backtick-quoted `[` must be extracted"
+    );
+    assert!(
+        names.contains(&"[["),
+        "backtick-quoted `[[` must be extracted"
+    );
+    assert!(
+        names.contains(&"$"),
+        "backtick-quoted `$` must be extracted"
+    );
+    assert!(
+        names.contains(&"+"),
+        "backtick-quoted `+` must be extracted"
+    );
 }
 
 #[test]
@@ -154,8 +169,14 @@ fn parse_namespace_s3method_emits_generic() {
     let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
     // print and format are the generic names from S3method(print, default) and
     // S3method(format, Date).
-    assert!(names.contains(&"print"), "S3method generic print must be emitted");
-    assert!(names.contains(&"format"), "S3method generic format must be emitted");
+    assert!(
+        names.contains(&"print"),
+        "S3method generic print must be emitted"
+    );
+    assert!(
+        names.contains(&"format"),
+        "S3method generic format must be emitted"
+    );
 }
 
 #[test]
@@ -163,8 +184,13 @@ fn parse_namespace_export_classes() {
     let mut out = Vec::new();
     parse_namespace(BASE_NAMESPACE, "base", &mut out);
 
-    let class_sym = out.iter().find(|s| s.name == "Date" && matches!(s.kind, SymbolKind::Class));
-    assert!(class_sym.is_some(), "exportClasses(Date) must emit a Class symbol");
+    let class_sym = out
+        .iter()
+        .find(|s| s.name == "Date" && matches!(s.kind, SymbolKind::Class));
+    assert!(
+        class_sym.is_some(),
+        "exportClasses(Date) must emit a Class symbol"
+    );
 }
 
 #[test]
@@ -173,7 +199,10 @@ fn parse_namespace_export_methods() {
     parse_namespace(BASE_NAMESPACE, "base", &mut out);
 
     let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"show"), "exportMethods(show) must emit show");
+    assert!(
+        names.contains(&"show"),
+        "exportMethods(show) must emit show"
+    );
 }
 
 #[test]
@@ -183,7 +212,11 @@ fn parse_namespace_skips_comments_and_import_directives() {
     parse_namespace(ns, "testpkg", &mut out);
 
     let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, vec!["myFunc"], "only export() symbols must appear; import/useDynLib are skipped");
+    assert_eq!(
+        names,
+        vec!["myFunc"],
+        "only export() symbols must appear; import/useDynLib are skipped"
+    );
 }
 
 #[test]
@@ -234,7 +267,11 @@ fn synthesize_from_namespace_returns_parsed_file() {
     );
 
     let files = synthesize_from_namespace(tmp.path());
-    assert_eq!(files.len(), 1, "should produce exactly one synthetic ParsedFile");
+    assert_eq!(
+        files.len(),
+        1,
+        "should produce exactly one synthetic ParsedFile"
+    );
 
     let pf = &files[0];
     assert_eq!(pf.language, "r");
@@ -244,7 +281,10 @@ fn synthesize_from_namespace_returns_parsed_file() {
     assert!(names.contains(&"c"));
     assert!(names.contains(&"length"));
     assert!(names.contains(&"sum"));
-    assert!(names.contains(&"print"), "S3method generic must be included");
+    assert!(
+        names.contains(&"print"),
+        "S3method generic must be included"
+    );
     assert!(names.contains(&"lm"));
     assert!(names.contains(&"glm"));
     assert!(names.contains(&"t.test"));
@@ -255,16 +295,16 @@ fn synthesize_from_namespace_returns_empty_when_no_packages_present() {
     let tmp = tempfile::tempdir().unwrap();
     // library root exists but has no base/NAMESPACE etc.
     let files = synthesize_from_namespace(tmp.path());
-    assert!(files.is_empty(), "no NAMESPACE files means no synthetic output");
+    assert!(
+        files.is_empty(),
+        "no NAMESPACE files means no synthetic output"
+    );
 }
 
 #[test]
 fn synthesize_from_namespace_symbol_and_origin_counts_match() {
     let tmp = tempfile::tempdir().unwrap();
-    make_installed_r_fixture(
-        tmp.path(),
-        &[("base", "export(a, b, c)\n")],
-    );
+    make_installed_r_fixture(tmp.path(), &[("base", "export(a, b, c)\n")]);
 
     let files = synthesize_from_namespace(tmp.path());
     assert_eq!(files.len(), 1);
@@ -294,7 +334,9 @@ fn discover_uses_r_home_when_library_base_description_present() {
     std::env::remove_var("R_HOME");
 
     assert!(!roots.is_empty(), "system library should produce a root");
-    let sys_root = roots.iter().find(|r| r.module_path == KIND_NAMESPACE)
+    let sys_root = roots
+        .iter()
+        .find(|r| r.module_path == KIND_NAMESPACE)
         .expect("KIND_NAMESPACE root expected for installed R");
     assert!(
         sys_root.root.ends_with("library"),
@@ -339,6 +381,8 @@ fn source_distro_takes_priority_over_r_home() {
     std::env::remove_var("R_HOME");
 
     assert_eq!(roots.len(), 1);
-    assert_eq!(roots[0].module_path, KIND_SOURCE,
-        "source distro must win over installed R when both are present");
+    assert_eq!(
+        roots[0].module_path, KIND_SOURCE,
+        "source distro must win over installed R when both are present"
+    );
 }

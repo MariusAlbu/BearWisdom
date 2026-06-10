@@ -9,9 +9,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -101,7 +99,11 @@ pub(crate) fn detect_scala_db_query_emission(
     }
     let root = segs[0].name.as_str();
     let leaf = segs.last()?.name.as_str();
-    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+    if !root
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
+    {
         return None;
     }
     let op = match leaf {
@@ -210,11 +212,17 @@ pub(crate) fn detect_scala_grpc_emission(
         return None;
     }
     let ctor = segs[1].name.as_str();
-    if !matches!(ctor, "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply") {
+    if !matches!(
+        ctor,
+        "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply"
+    ) {
         return None;
     }
     let leaf = segs.last()?.name.as_str();
-    if matches!(leaf, "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply") {
+    if matches!(
+        leaf,
+        "stub" | "blockingStub" | "newStub" | "newBlockingStub" | "apply"
+    ) {
         return None;
     }
     let service = root
@@ -247,8 +255,7 @@ pub(crate) fn infer_external_inner(
                     if manifest.dependencies.iter().any(|group_id| {
                         import_path == group_id
                             || import_path.starts_with(group_id.as_str())
-                                && import_path.as_bytes().get(group_id.len())
-                                    == Some(&b'.')
+                                && import_path.as_bytes().get(group_id.len()) == Some(&b'.')
                     }) {
                         return Some(import_path.to_string());
                     }

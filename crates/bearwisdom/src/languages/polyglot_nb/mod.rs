@@ -19,8 +19,8 @@
 //! code cell to its language plugin with `origin = NotebookCell`.
 
 pub mod cells;
-pub mod extract;
 pub mod embedded;
+pub mod extract;
 pub(crate) mod profile;
 
 pub use profile::POLYGLOT_NB_PROFILE;

@@ -11,7 +11,9 @@ use tracing::debug;
 use crate::ecosystem::externals::{ExternalDepRoot, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
-use super::{is_valid_npm_module_path, normalize_virtual_rel, package_ships_scss, scan_for_scss_bounded};
+use super::{
+    is_valid_npm_module_path, normalize_virtual_rel, package_ships_scss, scan_for_scss_bounded,
+};
 
 // ---------------------------------------------------------------------------
 // Walk
@@ -44,7 +46,15 @@ pub(crate) fn find_files_declaring_type(dep: &ExternalDepRoot, type_name: &str) 
     const MAX_FILES_SCANNED: usize = 500;
     let mut out = Vec::new();
     let mut scanned = 0usize;
-    scan_for_type_decl(&dep.root, &dep.root, dep, type_name, &mut out, &mut scanned, 0);
+    scan_for_type_decl(
+        &dep.root,
+        &dep.root,
+        dep,
+        type_name,
+        &mut out,
+        &mut scanned,
+        0,
+    );
     if scanned >= MAX_FILES_SCANNED {
         // Bail out — search exceeded budget. Caller falls back to the
         // package entry walk.
@@ -63,49 +73,84 @@ pub(crate) fn scan_for_type_decl(
     depth: u32,
 ) {
     const MAX_FILES_SCANNED: usize = 500;
-    if depth >= MAX_WALK_DEPTH || *scanned >= MAX_FILES_SCANNED { return }
+    if depth >= MAX_WALK_DEPTH || *scanned >= MAX_FILES_SCANNED {
+        return;
+    }
 
     let walk_nested = std::env::var_os("BEARWISDOM_TS_WALK_NESTED")
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
 
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        if *scanned >= MAX_FILES_SCANNED { return }
-        let Ok(file_type) = entry.file_type() else { continue };
+        if *scanned >= MAX_FILES_SCANNED {
+            return;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" && !walk_nested { continue }
+                if name == "node_modules" && !walk_nested {
+                    continue;
+                }
                 // Skip every dot-prefixed directory: pnpm `.ignored_*`
                 // shadows, the `.pnpm/` store root if it ever leaks through,
                 // `.git`, `.cache`, `.storybook`, `.next`, etc. None of
                 // them carry source we want to index, and `.ignored_*`
                 // specifically would otherwise produce broken `ext:ts:`
                 // paths whose package prefix can't be parsed.
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
                 if matches!(
                     name,
-                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
-                        | "example" | "examples" | "_examples" | "fixtures"
-                ) { continue }
+                    "__tests__"
+                        | "__mocks__"
+                        | "test"
+                        | "tests"
+                        | "docs"
+                        | "example"
+                        | "examples"
+                        | "_examples"
+                        | "fixtures"
+                ) {
+                    continue;
+                }
             }
             scan_for_type_decl(&path, root, dep, type_name, out, scanned, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !is_ts_source_file(name) { continue }
-            if is_test_or_story_file(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !is_ts_source_file(name) {
+                continue;
+            }
+            if is_test_or_story_file(name) {
+                continue;
+            }
 
             *scanned += 1;
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
-            if !file_declares_type(&content, type_name) { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if !file_declares_type(&content, type_name) {
+                continue;
+            }
 
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
                 Err(_) => continue,
             };
             let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
-            let language = if name.ends_with(".tsx") { "tsx" } else { "typescript" };
+            let language = if name.ends_with(".tsx") {
+                "tsx"
+            } else {
+                "typescript"
+            };
             out.push(WalkedFile {
                 relative_path: virtual_path,
                 absolute_path: path,
@@ -128,26 +173,45 @@ pub(crate) fn scan_for_type_decl(
 /// keywords and followed by `<`, ` `, `=`, `(`, `:`, `{`, `;`, `\n`, or end.
 pub(crate) fn file_declares_type(content: &str, type_name: &str) -> bool {
     // Cheap pre-filter: skip files that don't contain the name at all.
-    if !content.contains(type_name) { return false }
+    if !content.contains(type_name) {
+        return false;
+    }
 
     for raw in content.lines() {
         let line = raw.trim_start();
         // Strip combinations of leading modifiers; order doesn't matter.
         let stripped = strip_decl_modifiers(line);
-        for keyword in &["class ", "interface ", "type ", "enum ", "function ",
-                         "const ", "let ", "var ", "abstract class "]
-        {
+        for keyword in &[
+            "class ",
+            "interface ",
+            "type ",
+            "enum ",
+            "function ",
+            "const ",
+            "let ",
+            "var ",
+            "abstract class ",
+        ] {
             if let Some(rest) = stripped.strip_prefix(keyword) {
                 let rest = rest.trim_start();
                 if let Some(after_name) = rest.strip_prefix(type_name) {
                     let next = after_name.chars().next();
                     let ok = matches!(
                         next,
-                        None | Some(' ') | Some('<') | Some('=') | Some('(')
-                            | Some(':') | Some('{') | Some(';') | Some('\t')
-                            | Some('\n') | Some('\r')
+                        None | Some(' ')
+                            | Some('<')
+                            | Some('=')
+                            | Some('(')
+                            | Some(':')
+                            | Some('{')
+                            | Some(';')
+                            | Some('\t')
+                            | Some('\n')
+                            | Some('\r')
                     );
-                    if ok { return true }
+                    if ok {
+                        return true;
+                    }
                 }
             }
         }
@@ -168,7 +232,9 @@ pub(crate) fn strip_decl_modifiers(line: &str) -> &str {
                 break;
             }
         }
-        if !advanced { break }
+        if !advanced {
+            break;
+        }
     }
     s
 }
@@ -180,43 +246,72 @@ pub(crate) fn walk_ts_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
     let walk_nested = std::env::var_os("BEARWISDOM_TS_WALK_NESTED")
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
 
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" && !walk_nested { continue }
+                if name == "node_modules" && !walk_nested {
+                    continue;
+                }
                 // Skip every dot-prefixed directory: pnpm `.ignored_*`
                 // shadows, the `.pnpm/` store root if it ever leaks through,
                 // `.git`, `.cache`, `.storybook`, `.next`, etc. None of
                 // them carry source we want to index, and `.ignored_*`
                 // specifically would otherwise produce broken `ext:ts:`
                 // paths whose package prefix can't be parsed.
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
                 if matches!(
                     name,
-                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
-                        | "example" | "examples" | "_examples" | "fixtures"
-                ) { continue }
+                    "__tests__"
+                        | "__mocks__"
+                        | "test"
+                        | "tests"
+                        | "docs"
+                        | "example"
+                        | "examples"
+                        | "_examples"
+                        | "fixtures"
+                ) {
+                    continue;
+                }
             }
             walk_ts_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !is_ts_source_file(name) { continue }
-            if is_test_or_story_file(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !is_ts_source_file(name) {
+                continue;
+            }
+            if is_test_or_story_file(name) {
+                continue;
+            }
 
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
                 Err(_) => continue,
             };
             let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
-            let language = if name.ends_with(".tsx") { "tsx" } else { "typescript" };
+            let language = if name.ends_with(".tsx") {
+                "tsx"
+            } else {
+                "typescript"
+            };
             out.push(WalkedFile {
                 relative_path: virtual_path,
                 absolute_path: path,
@@ -294,7 +389,12 @@ pub(crate) fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBu
         }
     }
 
-    for fallback in ["index.d.ts", "dist/index.d.ts", "lib/index.d.ts", "types/index.d.ts"] {
+    for fallback in [
+        "index.d.ts",
+        "dist/index.d.ts",
+        "lib/index.d.ts",
+        "types/index.d.ts",
+    ] {
         candidates.push(dep.root.join(fallback));
     }
 
@@ -381,27 +481,43 @@ pub(crate) fn expand_reexports_into(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: u32,
 ) {
-    if !seen.insert(file.to_path_buf()) { return }
-    if !file.is_file() { return }
-    let Ok(rel) = file.strip_prefix(&dep.root) else { return };
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    if !file.is_file() {
+        return;
+    }
+    let Ok(rel) = file.strip_prefix(&dep.root) else {
+        return;
+    };
     // `resolve_relative_ts_path` joins specs like `./internal/foo` against
     // the parent dir without normalising, so `rel` can carry embedded `/./`
     // segments through to the virtual path. Collapse them here so the same
     // file emits a single canonical `ext:ts:<pkg>/dist/types/internal/Foo.d.ts`
     // shape regardless of which re-export hop pulled it in.
     let rel_s = normalize_virtual_rel(&rel.to_string_lossy());
-    let lang = if rel_s.ends_with(".tsx") || rel_s.ends_with(".jsx") { "tsx" } else { "typescript" };
+    let lang = if rel_s.ends_with(".tsx") || rel_s.ends_with(".jsx") {
+        "tsx"
+    } else {
+        "typescript"
+    };
     out.push(WalkedFile {
         relative_path: format!("ext:ts:{}/{}", dep.module_path, rel_s),
         absolute_path: file.to_path_buf(),
         language: lang,
     });
 
-    if depth >= REEXPORT_MAX_DEPTH { return }
+    if depth >= REEXPORT_MAX_DEPTH {
+        return;
+    }
 
-    let Ok(src) = std::fs::read_to_string(file) else { return };
+    let Ok(src) = std::fs::read_to_string(file) else {
+        return;
+    };
     for target in extract_relative_reexports(&src) {
-        let Some(next) = resolve_relative_ts_path(file, &target) else { continue };
+        let Some(next) = resolve_relative_ts_path(file, &target) else {
+            continue;
+        };
         expand_reexports_into(dep, &next, out, seen, depth + 1);
     }
 }
@@ -414,11 +530,17 @@ pub(crate) fn extract_relative_reexports(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in src.lines() {
         let t = line.trim();
-        if !(t.starts_with("export") || t.starts_with("import")) { continue }
+        if !(t.starts_with("export") || t.starts_with("import")) {
+            continue;
+        }
         let Some(ix) = t.find(" from ") else { continue };
         let rest = t[ix + 6..].trim_start();
-        let Some(quote) = rest.chars().next() else { continue };
-        if quote != '\'' && quote != '"' { continue }
+        let Some(quote) = rest.chars().next() else {
+            continue;
+        };
+        if quote != '\'' && quote != '"' {
+            continue;
+        }
         let inner = &rest[1..];
         if let Some(end) = inner.find(quote) {
             let spec = &inner[..end];
@@ -449,20 +571,34 @@ pub(crate) fn resolve_relative_ts_path(from_file: &Path, spec: &str) -> Option<P
         if let Some(stripped) = raw_str.strip_suffix(runtime_ext) {
             for type_ext in type_exts {
                 let p = PathBuf::from(format!("{stripped}{type_ext}"));
-                if p.is_file() { return Some(p) }
+                if p.is_file() {
+                    return Some(p);
+                }
             }
         }
     }
 
     for ext in [".d.ts", ".ts", ".tsx", ".mts", ".cts", ".d.mts", ".d.cts"] {
         let p = PathBuf::from(format!("{raw_str}{ext}"));
-        if p.is_file() { return Some(p) }
+        if p.is_file() {
+            return Some(p);
+        }
     }
-    for ext in ["index.d.ts", "index.ts", "index.tsx", "index.d.mts", "index.d.cts"] {
+    for ext in [
+        "index.d.ts",
+        "index.ts",
+        "index.tsx",
+        "index.d.mts",
+        "index.d.cts",
+    ] {
         let p = raw.join(ext);
-        if p.is_file() { return Some(p) }
+        if p.is_file() {
+            return Some(p);
+        }
     }
-    if raw.is_file() { return Some(raw) }
+    if raw.is_file() {
+        return Some(raw);
+    }
     None
 }
 
@@ -483,4 +619,3 @@ pub(crate) fn is_test_or_story_file(name: &str) -> bool {
         || stem == "test"
         || stem == "index.test"
 }
-

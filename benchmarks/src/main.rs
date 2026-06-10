@@ -166,18 +166,29 @@ enum Commands {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Generate { project, output, count } => {
+        Commands::Generate {
+            project,
+            output,
+            count,
+        } => {
             cmd_generate(&project, &output, count)?;
         }
-        Commands::Run { tasks, model, output, conditions, backend, repeat, project_name } => {
+        Commands::Run {
+            tasks,
+            model,
+            output,
+            conditions,
+            backend,
+            repeat,
+            project_name,
+        } => {
             let conditions = parse_conditions(&conditions)?;
             let task_set = TaskSet::load(&tasks)?;
             let project_root = PathBuf::from(&task_set.project_path);
@@ -209,7 +220,15 @@ async fn main() -> Result<()> {
         Commands::Diagnose { project } => {
             cmd_diagnose(&project)?;
         }
-        Commands::Full { project, projects, model, output, count, repeat, backend } => {
+        Commands::Full {
+            project,
+            projects,
+            model,
+            output,
+            count,
+            repeat,
+            backend,
+        } => {
             std::fs::create_dir_all(&output)
                 .with_context(|| format!("Failed to create output dir {}", output.display()))?;
 
@@ -223,8 +242,7 @@ async fn main() -> Result<()> {
             };
 
             for project_root in &project_roots {
-                let tag = project_basename(project_root)
-                    .unwrap_or_else(|| "unknown".to_owned());
+                let tag = project_basename(project_root).unwrap_or_else(|| "unknown".to_owned());
                 info!("=== Project: {tag} ({}) ===", project_root.display());
 
                 let project_out = output.join(&tag);
@@ -271,8 +289,7 @@ async fn main() -> Result<()> {
 
 fn cmd_generate(project: &std::path::Path, output: &std::path::Path, count: usize) -> Result<()> {
     info!("Generating tasks from project: {}", project.display());
-    let task_set = sampler::generate_tasks(project, count)
-        .context("Failed to generate tasks")?;
+    let task_set = sampler::generate_tasks(project, count).context("Failed to generate tasks")?;
     info!("Generated {} tasks total", task_set.tasks.len());
     task_set.save(output)?;
     info!("Task set written to {}", output.display());
@@ -282,7 +299,10 @@ fn cmd_generate(project: &std::path::Path, output: &std::path::Path, count: usiz
 fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     let db_path = bearwisdom::resolve_db_path(project)?;
     if !db_path.exists() {
-        bail!("No index found at {}. Run `bw open` first.", db_path.display());
+        bail!(
+            "No index found at {}. Run `bw open` first.",
+            db_path.display()
+        );
     }
     let db = Database::open(&db_path)?;
 
@@ -317,7 +337,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     // 3. Kind distribution
     println!("\n  Kind distribution (top 15):");
     let mut stmt = db.prepare(
-        "SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 15"
+        "SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 15",
     )?;
     let mut rows = Vec::new();
     let mut query_rows = stmt.query([])?;
@@ -337,7 +357,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
          FROM symbols
          WHERE kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
          GROUP BY kind, visibility
-         ORDER BY kind, COUNT(*) DESC"
+         ORDER BY kind, COUNT(*) DESC",
     )?;
     let mut rows = Vec::new();
     let mut query_rows = stmt.query([])?;
@@ -403,7 +423,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
          JOIN edges e ON e.target_id = s.id
          GROUP BY s.id
          ORDER BY ref_count DESC
-         LIMIT 5"
+         LIMIT 5",
     )?;
     let mut rows = Vec::new();
     let mut query_rows = stmt.query([])?;
@@ -422,7 +442,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     println!("\n  Unresolved refs by kind:");
     {
         let mut stmt = db.prepare(
-            "SELECT kind, COUNT(*) FROM unresolved_refs GROUP BY kind ORDER BY COUNT(*) DESC"
+            "SELECT kind, COUNT(*) FROM unresolved_refs GROUP BY kind ORDER BY COUNT(*) DESC",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -433,16 +453,10 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     }
 
     // External refs (separate table)
-    let external_count: i64 = db.query_row(
-        "SELECT COUNT(*) FROM external_refs",
-        [],
-        |row| row.get(0),
-    )?;
-    let unresolved_count: i64 = db.query_row(
-        "SELECT COUNT(*) FROM unresolved_refs",
-        [],
-        |row| row.get(0),
-    )?;
+    let external_count: i64 =
+        db.query_row("SELECT COUNT(*) FROM external_refs", [], |row| row.get(0))?;
+    let unresolved_count: i64 =
+        db.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |row| row.get(0))?;
     println!("    → external (framework refs): {external_count}");
     println!("    → truly unresolved: {unresolved_count}");
 
@@ -450,7 +464,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     {
         let mut stmt = db.prepare(
             "SELECT namespace, COUNT(*) as cnt FROM external_refs
-             GROUP BY namespace ORDER BY cnt DESC LIMIT 10"
+             GROUP BY namespace ORDER BY cnt DESC LIMIT 10",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -467,7 +481,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
              FROM unresolved_refs
              GROUP BY target_name, kind
              ORDER BY cnt DESC
-             LIMIT 20"
+             LIMIT 20",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -492,7 +506,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
                 COUNT(*)
              FROM edges
              GROUP BY bucket
-             ORDER BY bucket DESC"
+             ORDER BY bucket DESC",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -561,12 +575,13 @@ fn cmd_report(results_dir: &std::path::Path, output_path: &std::path::Path) -> R
 // ---------------------------------------------------------------------------
 
 fn api_key() -> Result<String> {
-    std::env::var("ANTHROPIC_API_KEY")
-        .context("ANTHROPIC_API_KEY environment variable is not set")
+    std::env::var("ANTHROPIC_API_KEY").context("ANTHROPIC_API_KEY environment variable is not set")
 }
 
 fn project_basename(path: &std::path::Path) -> Option<String> {
-    path.file_name().and_then(|s| s.to_str()).map(|s| s.to_owned())
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_owned())
 }
 
 fn parse_conditions(s: &str) -> Result<Vec<Condition>> {

@@ -70,18 +70,22 @@ impl LanguagePlugin for GleamPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "function_call",
-            "binary_expression",
-            "import",
-        ]
+        &["function_call", "binary_expression", "import"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
         &[
-            "Int", "Float", "Bool", "String", "BitArray",
-            "List", "Result", "Option", "Nil",
-            "Dynamic", "UtfCodepoint",
+            "Int",
+            "Float",
+            "Bool",
+            "String",
+            "BitArray",
+            "List",
+            "Result",
+            "Option",
+            "Nil",
+            "Dynamic",
+            "UtfCodepoint",
         ]
     }
 
@@ -93,8 +97,7 @@ impl LanguagePlugin for GleamPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::GLEAM_HOOKS)
     }
 }

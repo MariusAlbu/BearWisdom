@@ -18,8 +18,8 @@ use tracing::{debug, info, warn};
 
 use bearwisdom::{
     query::{
-        architecture, blast_radius as blast_radius_mod, call_hierarchy,
-        references, search as search_mod, symbol_info,
+        architecture, blast_radius as blast_radius_mod, call_hierarchy, references,
+        search as search_mod, symbol_info,
     },
     resolve_db_path,
 };
@@ -41,7 +41,11 @@ pub enum Condition {
 impl Condition {
     /// All known conditions in display order.
     pub fn all() -> &'static [Condition] {
-        &[Condition::UseBearWisdom, Condition::UseBearWisdomCli, Condition::NoBearWisdom]
+        &[
+            Condition::UseBearWisdom,
+            Condition::UseBearWisdomCli,
+            Condition::NoBearWisdom,
+        ]
     }
 }
 
@@ -196,9 +200,7 @@ impl Runner {
         let system = self.system_prompt(condition, task);
 
         let start = Instant::now();
-        let mut messages: Vec<Value> = vec![
-            json!({ "role": "user", "content": task.question }),
-        ];
+        let mut messages: Vec<Value> = vec![json!({ "role": "user", "content": task.question })];
 
         let mut all_tool_calls: Vec<ToolCall> = Vec::new();
         let mut input_tokens: u64 = 0;
@@ -324,10 +326,7 @@ impl Runner {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_owned();
-                let input = block
-                    .get("input")
-                    .cloned()
-                    .unwrap_or(json!({}));
+                let input = block.get("input").cloned().unwrap_or(json!({}));
 
                 debug!("Executing tool: {tool_name}");
                 let output = self.execute_tool(&tool_name, &input, condition);
@@ -447,14 +446,8 @@ impl Runner {
             .get("case_insensitive")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let glob_filter = input
-            .get("glob")
-            .and_then(|v| v.as_str())
-            .unwrap_or("**/*");
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(30) as usize;
+        let glob_filter = input.get("glob").and_then(|v| v.as_str()).unwrap_or("**/*");
+        let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(30) as usize;
 
         let regex_pattern = if is_regex {
             if case_insensitive {
@@ -486,7 +479,10 @@ impl Runner {
             .filter_entry(|e| {
                 // Skip .git, .bearwisdom, target directories.
                 let name = e.file_name().to_string_lossy();
-                !matches!(name.as_ref(), ".git" | ".bearwisdom" | "target" | "node_modules")
+                !matches!(
+                    name.as_ref(),
+                    ".git" | ".bearwisdom" | "target" | "node_modules"
+                )
             });
 
         for entry in walker.flatten() {
@@ -533,10 +529,7 @@ impl Runner {
             Some(p) => p,
             None => return r#"{"error": "pattern parameter required"}"#.to_owned(),
         };
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(100) as usize;
+        let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
 
         let glob_re = glob_to_regex(pattern);
         let mut files: Vec<String> = Vec::new();
@@ -546,7 +539,10 @@ impl Runner {
             .into_iter()
             .filter_entry(|e| {
                 let name = e.file_name().to_string_lossy();
-                !matches!(name.as_ref(), ".git" | ".bearwisdom" | "target" | "node_modules")
+                !matches!(
+                    name.as_ref(),
+                    ".git" | ".bearwisdom" | "target" | "node_modules"
+                )
             });
 
         for entry in walker.flatten() {
@@ -612,7 +608,12 @@ impl Runner {
             Ok(d) => d,
             Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
-        match search_mod::search_symbols(&db, &query, limit, &bearwisdom::query::QueryOptions::full()) {
+        match search_mod::search_symbols(
+            &db,
+            &query,
+            limit,
+            &bearwisdom::query::QueryOptions::full(),
+        ) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
@@ -671,8 +672,9 @@ impl Runner {
             Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match blast_radius_mod::blast_radius(&db, &symbol, depth, 500) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+            Ok(result) => {
+                serde_json::to_string(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+            }
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }
@@ -684,8 +686,9 @@ impl Runner {
             Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match architecture::get_overview(&db) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+            Ok(result) => {
+                serde_json::to_string(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+            }
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
         }
     }
@@ -1092,10 +1095,13 @@ impl CliRunner {
 
         let mut cmd = std::process::Command::new("claude");
         cmd.arg("-p")
-            .arg("--output-format").arg("json")
+            .arg("--output-format")
+            .arg("json")
             .arg("--verbose")
-            .arg("--model").arg(&self.model)
-            .arg("--append-system-prompt").arg(&system_prompt)
+            .arg("--model")
+            .arg(&self.model)
+            .arg("--append-system-prompt")
+            .arg(&system_prompt)
             .arg("--dangerously-skip-permissions");
 
         // Set working directory to the project root so native tools work correctly.
@@ -1110,7 +1116,8 @@ impl CliRunner {
             }
             Condition::UseBearWisdom => {
                 cmd.arg("--strict-mcp-config")
-                    .arg("--mcp-config").arg(&self.mcp_config_path)
+                    .arg("--mcp-config")
+                    .arg(&self.mcp_config_path)
                     .arg("--allowedTools")
                     .arg("Read,Grep,Glob,Bash(find:*),Bash(ls:*),mcp__bearwisdom__*");
             }
@@ -1118,7 +1125,10 @@ impl CliRunner {
                 // No MCP — model uses bw CLI via Bash.
                 cmd.arg("--strict-mcp-config")
                     .arg("--allowedTools")
-                    .arg(format!("Read,Grep,Glob,Bash(find:*),Bash(ls:*),Bash({}:*)", self.bw_cli_binary));
+                    .arg(format!(
+                        "Read,Grep,Glob,Bash(find:*),Bash(ls:*),Bash({}:*)",
+                        self.bw_cli_binary
+                    ));
             }
         }
 
@@ -1185,7 +1195,8 @@ impl CliRunner {
             match event_type {
                 "assistant" => {
                     iterations += 1;
-                    if let Some(content) = event.get("message")
+                    if let Some(content) = event
+                        .get("message")
                         .and_then(|m| m.get("content"))
                         .and_then(|c| c.as_array())
                     {
@@ -1197,11 +1208,13 @@ impl CliRunner {
                                     }
                                 }
                                 "tool_use" => {
-                                    let name = block.get("name")
+                                    let name = block
+                                        .get("name")
                                         .and_then(|n| n.as_str())
                                         .unwrap_or("unknown")
                                         .to_owned();
-                                    let input_val = block.get("input").cloned().unwrap_or(json!({}));
+                                    let input_val =
+                                        block.get("input").cloned().unwrap_or(json!({}));
                                     tool_calls.push(ToolCall {
                                         tool_name: name,
                                         input: input_val,
@@ -1223,10 +1236,12 @@ impl CliRunner {
                 }
                 "result" => {
                     if let Some(usage) = event.get("usage") {
-                        input_tokens = usage.get("input_tokens")
+                        input_tokens = usage
+                            .get("input_tokens")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        output_tokens = usage.get("output_tokens")
+                        output_tokens = usage
+                            .get("output_tokens")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
                     }
@@ -1284,9 +1299,12 @@ fn load_bw_agent_prompt() -> Result<String> {
     // Check relative to the current exe first (same repo checkout).
     let candidates = [
         // Relative to exe: target/release/../../agents/bearwisdom.md
-        std::env::current_exe()
-            .ok()
-            .and_then(|e| e.parent()?.parent()?.parent().map(|p| p.join("agents/bearwisdom.md"))),
+        std::env::current_exe().ok().and_then(|e| {
+            e.parent()?
+                .parent()?
+                .parent()
+                .map(|p| p.join("agents/bearwisdom.md"))
+        }),
         // Current working directory
         Some(PathBuf::from("agents/bearwisdom.md")),
     ];
@@ -1316,7 +1334,9 @@ fn find_binary(name: &str) -> Result<String> {
     // Check relative to the current exe (benchmarks binary lives in same target dir).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join(name).with_extension(std::env::consts::EXE_EXTENSION);
+            let candidate = dir
+                .join(name)
+                .with_extension(std::env::consts::EXE_EXTENSION);
             if candidate.exists() {
                 return Ok(candidate.to_string_lossy().into_owned());
             }
@@ -1325,9 +1345,13 @@ fn find_binary(name: &str) -> Result<String> {
 
     // Check common build locations.
     for subdir in ["target/release", "target/debug"] {
-        let candidate = PathBuf::from(subdir).join(name).with_extension(std::env::consts::EXE_EXTENSION);
+        let candidate = PathBuf::from(subdir)
+            .join(name)
+            .with_extension(std::env::consts::EXE_EXTENSION);
         if candidate.exists() {
-            return Ok(std::fs::canonicalize(candidate)?.to_string_lossy().into_owned());
+            return Ok(std::fs::canonicalize(candidate)?
+                .to_string_lossy()
+                .into_owned());
         }
     }
 
@@ -1381,7 +1405,9 @@ fn glob_to_regex(pattern: &str) -> Regex {
 /// layout: results in `dir/<project>/`) and collect both RunResults and the
 /// task definitions referenced by them. The tasks vector aggregates every
 /// `tasks.json` discovered at any depth.
-pub fn load_results_recursive(dir: &Path) -> Result<(Vec<RunResult>, Vec<crate::task::BenchmarkTask>)> {
+pub fn load_results_recursive(
+    dir: &Path,
+) -> Result<(Vec<RunResult>, Vec<crate::task::BenchmarkTask>)> {
     let mut results = Vec::new();
     let mut tasks = Vec::new();
     walk(dir, &mut results, &mut tasks)?;

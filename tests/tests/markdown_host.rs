@@ -171,7 +171,10 @@ class Foo {}
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(sub_count, 0, "expected zero sub-lang symbols for mermaid/plantuml");
+    assert_eq!(
+        sub_count, 0,
+        "expected zero sub-lang symbols for mermaid/plantuml"
+    );
 }
 
 #[test]
@@ -371,11 +374,7 @@ def compute(n):
 fn markdown_file_is_indexed_as_markdown_language() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    fs::write(
-        root.join("README.md"),
-        "# Project\n\nHello.\n",
-    )
-    .unwrap();
+    fs::write(root.join("README.md"), "# Project\n\nHello.\n").unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");

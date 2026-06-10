@@ -66,27 +66,37 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
             // Try each Razor construct in priority order. The first match
             // consumes the slice and advances `i`.
             if let Some((region, end)) = try_control_flow(source, bytes, i) {
-                if let Some(r) = region { regions.push(r); }
+                if let Some(r) = region {
+                    regions.push(r);
+                }
                 i = end;
                 continue;
             }
             if let Some((region, end)) = try_directive(source, bytes, i) {
-                if let Some(r) = region { regions.push(r); }
+                if let Some(r) = region {
+                    regions.push(r);
+                }
                 i = end;
                 continue;
             }
             if let Some((region, end)) = try_code_or_functions(source, bytes, i) {
-                if let Some(r) = region { regions.push(r); }
+                if let Some(r) = region {
+                    regions.push(r);
+                }
                 i = end;
                 continue;
             }
             if let Some((region, end)) = try_at_brace(source, bytes, i) {
-                if let Some(r) = region { regions.push(r); }
+                if let Some(r) = region {
+                    regions.push(r);
+                }
                 i = end;
                 continue;
             }
             if let Some((region, end)) = try_at_paren(source, bytes, i) {
-                if let Some(r) = region { regions.push(r); }
+                if let Some(r) = region {
+                    regions.push(r);
+                }
                 i = end;
                 continue;
             }
@@ -151,11 +161,15 @@ fn try_control_flow(
         .or_else(|| match_using_with_paren(bytes, kw_start))?;
 
     let paren_pos = skip_ascii_ws(bytes, after_kw);
-    if bytes.get(paren_pos) != Some(&b'(') { return None; }
+    if bytes.get(paren_pos) != Some(&b'(') {
+        return None;
+    }
     let (cond, _cond_body_start, after_cond) = match_paren_block(bytes, paren_pos)?;
 
     let brace_pos = skip_ascii_ws(bytes, after_cond);
-    if bytes.get(brace_pos) != Some(&b'{') { return None; }
+    if bytes.get(brace_pos) != Some(&b'{') {
+        return None;
+    }
     let (body, _body_start, end) = match_brace_block(bytes, brace_pos)?;
 
     // Rebuild the full construct text: `keyword (cond) { body }`.
@@ -184,16 +198,26 @@ fn try_control_flow(
 /// `@using (` → using-statement. Returns the keyword "using" and the
 /// byte position AFTER `using`.
 fn match_using_with_paren(bytes: &[u8], kw_start: usize) -> Option<(&'static str, usize)> {
-    if !has_prefix(bytes, kw_start, b"using") { return None; }
+    if !has_prefix(bytes, kw_start, b"using") {
+        return None;
+    }
     let after = kw_start + 5;
     let peek = skip_ascii_ws(bytes, after);
-    if bytes.get(peek) == Some(&b'(') { Some(("using", after)) } else { None }
+    if bytes.get(peek) == Some(&b'(') {
+        Some(("using", after))
+    } else {
+        None
+    }
 }
 
 /// Try a list of keywords; return the one that matches plus the byte
 /// position immediately after it. Checks word boundary to avoid matching
 /// `@ifable`.
-fn match_keyword<'a>(bytes: &[u8], at: usize, keywords: &'a [&'a [u8]]) -> Option<(&'a str, usize)> {
+fn match_keyword<'a>(
+    bytes: &[u8],
+    at: usize,
+    keywords: &'a [&'a [u8]],
+) -> Option<(&'a str, usize)> {
     for kw in keywords {
         if has_prefix(bytes, at, kw) {
             let end = at + kw.len();
@@ -226,16 +250,17 @@ fn is_ident_continue(b: u8) -> bool {
 ///
 /// Directives without a payload (empty rest-of-line) consume the bytes
 /// but emit no region.
-fn try_directive(
-    source: &str,
-    bytes: &[u8],
-    at: usize,
-) -> Option<(Option<EmbeddedRegion>, usize)> {
+fn try_directive(source: &str, bytes: &[u8], at: usize) -> Option<(Option<EmbeddedRegion>, usize)> {
     // Keywords ordered so longer prefixes win (e.g. `implements` before
     // a hypothetical `imp`). `using` comes AFTER the control-flow check
     // in the caller so `@using (x) { }` doesn't land here.
     static DIRECTIVES: &[&[u8]] = &[
-        b"model", b"inject", b"inherits", b"implements", b"using", b"namespace",
+        b"model",
+        b"inject",
+        b"inherits",
+        b"implements",
+        b"using",
+        b"namespace",
     ];
     let kw_start = at + 1;
     let (keyword, after_kw) = match_keyword(bytes, kw_start, DIRECTIVES)?;
@@ -276,9 +301,7 @@ fn wrap_directive(keyword: &str, payload: &str) -> String {
             format!("class __RazorBody : {payload} {{}}")
         }
         "using" => format!("using {payload};\nclass __RazorBody {{}}"),
-        "namespace" => format!(
-            "namespace {payload} {{ class __RazorBody {{}} }}"
-        ),
+        "namespace" => format!("namespace {payload} {{ class __RazorBody {{}} }}"),
         _ => format!("class __RazorBody {{ {payload}; }}"),
     }
 }
@@ -293,31 +316,29 @@ fn try_code_or_functions(
     let kw_start = at + 1;
     let (_, after_kw) = match_keyword(bytes, kw_start, KEYWORDS)?;
     let brace_pos = skip_ascii_ws(bytes, after_kw);
-    if bytes.get(brace_pos) != Some(&b'{') { return None; }
+    if bytes.get(brace_pos) != Some(&b'{') {
+        return None;
+    }
     let (content, body_start, end) = match_brace_block(bytes, brace_pos)?;
     let region = make_csharp_region(source, body_start, content, EmbeddedOrigin::RazorCode);
     Some((region, end))
 }
 
 /// `@{ ... }`.
-fn try_at_brace(
-    source: &str,
-    bytes: &[u8],
-    at: usize,
-) -> Option<(Option<EmbeddedRegion>, usize)> {
-    if bytes.get(at + 1) != Some(&b'{') { return None; }
+fn try_at_brace(source: &str, bytes: &[u8], at: usize) -> Option<(Option<EmbeddedRegion>, usize)> {
+    if bytes.get(at + 1) != Some(&b'{') {
+        return None;
+    }
     let (content, body_start, end) = match_brace_block(bytes, at + 1)?;
     let region = make_csharp_region(source, body_start, content, EmbeddedOrigin::RazorCode);
     Some((region, end))
 }
 
 /// `@(expr)`.
-fn try_at_paren(
-    source: &str,
-    bytes: &[u8],
-    at: usize,
-) -> Option<(Option<EmbeddedRegion>, usize)> {
-    if bytes.get(at + 1) != Some(&b'(') { return None; }
+fn try_at_paren(source: &str, bytes: &[u8], at: usize) -> Option<(Option<EmbeddedRegion>, usize)> {
+    if bytes.get(at + 1) != Some(&b'(') {
+        return None;
+    }
     let (content, body_start, end) = match_paren_block(bytes, at + 1)?;
     let region = make_csharp_region(source, body_start, content, EmbeddedOrigin::RazorCode);
     Some((region, end))

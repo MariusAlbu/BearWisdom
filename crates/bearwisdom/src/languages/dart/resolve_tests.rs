@@ -1,4 +1,7 @@
-use super::hooks::{classify_dart_import_uri, detect_dart_drift_emission, detect_dart_grpc_emission, detect_dart_http_chain, detect_dart_shelf_route};
+use super::hooks::{
+    classify_dart_import_uri, detect_dart_drift_emission, detect_dart_grpc_emission,
+    detect_dart_http_chain, detect_dart_shelf_route,
+};
 use crate::types::*;
 
 fn make_chain(segments: &[&str]) -> MemberChain {
@@ -9,16 +12,20 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
                 node_kind: "test".to_string(),
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
@@ -91,7 +98,9 @@ fn test_dart_grpc_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["UserServiceClient", "getUser"]);
     match detect_dart_grpc_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "UserService.getUser");

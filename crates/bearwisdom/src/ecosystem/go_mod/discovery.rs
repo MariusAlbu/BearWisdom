@@ -11,8 +11,12 @@ use super::LEGACY_ECOSYSTEM_TAG;
 use crate::ecosystem::externals::ExternalDepRoot;
 
 pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let Some(go_mod_path) = find_go_mod(project_root) else { return Vec::new() };
-    let Ok(content) = std::fs::read_to_string(&go_mod_path) else { return Vec::new() };
+    let Some(go_mod_path) = find_go_mod(project_root) else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(&go_mod_path) else {
+        return Vec::new();
+    };
     let parsed = parse_go_mod(&content);
 
     let cache_root = match gomodcache_root() {
@@ -27,7 +31,9 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 
     let mut roots = Vec::new();
     for dep in &parsed.require_deps {
-        if dep.indirect && !go_dep_is_imported(&dep.path, &user_imports) { continue }
+        if dep.indirect && !go_dep_is_imported(&dep.path, &user_imports) {
+            continue;
+        }
         if let Some(root) = resolve_go_dep_path(&cache_root, dep) {
             let requested = collect_module_imports(&dep.path, &user_imports);
             roots.push(ExternalDepRoot {
@@ -61,9 +67,13 @@ pub(super) fn collect_module_imports(
 ) -> Vec<String> {
     let mut out = Vec::new();
     let prefix = format!("{module_path}/");
-    if user_imports.contains(module_path) { out.push(module_path.to_string()) }
+    if user_imports.contains(module_path) {
+        out.push(module_path.to_string())
+    }
     for imp in user_imports {
-        if imp.starts_with(&prefix) { out.push(imp.clone()) }
+        if imp.starts_with(&prefix) {
+            out.push(imp.clone())
+        }
     }
     out.sort();
     out.dedup();
@@ -81,8 +91,12 @@ fn scan_go_imports_recursive(
     out: &mut std::collections::HashSet<String>,
     depth: usize,
 ) {
-    if depth > 10 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if let Ok(ft) = entry.file_type() {
@@ -90,29 +104,51 @@ fn scan_go_imports_recursive(
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if matches!(
                         name,
-                        ".git" | "vendor" | "node_modules" | "target"
-                            | "build" | "dist" | "testdata"
-                    ) { continue }
+                        ".git"
+                            | "vendor"
+                            | "node_modules"
+                            | "target"
+                            | "build"
+                            | "dist"
+                            | "testdata"
+                    ) {
+                        continue;
+                    }
                 }
                 scan_go_imports_recursive(&path, out, depth + 1);
             } else if ft.is_file() {
-                let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                if !name.ends_with(".go") || name.ends_with("_test.go") { continue }
-                let Ok(content) = std::fs::read_to_string(&path) else { continue };
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if !name.ends_with(".go") || name.ends_with("_test.go") {
+                    continue;
+                }
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
                 extract_imports_from_go_source(&content, out);
             }
         }
     }
 }
 
-pub(super) fn extract_imports_from_go_source(content: &str, out: &mut std::collections::HashSet<String>) {
-    enum Mode { Top, InBlock }
+pub(super) fn extract_imports_from_go_source(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
+    enum Mode {
+        Top,
+        InBlock,
+    }
     let mut mode = Mode::Top;
     for line in content.lines() {
         let trimmed = line.trim();
         match mode {
             Mode::Top => {
-                if trimmed.starts_with("import (") { mode = Mode::InBlock; continue }
+                if trimmed.starts_with("import (") {
+                    mode = Mode::InBlock;
+                    continue;
+                }
                 if let Some(rest) = trimmed.strip_prefix("import ") {
                     let rest = rest.trim_start_matches('_').trim();
                     let quoted = rest
@@ -120,29 +156,37 @@ pub(super) fn extract_imports_from_go_source(content: &str, out: &mut std::colle
                         .map(|(head, _)| head)
                         .and_then(|head| head.rsplit_once('"').map(|(_, s)| s));
                     if let Some(path) = quoted {
-                        if !path.is_empty() { out.insert(path.to_string()); }
+                        if !path.is_empty() {
+                            out.insert(path.to_string());
+                        }
                     }
                 }
             }
             Mode::InBlock => {
-                if trimmed == ")" { mode = Mode::Top; continue }
+                if trimmed == ")" {
+                    mode = Mode::Top;
+                    continue;
+                }
                 let bytes = trimmed.as_bytes();
                 let first = bytes.iter().position(|&b| b == b'"');
                 let Some(start) = first else { continue };
                 let after = &trimmed[start + 1..];
-                let Some(end_rel) = after.find('"') else { continue };
+                let Some(end_rel) = after.find('"') else {
+                    continue;
+                };
                 let path = &after[..end_rel];
-                if !path.is_empty() { out.insert(path.to_string()); }
+                if !path.is_empty() {
+                    out.insert(path.to_string());
+                }
             }
         }
     }
 }
 
-fn go_dep_is_imported(
-    dep_path: &str,
-    user_imports: &std::collections::HashSet<String>,
-) -> bool {
-    if user_imports.contains(dep_path) { return true }
+fn go_dep_is_imported(dep_path: &str, user_imports: &std::collections::HashSet<String>) -> bool {
+    if user_imports.contains(dep_path) {
+        return true;
+    }
     let prefix = format!("{dep_path}/");
     user_imports.iter().any(|imp| imp.starts_with(&prefix))
 }
@@ -150,7 +194,9 @@ fn go_dep_is_imported(
 pub fn gomodcache_root() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("GOMODCACHE") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(gopath) = std::env::var_os("GOPATH") {
         let first = PathBuf::from(gopath)
@@ -160,25 +206,39 @@ pub fn gomodcache_root() -> Option<PathBuf> {
             .map(PathBuf::from);
         if let Some(p) = first {
             let candidate = p.join("pkg").join("mod");
-            if candidate.is_dir() { return Some(candidate) }
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
         }
     }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     let candidate = PathBuf::from(home).join("go").join("pkg").join("mod");
-    if candidate.is_dir() { Some(candidate) } else { None }
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn resolve_go_dep_path(cache_root: &Path, dep: &GoModDep) -> Option<PathBuf> {
     let escaped = escape_module_path(&dep.path);
     let dirname = format!("{}@{}", escaped, dep.version);
     let candidate = cache_root.join(dirname.replace('/', std::path::MAIN_SEPARATOR_STR));
-    if candidate.is_dir() { return Some(candidate) }
+    if candidate.is_dir() {
+        return Some(candidate);
+    }
     let mut segments: Vec<&str> = escaped.split('/').collect();
     let last = segments.pop()?;
     let mut path = cache_root.to_path_buf();
-    for seg in segments { path.push(seg); }
+    for seg in segments {
+        path.push(seg);
+    }
     path.push(format!("{last}@{}", dep.version));
-    if path.is_dir() { Some(path) } else { None }
+    if path.is_dir() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 pub(super) fn escape_module_path(path: &str) -> String {

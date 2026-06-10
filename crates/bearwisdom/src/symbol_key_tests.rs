@@ -44,8 +44,20 @@ fn sym(
 #[test]
 fn overloads_differ_by_param_types() {
     let arena = TypeArena::new();
-    let a = sym("M.foo", SymbolKind::Method, vec![arena.intern_type_str("int")], 0, None);
-    let b = sym("M.foo", SymbolKind::Method, vec![arena.intern_type_str("string")], 0, None);
+    let a = sym(
+        "M.foo",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("int")],
+        0,
+        None,
+    );
+    let b = sym(
+        "M.foo",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("string")],
+        0,
+        None,
+    );
     assert_ne!(
         symbol_key("csharp", &a, 1, &arena),
         symbol_key("csharp", &b, 1, &arena),
@@ -58,9 +70,24 @@ fn body_change_keeps_key_stable() {
     // The key never sees a body — same name/kind/params/arity ⇒ same key,
     // regardless of an unrelated signature string difference.
     let arena = TypeArena::new();
-    let a = sym("M.foo", SymbolKind::Method, vec![arena.intern_type_str("int")], 0, Some("v1"));
-    let b = sym("M.foo", SymbolKind::Method, vec![arena.intern_type_str("int")], 0, Some("v2"));
-    assert_eq!(symbol_key("csharp", &a, 1, &arena), symbol_key("csharp", &b, 1, &arena));
+    let a = sym(
+        "M.foo",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("int")],
+        0,
+        Some("v1"),
+    );
+    let b = sym(
+        "M.foo",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("int")],
+        0,
+        Some("v2"),
+    );
+    assert_eq!(
+        symbol_key("csharp", &a, 1, &arena),
+        symbol_key("csharp", &b, 1, &arena)
+    );
 }
 
 #[test]
@@ -83,14 +110,30 @@ fn untyped_params_become_underscore_and_preserve_arity() {
     let one = sym("M.f", SymbolKind::Function, vec![unknown], 0, None);
     let k2 = symbol_key("javascript", &two, 1, &arena);
     assert!(k2.ends_with("#(_,_)"), "arity-2 untyped → (_,_): {k2}");
-    assert_ne!(k2, symbol_key("javascript", &one, 1, &arena), "arity still disambiguates");
+    assert_ne!(
+        k2,
+        symbol_key("javascript", &one, 1, &arena),
+        "arity still disambiguates"
+    );
 }
 
 #[test]
 fn param_type_whitespace_is_normalized() {
     let arena = TypeArena::new();
-    let spaced = sym("M.g", SymbolKind::Method, vec![arena.intern_type_str("Map< string , int >")], 0, None);
-    let tight = sym("M.g", SymbolKind::Method, vec![arena.intern_type_str("Map<string,int>")], 0, None);
+    let spaced = sym(
+        "M.g",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("Map< string , int >")],
+        0,
+        None,
+    );
+    let tight = sym(
+        "M.g",
+        SymbolKind::Method,
+        vec![arena.intern_type_str("Map<string,int>")],
+        0,
+        None,
+    );
     assert_eq!(
         symbol_key("csharp", &spaced, 1, &arena),
         symbol_key("csharp", &tight, 1, &arena),
@@ -114,7 +157,10 @@ fn non_mergeable_symbol_is_file_scoped() {
     let m = sym("M.foo", SymbolKind::Method, vec![], 0, None);
     let in_f1 = symbol_key("csharp", &m, 1, &arena);
     let in_f2 = symbol_key("csharp", &m, 2, &arena);
-    assert_ne!(in_f1, in_f2, "same private method in two files stays two symbols");
+    assert_ne!(
+        in_f1, in_f2,
+        "same private method in two files stays two symbols"
+    );
     assert!(in_f1.starts_with("1:") && in_f2.starts_with("2:"));
 }
 
@@ -132,8 +178,20 @@ fn mergeable_symbol_is_file_independent() {
 #[test]
 fn csharp_partial_class_merges_plain_class_does_not() {
     let arena = TypeArena::new();
-    let partial = sym("App.Foo", SymbolKind::Class, vec![], 0, Some("public partial class Foo"));
-    let plain = sym("App.Foo", SymbolKind::Class, vec![], 0, Some("public class Foo"));
+    let partial = sym(
+        "App.Foo",
+        SymbolKind::Class,
+        vec![],
+        0,
+        Some("public partial class Foo"),
+    );
+    let plain = sym(
+        "App.Foo",
+        SymbolKind::Class,
+        vec![],
+        0,
+        Some("public class Foo"),
+    );
     assert_eq!(
         symbol_key("csharp", &partial, 1, &arena),
         symbol_key("csharp", &partial, 2, &arena),

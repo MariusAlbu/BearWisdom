@@ -22,11 +22,10 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
     // Helper that tolerates "query returned no rows" (some PRAGMAs return
     // nothing on certain SQLite versions).
     fn pragma(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
-        conn.query_row(sql, [], |_| Ok(()))
-            .or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(()),
-                other => Err(other),
-            })
+        conn.query_row(sql, [], |_| Ok(())).or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(()),
+            other => Err(other),
+        })
     }
 
     // page_size must be set BEFORE the first page is written.
@@ -110,7 +109,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // v0.3: Add incoming_edge_count to symbols for materialized centrality.
     if !column_exists(conn, "symbols", "incoming_edge_count") {
         conn.execute_batch(
-            "ALTER TABLE symbols ADD COLUMN incoming_edge_count INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE symbols ADD COLUMN incoming_edge_count INTEGER NOT NULL DEFAULT 0",
         )?;
     }
     // v0.3: Add package_id to files for monorepo/workspace support.
@@ -121,13 +120,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     // Always ensure the index exists — covers both new DBs (column from CREATE
     // TABLE) and migrated DBs (column from ALTER TABLE above).
-    conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_files_package ON files(package_id)"
-    )?;
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_files_package ON files(package_id)")?;
     // v0.4: Add is_service flag to packages for Dockerfile-backed service detection.
     if !column_exists(conn, "packages", "is_service") {
         conn.execute_batch(
-            "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0",
         )?;
     }
     // v0.3 monorepo Phase A: add declared_name — the package name as stated
@@ -137,44 +134,38 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // can map `import { x } from '@myorg/utils'` → package_id of the
     // workspace package whose package.json declares `"name": "@myorg/utils"`.
     if !column_exists(conn, "packages", "declared_name") {
-        conn.execute_batch(
-            "ALTER TABLE packages ADD COLUMN declared_name TEXT"
-        )?;
+        conn.execute_batch("ALTER TABLE packages ADD COLUMN declared_name TEXT")?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_packages_declared_name
          ON packages(declared_name)
-         WHERE declared_name IS NOT NULL"
+         WHERE declared_name IS NOT NULL",
     )?;
     // v0.5: Add origin to files and symbols to partition internal project code
     // from externally-indexed dependency code (module cache, package sources).
     // Values: 'internal' | 'external'. User-facing queries filter origin='internal'.
     if !column_exists(conn, "files", "origin") {
-        conn.execute_batch(
-            "ALTER TABLE files ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'"
-        )?;
+        conn.execute_batch("ALTER TABLE files ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'")?;
     }
     if !column_exists(conn, "symbols", "origin") {
         conn.execute_batch(
-            "ALTER TABLE symbols ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'"
+            "ALTER TABLE symbols ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'",
         )?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_files_origin ON files(origin);
-         CREATE INDEX IF NOT EXISTS idx_symbols_origin ON symbols(origin);"
+         CREATE INDEX IF NOT EXISTS idx_symbols_origin ON symbols(origin);",
     )?;
     // v0.6: Add origin_language to symbols for multi-language host files
     // (Vue/Svelte/Astro/Razor/HTML/PHP). NULL = same as the file's language.
     // Populated by the indexer when it splices sub-extracted symbols back into
     // a host file; lets queries filter "show me only the TS symbols in this .vue".
     if !column_exists(conn, "symbols", "origin_language") {
-        conn.execute_batch(
-            "ALTER TABLE symbols ADD COLUMN origin_language TEXT"
-        )?;
+        conn.execute_batch("ALTER TABLE symbols ADD COLUMN origin_language TEXT")?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_symbols_origin_language
-           ON symbols(origin_language) WHERE origin_language IS NOT NULL"
+           ON symbols(origin_language) WHERE origin_language IS NOT NULL",
     )?;
     // v0.7 (M1): Per-package attribution on external_refs + unresolved_refs.
     // Populated by the resolver (M2) from the source symbol's package_id so
@@ -200,12 +191,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // resolution stats exclude these rows — snippets typically lack imports.
     if !column_exists(conn, "unresolved_refs", "from_snippet") {
         conn.execute_batch(
-            "ALTER TABLE unresolved_refs ADD COLUMN from_snippet INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE unresolved_refs ADD COLUMN from_snippet INTEGER NOT NULL DEFAULT 0",
         )?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_snippet
-           ON unresolved_refs(from_snippet) WHERE from_snippet = 1"
+           ON unresolved_refs(from_snippet) WHERE from_snippet = 1",
     )?;
     // v0.9 (T9): Record which resolver strategy produced each edge.
     // Populated by the resolution pipeline — the engine writes the language
@@ -218,7 +209,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_edges_strategy
-           ON edges(strategy) WHERE strategy IS NOT NULL"
+           ON edges(strategy) WHERE strategy IS NOT NULL",
     )?;
     // v0.10 + v0.12 packages-table rebuild. Both gated on
     // `PRAGMA user_version < 12` so they can't re-run on already-migrated
@@ -271,7 +262,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // `<distributionManagement>`, etc.
     if !column_exists(conn, "packages", "is_publishable") {
         conn.execute_batch(
-            "ALTER TABLE packages ADD COLUMN is_publishable INTEGER NOT NULL DEFAULT 1"
+            "ALTER TABLE packages ADD COLUMN is_publishable INTEGER NOT NULL DEFAULT 1",
         )?;
     }
     // v0.11: Indexes on FK columns referencing symbols(id) so cascade
@@ -286,7 +277,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_code_chunks_symbol
             ON code_chunks(symbol_id) WHERE symbol_id IS NOT NULL;
          CREATE INDEX IF NOT EXISTS idx_db_mappings_symbol
-            ON db_mappings(symbol_id);"
+            ON db_mappings(symbol_id);",
     )?;
 
     // Phase H (post-connector-kill): dedup + UNIQUE indexes on flow_edges
@@ -321,7 +312,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                     COALESCE(target_symbol, ''),
                     edge_type,
                     COALESCE(url_pattern, '')
-                );"
+                );",
         )?;
     }
     if !index_exists(conn, "idx_routes_unique") {
@@ -335,7 +326,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                     COALESCE(line, -1)
             );
             CREATE UNIQUE INDEX idx_routes_unique
-                ON routes(file_id, http_method, route_template, COALESCE(line, -1));"
+                ON routes(file_id, http_method, route_template, COALESCE(line, -1));",
         )?;
     }
     // Symbol-identity refactor (SYMBOL-IDENTITY.md): stable key, multi-location

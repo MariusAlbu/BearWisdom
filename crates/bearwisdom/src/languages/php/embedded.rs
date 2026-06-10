@@ -117,7 +117,9 @@ fn skip_string(bytes: &[u8], pos: usize, quote: u8) -> usize {
 
 fn skip_to_eol(bytes: &[u8], pos: usize) -> usize {
     let mut i = pos;
-    while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
     i
 }
 
@@ -141,7 +143,9 @@ fn scan_html_section(
     end: usize,
     out: &mut Vec<EmbeddedRegion>,
 ) {
-    if start >= end { return; }
+    if start >= end {
+        return;
+    }
     let mut i = start;
     while i < end {
         if bytes[i] == b'<' {
@@ -197,10 +201,13 @@ fn match_html_block(
     tag: &[u8],
     end: usize,
 ) -> Option<(usize, usize, usize, Option<&'static str>)> {
-    if !has_prefix_ci(bytes, tag_start + 1, tag) { return None; }
-    let tag_end = (tag_start + 1 + tag.len()..end)
-        .find(|&i| bytes[i] == b'>')?;
-    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') { return None; }
+    if !has_prefix_ci(bytes, tag_start + 1, tag) {
+        return None;
+    }
+    let tag_end = (tag_start + 1 + tag.len()..end).find(|&i| bytes[i] == b'>')?;
+    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') {
+        return None;
+    }
     let attrs = &bytes[tag_start..tag_end];
     let lang = if tag == b"script" {
         Some(script_language_from_attrs(attrs))
@@ -219,10 +226,7 @@ fn match_html_block(
     let _ = close_needle; // only used for sizing intent — bounds enforced inline.
     let mut i = body_start;
     while i < end {
-        if bytes[i] == b'<'
-            && bytes.get(i + 1) == Some(&b'/')
-            && has_prefix_ci(bytes, i + 2, tag)
-        {
+        if bytes[i] == b'<' && bytes.get(i + 1) == Some(&b'/') && has_prefix_ci(bytes, i + 2, tag) {
             let after_name = i + 2 + tag.len();
             if let Some(gt) = (after_name..end).find(|&j| bytes[j] == b'>') {
                 return Some((body_start, i, gt + 1, lang));
@@ -260,12 +264,16 @@ fn style_language_from_attrs(attr_bytes: &[u8]) -> &'static str {
 }
 
 fn has_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     &bytes[start..start + needle.len()] == needle
 }
 
 fn has_prefix_ci(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     bytes[start..start + needle.len()]
         .iter()
         .zip(needle.iter())
@@ -345,7 +353,8 @@ mod tests {
 
     #[test]
     fn alternating_php_and_html_blocks() {
-        let src = "<?php echo 'a'; ?>\n<script>x=1;</script>\n<?php echo 'b'; ?>\n<style>p{}</style>";
+        let src =
+            "<?php echo 'a'; ?>\n<script>x=1;</script>\n<?php echo 'b'; ?>\n<style>p{}</style>";
         let regions = detect_regions(src);
         assert_eq!(regions.len(), 2);
         assert!(regions.iter().any(|r| r.language_id == "javascript"));

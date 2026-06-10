@@ -1,7 +1,7 @@
 use super::hooks::HeexHooks;
 use crate::indexer::resolve::engine::FileContext;
-use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -24,11 +24,11 @@ fn make_method_symbol(name: &str, qname: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_class_symbol(name: &str) -> ExtractedSymbol {
@@ -46,15 +46,17 @@ fn make_class_symbol(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_calls_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -68,7 +70,12 @@ fn make_calls_ref(target: &str) -> ExtractedRef {
     }
 }
 
-fn make_file(path: &str, lang: &str, syms: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
+fn make_file(
+    path: &str,
+    lang: &str,
+    syms: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
         language: lang.to_string(),
@@ -144,7 +151,10 @@ fn ext_component_not_grep_resolved() {
         file_package_id: None,
     };
     let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
-    assert!(res.is_none(), "bare external component is no longer grep-resolved");
+    assert!(
+        res.is_none(),
+        "bare external component is no longer grep-resolved"
+    );
     let _ = id_map;
 }
 
@@ -157,7 +167,10 @@ fn internal_component_not_grep_resolved() {
     let comp_file = make_file(
         "lib/my_app_web/components/core_components.ex",
         "elixir",
-        vec![make_method_symbol("button", "MyAppWeb.CoreComponents.button")],
+        vec![make_method_symbol(
+            "button",
+            "MyAppWeb.CoreComponents.button",
+        )],
         vec![],
     );
     let heex_file = make_file(
@@ -175,7 +188,10 @@ fn internal_component_not_grep_resolved() {
         file_package_id: None,
     };
     let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
-    assert!(res.is_none(), "bare internal component is no longer grep-resolved");
+    assert!(
+        res.is_none(),
+        "bare internal component is no longer grep-resolved"
+    );
     let _ = id_map;
 }
 
@@ -189,14 +205,17 @@ fn dotted_target_skipped_by_resolver() {
     );
     let (index, _id_map) = build_env(&[&heex_file]);
     let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
-        let ref_ctx = RefContext {
+    let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
     let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
-    assert!(res.is_none(), "dotted refs should pass through to heuristic");
+    assert!(
+        res.is_none(),
+        "dotted refs should pass through to heuristic"
+    );
 }
 
 #[test]
@@ -209,7 +228,7 @@ fn infer_external_namespace_dotted_phoenix_root() {
     );
     let (_, _) = build_env(&[&heex_file]);
     let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
-        let ref_ctx = RefContext {
+    let ref_ctx = RefContext {
         extracted_ref: &heex_file.refs[0],
         source_symbol: &heex_file.symbols[0],
         scope_chain: build_scope_chain(None),
@@ -218,9 +237,13 @@ fn infer_external_namespace_dotted_phoenix_root() {
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
         crate::languages::heex::hooks::HeexHooks.classify_external(
-            &ref_ctx, &file_ctx, None, &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
         )
     };
     assert_eq!(ns.as_deref(), Some("Phoenix"));

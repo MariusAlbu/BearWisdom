@@ -55,7 +55,8 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         [^,]+,\s*                       # alias module
         as:\s*:(\w+)                    # as: :name
         "#,
-    ).expect("phoenix scope-as regex");
+    )
+    .expect("phoenix scope-as regex");
     let re_scope_bare = Regex::new(r#"^\s*scope\s+"#).expect("phoenix scope regex");
     let re_end = Regex::new(r"^\s*end\s*$").expect("phoenix end regex");
 
@@ -69,7 +70,8 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         :(\w+)                                         # :action
         (?:.*?as:\s*:(\w+))?                           # optional as: :alias
         "#,
-    ).expect("phoenix verb regex");
+    )
+    .expect("phoenix verb regex");
 
     // `resources "/path", Controller [, only/except: [...]] [, as: :alias] [do]`
     // The trailing `do` (with or without `end` on the same line) indicates a
@@ -88,13 +90,13 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         "[^"]*"\s*,\s*                                 # path
         ([A-Z][\w.]*Controller)                        # Controller module
         "#,
-    ).expect("phoenix resources regex");
+    )
+    .expect("phoenix resources regex");
 
     // Option-specific regexes applied to the full line independently.
-    let re_resources_only = Regex::new(r#"(?x)\bonly:\s*\[([^\]]*)\]"#)
-        .expect("resources-only regex");
-    let re_resources_as = Regex::new(r#"(?x)\bas:\s*:(\w+)"#)
-        .expect("resources-as regex");
+    let re_resources_only =
+        Regex::new(r#"(?x)\bonly:\s*\[([^\]]*)\]"#).expect("resources-only regex");
+    let re_resources_as = Regex::new(r#"(?x)\bas:\s*:(\w+)"#).expect("resources-as regex");
 
     // Detects whether a `resources` line (or any route line) ends with a bare
     // `do` keyword that opens a nested block.  We check separately because the
@@ -111,7 +113,8 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         ([A-Z][\w.]*(?:Live|LiveView))(?:\s*,\s*:(\w+))?
         (?:.*?as:\s*:(\w+))?
         "#,
-    ).expect("phoenix live regex");
+    )
+    .expect("phoenix live regex");
 
     // Scope stack — each entry is `(depth, name_segment)`:
     //   - `depth` is the do/end nesting depth at which this entry was pushed.
@@ -163,11 +166,13 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
             let controller = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             // Capture `only:` and `as:` independently from the full line so
             // that their relative order doesn't matter.
-            let only = re_resources_only.captures(line)
+            let only = re_resources_only
+                .captures(line)
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str())
                 .unwrap_or("");
-            let explicit_as = re_resources_as.captures(line)
+            let explicit_as = re_resources_as
+                .captures(line)
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str().to_string());
             // Use a separate check for trailing `do` — the capture regex's
@@ -291,11 +296,11 @@ fn make_helper_symbol(name: &str) -> ExtractedSymbol {
         scope_path: Some("Routes".to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 /// Derive the singular resource name from a controller module name.
@@ -496,12 +501,27 @@ end
 "#;
         let names = helper_names(src);
         // Scoped top-level resources
-        assert!(names.contains(&"admin_news_item_path".to_string()), "admin_news_item_path missing; got: {names:?}");
+        assert!(
+            names.contains(&"admin_news_item_path".to_string()),
+            "admin_news_item_path missing; got: {names:?}"
+        );
         // Nested resources inside `resources ... do`
-        assert!(names.contains(&"admin_news_item_subscription_path".to_string()), "admin_news_item_subscription_path missing");
-        assert!(names.contains(&"admin_podcast_path".to_string()), "admin_podcast_path missing");
-        assert!(names.contains(&"admin_podcast_episode_path".to_string()), "admin_podcast_episode_path missing");
-        assert!(names.contains(&"admin_podcast_episode_url".to_string()), "admin_podcast_episode_url missing");
+        assert!(
+            names.contains(&"admin_news_item_subscription_path".to_string()),
+            "admin_news_item_subscription_path missing"
+        );
+        assert!(
+            names.contains(&"admin_podcast_path".to_string()),
+            "admin_podcast_path missing"
+        );
+        assert!(
+            names.contains(&"admin_podcast_episode_path".to_string()),
+            "admin_podcast_episode_path missing"
+        );
+        assert!(
+            names.contains(&"admin_podcast_episode_url".to_string()),
+            "admin_podcast_episode_url missing"
+        );
     }
 
     #[test]

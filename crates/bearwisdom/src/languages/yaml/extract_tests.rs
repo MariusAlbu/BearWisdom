@@ -17,7 +17,9 @@ fn top_level_keys_become_fields() {
 fn comments_and_indent_ignored() {
     let src = "# header comment\nname: CI\n  nested: true\n";
     let r = extract(src, "ci.yml");
-    let keys: Vec<&str> = r.symbols.iter()
+    let keys: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Field)
         .map(|s| s.name.as_str())
         .collect();
@@ -99,5 +101,8 @@ fn action_yml_root_is_recognised_as_gha() {
     let src = "name: my-action\nruns:\n  using: composite\n  steps:\n    - uses: ./other-action\n";
     let r = extract(src, "action.yml");
     let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports);
-    assert!(imp.is_some(), "expected uses: extracted for action.yml at repo root");
+    assert!(
+        imp.is_some(),
+        "expected uses: extracted for action.yml at repo root"
+    );
 }

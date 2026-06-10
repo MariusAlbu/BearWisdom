@@ -2,14 +2,14 @@
 
 mod calls;
 pub(crate) mod decorators;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-pub mod extract;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::SCALA_HOOKS;
@@ -32,24 +32,32 @@ mod predicates_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct ScalaPlugin;
 
 impl LanguagePlugin for ScalaPlugin {
-    fn id(&self) -> &str { "scala" }
+    fn id(&self) -> &str {
+        "scala"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["scala"] }
+    fn language_ids(&self) -> &[&str] {
+        &["scala"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".scala", ".sc"] }
+    fn extensions(&self) -> &[&str] {
+        &[".scala", ".sc"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_scala::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::SCALA_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::SCALA_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -103,14 +111,12 @@ impl LanguagePlugin for ScalaPlugin {
         Some(&profile::SCALA_PROFILE)
     }
 
-    
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::SCALA_HOOKS)
     }
-fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::SCALA_FLOW_CONFIG)
     }
 }

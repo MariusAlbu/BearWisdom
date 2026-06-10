@@ -103,12 +103,12 @@ pub(super) fn extract_short_var_decl(
             doc_comment: None,
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // If the corresponding RHS value is a call_expression, emit a
         // chain-bearing TypeRef so the resolution engine can follow the chain.
@@ -125,7 +125,9 @@ pub(super) fn extract_short_var_decl(
                                 .map(|s| s.name.clone())
                                 .unwrap_or_default();
                             if !target.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
@@ -134,15 +136,17 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: Some(chain),
                                     byte_offset: rhs_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         } else {
                             // Bare function call (single identifier) — still emit TypeRef.
                             let target = node_text(&func, source);
                             if !target.is_empty() && target != "_" {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: target,
                                     kind: EdgeKind::TypeRef,
@@ -151,9 +155,9 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: None,
                                     byte_offset: rhs_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -176,7 +180,9 @@ pub(super) fn extract_short_var_decl(
                                 _ => node_text(&type_node, source),
                             };
                             if !type_name.is_empty() && !is_go_builtin_type(&type_name) {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: sym_idx,
                                     target_name: type_name,
                                     kind: EdgeKind::TypeRef,
@@ -185,9 +191,9 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: None,
                                     byte_offset: rhs_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -228,12 +234,28 @@ pub(super) fn extract_const_var_decl(
             // Fallback: append "_list" and hope for the best.
             let fallback = format!("{other}_list");
             return extract_const_var_decl_inner(
-                node, source, symbols, refs, parent_index, qualified_prefix, keyword, spec_kind, &fallback,
+                node,
+                source,
+                symbols,
+                refs,
+                parent_index,
+                qualified_prefix,
+                keyword,
+                spec_kind,
+                &fallback,
             );
         }
     };
     extract_const_var_decl_inner(
-        node, source, symbols, refs, parent_index, qualified_prefix, keyword, spec_kind, list_kind,
+        node,
+        source,
+        symbols,
+        refs,
+        parent_index,
+        qualified_prefix,
+        keyword,
+        spec_kind,
+        list_kind,
     );
 }
 
@@ -305,8 +327,8 @@ fn extract_var_type_name(node: &Node, source: &str) -> String {
             .map(|n| extract_var_type_name(&n, source))
             .unwrap_or_default(),
         // Anonymous types — no symbolic target to reference.
-        "struct_type" | "slice_type" | "map_type" | "array_type"
-        | "channel_type" | "function_type" | "interface_type" => String::new(),
+        "struct_type" | "slice_type" | "map_type" | "array_type" | "channel_type"
+        | "function_type" | "interface_type" => String::new(),
         _ => node_text(node, source),
     }
 }
@@ -361,7 +383,9 @@ fn extract_const_var_spec(
     // We do this once, not per-name, because all names share the same type.
     if let Some(ref t) = type_text {
         if !t.is_empty() && !is_go_builtin_type(t) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: t.clone(),
                 kind: EdgeKind::TypeRef,
@@ -370,9 +394,9 @@ fn extract_const_var_spec(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -399,12 +423,12 @@ fn extract_const_var_spec(
             doc_comment: extract_go_doc_comment(node, source),
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // When the declared type is an anonymous struct, extract its fields as
         // Field symbols scoped to the variable (e.g. `var opts struct{ Verbose bool }`

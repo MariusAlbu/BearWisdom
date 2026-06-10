@@ -28,15 +28,25 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct BladePlugin;
 
 impl LanguagePlugin for BladePlugin {
-    fn id(&self) -> &str { "blade" }
+    fn id(&self) -> &str {
+        "blade"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["blade"] }
+    fn language_ids(&self) -> &[&str] {
+        &["blade"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".blade.php"] }
+    fn extensions(&self) -> &[&str] {
+        &[".blade.php"]
+    }
 
-    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> { None }
+    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
+        None
+    }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
@@ -51,8 +61,12 @@ impl LanguagePlugin for BladePlugin {
         embedded::detect_regions(source)
     }
 
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

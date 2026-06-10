@@ -37,8 +37,8 @@
 //   73+:   identification (ignored)
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Division {
@@ -138,7 +138,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                 let stmt_upper_data = line.trim().to_uppercase();
                 if let Some(copybook) = parse_copy(&stmt_upper_data) {
                     let source_idx = current_para.unwrap_or(0);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: copybook.clone(),
                         kind: EdgeKind::Imports,
@@ -147,9 +149,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                     continue;
                 }
 
@@ -171,7 +173,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                             kind,
                             row,
                             Some(sig),
-                            if level > 1 && level != 77 { current_para } else { None },
+                            if level > 1 && level != 77 {
+                                current_para
+                            } else {
+                                None
+                            },
                         ));
                         if level == 1 || level == 77 {
                             current_para = Some(idx);
@@ -223,7 +229,9 @@ pub fn extract(source: &str) -> ExtractionResult {
 
                 // PERFORM <para-name> [THRU <para-name>] [VARYING ...]
                 if let Some(target) = parse_perform(&stmt_upper) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -232,14 +240,16 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
 
                 // CALL '<program>' or CALL "program"
                 if let Some(prog) = parse_call(&stmt_upper) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: prog.clone(),
                         kind: EdgeKind::Calls,
@@ -248,10 +258,12 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: prog.clone(),
                         kind: EdgeKind::Imports,
@@ -260,14 +272,16 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(prog),
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
 
                 // COPY <copybook>
                 if let Some(copybook) = parse_copy(&stmt_upper) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: copybook.clone(),
                         kind: EdgeKind::Imports,
@@ -276,14 +290,16 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
 
                 // GO TO <para-name>
                 if let Some(target) = parse_goto(&stmt_upper) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -292,9 +308,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -320,7 +336,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                 let stmt_upper = line.trim().to_uppercase();
                 let source_idx = current_para.unwrap_or(0);
                 if let Some(copybook) = parse_copy(&stmt_upper) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: copybook.clone(),
                         kind: EdgeKind::Imports,
@@ -329,9 +347,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: row_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -388,9 +406,10 @@ fn detect_data_section(stmt: &str) -> DataSection {
 
 fn parse_level_number(stmt: &str) -> Option<u8> {
     let token = stmt.split_whitespace().next()?;
-    token.parse::<u8>().ok().filter(|&n| {
-        (n >= 1 && n <= 49) || n == 66 || n == 77 || n == 78 || n == 88
-    })
+    token
+        .parse::<u8>()
+        .ok()
+        .filter(|&n| (n >= 1 && n <= 49) || n == 66 || n == 77 || n == 78 || n == 88)
 }
 
 fn extract_data_name(stmt: &str, _area_b: &str) -> String {
@@ -398,7 +417,11 @@ fn extract_data_name(stmt: &str, _area_b: &str) -> String {
     // The name is the second token.
     let mut tokens = stmt.split_whitespace();
     tokens.next(); // level number
-    tokens.next().unwrap_or("").trim_end_matches('.').to_string()
+    tokens
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('.')
+        .to_string()
 }
 
 fn build_data_sig(level: u8, name: &str, area_b: &str) -> String {
@@ -406,7 +429,13 @@ fn build_data_sig(level: u8, name: &str, area_b: &str) -> String {
     let pic_part = area_b
         .to_uppercase()
         .find("PIC")
-        .map(|p| area_b[p..].split_whitespace().take(3).collect::<Vec<_>>().join(" "))
+        .map(|p| {
+            area_b[p..]
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .unwrap_or_default();
     if pic_part.is_empty() {
         format!("{:02} {}", level, name)
@@ -447,12 +476,45 @@ fn is_paragraph_name(stmt: &str, area_a: &str) -> bool {
 fn is_cobol_keyword(name: &str) -> bool {
     matches!(
         name,
-        "STOP" | "EXIT" | "MOVE" | "ADD" | "SUBTRACT" | "MULTIPLY" | "DIVIDE"
-        | "COMPUTE" | "IF" | "ELSE" | "END-IF" | "EVALUATE" | "WHEN" | "END-EVALUATE"
-        | "PERFORM" | "CALL" | "COPY" | "DISPLAY" | "ACCEPT" | "READ" | "WRITE"
-        | "OPEN" | "CLOSE" | "INITIALIZE" | "INSPECT" | "STRING" | "UNSTRING"
-        | "SORT" | "MERGE" | "RETURN" | "RELEASE" | "CONTINUE" | "NEXT"
-        | "SENTENCE" | "GO" | "ALTER" | "RUN" | "GOBACK" | "END-PROGRAM"
+        "STOP"
+            | "EXIT"
+            | "MOVE"
+            | "ADD"
+            | "SUBTRACT"
+            | "MULTIPLY"
+            | "DIVIDE"
+            | "COMPUTE"
+            | "IF"
+            | "ELSE"
+            | "END-IF"
+            | "EVALUATE"
+            | "WHEN"
+            | "END-EVALUATE"
+            | "PERFORM"
+            | "CALL"
+            | "COPY"
+            | "DISPLAY"
+            | "ACCEPT"
+            | "READ"
+            | "WRITE"
+            | "OPEN"
+            | "CLOSE"
+            | "INITIALIZE"
+            | "INSPECT"
+            | "STRING"
+            | "UNSTRING"
+            | "SORT"
+            | "MERGE"
+            | "RETURN"
+            | "RELEASE"
+            | "CONTINUE"
+            | "NEXT"
+            | "SENTENCE"
+            | "GO"
+            | "ALTER"
+            | "RUN"
+            | "GOBACK"
+            | "END-PROGRAM"
     )
 }
 
@@ -586,10 +648,10 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

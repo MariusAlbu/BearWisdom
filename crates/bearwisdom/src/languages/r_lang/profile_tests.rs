@@ -10,11 +10,9 @@
 // =============================================================================
 
 use super::R_PROFILE;
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::language_profile::DispatchAxis;
-use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolIndex,
-};
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -135,7 +133,11 @@ fn sym_id(id_map: &HashMap<(String, String), i64>, file: &str, name: &str) -> i6
 
 fn resolve_call(file_path: &str, target: &str, all: &[&ParsedFile]) -> Option<Resolution> {
     let (index, _) = build_index(all);
-    let caller = make_file(file_path, vec![make_sym("caller", SymbolKind::Function)], vec![make_call(target)]);
+    let caller = make_file(
+        file_path,
+        vec![make_sym("caller", SymbolKind::Function)],
+        vec![make_call(target)],
+    );
     let file_ctx = FileContext {
         file_path: file_path.to_string(),
         language: "r".to_string(),
@@ -163,9 +165,21 @@ fn r_bare_call_binds_internal_function_over_external_stub() {
     // `group_by` is the project's own exported function (two defs across .R
     // files) plus a same-named ext:r-stdlib stub. The bare call binds an
     // INTERNAL definition first-match; the external stub never wins.
-    let a = make_file("R/group_by.R", vec![make_sym("group_by", SymbolKind::Function)], vec![]);
-    let b = make_file("R/grouped_df.R", vec![make_sym("group_by", SymbolKind::Function)], vec![]);
-    let ext = make_file("ext:r-stdlib/dplyr.R", vec![make_sym("group_by", SymbolKind::Function)], vec![]);
+    let a = make_file(
+        "R/group_by.R",
+        vec![make_sym("group_by", SymbolKind::Function)],
+        vec![],
+    );
+    let b = make_file(
+        "R/grouped_df.R",
+        vec![make_sym("group_by", SymbolKind::Function)],
+        vec![],
+    );
+    let ext = make_file(
+        "ext:r-stdlib/dplyr.R",
+        vec![make_sym("group_by", SymbolKind::Function)],
+        vec![],
+    );
     let (id_a, id_b, ext_id) = {
         let (_, id_map) = build_index(&[&a, &b, &ext]);
         (
@@ -177,7 +191,10 @@ fn r_bare_call_binds_internal_function_over_external_stub() {
     let res = resolve_call("R/main.R", "group_by", &[&a, &b, &ext])
         .expect("bare R call binds an internal function");
     assert_eq!(res.strategy, "default_namespaceless_global");
-    assert_ne!(res.target_symbol_id, ext_id, "must not bind the ext:r-stdlib stub");
+    assert_ne!(
+        res.target_symbol_id, ext_id,
+        "must not bind the ext:r-stdlib stub"
+    );
     assert!(
         res.target_symbol_id == id_a || res.target_symbol_id == id_b,
         "binds an internal group_by (got {})",
@@ -190,7 +207,11 @@ fn r_external_only_name_stays_unresolved() {
     // `expect_equal` (testthat) is owned ONLY by an external file — no internal
     // definition. The internal-only rung declines, leaving it for external
     // classification.
-    let ext = make_file("ext:r-stdlib/testthat.R", vec![make_sym("expect_equal", SymbolKind::Function)], vec![]);
+    let ext = make_file(
+        "ext:r-stdlib/testthat.R",
+        vec![make_sym("expect_equal", SymbolKind::Function)],
+        vec![],
+    );
     let res = resolve_call("R/main.R", "expect_equal", &[&ext]);
     assert!(
         res.is_none(),

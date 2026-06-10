@@ -11,8 +11,16 @@ fn dart_profile_identity() {
 #[test]
 fn dart_implements_accepts_class_and_interface() {
     let t = DART_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Class));
-    assert!(KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Interface));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Class
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Interface
+    ));
 }
 
 #[test]

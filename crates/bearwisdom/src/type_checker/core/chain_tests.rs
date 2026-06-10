@@ -64,7 +64,9 @@ fn sym_info_sig(
 }
 
 fn dummy_extracted_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -142,13 +144,17 @@ impl EmptyLookup {
         }
     }
     fn with_discriminant(mut self, name: &str, prop: &str, literal: &str) -> Self {
-        self.discriminants
-            .insert(name.to_string(), (prop.to_string(), literal.to_string(), false));
+        self.discriminants.insert(
+            name.to_string(),
+            (prop.to_string(), literal.to_string(), false),
+        );
         self
     }
     fn with_negated_discriminant(mut self, name: &str, prop: &str, literal: &str) -> Self {
-        self.discriminants
-            .insert(name.to_string(), (prop.to_string(), literal.to_string(), true));
+        self.discriminants.insert(
+            name.to_string(),
+            (prop.to_string(), literal.to_string(), true),
+        );
         self
     }
     fn with_type(mut self, name: &str, qname: &str) -> Self {
@@ -161,8 +167,10 @@ impl EmptyLookup {
         self
     }
     fn with_local_union(mut self, name: &str, branches: &[&str]) -> Self {
-        self.local_unions
-            .insert(name.to_string(), branches.iter().map(|s| s.to_string()).collect());
+        self.local_unions.insert(
+            name.to_string(),
+            branches.iter().map(|s| s.to_string()).collect(),
+        );
         self
     }
     fn with_field_type(mut self, qname: &str, type_name: &str) -> Self {
@@ -459,8 +467,14 @@ fn three_segment_chain_walks_method_then_field() {
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(repo_ty, sym_info(3, "get", "Repo.get", "method", Some("Repo")));
-    members.add_direct(user_ty, sym_info(4, "name", "User.name", "field", Some("User")));
+    members.add_direct(
+        repo_ty,
+        sym_info(3, "get", "Repo.get", "method", Some("Repo")),
+    );
+    members.add_direct(
+        user_ty,
+        sym_info(4, "name", "User.name", "field", Some("User")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -632,8 +646,14 @@ fn turbofish_binds_method_own_generic() {
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(repo_ty, sym_info(1, "find", "Repo.find", "method", Some("Repo")));
-    members.add_direct(user_ty, sym_info(2, "name", "User.name", "property", Some("User")));
+    members.add_direct(
+        repo_ty,
+        sym_info(1, "find", "Repo.find", "method", Some("Repo")),
+    );
+    members.add_direct(
+        user_ty,
+        sym_info(2, "name", "User.name", "property", Some("User")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -735,14 +755,17 @@ fn arg_driven_generic_binds_terminal_yield() {
     symbol_types.insert(
         1,
         SymbolTypeData {
-            return_type: Some(class_t),    // param-blind Class("T")
-            param_types: vec![class_t],    // x: T, also param-blind
+            return_type: Some(class_t), // param-blind Class("T")
+            param_types: vec![class_t], // x: T, also param-blind
             ..Default::default()
         },
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+    members.add_direct(
+        box_ty,
+        sym_info(1, "wrap", "Box.wrap", "method", Some("Box")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -770,7 +793,9 @@ fn arg_driven_generic_binds_terminal_yield() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -855,7 +880,9 @@ fn arg_driven_generic_inferred_through_array_arg() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("items".to_string())],
         ..dummy_extracted_ref("firstOf")
     };
@@ -901,7 +928,10 @@ fn turbofish_overrides_arg_driven_inference() {
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+    members.add_direct(
+        box_ty,
+        sym_info(1, "wrap", "Box.wrap", "method", Some("Box")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -930,7 +960,9 @@ fn turbofish_overrides_arg_driven_inference() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -976,7 +1008,10 @@ fn arg_driven_no_inference_when_arg_untyped() {
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(box_ty, sym_info(1, "wrap", "Box.wrap", "method", Some("Box")));
+    members.add_direct(
+        box_ty,
+        sym_info(1, "wrap", "Box.wrap", "method", Some("Box")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -1003,7 +1038,9 @@ fn arg_driven_no_inference_when_arg_untyped() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("mystery".to_string())],
         ..dummy_extracted_ref("wrap")
     };
@@ -1054,7 +1091,13 @@ fn arg_driven_infers_owner_param_when_receiver_unbound() {
     let mut members = MembersIndex::new();
     members.add_direct(
         repo_ty,
-        sym_info(1, "findOne", "Repository.findOne", "method", Some("Repository")),
+        sym_info(
+            1,
+            "findOne",
+            "Repository.findOne",
+            "method",
+            Some("Repository"),
+        ),
     );
 
     let supertypes = SupertypeGraph::new();
@@ -1084,7 +1127,9 @@ fn arg_driven_infers_owner_param_when_receiver_unbound() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("findOne")
     };
@@ -1138,7 +1183,13 @@ fn receiver_binding_wins_over_arg_driven_inference() {
     let mut members = MembersIndex::new();
     members.add_direct(
         repo_ty,
-        sym_info(1, "findOne", "Repository.findOne", "method", Some("Repository")),
+        sym_info(
+            1,
+            "findOne",
+            "Repository.findOne",
+            "method",
+            Some("Repository"),
+        ),
     );
 
     let supertypes = SupertypeGraph::new();
@@ -1167,7 +1218,9 @@ fn receiver_binding_wins_over_arg_driven_inference() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         call_args: vec![CallArg::Ident("u".to_string())],
         ..dummy_extracted_ref("findOne")
     };
@@ -1179,7 +1232,14 @@ fn receiver_binding_wins_over_arg_driven_inference() {
     };
     let fc = file_ctx();
     let result = walker
-        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_of_account })
+        .walk_with_root(
+            &chain,
+            &ref_ctx,
+            &fc,
+            &InferFixedRoot {
+                ty: repo_of_account,
+            },
+        )
         .expect("findOne resolves");
     assert_eq!(result.target_symbol_id, 1);
     // Receiver pinned T → Account; the User argument must not override it.
@@ -1364,7 +1424,14 @@ fn mid_chain_receiver_binding_wins() {
     };
     let fc = file_ctx();
     let result = walker
-        .walk_with_root(&chain, &ref_ctx, &fc, &InferFixedRoot { ty: repo_of_account })
+        .walk_with_root(
+            &chain,
+            &ref_ctx,
+            &fc,
+            &InferFixedRoot {
+                ty: repo_of_account,
+            },
+        )
         .expect("name resolves on Account");
     // Receiver pinned T → Account; the mid-chain User arg must not override it.
     assert_eq!(result.target_symbol_id, 3);
@@ -1565,8 +1632,12 @@ fn lambda_param_seeded_from_callback_signature() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
-        call_args: vec![CallArg::Lambda { params: vec!["x".to_string()] }],
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        call_args: vec![CallArg::Lambda {
+            params: vec!["x".to_string()],
+        }],
         ..dummy_extracted_ref("map")
     };
     let ref_ctx = RefContext {
@@ -1580,9 +1651,7 @@ fn lambda_param_seeded_from_callback_signature() {
 
     let recorded = lookup.recorded_locals.borrow();
     assert!(
-        recorded
-            .iter()
-            .any(|(n, t)| n == "x" && t == "User"),
+        recorded.iter().any(|(n, t)| n == "x" && t == "User"),
         "expected lambda param x seeded as User, got: {recorded:?}"
     );
 }
@@ -1664,8 +1733,12 @@ fn lambda_param_unbound_receiver_seeds_nothing() {
         ],
     };
     let source = dummy_source_symbol("caller", None);
-    let r = ExtractedRef { is_import_binding: false, is_reexport: false,
-        call_args: vec![CallArg::Lambda { params: vec!["x".to_string()] }],
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        call_args: vec![CallArg::Lambda {
+            params: vec!["x".to_string()],
+        }],
         ..dummy_extracted_ref("map")
     };
     let ref_ctx = RefContext {
@@ -1802,7 +1875,10 @@ fn cast_segment_adopts_asserted_type() {
 
     let symbol_types = SymbolTypeMap::new();
     let mut members = MembersIndex::new();
-    members.add_direct(admin_ty, sym_info(5, "ban", "Admin.ban", "method", Some("Admin")));
+    members.add_direct(
+        admin_ty,
+        sym_info(5, "ban", "Admin.ban", "method", Some("Admin")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -1926,7 +2002,10 @@ fn opaque_existential_root_resolves_protocol_extension_default() {
         let result = walker
             .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: irrelevant })
             .unwrap_or_else(|| panic!("hello resolves on the peeled `{opaque}` receiver"));
-        assert_eq!(result.target_symbol_id, 7, "{opaque} dispatches `hello` through Greet");
+        assert_eq!(
+            result.target_symbol_id, 7,
+            "{opaque} dispatches `hello` through Greet"
+        );
     }
 }
 
@@ -2051,7 +2130,13 @@ fn generic_arg_substitutes_through_inheritance() {
     let mut members = MembersIndex::new();
     members.add_direct(
         repository_ty,
-        sym_info(4, "find_one", "Repository.find_one", "method", Some("Repository")),
+        sym_info(
+            4,
+            "find_one",
+            "Repository.find_one",
+            "method",
+            Some("Repository"),
+        ),
     );
 
     // UserRepo extends Repository<User> — the edge carries the bound arg.
@@ -2137,19 +2222,39 @@ fn generic_arg_composes_through_multi_level_inheritance() {
     let generic_ct = arena.intern(Type::Generic { param: c_t });
 
     let mut symbol_types = SymbolTypeMap::new();
-    symbol_types.insert(2, SymbolTypeData { return_type: Some(a_ty), ..Default::default() });
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(a_ty),
+            ..Default::default()
+        },
+    );
     symbol_types.mark_self_yielding(a_ty, 2);
     symbol_types.insert(
         3,
-        SymbolTypeData { return_type: Some(b_ty), generic_params: vec![b_t], ..Default::default() },
+        SymbolTypeData {
+            return_type: Some(b_ty),
+            generic_params: vec![b_t],
+            ..Default::default()
+        },
     );
     symbol_types.mark_self_yielding(b_ty, 3);
     symbol_types.insert(
         4,
-        SymbolTypeData { return_type: Some(c_ty), generic_params: vec![c_t], ..Default::default() },
+        SymbolTypeData {
+            return_type: Some(c_ty),
+            generic_params: vec![c_t],
+            ..Default::default()
+        },
     );
     symbol_types.mark_self_yielding(c_ty, 4);
-    symbol_types.insert(1, SymbolTypeData { return_type: Some(generic_ct), ..Default::default() });
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(generic_ct),
+            ..Default::default()
+        },
+    );
 
     let mut members = MembersIndex::new();
     members.add_direct(c_ty, sym_info(1, "item", "C.item", "method", Some("C")));
@@ -2308,12 +2413,24 @@ fn f_bounded_param_resolves_member_on_generic_bound() {
     let generic_t = arena.intern(Type::Generic { param: t_param });
 
     let mut symbol_types = SymbolTypeMap::new();
-    symbol_types.insert(1, SymbolTypeData { return_type: Some(int_ty), ..Default::default() });
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(int_ty),
+            ..Default::default()
+        },
+    );
 
     let mut members = MembersIndex::new();
     members.add_direct(
         comparable_ty,
-        sym_info(1, "compareTo", "Comparable.compareTo", "method", Some("Comparable")),
+        sym_info(
+            1,
+            "compareTo",
+            "Comparable.compareTo",
+            "method",
+            Some("Comparable"),
+        ),
     );
 
     let supertypes = SupertypeGraph::new();
@@ -2391,8 +2508,14 @@ fn called_function_typed_field_yields_return_type() {
     );
 
     let mut members = MembersIndex::new();
-    members.add_direct(obj, sym_info(1, "handler", "Obj.handler", "property", Some("Obj")));
-    members.add_direct(user, sym_info(2, "name", "User.name", "property", Some("User")));
+    members.add_direct(
+        obj,
+        sym_info(1, "handler", "Obj.handler", "property", Some("Obj")),
+    );
+    members.add_direct(
+        user,
+        sym_info(2, "name", "User.name", "property", Some("User")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -2464,7 +2587,10 @@ fn called_function_typed_root_yields_return_type() {
 
     let symbol_types = SymbolTypeMap::new();
     let mut members = MembersIndex::new();
-    members.add_direct(user, sym_info(2, "name", "User.name", "property", Some("User")));
+    members.add_direct(
+        user,
+        sym_info(2, "name", "User.name", "property", Some("User")),
+    );
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -2536,7 +2662,14 @@ fn discriminated_union_narrows_to_matching_branch() {
     let mut members = MembersIndex::new();
     members.add_direct(
         circle,
-        sym_info_sig(1, "kind", "Circle.kind", "property", Some("Circle"), "\"circle\""),
+        sym_info_sig(
+            1,
+            "kind",
+            "Circle.kind",
+            "property",
+            Some("Circle"),
+            "\"circle\"",
+        ),
     );
     members.add_direct(
         circle,
@@ -2544,7 +2677,14 @@ fn discriminated_union_narrows_to_matching_branch() {
     );
     members.add_direct(
         square,
-        sym_info_sig(3, "kind", "Square.kind", "property", Some("Square"), "\"square\""),
+        sym_info_sig(
+            3,
+            "kind",
+            "Square.kind",
+            "property",
+            Some("Square"),
+            "\"square\"",
+        ),
     );
     members.add_direct(
         square,
@@ -2617,7 +2757,14 @@ fn discriminated_union_negate_excludes_branch() {
     let mut members = MembersIndex::new();
     members.add_direct(
         circle,
-        sym_info_sig(1, "kind", "Circle.kind", "property", Some("Circle"), "\"circle\""),
+        sym_info_sig(
+            1,
+            "kind",
+            "Circle.kind",
+            "property",
+            Some("Circle"),
+            "\"circle\"",
+        ),
     );
     members.add_direct(
         circle,
@@ -2625,7 +2772,14 @@ fn discriminated_union_negate_excludes_branch() {
     );
     members.add_direct(
         square,
-        sym_info_sig(3, "kind", "Square.kind", "property", Some("Square"), "\"square\""),
+        sym_info_sig(
+            3,
+            "kind",
+            "Square.kind",
+            "property",
+            Some("Square"),
+            "\"square\"",
+        ),
     );
     members.add_direct(
         square,
@@ -2699,7 +2853,14 @@ fn anonymous_union_intersection_narrows_to_branch() {
     let mut members = MembersIndex::new();
     members.add_direct(
         circle,
-        sym_info_sig(1, "kind", "S\u{1}0.kind", "property", Some("S\u{1}0"), "\"circle\""),
+        sym_info_sig(
+            1,
+            "kind",
+            "S\u{1}0.kind",
+            "property",
+            Some("S\u{1}0"),
+            "\"circle\"",
+        ),
     );
     members.add_direct(
         circle,
@@ -2707,7 +2868,14 @@ fn anonymous_union_intersection_narrows_to_branch() {
     );
     members.add_direct(
         square,
-        sym_info_sig(3, "kind", "S\u{1}1.kind", "property", Some("S\u{1}1"), "\"square\""),
+        sym_info_sig(
+            3,
+            "kind",
+            "S\u{1}1.kind",
+            "property",
+            Some("S\u{1}1"),
+            "\"square\"",
+        ),
     );
     members.add_direct(
         square,
@@ -3141,7 +3309,9 @@ fn self_ref_root_resolves_through_enclosing_scope() {
         file_package_id: None,
     };
     let fc = file_ctx();
-    let result = walker.walk(&chain, &ref_ctx, &fc).expect("self-ref resolves");
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("self-ref resolves");
     assert_eq!(result.target_symbol_id, 2);
     assert_eq!(result.resolved_yield_type, str_ty);
 }
@@ -3485,11 +3655,8 @@ export class User {
     }
 
     let mut arena = TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
 
     // Add a synthetic `declared_type = Str` for the `name` field so the
     // chain walker has somewhere to land. Real Phase 5 TS migration
@@ -3499,7 +3666,9 @@ export class User {
     let name_idx = pf
         .symbols
         .iter()
-        .position(|s| s.name == "name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field))
+        .position(|s| {
+            s.name == "name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field)
+        })
         .expect("extractor must emit `name` field/property");
     let name_sym_id = sym_ids[&(pf.path.clone(), name_idx)];
 
@@ -3607,11 +3776,8 @@ func (r *Repo) Get() *User {
     }
 
     let mut arena = TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
 
     // Pull the qnames the extractor emitted for Repo / User / Get / Name.
     let user_qname = pf
@@ -3653,7 +3819,9 @@ func (r *Repo) Get() *User {
     let name_idx = pf
         .symbols
         .iter()
-        .position(|s| s.name == "Name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field))
+        .position(|s| {
+            s.name == "Name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field)
+        })
         .expect("Name field extracted");
     let name_id = sym_ids[&(pf.path.clone(), name_idx)];
     symbol_types.insert(
@@ -3746,11 +3914,8 @@ export class Repo {
     }
 
     let mut arena = TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
 
     let user_ty = arena.class("User");
     let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
@@ -3779,7 +3944,9 @@ export class Repo {
     let name_idx = pf
         .symbols
         .iter()
-        .position(|s| s.name == "name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field))
+        .position(|s| {
+            s.name == "name" && matches!(s.kind, SymbolKind::Property | SymbolKind::Field)
+        })
         .expect("`name` field extracted");
     let name_id = sym_ids[&(pf.path.clone(), name_idx)];
     symbol_types.insert(
@@ -3861,8 +4028,7 @@ fn identifier_root_resolves_via_scope_chain_field_type() {
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
-    let lookup =
-        EmptyLookup::new().with_field_type("Equinox.Foo.Bar.customer", "Customer");
+    let lookup = EmptyLookup::new().with_field_type("Equinox.Foo.Bar.customer", "Customer");
 
     let mut walker = ChainWalker::new(
         &mut arena,
@@ -3961,12 +4127,13 @@ fn wildcard_import_fallback_prepends_namespace_to_member_qname() {
         file_package_id: None,
     };
     let mut fc = file_ctx();
-    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
-        imported_name: "Newtonsoft.Json".to_string(),
-        module_path: Some("Newtonsoft.Json".to_string()),
-        alias: None,
-        is_wildcard: true,
-    });
+    fc.imports
+        .push(crate::indexer::resolve::engine::ImportEntry {
+            imported_name: "Newtonsoft.Json".to_string(),
+            module_path: Some("Newtonsoft.Json".to_string()),
+            alias: None,
+            is_wildcard: true,
+        });
     let result = walker
         .walk(&chain, &ref_ctx, &fc)
         .expect("JsonConvert.SerializeObject resolves via using-directive fallback");
@@ -3997,8 +4164,13 @@ fn inheritance_walk_finds_member_on_parent_via_qname() {
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
 
-    let find_one_sym =
-        sym_info(301, "findOne", "BaseRepo.findOne", "method", Some("BaseRepo"));
+    let find_one_sym = sym_info(
+        301,
+        "findOne",
+        "BaseRepo.findOne",
+        "method",
+        Some("BaseRepo"),
+    );
     let lookup = EmptyLookup::new()
         .with_type("UserRepo", "UserRepo")
         .with_parent("UserRepo", "BaseRepo")
@@ -4142,7 +4314,13 @@ fn external_type_qname_promotion_finds_member_via_full_qname() {
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
 
-    let to_member = sym_info(101, "to", "chai.Assertion.to", "property", Some("chai.Assertion"));
+    let to_member = sym_info(
+        101,
+        "to",
+        "chai.Assertion.to",
+        "property",
+        Some("chai.Assertion"),
+    );
     let lookup = EmptyLookup::new()
         .with_type("Assertion", "Assertion")
         .with_external_type("Assertion", "chai.Assertion")
@@ -4478,9 +4656,7 @@ fn cfg_union_narrowing_drops_when_member_missing_on_a_branch() {
 // data (`container_accessors`), not a hardcoded method→element map.
 // ----------------------------------------------------------------------------
 
-use crate::type_checker::profile::language_profile::{
-    AccessorSlot, ContainerShape,
-};
+use crate::type_checker::profile::language_profile::{AccessorSlot, ContainerShape};
 
 /// A profile carrying the three built-in container accessors under test.
 /// All other axes are DEFAULT_PROFILE's conservative values.
@@ -4763,10 +4939,7 @@ fn box_receiver_resolves_inner_type_method() {
     symbol_types.mark_self_yielding(c_ty, 99);
 
     let mut members = MembersIndex::new();
-    members.add_direct(
-        c_ty,
-        sym_info(7, "method", "C.method", "method", Some("C")),
-    );
+    members.add_direct(c_ty, sym_info(7, "method", "C.method", "method", Some("C")));
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -4835,10 +5008,7 @@ fn pin_and_cow_receivers_resolve_inner_type_method() {
     symbol_types.mark_self_yielding(c_ty, 99);
 
     let mut members = MembersIndex::new();
-    members.add_direct(
-        c_ty,
-        sym_info(7, "method", "C.method", "method", Some("C")),
-    );
+    members.add_direct(c_ty, sym_info(7, "method", "C.method", "method", Some("C")));
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -4911,10 +5081,7 @@ fn box_field_receiver_resolves_inner_via_default_root() {
     symbol_types.mark_self_yielding(c_ty, 99);
 
     let mut members = MembersIndex::new();
-    members.add_direct(
-        c_ty,
-        sym_info(7, "method", "C.method", "method", Some("C")),
-    );
+    members.add_direct(c_ty, sym_info(7, "method", "C.method", "method", Some("C")));
 
     let supertypes = SupertypeGraph::new();
     let aliases = AliasIndex::default();
@@ -5066,7 +5233,13 @@ fn user_deref_receiver_resolves_inner_target_method() {
     // Deref peel to Inner.
     members.add_direct(
         inner_ty,
-        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+        sym_info(
+            7,
+            "inner_method",
+            "Inner.inner_method",
+            "method",
+            Some("Inner"),
+        ),
     );
 
     let mut supertypes = SupertypeGraph::new();
@@ -5074,8 +5247,7 @@ fn user_deref_receiver_resolves_inner_target_method() {
     // MyWrapper`.
     supertypes.add_edge(wrapper_ty, deref_ty);
     let aliases = AliasIndex::default();
-    let lookup = EmptyLookup::new()
-        .with_field_type("MyWrapper.Target", "Inner");
+    let lookup = EmptyLookup::new().with_field_type("MyWrapper.Target", "Inner");
 
     let walker = ChainWalker::new(
         &arena,
@@ -5125,7 +5297,13 @@ fn user_deref_peel_declines_without_deref_edge() {
     let mut members = MembersIndex::new();
     members.add_direct(
         inner_ty,
-        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+        sym_info(
+            7,
+            "inner_method",
+            "Inner.inner_method",
+            "method",
+            Some("Inner"),
+        ),
     );
 
     // No edge: Plain does NOT implement Deref.
@@ -5157,8 +5335,7 @@ fn user_deref_peel_declines_without_deref_edge() {
         file_package_id: None,
     };
     let fc = file_ctx();
-    let result =
-        walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: plain_ty });
+    let result = walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: plain_ty });
     assert!(
         result.is_none(),
         "no Deref edge → no peel → inner_method must not resolve"
@@ -5183,7 +5360,13 @@ fn user_deref_peel_inert_under_default_profile() {
     let mut members = MembersIndex::new();
     members.add_direct(
         inner_ty,
-        sym_info(7, "inner_method", "Inner.inner_method", "method", Some("Inner")),
+        sym_info(
+            7,
+            "inner_method",
+            "Inner.inner_method",
+            "method",
+            Some("Inner"),
+        ),
     );
 
     let mut supertypes = SupertypeGraph::new();
@@ -5215,8 +5398,7 @@ fn user_deref_peel_inert_under_default_profile() {
         file_package_id: None,
     };
     let fc = file_ctx();
-    let result =
-        walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: wrapper_ty });
+    let result = walker.walk_with_root(&chain, &ref_ctx, &fc, &DerefFixedRoot { ty: wrapper_ty });
     assert!(
         result.is_none(),
         "default profile has no deref_wrapper → no peel → no resolution"
@@ -5973,12 +6155,13 @@ fn wildcard_using_promotes_root_receiver_to_fqn() {
         file_package_id: None,
     };
     let mut fc = file_ctx();
-    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
-        imported_name: "System.Windows.Controls".to_string(),
-        module_path: Some("System.Windows.Controls".to_string()),
-        alias: None,
-        is_wildcard: true,
-    });
+    fc.imports
+        .push(crate::indexer::resolve::engine::ImportEntry {
+            imported_name: "System.Windows.Controls".to_string(),
+            module_path: Some("System.Windows.Controls".to_string()),
+            alias: None,
+            is_wildcard: true,
+        });
 
     let result = walker
         .walk(&chain, &ref_ctx, &fc)
@@ -6036,12 +6219,13 @@ fn wildcard_using_promotes_only_when_fqn_keys() {
         file_package_id: None,
     };
     let mut fc = file_ctx();
-    fc.imports.push(crate::indexer::resolve::engine::ImportEntry {
-        imported_name: "System.Windows.Controls".to_string(),
-        module_path: Some("System.Windows.Controls".to_string()),
-        alias: None,
-        is_wildcard: true,
-    });
+    fc.imports
+        .push(crate::indexer::resolve::engine::ImportEntry {
+            imported_name: "System.Windows.Controls".to_string(),
+            module_path: Some("System.Windows.Controls".to_string()),
+            alias: None,
+            is_wildcard: true,
+        });
 
     assert!(
         walker.walk(&chain, &ref_ctx, &fc).is_none(),

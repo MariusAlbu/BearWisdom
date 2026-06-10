@@ -2,26 +2,8 @@
 // Builtins and locals.scm content for `c` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "break",
-    "case",
-    "const",
-    "continue",
-    "default",
-    "do",
-    "else",
-    "enum",
-    "extern",
-    "for",
-    "if",
-    "inline",
-    "return",
-    "sizeof",
-    "static",
-    "struct",
-    "switch",
-    "typedef",
-    "union",
-    "volatile",
+    "break", "case", "const", "continue", "default", "do", "else", "enum", "extern", "for", "if",
+    "inline", "return", "sizeof", "static", "struct", "switch", "typedef", "union", "volatile",
     "while",
 ];
 

@@ -1,9 +1,9 @@
 //! Protocol Buffers language plugin.
 
 pub mod connectors;
-pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::PROTO_HOOKS;
@@ -60,18 +60,14 @@ impl LanguagePlugin for ProtoPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "message_or_enum_type",
-            "import",
-        ]
+        &["message_or_enum_type", "import"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
         // Proto primitive types — these should not produce TypeRef edges
         &[
-            "double", "float", "int32", "int64", "uint32", "uint64",
-            "sint32", "sint64", "fixed32", "fixed64", "sfixed32", "sfixed64",
-            "bool", "string", "bytes",
+            "double", "float", "int32", "int64", "uint32", "uint64", "sint32", "sint64", "fixed32",
+            "fixed64", "sfixed32", "sfixed64", "bool", "string", "bytes",
         ]
     }
 
@@ -83,8 +79,7 @@ impl LanguagePlugin for ProtoPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PROTO_HOOKS)
     }
 }

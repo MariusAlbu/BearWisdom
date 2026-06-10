@@ -1,10 +1,10 @@
 //! bash language plugin.
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -23,8 +23,8 @@ mod extract_tests;
 mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct BashPlugin;
 
@@ -37,18 +37,26 @@ impl LanguagePlugin for BashPlugin {
     // returning `"bash"` would route every shell file to the generic
     // fallback plugin and emit zero symbols. Same shape as the rust_lang
     // / c_lang fixes (PR 104, PR 109).
-    fn id(&self) -> &str { "shell" }
+    fn id(&self) -> &str {
+        "shell"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["shell"] }
+    fn language_ids(&self) -> &[&str] {
+        &["shell"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".sh", ".bash", ".zsh"] }
+    fn extensions(&self) -> &[&str] {
+        &[".sh", ".bash", ".zsh"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_bash::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -88,8 +96,7 @@ impl LanguagePlugin for BashPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::BASH_HOOKS)
     }
 }

@@ -88,7 +88,10 @@ PLVERSION="90100";
 #[test]
 fn parse_pllibdir_handles_bare_form() {
     let text = "PLBASE=/usr/lib/swipl\nPLLIBDIR=/usr/lib/swipl/library\n";
-    assert_eq!(parse_pllibdir(text).as_deref(), Some("/usr/lib/swipl/library"));
+    assert_eq!(
+        parse_pllibdir(text).as_deref(),
+        Some("/usr/lib/swipl/library")
+    );
 }
 
 #[test]
@@ -121,10 +124,7 @@ fn walker_emits_only_pl_files() {
         requested_imports: Vec::new(),
     };
     let walked = walk_prolog_tree(&dep);
-    let names: Vec<&str> = walked
-        .iter()
-        .map(|w| w.relative_path.as_str())
-        .collect();
+    let names: Vec<&str> = walked.iter().map(|w| w.relative_path.as_str()).collect();
 
     assert!(names.iter().any(|n| n.ends_with("lists.pl")));
     assert!(names.iter().any(|n| n.ends_with("http_dispatch.pl")));

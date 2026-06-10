@@ -30,7 +30,10 @@ fn symbol_subprogram_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Function),
         "expected Function from subprogram_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -40,9 +43,14 @@ fn symbol_function_subprogram_declaration() {
     let src = "function Add(A, B : Integer) return Integer;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "Add"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "Add"),
         "expected Function Add from function subprogram_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,9 +60,14 @@ fn symbol_subprogram_body() {
     let src = "with Ada.Text_IO;\nprocedure Hello is\nbegin\n  null;\nend Hello;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Hello" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Hello" && s.kind == SymbolKind::Function),
         "expected Function Hello; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -64,9 +77,14 @@ fn symbol_function_subprogram_body() {
     let src = "function Double(X : Integer) return Integer is\nbegin\n  return X * 2;\nend Double;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Double" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Double" && s.kind == SymbolKind::Function),
         "expected Function Double from function body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -78,7 +96,10 @@ fn symbol_package_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
         "expected Namespace from package_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -88,9 +109,14 @@ fn symbol_package_declaration_name() {
     let src = "package Geometry is\nend Geometry;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Geometry" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Geometry" && s.kind == SymbolKind::Namespace),
         "expected Namespace(Geometry) from package_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -102,7 +128,10 @@ fn symbol_package_body() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
         "expected Namespace from package_body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -112,9 +141,14 @@ fn symbol_full_type_declaration_record() {
     let src = "procedure P is\n  type Point is record\n    X, Y : Integer;\n  end record;\nbegin\n  null;\nend P;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class),
         "expected Struct from full_type_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -124,9 +158,15 @@ fn symbol_full_type_declaration_record_name() {
     let src = "package Types is\n  type Point is record\n    X : Integer;\n    Y : Integer;\n  end record;\nend Types;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && (s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class)),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point"
+                && (s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class)),
         "expected Struct(Point) from full_type_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -136,9 +176,14 @@ fn symbol_full_type_declaration_enum() {
     let src = "procedure P is\n  type Color is (Red, Green, Blue);\nbegin\n  null;\nend P;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum || s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum || s.kind == SymbolKind::Struct),
         "expected Enum from full_type_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -148,9 +193,14 @@ fn symbol_full_type_declaration_enum_name() {
     let src = "package Colors is\n  type Hue is (Red, Green, Blue);\nend Colors;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Hue" && (s.kind == SymbolKind::Enum || s.kind == SymbolKind::Struct)),
+        r.symbols.iter().any(
+            |s| s.name == "Hue" && (s.kind == SymbolKind::Enum || s.kind == SymbolKind::Struct)
+        ),
         "expected Enum(Hue) from full_type_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -160,9 +210,14 @@ fn symbol_nested_subprogram_in_package() {
     let src = "package Math is\n  function Square(X : Integer) return Integer;\nend Math;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Square" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Square" && s.kind == SymbolKind::Function),
         "expected nested Function(Square) inside package; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -181,7 +236,10 @@ fn ref_with_clause() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from with_clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -193,33 +251,48 @@ fn ref_with_clause_dotted_name() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from dotted with_clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// with_clause — multiple packages on one clause → multiple Imports refs
 #[test]
 fn ref_with_clause_multiple_packages() {
-    let src = "with Ada.Text_IO, Ada.Integer_Text_IO;\nprocedure Hello is\nbegin\n  null;\nend Hello;";
+    let src =
+        "with Ada.Text_IO, Ada.Integer_Text_IO;\nprocedure Hello is\nbegin\n  null;\nend Hello;";
     let r = extract(src);
-    let import_count = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).count();
+    let import_count = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .count();
     assert!(
         import_count >= 2,
         "expected ≥2 Imports refs from multi-package with_clause; got {} refs: {:?}",
         import_count,
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// procedure_call_statement → Calls ref
 #[test]
 fn ref_procedure_call_statement() {
-    let src = "with Ada.Text_IO;\nprocedure Hello is\nbegin\n  Ada.Text_IO.Put_Line(\"Hi\");\nend Hello;";
+    let src =
+        "with Ada.Text_IO;\nprocedure Hello is\nbegin\n  Ada.Text_IO.Put_Line(\"Hi\");\nend Hello;";
     let r = extract(src);
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected Calls from procedure_call_statement; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -229,9 +302,14 @@ fn ref_procedure_call_statement_name() {
     let src = "procedure P is\nbegin\n  Do_Work;\nend P;";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Do_Work"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Do_Work"),
         "expected Calls(Do_Work); got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -257,7 +335,10 @@ fn ref_function_call_in_assignment() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
         "expected at least Namespace symbol for package body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -272,10 +353,16 @@ fn ref_function_call_in_assignment() {
 fn subprogram_qualified_by_parent_package() {
     let src = "package body Trace is\n  procedure Debug (M : String) is\n  begin\n    null;\n  end Debug;\nend Trace;";
     let r = extract(src);
-    let debug = r.symbols.iter().find(|s| s.name == "Debug")
+    let debug = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Debug")
         .expect("expected Debug procedure symbol");
-    assert_eq!(debug.qualified_name, "Trace.Debug",
-        "expected qualified_name 'Trace.Debug', got '{}'", debug.qualified_name);
+    assert_eq!(
+        debug.qualified_name, "Trace.Debug",
+        "expected qualified_name 'Trace.Debug', got '{}'",
+        debug.qualified_name
+    );
 }
 
 /// `package X renames Y;` must emit an Imports ref with the alias name as
@@ -287,11 +374,18 @@ fn subprogram_qualified_by_parent_package() {
 fn package_rename_emits_imports_ref() {
     let src = "package body Foo is\n  package Trace renames Simple_Logging;\nend Foo;\n";
     let r = extract(src);
-    let ren = r.refs.iter()
+    let ren = r
+        .refs
+        .iter()
         .find(|rf| rf.target_name == "Trace" && rf.kind == EdgeKind::Imports);
-    assert!(ren.is_some(),
+    assert!(
+        ren.is_some(),
         "expected Imports ref target_name=Trace; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(ren.unwrap().module.as_deref(), Some("Simple_Logging"));
 }
 
@@ -300,7 +394,9 @@ fn package_rename_emits_imports_ref() {
 fn package_rename_dotted_target() {
     let src = "package body Foo is\n  package Console renames Ada.Text_IO;\nend Foo;\n";
     let r = extract(src);
-    let ren = r.refs.iter()
+    let ren = r
+        .refs
+        .iter()
         .find(|rf| rf.target_name == "Console" && rf.kind == EdgeKind::Imports);
     assert!(ren.is_some(), "expected Imports ref target_name=Console");
     assert_eq!(ren.unwrap().module.as_deref(), Some("Ada.Text_IO"));
@@ -314,15 +410,24 @@ fn diag_package_rename_ast_dump() {
     use tree_sitter::Parser;
     let src = "package body Foo is\n  package Trace renames Simple_Logging;\nend Foo;\n";
     let mut parser = Parser::new();
-    parser.set_language(&tree_sitter_ada::LANGUAGE.into()).unwrap();
+    parser
+        .set_language(&tree_sitter_ada::LANGUAGE.into())
+        .unwrap();
     let tree = parser.parse(src, None).unwrap();
     fn walk(n: tree_sitter::Node, src: &str, depth: usize) {
         let text = if n.start_byte() < src.len() && n.end_byte() <= src.len() {
             &src[n.start_byte()..n.end_byte().min(n.start_byte() + 80)]
-        } else { "" };
-        eprintln!("{}{} [{}..{}] {:?}",
-            "  ".repeat(depth), n.kind(), n.start_byte(), n.end_byte(),
-            text.replace('\n', "\\n"));
+        } else {
+            ""
+        };
+        eprintln!(
+            "{}{} [{}..{}] {:?}",
+            "  ".repeat(depth),
+            n.kind(),
+            n.start_byte(),
+            n.end_byte(),
+            text.replace('\n', "\\n")
+        );
         let mut c = n.walk();
         for child in n.children(&mut c) {
             walk(child, src, depth + 1);
@@ -337,9 +442,14 @@ fn expression_function_declaration_emits_function_symbol() {
     let src = "package body P is\n  function Name (C : String) return String is (C);\nend P;";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Name" && s.kind == SymbolKind::Function),
         "expected Function(Name) from expression_function_declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -349,7 +459,10 @@ fn generic_instantiation_simple_emits_instantiates_sig() {
     let src = "package body P is\n  package V is new Ada.Containers.Vectors;\nend P;";
     let r = extract(src);
     let inst = r.symbols.iter().find(|s| s.name == "V");
-    assert!(inst.is_some(), "expected Namespace symbol V from generic_instantiation");
+    assert!(
+        inst.is_some(),
+        "expected Namespace symbol V from generic_instantiation"
+    );
     let sig = inst.unwrap().signature.as_deref().unwrap_or("");
     assert!(
         sig.starts_with("instantiates "),
@@ -371,7 +484,10 @@ fn generic_instantiation_with_named_params_emits_instantiates_sig() {
     );
     let r = extract(src);
     let inst = r.symbols.iter().find(|s| s.name == "Sub_Cmd");
-    assert!(inst.is_some(), "expected Namespace symbol Sub_Cmd from generic_instantiation");
+    assert!(
+        inst.is_some(),
+        "expected Namespace symbol Sub_Cmd from generic_instantiation"
+    );
     let sig = inst.unwrap().signature.as_deref().unwrap_or("");
     assert_eq!(
         sig, "instantiates CLIC.Subcommand.Instance",
@@ -385,10 +501,16 @@ fn generic_instantiation_with_named_params_emits_instantiates_sig() {
 fn nested_package_qualification_chains() {
     let src = "package body Trace is\n  package body IO is\n    procedure Format is\n    begin\n      null;\n    end Format;\n  end IO;\nend Trace;";
     let r = extract(src);
-    let format = r.symbols.iter().find(|s| s.name == "Format")
+    let format = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Format")
         .expect("expected Format procedure symbol");
-    assert_eq!(format.qualified_name, "Trace.IO.Format",
-        "expected qualified_name 'Trace.IO.Format', got '{}'", format.qualified_name);
+    assert_eq!(
+        format.qualified_name, "Trace.IO.Format",
+        "expected qualified_name 'Trace.IO.Format', got '{}'",
+        format.qualified_name
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -409,8 +531,11 @@ fn object_renaming_access_type_extraction() {
     let sym = r.symbols.iter().find(|s| s.name == "Lines");
     assert!(sym.is_some(), "expected Variable symbol for Lines");
     let sig = sym.unwrap().signature.as_deref().unwrap_or("");
-    assert_eq!(sig, "type: AAA.Strings.Vector",
-        "expected 'type: AAA.Strings.Vector', got {:?}", sig);
+    assert_eq!(
+        sig, "type: AAA.Strings.Vector",
+        "expected 'type: AAA.Strings.Vector', got {:?}",
+        sig
+    );
 }
 
 /// `extended_return_object_declaration` — `return V : String_Vectors.Vector do ... end return;`
@@ -428,11 +553,20 @@ fn extended_return_variable_has_type() {
         "end P;\n"
     );
     let r = extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "V" && s.kind == SymbolKind::Variable);
-    assert!(sym.is_some(), "expected Variable symbol V from extended_return_object_declaration");
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "V" && s.kind == SymbolKind::Variable);
+    assert!(
+        sym.is_some(),
+        "expected Variable symbol V from extended_return_object_declaration"
+    );
     let sig = sym.unwrap().signature.as_deref().unwrap_or("");
-    assert_eq!(sig, "type: String_Vectors.Vector",
-        "expected type: String_Vectors.Vector, got {:?}", sig);
+    assert_eq!(
+        sig, "type: String_Vectors.Vector",
+        "expected type: String_Vectors.Vector, got {:?}",
+        sig
+    );
 }
 
 /// `object_renaming_declaration` — `Green_LED : GPIO_Point renames PC2;` — must
@@ -448,11 +582,22 @@ fn object_renaming_emits_variable_with_type() {
     );
     let r = extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Green_LED");
-    assert!(sym.is_some(), "expected Variable symbol for Green_LED from object_renaming_declaration");
+    assert!(
+        sym.is_some(),
+        "expected Variable symbol for Green_LED from object_renaming_declaration"
+    );
     let sym = sym.unwrap();
-    assert_eq!(sym.kind, SymbolKind::Variable, "expected Variable kind for Green_LED");
+    assert_eq!(
+        sym.kind,
+        SymbolKind::Variable,
+        "expected Variable kind for Green_LED"
+    );
     let sig = sym.signature.as_deref().unwrap_or("");
-    assert_eq!(sig, "type: GPIO_Point", "expected signature 'type: GPIO_Point', got {:?}", sig);
+    assert_eq!(
+        sig, "type: GPIO_Point",
+        "expected signature 'type: GPIO_Point', got {:?}",
+        sig
+    );
 }
 
 /// A `selected_component` that spans multiple lines produces a raw text with
@@ -469,10 +614,15 @@ fn multiline_call_target_has_no_embedded_whitespace() {
         "end Main;\n"
     );
     let r = extract(src);
-    let append_refs: Vec<_> = r.refs.iter()
+    let append_refs: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.target_name.contains("Append"))
         .collect();
-    assert!(!append_refs.is_empty(), "expected at least one Append call ref");
+    assert!(
+        !append_refs.is_empty(),
+        "expected at least one Append call ref"
+    );
     for rf in &append_refs {
         assert!(
             !rf.target_name.chars().any(|c| c.is_whitespace()),
@@ -526,7 +676,10 @@ fn receiver_chain_call_emits_member_chain() {
     assert_eq!(names, vec!["This", "Port", "CCER"]);
     assert_eq!(chain.segments[0].kind, SegmentKind::Identifier);
     assert_eq!(chain.segments[1].kind, SegmentKind::Property);
-    assert!(chain.segments[2].is_call, "leaf segment is the invoked member");
+    assert!(
+        chain.segments[2].is_call,
+        "leaf segment is the invoked member"
+    );
 }
 
 /// A package-qualified call (`Ada.Text_IO.Put_Line`) whose root is NOT a value

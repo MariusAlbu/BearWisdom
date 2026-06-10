@@ -77,7 +77,10 @@ fn detect_cargo_workspace(root: &Path) -> Option<MonorepoInfo> {
         })
         .collect();
 
-    Some(MonorepoInfo { kind: "cargo-workspace".into(), packages })
+    Some(MonorepoInfo {
+        kind: "cargo-workspace".into(),
+        packages,
+    })
 }
 
 fn detect_npm_workspace(root: &Path) -> Option<MonorepoInfo> {
@@ -120,11 +123,7 @@ fn find_nx_packages(root: &Path) -> Vec<String> {
             if let Ok(entries) = std::fs::read_dir(&base) {
                 for entry in entries.flatten() {
                     if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                        packages.push(format!(
-                            "{}/{}",
-                            dir,
-                            entry.file_name().to_string_lossy()
-                        ));
+                        packages.push(format!("{}/{}", dir, entry.file_name().to_string_lossy()));
                     }
                 }
             }

@@ -17,10 +17,8 @@
 //   Inherits    — `derived_type_statement` `base` field (EXTENDS clause)
 // =============================================================================
 
-use crate::types::{
-    ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
-};
 use super::walk::walk_node;
+use crate::types::{ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
 
@@ -47,7 +45,6 @@ pub(super) fn is_fortran_callable_text(name: &str) -> bool {
     // like `optval_${t1[0]}$${k1}$` never become unresolvable Calls refs.
     !name.contains('$')
 }
-
 
 pub fn extract(source: &str) -> ExtractionResult {
     let mut parser = Parser::new();
@@ -108,7 +105,15 @@ pub fn extract(source: &str) -> ExtractionResult {
     // resolve `obj%method` calls to `method` with `module = type_name`
     // rather than `module = var_name`, enabling member lookup in the resolver.
     let mut local_types: Vec<HashMap<String, String>> = Vec::new();
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, &mut locals, &mut local_types);
+    walk_node(
+        tree.root_node(),
+        src,
+        &mut symbols,
+        &mut refs,
+        None,
+        &mut locals,
+        &mut local_types,
+    );
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
 }
@@ -122,17 +127,24 @@ pub(super) fn collect_local_decls(node: Node, src: &[u8], out: &mut HashSet<Stri
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            "subroutine_statement" | "function_statement" => {
+                collect_procedure_dummy_args(&text(child, src), out);
+            }
+            "associate_statement" => {
+                collect_associate_locals(&text(child, src), out);
+            }
             "variable_declaration" => {
                 let mut vc = child.walk();
                 for d in child.children(&mut vc) {
                     let name = match d.kind() {
                         "identifier" => text(d, src),
-                        "init_declarator" => d.child_by_field_name("left")
+                        "init_declarator" => d
+                            .child_by_field_name("left")
                             .map(|n| text(n, src))
                             .unwrap_or_default(),
-                        "sized_declarator" => d.named_child(0)
-                            .map(|n| text(n, src))
-                            .unwrap_or_default(),
+                        "sized_declarator" => {
+                            d.named_child(0).map(|n| text(n, src)).unwrap_or_default()
+                        }
                         _ => continue,
                     };
                     if !name.is_empty() {
@@ -148,12 +160,90 @@ pub(super) fn collect_local_decls(node: Node, src: &[u8], out: &mut HashSet<Stri
     }
 }
 
+fn collect_procedure_dummy_args(stmt: &str, out: &mut HashSet<String>) {
+    if let Some(args) = first_balanced_paren(stmt) {
+        for arg in split_top_level_commas(args) {
+            let name = arg.trim();
+            if is_fortran_identifier(name) {
+                out.insert(name.to_string());
+            }
+        }
+    }
+
+    let lower = stmt.to_ascii_lowercase();
+    if let Some(result_pos) = lower.find("result") {
+        if let Some(result_name) = first_balanced_paren(&stmt[result_pos..]) {
+            let name = result_name.trim();
+            if is_fortran_identifier(name) {
+                out.insert(name.to_string());
+            }
+        }
+    }
+}
+
+fn collect_associate_locals(stmt: &str, out: &mut HashSet<String>) {
+    let Some(bindings) = first_balanced_paren(stmt) else {
+        return;
+    };
+    for binding in split_top_level_commas(bindings) {
+        let name = binding.split("=>").next().unwrap_or("").trim();
+        if is_fortran_identifier(name) {
+            out.insert(name.to_string());
+        }
+    }
+}
+
+fn first_balanced_paren(text: &str) -> Option<&str> {
+    let start = text.find('(')?;
+    let mut depth = 0usize;
+    for (rel, ch) in text[start..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return text.get(start + 1..start + rel);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn split_top_level_commas(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&text[start..idx]);
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn is_fortran_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(ch) if ch == '_' || ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 /// Returns true if `name` is declared as a local variable in any open
 /// scope on the stack. Inner scopes shadow outer per Fortran semantics,
 /// but for filter purposes "any scope contains" is equivalent — a local
 /// at any level disqualifies a Calls emission.
 pub(super) fn is_local(name: &str, locals: &[HashSet<String>]) -> bool {
-    locals.iter().any(|s| s.contains(name))
+    locals
+        .iter()
+        .any(|s| s.iter().any(|local| local.eq_ignore_ascii_case(name)))
 }
 
 /// Collect `variable_name → derived_type_name` mappings from
@@ -169,13 +259,13 @@ pub(super) fn collect_local_type_decls(node: Node, src: &[u8], out: &mut HashMap
                 // Capture derived-type and class specifiers (`type(T)`, `class(T)`).
                 // `derived_type` → name field is a `type_name` node.
                 // `declared_type` → name field is an `identifier` node (`class(T)`).
-                let type_name = child.child_by_field_name("type").and_then(|tn| {
-                    match tn.kind() {
+                let type_name = child
+                    .child_by_field_name("type")
+                    .and_then(|tn| match tn.kind() {
                         "derived_type" => tn.child_by_field_name("name").map(|nn| text(nn, src)),
                         "declared_type" => tn.child_by_field_name("name").map(|nn| text(nn, src)),
                         _ => None,
-                    }
-                });
+                    });
                 let Some(tname) = type_name else { continue };
                 if tname.is_empty() || tname.contains('$') {
                     continue;
@@ -185,12 +275,13 @@ pub(super) fn collect_local_type_decls(node: Node, src: &[u8], out: &mut HashMap
                 for d in child.children(&mut vc) {
                     let var_name = match d.kind() {
                         "identifier" => text(d, src),
-                        "init_declarator" => d.child_by_field_name("left")
+                        "init_declarator" => d
+                            .child_by_field_name("left")
                             .map(|n| text(n, src))
                             .unwrap_or_default(),
-                        "sized_declarator" => d.named_child(0)
-                            .map(|n| text(n, src))
-                            .unwrap_or_default(),
+                        "sized_declarator" => {
+                            d.named_child(0).map(|n| text(n, src)).unwrap_or_default()
+                        }
                         _ => continue,
                     };
                     if !var_name.is_empty() {
@@ -207,7 +298,10 @@ pub(super) fn collect_local_type_decls(node: Node, src: &[u8], out: &mut HashMap
 
 /// Look up the derived type of `var_name` in the innermost scope that
 /// declares it, searching the type-map stack from top (inner) to bottom.
-pub(super) fn local_derived_type<'a>(var_name: &str, local_types: &'a [HashMap<String, String>]) -> Option<&'a str> {
+pub(super) fn local_derived_type<'a>(
+    var_name: &str,
+    local_types: &'a [HashMap<String, String>],
+) -> Option<&'a str> {
     let lower = var_name.to_lowercase();
     for scope in local_types.iter().rev() {
         if let Some(t) = scope.get(&lower) {
@@ -247,11 +341,11 @@ pub(super) fn push_sym(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     idx
 }
 

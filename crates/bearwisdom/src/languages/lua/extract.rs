@@ -19,17 +19,18 @@
 // =============================================================================
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
 // Scope configuration
 // ---------------------------------------------------------------------------
 
-pub(crate) static LUA_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "function_declaration", name_field: "name" },
-];
+pub(crate) static LUA_SCOPE_KINDS: &[ScopeKind] = &[ScopeKind {
+    node_kind: "function_declaration",
+    name_field: "name",
+}];
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -39,7 +40,9 @@ pub fn extract(source: &str) -> ExtractionResult {
     let lang: tree_sitter::Language = tree_sitter_lua::LANGUAGE.into();
 
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("Failed to load Lua grammar");
+    parser
+        .set_language(&lang)
+        .expect("Failed to load Lua grammar");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -76,7 +79,8 @@ fn visit(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "function_declaration" => {
-                let idx = extract_function_declaration(&child, src, scope_tree, symbols, parent_index);
+                let idx =
+                    extract_function_declaration(&child, src, scope_tree, symbols, parent_index);
                 visit(child, src, scope_tree, symbols, refs, idx.or(parent_index));
             }
             "local_function" => {
@@ -86,7 +90,14 @@ fn visit(
             }
             "variable_declaration" => {
                 // Could be: local name = function(...) or local Name = {}
-                let idx = extract_variable_declaration(&child, src, scope_tree, symbols, refs, parent_index);
+                let idx = extract_variable_declaration(
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
                 // Recurse into body for nested functions
                 if let Some(body) = child.child_by_field_name("body") {
                     visit(body, src, scope_tree, symbols, refs, idx.or(parent_index));
@@ -95,7 +106,14 @@ fn visit(
                 }
             }
             "assignment_statement" => {
-                let idx = extract_assignment_statement(&child, src, scope_tree, symbols, refs, parent_index);
+                let idx = extract_assignment_statement(
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
                 visit(child, src, scope_tree, symbols, refs, idx.or(parent_index));
             }
             "function_call" => {
@@ -137,12 +155,17 @@ fn extract_function_declaration(
 
     let params = extract_param_list(node, src);
     let signature = format!("function {}({})", qualified_name, params);
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
-        qualified_name: if let Some(p) = &scope { format!("{}.{}", p, qualified_name) } else { qualified_name },
+        qualified_name: if let Some(p) = &scope {
+            format!("{}.{}", p, qualified_name)
+        } else {
+            qualified_name
+        },
         kind,
         visibility: Some(Visibility::Public),
         start_line: node.start_position().row as u32,
@@ -153,12 +176,12 @@ fn extract_function_declaration(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -178,12 +201,17 @@ fn extract_local_function(
 
     let params = extract_param_list(node, src);
     let signature = format!("local function {}({})", name, params);
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
+        qualified_name: if let Some(p) = &scope {
+            format!("{}.{}", p, name)
+        } else {
+            name
+        },
         kind: SymbolKind::Function,
         visibility: Some(Visibility::Private),
         start_line: node.start_position().row as u32,
@@ -194,12 +222,12 @@ fn extract_local_function(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -252,20 +280,28 @@ fn extract_variable_declaration(
         return None;
     }
 
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
 
     let (kind, sig) = if let Some(rhs_node) = rhs {
         match rhs_node.kind() {
             "function_definition" => {
                 let params = extract_param_list_from(&rhs_node, src);
-                (SymbolKind::Function, Some(format!("local {} = function({})", name, params)))
+                (
+                    SymbolKind::Function,
+                    Some(format!("local {} = function({})", name, params)),
+                )
             }
             "table_constructor" => {
                 // Also extract fields from the table (for coverage of `field` nodes)
                 let idx = symbols.len();
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
-                    qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() },
+                    qualified_name: if let Some(p) = &scope {
+                        format!("{}.{}", p, name)
+                    } else {
+                        name.clone()
+                    },
                     kind: SymbolKind::Class,
                     visibility: Some(Visibility::Private),
                     start_line: node.start_position().row as u32,
@@ -276,12 +312,12 @@ fn extract_variable_declaration(
                     doc_comment: None,
                     scope_path: scope,
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
                 extract_table_fields(&rhs_node, src, idx, symbols, refs);
                 return Some(idx);
             }
@@ -298,7 +334,11 @@ fn extract_variable_declaration(
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
-        qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
+        qualified_name: if let Some(p) = &scope {
+            format!("{}.{}", p, name)
+        } else {
+            name
+        },
         kind,
         visibility: Some(Visibility::Private),
         start_line: node.start_position().row as u32,
@@ -309,12 +349,12 @@ fn extract_variable_declaration(
         doc_comment: None,
         scope_path: scope,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -346,7 +386,8 @@ fn extract_assignment_statement(
     };
 
     let rhs = exp_list.and_then(|el| el.named_child(0));
-    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
 
     match lhs.kind() {
         "dot_index_expression" | "method_index_expression" => {
@@ -363,7 +404,10 @@ fn extract_assignment_statement(
             let (kind, sig) = if let Some(rhs_node) = rhs {
                 if rhs_node.kind() == "function_definition" {
                     let params = extract_param_list_from(&rhs_node, src);
-                    (SymbolKind::Method, Some(format!("function {}({})", qname, params)))
+                    (
+                        SymbolKind::Method,
+                        Some(format!("function {}({})", qname, params)),
+                    )
                 } else {
                     if rhs_node.kind() == "function_call" {
                         extract_function_call(&rhs_node, src, symbols, refs, parent_index);
@@ -387,12 +431,12 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
         "identifier" => {
@@ -410,7 +454,11 @@ fn extract_assignment_statement(
                         let idx = symbols.len();
                         symbols.push(ExtractedSymbol {
                             name: name.clone(),
-                            qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() },
+                            qualified_name: if let Some(p) = &scope {
+                                format!("{}.{}", p, name)
+                            } else {
+                                name.clone()
+                            },
                             kind: SymbolKind::Class,
                             visibility: Some(Visibility::Public),
                             start_line: node.start_position().row as u32,
@@ -421,12 +469,12 @@ fn extract_assignment_statement(
                             doc_comment: None,
                             scope_path: scope,
                             parent_index,
-                                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                         extract_table_fields(&rhs_node, src, idx, symbols, refs);
                         return Some(idx);
                     }
@@ -442,7 +490,11 @@ fn extract_assignment_statement(
             let idx = symbols.len();
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
-                qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
+                qualified_name: if let Some(p) = &scope {
+                    format!("{}.{}", p, name)
+                } else {
+                    name
+                },
                 kind,
                 visibility: Some(Visibility::Public),
                 start_line: node.start_position().row as u32,
@@ -453,12 +505,12 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
         _ => {
@@ -468,7 +520,12 @@ fn extract_assignment_statement(
                 return None;
             }
             // Truncate to avoid emitting giant expressions as names
-            let short_name = name.split(|c| c == '[' || c == '.' || c == ':').next().unwrap_or(&name).trim().to_string();
+            let short_name = name
+                .split(|c| c == '[' || c == '.' || c == ':')
+                .next()
+                .unwrap_or(&name)
+                .trim()
+                .to_string();
             if short_name.is_empty() {
                 return None;
             }
@@ -486,12 +543,12 @@ fn extract_assignment_statement(
                 doc_comment: None,
                 scope_path: scope,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
     }
@@ -516,7 +573,11 @@ fn extract_table_fields(
         }
         let name = if let Some(n) = field.child_by_field_name("name") {
             let t = node_text(n, src);
-            if t.is_empty() { format!("_{}", field_idx) } else { t }
+            if t.is_empty() {
+                format!("_{}", field_idx)
+            } else {
+                t
+            }
         } else {
             format!("_{}", field_idx)
         };
@@ -543,11 +604,11 @@ fn extract_table_fields(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -578,7 +639,9 @@ fn extract_function_call(
             if name == "require" {
                 // Extract the module path
                 if let Some(module_path) = extract_require_arg(node, src) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: module_path.clone(),
                         kind: EdgeKind::Imports,
@@ -586,16 +649,18 @@ fn extract_function_call(
                         module: Some(module_path),
                         chain: None,
                         byte_offset: call_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-    col: 0,
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                        col: 0,
+                    });
                 }
             } else if name == "setmetatable" {
                 // `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
                 // Emit Calls for setmetatable itself, then Inherits for the parent if
                 // the second arg has `__index = <name>`.
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -603,12 +668,14 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: call_byte_offset,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-    col: 0,
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: parent,
                         kind: EdgeKind::Inherits,
@@ -616,13 +683,15 @@ fn extract_function_call(
                         module: None,
                         chain: None,
                         byte_offset: call_byte_offset,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-    col: 0,
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                        col: 0,
+                    });
                 }
             } else if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -630,16 +699,18 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: call_byte_offset,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-    col: 0,
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
             }
         }
         "dot_index_expression" => {
             let method = get_index_field_name(&callee, src);
             if !method.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: method,
                     kind: EdgeKind::Calls,
@@ -647,16 +718,18 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: call_byte_offset,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-    col: 0,
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
             }
         }
         "method_index_expression" => {
             let method = get_method_name(&callee, src);
             if !method.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: method,
                     kind: EdgeKind::Calls,
@@ -664,10 +737,10 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: call_byte_offset,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-    col: 0,
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
             }
         }
         _ => {}
@@ -687,13 +760,21 @@ fn resolve_func_name(name_node: Node, src: &[u8]) -> (String, String, SymbolKind
         "dot_index_expression" => {
             let field = get_index_field_name(&name_node, src);
             let table = get_index_table_name(&name_node, src);
-            let qname = if table.is_empty() { field.clone() } else { format!("{}.{}", table, field) };
+            let qname = if table.is_empty() {
+                field.clone()
+            } else {
+                format!("{}.{}", table, field)
+            };
             (field, qname, SymbolKind::Method)
         }
         "method_index_expression" => {
             let method = get_method_name(&name_node, src);
             let table = get_method_table(&name_node, src);
-            let qname = if table.is_empty() { method.clone() } else { format!("{}:{}", table, method) };
+            let qname = if table.is_empty() {
+                method.clone()
+            } else {
+                format!("{}:{}", table, method)
+            };
             (method, qname, SymbolKind::Method)
         }
         _ => (String::new(), String::new(), SymbolKind::Function),
@@ -783,12 +864,7 @@ fn extract_setmetatable_parent(call_node: &Node, src: &[u8]) -> Option<String> {
     let mut cursor = args.walk();
     let arg_nodes: Vec<_> = args
         .children(&mut cursor)
-        .filter(|c| {
-            c.kind() != ","
-                && c.kind() != "("
-                && c.kind() != ")"
-                && !c.is_extra()
-        })
+        .filter(|c| c.kind() != "," && c.kind() != "(" && c.kind() != ")" && !c.is_extra())
         .collect();
     // We need at least 2 args: the object, and the metatable table.
     let second_arg = arg_nodes.get(1)?;
@@ -853,7 +929,11 @@ fn extract_all_fields(
         // Try named field first, then bracket field [key]=val, then positional
         let name = if let Some(n) = field.child_by_field_name("name") {
             let t = node_text(n, src);
-            if t.is_empty() { format!("_{}", field_idx) } else { t }
+            if t.is_empty() {
+                format!("_{}", field_idx)
+            } else {
+                t
+            }
         } else {
             // Positional field or [key] = val — use positional index as name
             format!("_{}", field_idx)
@@ -881,10 +961,10 @@ fn extract_all_fields(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }

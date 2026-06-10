@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 // home so existing callers (`bearwisdom-cli`, `bearwisdom-mcp`,
 // `bearwisdom-web`, `bearwisdom-mcp/compact`) keep working unchanged.
 pub use crate::query::entry_points::{
-    EntryPoint, EntryPointKind, EntryPointsReport, find_entry_points,
+    find_entry_points, EntryPoint, EntryPointKind, EntryPointsReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -189,10 +189,7 @@ pub struct DeadCodeReport {
 
 /// Find dead code candidates — symbols with zero (or only low-confidence)
 /// incoming edges that are not entry points.
-pub fn find_dead_code(
-    db: &Database,
-    options: &DeadCodeOptions,
-) -> QueryResult<DeadCodeReport> {
+pub fn find_dead_code(db: &Database, options: &DeadCodeOptions) -> QueryResult<DeadCodeReport> {
     let _timer = db.timer("dead_code");
     let conn = db.conn();
 
@@ -251,8 +248,15 @@ pub fn find_dead_code(
 
     // Default kinds to check.
     let default_kinds = [
-        "function", "method", "class", "struct", "interface", "enum",
-        "type_alias", "trait", "protocol",
+        "function",
+        "method",
+        "class",
+        "struct",
+        "interface",
+        "enum",
+        "type_alias",
+        "trait",
+        "protocol",
     ];
     let check_kinds: Vec<&str> = if options.kinds.is_empty() {
         default_kinds.to_vec()
@@ -320,20 +324,19 @@ pub fn find_dead_code(
         .iter()
         .map(|k| Box::new(k.to_string()) as Box<dyn rusqlite::types::ToSql>)
         .collect();
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let rows = stmt
         .query_map(param_refs.as_slice(), |row| {
             Ok((
                 row.get::<_, i64>(0)?,            // id
-                row.get::<_, String>(1)?,          // name
-                row.get::<_, String>(2)?,          // qualified_name
-                row.get::<_, String>(3)?,          // kind
+                row.get::<_, String>(1)?,         // name
+                row.get::<_, String>(2)?,         // qualified_name
+                row.get::<_, String>(3)?,         // kind
                 row.get::<_, Option<String>>(4)?, // visibility
-                row.get::<_, String>(5)?,          // path
-                row.get::<_, u32>(6)?,             // line
-                row.get::<_, i64>(7)?,             // file_id
+                row.get::<_, String>(5)?,         // path
+                row.get::<_, u32>(6)?,            // line
+                row.get::<_, i64>(7)?,            // file_id
             ))
         })
         .context("dead_code: execute query")?;
@@ -537,7 +540,10 @@ fn compute_resolution_health(
         Some(ids) if ids.is_empty() => " AND 0 = 1".to_string(),
         Some(ids) => format!(
             " AND f.id IN ({})",
-            ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
+            ids.iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         ),
     };
 
@@ -693,12 +699,8 @@ pub fn materialize_package_resolution_health(db: &Database) -> QueryResult<()> {
         .context("pkg_health: prepare insert")?;
 
     for pid in package_ids {
-        let edges: u64 = edges_stmt
-            .query_row([pid], |r| r.get(0))
-            .unwrap_or(0);
-        let unresolved: u64 = unresolved_stmt
-            .query_row([pid], |r| r.get(0))
-            .unwrap_or(0);
+        let edges: u64 = edges_stmt.query_row([pid], |r| r.get(0)).unwrap_or(0);
+        let unresolved: u64 = unresolved_stmt.query_row([pid], |r| r.get(0)).unwrap_or(0);
         let low_conf: u64 = low_conf_stmt
             .query_row(rusqlite::params![pid, low_conf_threshold], |r| r.get(0))
             .unwrap_or(0);
@@ -797,8 +799,9 @@ fn build_unresolved_name_counts(
 ) -> QueryResult<std::collections::HashMap<String, u32>> {
     let mut map = std::collections::HashMap::new();
     let sql = match scope_file_ids {
-        None => "SELECT target_name, COUNT(*) FROM unresolved_refs GROUP BY target_name"
-            .to_string(),
+        None => {
+            "SELECT target_name, COUNT(*) FROM unresolved_refs GROUP BY target_name".to_string()
+        }
         Some(ids) if ids.is_empty() => return Ok(map),
         Some(ids) => format!(
             "SELECT u.target_name, COUNT(*)
@@ -806,12 +809,13 @@ fn build_unresolved_name_counts(
              JOIN symbols s ON s.id = u.source_id
              WHERE s.file_id IN ({})
              GROUP BY u.target_name",
-            ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",")
+            ids.iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         ),
     };
-    let mut stmt = conn
-        .prepare(&sql)
-        .context("unresolved_names: prepare")?;
+    let mut stmt = conn.prepare(&sql).context("unresolved_names: prepare")?;
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))
         .context("unresolved_names: query")?;
@@ -869,10 +873,7 @@ fn resolve_scope_file_ids(
             .join(",");
         let sql = format!("SELECT id FROM files WHERE package_id IN ({csv})");
         let mut fstmt = conn.prepare(&sql).context("resolve_scope: pkg files")?;
-        for fid in fstmt
-            .query_map([], |r| r.get::<_, i64>(0))?
-            .flatten()
-        {
+        for fid in fstmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
             file_ids.insert(fid);
         }
     }
@@ -886,17 +887,72 @@ fn resolve_scope_file_ids(
 fn is_generic_name(name: &str) -> bool {
     matches!(
         name,
-        "value" | "data" | "result" | "error" | "key" | "name" | "id" | "type"
-            | "index" | "count" | "size" | "length" | "state" | "status"
-            | "config" | "options" | "params" | "args" | "context" | "request"
-            | "response" | "item" | "items" | "list" | "map" | "set"
-            | "input" | "output" | "source" | "target" | "path" | "url"
-            | "text" | "message" | "label" | "title" | "description"
-            | "callback" | "handler" | "listener" | "observer"
-            | "create" | "update" | "delete" | "get" | "add" | "remove"
-            | "start" | "stop" | "open" | "close" | "read" | "write"
-            | "load" | "save" | "init" | "reset" | "clear" | "build" | "run"
-            | "apply" | "call" | "invoke" | "execute" | "process" | "handle"
+        "value"
+            | "data"
+            | "result"
+            | "error"
+            | "key"
+            | "name"
+            | "id"
+            | "type"
+            | "index"
+            | "count"
+            | "size"
+            | "length"
+            | "state"
+            | "status"
+            | "config"
+            | "options"
+            | "params"
+            | "args"
+            | "context"
+            | "request"
+            | "response"
+            | "item"
+            | "items"
+            | "list"
+            | "map"
+            | "set"
+            | "input"
+            | "output"
+            | "source"
+            | "target"
+            | "path"
+            | "url"
+            | "text"
+            | "message"
+            | "label"
+            | "title"
+            | "description"
+            | "callback"
+            | "handler"
+            | "listener"
+            | "observer"
+            | "create"
+            | "update"
+            | "delete"
+            | "get"
+            | "add"
+            | "remove"
+            | "start"
+            | "stop"
+            | "open"
+            | "close"
+            | "read"
+            | "write"
+            | "load"
+            | "save"
+            | "init"
+            | "reset"
+            | "clear"
+            | "build"
+            | "run"
+            | "apply"
+            | "call"
+            | "invoke"
+            | "execute"
+            | "process"
+            | "handle"
     )
 }
 

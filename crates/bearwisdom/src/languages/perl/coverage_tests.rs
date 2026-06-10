@@ -20,9 +20,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_package_namespace() {
     let r = extract("package MyModule;\nuse strict;\n");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyModule" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyModule" && s.kind == SymbolKind::Namespace),
         "expected Namespace MyModule; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -31,9 +36,14 @@ fn symbol_package_namespace() {
 fn symbol_sub_function() {
     let r = extract("sub foo { my $x = shift; return $x; }\n");
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -44,7 +54,8 @@ fn symbol_multiple_subs() {
     let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"alpha") && names.contains(&"beta"),
-        "expected both alpha and beta; got {:?}", names
+        "expected both alpha and beta; got {:?}",
+        names
     );
 }
 
@@ -55,11 +66,13 @@ fn symbol_package_and_sub() {
     let kinds: Vec<SymbolKind> = r.symbols.iter().map(|s| s.kind).collect();
     assert!(
         kinds.contains(&SymbolKind::Namespace),
-        "expected Namespace; got {:?}", kinds
+        "expected Namespace; got {:?}",
+        kinds
     );
     assert!(
         kinds.contains(&SymbolKind::Function),
-        "expected Function; got {:?}", kinds
+        "expected Function; got {:?}",
+        kinds
     );
 }
 
@@ -74,7 +87,10 @@ fn ref_use_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from use; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -94,9 +110,14 @@ fn ref_use_strict_warnings_skipped() {
 fn ref_use_module_name() {
     let r = extract("use Scalar::Util qw(blessed);\n");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Scalar::Util" && rf.kind == EdgeKind::Imports),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Scalar::Util" && rf.kind == EdgeKind::Imports),
         "expected Imports Scalar::Util; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -117,7 +138,10 @@ fn ref_use_parent_emits_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from use parent; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -128,7 +152,10 @@ fn ref_use_base_emits_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from use base; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -144,9 +171,14 @@ fn ref_use_base_emits_imports() {
 fn symbol_sub_new_is_function() {
     let r = extract("package Foo;\nsub new { my $class = shift; bless {}, $class; }\n");
     assert!(
-        r.symbols.iter().any(|s| s.name == "new" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "new" && s.kind == SymbolKind::Function),
         "expected Function symbol 'new'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -160,9 +192,14 @@ fn symbol_sub_new_is_function() {
 fn ref_use_constant_emits_imports() {
     let r = extract("use constant PI => 3.14;\n");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "constant" && rf.kind == EdgeKind::Imports),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "constant" && rf.kind == EdgeKind::Imports),
         "expected Imports('constant') from use constant; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -190,8 +227,13 @@ fn ref_use_version_skipped() {
 fn symbol_nested_package_name_preserved() {
     let r = extract("package Foo::Bar::Baz;\n");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo::Bar::Baz" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo::Bar::Baz" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'Foo::Bar::Baz'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

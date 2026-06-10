@@ -20,26 +20,41 @@ fn cov_test_case_definition_produces_test() {
     let src = "*** Test Cases ***\nMy Test\n    Log    Hello\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Test && s.name == "My Test"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Test && s.name == "My Test"),
         "test case should produce Test symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"Log"),
-        "Log call expected in this baseline; got {calls:?}");
+    assert!(
+        calls.contains(&"Log"),
+        "Log call expected in this baseline; got {calls:?}"
+    );
 }
 
 #[test]
 fn cov_keyword_definition_produces_function() {
-    let src = "*** Keywords ***\nGreet User\n    [Arguments]    ${name}\n    Log    Hello ${name}\n";
+    let src =
+        "*** Keywords ***\nGreet User\n    [Arguments]    ${name}\n    Log    Hello ${name}\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "Greet User"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "Greet User"),
         "keyword definition should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -50,7 +65,10 @@ fn cov_variable_definition_produces_variable() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Variable),
         "variable definition should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -65,7 +83,10 @@ fn cov_keyword_invocation_in_test_case_produces_calls() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "keyword invocations should produce Calls refs; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -74,9 +95,14 @@ fn cov_library_setting_produces_imports() {
     let src = "*** Settings ***\nLibrary    Collections\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Collections"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Collections"),
         "Library setting should produce Imports(Collections); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,9 +115,14 @@ fn cov_resource_setting_produces_imports() {
     let src = "*** Settings ***\nResource    common.robot\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "common.robot"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "common.robot"),
         "Resource setting should produce Imports(common.robot); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -100,9 +131,14 @@ fn cov_variables_setting_produces_imports() {
     let src = "*** Settings ***\nVariables    my_vars.py\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "my_vars.py"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "my_vars.py"),
         "Variables setting should produce Imports(my_vars.py); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -114,11 +150,17 @@ fn cov_variables_setting_produces_imports() {
 fn cov_scalar_variable_strips_delimiters() {
     let src = "*** Variables ***\n${HOST}    localhost\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "HOST");
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Variable && s.name == "HOST");
     assert!(
         sym.is_some(),
         "scalar variable should strip ${{}} delimiters to produce name 'HOST'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -127,11 +169,17 @@ fn cov_list_variable_strips_delimiters() {
     // @{LIST} → name should be "LIST"
     let src = "*** Variables ***\n@{ITEMS}    one    two    three\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "ITEMS");
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Variable && s.name == "ITEMS");
     assert!(
         sym.is_some(),
         "list variable should strip @{{}} delimiters to produce name 'ITEMS'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -140,11 +188,17 @@ fn cov_dict_variable_strips_delimiters() {
     // &{DICT} → name should be "DICT"
     let src = "*** Variables ***\n&{CONFIG}    key=value\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "CONFIG");
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Variable && s.name == "CONFIG");
     assert!(
         sym.is_some(),
         "dict variable should strip &{{}} delimiters to produce name 'CONFIG'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -154,12 +208,18 @@ fn cov_dict_variable_strips_delimiters() {
 
 #[test]
 fn cov_keyword_invocation_in_keyword_body_produces_calls() {
-    let src = "*** Keywords ***\nSetup Database\n    Connect To DB    myhost\n    Log    Connected\n";
+    let src =
+        "*** Keywords ***\nSetup Database\n    Connect To DB    myhost\n    Log    Connected\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Connect To DB"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Connect To DB"),
         "keyword invocation in keyword body should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -169,9 +229,14 @@ fn cov_keyword_invocation_assignment_pattern_produces_calls() {
     let src = "*** Test Cases ***\nCheck Title\n    ${title} =    Get Title\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Get Title"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Get Title"),
         "assignment-pattern keyword invocation should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -183,7 +248,11 @@ fn cov_keyword_invocation_assignment_pattern_produces_calls() {
 fn cov_multiple_test_cases() {
     let src = "*** Test Cases ***\nFirst Test\n    Log    one\nSecond Test\n    Log    two\n";
     let r = extract::extract(src);
-    let tests: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Test).collect();
+    let tests: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Test)
+        .collect();
     assert_eq!(tests.len(), 2, "expected 2 Test symbols; got: {:?}", tests);
 }
 
@@ -191,7 +260,11 @@ fn cov_multiple_test_cases() {
 fn cov_multiple_keywords() {
     let src = "*** Keywords ***\nKeyword One\n    Log    one\nKeyword Two\n    Log    two\n";
     let r = extract::extract(src);
-    let kws: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Function).collect();
+    let kws: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Function)
+        .collect();
     assert_eq!(kws.len(), 2, "expected 2 Function symbols; got: {:?}", kws);
 }
 
@@ -202,12 +275,18 @@ fn cov_multiple_keywords() {
 #[test]
 fn cov_continuation_marker_does_not_produce_call() {
     // `...` extends the previous line's argument list. It is not a keyword call.
-    let src = "*** Test Cases ***\nMulti Line\n    Log Many    one    two\n    ...    three    four\n";
+    let src =
+        "*** Test Cases ***\nMulti Line\n    Log Many    one    two\n    ...    three    four\n";
     let r = extract::extract(src);
     assert!(
-        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "..."),
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "..."),
         "`...` continuation marker must not produce a Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, rf.target_name.clone()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -217,9 +296,14 @@ fn cov_escaped_end_marker_does_not_produce_call() {
     let src = "*** Keywords ***\nLoop Things\n    FOR    ${i}    IN RANGE    3\n    \\END\n";
     let r = extract::extract(src);
     assert!(
-        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "\\END"),
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "\\END"),
         "`\\END` escape must not produce a Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, rf.target_name.clone()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -227,12 +311,18 @@ fn cov_escaped_end_marker_does_not_produce_call() {
 fn cov_var_inline_assignment_does_not_produce_call() {
     // Robot 6+ inline variable assignment syntax: `VAR    ${name}    value`.
     // VAR is a control marker, not a keyword call.
-    let src = "*** Test Cases ***\nUse Var\n    VAR    ${greeting}    hello\n    Log    ${greeting}\n";
+    let src =
+        "*** Test Cases ***\nUse Var\n    VAR    ${greeting}    hello\n    Log    ${greeting}\n";
     let r = extract::extract(src);
     assert!(
-        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "VAR"),
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "VAR"),
         "`VAR` inline assignment must not produce a Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, rf.target_name.clone()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -264,9 +354,14 @@ fn template_suppresses_body_rows_as_keyword_calls() {
         .map(|rf| rf.target_name.as_str())
         .collect();
     // sanity: the test case symbol exists
-    assert!(r.symbols.iter().any(|s| s.name == "Get Lines When Empty"),
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Get Lines When Empty"),
         "test case symbol must be extracted; got symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 
     // None of the data values must appear as call targets.
     for leaked in ["whatever", "1", "Hello, world!"] {
@@ -289,7 +384,9 @@ fn template_can_be_disabled_within_a_test() {
         "    Log    Hello\n",
     );
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -319,10 +416,14 @@ fn setup_setting_emits_keyword_call_from_second_cell() {
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"Initialize System"),
-        "[Setup] keyword must emit a Calls ref; got: {calls:?}");
-    assert!(calls.contains(&"Cleanup Resources"),
-        "[Teardown] keyword must emit a Calls ref; got: {calls:?}");
+    assert!(
+        calls.contains(&"Initialize System"),
+        "[Setup] keyword must emit a Calls ref; got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"Cleanup Resources"),
+        "[Teardown] keyword must emit a Calls ref; got: {calls:?}"
+    );
 }
 
 #[test]
@@ -346,7 +447,9 @@ fn suite_test_template_suppresses_body_rows_in_every_test() {
         "    ${DICT.b}     ${2}\n",
     );
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -374,7 +477,9 @@ fn per_test_template_none_overrides_suite_template() {
         "    Log    Hello\n",
     );
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -402,14 +507,20 @@ fn multi_variable_assignment_picks_correct_keyword() {
         "    ${name}    ${item} =    My Keyword    arg1\n",
     );
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"My Keyword"),
-        "real keyword `My Keyword` must be the target; got: {calls:?}");
-    assert!(!calls.iter().any(|c| c.contains("${")),
-        "no receive-var cell may leak as a Calls target; got: {calls:?}");
+    assert!(
+        calls.contains(&"My Keyword"),
+        "real keyword `My Keyword` must be the target; got: {calls:?}"
+    );
+    assert!(
+        !calls.iter().any(|c| c.contains("${")),
+        "no receive-var cell may leak as a Calls target; got: {calls:?}"
+    );
 }
 
 #[test]
@@ -423,17 +534,23 @@ fn single_variable_assignment_still_picks_keyword() {
         "    ${noeq}     Set Value    arg\n",
     );
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"Get Value"),
-        "single-var `${{var}} =` assignment must produce `Get Value`; got: {calls:?}");
+    assert!(
+        calls.contains(&"Get Value"),
+        "single-var `${{var}} =` assignment must produce `Get Value`; got: {calls:?}"
+    );
     // `${noeq}    Set Value` (no `=`) is not a real assignment — it's
     // either a template arg row (already filtered) or malformed. Don't
     // emit either cell.
-    assert!(!calls.contains(&"Set Value"),
-        "non-assignment `${{var}}    Set Value` should not produce a call; got: {calls:?}");
+    assert!(
+        !calls.contains(&"Set Value"),
+        "non-assignment `${{var}}    Set Value` should not produce a call; got: {calls:?}"
+    );
 }
 
 #[test]
@@ -449,12 +566,15 @@ fn other_settings_do_not_emit_calls() {
         "    Log    body\n",
     );
     let r = extract::extract(src);
-    let bad: Vec<&str> = r.refs.iter()
+    let bad: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
-        .filter(|n| matches!(*n,
-            "smoke" | "regression" | "does a thing" | "5 seconds"))
+        .filter(|n| matches!(*n, "smoke" | "regression" | "does a thing" | "5 seconds"))
         .collect();
-    assert!(bad.is_empty(),
-        "non-call setting values must not produce Calls refs; got: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "non-call setting values must not produce Calls refs; got: {bad:?}"
+    );
 }

@@ -94,9 +94,8 @@ fn scan_reitit_method_map(
         // We have a key, now this child is the value.
         let method = pending_method.take().unwrap_or_default();
         if !method.is_empty() {
-            let handler_line = locate_first_sym_line(child, src).unwrap_or_else(|| {
-                map_node.start_position().row as u32 + 1
-            });
+            let handler_line = locate_first_sym_line(child, src)
+                .unwrap_or_else(|| map_node.start_position().row as u32 + 1);
             let handler_symbol_index = symbols
                 .iter()
                 .position(|s| s.start_line == handler_line)

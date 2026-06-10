@@ -11,7 +11,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // Keyword primitives — no indexable source
     "int", "long", "float", "double", "boolean", "char", "byte", "short", "void",
     // Generic type parameters
-    "T", "U", "K", "V", "E", "R", "S",
-    // From former builtin_type_names:
+    "T", "U", "K", "V", "E", "R", "S", // From former builtin_type_names:
     "var",
 ];

@@ -8,8 +8,18 @@ use crate::types::{EdgeKind, ExtractedRef};
 pub(super) fn is_ts_primitive(name: &str) -> bool {
     matches!(
         name,
-        "string" | "number" | "boolean" | "void" | "any" | "unknown" | "never"
-            | "undefined" | "null" | "object" | "symbol" | "bigint"
+        "string"
+            | "number"
+            | "boolean"
+            | "void"
+            | "any"
+            | "unknown"
+            | "never"
+            | "undefined"
+            | "null"
+            | "object"
+            | "symbol"
+            | "bigint"
     )
 }
 
@@ -47,8 +57,8 @@ fn first_non_literal_descendant_text(node: tree_sitter::Node, src: &[u8]) -> Opt
             // `'a'[]` and `('a' | 'b')` and `Readonly<'a' | 'b'>` are all
             // structurally pure-literal containers — recurse so we don't
             // grab their literal contents as a TypeRef target.
-            "union_type" | "intersection_type" | "parenthesized_type"
-            | "array_type" | "readonly_type" | "tuple_type" => {
+            "union_type" | "intersection_type" | "parenthesized_type" | "array_type"
+            | "readonly_type" | "tuple_type" => {
                 if let Some(t) = first_non_literal_descendant_text(child, src) {
                     return Some(t);
                 }
@@ -68,8 +78,8 @@ fn is_pure_literal_type_composite(node: tree_sitter::Node) -> bool {
             // Structural wrappers around literals are still "pure literal"
             // for coverage purposes — `'a' | 'b'`, `'a'[]`, `('a' | 'b')`,
             // `readonly 'a'[]`, `['a', 'b']` all carry no real type ref.
-            "union_type" | "intersection_type" | "parenthesized_type"
-            | "array_type" | "readonly_type" | "tuple_type" => {
+            "union_type" | "intersection_type" | "parenthesized_type" | "array_type"
+            | "readonly_type" | "tuple_type" => {
                 if !is_pure_literal_type_composite(child) {
                     return false;
                 }
@@ -93,7 +103,9 @@ pub(super) fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -102,9 +114,9 @@ pub(super) fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -115,7 +127,9 @@ pub(super) fn scan_all_type_identifiers(
                 // would otherwise be emitted as a duplicate bare ref.
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -124,9 +138,9 @@ pub(super) fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "generic_type" if child.is_named() => {
@@ -142,7 +156,9 @@ pub(super) fn scan_all_type_identifiers(
                 if let Some(base) = base_opt {
                     let name = helpers::node_text(base, src);
                     if !name.is_empty() && !is_ts_primitive(&name) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -151,9 +167,9 @@ pub(super) fn scan_all_type_identifiers(
                             module: None,
                             chain: None,
                             byte_offset: base.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 // Still recurse so type arguments inside are also scanned.
@@ -205,8 +221,7 @@ pub(super) fn scan_all_type_identifiers(
                             // `'a'[]`, `('a' | 'b')`, `readonly 'a'[]`, `['a', 'b']` —
                             // emit only the primitive sentinel; the literal
                             // content isn't a real type ref.
-                            "union_type" | "intersection_type"
-                            | "array_type" | "tuple_type"
+                            "union_type" | "intersection_type" | "array_type" | "tuple_type"
                             | "parenthesized_type" | "readonly_type"
                                 if is_pure_literal_type_composite(tn) =>
                             {
@@ -215,16 +230,9 @@ pub(super) fn scan_all_type_identifiers(
                             // Literal type by itself (rare — typically sits in
                             // a union, handled above) — never a real ref.
                             "literal_type" => "_primitive".to_string(),
-                            "type_identifier"
-                            | "identifier"
-                            | "generic_type"
-                            | "array_type"
-                            | "tuple_type"
-                            | "union_type"
-                            | "intersection_type"
-                            | "parenthesized_type"
-                            | "type_query"
-                            | "readonly_type" => {
+                            "type_identifier" | "identifier" | "generic_type" | "array_type"
+                            | "tuple_type" | "union_type" | "intersection_type"
+                            | "parenthesized_type" | "type_query" | "readonly_type" => {
                                 // Walk past leading literal_type children when
                                 // splitting by first segment — `'400' | Array<...>`
                                 // would otherwise pick up the string contents
@@ -254,7 +262,9 @@ pub(super) fn scan_all_type_identifiers(
                             _ => "_primitive".to_string(),
                         };
                         if !is_ts_primitive(&target) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -263,15 +273,17 @@ pub(super) fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         } else {
                             // Even for primitive annotations we need a ref at this line
                             // so the type_annotation coverage budget is consumed.
                             // Use "_primitive" as a placeholder target — it won't resolve
                             // to any real symbol, but satisfies the coverage counter.
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: "_primitive".to_string(),
                                 kind: EdgeKind::TypeRef,
@@ -280,9 +292,9 @@ pub(super) fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                 }
@@ -314,7 +326,9 @@ pub(super) fn scan_all_type_identifiers(
                             .unwrap_or("_")
                             .to_string();
                         if !target.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -323,9 +337,9 @@ pub(super) fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -350,7 +364,9 @@ pub(super) fn scan_all_type_identifiers(
                             .unwrap_or("_")
                             .to_string();
                         if !target.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
@@ -359,9 +375,9 @@ pub(super) fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -523,4 +539,3 @@ fn enclosing_conditional_type<'a>(node: &tree_sitter::Node<'a>) -> Option<tree_s
     }
     None
 }
-

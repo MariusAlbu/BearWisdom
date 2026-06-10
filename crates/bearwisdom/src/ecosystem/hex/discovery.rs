@@ -14,9 +14,7 @@ pub(super) fn discover_hex_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     // R3: scan project source once, attach the demand set to every dep root.
     // Each language's narrowing logic interprets these as its own conventions
     // (Elixir/Gleam → file path, Erlang → module-name match).
-    let user_imports: Vec<String> = collect_hex_user_imports(project_root)
-        .into_iter()
-        .collect();
+    let user_imports: Vec<String> = collect_hex_user_imports(project_root).into_iter().collect();
 
     let mut roots = Vec::new();
     roots.extend(discover_mix_roots(project_root, &user_imports));
@@ -57,13 +55,21 @@ pub(super) fn discover_erlang_mk_roots(
         return Vec::new();
     }
 
-    let Ok(entries) = std::fs::read_dir(&deps_dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&deps_dir) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if name.starts_with('.') { continue }
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
         out.push(ExternalDepRoot {
             module_path: name.to_string(),
             // erlang.mk doesn't pin versions in Makefile DEPS; the version
@@ -76,7 +82,11 @@ pub(super) fn discover_erlang_mk_roots(
             requested_imports: user_imports.to_vec(),
         });
     }
-    debug!("erlang.mk: {} dep roots from {}", out.len(), deps_dir.display());
+    debug!(
+        "erlang.mk: {} dep roots from {}",
+        out.len(),
+        deps_dir.display()
+    );
     out
 }
 
@@ -84,9 +94,14 @@ pub(super) fn discover_erlang_mk_roots(
 // Elixir (mix) — <project>/deps/<name>/
 // ---------------------------------------------------------------------------
 
-pub(super) fn discover_mix_roots(project_root: &Path, user_imports: &[String]) -> Vec<ExternalDepRoot> {
+pub(super) fn discover_mix_roots(
+    project_root: &Path,
+    user_imports: &[String],
+) -> Vec<ExternalDepRoot> {
     let mix_exs = project_root.join("mix.exs");
-    if !mix_exs.is_file() { return Vec::new() }
+    if !mix_exs.is_file() {
+        return Vec::new();
+    }
     let deps_dir = project_root.join("deps");
     if !deps_dir.is_dir() {
         debug!(
@@ -95,14 +110,22 @@ pub(super) fn discover_mix_roots(project_root: &Path, user_imports: &[String]) -
         );
         return Vec::new();
     }
-    let Ok(entries) = std::fs::read_dir(&deps_dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&deps_dir) else {
+        return Vec::new();
+    };
 
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !path.join("lib").is_dir() { continue }
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !path.join("lib").is_dir() {
+            continue;
+        }
         let version = read_mix_package_version(&path).unwrap_or_default();
         out.push(ExternalDepRoot {
             module_path: name.to_string(),
@@ -124,7 +147,9 @@ fn read_mix_package_version(pkg_root: &Path) -> Option<String> {
         if let Some(rest) = trimmed.strip_prefix("@version ") {
             let rest = rest.trim().trim_start_matches('=').trim();
             let ver = rest.trim_matches('"').trim_matches('\'');
-            if !ver.is_empty() { return Some(ver.to_string()) }
+            if !ver.is_empty() {
+                return Some(ver.to_string());
+            }
         }
     }
     None
@@ -134,12 +159,21 @@ fn read_mix_package_version(pkg_root: &Path) -> Option<String> {
 // Erlang (rebar3) — _build/ OR hex tarball fallback
 // ---------------------------------------------------------------------------
 
-pub(super) fn discover_rebar_roots(project_root: &Path, user_imports: &[String]) -> Vec<ExternalDepRoot> {
+pub(super) fn discover_rebar_roots(
+    project_root: &Path,
+    user_imports: &[String],
+) -> Vec<ExternalDepRoot> {
     let rebar_config = project_root.join("rebar.config");
-    if !rebar_config.is_file() { return Vec::new() }
-    let Ok(content) = std::fs::read_to_string(&rebar_config) else { return Vec::new() };
+    if !rebar_config.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&rebar_config) else {
+        return Vec::new();
+    };
     let declared = parse_rebar_deps(&content);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let locked_versions = parse_rebar_lock(project_root);
     let build_lib = project_root.join("_build").join("default").join("lib");
@@ -190,9 +224,13 @@ pub(super) fn discover_rebar_roots(project_root: &Path, user_imports: &[String])
 /// Parse dep names from rebar.config `{deps, [...]}` section.
 pub fn parse_rebar_deps(content: &str) -> Vec<String> {
     let mut deps = Vec::new();
-    let Some(start) = content.find("{deps,") else { return deps };
+    let Some(start) = content.find("{deps,") else {
+        return deps;
+    };
     let rest = &content[start..];
-    let Some(bracket_start) = rest.find('[') else { return deps };
+    let Some(bracket_start) = rest.find('[') else {
+        return deps;
+    };
     let rest = &rest[bracket_start..];
 
     let mut bracket_depth = 0i32;
@@ -202,12 +240,18 @@ pub fn parse_rebar_deps(content: &str) -> Vec<String> {
             '[' => bracket_depth += 1,
             ']' => {
                 bracket_depth -= 1;
-                if bracket_depth == 0 { bracket_end = Some(i); break }
+                if bracket_depth == 0 {
+                    bracket_end = Some(i);
+                    break;
+                }
             }
             _ => {}
         }
     }
-    let bracket_end = match bracket_end { Some(e) => e, None => return deps };
+    let bracket_end = match bracket_end {
+        Some(e) => e,
+        None => return deps,
+    };
     let deps_block = &rest[1..bracket_end];
 
     let mut brace_depth = 0u32;
@@ -217,19 +261,22 @@ pub fn parse_rebar_deps(content: &str) -> Vec<String> {
         match ch {
             '{' => {
                 brace_depth += 1;
-                if brace_depth == 1 { in_atom = true; atom_start = i + 1 }
+                if brace_depth == 1 {
+                    in_atom = true;
+                    atom_start = i + 1
+                }
             }
             ',' | '}' if brace_depth == 1 && in_atom => {
                 let name = deps_block[atom_start..i].trim();
-                if !name.is_empty()
-                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                {
+                if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     deps.push(name.to_string());
                 }
                 in_atom = false;
-                if ch == '}' { brace_depth = brace_depth.saturating_sub(1) }
+                if ch == '}' {
+                    brace_depth = brace_depth.saturating_sub(1)
+                }
             }
-            '}' => { brace_depth = brace_depth.saturating_sub(1) }
+            '}' => brace_depth = brace_depth.saturating_sub(1),
             _ => {}
         }
     }
@@ -239,7 +286,9 @@ pub fn parse_rebar_deps(content: &str) -> Vec<String> {
 pub fn parse_rebar_lock(project_root: &Path) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     let lock_path = project_root.join("rebar.lock");
-    let Ok(content) = std::fs::read_to_string(&lock_path) else { return map };
+    let Ok(content) = std::fs::read_to_string(&lock_path) else {
+        return map;
+    };
     let needle = b"{pkg,";
     let bytes = content.as_bytes();
     let mut pos = 0;
@@ -273,11 +322,20 @@ fn read_binary_literal(s: &str) -> Option<(String, usize)> {
 fn hex_packages_dir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_HEX_PACKAGES") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    let candidate = PathBuf::from(home).join(".hex").join("packages").join("hexpm");
-    if candidate.is_dir() { Some(candidate) } else { None }
+    let candidate = PathBuf::from(home)
+        .join(".hex")
+        .join("packages")
+        .join("hexpm");
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn erlang_source_cache_dir() -> Option<PathBuf> {
@@ -287,12 +345,21 @@ fn erlang_source_cache_dir() -> Option<PathBuf> {
         return Some(p);
     }
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        let p = PathBuf::from(local).join("bearwisdom").join("erlang-sources");
-        if std::fs::create_dir_all(&p).is_ok() { return Some(p) }
+        let p = PathBuf::from(local)
+            .join("bearwisdom")
+            .join("erlang-sources");
+        if std::fs::create_dir_all(&p).is_ok() {
+            return Some(p);
+        }
     }
     if let Some(home) = std::env::var_os("HOME") {
-        let p = PathBuf::from(home).join(".cache").join("bearwisdom").join("erlang-sources");
-        if std::fs::create_dir_all(&p).is_ok() { return Some(p) }
+        let p = PathBuf::from(home)
+            .join(".cache")
+            .join("bearwisdom")
+            .join("erlang-sources");
+        if std::fs::create_dir_all(&p).is_ok() {
+            return Some(p);
+        }
     }
     None
 }
@@ -304,7 +371,11 @@ fn locate_hex_dep(
 ) -> Option<(String, PathBuf)> {
     let (tar_path, version) = if let Some(ver) = pinned_version {
         let p = hex_cache.join(format!("{dep_name}-{ver}.tar"));
-        if p.is_file() { (p, ver.to_string()) } else { return None }
+        if p.is_file() {
+            (p, ver.to_string())
+        } else {
+            return None;
+        }
     } else {
         let entries = std::fs::read_dir(hex_cache).ok()?;
         let prefix = format!("{dep_name}-");
@@ -314,7 +385,11 @@ fn locate_hex_dep(
                 let name = e.file_name().into_string().ok()?;
                 let stripped = name.strip_prefix(&prefix)?.strip_suffix(".tar")?;
                 let path = e.path();
-                if path.is_file() { Some((stripped.to_string(), path)) } else { None }
+                if path.is_file() {
+                    Some((stripped.to_string(), path))
+                } else {
+                    None
+                }
             })
             .collect();
         candidates.sort_by(|a, b| a.0.cmp(&b.0));
@@ -343,7 +418,9 @@ fn is_hex_cache_stale(tar: &Path, cache_dir: &Path) -> bool {
         Ok(t) => t,
         Err(_) => return true,
     };
-    let Ok(entries) = std::fs::read_dir(cache_dir) else { return true };
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return true;
+    };
     let mut newest: Option<std::time::SystemTime> = None;
     for entry in entries.flatten() {
         if let Ok(md) = entry.metadata() {
@@ -352,7 +429,10 @@ fn is_hex_cache_stale(tar: &Path, cache_dir: &Path) -> bool {
             }
         }
     }
-    match newest { Some(t) => tar_mtime > t, None => true }
+    match newest {
+        Some(t) => tar_mtime > t,
+        None => true,
+    }
 }
 
 fn extract_hex_tarball(tar_path: &Path, dest: &Path) -> std::io::Result<()> {
@@ -367,7 +447,9 @@ fn extract_hex_tarball(tar_path: &Path, dest: &Path) -> std::io::Result<()> {
         let mut entry = entry?;
         let path = entry.path()?;
         let name = path.to_string_lossy();
-        if name != "contents.tar.gz" { continue }
+        if name != "contents.tar.gz" {
+            continue;
+        }
         let mut gz_bytes = Vec::new();
         entry.read_to_end(&mut gz_bytes)?;
         let gz_cursor = std::io::Cursor::new(gz_bytes);
@@ -377,19 +459,31 @@ fn extract_hex_tarball(tar_path: &Path, dest: &Path) -> std::io::Result<()> {
         for inner_entry in inner.entries()? {
             let mut inner_entry = inner_entry?;
             let inner_path = inner_entry.path()?.to_path_buf();
-            let Some(file_name) = inner_path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(file_name.ends_with(".erl") || file_name.ends_with(".hrl")) { continue }
-            if file_name.ends_with("_SUITE.erl") || file_name.ends_with("_tests.erl") { continue }
+            let Some(file_name) = inner_path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(file_name.ends_with(".erl") || file_name.ends_with(".hrl")) {
+                continue;
+            }
+            if file_name.ends_with("_SUITE.erl") || file_name.ends_with("_tests.erl") {
+                continue;
+            }
             let out_path = dest.join(&inner_path);
             let canonical_dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
             let canonical_out = match out_path.parent() {
                 Some(parent) => {
-                    if std::fs::create_dir_all(parent).is_err() { continue }
-                    parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf())
+                    if std::fs::create_dir_all(parent).is_err() {
+                        continue;
+                    }
+                    parent
+                        .canonicalize()
+                        .unwrap_or_else(|_| parent.to_path_buf())
                 }
                 None => continue,
             };
-            if !canonical_out.starts_with(&canonical_dest) { continue }
+            if !canonical_out.starts_with(&canonical_dest) {
+                continue;
+            }
             let mut out_file = std::fs::File::create(&out_path)?;
             std::io::copy(&mut inner_entry, &mut out_file)?;
         }
@@ -405,17 +499,28 @@ fn extract_hex_tarball(tar_path: &Path, dest: &Path) -> std::io::Result<()> {
 // Gleam — <project>/build/packages/<name>/
 // ---------------------------------------------------------------------------
 
-pub(super) fn discover_gleam_roots(project_root: &Path, user_imports: &[String]) -> Vec<ExternalDepRoot> {
+pub(super) fn discover_gleam_roots(
+    project_root: &Path,
+    user_imports: &[String],
+) -> Vec<ExternalDepRoot> {
     use crate::ecosystem::manifest::gleam::parse_gleam_deps;
 
     let gleam_toml = project_root.join("gleam.toml");
-    if !gleam_toml.is_file() { return Vec::new() }
-    let Ok(content) = std::fs::read_to_string(&gleam_toml) else { return Vec::new() };
+    if !gleam_toml.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&gleam_toml) else {
+        return Vec::new();
+    };
     let declared = parse_gleam_deps(&content);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let packages = project_root.join("build").join("packages");
-    if !packages.is_dir() { return Vec::new() }
+    if !packages.is_dir() {
+        return Vec::new();
+    }
 
     let mut out = Vec::new();
     for dep in &declared {

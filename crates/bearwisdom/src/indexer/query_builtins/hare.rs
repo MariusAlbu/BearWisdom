@@ -2,44 +2,14 @@
 // Builtins and locals.scm content for `hare` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "abort",
-    "alloc",
-    "append",
-    "as",
-    "assert",
-    "bool",
-    "break",
-    "char",
-    "const",
-    "continue",
-    "def",
-    "defer",
-    "delete",
-    "else",
-    "enum",
-    "export",
-    "fn",
-    "for",
-    "free",
-    "if",
-    "is",
-    "len",
-    "let",
-    "match",
-    "nullable",
-    "offset",
-    "return",
-    "size",
-    "static",
-    "struct",
-    "switch",
-    "true",
-    "type",
-    "union",
-    "use",
+    "abort", "alloc", "append", "as", "assert", "bool", "break", "char", "const", "continue",
+    "def", "defer", "delete", "else", "enum", "export", "fn", "for", "free", "if", "is", "len",
+    "let", "match", "nullable", "offset", "return", "size", "static", "struct", "switch", "true",
+    "type", "union", "use",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(unit) @local.scope\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(unit) @local.scope\n\
 \n\
 (function_declaration) @local.scope\n\
 \n\
@@ -58,4 +28,5 @@ pub const LOCALS_SCM: Option<&str> = Some("(unit) @local.scope\n\
           (name) @local.definition)))))\n\
 \n\
 (identifier) @local.reference\n\
-");
+",
+);

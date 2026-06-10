@@ -178,20 +178,11 @@ fn find_rule_target(node: &Node, src: &str) -> Option<String> {
 fn build_rule_signature(node: &Node, src: &str) -> String {
     let text = node_text(*node, src);
     // Take the first line as the signature.
-    text.lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string()
+    text.lines().next().unwrap_or("").trim().to_string()
 }
 
 /// Emit `Calls` edges for each prerequisite in a rule's prerequisites field.
-fn extract_prerequisites(
-    node: &Node,
-    src: &str,
-    source_idx: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_prerequisites(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "prerequisites" || child.kind() == "prerequisite" {
@@ -204,7 +195,9 @@ fn extract_prerequisites(
                             && !name.starts_with('$')
                             && !is_unresolvable_prereq(&name)
                         {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: source_idx,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -264,17 +257,60 @@ pub(crate) fn is_unresolvable_prereq(name: &str) -> bool {
         // Single-char extensions like `.c`, `.h`, `.o`, `.a` plus common multi-char ones.
         matches!(
             ext,
-            "c" | "h" | "cc" | "cpp" | "cxx" | "C" | "hh" | "hpp" | "hxx"
-                | "o" | "obj" | "a" | "so" | "dylib" | "lib" | "dll"
-                | "d" | "s" | "S" | "asm"
-                | "f" | "f90" | "f95" | "for"
-                | "go" | "rs" | "py" | "rb" | "js" | "ts" | "lua"
-                | "java" | "class" | "jar"
-                | "cs" | "vb"
-                | "xml" | "xslt" | "xsl" | "dtd" | "xsls"
-                | "html" | "htm" | "css" | "json" | "yaml" | "yml" | "toml"
-                | "pod" | "pm" | "man" | "txt" | "md"
-                | "mk" | "mak"
+            "c" | "h"
+                | "cc"
+                | "cpp"
+                | "cxx"
+                | "C"
+                | "hh"
+                | "hpp"
+                | "hxx"
+                | "o"
+                | "obj"
+                | "a"
+                | "so"
+                | "dylib"
+                | "lib"
+                | "dll"
+                | "d"
+                | "s"
+                | "S"
+                | "asm"
+                | "f"
+                | "f90"
+                | "f95"
+                | "for"
+                | "go"
+                | "rs"
+                | "py"
+                | "rb"
+                | "js"
+                | "ts"
+                | "lua"
+                | "java"
+                | "class"
+                | "jar"
+                | "cs"
+                | "vb"
+                | "xml"
+                | "xslt"
+                | "xsl"
+                | "dtd"
+                | "xsls"
+                | "html"
+                | "htm"
+                | "css"
+                | "json"
+                | "yaml"
+                | "yml"
+                | "toml"
+                | "pod"
+                | "pm"
+                | "man"
+                | "txt"
+                | "md"
+                | "mk"
+                | "mak"
         )
     } else {
         false
@@ -285,11 +321,7 @@ pub(crate) fn is_unresolvable_prereq(name: &str) -> bool {
 // Variable assignments
 // ---------------------------------------------------------------------------
 
-fn extract_variable_assignment(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_variable_assignment(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_field_text(node, src, "name") {
         Some(n) => n,
         None => first_word_in_node(node, src).unwrap_or_default(),
@@ -308,11 +340,7 @@ fn extract_variable_assignment(
     ));
 }
 
-fn extract_define_directive(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_define_directive(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_field_text(node, src, "name") {
         Some(n) => n,
         None => {
@@ -336,11 +364,7 @@ fn extract_define_directive(
     ));
 }
 
-fn extract_shell_assignment(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_shell_assignment(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_field_text(node, src, "name") {
         Some(n) => n,
         None => first_word_in_node(node, src).unwrap_or_default(),
@@ -372,16 +396,14 @@ fn build_assignment_signature(node: &Node, src: &str) -> String {
 // include_directive → Imports
 // ---------------------------------------------------------------------------
 
-fn extract_include_directive(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_include_directive(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // The include_directive has a `filenames` field or word children.
     let paths = collect_include_paths(node, src);
     for path in paths {
         if !path.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: path.clone(),
                 kind: EdgeKind::Imports,
@@ -401,10 +423,7 @@ fn collect_include_paths(node: &Node, src: &str) -> Vec<String> {
     // Try the `filenames` named field first.
     if let Some(filenames) = node.child_by_field_name("filenames") {
         let text = node_text(filenames, src);
-        return text
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        return text.split_whitespace().map(|s| s.to_string()).collect();
     }
     // Fallback: collect all word children after the `include` keyword.
     let mut paths = Vec::new();
@@ -433,7 +452,9 @@ fn extract_function_calls_in_subtree(
     match node.kind() {
         "function_call" | "shell_function" => {
             if let Some(func_name) = find_field_text(node, src, "function") {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: func_name,
                     kind: EdgeKind::Calls,
@@ -500,12 +521,12 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn node_text(node: Node, src: &str) -> String {

@@ -116,7 +116,9 @@ pub fn materialize_reachability(db: &Database) -> Result<()> {
 
         for src in &frontier {
             let src_conf = *conf.get(src).unwrap_or(&1.0);
-            let Some(neighbors) = adj.get(src) else { continue };
+            let Some(neighbors) = adj.get(src) else {
+                continue;
+            };
             for (tgt, edge_conf, edge_kind) in neighbors {
                 // Skip already-reached at strictly shallower depth — the
                 // BFS guarantee says shortest-distance won't improve. If

@@ -50,8 +50,7 @@ pub fn parse_script_tag_deps(
     type_arena: &crate::type_checker::core::types::TypeArena,
 ) -> Vec<ParsedFile> {
     let mut refs: Vec<(&str, &str)> = Vec::new();
-    let existing_paths: HashSet<&str> =
-        parsed.iter().map(|pf| pf.path.as_str()).collect();
+    let existing_paths: HashSet<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
 
     for pf in parsed {
         if !is_script_host_language(&pf.language) {
@@ -146,11 +145,7 @@ fn has_web_asset_extension(url: &str) -> bool {
 
 /// Resolve a script URL against the webroot (for `~/` and `/` prefixes)
 /// or the host file's directory (for relative paths).
-fn resolve_script_url(
-    project_root: &Path,
-    host_file_path: &str,
-    url: &str,
-) -> Option<PathBuf> {
+fn resolve_script_url(project_root: &Path, host_file_path: &str, url: &str) -> Option<PathBuf> {
     let clean_url = url.split(&['?', '#'][..]).next()?.trim();
     if clean_url.is_empty() {
         return None;
@@ -158,7 +153,9 @@ fn resolve_script_url(
 
     let host_abs = project_root.join(host_file_path);
 
-    let rest_opt = clean_url.strip_prefix("~/").or_else(|| clean_url.strip_prefix('/'));
+    let rest_opt = clean_url
+        .strip_prefix("~/")
+        .or_else(|| clean_url.strip_prefix('/'));
     if let Some(rest) = rest_opt {
         // ASP.NET modular layouts expose TWO classes of webroot for a given
         // URL: the module's own `Modules/Foo/wwwroot/` (module-local assets
@@ -219,20 +216,30 @@ fn find_static_web_asset(project_root: &Path, pkg: &str, sub: &str) -> Option<Pa
     let entries = std::fs::read_dir(project_root).ok()?;
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() { continue }
+        if !ft.is_dir() {
+            continue;
+        }
         let d = entry.path();
         if d.file_name().and_then(|n| n.to_str()) == Some(pkg) {
-            if let Some(p) = try_at(&d) { return Some(p); }
+            if let Some(p) = try_at(&d) {
+                return Some(p);
+            }
         }
         // Nested scan: modular layouts put projects one level deeper
         // (`src/Modules/{pkg}/wwwroot/`).
         if let Ok(sub_entries) = std::fs::read_dir(&d) {
             for sub_entry in sub_entries.flatten() {
-                let Ok(sft) = sub_entry.file_type() else { continue };
-                if !sft.is_dir() { continue }
+                let Ok(sft) = sub_entry.file_type() else {
+                    continue;
+                };
+                if !sft.is_dir() {
+                    continue;
+                }
                 let dd = sub_entry.path();
                 if dd.file_name().and_then(|n| n.to_str()) == Some(pkg) {
-                    if let Some(p) = try_at(&dd) { return Some(p); }
+                    if let Some(p) = try_at(&dd) {
+                        return Some(p);
+                    }
                 }
             }
         }
@@ -283,19 +290,31 @@ fn find_webroots_for_host(project_root: &Path, host_abs: &Path) -> Vec<PathBuf> 
     // (e.g. `src/WebHost/wwwroot/` from a module under `src/Modules/`).
     // Two levels deep: `project_root/*/wwwroot` AND `project_root/*/*/wwwroot`.
     let scan_dir = |dir: &Path, name: &str, out: &mut Vec<PathBuf>| {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let Ok(ft) = entry.file_type() else { continue };
-            if !ft.is_dir() { continue }
+            if !ft.is_dir() {
+                continue;
+            }
             let sibling = entry.path();
             let p = sibling.join(name);
-            if p.is_dir() { push_unique(out, p); }
+            if p.is_dir() {
+                push_unique(out, p);
+            }
             if let Ok(sub) = std::fs::read_dir(&sibling) {
                 for sub_entry in sub.flatten() {
-                    let Ok(sft) = sub_entry.file_type() else { continue };
-                    if !sft.is_dir() { continue }
+                    let Ok(sft) = sub_entry.file_type() else {
+                        continue;
+                    };
+                    if !sft.is_dir() {
+                        continue;
+                    }
                     let p = sub_entry.path().join(name);
-                    if p.is_dir() { push_unique(out, p); }
+                    if p.is_dir() {
+                        push_unique(out, p);
+                    }
                 }
             }
         }

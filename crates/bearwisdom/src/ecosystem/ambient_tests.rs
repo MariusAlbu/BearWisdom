@@ -16,7 +16,10 @@ fn matches_nuxt_and_svelte_and_next_generated() {
         "app/.svelte-kit/ambient.d.ts",
         "web/.next/next-env.d.ts",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "should be ambient: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "should be ambient: {p}"
+        );
     }
 }
 
@@ -27,7 +30,10 @@ fn matches_root_relative_forms() {
         ".svelte-kit/ambient.d.ts",
         ".next/next-env.d.ts",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "root-relative should match: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "root-relative should match: {p}"
+        );
     }
 }
 
@@ -39,7 +45,10 @@ fn matches_vue_runtime_declarations() {
         "node_modules/@vue/runtime-dom/dist/runtime-dom.d.ts",
         "node_modules/@vue/reactivity/dist/reactivity.d.ts",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "vue runtime should match: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "vue runtime should match: {p}"
+        );
     }
 }
 
@@ -61,7 +70,10 @@ fn matches_bazel_builtins_path() {
         "ext:bazel-builtins:ctx.bzl",
         "ext:bazel-builtins:env.bzl",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "bazel builtin should match: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "bazel builtin should match: {p}"
+        );
     }
 }
 
@@ -83,14 +95,20 @@ fn matches_dart_core_and_rejects_other_dart_libs() {
         "ext:idx:C:/x/flutter/cache/dart-sdk/lib/core/errors.dart",
         "ext:idx:C:/x/flutter/cache/pkg/sky_engine/lib/core/list.dart",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "dart:core should be ambient: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "dart:core should be ambient: {p}"
+        );
     }
     // Other dart: libraries need an explicit import — not ambient.
     for p in [
         "ext:idx:C:/x/flutter/cache/dart-sdk/lib/async/stream.dart",
         "ext:idx:C:/x/Pub/Cache/hosted/pub.dev/googleapis-16.0.0/lib/docs/v1.dart",
     ] {
-        assert!(!is_framework_ambient_path(&norm(p)), "non-core dart lib must NOT be ambient: {p}");
+        assert!(
+            !is_framework_ambient_path(&norm(p)),
+            "non-core dart lib must NOT be ambient: {p}"
+        );
     }
 }
 
@@ -100,7 +118,10 @@ fn matches_haskell_ghc_internal_prelude() {
         "ext:haskell:ghc-internal/src/GHC/Internal/Maybe.hs",
         "ext:idx:C:/Users/x/cabal/store/ghc-9.12.1/ghc-internal-9.1401.0/src/GHC/Internal/Base.hs",
     ] {
-        assert!(is_framework_ambient_path(&norm(p)), "GHC.Internal prelude should be ambient: {p}");
+        assert!(
+            is_framework_ambient_path(&norm(p)),
+            "GHC.Internal prelude should be ambient: {p}"
+        );
     }
 }
 
@@ -113,7 +134,10 @@ fn rejects_cargo_registry_crates() {
         "ext:rust:C:/Users/x/.cargo/registry/src/index.crates.io-abc/serde-1.0.0/src/lib.rs",
         "ext:rust:serde/src/de/mod.rs",
     ] {
-        assert!(!is_framework_ambient_path(&norm(p)), "cargo dep should NOT be ambient: {p}");
+        assert!(
+            !is_framework_ambient_path(&norm(p)),
+            "cargo dep should NOT be ambient: {p}"
+        );
     }
 }
 
@@ -125,6 +149,9 @@ fn rejects_ordinary_files() {
         "project/.nuxt/other.ts",                   // wrong basename
         "src/components.d.ts",                      // not under .nuxt
     ] {
-        assert!(!is_framework_ambient_path(&norm(p)), "should NOT be ambient: {p}");
+        assert!(
+            !is_framework_ambient_path(&norm(p)),
+            "should NOT be ambient: {p}"
+        );
     }
 }

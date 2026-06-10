@@ -49,18 +49,20 @@ fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
     let conn = db.conn();
     let ids = if symbol_name.contains('.') {
         // Qualified name: expect exactly one match.
-        let mut stmt = conn.prepare(
-            "SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'"
-        ).context("Failed to prepare qualified lookup")?;
-        let rows = stmt.query_map([symbol_name], |r| r.get(0))
+        let mut stmt = conn
+            .prepare("SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'")
+            .context("Failed to prepare qualified lookup")?;
+        let rows = stmt
+            .query_map([symbol_name], |r| r.get(0))
             .context("Failed to query qualified lookup")?;
         rows.filter_map(|r| r.ok()).collect()
     } else {
         // Simple name: may be ambiguous — return all matches.
-        let mut stmt = conn.prepare(
-            "SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'"
-        ).context("Failed to prepare simple lookup")?;
-        let rows = stmt.query_map([symbol_name], |r| r.get(0))
+        let mut stmt = conn
+            .prepare("SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'")
+            .context("Failed to prepare simple lookup")?;
+        let rows = stmt
+            .query_map([symbol_name], |r| r.get(0))
             .context("Failed to query simple lookup")?;
         rows.filter_map(|r| r.ok()).collect()
     };
@@ -87,7 +89,11 @@ pub fn incoming_calls(
     }
 
     let conn = db.conn();
-    let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
+    let limit_clause = if limit > 0 {
+        format!("LIMIT {limit}")
+    } else {
+        String::new()
+    };
     let mut results = Vec::new();
 
     for target_id in &target_ids {
@@ -109,18 +115,21 @@ pub fn incoming_calls(
              {limit_clause}"
         );
 
-        let mut stmt = conn.prepare(&sql)
+        let mut stmt = conn
+            .prepare(&sql)
             .context("Failed to prepare incoming_calls query")?;
 
-        let rows = stmt.query_map([target_id], |row| {
-            Ok(CallHierarchyItem {
-                name:           row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind:           row.get(2)?,
-                file_path:      row.get(3)?,
-                line:           row.get(4)?,
+        let rows = stmt
+            .query_map([target_id], |row| {
+                Ok(CallHierarchyItem {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                })
             })
-        }).context("Failed to execute incoming_calls query")?;
+            .context("Failed to execute incoming_calls query")?;
 
         for row in rows {
             results.push(row.context("Failed to read incoming_calls row")?);
@@ -153,7 +162,11 @@ pub fn outgoing_calls(
     }
 
     let conn = db.conn();
-    let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
+    let limit_clause = if limit > 0 {
+        format!("LIMIT {limit}")
+    } else {
+        String::new()
+    };
     let mut results = Vec::new();
 
     for source_id in &source_ids {
@@ -174,18 +187,21 @@ pub fn outgoing_calls(
              {limit_clause}"
         );
 
-        let mut stmt = conn.prepare(&sql)
+        let mut stmt = conn
+            .prepare(&sql)
             .context("Failed to prepare outgoing_calls query")?;
 
-        let rows = stmt.query_map([source_id], |row| {
-            Ok(CallHierarchyItem {
-                name:           row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind:           row.get(2)?,
-                file_path:      row.get(3)?,
-                line:           row.get(4)?,
+        let rows = stmt
+            .query_map([source_id], |row| {
+                Ok(CallHierarchyItem {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                })
             })
-        }).context("Failed to execute outgoing_calls query")?;
+            .context("Failed to execute outgoing_calls query")?;
 
         for row in rows {
             results.push(row.context("Failed to read outgoing_calls row")?);

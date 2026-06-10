@@ -47,9 +47,15 @@ const LANGUAGES: &[&str] = &["ejs", "javascript"];
 pub struct HexoRuntimeEcosystem;
 
 impl Ecosystem for HexoRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Hexo is a project dep, not an EJS substrate. Gate on the project's
@@ -77,7 +83,9 @@ impl Ecosystem for HexoRuntimeEcosystem {
         Vec::new()
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
         Some(synthesise_hexo_helpers(&dep.root))
@@ -85,13 +93,17 @@ impl Ecosystem for HexoRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for HexoRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_hexo_root(project_root)
     }
 
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> { Vec::new() }
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
         let roots = discover_hexo_root(project_root);
@@ -103,7 +115,9 @@ impl ExternalSourceLocator for HexoRuntimeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<HexoRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(HexoRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(HexoRuntimeEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +224,9 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
     let globals = crate::ecosystem::npm::NPM_GLOBALS_MODULE;
-    for (name, scope) in core_names.iter().map(|n| (n, "hexo.core"))
+    for (name, scope) in core_names
+        .iter()
+        .map(|n| (n, "hexo.core"))
         .chain(theme_names.iter().map(|n| (n, "hexo.theme")))
     {
         if !emitted.insert(name.clone()) {
@@ -230,11 +246,11 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
             scope_path: Some(scope.to_string()),
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     if symbols.is_empty() {
@@ -278,7 +294,9 @@ fn scan_scripts_dir(dir: &Path, out: &mut Vec<String>, depth: u32) {
     if depth > 6 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -307,7 +325,9 @@ pub(crate) fn extract_helper_names(text: &str, marker: &str, out: &mut Vec<Strin
     let bytes = text.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
-        let Some(rel) = text[i..].find(marker) else { break };
+        let Some(rel) = text[i..].find(marker) else {
+            break;
+        };
         let start = i + rel;
         // Identifier-boundary check on the byte before the match.
         if start > 0 {

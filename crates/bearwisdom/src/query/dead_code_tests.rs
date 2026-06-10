@@ -98,7 +98,10 @@ fn dead_code_excludes_test_files() {
 #[test]
 fn dead_code_includes_tests_when_asked() {
     let db = setup_db();
-    let opts = DeadCodeOptions { include_tests: true, ..Default::default() };
+    let opts = DeadCodeOptions {
+        include_tests: true,
+        ..Default::default()
+    };
     let report = find_dead_code(&db, &opts).unwrap();
 
     assert!(report
@@ -132,8 +135,11 @@ fn entry_points_finds_main() {
 fn entry_points_finds_test_functions() {
     let db = setup_db();
     let report = find_entry_points(&db).unwrap();
-    assert!(report.entry_points.iter().any(|ep| ep.name == "test_something"
-        && matches!(ep.entry_kind, EntryPointKind::TestFunction)));
+    assert!(report
+        .entry_points
+        .iter()
+        .any(|ep| ep.name == "test_something"
+            && matches!(ep.entry_kind, EntryPointKind::TestFunction)));
 }
 
 #[test]
@@ -244,7 +250,10 @@ fn dead_code_scope_matches_package_declared_name() {
     )
     .unwrap();
 
-    let opts = DeadCodeOptions { scope: Some("@org/a".to_string()), ..Default::default() };
+    let opts = DeadCodeOptions {
+        scope: Some("@org/a".to_string()),
+        ..Default::default()
+    };
     let report = find_dead_code(&db, &opts).unwrap();
 
     let names: Vec<&str> = report
@@ -252,8 +261,14 @@ fn dead_code_scope_matches_package_declared_name() {
         .iter()
         .map(|c| c.name.as_str())
         .collect();
-    assert!(names.contains(&"dead_in_a"), "scope should include a's dead symbol, got {names:?}");
-    assert!(!names.contains(&"dead_in_b"), "scope should exclude b's dead symbol, got {names:?}");
+    assert!(
+        names.contains(&"dead_in_a"),
+        "scope should include a's dead symbol, got {names:?}"
+    );
+    assert!(
+        !names.contains(&"dead_in_b"),
+        "scope should exclude b's dead symbol, got {names:?}"
+    );
 }
 
 /// Behavioral success criterion #1 from the goal prompt: a trait method

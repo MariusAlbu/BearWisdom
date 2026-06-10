@@ -25,11 +25,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index: usize = 0;
 
     for (idx, cell) in cells::parse_cells(source).into_iter().enumerate() {
@@ -49,11 +49,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     ExtractionResult {
@@ -86,12 +86,7 @@ mod tests {
         let src = "#!csharp\nvar x = 1;\n\n#!fsharp\nlet y = 2\n";
         let r = extract(src, "notebooks/demo.dib");
         assert_eq!(r.symbols[0].name, "demo");
-        let anchors: Vec<&str> = r
-            .symbols
-            .iter()
-            .skip(1)
-            .map(|s| s.name.as_str())
-            .collect();
+        let anchors: Vec<&str> = r.symbols.iter().skip(1).map(|s| s.name.as_str()).collect();
         assert_eq!(anchors, vec!["csharp#0", "fsharp#1"]);
     }
 

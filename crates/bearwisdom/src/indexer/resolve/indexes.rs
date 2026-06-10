@@ -70,7 +70,10 @@ pub(super) fn build_name_index(
             continue;
         }
         for sym in &pf.symbols {
-            kind_map.insert((pf.path.as_str(), sym.qualified_name.as_str()), sym.kind.as_str());
+            kind_map.insert(
+                (pf.path.as_str(), sym.qualified_name.as_str()),
+                sym.kind.as_str(),
+            );
         }
     }
 
@@ -80,7 +83,11 @@ pub(super) fn build_name_index(
             continue;
         }
         // Extract the simple name (last segment of the qualified name).
-        let simple = qname.rsplit('.').next().unwrap_or(qname.as_str()).to_string();
+        let simple = qname
+            .rsplit('.')
+            .next()
+            .unwrap_or(qname.as_str())
+            .to_string();
         let kind = kind_map
             .get(&(file.as_str(), qname.as_str()))
             .copied()
@@ -114,9 +121,11 @@ pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> FxHashMap<Strin
         if is_external_path(&pf.path) {
             continue;
         }
-        if let Some(ns_sym) = pf.symbols.iter().find(|s| {
-            s.kind == SymbolKind::Namespace || s.kind == SymbolKind::Module
-        }) {
+        if let Some(ns_sym) = pf
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Namespace || s.kind == SymbolKind::Module)
+        {
             map.insert(pf.path.clone(), ns_sym.qualified_name.clone());
         }
     }
@@ -230,4 +239,3 @@ pub(super) fn build_import_map(
     }
     map
 }
-

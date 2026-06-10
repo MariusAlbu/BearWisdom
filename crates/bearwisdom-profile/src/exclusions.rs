@@ -23,9 +23,13 @@ pub static COMMON_EXCLUDE_DIRS: &[&str] = &[
 
 /// File extensions that are always skipped (minified/bundled artifacts and source maps).
 static SKIP_EXTENSIONS: &[&str] = &[
-    ".min.js", ".min.css", ".min.mjs",
-    ".bundle.js", ".bundle.css",
-    ".chunk.js", ".chunk.css",
+    ".min.js",
+    ".min.css",
+    ".min.mjs",
+    ".bundle.js",
+    ".bundle.css",
+    ".chunk.js",
+    ".chunk.css",
 ];
 
 /// Returns the deduplicated, sorted union of `COMMON_EXCLUDE_DIRS` and all
@@ -89,7 +93,9 @@ pub fn project_active_languages(root: &Path) -> Vec<&'static str> {
                 continue;
             }
             let name = entry.file_name();
-            let Some(name_str) = name.to_str() else { continue };
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
             if COMMON_EXCLUDE_DIRS.contains(&name_str) {
                 continue;
             }
@@ -171,11 +177,7 @@ pub fn should_exclude_in_project(name: &str, exclude_dirs: &[&'static str]) -> b
 /// `should_exclude_in_project_path` checks this set against the component
 /// position: only the FIRST path component (depth 1) gets the exclusion;
 /// nested copies pass through.
-pub static ROOT_ONLY_EXCLUDE_NAMES: &[&str] = &[
-    "vendor",
-    "lib",
-    "libs",
-];
+pub static ROOT_ONLY_EXCLUDE_NAMES: &[&str] = &["vendor", "lib", "libs"];
 
 /// Path-aware variant of [`should_exclude_in_project`]. Returns true
 /// when ANY component of `rel_path` is excluded — but for names in

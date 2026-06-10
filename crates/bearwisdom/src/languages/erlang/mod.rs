@@ -10,11 +10,11 @@
 //! - `export_attribute` → marks functions as public
 //! - `import_attribute` / `pp_include` → Imports
 
-mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
-pub mod keywords;
 pub mod extract;
+pub(crate) mod hooks;
+pub mod keywords;
+mod predicates;
+pub(crate) mod profile;
 
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
@@ -37,28 +37,32 @@ use crate::types::ExtractionResult;
 pub struct ErlangPlugin;
 
 impl LanguagePlugin for ErlangPlugin {
-    fn id(&self) -> &str { "erlang" }
+    fn id(&self) -> &str {
+        "erlang"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["erlang"] }
+    fn language_ids(&self) -> &[&str] {
+        &["erlang"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".erl", ".hrl"] }
+    fn extensions(&self) -> &[&str] {
+        &[".erl", ".hrl"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_erlang::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "fun_decl",
-            "module_attribute",
-            "record_decl",
-        ]
+        &["fun_decl", "module_attribute", "record_decl"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
@@ -73,11 +77,35 @@ impl LanguagePlugin for ErlangPlugin {
 
     fn keywords(&self) -> &'static [&'static str] {
         &[
-            "atom", "integer", "float", "boolean", "binary", "bitstring",
-            "list", "tuple", "map", "pid", "port", "reference", "fun",
-            "iolist", "iodata", "string", "char", "byte", "timeout",
-            "any", "none", "term", "number", "no_return",
-            "neg_integer", "non_neg_integer", "pos_integer", "nonempty_list", "mfa",
+            "atom",
+            "integer",
+            "float",
+            "boolean",
+            "binary",
+            "bitstring",
+            "list",
+            "tuple",
+            "map",
+            "pid",
+            "port",
+            "reference",
+            "fun",
+            "iolist",
+            "iodata",
+            "string",
+            "char",
+            "byte",
+            "timeout",
+            "any",
+            "none",
+            "term",
+            "number",
+            "no_return",
+            "neg_integer",
+            "non_neg_integer",
+            "pos_integer",
+            "nonempty_list",
+            "mfa",
         ]
     }
 
@@ -89,8 +117,7 @@ impl LanguagePlugin for ErlangPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ERLANG_HOOKS)
     }
 }

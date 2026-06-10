@@ -83,7 +83,9 @@ pub(super) fn sweep_typerefs<'a>(
                     && !predicates::is_c_compiler_intrinsic(&name)
                     && !predicates::is_template_param(&name)
                 {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: default_sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -92,9 +94,9 @@ pub(super) fn sweep_typerefs<'a>(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -112,7 +114,9 @@ pub(super) fn sweep_typerefs<'a>(
                         "type_identifier" => {
                             let name = node_text(base, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: default_sym_idx,
                                     target_name: name,
                                     kind: EdgeKind::Inherits,
@@ -121,9 +125,9 @@ pub(super) fn sweep_typerefs<'a>(
                                     module: None,
                                     chain: None,
                                     byte_offset: base.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         "base_class_specifier" => {
@@ -132,7 +136,9 @@ pub(super) fn sweep_typerefs<'a>(
                                 if inner.kind() == "type_identifier" {
                                     let name = node_text(inner, src);
                                     if !name.is_empty() {
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index: default_sym_idx,
                                             target_name: name,
                                             kind: EdgeKind::Inherits,
@@ -141,9 +147,9 @@ pub(super) fn sweep_typerefs<'a>(
                                             module: None,
                                             chain: None,
                                             byte_offset: inner.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
                                     }
                                 }
                             }
@@ -165,7 +171,10 @@ pub(super) fn sweep_typerefs<'a>(
                 sweep_typerefs(child, src, default_sym_idx, language, refs);
             }
             // Skip string/comment nodes that have no useful type info.
-            "string_literal" | "comment" | "number_literal" | "char_literal"
+            "string_literal"
+            | "comment"
+            | "number_literal"
+            | "char_literal"
             | "concatenated_string" => {}
             _ => {
                 sweep_typerefs(child, src, default_sym_idx, language, refs);
@@ -173,4 +182,3 @@ pub(super) fn sweep_typerefs<'a>(
         }
     }
 }
-

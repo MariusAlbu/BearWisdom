@@ -1,13 +1,13 @@
 //! javascript language plugin.
 
+mod calls;
+pub mod extract;
+mod globals;
 mod helpers;
+mod imports;
+pub(crate) mod keywords;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-pub(crate) mod keywords;
-pub mod extract;
-mod calls;
-mod imports;
-mod globals;
 
 pub use profile::JAVASCRIPT_PROFILE;
 
@@ -32,24 +32,32 @@ mod calls_tests;
 mod predicates_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct JavascriptPlugin;
 
 impl LanguagePlugin for JavascriptPlugin {
-    fn id(&self) -> &str { "javascript" }
+    fn id(&self) -> &str {
+        "javascript"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["javascript", "jsx"] }
+    fn language_ids(&self) -> &[&str] {
+        &["javascript", "jsx"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".js", ".jsx", ".mjs", ".cjs"] }
+    fn extensions(&self) -> &[&str] {
+        &[".js", ".jsx", ".mjs", ".cjs"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_javascript::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = lang_id;
@@ -62,7 +70,11 @@ impl LanguagePlugin for JavascriptPlugin {
             return ExtractionResult::empty();
         }
         let mut result = extract::extract(source);
-        crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        crate::languages::common::append_ember_helper_default_export(
+            file_path,
+            source,
+            &mut result,
+        );
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         crate::languages::common::append_amd_define_imports(source, &mut result);
         crate::languages::common::append_jquery_fn_plugin_globals(source, &mut result);
@@ -121,8 +133,7 @@ impl LanguagePlugin for JavascriptPlugin {
     /// `lib.es5.d.ts` / `lib.dom.d.ts`.
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&crate::languages::typescript::TYPESCRIPT_HOOKS)
     }
 }

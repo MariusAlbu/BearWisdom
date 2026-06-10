@@ -116,7 +116,11 @@ fn apply_local_resolution(
         let mut set = rustc_hash::FxHashSet::default();
         let line_offsets: Vec<usize> = std::iter::once(0)
             .chain(source.bytes().enumerate().filter_map(|(i, b)| {
-                if b == b'\n' { Some(i + 1) } else { None }
+                if b == b'\n' {
+                    Some(i + 1)
+                } else {
+                    None
+                }
             }))
             .collect();
 
@@ -127,7 +131,8 @@ fn apply_local_resolution(
             // Convert byte offset to 0-based line number.
             // partition_point returns count of line starts <= byte_offset (1-indexed);
             // saturating_sub to get 0-based line matching ExtractedRef.line.
-            let line = (line_offsets.partition_point(|&off| off <= byte_offset) as u32).saturating_sub(1);
+            let line =
+                (line_offsets.partition_point(|&off| off <= byte_offset) as u32).saturating_sub(1);
             // Extract the identifier name at this offset.
             let end = source[byte_offset..]
                 .find(|c: char| !c.is_alphanumeric() && c != '_')
@@ -208,4 +213,3 @@ fn is_operator_only_call(r: &crate::types::ExtractedRef) -> bool {
 #[cfg(test)]
 #[path = "local_refs_tests.rs"]
 mod tests;
-

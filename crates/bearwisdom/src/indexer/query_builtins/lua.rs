@@ -2,21 +2,11 @@
 // Builtins and locals.scm content for `lua` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "and",
-    "do",
-    "end",
-    "function",
-    "global",
-    "goto",
-    "in",
-    "local",
-    "not",
-    "or",
-    "return",
-    "self",
+    "and", "do", "end", "function", "global", "goto", "in", "local", "not", "or", "return", "self",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 [\n\
   (chunk)\n\
   (do_statement)\n\
@@ -48,4 +38,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
 \n\
 ; References\n\
 (identifier) @local.reference\n\
-");
+",
+);

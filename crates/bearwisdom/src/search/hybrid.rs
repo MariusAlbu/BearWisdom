@@ -121,8 +121,7 @@ pub fn hybrid_search(
     // Batch-fetch all chunk IDs for the FTS-matched files in one query rather
     // than one query per file path.
     let fts_paths: Vec<&str> = text_file_rank.keys().map(|s| s.as_str()).collect();
-    let mut candidate_chunk_ids: HashSet<i64> =
-        batch_chunk_ids_for_files(db.conn(), &fts_paths)?;
+    let mut candidate_chunk_ids: HashSet<i64> = batch_chunk_ids_for_files(db.conn(), &fts_paths)?;
 
     for &chunk_id in vec_chunk_rank.keys() {
         candidate_chunk_ids.insert(chunk_id);
@@ -165,7 +164,10 @@ pub fn hybrid_search(
         let meta = match meta_map.get(&chunk_id) {
             Some(m) => m,
             None => {
-                warn!(chunk_id, "chunk_id disappeared from meta_map during result build");
+                warn!(
+                    chunk_id,
+                    "chunk_id disappeared from meta_map during result build"
+                );
                 continue;
             }
         };
@@ -191,7 +193,10 @@ pub fn hybrid_search(
         }
     }
 
-    debug!(result_count = results.len(), query, "hybrid_search complete");
+    debug!(
+        result_count = results.len(),
+        query, "hybrid_search complete"
+    );
     Ok(results)
 }
 
@@ -251,7 +256,10 @@ pub fn semantic_search(
         trace!(chunk_id, rank = vector_rank, "semantic_search result");
     }
 
-    debug!(result_count = results.len(), query, "semantic_search complete");
+    debug!(
+        result_count = results.len(),
+        query, "semantic_search complete"
+    );
     Ok(results)
 }
 
@@ -389,8 +397,7 @@ fn batch_chunk_ids_for_files(
     conn.execute("DELETE FROM _search_paths", [])?;
 
     {
-        let mut ins =
-            conn.prepare("INSERT OR IGNORE INTO _search_paths (path) VALUES (?1)")?;
+        let mut ins = conn.prepare("INSERT OR IGNORE INTO _search_paths (path) VALUES (?1)")?;
         for path in file_paths {
             ins.execute([*path])?;
         }
@@ -431,8 +438,7 @@ fn batch_fetch_chunk_meta(
     conn.execute("DELETE FROM _search_chunks", [])?;
 
     {
-        let mut ins =
-            conn.prepare("INSERT OR IGNORE INTO _search_chunks (id) VALUES (?1)")?;
+        let mut ins = conn.prepare("INSERT OR IGNORE INTO _search_chunks (id) VALUES (?1)")?;
         for &id in chunk_ids {
             ins.execute([id])?;
         }

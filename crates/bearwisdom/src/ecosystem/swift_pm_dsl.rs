@@ -29,9 +29,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -46,9 +44,15 @@ const LANGUAGES: &[&str] = &["swift"];
 pub struct SwiftPmDslEcosystem;
 
 impl Ecosystem for SwiftPmDslEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::ManifestFieldContains {
@@ -66,12 +70,18 @@ impl Ecosystem for SwiftPmDslEcosystem {
         walk_manifest_api(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for SwiftPmDslEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_manifest_api()
     }
@@ -83,7 +93,9 @@ impl ExternalSourceLocator for SwiftPmDslEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<SwiftPmDslEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(SwiftPmDslEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(SwiftPmDslEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -109,10 +121,14 @@ fn discover_manifest_api() -> Vec<ExternalDepRoot> {
 fn probe_manifest_api_dir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_SWIFT_TOOLCHAIN") {
         let toolchain = PathBuf::from(explicit);
-        if let Some(p) = manifest_api_under(&toolchain) { return Some(p); }
+        if let Some(p) = manifest_api_under(&toolchain) {
+            return Some(p);
+        }
     }
     if let Some(p) = probe_via_xcrun() {
-        if let Some(found) = manifest_api_under(&p) { return Some(found); }
+        if let Some(found) = manifest_api_under(&p) {
+            return Some(found);
+        }
     }
     for candidate in standard_toolchain_paths() {
         if let Some(found) = manifest_api_under(&candidate) {
@@ -128,9 +144,7 @@ fn standard_toolchain_paths() -> Vec<PathBuf> {
     out.push(PathBuf::from(
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain",
     ));
-    out.push(PathBuf::from(
-        "/Library/Developer/CommandLineTools",
-    ));
+    out.push(PathBuf::from("/Library/Developer/CommandLineTools"));
     if let Some(home) = dirs::home_dir() {
         out.push(home.join("Library/Developer/Toolchains/swift-latest.xctoolchain"));
     }
@@ -153,24 +167,37 @@ fn standard_toolchain_paths() -> Vec<PathBuf> {
 /// exists. Tries the canonical layout first, then a couple of legacy
 /// shapes.
 fn manifest_api_under(toolchain: &Path) -> Option<PathBuf> {
-    if !toolchain.is_dir() { return None }
+    if !toolchain.is_dir() {
+        return None;
+    }
     // Modern: <toolchain>/usr/lib/swift/pm/ManifestAPI
     let modern = toolchain.join("usr/lib/swift/pm/ManifestAPI");
-    if modern.is_dir() { return Some(modern); }
+    if modern.is_dir() {
+        return Some(modern);
+    }
     // Some Linux distros: <toolchain>/lib/swift/pm/ManifestAPI
     let alt = toolchain.join("lib/swift/pm/ManifestAPI");
-    if alt.is_dir() { return Some(alt); }
+    if alt.is_dir() {
+        return Some(alt);
+    }
     // Windows swift.org installer: <toolchain>/usr/lib/swift_static/pm/ManifestAPI
     let win = toolchain.join("usr/lib/swift_static/pm/ManifestAPI");
-    if win.is_dir() { return Some(win); }
+    if win.is_dir() {
+        return Some(win);
+    }
     None
 }
 
 fn probe_via_xcrun() -> Option<PathBuf> {
     // `xcrun --find swiftc` returns the path to the swiftc binary inside the
     // active toolchain. The toolchain root is the bin/ ancestor.
-    let output = Command::new("xcrun").args(["--find", "swiftc"]).output().ok()?;
-    if !output.status.success() { return None; }
+    let output = Command::new("xcrun")
+        .args(["--find", "swiftc"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let swiftc = PathBuf::from(stdout.trim());
     // <toolchain>/usr/bin/swiftc → toolchain root is parent.parent.parent
@@ -183,12 +210,18 @@ fn probe_via_xcrun() -> Option<PathBuf> {
 
 fn walk_manifest_api(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dep.root) else { return out };
+    let Ok(entries) = std::fs::read_dir(&dep.root) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !ft.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         // `.swiftinterface` is the textual module interface; some toolchains
         // also ship a redundant `.private.swiftinterface`. Index the public
         // surface only — the private one duplicates declarations and adds

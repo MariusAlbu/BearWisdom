@@ -42,9 +42,18 @@ fn sdl3_additions_present() {
     let pf = synthesize_file();
     let names: Vec<&str> = pf.symbols.iter().map(|s| s.name.as_str()).collect();
 
-    assert!(names.contains(&"SDL_RenderTexture"), "SDL3 SDL_RenderTexture must be present");
-    assert!(names.contains(&"SDL_SetRenderClipRect"), "SDL3 SDL_SetRenderClipRect must be present");
-    assert!(names.contains(&"SDL_CreateWindowAndRenderer"), "SDL3 SDL_CreateWindowAndRenderer must be present");
+    assert!(
+        names.contains(&"SDL_RenderTexture"),
+        "SDL3 SDL_RenderTexture must be present"
+    );
+    assert!(
+        names.contains(&"SDL_SetRenderClipRect"),
+        "SDL3 SDL_SetRenderClipRect must be present"
+    );
+    assert!(
+        names.contains(&"SDL_CreateWindowAndRenderer"),
+        "SDL3 SDL_CreateWindowAndRenderer must be present"
+    );
     assert!(names.contains(&"SDL_ShowWindow"));
     assert!(names.contains(&"SDL_SetWindowResizable"));
     assert!(names.contains(&"SDL_AddEventWatch"));
@@ -125,7 +134,11 @@ fn sdl_cmake_project_returns_root() {
         .unwrap();
     let eco = SdlSyntheticsEcosystem;
     let roots = ExternalSourceLocator::locate_roots(&eco, dir.path());
-    assert_eq!(roots.len(), 1, "locate_roots must return the synthetic dep root for SDL projects");
+    assert_eq!(
+        roots.len(),
+        1,
+        "locate_roots must return the synthetic dep root for SDL projects"
+    );
 }
 
 #[test]

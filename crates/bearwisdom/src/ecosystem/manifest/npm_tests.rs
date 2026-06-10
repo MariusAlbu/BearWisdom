@@ -24,9 +24,18 @@ fn workspace_protocol_deps_excluded() {
     }"#;
     let (_, deps) = parse_package_json(json);
     assert!(deps.contains(&"react".to_string()), "registry dep kept");
-    assert!(!deps.contains(&"@myorg/utils".to_string()), "workspace:* excluded");
-    assert!(!deps.contains(&"@myorg/ui".to_string()), "workspace:^ excluded");
-    assert!(!deps.contains(&"@myorg/local".to_string()), "file: excluded");
+    assert!(
+        !deps.contains(&"@myorg/utils".to_string()),
+        "workspace:* excluded"
+    );
+    assert!(
+        !deps.contains(&"@myorg/ui".to_string()),
+        "workspace:^ excluded"
+    );
+    assert!(
+        !deps.contains(&"@myorg/local".to_string()),
+        "file: excluded"
+    );
 }
 
 #[test]
@@ -122,9 +131,18 @@ fn child_paths_shadow_parent_on_conflict() {
             ),
         ],
     );
-    assert!(out.contains(&("@/".to_string(), "app/".to_string())), "child @/ wins");
-    assert!(out.contains(&("~/".to_string(), "lib/".to_string())), "parent ~/ inherited");
-    assert!(!out.contains(&("@/".to_string(), "src/".to_string())), "parent @/ shadowed");
+    assert!(
+        out.contains(&("@/".to_string(), "app/".to_string())),
+        "child @/ wins"
+    );
+    assert!(
+        out.contains(&("~/".to_string(), "lib/".to_string())),
+        "parent ~/ inherited"
+    );
+    assert!(
+        !out.contains(&("@/".to_string(), "src/".to_string())),
+        "parent @/ shadowed"
+    );
 }
 
 #[test]
@@ -137,7 +155,10 @@ fn extends_package_preset_in_node_modules() {
     let out = paths_via(
         &child,
         vec![
-            (child.clone(), r#"{"extends":"@tsconfig/base/tsconfig.json"}"#),
+            (
+                child.clone(),
+                r#"{"extends":"@tsconfig/base/tsconfig.json"}"#,
+            ),
             (preset, r#"{"compilerOptions":{"paths":{"@/*":["src/*"]}}}"#),
         ],
     );

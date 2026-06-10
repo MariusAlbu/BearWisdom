@@ -165,7 +165,10 @@ fn synth_ctx_api_symbols_in_database() {
             |r| r.get(0),
         )
         .unwrap_or(0);
-    assert_eq!(run_shell, 1, "ctx.actions.run_shell must be in symbol table");
+    assert_eq!(
+        run_shell, 1,
+        "ctx.actions.run_shell must be in symbol table"
+    );
 
     let label_name: i64 = db
         .query_row(

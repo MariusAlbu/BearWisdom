@@ -72,21 +72,13 @@ impl LanguagePlugin for HarePlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call_expression",
-            "use_statement",
-        ]
+        &["call_expression", "use_statement"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
         &[
-            "bool", "void", "never",
-            "int", "i8", "i16", "i32", "i64",
-            "uint", "u8", "u16", "u32", "u64",
-            "uintptr", "size",
-            "f32", "f64",
-            "rune", "str", "bytes",
-            "null",
+            "bool", "void", "never", "int", "i8", "i16", "i32", "i64", "uint", "u8", "u16", "u32",
+            "u64", "uintptr", "size", "f32", "f64", "rune", "str", "bytes", "null",
         ]
     }
 
@@ -98,8 +90,7 @@ impl LanguagePlugin for HarePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::HARE_HOOKS)
     }
 }

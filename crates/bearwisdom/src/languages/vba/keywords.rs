@@ -44,7 +44,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Nothing",
     "Empty",
     "Null",
-
     // ── String intrinsics ─────────────────────────────────────────────────────
     "Len",
     "LenB",
@@ -81,7 +80,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "FormatPercent",
     "FormatDateTime",
     "StrReverse",
-
     // ── Type-conversion intrinsics ────────────────────────────────────────────
     "CInt",
     "CLng",
@@ -97,7 +95,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "CByte",
     "CVar",
     "CVErr",
-
     // ── Numeric / math intrinsics ─────────────────────────────────────────────
     "Int",
     "Fix",
@@ -113,7 +110,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Atn",
     "Rnd",
     "Randomize",
-
     // ── Type-test intrinsics ──────────────────────────────────────────────────
     "IsNumeric",
     "IsEmpty",
@@ -125,13 +121,11 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "IsMissing",
     "TypeName",
     "VarType",
-
     // ── Array intrinsics ──────────────────────────────────────────────────────
     "Array",
     "UBound",
     "LBound",
     "Filter",
-
     // ── Event / flow control statements ──────────────────────────────────────
     // These are VBA language statements that appear as the first identifier
     // on a line and look like procedure calls to the heuristic scanner.
@@ -139,7 +133,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "GoSub",
     "DoEvents",
     "Static",
-
     // ── I/O and interaction intrinsics ────────────────────────────────────────
     // These are VBA runtime statements, not Office-specific.
     "MsgBox",
@@ -151,7 +144,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "GetAllSettings",
     "SendKeys",
     "Beep",
-
     // ── Date / time intrinsics ────────────────────────────────────────────────
     "Now",
     "Date",
@@ -173,7 +165,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "TimeSerial",
     "TimeValue",
     "Timer",
-
     // ── File / I/O intrinsics ─────────────────────────────────────────────────
     "Dir",
     "FileLen",
@@ -192,12 +183,10 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "EOF",
     "Loc",
     "Seek",
-
     // ── Pointer / memory intrinsics ───────────────────────────────────────────
     "VarPtr",
     "ObjPtr",
     "StrPtr",
-
     // ── Miscellaneous intrinsics ──────────────────────────────────────────────
     "Choose",
     "Switch",
@@ -212,7 +201,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "GetObject",
     "TypeOf",
     "Nz",
-
     // ── Office Object Model — common top-level objects ────────────────────────
     // These are COM type library definitions from Microsoft Office, not VBA
     // language intrinsics. A typelib walker would be the correct fix; this
@@ -245,7 +233,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "Me",
     "Err",
     "Debug",
-
     // ── Excel-specific constants frequently used as bare names ────────────────
     "xlUp",
     "xlDown",

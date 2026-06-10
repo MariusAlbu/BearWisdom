@@ -1,4 +1,7 @@
-use super::hooks::{detect_ocaml_caqti_emission, detect_ocaml_caqti_with_imports, detect_ocaml_cohttp_producer, detect_ocaml_dream_route, OcamlHooks};
+use super::hooks::{
+    detect_ocaml_caqti_emission, detect_ocaml_caqti_with_imports, detect_ocaml_cohttp_producer,
+    detect_ocaml_dream_route, OcamlHooks,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 
@@ -132,9 +135,16 @@ fn build_file_context_includes_implicit_stdlib_open() {
         .iter()
         .filter(|i| i.imported_name == "Stdlib")
         .collect();
-    assert_eq!(stdlib_imports.len(), 1, "expected exactly one implicit Stdlib open");
+    assert_eq!(
+        stdlib_imports.len(),
+        1,
+        "expected exactly one implicit Stdlib open"
+    );
     let imp = stdlib_imports[0];
     assert!(imp.is_wildcard, "Stdlib must be wildcard-opened");
-    assert_eq!(imp.module_path.as_deref(), Some("stdlib"),
-        "module_path lowercased so file_stem_matches against stdlib.ml");
+    assert_eq!(
+        imp.module_path.as_deref(),
+        Some("stdlib"),
+        "module_path lowercased so file_stem_matches against stdlib.ml"
+    );
 }

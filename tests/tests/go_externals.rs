@@ -161,12 +161,16 @@ fn external_go_package_is_indexed_and_resolved() {
 
     // The externals must not appear in user-facing symbol search.
     let search_hits =
-        bearwisdom::query::search::search_symbols(&db, "Greet", 10, &Default::default())
-            .unwrap();
+        bearwisdom::query::search::search_symbols(&db, "Greet", 10, &Default::default()).unwrap();
     assert!(
-        search_hits.iter().all(|s| !s.qualified_name.contains("greeter")),
+        search_hits
+            .iter()
+            .all(|s| !s.qualified_name.contains("greeter")),
         "search_symbols leaked an external symbol: {:?}",
-        search_hits.iter().map(|s| &s.qualified_name).collect::<Vec<_>>()
+        search_hits
+            .iter()
+            .map(|s| &s.qualified_name)
+            .collect::<Vec<_>>()
     );
 
     // --- Probe: does the resolver close the loop? ---

@@ -10,9 +10,16 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 const GROOVY_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method, SymbolKind::Constructor],
+        &[
+            SymbolKind::Function,
+            SymbolKind::Method,
+            SymbolKind::Constructor,
+        ],
     ),
-    (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::Inherits,
+        &[SymbolKind::Class, SymbolKind::Interface],
+    ),
     (EdgeKind::Implements, &[SymbolKind::Interface]),
     (
         EdgeKind::TypeRef,
@@ -74,7 +81,8 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

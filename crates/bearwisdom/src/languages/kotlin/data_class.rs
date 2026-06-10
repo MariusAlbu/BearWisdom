@@ -98,9 +98,19 @@ pub(super) fn synthesize_data_class_members(
             }
 
             let prop_type = property_type_from_source(prop, &lines);
-            let ret_ty = if prop_type.is_empty() { "Any".to_string() } else { prop_type.clone() };
+            let ret_ty = if prop_type.is_empty() {
+                "Any".to_string()
+            } else {
+                prop_type.clone()
+            };
             let sig = format!("fun {method_name}(): {ret_ty}");
-            let comp_sym = make_synth(&method_name, SymbolKind::Method, sig, class_qname, prop.start_line);
+            let comp_sym = make_synth(
+                &method_name,
+                SymbolKind::Method,
+                sig,
+                class_qname,
+                prop.start_line,
+            );
             let comp_idx = out_symbols.len();
             out_symbols.push(comp_sym);
 
@@ -117,19 +127,28 @@ pub(super) fn synthesize_data_class_members(
         // value).  Emitting them as members lets calls like `.toString()`
         // resolve to a class member rather than going unresolved.
         let structural: [(&str, &str); 3] = [
-            ("equals",   "fun equals(other: Any?): Boolean"),
+            ("equals", "fun equals(other: Any?): Boolean"),
             ("hashCode", "fun hashCode(): Int"),
             ("toString", "fun toString(): String"),
         ];
         for (name, sig) in structural {
             let qname = format!("{class_qname}.{name}");
             if !existing.contains(qname.as_str()) && emitted.insert(qname.clone()) {
-                out_symbols.push(make_synth(name, SymbolKind::Method, sig.to_string(), class_qname, line));
+                out_symbols.push(make_synth(
+                    name,
+                    SymbolKind::Method,
+                    sig.to_string(),
+                    class_qname,
+                    line,
+                ));
             }
         }
     }
 
-    Synthesized { symbols: out_symbols, refs: out_refs }
+    Synthesized {
+        symbols: out_symbols,
+        refs: out_refs,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,15 +236,38 @@ fn type_head(t: &str) -> &str {
 fn is_kotlin_primitive(t: &str) -> bool {
     matches!(
         t,
-        "Boolean" | "Byte" | "Short" | "Int" | "Long" | "Float" | "Double"
-            | "Char" | "String" | "Unit" | "Nothing" | "Any"
-            | "boolean" | "byte" | "short" | "int" | "long" | "float" | "double"
-            | "char" | "void"
+        "Boolean"
+            | "Byte"
+            | "Short"
+            | "Int"
+            | "Long"
+            | "Float"
+            | "Double"
+            | "Char"
+            | "String"
+            | "Unit"
+            | "Nothing"
+            | "Any"
+            | "boolean"
+            | "byte"
+            | "short"
+            | "int"
+            | "long"
+            | "float"
+            | "double"
+            | "char"
+            | "void"
     )
 }
 
 /// Build a synthesized method symbol parented to `scope_qname`.
-fn make_synth(name: &str, kind: SymbolKind, signature: String, scope_qname: &str, line: u32) -> ExtractedSymbol {
+fn make_synth(
+    name: &str,
+    kind: SymbolKind,
+    signature: String,
+    scope_qname: &str,
+    line: u32,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: format!("{scope_qname}.{name}"),

@@ -15,9 +15,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
-use crate::indexer::resolve::flow_emit::{
-    ChannelRole, FlowEmission, NamedChannelKind, StreamKind,
-};
+use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind, StreamKind};
 use crate::types::CallArg;
 
 use super::db::is_pascal_case_first;
@@ -44,7 +42,7 @@ pub(crate) fn detect_mq_chain_emission(
         name,
         role,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -149,7 +147,7 @@ pub(crate) fn detect_bgjob_chain_emission(
             name: format!("{}/*", queue_name),
             role,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -169,7 +167,7 @@ pub(crate) fn detect_bgjob_chain_emission(
             name: format!("{}/*", queue_name),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -188,7 +186,7 @@ pub(crate) fn detect_bgjob_chain_emission(
             name: format!("{}/*", queue_name),
             role,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -205,7 +203,7 @@ pub(crate) fn detect_bgjob_chain_emission(
         name,
         role,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -341,7 +339,7 @@ pub(crate) fn detect_rpc_chain_emission(
             name: canonical_rpc_key(&service, "*"),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -372,7 +370,7 @@ pub(crate) fn detect_rpc_chain_emission(
         name: canonical_rpc_key(&service_norm, method),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -491,7 +489,7 @@ pub(crate) fn detect_mailer_chain_emission(
             name: template,
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     // Fallback: the chain root identifies a library-named mailer client
@@ -502,7 +500,11 @@ pub(crate) fn detect_mailer_chain_emission(
     // preserved for nodemailer / Mailer-service shapes; pairing those
     // through a wildcard would cluster every unrelated mailer call into
     // one bucket.
-    let root_name = chain.segments.first().map(|s| s.name.as_str()).unwrap_or("");
+    let root_name = chain
+        .segments
+        .first()
+        .map(|s| s.name.as_str())
+        .unwrap_or("");
     let is_library_root = matches!(
         root_name,
         "resend" | "sgMail" | "sendgrid" | "postmark" | "mailgun" | "Resend"
@@ -515,7 +517,7 @@ pub(crate) fn detect_mailer_chain_emission(
         name: format!("ts.{}", root_name),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 

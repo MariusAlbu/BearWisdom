@@ -24,10 +24,7 @@ use crate::types::{ExtractedSymbol, ExtractionResult, SymbolKind};
 // `addClass`, ...) need jQuery's own source on disk to be indexed.
 // ---------------------------------------------------------------------------
 
-pub fn append_jquery_fn_plugin_globals(
-    source: &str,
-    result: &mut crate::types::ExtractionResult,
-) {
+pub fn append_jquery_fn_plugin_globals(source: &str, result: &mut crate::types::ExtractionResult) {
     for name in scan_jquery_fn_plugin_names(source) {
         let qname = format!("__npm_globals__.{name}");
         if result.symbols.iter().any(|s| s.qualified_name == qname) {
@@ -47,11 +44,11 @@ pub fn append_jquery_fn_plugin_globals(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -145,7 +142,9 @@ pub(crate) fn scan_jquery_fn_plugin_names(source: &str) -> Vec<String> {
             if let Some(n) = name {
                 let trimmed = n.trim();
                 if !trimmed.is_empty()
-                    && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                    && trimmed
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
                     && !out.iter().any(|x| x == trimmed)
                 {
                     out.push(trimmed.to_string());
@@ -158,4 +157,3 @@ pub(crate) fn scan_jquery_fn_plugin_names(source: &str) -> Vec<String> {
     }
     out
 }
-

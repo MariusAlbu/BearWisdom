@@ -43,8 +43,7 @@ fn seed_fake_maven_repo() -> TempDir {
     let jar_path = artifact_dir.join("greeter-1.0.0-sources.jar");
     let jar_file = fs::File::create(&jar_path).unwrap();
     let mut zip = zip::ZipWriter::new(jar_file);
-    let options =
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     zip.start_file("com/fakeext/greeter/Greeter.java", options)
         .unwrap();
@@ -148,10 +147,10 @@ fn seed_isolated_chain_repo() -> TempDir {
     let jar_path = artifact_dir.join("data-2.0.0-sources.jar");
     let jar_file = fs::File::create(&jar_path).unwrap();
     let mut zip = zip::ZipWriter::new(jar_file);
-    let options =
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    zip.start_file("com/fakeext/data/Repository.java", options).unwrap();
+    zip.start_file("com/fakeext/data/Repository.java", options)
+        .unwrap();
     zip.write_all(
         br#"package com.fakeext.data;
 
@@ -162,7 +161,8 @@ public class Repository {
     )
     .unwrap();
 
-    zip.start_file("com/fakeext/data/Entity.java", options).unwrap();
+    zip.start_file("com/fakeext/data/Entity.java", options)
+        .unwrap();
     zip.write_all(
         br#"package com.fakeext.data;
 
@@ -182,7 +182,9 @@ public class Entity {
 /// `getEmail` reference is the second hop, so the assertion can't false-pass on
 /// a direct `Entity` chain.
 fn seed_no_import_chain_consumer() -> TestProject {
-    let project = TestProject { dir: TempDir::new().unwrap() };
+    let project = TestProject {
+        dir: TempDir::new().unwrap(),
+    };
     project.add_file(
         "pom.xml",
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -227,7 +229,9 @@ public class App {
 /// though the parameter's own qname is package-less.
 #[test]
 fn internal_java_param_rooted_chain_resolves() {
-    let project = TestProject { dir: TempDir::new().unwrap() };
+    let project = TestProject {
+        dir: TempDir::new().unwrap(),
+    };
     project.add_file(
         "src/main/java/app/Repository.java",
         "package app;\npublic class Repository {\n    public Entity findOne() { return null; }\n}\n",
@@ -299,7 +303,10 @@ fn external_java_chain_types_past_external_method_return() {
             |r| r.get(0),
         )
         .unwrap();
-    assert!(repo_indexed >= 1, "Repository (imported) not pulled ({repo_indexed})");
+    assert!(
+        repo_indexed >= 1,
+        "Repository (imported) not pulled ({repo_indexed})"
+    );
 
     let entity_indexed: i64 = db
         .query_row(
@@ -401,8 +408,7 @@ fn external_java_package_is_indexed_and_resolved() {
 
     // Search must not leak externals into user-facing results.
     let search_hits =
-        bearwisdom::query::search::search_symbols(&db, "Greeter", 10, &Default::default())
-            .unwrap();
+        bearwisdom::query::search::search_symbols(&db, "Greeter", 10, &Default::default()).unwrap();
     assert!(
         search_hits
             .iter()

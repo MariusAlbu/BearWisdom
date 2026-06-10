@@ -100,7 +100,9 @@ pub fn build_robot_dynamic_keyword_map(
 
     for path in library_paths {
         let Some(source) = reader(path) else { continue };
-        let Some(tree) = parser.parse(&source, None) else { continue };
+        let Some(tree) = parser.parse(&source, None) else {
+            continue;
+        };
         let mut keywords: Vec<RobotDynamicKeyword> = Vec::new();
         scan_module(tree.root_node(), source.as_bytes(), &mut keywords);
         if !keywords.is_empty() {
@@ -206,12 +208,18 @@ fn scan_class_dict_assignment(
     class_name: Option<&str>,
     out: &mut Vec<RobotDynamicKeyword>,
 ) {
-    let Some(asn) = first_child_of_kind(stmt, "assignment") else { return };
-    let Some(left) = asn.child_by_field_name("left") else { return };
+    let Some(asn) = first_child_of_kind(stmt, "assignment") else {
+        return;
+    };
+    let Some(left) = asn.child_by_field_name("left") else {
+        return;
+    };
     if left.kind() != "identifier" {
         return;
     }
-    let Some(right) = asn.child_by_field_name("right") else { return };
+    let Some(right) = asn.child_by_field_name("right") else {
+        return;
+    };
     if right.kind() != "dictionary" {
         return;
     }
@@ -246,13 +254,21 @@ fn scan_top_level_assignment(
     class_name: Option<&str>,
     out: &mut Vec<RobotDynamicKeyword>,
 ) {
-    let Some(asn) = first_child_of_kind(stmt, "assignment") else { return };
-    let Some(left) = asn.child_by_field_name("left") else { return };
-    let Ok(left_text) = left.utf8_text(src) else { return };
+    let Some(asn) = first_child_of_kind(stmt, "assignment") else {
+        return;
+    };
+    let Some(left) = asn.child_by_field_name("left") else {
+        return;
+    };
+    let Ok(left_text) = left.utf8_text(src) else {
+        return;
+    };
     if left_text != "KEYWORDS" {
         return;
     }
-    let Some(right) = asn.child_by_field_name("right") else { return };
+    let Some(right) = asn.child_by_field_name("right") else {
+        return;
+    };
     if right.kind() != "dictionary" {
         return;
     }
@@ -275,12 +291,18 @@ fn scan_get_keyword_names_fn(
     method_names: &[String],
     out: &mut Vec<RobotDynamicKeyword>,
 ) {
-    let Some(name_node) = fn_node.child_by_field_name("name") else { return };
-    let Ok(name) = name_node.utf8_text(src) else { return };
+    let Some(name_node) = fn_node.child_by_field_name("name") else {
+        return;
+    };
+    let Ok(name) = name_node.utf8_text(src) else {
+        return;
+    };
     if name != "get_keyword_names" {
         return;
     }
-    let Some(body) = fn_node.child_by_field_name("body") else { return };
+    let Some(body) = fn_node.child_by_field_name("body") else {
+        return;
+    };
     let mut cursor = body.walk();
     for stmt in body.children(&mut cursor) {
         if stmt.kind() != "return_statement" {
@@ -315,9 +337,15 @@ fn scan_decorated_method(
     class_name: Option<&str>,
     out: &mut Vec<RobotDynamicKeyword>,
 ) {
-    let Some(fn_node) = first_child_of_kind(decorated, "function_definition") else { return };
-    let Some(method_name_node) = fn_node.child_by_field_name("name") else { return };
-    let Ok(method_name) = method_name_node.utf8_text(src) else { return };
+    let Some(fn_node) = first_child_of_kind(decorated, "function_definition") else {
+        return;
+    };
+    let Some(method_name_node) = fn_node.child_by_field_name("name") else {
+        return;
+    };
+    let Ok(method_name) = method_name_node.utf8_text(src) else {
+        return;
+    };
 
     let mut cursor = decorated.walk();
     for child in decorated.children(&mut cursor) {
@@ -327,10 +355,7 @@ fn scan_decorated_method(
         // The decorator's expression is the named "@..." — fetched via
         // the only non-`@` child.
         let mut dc = child.walk();
-        let expr = child
-            .children(&mut dc)
-            .find(|n| n.kind() != "@")
-            .map(|n| n);
+        let expr = child.children(&mut dc).find(|n| n.kind() != "@").map(|n| n);
         let Some(expr) = expr else { continue };
         match expr.kind() {
             "identifier" => {
@@ -339,11 +364,15 @@ fn scan_decorated_method(
                 }
             }
             "call" => {
-                let Some(func) = expr.child_by_field_name("function") else { continue };
+                let Some(func) = expr.child_by_field_name("function") else {
+                    continue;
+                };
                 if func.utf8_text(src).ok() != Some("keyword") {
                     continue;
                 }
-                let Some(args) = expr.child_by_field_name("arguments") else { continue };
+                let Some(args) = expr.child_by_field_name("arguments") else {
+                    continue;
+                };
                 let alias = first_string_arg(&args, src);
                 let alias_str = alias.as_deref().unwrap_or(method_name);
                 push_decorator_alias(alias_str, method_name, class_name, out);
@@ -393,7 +422,9 @@ fn match_dir_prefix_comprehension(expr: &Node, src: &[u8]) -> Option<String> {
                 let mut sc = child.walk();
                 for c in child.children(&mut sc) {
                     if c.kind() == "call" {
-                        let Some(func) = c.child_by_field_name("function") else { continue };
+                        let Some(func) = c.child_by_field_name("function") else {
+                            continue;
+                        };
                         if func.utf8_text(src).ok() == Some("dir") {
                             has_dir_self = true;
                         }
@@ -408,7 +439,11 @@ fn match_dir_prefix_comprehension(expr: &Node, src: &[u8]) -> Option<String> {
             _ => {}
         }
     }
-    if has_dir_self { prefix } else { None }
+    if has_dir_self {
+        prefix
+    } else {
+        None
+    }
 }
 
 /// In an `if_clause` body, find a `<name>.startswith(<string>)` call and
@@ -419,15 +454,21 @@ fn extract_startswith_prefix(if_clause: &Node, src: &[u8]) -> Option<String> {
         if child.kind() != "call" {
             continue;
         }
-        let Some(func) = child.child_by_field_name("function") else { continue };
+        let Some(func) = child.child_by_field_name("function") else {
+            continue;
+        };
         if func.kind() != "attribute" {
             continue;
         }
-        let Some(attr) = func.child_by_field_name("attribute") else { continue };
+        let Some(attr) = func.child_by_field_name("attribute") else {
+            continue;
+        };
         if attr.utf8_text(src).ok() != Some("startswith") {
             continue;
         }
-        let Some(args) = child.child_by_field_name("arguments") else { continue };
+        let Some(args) = child.child_by_field_name("arguments") else {
+            continue;
+        };
         return first_string_arg(&args, src);
     }
     None
@@ -462,7 +503,9 @@ fn collect_dict_string_keys(
         if child.kind() != "pair" {
             continue;
         }
-        let Some(key) = child.child_by_field_name("key") else { continue };
+        let Some(key) = child.child_by_field_name("key") else {
+            continue;
+        };
         if let Some(s) = string_literal_value(&key, src) {
             out.push(RobotDynamicKeyword {
                 normalized_name: normalize_robot_name(&s),
@@ -502,7 +545,16 @@ fn string_literal_value(node: &Node, src: &[u8]) -> Option<String> {
     }
     let raw = node.utf8_text(src).ok()?;
     let stripped = raw
-        .trim_start_matches(|c: char| c == 'r' || c == 'R' || c == 'b' || c == 'B' || c == 'u' || c == 'U' || c == 'f' || c == 'F')
+        .trim_start_matches(|c: char| {
+            c == 'r'
+                || c == 'R'
+                || c == 'b'
+                || c == 'B'
+                || c == 'u'
+                || c == 'U'
+                || c == 'f'
+                || c == 'F'
+        })
         .trim_start_matches("\"\"\"")
         .trim_end_matches("\"\"\"")
         .trim_start_matches("'''")

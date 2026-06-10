@@ -61,7 +61,10 @@ impl SearchScope {
 
         // Language filter
         if !self.languages.is_empty()
-            && !self.languages.iter().any(|l| l.eq_ignore_ascii_case(language))
+            && !self
+                .languages
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(language))
         {
             return false;
         }
@@ -74,7 +77,8 @@ impl SearchScope {
             } else {
                 format!("{dir_norm}/")
             };
-            if !path_norm.starts_with(&dir_prefix) && path_norm != dir_prefix.trim_end_matches('/') {
+            if !path_norm.starts_with(&dir_prefix) && path_norm != dir_prefix.trim_end_matches('/')
+            {
                 return false;
             }
         }

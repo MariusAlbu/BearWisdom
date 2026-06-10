@@ -31,28 +31,36 @@ fn cshtml_code_block_produces_csharp_symbols() {
 
 <p>Done</p>
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
     // Confirm file was indexed as razor.
-    let lang: String = db.query_row(
-        "SELECT language FROM files WHERE path LIKE '%Index.cshtml'",
-        [], |r| r.get(0),
-    ).expect("Index.cshtml row missing");
+    let lang: String = db
+        .query_row(
+            "SELECT language FROM files WHERE path LIKE '%Index.cshtml'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("Index.cshtml row missing");
     assert_eq!(lang, "razor");
 
     // Confirm at least one csharp-origin symbol was produced.
-    let csharp_symbols: Vec<String> = db.prepare(
-        "SELECT s.name FROM symbols s
+    let csharp_symbols: Vec<String> = db
+        .prepare(
+            "SELECT s.name FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE f.path LIKE '%Index.cshtml'
            AND s.origin_language = 'csharp'
-         ORDER BY s.name"
-    ).unwrap()
-     .query_map([], |r| r.get::<_, String>(0)).unwrap()
-     .flatten().collect();
+         ORDER BY s.name",
+        )
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .flatten()
+        .collect();
 
     assert!(
         csharp_symbols.iter().any(|n| n == "Increment"),
@@ -77,20 +85,25 @@ function onReady() {
 function onSubmit() {}
 </script>
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
-    let js_symbols: Vec<String> = db.prepare(
-        "SELECT s.name FROM symbols s
+    let js_symbols: Vec<String> = db
+        .prepare(
+            "SELECT s.name FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE f.path LIKE '%Page.cshtml'
            AND s.origin_language = 'javascript'
-         ORDER BY s.name"
-    ).unwrap()
-     .query_map([], |r| r.get::<_, String>(0)).unwrap()
-     .flatten().collect();
+         ORDER BY s.name",
+        )
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .flatten()
+        .collect();
 
     assert!(
         js_symbols.iter().any(|n| n == "onReady"),
@@ -113,27 +126,33 @@ fn cshtml_model_directive_surfaces_type_ref() {
     fs::write(
         root.join("Views/User.cshtml"),
         "@model MyApp.Models.UserViewModel\n<h1>Hello</h1>\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
     // Any csharp-origin symbol on User.cshtml must not leak the
     // __RazorBody prefix.
-    let leaked: Vec<String> = db.prepare(
-        "SELECT s.qualified_name FROM symbols s
+    let leaked: Vec<String> = db
+        .prepare(
+            "SELECT s.qualified_name FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE f.path LIKE '%User.cshtml'
-           AND s.qualified_name LIKE '__RazorBody%'"
-    ).unwrap()
-     .query_map([], |r| r.get::<_, String>(0)).unwrap()
-     .flatten().collect();
+           AND s.qualified_name LIKE '__RazorBody%'",
+        )
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .flatten()
+        .collect();
     assert!(leaked.is_empty(), "synthetic prefix leaked: {leaked:?}");
 
     // `UserViewModel` must appear somewhere as a type reference — either
     // an unresolved_ref (no csproj) or an external_ref. Search both.
-    let type_referenced: i64 = db.query_row(
-        "SELECT (SELECT COUNT(*) FROM unresolved_refs ur
+    let type_referenced: i64 = db
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM unresolved_refs ur
                  JOIN symbols s ON s.id = ur.source_id
                  JOIN files   f ON f.id = s.file_id
                  WHERE f.path LIKE '%User.cshtml'
@@ -143,8 +162,10 @@ fn cshtml_model_directive_surfaces_type_ref() {
                  JOIN files   f ON f.id = s.file_id
                  WHERE f.path LIKE '%User.cshtml'
                    AND er.target_name = 'UserViewModel')",
-        [], |r| r.get(0),
-    ).unwrap();
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert!(
         type_referenced > 0,
         "@model payload UserViewModel did not surface as a type ref"
@@ -163,23 +184,27 @@ fn cshtml_if_control_flow_surfaces_refs() {
         r#"@code { public bool IsAdmin() { return false; } }
 @if (IsAdmin()) { <p>Admin</p> }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
     // The @code block produces a method `IsAdmin`; the @if block calls
     // it. We should see a resolved Calls edge between them.
-    let calls: i64 = db.query_row(
-        "SELECT COUNT(*) FROM edges e
+    let calls: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM edges e
          JOIN symbols src ON src.id = e.source_id
          JOIN symbols tgt ON tgt.id = e.target_id
          JOIN files f ON f.id = src.file_id
          WHERE f.path LIKE '%Gate.cshtml'
            AND tgt.name = 'IsAdmin'
            AND e.kind = 'calls'",
-        [], |r| r.get(0),
-    ).unwrap();
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert!(
         calls > 0,
         "expected Calls edge from @if body to IsAdmin() method in @code"
@@ -203,19 +228,23 @@ fn cshtml_no_wrapper_prefix_leaks_to_qualified_names() {
 }
 @if (Count > 0) { <p>yes</p> }
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
-    let leak: i64 = db.query_row(
-        "SELECT COUNT(*) FROM symbols s
+    let leak: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE f.path LIKE '%All.cshtml'
            AND (s.qualified_name LIKE '__RazorBody%'
                 OR s.scope_path LIKE '__RazorBody%')",
-        [], |r| r.get(0),
-    ).unwrap();
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(leak, 0, "synthetic __RazorBody prefix must be stripped");
 }
 
@@ -237,14 +266,29 @@ fn cshtml_mixed_content_produces_both_languages() {
 function clientSide() {}
 </script>
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, root, None, None, None).expect("index failed");
 
     let ov = bearwisdom::query::architecture::get_overview(&db).unwrap();
-    let has_csharp = ov.languages.iter().any(|l| l.language == "csharp" && l.symbol_count > 0);
-    let has_javascript = ov.languages.iter().any(|l| l.language == "javascript" && l.symbol_count > 0);
-    assert!(has_csharp, "architecture overview missing csharp: {:?}", ov.languages);
-    assert!(has_javascript, "architecture overview missing javascript: {:?}", ov.languages);
+    let has_csharp = ov
+        .languages
+        .iter()
+        .any(|l| l.language == "csharp" && l.symbol_count > 0);
+    let has_javascript = ov
+        .languages
+        .iter()
+        .any(|l| l.language == "javascript" && l.symbol_count > 0);
+    assert!(
+        has_csharp,
+        "architecture overview missing csharp: {:?}",
+        ov.languages
+    );
+    assert!(
+        has_javascript,
+        "architecture overview missing javascript: {:?}",
+        ov.languages
+    );
 }

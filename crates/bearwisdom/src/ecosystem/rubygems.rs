@@ -32,10 +32,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "ruby";
 pub struct RubygemsEcosystem;
 
 impl Ecosystem for RubygemsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // Gemfile alone marks an app; .gemspec is matched by extension.
@@ -69,7 +77,9 @@ impl Ecosystem for RubygemsEcosystem {
         walk_ruby_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -80,26 +90,23 @@ impl Ecosystem for RubygemsEcosystem {
         resolve_ruby_gem_entry(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         resolve_ruby_gem_entry(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_ruby_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for RubygemsEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ruby_externals(project_root)
     }
@@ -121,11 +128,15 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 pub struct GemfileManifest;
 
 impl ManifestReader for GemfileManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Gemfile }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Gemfile
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let gemfile_path = project_root.join("Gemfile");
-        if !gemfile_path.is_file() { return None }
+        if !gemfile_path.is_file() {
+            return None;
+        }
         let content = std::fs::read_to_string(&gemfile_path).ok()?;
         let mut data = ManifestData::default();
         for name in parse_gemfile_gems(&content) {
@@ -139,17 +150,29 @@ pub fn parse_gemfile_gems(content: &str) -> Vec<String> {
     let mut gems = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
-        let rest = if let Some(r) = trimmed.strip_prefix("gem ") { r.trim() } else { continue };
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let rest = if let Some(r) = trimmed.strip_prefix("gem ") {
+            r.trim()
+        } else {
+            continue;
+        };
         let name = if let Some(r) = rest.strip_prefix('\'') {
             r.split('\'').next().unwrap_or("").trim()
         } else if let Some(r) = rest.strip_prefix('"') {
             r.split('"').next().unwrap_or("").trim()
         } else {
             rest.split(|c: char| c == ',' || c.is_whitespace())
-                .next().unwrap_or("").trim()
+                .next()
+                .unwrap_or("")
+                .trim()
         };
-        if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             gems.push(name.to_string());
         }
     }
@@ -179,11 +202,23 @@ fn parse_gemfile_lock_entries(content: &str) -> Vec<GemEntry> {
     let mut in_specs = false;
 
     for line in content.lines() {
-        if line.trim().is_empty() { continue }
-        if line == "  specs:" { in_specs = true; continue }
-        if !line.starts_with("  ") { in_specs = false; continue }
-        if !in_specs { continue }
-        if !line.starts_with("    ") || line.starts_with("      ") { continue }
+        if line.trim().is_empty() {
+            continue;
+        }
+        if line == "  specs:" {
+            in_specs = true;
+            continue;
+        }
+        if !line.starts_with("  ") {
+            in_specs = false;
+            continue;
+        }
+        if !in_specs {
+            continue;
+        }
+        if !line.starts_with("    ") || line.starts_with("      ") {
+            continue;
+        }
 
         let trimmed = line.trim();
         if let Some(paren) = trimmed.find(" (") {
@@ -191,7 +226,10 @@ fn parse_gemfile_lock_entries(content: &str) -> Vec<GemEntry> {
             let rest = &trimmed[paren + 2..];
             let version = rest.trim_end_matches(')').trim().to_string();
             if !name.is_empty() && !version.is_empty() {
-                entries.push(GemEntry { name, version: Some(version) });
+                entries.push(GemEntry {
+                    name,
+                    version: Some(version),
+                });
             }
         }
     }
@@ -210,22 +248,38 @@ pub fn discover_ruby_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 if let Ok(gf) = std::fs::read_to_string(&gemfile_path) {
                     parse_gemfile_gems(&gf)
                         .into_iter()
-                        .map(|name| GemEntry { name, version: None })
+                        .map(|name| GemEntry {
+                            name,
+                            version: None,
+                        })
                         .collect()
-                } else { return Vec::new() }
+                } else {
+                    return Vec::new();
+                }
             }
-        } else { return Vec::new() }
+        } else {
+            return Vec::new();
+        }
     } else {
         let gemfile_path = project_root.join("Gemfile");
-        if !gemfile_path.is_file() { return Vec::new() }
-        let Ok(gf) = std::fs::read_to_string(&gemfile_path) else { return Vec::new() };
+        if !gemfile_path.is_file() {
+            return Vec::new();
+        }
+        let Ok(gf) = std::fs::read_to_string(&gemfile_path) else {
+            return Vec::new();
+        };
         parse_gemfile_gems(&gf)
             .into_iter()
-            .map(|name| GemEntry { name, version: None })
+            .map(|name| GemEntry {
+                name,
+                version: None,
+            })
             .collect()
     };
 
-    if gems.is_empty() { return Vec::new() }
+    if gems.is_empty() {
+        return Vec::new();
+    }
 
     let candidate_roots = ruby_candidate_gem_roots(project_root);
     if candidate_roots.is_empty() {
@@ -236,7 +290,9 @@ pub fn discover_ruby_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let mut result = Vec::with_capacity(gems.len());
     let mut seen = std::collections::HashSet::new();
     for entry in &gems {
-        if !seen.insert(entry.name.clone()) { continue }
+        if !seen.insert(entry.name.clone()) {
+            continue;
+        }
         if let Some(gem_root) = find_gem_dir_entry(&candidate_roots, entry) {
             let version = gem_root
                 .file_name()
@@ -263,8 +319,11 @@ fn ruby_candidate_gem_roots(project_root: &Path) -> Vec<PathBuf> {
     if let Ok(override_val) = std::env::var("BEARWISDOM_RUBY_GEM_HOME") {
         for seg in std::env::split_paths(&override_val) {
             let gems = seg.join("gems");
-            if gems.is_dir() { candidates.push(gems); }
-            else if seg.is_dir() { candidates.push(seg); }
+            if gems.is_dir() {
+                candidates.push(gems);
+            } else if seg.is_dir() {
+                candidates.push(seg);
+            }
         }
     }
 
@@ -273,7 +332,9 @@ fn ruby_candidate_gem_roots(project_root: &Path) -> Vec<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(&vendor) {
             for entry in entries.flatten() {
                 let gems = entry.path().join("gems");
-                if gems.is_dir() { candidates.push(gems) }
+                if gems.is_dir() {
+                    candidates.push(gems)
+                }
             }
         }
     }
@@ -284,7 +345,9 @@ fn ruby_candidate_gem_roots(project_root: &Path) -> Vec<PathBuf> {
             if let Ok(entries) = std::fs::read_dir(&xdg_gem) {
                 for entry in entries.flatten() {
                     let gems = entry.path().join("gems");
-                    if gems.is_dir() { candidates.push(gems) }
+                    if gems.is_dir() {
+                        candidates.push(gems)
+                    }
                 }
             }
         }
@@ -293,18 +356,24 @@ fn ruby_candidate_gem_roots(project_root: &Path) -> Vec<PathBuf> {
             if let Ok(entries) = std::fs::read_dir(&gem_dir) {
                 for entry in entries.flatten() {
                     let gems = entry.path().join("gems");
-                    if gems.is_dir() { candidates.push(gems) }
+                    if gems.is_dir() {
+                        candidates.push(gems)
+                    }
                 }
             }
         }
         let win_default = home.join("gems").join("gems");
-        if win_default.is_dir() { candidates.push(win_default) }
+        if win_default.is_dir() {
+            candidates.push(win_default)
+        }
     }
 
     if let Ok(gem_home) = std::env::var("GEM_HOME") {
         if !gem_home.is_empty() {
             let gems = PathBuf::from(gem_home).join("gems");
-            if gems.is_dir() { candidates.push(gems) }
+            if gems.is_dir() {
+                candidates.push(gems)
+            }
         }
     }
     candidates
@@ -315,7 +384,9 @@ fn find_gem_dir_entry(candidates: &[PathBuf], entry: &GemEntry) -> Option<PathBu
     for root in candidates {
         if let Some(ref ver) = entry.version {
             let exact = root.join(format!("{}-{}", entry.name, ver));
-            if exact.is_dir() { return Some(exact) }
+            if exact.is_dir() {
+                return Some(exact);
+            }
             let ver_prefix = format!("{}-{}-", entry.name, ver);
             if let Ok(dir_entries) = std::fs::read_dir(root) {
                 let mut platform_matches: Vec<PathBuf> = dir_entries
@@ -323,7 +394,11 @@ fn find_gem_dir_entry(candidates: &[PathBuf], entry: &GemEntry) -> Option<PathBu
                     .filter_map(|e| {
                         let p = e.path();
                         let name = p.file_name()?.to_str()?;
-                        if name.starts_with(&ver_prefix) && p.is_dir() { Some(p) } else { None }
+                        if name.starts_with(&ver_prefix) && p.is_dir() {
+                            Some(p)
+                        } else {
+                            None
+                        }
                     })
                     .collect();
                 if !platform_matches.is_empty() {
@@ -333,7 +408,9 @@ fn find_gem_dir_entry(candidates: &[PathBuf], entry: &GemEntry) -> Option<PathBu
             }
         }
 
-        let Ok(dir_entries) = std::fs::read_dir(root) else { continue };
+        let Ok(dir_entries) = std::fs::read_dir(root) else {
+            continue;
+        };
         let mut matches: Vec<PathBuf> = dir_entries
             .flatten()
             .filter_map(|e| {
@@ -341,8 +418,14 @@ fn find_gem_dir_entry(candidates: &[PathBuf], entry: &GemEntry) -> Option<PathBu
                 let name = p.file_name()?.to_str()?;
                 if name.starts_with(&prefix) && p.is_dir() {
                     let after = &name[prefix.len()..];
-                    if after.starts_with(|c: char| c.is_ascii_digit()) { Some(p) } else { None }
-                } else { None }
+                    if after.starts_with(|c: char| c.is_ascii_digit()) {
+                        Some(p)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             })
             .collect();
         if !matches.is_empty() {
@@ -366,7 +449,9 @@ const RB_REQUIRE_MAX_DEPTH: u32 = 3;
 /// depth 3. Cross-gem requires are skipped — they're separate dep roots.
 fn resolve_ruby_gem_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let lib = dep.root.join("lib");
-    if !lib.is_dir() { return Vec::new() }
+    if !lib.is_dir() {
+        return Vec::new();
+    }
 
     let primary = lib.join(format!("{}.rb", dep.module_path));
     let dashed = lib.join(format!("{}.rb", dep.module_path.replace('-', "/")));
@@ -392,8 +477,12 @@ fn expand_ruby_requires_into(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: u32,
 ) {
-    if !seen.insert(file.to_path_buf()) { return }
-    if !file.is_file() { return }
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    if !file.is_file() {
+        return;
+    }
 
     let rel_sub = match file.strip_prefix(&dep.root) {
         Ok(p) => p.to_string_lossy().replace('\\', "/"),
@@ -405,9 +494,13 @@ fn expand_ruby_requires_into(
         language: "ruby",
     });
 
-    if depth >= RB_REQUIRE_MAX_DEPTH { return }
+    if depth >= RB_REQUIRE_MAX_DEPTH {
+        return;
+    }
 
-    let Ok(src) = std::fs::read_to_string(file) else { return };
+    let Ok(src) = std::fs::read_to_string(file) else {
+        return;
+    };
     for (kind, target) in extract_ruby_requires(&src) {
         let next = match kind {
             // Ruby's $LOAD_PATH prepends every gem's lib/, so
@@ -422,7 +515,10 @@ fn expand_ruby_requires_into(
     }
 }
 
-enum RubyRequireKind { Absolute, Relative }
+enum RubyRequireKind {
+    Absolute,
+    Relative,
+}
 
 /// Scan line-oriented for `require "..."`, `require '...'`,
 /// `require_relative "..."`, `require_relative '...'`. Returns
@@ -442,12 +538,18 @@ fn extract_ruby_requires(src: &str) -> Vec<(RubyRequireKind, String)> {
             continue;
         };
         let rest = rest.trim_start();
-        let Some(q) = rest.chars().next() else { continue };
-        if q != '\'' && q != '"' { continue }
+        let Some(q) = rest.chars().next() else {
+            continue;
+        };
+        if q != '\'' && q != '"' {
+            continue;
+        }
         let inner = &rest[1..];
         let Some(end) = inner.find(q) else { continue };
         let spec = &inner[..end];
-        if spec.is_empty() { continue }
+        if spec.is_empty() {
+            continue;
+        }
         out.push((kind, spec.to_string()));
     }
     out
@@ -458,9 +560,15 @@ fn extract_ruby_requires(src: &str) -> Vec<(RubyRequireKind, String)> {
 /// means the require targets a different gem and will be handled by its
 /// own dep root.
 fn resolve_ruby_lib_path(lib_root: &Path, spec: &str) -> Option<PathBuf> {
-    if spec.is_empty() { return None }
+    if spec.is_empty() {
+        return None;
+    }
     let candidate = lib_root.join(format!("{spec}.rb"));
-    if candidate.is_file() { Some(candidate) } else { None }
+    if candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 /// Resolve `require_relative "X"` against the file's directory. Spec is
@@ -468,7 +576,11 @@ fn resolve_ruby_lib_path(lib_root: &Path, spec: &str) -> Option<PathBuf> {
 fn resolve_ruby_relative_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
     let base = from_file.parent()?;
     let candidate = base.join(format!("{spec}.rb"));
-    if candidate.is_file() { Some(candidate) } else { None }
+    if candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -477,31 +589,58 @@ fn resolve_ruby_relative_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
 
 fn walk_ruby_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let lib_dir = dep.root.join("lib");
-    if !lib_dir.is_dir() { return Vec::new() }
+    if !lib_dir.is_dir() {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     walk_dir_bounded(&lib_dir, &dep.root, dep, &mut out, 0);
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    "test" | "tests" | "spec" | "specs" | "bin" | "ext"
-                        | "vendor" | "examples" | "docs"
+                    "test"
+                        | "tests"
+                        | "spec"
+                        | "specs"
+                        | "bin"
+                        | "ext"
+                        | "vendor"
+                        | "examples"
+                        | "docs"
                 ) || name.starts_with('.')
-                { continue }
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".rb") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".rb") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -573,7 +712,9 @@ fn scan_ruby_header(source: &str) -> Vec<String> {
 }
 
 fn walk_ruby_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) {
-    if depth > 4 { return }
+    if depth > 4 {
+        return;
+    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -584,7 +725,9 @@ fn walk_ruby_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32)
                         // also the last segment so both lookups hit.
                         out.push(t.to_string());
                         if let Some(last) = t.rsplit("::").next() {
-                            if last != t { out.push(last.to_string()) }
+                            if last != t {
+                                out.push(last.to_string())
+                            }
                         }
                     }
                 }
@@ -643,7 +786,12 @@ mod tests {
         }
         std::fs::write(tmp.join("Gemfile"), gemfile).unwrap();
 
-        let gems_root = tmp.join("vendor").join("bundle").join("ruby").join("3.2.0").join("gems");
+        let gems_root = tmp
+            .join("vendor")
+            .join("bundle")
+            .join("ruby")
+            .join("3.2.0")
+            .join("gems");
         std::fs::create_dir_all(&gems_root).unwrap();
         for (name, version) in gems {
             let gem_root = gems_root.join(format!("{name}-{version}"));
@@ -651,8 +799,13 @@ mod tests {
             std::fs::create_dir_all(&lib).unwrap();
             std::fs::write(
                 lib.join(format!("{name}.rb")),
-                format!("module {} ; VERSION = '{}' ; end\n", capitalize(name), version),
-            ).unwrap();
+                format!(
+                    "module {} ; VERSION = '{}' ; end\n",
+                    capitalize(name),
+                    version
+                ),
+            )
+            .unwrap();
             std::fs::create_dir_all(gem_root.join("test")).unwrap();
             std::fs::write(gem_root.join("test").join("should_skip.rb"), "# test\n").unwrap();
         }
@@ -734,7 +887,11 @@ PLATFORMS
         let tmp = std::env::temp_dir().join("bw-test-rubygems-lockfile-preferred");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("Gemfile"), "source 'https://rubygems.org'\ngem 'rails'\n").unwrap();
+        std::fs::write(
+            tmp.join("Gemfile"),
+            "source 'https://rubygems.org'\ngem 'rails'\n",
+        )
+        .unwrap();
         let lock = r#"GEM
   specs:
     minitest (5.27.0)
@@ -743,18 +900,32 @@ PLATFORMS
         std::fs::write(tmp.join("Gemfile.lock"), lock).unwrap();
 
         let gems_root = tmp.join("fake_gems");
-        std::fs::create_dir_all(gems_root.join("gems").join("minitest-5.27.0").join("lib")).unwrap();
+        std::fs::create_dir_all(gems_root.join("gems").join("minitest-5.27.0").join("lib"))
+            .unwrap();
         std::fs::write(
-            gems_root.join("gems").join("minitest-5.27.0").join("lib").join("minitest.rb"),
+            gems_root
+                .join("gems")
+                .join("minitest-5.27.0")
+                .join("lib")
+                .join("minitest.rb"),
             "module Minitest; end\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::create_dir_all(gems_root.join("gems").join("devise-4.9.3").join("lib")).unwrap();
         std::fs::write(
-            gems_root.join("gems").join("devise-4.9.3").join("lib").join("devise.rb"),
+            gems_root
+                .join("gems")
+                .join("devise-4.9.3")
+                .join("lib")
+                .join("devise.rb"),
             "module Devise; end\n",
-        ).unwrap();
+        )
+        .unwrap();
 
-        std::env::set_var("BEARWISDOM_RUBY_GEM_HOME", gems_root.join("gems").to_str().unwrap());
+        std::env::set_var(
+            "BEARWISDOM_RUBY_GEM_HOME",
+            gems_root.join("gems").to_str().unwrap(),
+        );
         let roots = discover_ruby_externals(&tmp);
         std::env::remove_var("BEARWISDOM_RUBY_GEM_HOME");
 
@@ -818,9 +989,18 @@ require "devise/version"
 require_relative "devise/helpers"
 require "otheram/stuff"
 "#,
-        ).unwrap();
-        std::fs::write(lib.join("devise").join("version.rb"), "module Devise; VERSION='x'; end\n").unwrap();
-        std::fs::write(lib.join("devise").join("helpers.rb"), "module Devise::Helpers; end\n").unwrap();
+        )
+        .unwrap();
+        std::fs::write(
+            lib.join("devise").join("version.rb"),
+            "module Devise; VERSION='x'; end\n",
+        )
+        .unwrap();
+        std::fs::write(
+            lib.join("devise").join("helpers.rb"),
+            "module Devise::Helpers; end\n",
+        )
+        .unwrap();
 
         let dep = mkdep(root.clone(), "devise");
         let files = RubygemsEcosystem.resolve_import(&dep, "devise", &[]);
@@ -842,7 +1022,11 @@ require "otheram/stuff"
         let root = tmp.path().join("rails-html-sanitizer-1.0.0");
         let nested = root.join("lib").join("rails").join("html");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(nested.join("sanitizer.rb"), "module Rails::Html::Sanitizer; end\n").unwrap();
+        std::fs::write(
+            nested.join("sanitizer.rb"),
+            "module Rails::Html::Sanitizer; end\n",
+        )
+        .unwrap();
 
         let dep = mkdep(root, "rails-html-sanitizer");
         let files = RubygemsEcosystem.resolve_import(&dep, "rails-html-sanitizer", &[]);
@@ -857,6 +1041,8 @@ require "otheram/stuff"
         std::fs::create_dir_all(&root).unwrap();
 
         let dep = mkdep(root, "missing");
-        assert!(RubygemsEcosystem.resolve_import(&dep, "missing", &[]).is_empty());
+        assert!(RubygemsEcosystem
+            .resolve_import(&dep, "missing", &[])
+            .is_empty());
     }
 }

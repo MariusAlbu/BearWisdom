@@ -30,7 +30,11 @@ use tree_sitter::{Node, Parser};
 /// Build the qualified name for a child symbol by prefixing the parent's qname.
 /// OCaml's `module M = struct ... end` introduces a Namespace symbol whose
 /// qname is the module path; descendants must inherit that prefix.
-fn qualify_with_parent(name: &str, parent_idx: Option<usize>, symbols: &[ExtractedSymbol]) -> String {
+fn qualify_with_parent(
+    name: &str,
+    parent_idx: Option<usize>,
+    symbols: &[ExtractedSymbol],
+) -> String {
     match parent_idx.and_then(|i| symbols.get(i)) {
         Some(parent) => format!("{}.{}", parent.qualified_name, name),
         None => name.to_string(),
@@ -39,8 +43,13 @@ fn qualify_with_parent(name: &str, parent_idx: Option<usize>, symbols: &[Extract
 
 /// Build the scope_path string from the parent's qualified_name. None when the
 /// symbol is at file top level.
-fn scope_path_from_parent(parent_idx: Option<usize>, symbols: &[ExtractedSymbol]) -> Option<String> {
-    parent_idx.and_then(|i| symbols.get(i)).map(|p| p.qualified_name.clone())
+fn scope_path_from_parent(
+    parent_idx: Option<usize>,
+    symbols: &[ExtractedSymbol],
+) -> Option<String> {
+    parent_idx
+        .and_then(|i| symbols.get(i))
+        .map(|p| p.qualified_name.clone())
 }
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
@@ -116,12 +125,14 @@ fn walk_node(
                         scope_path: None,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    });
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -165,9 +176,11 @@ fn walk_node(
                         // Prefer the explicitly extracted module; fall back to
                         // the inherited local_open context when no qualifier was
                         // present in the source text.
-                        let module = extracted_module
-                            .or_else(|| local_open_ctx.map(|m| m.to_string()));
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        let module =
+                            extracted_module.or_else(|| local_open_ctx.map(|m| m.to_string()));
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -228,7 +241,9 @@ fn walk_node(
             if let Some(cls_node) = node.child_by_field_name("class") {
                 let name = first_identifier_in_subtree(cls_node, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -252,7 +267,9 @@ fn walk_node(
                 if child.kind() == "class_path" {
                     let name = first_identifier_in_subtree(child, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Instantiates,
@@ -288,7 +305,9 @@ fn extract_value_def(
         if child.kind() == "let_binding" {
             if let Some(pat) = child.child_by_field_name("pattern") {
                 let name = text(pat, src);
-                if name.is_empty() { continue; }
+                if name.is_empty() {
+                    continue;
+                }
                 // Check if it's a function (has `parameter` children in let_binding)
                 let has_params = (0..child.child_count())
                     .any(|i| child.child(i).map_or(false, |n| n.kind() == "parameter"));
@@ -321,11 +340,11 @@ fn extract_value_def(
                     scope_path,
                     parent_index: parent_idx,
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
                 return Some(idx);
             }
         }
@@ -347,7 +366,9 @@ fn extract_type_def(
                 .child_by_field_name("name")
                 .map(|n| text(n, src))
                 .unwrap_or_default();
-            if name.is_empty() { continue; }
+            if name.is_empty() {
+                continue;
+            }
 
             // Determine kind from body
             let body_opt = child.child_by_field_name("body");
@@ -384,11 +405,11 @@ fn extract_type_def(
                 scope_path: scope_path.clone(),
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // For variant types, emit each constructor as a child symbol so
             // that constructor applications resolve. Constructors live at module
@@ -431,7 +452,9 @@ fn extract_variant_constructors(
     for child in variant_decl.children(&mut cursor) {
         if child.kind() == "constructor_declaration" {
             let ctor_name = extract_constructor_name(child, src);
-            if ctor_name.is_empty() { continue; }
+            if ctor_name.is_empty() {
+                continue;
+            }
             let qualified_name = match module_scope {
                 Some(scope) => format!("{scope}.{ctor_name}"),
                 None => ctor_name.clone(),
@@ -450,11 +473,11 @@ fn extract_variant_constructors(
                 scope_path: module_scope.map(str::to_string),
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -474,7 +497,9 @@ fn extract_module_def(
             for gc in child.children(&mut c2) {
                 if gc.kind() == "module_name" {
                     let name = text(gc, src);
-                    if name.is_empty() { continue; }
+                    if name.is_empty() {
+                        continue;
+                    }
                     let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
                     let scope_path = scope_path_from_parent(parent_idx, symbols);
                     let idx = symbols.len();
@@ -492,11 +517,11 @@ fn extract_module_def(
                         scope_path,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                     return Some(idx);
                 }
             }
@@ -519,7 +544,9 @@ fn extract_exception_def(
     for child in node.children(&mut cursor) {
         if child.kind() == "constructor_declaration" {
             let name = extract_constructor_name(child, src);
-            if name.is_empty() { continue; }
+            if name.is_empty() {
+                continue;
+            }
             let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
             let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
@@ -537,11 +564,11 @@ fn extract_exception_def(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             return Some(idx);
         }
     }
@@ -562,7 +589,9 @@ fn extract_module_type_def(
     for child in node.children(&mut cursor) {
         if child.kind() == "module_type_name" {
             let name = text(child, src);
-            if name.is_empty() { continue; }
+            if name.is_empty() {
+                continue;
+            }
             let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
             let scope_path = scope_path_from_parent(parent_idx, symbols);
             let idx = symbols.len();
@@ -580,11 +609,11 @@ fn extract_module_type_def(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             return Some(idx);
         }
     }
@@ -608,7 +637,9 @@ fn extract_class_def(
             for gc in child.children(&mut c2) {
                 if gc.kind() == "class_name" {
                     let name = text(gc, src);
-                    if name.is_empty() { continue; }
+                    if name.is_empty() {
+                        continue;
+                    }
                     let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
                     let scope_path = scope_path_from_parent(parent_idx, symbols);
                     let idx = symbols.len();
@@ -626,11 +657,11 @@ fn extract_class_def(
                         scope_path,
                         parent_index: parent_idx,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                     return Some(idx);
                 }
             }
@@ -652,7 +683,9 @@ fn extract_external(
     for child in node.children(&mut cursor) {
         if child.kind() == "value_name" {
             let name = text(child, src);
-            if name.is_empty() { return; }
+            if name.is_empty() {
+                return;
+            }
             let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
             let scope_path = scope_path_from_parent(parent_idx, symbols);
             symbols.push(ExtractedSymbol {
@@ -669,11 +702,11 @@ fn extract_external(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             return;
         }
     }
@@ -691,7 +724,9 @@ fn extract_value_specification(
     for child in node.children(&mut cursor) {
         if child.kind() == "value_name" {
             let name = text(child, src);
-            if name.is_empty() { return; }
+            if name.is_empty() {
+                return;
+            }
             // value_specifications are always function-typed (val f : a -> b)
             // but we use Function kind since that's what the spec says.
             let qualified_name = qualify_with_parent(&name, parent_idx, symbols);
@@ -710,11 +745,11 @@ fn extract_value_specification(
                 scope_path,
                 parent_index: parent_idx,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             return;
         }
     }
@@ -742,17 +777,20 @@ fn extract_constructor_name(node: Node, src: &[u8]) -> String {
 /// or plain `identifier`) in the subtree rooted at `node`.
 fn first_identifier_in_subtree(node: Node, src: &[u8]) -> String {
     match node.kind() {
-        "value_name" | "class_name" | "constructor_name" | "module_name"
-        | "module_type_name" => {
+        "value_name" | "class_name" | "constructor_name" | "module_name" | "module_type_name" => {
             let t = text(node, src);
-            if !t.is_empty() { return t; }
+            if !t.is_empty() {
+                return t;
+            }
         }
         _ => {}
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let t = first_identifier_in_subtree(child, src);
-        if !t.is_empty() { return t; }
+        if !t.is_empty() {
+            return t;
+        }
     }
     String::new()
 }
@@ -803,7 +841,14 @@ fn split_value_path(node: Node, src: &[u8]) -> (String, Option<String>) {
         .map(|n| text(n, src))
         .collect();
     let module = module_parts.join(".");
-    (fn_name, if module.is_empty() { None } else { Some(module) })
+    (
+        fn_name,
+        if module.is_empty() {
+            None
+        } else {
+            Some(module)
+        },
+    )
 }
 
 /// Split a `constructor_path` node into `(constructor_name, module_qualifier)`.
@@ -830,7 +875,14 @@ fn split_constructor_path(node: Node, src: &[u8]) -> (String, Option<String>) {
         .map(|n| text(n, src))
         .collect();
     let module = module_parts.join(".");
-    (ctor_name, if module.is_empty() { None } else { Some(module) })
+    (
+        ctor_name,
+        if module.is_empty() {
+            None
+        } else {
+            Some(module)
+        },
+    )
 }
 
 fn text(node: Node, src: &[u8]) -> String {

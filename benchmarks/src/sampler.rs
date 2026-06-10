@@ -25,12 +25,14 @@ use crate::task::{BenchmarkTask, GroundTruth, TaskCategory, TaskSet};
 /// Open (or create) the BearWisdom index for `project_root` and generate
 /// benchmark tasks.  Indexing is triggered automatically when no index exists.
 pub fn generate_tasks(project_root: &Path, count_per_category: usize) -> Result<TaskSet> {
-    let db_path = resolve_db_path(project_root)
-        .context("Failed to resolve DB path")?;
+    let db_path = resolve_db_path(project_root).context("Failed to resolve DB path")?;
 
     // Index if the database doesn't exist yet.
     let db = if !db_path.exists() {
-        tracing::info!("No index found — running full index on {}", project_root.display());
+        tracing::info!(
+            "No index found — running full index on {}",
+            project_root.display()
+        );
         let mut db = Database::open(&db_path).context("Failed to open database")?;
         bearwisdom::full_index(&mut db, project_root, None, None, None)
             .context("Failed to index project")?;
@@ -39,19 +41,36 @@ pub fn generate_tasks(project_root: &Path, count_per_category: usize) -> Result<
         Database::open(&db_path).context("Failed to open database")?
     };
 
-    let project_str = project_root
-        .to_str()
-        .unwrap_or("<unknown>")
-        .to_owned();
+    let project_str = project_root.to_str().unwrap_or("<unknown>").to_owned();
 
     let mut tasks: Vec<BenchmarkTask> = Vec::new();
 
-    tasks.extend(generate_impact_analysis(&db, &project_str, count_per_category)?);
-    tasks.extend(generate_call_hierarchy(&db, &project_str, count_per_category)?);
+    tasks.extend(generate_impact_analysis(
+        &db,
+        &project_str,
+        count_per_category,
+    )?);
+    tasks.extend(generate_call_hierarchy(
+        &db,
+        &project_str,
+        count_per_category,
+    )?);
     tasks.extend(generate_architecture_overview(&db, &project_str)?);
-    tasks.extend(generate_cross_file_references(&db, &project_str, count_per_category)?);
-    tasks.extend(generate_concept_discovery(&db, &project_str, count_per_category)?);
-    tasks.extend(generate_symbol_search(&db, &project_str, count_per_category)?);
+    tasks.extend(generate_cross_file_references(
+        &db,
+        &project_str,
+        count_per_category,
+    )?);
+    tasks.extend(generate_concept_discovery(
+        &db,
+        &project_str,
+        count_per_category,
+    )?);
+    tasks.extend(generate_symbol_search(
+        &db,
+        &project_str,
+        count_per_category,
+    )?);
 
     Ok(TaskSet::new(tasks, project_str))
 }
@@ -67,12 +86,7 @@ fn generate_impact_analysis(
 ) -> Result<Vec<BenchmarkTask>> {
     let overview = architecture::get_overview(db).context("Failed to get architecture overview")?;
 
-    let hotspots: Vec<_> = overview
-        .hotspots
-        .iter()
-        .take(count)
-        .cloned()
-        .collect();
+    let hotspots: Vec<_> = overview.hotspots.iter().take(count).cloned().collect();
 
     let mut tasks = Vec::new();
 
@@ -140,19 +154,13 @@ fn generate_call_hierarchy(
     let overview = architecture::get_overview(db).context("Failed to get architecture overview")?;
 
     // Use hotspots as candidates — they have callers by definition.
-    let candidates: Vec<_> = overview
-        .hotspots
-        .iter()
-        .take(count)
-        .cloned()
-        .collect();
+    let candidates: Vec<_> = overview.hotspots.iter().take(count).cloned().collect();
 
     let mut tasks = Vec::new();
 
     for candidate in &candidates {
-        let callers =
-            call_hierarchy::incoming_calls(db, &candidate.qualified_name, 50)
-                .with_context(|| format!("incoming_calls failed for {}", candidate.qualified_name))?;
+        let callers = call_hierarchy::incoming_calls(db, &candidate.qualified_name, 50)
+            .with_context(|| format!("incoming_calls failed for {}", candidate.qualified_name))?;
 
         if callers.is_empty() {
             continue;
@@ -201,10 +209,7 @@ fn generate_call_hierarchy(
 // ArchitectureOverview  (one task per project)
 // ---------------------------------------------------------------------------
 
-fn generate_architecture_overview(
-    db: &Database,
-    project_path: &str,
-) -> Result<Vec<BenchmarkTask>> {
+fn generate_architecture_overview(db: &Database, project_path: &str) -> Result<Vec<BenchmarkTask>> {
     let overview = architecture::get_overview(db).context("Failed to get architecture overview")?;
 
     let lang_names: Vec<String> = overview
@@ -389,8 +394,7 @@ fn generate_concept_discovery(
     let mut expected_items = concept_names.clone();
 
     for concept in &usable {
-        let members = concepts_mod::concept_members(db, &concept.name, 20)
-            .unwrap_or_default();
+        let members = concepts_mod::concept_members(db, &concept.name, 20).unwrap_or_default();
         for m in members {
             expected_items.push(m.qualified_name);
         }
@@ -400,10 +404,12 @@ fn generate_concept_discovery(
 
     // Pick one representative concept for the per-concept question.
     let representative = &usable[0];
-    let rep_members = concepts_mod::concept_members(db, &representative.name, 30)
-        .unwrap_or_default();
-    let rep_member_names: Vec<String> =
-        rep_members.iter().map(|m| m.qualified_name.clone()).collect();
+    let rep_members =
+        concepts_mod::concept_members(db, &representative.name, 30).unwrap_or_default();
+    let rep_member_names: Vec<String> = rep_members
+        .iter()
+        .map(|m| m.qualified_name.clone())
+        .collect();
 
     let question = format!(
         "What are the main domain concepts in this codebase? \
@@ -444,18 +450,17 @@ fn generate_symbol_search(
     let overview = architecture::get_overview(db)?;
 
     // Use entry points as search targets — public, well-defined symbols.
-    let targets: Vec<_> = overview
-        .entry_points
-        .iter()
-        .take(count)
-        .cloned()
-        .collect();
+    let targets: Vec<_> = overview.entry_points.iter().take(count).cloned().collect();
 
     let mut tasks = Vec::new();
 
     for target in &targets {
-        let details = symbol_info::symbol_info(db, &target.qualified_name, &bearwisdom::query::QueryOptions::full())
-            .with_context(|| format!("symbol_info failed for {}", target.qualified_name))?;
+        let details = symbol_info::symbol_info(
+            db,
+            &target.qualified_name,
+            &bearwisdom::query::QueryOptions::full(),
+        )
+        .with_context(|| format!("symbol_info failed for {}", target.qualified_name))?;
 
         if details.is_empty() {
             continue;

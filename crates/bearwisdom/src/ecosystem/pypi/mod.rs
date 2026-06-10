@@ -29,23 +29,37 @@ pub struct PypiEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for PypiEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // pyproject.toml is the modern marker; setup.py persists in older
         // projects. Both legitimately mark a package root.
-        &[
-            ("pyproject.toml", "python"),
-            ("setup.py",       "python"),
-        ]
+        &[("pyproject.toml", "python"), ("setup.py", "python")]
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        &["__pycache__", ".venv", "venv", ".tox", ".pytest_cache",
-          ".mypy_cache", ".ruff_cache", "site-packages", ".eggs"]
+        &[
+            "__pycache__",
+            ".venv",
+            "venv",
+            ".tox",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            "site-packages",
+            ".eggs",
+        ]
     }
 
     fn activation(&self) -> EcosystemActivation {
@@ -65,7 +79,9 @@ impl Ecosystem for PypiEcosystem {
         walk_python_external_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -103,9 +119,7 @@ impl Ecosystem for PypiEcosystem {
                     if init.is_file() {
                         let mut seen: std::collections::HashSet<std::path::PathBuf> =
                             out.iter().map(|wf| wf.absolute_path.clone()).collect();
-                        expand_python_reexports_into(
-                            dep, &dep.root, &init, &mut out, &mut seen, 0,
-                        );
+                        expand_python_reexports_into(dep, &dep.root, &init, &mut out, &mut seen, 0);
                     }
                     // Final segment may be a leaf .py file.
                     if parts.peek().is_none() {
@@ -125,25 +139,20 @@ impl Ecosystem for PypiEcosystem {
         out
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         // Same entry point. Re-exports within the package are expanded by
         // resolve_python_package_entry; deeper fqn-specific walking is a
         // later optimization.
         resolve_python_package_entry(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_python_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +160,9 @@ impl Ecosystem for PypiEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for PypiEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_python_externals(project_root)
@@ -194,8 +205,8 @@ pub use discovery::{
 pub use manifest::{
     parse_pipfile_deps, parse_pyproject_deps, parse_requirements_txt, PyProjectManifest,
 };
-pub use walk::walk_python_external_root;
 pub(crate) use symbol_index::build_python_symbol_index;
+pub use walk::walk_python_external_root;
 
 use reachability::{expand_python_reexports_into, resolve_python_package_entry};
 

@@ -101,7 +101,11 @@ impl SupertypeGraph {
     /// non-generic edges carry empty args; a node with no recorded params
     /// composes as the identity (the single-level `Subclass: Generic<Concrete>`
     /// case is unchanged — its edge args are already concrete).
-    pub fn walk_up_with_args(&self, start: TypeId, arena: &TypeArena) -> Vec<(TypeId, Vec<TypeId>)> {
+    pub fn walk_up_with_args(
+        &self,
+        start: TypeId,
+        arena: &TypeArena,
+    ) -> Vec<(TypeId, Vec<TypeId>)> {
         let mut out = Vec::new();
         let mut queue = VecDeque::new();
         queue.push_back((start, Vec::new()));
@@ -279,14 +283,42 @@ impl SupertypeGraph {
         let mut graph = SupertypeGraph::new();
         match profile.supertype_discovery {
             SupertypeDiscovery::Explicit => {
-                build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
+                build_explicit(
+                    &mut graph,
+                    parsed,
+                    arena,
+                    lookup,
+                    profile.blanket_impl_resolution,
+                );
             }
             SupertypeDiscovery::Structural => {
-                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping, None);
+                build_structural(
+                    &mut graph,
+                    arena,
+                    members,
+                    symbol_types,
+                    lookup,
+                    profile.primitive_mapping,
+                    None,
+                );
             }
             SupertypeDiscovery::Both => {
-                build_explicit(&mut graph, parsed, arena, lookup, profile.blanket_impl_resolution);
-                build_structural(&mut graph, arena, members, symbol_types, lookup, profile.primitive_mapping, None);
+                build_explicit(
+                    &mut graph,
+                    parsed,
+                    arena,
+                    lookup,
+                    profile.blanket_impl_resolution,
+                );
+                build_structural(
+                    &mut graph,
+                    arena,
+                    members,
+                    symbol_types,
+                    lookup,
+                    profile.primitive_mapping,
+                    None,
+                );
             }
         }
         graph
@@ -463,9 +495,14 @@ fn build_explicit(
             // any language's `impl` syntax. Absent the marker, key on the
             // source's own qname (every other language's classes/traits land
             // here unchanged).
-            let child_qname =
-                impl_container_child_qname(source_sym, r.source_symbol_index, &pf.refs, arena, lookup)
-                    .unwrap_or_else(|| source_sym.qualified_name.clone());
+            let child_qname = impl_container_child_qname(
+                source_sym,
+                r.source_symbol_index,
+                &pf.refs,
+                arena,
+                lookup,
+            )
+            .unwrap_or_else(|| source_sym.qualified_name.clone());
             let child = arena.class(&child_qname);
             // Decompose a generic parent (`Repository<User>`) into its base
             // class + arguments so the args can bind the parent's params on
@@ -500,8 +537,11 @@ fn build_explicit(
                         .collect()
                 }
             };
-            let parent_qname =
-                resolve_target_qname(&parent_base_qname, lookup, KindPreference::for_supertype(r.kind));
+            let parent_qname = resolve_target_qname(
+                &parent_base_qname,
+                lookup,
+                KindPreference::for_supertype(r.kind),
+            );
             let parent = arena.class(parent_qname.as_str());
             graph.add_edge_generic(child, parent, parent_args);
 
@@ -754,9 +794,9 @@ fn impl_container_child_qname(
     // The container's self-`TypeRef` (same source symbol as this inheritance
     // edge) names the implementing type. Match by source index so a file with
     // several impl blocks attaches each edge to its own implementing type.
-    let impl_type = refs.iter().find(|r| {
-        matches!(r.kind, EdgeKind::TypeRef) && r.source_symbol_index == source_index
-    })?;
+    let impl_type = refs
+        .iter()
+        .find(|r| matches!(r.kind, EdgeKind::TypeRef) && r.source_symbol_index == source_index)?;
     let base = type_base_qname(&impl_type.target_name, arena);
     if base.is_empty() {
         return None;
@@ -764,7 +804,11 @@ fn impl_container_child_qname(
     // The implementing type is always a concrete type (class/struct/enum),
     // never the interface/trait it implements — prefer that kind-class if the
     // bare name collides with a same-named interface in the pool.
-    Some(resolve_target_qname(&base, lookup, KindPreference::ConcreteType))
+    Some(resolve_target_qname(
+        &base,
+        lookup,
+        KindPreference::ConcreteType,
+    ))
 }
 
 /// Decompose a type node's text into its base type name, dropping any generic
@@ -872,9 +916,7 @@ fn child_param_map(
     let Some(ids) = lookup.generic_param_type_ids(child_qname) else {
         return FxHashMap::default();
     };
-    ids.iter()
-        .map(|&id| (arena.format_type(id), id))
-        .collect()
+    ids.iter().map(|&id| (arena.format_type(id), id)).collect()
 }
 
 /// For each interface-like type, add a `candidate → interface` edge for every

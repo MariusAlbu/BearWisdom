@@ -239,7 +239,10 @@ fn external_dotnet_package_is_indexed_and_resolved() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(greeter_exists, 1, "FakeExt.Greeter missing from external index");
+    assert_eq!(
+        greeter_exists, 1,
+        "FakeExt.Greeter missing from external index"
+    );
 
     // IFormatter interface must land too.
     let iformatter_exists: i64 = db

@@ -13,7 +13,7 @@
 // =============================================================================
 
 use super::extract;
-use crate::types::{EdgeKind, SymbolKind};
+use crate::types::{AliasTarget, EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
@@ -23,9 +23,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_proc_declaration_produces_function() {
     let r = extract::extract("proc foo(x: int): int =\n  x + 1\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "foo"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "foo"),
         "proc declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -33,9 +38,14 @@ fn cov_proc_declaration_produces_function() {
 fn cov_func_declaration_produces_function() {
     let r = extract::extract("func pure(x: int): int =\n  x * 2\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "pure"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "pure"),
         "func declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -43,9 +53,14 @@ fn cov_func_declaration_produces_function() {
 fn cov_method_declaration_produces_method() {
     let r = extract::extract("method greet(self: Animal): string =\n  \"hello\"\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "greet"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "greet"),
         "method declaration should produce Method; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -54,9 +69,31 @@ fn cov_method_declaration_produces_method() {
 fn cov_template_declaration_produces_function() {
     let r = extract::extract("template withLock(lock: Lock, body: untyped) =\n  acquire(lock)\n  body\n  release(lock)\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "withLock"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "withLock"),
         "template declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_nested_template_declaration_produces_function() {
+    let r = extract::extract(
+        "proc outer() =\n  template printit(t: untyped) =\n    echo t\n  printit(int)\n",
+    );
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "printit"),
+        "nested template declaration should produce Function; got: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -65,20 +102,32 @@ fn cov_template_declaration_produces_function() {
 fn cov_macro_declaration_produces_function() {
     let r = extract::extract("macro dumpExpr(x: untyped): untyped =\n  result = newLit(x.repr)\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "dumpExpr"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "dumpExpr"),
         "macro declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// iterator_declaration → Function (coroutine-style iterator)
 #[test]
 fn cov_iterator_declaration_produces_function() {
-    let r = extract::extract("iterator countdown(n: int): int =\n  var i = n\n  while i >= 0:\n    yield i\n    dec i\n");
+    let r = extract::extract(
+        "iterator countdown(n: int): int =\n  var i = n\n  while i >= 0:\n    yield i\n    dec i\n",
+    );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "countdown"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "countdown"),
         "iterator declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -87,9 +136,14 @@ fn cov_iterator_declaration_produces_function() {
 fn cov_converter_declaration_produces_function() {
     let r = extract::extract("converter toFloat(x: int): float =\n  float(x)\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "toFloat"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "toFloat"),
         "converter declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -99,9 +153,14 @@ fn cov_type_object_produces_struct() {
     let src = "type\n  Point = object\n    x: int\n    y: int\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
         "type object should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -111,9 +170,14 @@ fn cov_type_enum_produces_enum() {
     let src = "type\n  Color = enum\n    Red, Green, Blue\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Color"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "Color"),
         "type enum should produce Enum; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -123,9 +187,14 @@ fn cov_type_concept_produces_interface() {
     let src = "type\n  Printable = concept x\n    print(x)\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Interface && s.name == "Printable"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Interface && s.name == "Printable"),
         "type concept should produce Interface; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -135,9 +204,52 @@ fn cov_type_alias_produces_typealias() {
     let src = "type\n  MyInt = int\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::TypeAlias && s.name == "MyInt"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::TypeAlias && s.name == "MyInt"),
         "type alias should produce TypeAlias; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_type_alias_produces_alias_target() {
+    let src = "type\n  ApiResponse[T] = Result[T, string]\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::TypeAlias && s.name == "ApiResponse"),
+        "type alias should produce TypeAlias; got: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| {
+            s.name == "ApiResponse" && s.signature.as_deref() == Some("ApiResponse[T]")
+        }),
+        "type alias should carry generic signature; got: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.signature.as_deref()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.alias_targets.iter().any(|(name, target)| {
+            name == "ApiResponse"
+                && *target
+                    == AliasTarget::Application {
+                        root: "Result".to_string(),
+                        args: vec!["T".to_string(), "string".to_string()],
+                    }
+        }),
+        "type alias should produce Application alias target; got: {:?}",
+        r.alias_targets
     );
 }
 
@@ -147,9 +259,14 @@ fn cov_type_tuple_produces_struct() {
     let src = "type\n  Pair = tuple\n    a: int\n    b: string\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Pair"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Pair"),
         "type tuple should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -160,7 +277,10 @@ fn cov_single_line_type_decl_produces_symbol() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Alias"),
         "single-line type decl should produce symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -173,9 +293,14 @@ fn cov_single_line_type_decl_produces_symbol() {
 fn cov_import_statement_produces_imports() {
     let r = extract::extract("import strutils\n");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "strutils"),
-        "import statement should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "*"
+            && rf.module.as_deref() == Some("strutils")),
+        "import statement should produce wildcard module Imports ref; got: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name, rf.module.as_deref()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -187,10 +312,12 @@ fn cov_import_multiple_modules_produces_multiple_imports() {
         .refs
         .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
-        .map(|rf| rf.target_name.as_str())
+        .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
         .collect();
     assert!(
-        imports.contains(&"os") && imports.contains(&"strutils") && imports.contains(&"sequtils"),
+        imports.contains(&("*", Some("os")))
+            && imports.contains(&("*", Some("strutils")))
+            && imports.contains(&("*", Some("sequtils"))),
         "multi-module import should produce one Imports ref per module; got: {:?}",
         imports
     );
@@ -201,9 +328,14 @@ fn cov_import_multiple_modules_produces_multiple_imports() {
 fn cov_import_from_statement_produces_imports() {
     let r = extract::extract("from strutils import parseInt\n");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "strutils"),
-        "from-import should produce Imports ref with module name; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "strutils"
+            && rf.module.as_deref() == Some("strutils")),
+        "from-import should produce module-scoped Imports ref with module name; got: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name, rf.module.as_deref()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -212,9 +344,55 @@ fn cov_import_from_statement_produces_imports() {
 fn cov_include_statement_produces_imports() {
     let r = extract::extract("include sinkparameter_inference\n");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "sinkparameter_inference"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "sinkparameter_inference"),
         "include statement should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// export_statement → re-export ref for the generic re-export walker
+#[test]
+fn cov_export_statement_produces_reexport_imports() {
+    let r = extract::extract("export results, chronos\n");
+    let reexports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports && rf.is_reexport)
+        .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
+        .collect();
+    assert!(
+        reexports.contains(&("*", Some("results"))) && reexports.contains(&("*", Some("chronos"))),
+        "export statement should produce wildcard re-export refs; got: {:?}",
+        reexports
+    );
+}
+
+#[test]
+fn cov_conditional_import_export_produces_module_refs() {
+    let r =
+        extract::extract("when supportedSystem:\n  import std/private/osdirs\n  export osdirs\n");
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| {
+            (
+                rf.target_name.as_str(),
+                rf.module.as_deref(),
+                rf.is_reexport,
+            )
+        })
+        .collect();
+    assert!(
+        imports.contains(&("*", Some("std/private/osdirs"), false))
+            && imports.contains(&("*", Some("osdirs"), true)),
+        "conditional module-level import/export should produce refs; got: {:?}",
+        imports
     );
 }
 
@@ -228,9 +406,14 @@ fn cov_direct_call_produces_calls_ref() {
     let src = "proc foo() =\n  bar()\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "bar"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "bar"),
         "direct call should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -240,9 +423,14 @@ fn cov_dot_call_produces_calls_ref() {
     let src = "proc go() =\n  s.close()\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "close"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "close"),
         "dot call should produce Calls ref for method name; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -252,9 +440,14 @@ fn cov_generic_call_produces_calls_ref() {
     let src = "proc setup() =\n  newSeq[int](10)\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "newSeq"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "newSeq"),
         "generic call should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -263,13 +456,16 @@ fn cov_generic_call_produces_calls_ref() {
 fn cov_multiple_calls_on_line_produce_multiple_refs() {
     let src = "proc run() =\n  foo(bar())\n";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter()
+    let calls: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
         calls.contains(&"foo") && calls.contains(&"bar"),
-        "nested calls should each produce a Calls ref; got: {:?}", calls
+        "nested calls should each produce a Calls ref; got: {:?}",
+        calls
     );
 }
 
@@ -279,10 +475,18 @@ fn cov_multiple_calls_on_line_produce_multiple_refs() {
 fn cov_control_keywords_not_emitted_as_calls() {
     let src = "proc check(x: int) =\n  if (x > 0):\n    while (true):\n      break\n";
     let r = extract::extract(src);
-    let bad: Vec<_> = r.refs.iter()
-        .filter(|rf| rf.kind == EdgeKind::Calls && matches!(rf.target_name.as_str(), "if" | "while"))
+    let bad: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            rf.kind == EdgeKind::Calls && matches!(rf.target_name.as_str(), "if" | "while")
+        })
         .collect();
-    assert!(bad.is_empty(), "control keywords must not produce Calls refs; got: {:?}", bad);
+    assert!(
+        bad.is_empty(),
+        "control keywords must not produce Calls refs; got: {:?}",
+        bad
+    );
 }
 
 /// Comments after `#` are not scanned for calls
@@ -290,10 +494,16 @@ fn cov_control_keywords_not_emitted_as_calls() {
 fn cov_comment_content_not_extracted_as_calls() {
     let src = "proc dummy() =\n  discard # foo(bar)\n";
     let r = extract::extract(src);
-    let bad: Vec<_> = r.refs.iter()
+    let bad: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "foo")
         .collect();
-    assert!(bad.is_empty(), "comment content must not produce Calls refs; got: {:?}", bad);
+    assert!(
+        bad.is_empty(),
+        "comment content must not produce Calls refs; got: {:?}",
+        bad
+    );
 }
 
 /// Template invocation inside a body → Calls ref
@@ -302,9 +512,15 @@ fn cov_template_invocation_produces_calls_ref() {
     let src = "proc initDefines*(symbols: StringTableRef) =\n  template defineSymbol(s) = symbols.defineSymbol(s)\n  defineSymbol(\"nimhygiene\")\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defineSymbol"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defineSymbol"),
         "template invocation should produce Calls ref; got: {:?}",
-        r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).map(|rf| &rf.target_name).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -313,13 +529,18 @@ fn cov_template_invocation_produces_calls_ref() {
 fn cov_multiline_import_produces_all_modules() {
     let src = "import\n  blscurve,\n  stew/byteutils,\n  results\n";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter()
+    let imports: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
-        imports.contains(&"blscurve") && imports.contains(&"stew/byteutils") && imports.contains(&"results"),
-        "multi-line import should produce one Imports ref per module; got: {:?}", imports
+        imports.contains(&"blscurve")
+            && imports.contains(&"stew/byteutils")
+            && imports.contains(&"results"),
+        "multi-line import should produce one Imports ref per module; got: {:?}",
+        imports
     );
 }
 
@@ -328,13 +549,18 @@ fn cov_multiline_import_produces_all_modules() {
 fn cov_multiline_bracketed_import_produces_all_modules() {
     let src = "import std/[\n  sequtils,\n  strutils,\n  options\n]\n";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter()
+    let imports: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
-        imports.contains(&"std/sequtils") && imports.contains(&"std/strutils") && imports.contains(&"std/options"),
-        "multi-line bracketed import should expand into prefixed modules; got: {:?}", imports
+        imports.contains(&"std/sequtils")
+            && imports.contains(&"std/strutils")
+            && imports.contains(&"std/options"),
+        "multi-line bracketed import should expand into prefixed modules; got: {:?}",
+        imports
     );
 }
 
@@ -346,7 +572,8 @@ fn cov_exported_type_section_entry_produces_symbol() {
     let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"Slot") && names.contains(&"Epoch"),
-        "exported type section entries (Name* = ...) should produce symbols; got: {:?}", names
+        "exported type section entries (Name* = ...) should produce symbols; got: {:?}",
+        names
     );
 }
 
@@ -356,9 +583,14 @@ fn cov_exported_object_type_produces_struct() {
     let src = "type\n  BatchVerifier* = object\n    field: int\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "BatchVerifier" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "BatchVerifier" && s.kind == SymbolKind::Struct),
         "exported object type should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -370,7 +602,8 @@ fn cov_pragma_annotated_type_produces_symbol() {
     let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"cint") && names.contains(&"csize_t"),
-        "pragma-annotated type section entries should produce symbols; got: {:?}", names
+        "pragma-annotated type section entries should produce symbols; got: {:?}",
+        names
     );
 }
 
@@ -380,9 +613,14 @@ fn cov_when_block_proc_produces_function() {
     let src = "when defined(windows):\n  proc execShellCmd*(command: string): int =\n    discard\n";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "execShellCmd" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "execShellCmd" && s.kind == SymbolKind::Function),
         "proc inside when block (2-space indent) should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -405,7 +643,11 @@ fn cov_enum_members_produce_symbols() {
     let r = extract::extract(src);
     let names: Vec<_> = r.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        names.contains(&"tdiv") && names.contains(&"meta") && names.contains(&"script") && names.contains(&"span"),
-        "enum members should produce EnumMember symbols; got: {:?}", names
+        names.contains(&"tdiv")
+            && names.contains(&"meta")
+            && names.contains(&"script")
+            && names.contains(&"span"),
+        "enum members should produce EnumMember symbols; got: {:?}",
+        names
     );
 }

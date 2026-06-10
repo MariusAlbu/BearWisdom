@@ -21,9 +21,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_procedure_declaration_produces_function() {
     let r = extract::extract("main :: proc() {\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "main"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "main"),
         "proc declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -31,9 +36,14 @@ fn cov_procedure_declaration_produces_function() {
 fn cov_struct_declaration_produces_struct() {
     let r = extract::extract("Vec2 :: struct {\n  x: f32,\n  y: f32,\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Vec2"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Vec2"),
         "struct declaration should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -41,9 +51,14 @@ fn cov_struct_declaration_produces_struct() {
 fn cov_enum_declaration_produces_enum() {
     let r = extract::extract("Direction :: enum {\n  North,\n  South,\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Direction"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "Direction"),
         "enum declaration should produce Enum; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,9 +67,14 @@ fn cov_enum_declaration_produces_enum() {
 fn cov_union_declaration_produces_struct() {
     let r = extract::extract("Shape :: union {\n  Circle,\n  Rect,\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Shape"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Shape"),
         "union declaration should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -63,9 +83,14 @@ fn cov_union_declaration_produces_struct() {
 fn cov_const_declaration_produces_variable() {
     let r = extract::extract("MAX_PLAYERS :: 16");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MAX_PLAYERS"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "MAX_PLAYERS"),
         "const declaration should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -74,9 +99,14 @@ fn cov_const_declaration_produces_variable() {
 fn cov_variable_declaration_produces_variable() {
     let r = extract::extract("counter : int = 0");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
         "variable declaration should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -90,22 +120,30 @@ fn cov_variable_declaration_produces_variable() {
 fn cov_const_type_declaration_produces_variable() {
     let r = extract::extract("MyInt :: int");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MyInt"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "MyInt"),
         "const_type_declaration (parsed as const_declaration) should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// overloaded_procedure_declaration (`Name :: proc { ... }`) → Function
 #[test]
 fn cov_overloaded_procedure_declaration_produces_function() {
-    let r = extract::extract(
-        "print :: proc {\n    print_int,\n    print_string,\n}",
-    );
+    let r = extract::extract("print :: proc {\n    print_int,\n    print_string,\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "print"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "print"),
         "overloaded procedure declaration should produce Function; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -120,7 +158,10 @@ fn cov_import_declaration_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "import declaration should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -131,20 +172,24 @@ fn cov_import_with_alias_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "aliased import should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 /// call_expression inside a procedure body → Calls ref
 #[test]
 fn cov_call_expression_produces_calls() {
-    let r = extract::extract(
-        "greet :: proc() {\n    fmt.println(\"hello\")\n}",
-    );
+    let r = extract::extract("greet :: proc() {\n    fmt.println(\"hello\")\n}");
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "call_expression should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -157,15 +202,18 @@ fn cov_call_expression_produces_calls() {
 //       exercises `using_statement` inside a proc body is confirmed to work.
 #[test]
 fn cov_using_statement_inside_proc_produces_typeref() {
-    let r = extract::extract(
-        "init :: proc() {\n    using fmt\n    println(\"hello\")\n}",
-    );
+    let r = extract::extract("init :: proc() {\n    using fmt\n    println(\"hello\")\n}");
     // The extractor may or may not produce a TypeRef depending on whether
     // tree-sitter-odin emits `using_statement` for this form.  We assert that
     // at minimum the procedure symbol is extracted (smoke test).
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "init"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "init"),
         "proc containing using should still produce Function(init); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

@@ -33,10 +33,9 @@ fn test_register_preserves_existing_keys() {
 
     register(dir.path()).unwrap();
 
-    let content: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap(),
-    )
-    .unwrap();
+    let content: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap())
+            .unwrap();
 
     assert!(content["mcpServers"]["bearwisdom"].is_object());
     assert!(content["mcpServers"]["other-server"].is_object());
@@ -85,10 +84,9 @@ fn test_unregister_preserves_other_servers() {
 
     unregister(dir.path()).unwrap();
 
-    let content: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap(),
-    )
-    .unwrap();
+    let content: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap())
+            .unwrap();
 
     assert!(content["mcpServers"].get("bearwisdom").is_none());
     assert!(content["mcpServers"]["other-server"].is_object());

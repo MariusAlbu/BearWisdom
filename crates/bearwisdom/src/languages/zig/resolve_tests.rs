@@ -3,7 +3,9 @@ use crate::indexer::resolve::engine::{FileContext, RefContext};
 use crate::types::*;
 
 fn make_ref_calls(target: &str, args: Vec<CallArg>) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -32,11 +34,11 @@ fn make_sym() -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_file_ctx() -> FileContext {
@@ -51,7 +53,10 @@ fn make_file_ctx() -> FileContext {
 #[test]
 fn test_zig_http_fetch_emits_producer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
-    let r = make_ref_calls("fetch", vec![CallArg::StringLit("https://api.example.com/x".to_string())]);
+    let r = make_ref_calls(
+        "fetch",
+        vec![CallArg::StringLit("https://api.example.com/x".to_string())],
+    );
     let sym = make_sym();
     let rc = RefContext {
         extracted_ref: &r,
@@ -61,7 +66,13 @@ fn test_zig_http_fetch_emits_producer() {
     };
     let fc = make_file_ctx();
     let emissions = super::hooks::detect_flow_inner(&fc, &rc);
-    assert!(matches!(emissions.first(), Some(FlowEmission::NamedChannel { role: ChannelRole::Producer, .. })));
+    assert!(matches!(
+        emissions.first(),
+        Some(FlowEmission::NamedChannel {
+            role: ChannelRole::Producer,
+            ..
+        })
+    ));
 }
 
 #[test]

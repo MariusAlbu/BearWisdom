@@ -15,7 +15,9 @@
 //   Calls      — `foo(...)` at module/function level
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 
 pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -26,7 +28,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -45,8 +49,12 @@ pub fn extract(source: &str) -> ExtractionResult {
                 match ch {
                     '{' => in_sub_depth += 1,
                     '}' => {
-                        if in_sub_depth > 0 { in_sub_depth -= 1; }
-                        if in_sub_depth == 0 { current_sub_idx = None; }
+                        if in_sub_depth > 0 {
+                            in_sub_depth -= 1;
+                        }
+                        if in_sub_depth == 0 {
+                            current_sub_idx = None;
+                        }
                     }
                     _ => {}
                 }
@@ -57,7 +65,13 @@ pub fn extract(source: &str) -> ExtractionResult {
             // package Foo::Bar;
             if let Some(name) = parse_package(trimmed) {
                 let idx = symbols.len();
-                symbols.push(make_symbol(name.clone(), name, SymbolKind::Namespace, line_u32, None));
+                symbols.push(make_symbol(
+                    name.clone(),
+                    name,
+                    SymbolKind::Namespace,
+                    line_u32,
+                    None,
+                ));
                 current_sub_idx = Some(idx);
             }
         } else if trimmed.starts_with("sub ") {
@@ -65,17 +79,29 @@ pub fn extract(source: &str) -> ExtractionResult {
             if let Some(name) = parse_sub(trimmed) {
                 let idx = symbols.len();
                 let sig = format!("sub {}", name);
-                symbols.push(make_symbol(name.clone(), name, SymbolKind::Function, line_u32, Some(sig)));
+                symbols.push(make_symbol(
+                    name.clone(),
+                    name,
+                    SymbolKind::Function,
+                    line_u32,
+                    Some(sig),
+                ));
                 current_sub_idx = Some(idx);
                 // Count opening brace for depth tracking
                 in_sub_depth = trimmed.chars().filter(|&c| c == '{').count() as u32;
-                in_sub_depth = in_sub_depth.saturating_sub(trimmed.chars().filter(|&c| c == '}').count() as u32);
+                in_sub_depth = in_sub_depth
+                    .saturating_sub(trimmed.chars().filter(|&c| c == '}').count() as u32);
             }
-        } else if trimmed.starts_with("use ") && !trimmed.starts_with("use strict") && !trimmed.starts_with("use warnings") {
+        } else if trimmed.starts_with("use ")
+            && !trimmed.starts_with("use strict")
+            && !trimmed.starts_with("use warnings")
+        {
             // use Module::Name qw(...);
             if let Some(module) = parse_use(trimmed) {
                 let src_idx = current_sub_idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: src_idx,
                     target_name: module.clone(),
                     kind: EdgeKind::Imports,
@@ -84,9 +110,9 @@ pub fn extract(source: &str) -> ExtractionResult {
                     module: Some(module),
                     chain: None,
                     byte_offset: line_starts.get(lineno).copied().unwrap_or(0),
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -105,7 +131,11 @@ fn parse_package(line: &str) -> Option<String> {
         .split(|c: char| c == ';' || c.is_whitespace())
         .next()?
         .trim();
-    if name.is_empty() { None } else { Some(name.to_string()) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn parse_sub(line: &str) -> Option<String> {
@@ -115,7 +145,11 @@ fn parse_sub(line: &str) -> Option<String> {
         .split(|c: char| c == '{' || c == '(' || c == ';' || c.is_whitespace())
         .next()?
         .trim();
-    if name.is_empty() { None } else { Some(name.to_string()) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn parse_use(line: &str) -> Option<String> {
@@ -129,7 +163,11 @@ fn parse_use(line: &str) -> Option<String> {
     if module.starts_with(|c: char| c.is_ascii_digit()) {
         return None;
     }
-    if module.is_empty() { None } else { Some(module.to_string()) }
+    if module.is_empty() {
+        None
+    } else {
+        Some(module.to_string())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -157,9 +195,9 @@ fn make_symbol(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

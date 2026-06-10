@@ -25,9 +25,7 @@ pub fn discover_groovy_routes(
     project_root: &Path,
     _ctx: &ProjectContext,
 ) -> u32 {
-    let mut stmt = match conn.prepare(
-        "SELECT id, path FROM files WHERE language = 'groovy'",
-    ) {
+    let mut stmt = match conn.prepare("SELECT id, path FROM files WHERE language = 'groovy'") {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("groovy routes: prepare files failed: {e}");
@@ -36,7 +34,9 @@ pub fn discover_groovy_routes(
     };
 
     let files: Vec<(i64, String)> = match stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
     {
         Ok(v) => v,
@@ -96,10 +96,8 @@ struct GroovyRoute {
 }
 
 fn build_method_mapping_regex() -> Regex {
-    Regex::new(
-        r#"@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#,
-    )
-    .expect("groovy method mapping regex")
+    Regex::new(r#"@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#)
+        .expect("groovy method mapping regex")
 }
 
 fn build_request_mapping_regex() -> Regex {
@@ -133,7 +131,11 @@ fn scan_groovy_file(source: &str, re_method: &Regex, re_request: &Regex) -> Vec<
         if let Some(cap) = re_method.captures(line_text) {
             let verb = cap[1].to_uppercase();
             let path = format!("{}{}", class_prefix, &cap[2]);
-            out.push(GroovyRoute { http_method: verb, path, line: line_no });
+            out.push(GroovyRoute {
+                http_method: verb,
+                path,
+                line: line_no,
+            });
             continue;
         }
 
@@ -148,7 +150,11 @@ fn scan_groovy_file(source: &str, re_method: &Regex, re_request: &Regex) -> Vec<
                     .map(|m| m.as_str().to_uppercase())
                     .unwrap_or_else(|| "GET".to_string());
                 let path = format!("{}{}", class_prefix, &cap[1]);
-                out.push(GroovyRoute { http_method: verb, path, line: line_no });
+                out.push(GroovyRoute {
+                    http_method: verb,
+                    path,
+                    line: line_no,
+                });
             }
         }
     }

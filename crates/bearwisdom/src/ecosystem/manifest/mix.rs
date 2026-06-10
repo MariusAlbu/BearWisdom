@@ -18,7 +18,8 @@ impl ManifestReader for MixManifest {
         }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
     }
@@ -29,7 +30,9 @@ impl ManifestReader for MixManifest {
 
         let mut out = Vec::new();
         for manifest_path in paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
 
             let mut data = ManifestData::default();
             for name in parse_mix_deps(&content) {
@@ -155,9 +158,7 @@ pub fn parse_mix_deps(content: &str) -> Vec<String> {
 
         // Look for tuple entries: `{:dep_name, ...}` or `{:dep_name, version, opts}`.
         if let Some(name) = extract_mix_dep_atom(trimmed) {
-            if !name.is_empty()
-                && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-            {
+            if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 packages.push(name);
             }
         }

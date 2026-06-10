@@ -152,12 +152,12 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract body — use the function's own index as parent
     if let Some(body) = node.child_by_field_name("body") {
@@ -202,16 +202,23 @@ fn extract_variable(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(node_text(*node, src).lines().next().unwrap_or("").trim().to_string()),
+        signature: Some(
+            node_text(*node, src)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+        ),
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -263,12 +270,12 @@ fn extract_declaration(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                     break; // one symbol per declaration
                 }
             }
@@ -314,7 +321,9 @@ fn extract_source_import(
                 .unwrap_or(&raw)
                 .trim_end_matches(".sh")
                 .to_string();
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -323,9 +332,9 @@ fn extract_source_import(
                 module: Some(raw),
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -352,7 +361,9 @@ fn extract_command_call(
     if is_syntax_keyword(&cmd) {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: cmd,
         kind: EdgeKind::Calls,
@@ -361,9 +372,9 @@ fn extract_command_call(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// Filter / normalize a raw command-position word into a resolvable
@@ -435,17 +446,17 @@ fn normalize_command_target(raw: &str) -> Option<String> {
     }
     // Absolute path? Take the basename — `/usr/bin/find` resolves
     // against `find` in the keyword table.
-    let base = if unquoted.starts_with('/') || unquoted.starts_with("./") || unquoted.starts_with("../") {
-        unquoted.rsplit('/').next().unwrap_or(unquoted)
-    } else {
-        unquoted
-    };
+    let base =
+        if unquoted.starts_with('/') || unquoted.starts_with("./") || unquoted.starts_with("../") {
+            unquoted.rsplit('/').next().unwrap_or(unquoted)
+        } else {
+            unquoted
+        };
     if base.is_empty() {
         return None;
     }
     Some(base.to_string())
 }
-
 
 /// Return the first word/command_name text of a command node.
 fn first_word(node: &Node, src: &str) -> String {
@@ -472,10 +483,7 @@ fn first_word(node: &Node, src: &str) -> String {
 /// Kept very small: only things that appear as the command word but are
 /// pure grammar tokens rather than executable commands.
 fn is_syntax_keyword(name: &str) -> bool {
-    matches!(
-        name,
-        "[" | "[[" | "]]" | "]" | "!" | "function"
-    )
+    matches!(name, "[" | "[[" | "]]" | "]" | "!" | "function")
 }
 
 // ---------------------------------------------------------------------------

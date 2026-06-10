@@ -21,9 +21,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_class_block() {
     let r = extract("Public Class Animal\nEnd Class");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Animal" && s.kind == SymbolKind::Class),
         "expected Class Animal; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -32,9 +37,14 @@ fn symbol_class_block() {
 fn symbol_module_block() {
     let r = extract("Module Main\n  Sub Test()\n  End Sub\nEnd Module");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Main" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Main" && s.kind == SymbolKind::Class),
         "expected Class Main from module_block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -45,9 +55,14 @@ fn symbol_structure_block() {
         "Public Structure Point\n  Public X As Integer\n  Public Y As Integer\nEnd Structure",
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
         "expected Struct Point; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -56,9 +71,14 @@ fn symbol_structure_block() {
 fn symbol_interface_block() {
     let r = extract("Public Interface IRunnable\n  Sub Run()\nEnd Interface");
     assert!(
-        r.symbols.iter().any(|s| s.name == "IRunnable" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "IRunnable" && s.kind == SymbolKind::Interface),
         "expected Interface IRunnable; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -67,9 +87,14 @@ fn symbol_interface_block() {
 fn symbol_enum_block() {
     let r = extract("Public Enum Color\n  Red\n  Green\n  Blue\nEnd Enum");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
         "expected Enum Color; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -78,9 +103,14 @@ fn symbol_enum_block() {
 fn symbol_method_declaration() {
     let r = extract("Module Main\n  Sub Test()\n  End Sub\nEnd Module");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Test" && s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Test" && s.kind == SymbolKind::Method),
         "expected Method Test; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -91,9 +121,14 @@ fn symbol_property_declaration() {
         "Public Class Config\n  Public Property Timeout As Integer\n    Get\n      Return 30\n    End Get\n    Set(value As Integer)\n    End Set\n  End Property\nEnd Class",
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Timeout" && s.kind == SymbolKind::Property),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Timeout" && s.kind == SymbolKind::Property),
         "expected Property Timeout; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -102,9 +137,14 @@ fn symbol_property_declaration() {
 fn symbol_namespace_block() {
     let r = extract("Namespace MyApp.Core\n  Class Foo\n  End Class\nEnd Namespace");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyApp.Core" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyApp.Core" && s.kind == SymbolKind::Namespace),
         "expected Namespace MyApp.Core; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -119,7 +159,10 @@ fn ref_imports_statement() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from imports_statement; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -132,7 +175,10 @@ fn ref_invocation() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected Calls from invocation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -145,9 +191,14 @@ fn operator_keywords_not_emitted_as_calls() {
     );
     for op in ["NameOf", "CType", "GetType"] {
         assert!(
-            !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == op),
+            !r.refs
+                .iter()
+                .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == op),
             "{op} must not emit a Calls ref; got {:?}",
-            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+            r.refs
+                .iter()
+                .map(|rf| (&rf.target_name, rf.kind))
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -172,9 +223,14 @@ fn ref_new_expression() {
 fn ref_inherits_clause() {
     let r = extract("Public Class Dog\n    Inherits Animal\nEnd Class");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
         "expected Inherits Animal from Inherits clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -185,9 +241,14 @@ fn ref_inherits_clause() {
 fn ref_implements_clause() {
     let r = extract("Public Class Runner\n    Implements IRunnable\nEnd Class");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "IRunnable"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "IRunnable"),
         "expected Inherits (Implements) IRunnable from Implements clause; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -201,19 +262,34 @@ fn ref_implements_clause() {
 fn symbol_enum_member() {
     let r = extract("Public Enum Status\n  Active\n  Inactive\nEnd Enum");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
         "expected Enum Status; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Active" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Active" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember Active; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inactive" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Inactive" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember Inactive; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -222,35 +298,46 @@ fn symbol_enum_member() {
 fn symbol_constructor_declaration() {
     let r = extract("Public Class Widget\n  Public Sub New()\n  End Sub\nEnd Class");
     assert!(
-        r.symbols.iter().any(|s| s.name == "New" && s.kind == SymbolKind::Constructor),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "New" && s.kind == SymbolKind::Constructor),
         "expected Constructor New; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `field_declaration`  →  Field
 #[test]
 fn symbol_field_declaration() {
-    let r = extract(
-        "Public Class Config\n  Private _timeout As Integer\nEnd Class",
-    );
+    let r = extract("Public Class Config\n  Private _timeout As Integer\nEnd Class");
     assert!(
-        r.symbols.iter().any(|s| s.name == "_timeout" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "_timeout" && s.kind == SymbolKind::Field),
         "expected Field _timeout; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `const_declaration`  →  Variable
 #[test]
 fn symbol_const_declaration() {
-    let r = extract(
-        "Module M\n  Const MAX_RETRY As Integer = 3\nEnd Module",
-    );
+    let r = extract("Module M\n  Const MAX_RETRY As Integer = 3\nEnd Module");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MAX_RETRY" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MAX_RETRY" && s.kind == SymbolKind::Variable),
         "expected Variable MAX_RETRY; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -259,21 +346,29 @@ fn symbol_const_declaration() {
 fn symbol_delegate_declaration() {
     let r = extract("Delegate Function Transformer(x As Integer) As Integer");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Transformer" && s.kind == SymbolKind::Delegate),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Transformer" && s.kind == SymbolKind::Delegate),
         "expected Delegate Transformer; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `event_declaration`  →  Event
 #[test]
 fn symbol_event_declaration() {
-    let r = extract(
-        "Public Class Button\n  Public Event Clicked As EventHandler\nEnd Class",
-    );
+    let r = extract("Public Class Button\n  Public Event Clicked As EventHandler\nEnd Class");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Clicked" && s.kind == SymbolKind::Event),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Clicked" && s.kind == SymbolKind::Event),
         "expected Event Clicked; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

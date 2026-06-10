@@ -248,9 +248,15 @@ func setupChi() {
     extract_routes_from_source(source, file_id, conn, "routes.go", &re, &mut routes);
 
     assert_eq!(routes.len(), 3);
-    assert!(routes.iter().any(|r| r.http_method == "GET" && r.route_template == "/articles"));
-    assert!(routes.iter().any(|r| r.http_method == "POST" && r.route_template == "/articles"));
-    assert!(routes.iter().any(|r| r.http_method == "DELETE" && r.route_template == "/articles/{id}"));
+    assert!(routes
+        .iter()
+        .any(|r| r.http_method == "GET" && r.route_template == "/articles"));
+    assert!(routes
+        .iter()
+        .any(|r| r.http_method == "POST" && r.route_template == "/articles"));
+    assert!(routes
+        .iter()
+        .any(|r| r.http_method == "DELETE" && r.route_template == "/articles/{id}"));
 }
 
 #[test]
@@ -315,9 +321,7 @@ func main() {
     extract_routes_from_source(source, file_id, conn, "echo_server.go", &re, &mut routes);
 
     assert_eq!(routes.len(), 2);
-    assert!(routes
-        .iter()
-        .all(|r| r.resolved_route.starts_with("/v1/")));
+    assert!(routes.iter().all(|r| r.resolved_route.starts_with("/v1/")));
 }
 
 #[test]

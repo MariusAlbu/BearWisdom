@@ -17,10 +17,7 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
             let mut j = expr_start;
             let mut found = None;
             while j + close_needle_len <= bytes.len() {
-                if bytes[j] == b'}'
-                    && bytes[j + 1] == b'}'
-                    && (!triple || bytes[j + 2] == b'}')
-                {
+                if bytes[j] == b'}' && bytes[j + 1] == b'}' && (!triple || bytes[j + 2] == b'}') {
                     found = Some(j);
                     break;
                 }
@@ -41,9 +38,7 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
                         let (line, col) = line_col_at(bytes, expr_start);
                         regions.push(EmbeddedRegion {
                             language_id: "javascript".to_string(),
-                            text: format!(
-                                "function __HbsExpr{idx}() {{ return ({js_expr}); }}\n"
-                            ),
+                            text: format!("function __HbsExpr{idx}() {{ return ({js_expr}); }}\n"),
                             line_offset: line,
                             col_offset: col,
                             origin: EmbeddedOrigin::TemplateExpr,
@@ -176,11 +171,15 @@ fn top_level_eq(s: &str) -> Option<usize> {
     let mut in_squote = false;
     for (i, ch) in s.char_indices() {
         if in_dquote {
-            if ch == '"' { in_dquote = false; }
+            if ch == '"' {
+                in_dquote = false;
+            }
             continue;
         }
         if in_squote {
-            if ch == '\'' { in_squote = false; }
+            if ch == '\'' {
+                in_squote = false;
+            }
             continue;
         }
         match ch {
@@ -230,7 +229,9 @@ fn rewrite_token(tok: &str) -> String {
         return t.to_string();
     }
     // Bare identifier or dotted path (`user.name.first`).
-    if t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '-' || c == '/') {
+    if t.chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '-' || c == '/')
+    {
         // Slashes in paths (`user/name`) are Handlebars-only; flatten to dots.
         // Hyphens make it not a valid JS identifier; rewrite to underscores so
         // tree-sitter sees a single identifier token instead of a subtraction.

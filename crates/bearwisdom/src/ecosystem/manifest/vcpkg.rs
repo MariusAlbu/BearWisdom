@@ -20,7 +20,9 @@ use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 pub struct VcpkgManifest;
 
 impl ManifestReader for VcpkgManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Vcpkg }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Vcpkg
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let path = project_root.join("vcpkg.json");
@@ -36,18 +38,21 @@ impl ManifestReader for VcpkgManifest {
     }
 }
 
-fn collect_vcpkg_manifests(
-    dir: &Path,
-    out: &mut Vec<ReaderEntry>,
-    depth: u32,
-) {
-    if depth > 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn collect_vcpkg_manifests(dir: &Path, out: &mut Vec<ReaderEntry>, depth: u32) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(name, "node_modules" | ".git" | "target" | "build" | ".bearwisdom" | "vcpkg_installed") {
+            if matches!(
+                name,
+                "node_modules" | ".git" | "target" | "build" | ".bearwisdom" | "vcpkg_installed"
+            ) {
                 continue;
             }
             collect_vcpkg_manifests(&path, out, depth + 1);

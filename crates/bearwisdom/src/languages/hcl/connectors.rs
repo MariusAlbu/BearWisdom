@@ -31,7 +31,15 @@ pub fn run_kubernetes(db: &Database, project_root: &Path) {
 // Kubernetes connector (inlined from connectors/kubernetes.rs)
 // ---------------------------------------------------------------------------
 
-const K8S_DIRS: &[&str] = &["k8s", "kubernetes", "deploy", "helm", ".k8s", "manifests", "charts"];
+const K8S_DIRS: &[&str] = &[
+    "k8s",
+    "kubernetes",
+    "deploy",
+    "helm",
+    ".k8s",
+    "manifests",
+    "charts",
+];
 const SERVICE_URL_PATTERN: &str = r#"https?://([a-zA-Z][a-zA-Z0-9_-]*)(?::\d+)?"#;
 const HOST_PORT_PATTERN: &str = r#"^([a-zA-Z][a-zA-Z0-9_-]*):\d+"#;
 
@@ -82,13 +90,19 @@ fn k8s_connect(db: &Database, project_root: &Path) -> Result<u32> {
 
             match kind.as_str() {
                 "Service" => {
-                    if let Some(svc) = k8s_extract_service(conn, project_root, &manifest_path, &doc) {
+                    if let Some(svc) = k8s_extract_service(conn, project_root, &manifest_path, &doc)
+                    {
                         known_services.insert(svc.name.clone(), svc);
                     }
                 }
                 "Deployment" | "StatefulSet" | "DaemonSet" | "Job" | "CronJob" => {
                     let refs = k8s_extract_deployment_refs(
-                        conn, project_root, &manifest_path, &doc, &url_re, &host_port_re,
+                        conn,
+                        project_root,
+                        &manifest_path,
+                        &doc,
+                        &url_re,
+                        &host_port_re,
                     );
                     service_refs.extend(refs);
                 }
@@ -104,9 +118,15 @@ fn k8s_connect(db: &Database, project_root: &Path) -> Result<u32> {
     let mut total = 0u32;
 
     for sref in &service_refs {
-        let Some(target_svc) = known_services.get(&sref.service_name) else { continue };
-        let Some(source_pkg_id) = sref.source_package_id else { continue };
-        let Some(target_pkg_id) = target_svc.package_id else { continue };
+        let Some(target_svc) = known_services.get(&sref.service_name) else {
+            continue;
+        };
+        let Some(source_pkg_id) = sref.source_package_id else {
+            continue;
+        };
+        let Some(target_pkg_id) = target_svc.package_id else {
+            continue;
+        };
 
         let source_file_id = match k8s_representative_file_id(conn, source_pkg_id) {
             Some(id) => id,
@@ -213,16 +233,28 @@ fn k8s_extract_deployment_refs(
                 .and_then(|c| c.as_sequence())
         });
 
-    let Some(containers) = containers else { return refs };
+    let Some(containers) = containers else {
+        return refs;
+    };
 
     for container in containers {
-        let Some(env_list) = container.get("env").and_then(|e| e.as_sequence()) else { continue };
+        let Some(env_list) = container.get("env").and_then(|e| e.as_sequence()) else {
+            continue;
+        };
         for env in env_list {
             let value = env.get("value").and_then(|v| v.as_str()).unwrap_or("");
-            let env_name = env.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            let env_name = env
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
             let service_names = k8s_extract_service_names_from_url(value, url_re, host_port_re);
             for service_name in service_names {
-                refs.push(ServiceRef { service_name, env_var: env_name.clone(), source_package_id });
+                refs.push(ServiceRef {
+                    service_name,
+                    env_var: env_name.clone(),
+                    source_package_id,
+                });
             }
         }
     }
@@ -231,12 +263,15 @@ fn k8s_extract_deployment_refs(
 }
 
 fn k8s_resolve_package_by_name(conn: &rusqlite::Connection, name: &str) -> Option<i64> {
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     conn.query_row(
         "SELECT id FROM packages WHERE name = ?1 OR path = ?1 OR path LIKE ('%/' || ?1) LIMIT 1",
         rusqlite::params![name],
         |row| row.get(0),
-    ).ok()
+    )
+    .ok()
 }
 
 fn k8s_resolve_package_from_manifest_dir(
@@ -249,8 +284,13 @@ fn k8s_resolve_package_from_manifest_dir(
         .strip_prefix(project_root)
         .ok()
         .map(|p| p.to_string_lossy().replace('\\', "/"))?;
-    let normalised = rel.trim_start_matches("./").trim_end_matches('/').to_string();
-    if normalised.is_empty() { return None; }
+    let normalised = rel
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .to_string();
+    if normalised.is_empty() {
+        return None;
+    }
 
     for k8s_dir in K8S_DIRS {
         if let Some(stripped) = normalised.strip_suffix(k8s_dir) {
@@ -271,7 +311,8 @@ fn k8s_resolve_package_from_manifest_dir(
         "SELECT id FROM packages WHERE path = ?1 OR path LIKE (?1 || '%') LIMIT 1",
         rusqlite::params![normalised],
         |row| row.get(0),
-    ).ok()
+    )
+    .ok()
 }
 
 fn k8s_representative_file_id(conn: &rusqlite::Connection, package_id: i64) -> Option<i64> {
@@ -279,7 +320,8 @@ fn k8s_representative_file_id(conn: &rusqlite::Connection, package_id: i64) -> O
         "SELECT id FROM files WHERE package_id = ?1 LIMIT 1",
         rusqlite::params![package_id],
         |row| row.get(0),
-    ).ok()
+    )
+    .ok()
 }
 
 fn find_k8s_manifests(project_root: &Path) -> Vec<PathBuf> {
@@ -304,8 +346,14 @@ fn collect_yaml_files_with_k8s_kind(dir: &Path, out: &mut Vec<PathBuf>) {
             collect_yaml_files_with_k8s_kind(&path, out);
             continue;
         }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-        if ext != "yml" && ext != "yaml" { continue; }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext != "yml" && ext != "yaml" {
+            continue;
+        }
         if file_looks_like_k8s_manifest(&path) {
             out.push(path);
         }
@@ -323,8 +371,14 @@ fn file_looks_like_k8s_manifest(path: &Path) -> bool {
             let kind = trimmed.trim_start_matches("kind:").trim();
             return matches!(
                 kind,
-                "Deployment" | "Service" | "StatefulSet" | "DaemonSet"
-                    | "Job" | "CronJob" | "Ingress" | "ConfigMap"
+                "Deployment"
+                    | "Service"
+                    | "StatefulSet"
+                    | "DaemonSet"
+                    | "Job"
+                    | "CronJob"
+                    | "Ingress"
+                    | "ConfigMap"
             );
         }
     }
@@ -359,8 +413,7 @@ fn k8s_extract_service_names_from_url(
 }
 
 fn k8s_is_non_service_host(name: &str) -> bool {
-    matches!(name, "localhost" | "127" | "0" | "example")
-        || name.parse::<u8>().is_ok()
+    matches!(name, "localhost" | "127" | "0" | "example") || name.parse::<u8>().is_ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +429,11 @@ mod tests {
         let url_re = regex::Regex::new(SERVICE_URL_PATTERN).unwrap();
         let host_port_re = regex::Regex::new(HOST_PORT_PATTERN).unwrap();
 
-        let names = k8s_extract_service_names_from_url("http://auth-service:3000/api", &url_re, &host_port_re);
+        let names = k8s_extract_service_names_from_url(
+            "http://auth-service:3000/api",
+            &url_re,
+            &host_port_re,
+        );
         assert_eq!(names, vec!["auth-service"]);
 
         let names = k8s_extract_service_names_from_url("redis:6379", &url_re, &host_port_re);
@@ -390,7 +447,11 @@ mod tests {
     fn test_extract_service_names_multiple() {
         let url_re = regex::Regex::new(SERVICE_URL_PATTERN).unwrap();
         let host_port_re = regex::Regex::new(HOST_PORT_PATTERN).unwrap();
-        let names = k8s_extract_service_names_from_url("http://catalog-api:8080/items", &url_re, &host_port_re);
+        let names = k8s_extract_service_names_from_url(
+            "http://catalog-api:8080/items",
+            &url_re,
+            &host_port_re,
+        );
         assert_eq!(names, vec!["catalog-api"]);
     }
 
@@ -439,9 +500,16 @@ spec:
         let root = Path::new("/project");
         let manifest = root.join("k8s/deployment.yaml");
 
-        let refs = k8s_extract_deployment_refs(&conn, root, &manifest, &doc, &url_re, &host_port_re);
+        let refs =
+            k8s_extract_deployment_refs(&conn, root, &manifest, &doc, &url_re, &host_port_re);
         let service_names: Vec<_> = refs.iter().map(|r| r.service_name.as_str()).collect();
-        assert!(service_names.contains(&"auth-service"), "expected auth-service");
-        assert!(service_names.contains(&"postgres"), "expected postgres from host:port");
+        assert!(
+            service_names.contains(&"auth-service"),
+            "expected auth-service"
+        );
+        assert!(
+            service_names.contains(&"postgres"),
+            "expected postgres from host:port"
+        );
     }
 }

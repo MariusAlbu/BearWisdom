@@ -34,15 +34,13 @@ use super::{
 };
 use crate::ecosystem::externals::{
     collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
-    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
-    resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator,
-    MAX_WALK_DEPTH,
+    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar,
+    resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
+    ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
-    clojure as clojure_manifest,
-    gradle as gradle_manifest,
-    sbt as sbt_manifest,
+    clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
 };
 use crate::walker::WalkedFile;
 
@@ -70,21 +68,29 @@ const LANGUAGES: &[&str] = &["java", "kotlin", "scala", "clojure", "groovy"];
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for MavenEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // Maven covers the JVM tool family in BearWisdom: pom.xml + Gradle
         // (build.gradle / .kts) + SBT. Each filename gets its own kind label
         // so users querying packages.kind can tell them apart.
         &[
-            ("pom.xml",          "maven"),
-            ("build.gradle",     "gradle"),
+            ("pom.xml", "maven"),
+            ("build.gradle", "gradle"),
             ("build.gradle.kts", "gradle"),
-            ("build.sbt",        "sbt"),
-            ("deps.edn",         "clojure"),
+            ("build.sbt", "sbt"),
+            ("deps.edn", "clojure"),
         ]
     }
 
@@ -111,7 +117,9 @@ impl Ecosystem for MavenEcosystem {
         walk_maven_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -122,22 +130,17 @@ impl Ecosystem for MavenEcosystem {
         walk_maven_narrowed(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         walk_maven_narrowed(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_maven_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +149,9 @@ impl Ecosystem for MavenEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for MavenEcosystem {
-    fn ecosystem(&self) -> &'static str { ID.as_str() }
+    fn ecosystem(&self) -> &'static str {
+        ID.as_str()
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_maven_roots(project_root)
@@ -200,10 +205,16 @@ fn walk_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
@@ -213,7 +224,9 @@ fn walk_dir_bounded(
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
 
             let (language, virtual_tag) = match detect_jvm_language(name) {
                 Some(spec) => spec,
@@ -221,10 +234,14 @@ fn walk_dir_bounded(
             };
 
             // Skip test-suffixed files by convention.
-            if name.ends_with("Test.java") || name.ends_with("Tests.java")
-                || name.ends_with("Test.scala") || name.ends_with("Tests.scala")
-                || name.ends_with("Spec.scala") || name.ends_with("Suite.scala")
-                || name == "package-info.java" || name == "module-info.java"
+            if name.ends_with("Test.java")
+                || name.ends_with("Tests.java")
+                || name.ends_with("Test.scala")
+                || name.ends_with("Tests.scala")
+                || name.ends_with("Spec.scala")
+                || name.ends_with("Suite.scala")
+                || name == "package-info.java"
+                || name == "module-info.java"
             {
                 continue;
             }
@@ -255,7 +272,8 @@ pub(crate) fn detect_jvm_language(name: &str) -> Option<(&'static str, &'static 
         Some(("scala", "scala"))
     } else if name.ends_with(".clj") || name.ends_with(".cljc") || name.ends_with(".cljs") {
         Some(("clojure", "clojure"))
-    } else if name.ends_with(".groovy") || name.ends_with(".gradle")
+    } else if name.ends_with(".groovy")
+        || name.ends_with(".gradle")
         || name.ends_with(".gradle.kts")
     {
         // .gradle.kts files inside an extracted jar are unusual but not
@@ -267,16 +285,17 @@ pub(crate) fn detect_jvm_language(name: &str) -> Option<(&'static str, &'static 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::reachability::{extract_clojure_imports, extract_jvm_imports_from_source, jvm_import_to_package_prefix};
+    use super::reachability::{
+        extract_clojure_imports, extract_jvm_imports_from_source, jvm_import_to_package_prefix,
+    };
     use super::symbol_index::{
         collect_groovy_top_level_name, collect_java_top_level_name, collect_kotlin_top_level_name,
         collect_scala_pattern_names, collect_scala_top_level_name, scan_clojure_header,
         scan_groovy_header, scan_java_header, scan_kotlin_header, scan_scala_header,
     };
+    use super::*;
 
     #[test]
     fn ecosystem_identity() {
@@ -300,8 +319,14 @@ mod tests {
         assert_eq!(detect_jvm_language("Foo.kt"), Some(("kotlin", "kotlin")));
         assert_eq!(detect_jvm_language("Foo.scala"), Some(("scala", "scala")));
         assert_eq!(detect_jvm_language("foo.clj"), Some(("clojure", "clojure")));
-        assert_eq!(detect_jvm_language("foo.cljs"), Some(("clojure", "clojure")));
-        assert_eq!(detect_jvm_language("build.groovy"), Some(("groovy", "groovy")));
+        assert_eq!(
+            detect_jvm_language("foo.cljs"),
+            Some(("clojure", "clojure"))
+        );
+        assert_eq!(
+            detect_jvm_language("build.groovy"),
+            Some(("groovy", "groovy"))
+        );
         assert_eq!(detect_jvm_language("readme.md"), None);
     }
 
@@ -397,15 +422,18 @@ mod tests {
         std::fs::write(
             root.join("org/spring/context/Ctx.java"),
             "package org.spring.context;\npublic class Ctx {}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             root.join("org/spring/beans/Bean.java"),
             "package org.spring.beans;\npublic class Bean {}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             root.join("org/other/Unrelated.java"),
             "package org.other;\npublic class Unrelated {}\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let dep = ExternalDepRoot {
             module_path: "org.spring:spring-context".to_string(),
@@ -474,7 +502,10 @@ enum Status { OK, FAIL }
 record Coord(int x, int y) {}
 "#;
         let names = scan_java_header(src);
-        assert!(names.contains(&"ApplicationContext".to_string()), "{names:?}");
+        assert!(
+            names.contains(&"ApplicationContext".to_string()),
+            "{names:?}"
+        );
         assert!(names.contains(&"Bean".to_string()), "{names:?}");
         assert!(names.contains(&"Status".to_string()), "{names:?}");
         assert!(names.contains(&"Trace".to_string()), "{names:?}");

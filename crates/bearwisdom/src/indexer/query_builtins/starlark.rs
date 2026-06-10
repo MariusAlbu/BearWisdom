@@ -24,7 +24,8 @@ pub const BUILTINS: &[&str] = &[
     "with",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some(";;; Program structure\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    ";;; Program structure\n\
 (module) @scope\n\
 \n\
 ; Function with parameters, defines parameters\n\
@@ -115,4 +116,5 @@ pub const LOCALS_SCM: Option<&str> = Some(";;; Program structure\n\
   arguments: (argument_list\n\
     (string) @definition.import))\n\
   (#eq? @_fn \"load\"))\n\
-");
+",
+);

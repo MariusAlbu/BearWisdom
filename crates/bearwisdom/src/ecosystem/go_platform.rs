@@ -24,7 +24,9 @@
 /// `foo_GOARCH.go`, or `foo_GOOS_GOARCH.go` is only built for the matching
 /// host. Files without a platform suffix always pass.
 pub fn file_matches_host(filename: &str) -> bool {
-    let Some(stem) = strip_go_suffixes(filename) else { return false };
+    let Some(stem) = strip_go_suffixes(filename) else {
+        return false;
+    };
     file_matches(stem, host_goos(), host_goarch())
 }
 
@@ -43,15 +45,25 @@ fn file_matches(stem: &str, host_os: &str, host_arch: &str) -> bool {
     // A leading `name_` must exist; bare `amd64.go` is treated as a normal
     // filename with no tag (Go does the same).
     let segs: Vec<&str> = stem.split('_').collect();
-    if segs.len() < 2 { return true }
+    if segs.len() < 2 {
+        return true;
+    }
 
     let last = segs[segs.len() - 1];
-    let prev = if segs.len() >= 3 { Some(segs[segs.len() - 2]) } else { None };
+    let prev = if segs.len() >= 3 {
+        Some(segs[segs.len() - 2])
+    } else {
+        None
+    };
 
     if is_known_arch(last) {
-        if last != host_arch { return false }
+        if last != host_arch {
+            return false;
+        }
         if let Some(p) = prev {
-            if is_known_os(p) && p != host_os { return false }
+            if is_known_os(p) && p != host_os {
+                return false;
+            }
         }
         return true;
     }
@@ -85,19 +97,53 @@ fn host_goarch() -> &'static str {
 fn is_known_os(s: &str) -> bool {
     matches!(
         s,
-        "aix" | "android" | "darwin" | "dragonfly" | "freebsd" | "hurd"
-            | "illumos" | "ios" | "js" | "linux" | "nacl" | "netbsd"
-            | "openbsd" | "plan9" | "solaris" | "wasip1" | "windows" | "zos"
+        "aix"
+            | "android"
+            | "darwin"
+            | "dragonfly"
+            | "freebsd"
+            | "hurd"
+            | "illumos"
+            | "ios"
+            | "js"
+            | "linux"
+            | "nacl"
+            | "netbsd"
+            | "openbsd"
+            | "plan9"
+            | "solaris"
+            | "wasip1"
+            | "windows"
+            | "zos"
     )
 }
 
 fn is_known_arch(s: &str) -> bool {
     matches!(
         s,
-        "386" | "amd64" | "amd64p32" | "arm" | "armbe" | "arm64" | "arm64be"
-            | "loong64" | "mips" | "mipsle" | "mips64" | "mips64le"
-            | "mips64p32" | "mips64p32le" | "ppc" | "ppc64" | "ppc64le"
-            | "riscv" | "riscv64" | "s390" | "s390x" | "sparc" | "sparc64"
+        "386"
+            | "amd64"
+            | "amd64p32"
+            | "arm"
+            | "armbe"
+            | "arm64"
+            | "arm64be"
+            | "loong64"
+            | "mips"
+            | "mipsle"
+            | "mips64"
+            | "mips64le"
+            | "mips64p32"
+            | "mips64p32le"
+            | "ppc"
+            | "ppc64"
+            | "ppc64le"
+            | "riscv"
+            | "riscv64"
+            | "s390"
+            | "s390x"
+            | "sparc"
+            | "sparc64"
             | "wasm"
     )
 }

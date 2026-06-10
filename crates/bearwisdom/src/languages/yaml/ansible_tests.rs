@@ -154,7 +154,10 @@ fn indented_keys_not_emitted_as_top_level() {
     let source = "top_level:\n  nested_key: value\nanother_top: 2\n";
     let result = extract_ansible(source, "roles/app/defaults/main.yml", "app");
     let names: Vec<&str> = result.symbols.iter().map(|s| s.name.as_str()).collect();
-    assert!(!names.contains(&"nested_key"), "nested key should not be emitted");
+    assert!(
+        !names.contains(&"nested_key"),
+        "nested key should not be emitted"
+    );
     assert!(names.contains(&"top_level"));
     assert!(names.contains(&"another_top"));
 }

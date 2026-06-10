@@ -252,11 +252,9 @@ mod tests {
     fn json_frontmatter_at_bof() {
         let src = "{\n  \"title\": \"Post\"\n}\n\nbody\n";
         let regions = detect_regions(src);
-        assert!(
-            regions
-                .iter()
-                .any(|r| r.language_id == "json" && r.origin == EmbeddedOrigin::MarkdownFrontmatter)
-        );
+        assert!(regions
+            .iter()
+            .any(|r| r.language_id == "json" && r.origin == EmbeddedOrigin::MarkdownFrontmatter));
     }
 
     #[test]

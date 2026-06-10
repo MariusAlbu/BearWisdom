@@ -93,18 +93,12 @@ fn build_verb_regex() -> Regex {
 
 /// `resources "/path", Controller` — expands to standard CRUD routes.
 fn build_resources_regex() -> Regex {
-    Regex::new(
-        r#"^\s*resources\s+["']([^"']+)["']"#,
-    )
-    .expect("phoenix resources regex")
+    Regex::new(r#"^\s*resources\s+["']([^"']+)["']"#).expect("phoenix resources regex")
 }
 
 /// `scope "/prefix" do` or `scope "/prefix", Module do`
 fn build_scope_regex() -> Regex {
-    Regex::new(
-        r#"^\s*scope\s+["']([^"']+)["']"#,
-    )
-    .expect("phoenix scope regex")
+    Regex::new(r#"^\s*scope\s+["']([^"']+)["']"#).expect("phoenix scope regex")
 }
 
 /// `end` closing a block.
@@ -168,7 +162,9 @@ fn find_phoenix_routes(conn: &Connection, project_root: &Path) -> Result<Vec<Pho
         .context("Failed to prepare Elixir router file query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Elixir router files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Elixir router file rows")?;
@@ -198,14 +194,8 @@ fn find_phoenix_routes(conn: &Connection, project_root: &Path) -> Result<Vec<Pho
             continue;
         }
 
-        let mut routes = parse_phoenix_routes(
-            &source,
-            &re_verb,
-            &re_resources,
-            &re_scope,
-            &re_end,
-            &re_do,
-        );
+        let mut routes =
+            parse_phoenix_routes(&source, &re_verb, &re_resources, &re_scope, &re_end, &re_do);
 
         // Back-fill file_id (expand_resources uses 0 as placeholder).
         for r in &mut routes {
@@ -237,7 +227,11 @@ fn parse_phoenix_routes(
         // scope "/prefix" do ...
         if let Some(cap) = re_scope.captures(line_text) {
             let seg = cap[1].to_string();
-            let seg = if seg.starts_with('/') { seg } else { format!("/{seg}") };
+            let seg = if seg.starts_with('/') {
+                seg
+            } else {
+                format!("/{seg}")
+            };
             prefix_stack.push((seg, true));
             continue;
         }

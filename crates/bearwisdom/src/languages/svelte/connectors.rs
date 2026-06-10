@@ -13,13 +13,11 @@ use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannel
 /// Scan a `.svelte` source for embedded GraphQL schema definitions and
 /// resolver-map entries.
 pub fn extract_svelte_graphql_points(source: &str) -> Vec<(u32, FlowEmission)> {
-    let re_type_block =
-        Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("svelte gql type block regex");
-    let re_field =
-        Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("svelte gql field regex");
-    let re_resolver_key =
-        Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
-            .expect("svelte graphql resolver key regex");
+    let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
+        .expect("svelte gql type block regex");
+    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("svelte gql field regex");
+    let re_resolver_key = Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
+        .expect("svelte graphql resolver key regex");
 
     // Fast skip for files that contain neither a GraphQL schema block nor a
     // `gql` template literal — avoids line-by-line scanning on every `.svelte`.
@@ -45,7 +43,9 @@ pub fn extract_svelte_graphql_points(source: &str) -> Vec<(u32, FlowEmission)> {
                 match ch {
                     '{' => brace_depth += 1,
                     '}' => {
-                        if brace_depth > 0 { brace_depth -= 1; }
+                        if brace_depth > 0 {
+                            brace_depth -= 1;
+                        }
                     }
                     _ => {}
                 }

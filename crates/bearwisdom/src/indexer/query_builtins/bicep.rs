@@ -26,7 +26,8 @@ pub const BUILTINS: &[&str] = &[
     "with",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 [\n\
   (infrastructure)\n\
   (call_expression)\n\
@@ -99,4 +100,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
   (for_loop_parameters\n\
     (loop_variable) @local.definition.var\n\
     (loop_enumerator) @local.definition.var))\n\
-");
+",
+);

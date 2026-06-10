@@ -13,9 +13,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_class_declaration() {
     let r = extract("class Foo {}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
         "expected Class Foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -23,9 +28,14 @@ fn symbol_class_declaration() {
 fn symbol_protocol_declaration() {
     let r = extract("protocol Drawable {}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Drawable" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Drawable" && s.kind == SymbolKind::Interface),
         "expected Interface Drawable; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -36,7 +46,10 @@ fn symbol_enum_class_body() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Direction"),
         "expected Direction; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -47,7 +60,10 @@ fn symbol_property_in_enum_body() {
     assert!(
         r.symbols.iter().any(|s| s.name == "label"),
         "expected property 'label' inside enum body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -58,7 +74,10 @@ fn symbol_function_in_enum_body() {
     assert!(
         r.symbols.iter().any(|s| s.name == "describe"),
         "expected function 'describe' inside enum body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -69,7 +88,10 @@ fn symbol_property_in_extension_body() {
     assert!(
         r.symbols.iter().any(|s| s.name == "bar"),
         "expected property 'bar' inside extension body; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -79,7 +101,10 @@ fn symbol_function_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "greet"),
         "expected greet; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,7 +114,10 @@ fn symbol_init_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
         "expected Constructor; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -99,7 +127,10 @@ fn symbol_protocol_function_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "run"),
         "expected run; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -109,7 +140,10 @@ fn symbol_property_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "name"),
         "expected name; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -119,7 +153,10 @@ fn symbol_protocol_property_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "name"),
         "expected name; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -129,7 +166,10 @@ fn symbol_typealias_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "StringList"),
         "expected StringList; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -137,9 +177,14 @@ fn symbol_typealias_declaration() {
 fn symbol_subscript_declaration() {
     let r = extract("class Grid {\n    subscript(index: Int) -> Int { return 0 }\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "subscript" || s.kind == SymbolKind::Method),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "subscript" || s.kind == SymbolKind::Method),
         "expected subscript symbol; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -147,9 +192,14 @@ fn symbol_subscript_declaration() {
 fn symbol_associatedtype_declaration() {
     let r = extract("protocol Container {\n    associatedtype Element\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Element" || s.name == "Container"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Element" || s.name == "Container"),
         "expected Element or Container; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -165,9 +215,14 @@ fn symbol_operator_declaration() {
 fn symbol_enum_entry() {
     let r = extract("enum Color {\n    case red\n    case green\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "red" || s.name == "Color"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "red" || s.name == "Color"),
         "expected red or Color; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -179,9 +234,14 @@ fn symbol_enum_entry() {
 fn ref_call_expression() {
     let r = extract("func f() { print(\"hi\") }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "print" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "print" && rf.kind == EdgeKind::Calls),
         "expected Calls print; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -191,7 +251,10 @@ fn ref_constructor_expression() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Dog"),
         "expected ref to Dog; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -201,7 +264,10 @@ fn ref_import_declaration() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -211,7 +277,10 @@ fn ref_inheritance_specifier() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Animal"),
         "expected ref to Animal; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -221,7 +290,10 @@ fn ref_type_annotation() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "String"),
         "expected ref to String; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -231,7 +303,10 @@ fn ref_user_type() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "MyClass"),
         "expected ref to MyClass; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -239,9 +314,14 @@ fn ref_user_type() {
 fn ref_as_expression() {
     let r = extract("func f(x: Any) -> String { return x as! String }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from as; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -249,9 +329,14 @@ fn ref_as_expression() {
 fn ref_check_expression() {
     let r = extract("func f(x: Any) { if x is String {} }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from is; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -262,7 +347,10 @@ fn ref_type_identifier() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Int"),
         "expected ref to Int; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -271,9 +359,14 @@ fn ref_protocol_composition_type() {
     // `SomeProtocol & AnotherProtocol` in a type position.
     let r = extract("func f(x: Codable & Equatable) {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Codable" || rf.target_name == "Equatable"),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Codable" || rf.target_name == "Equatable"),
         "expected ref from protocol composition; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -284,7 +377,10 @@ fn ref_type_identifier_in_local_var() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "MyService"),
         "expected TypeRef MyService from local var annotation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -295,7 +391,10 @@ fn ref_user_type_in_property_decl() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "UserRepository"),
         "expected TypeRef UserRepository from property annotation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -324,7 +423,10 @@ fn ref_optional_and_array_types() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "String"),
         "expected TypeRef for String in optional array; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -333,14 +435,24 @@ fn ref_inheritance_specifier_complex() {
     // Multiple inheritance and conformance — verify both Inherits and Implements are emitted.
     let r = extract("class Dog: Animal, Runnable, CustomStringConvertible {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
         "expected Inherits Animal; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Runnable" && rf.kind == EdgeKind::Implements),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Runnable" && rf.kind == EdgeKind::Implements),
         "expected Implements Runnable; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -351,12 +463,18 @@ fn ref_type_identifier_non_builtin_not_suppressed() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "MyRepository"),
         "expected TypeRef MyRepository; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "MyService"),
         "expected TypeRef/ref MyService; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -371,7 +489,10 @@ fn ref_uiviewcontroller_not_in_refs() {
     assert!(
         r.symbols.iter().any(|s| s.name == "VC"),
         "expected Class VC; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -384,9 +505,14 @@ fn symbol_struct_declaration() {
     // class_declaration with declaration_kind=struct → SymbolKind::Struct
     let r = extract("struct Point {\n    var x: Int\n    var y: Int\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
         "expected Struct Point; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -395,9 +521,14 @@ fn symbol_actor_declaration() {
     // class_declaration with declaration_kind=actor → SymbolKind::Class
     let r = extract("actor BankAccount {\n    var balance: Int = 0\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "BankAccount" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "BankAccount" && s.kind == SymbolKind::Class),
         "expected Class BankAccount (actor); got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -420,7 +551,10 @@ fn ref_navigation_expression_dot_call() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected at least one Calls ref from dot-call; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -431,7 +565,10 @@ fn ref_protocol_inheritance_implements() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Equatable"),
         "expected ref to Equatable from protocol inheritance; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -442,7 +579,10 @@ fn ref_extension_protocol_conformance() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Equatable"),
         "expected ref to Equatable from extension conformance; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -453,7 +593,10 @@ fn ref_optional_type_wrapping() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "MyDelegate"),
         "expected TypeRef MyDelegate from optional_type; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -465,7 +608,10 @@ fn ref_generic_type_constraint_where() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Persistable"),
         "expected TypeRef Persistable from where constraint; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -474,14 +620,24 @@ fn ref_inherits_vs_implements_class() {
     // First parent in inheritance clause → Inherits; protocols → Implements.
     let r = extract("class Poodle: Dog, Trainable {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Dog" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Dog" && rf.kind == EdgeKind::Inherits),
         "expected Inherits Dog; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Trainable" && rf.kind == EdgeKind::Implements),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Trainable" && rf.kind == EdgeKind::Implements),
         "expected Implements Trainable; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -489,18 +645,29 @@ fn ref_inherits_vs_implements_class() {
 fn ref_struct_all_implements() {
     // struct conformances are all Implements (no Inherits for structs).
     let r = extract("struct Rect: Drawable, Hashable {}");
-    let non_implements = r.refs.iter()
-        .filter(|rf| (rf.target_name == "Drawable" || rf.target_name == "Hashable") && rf.kind == EdgeKind::Inherits)
+    let non_implements = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            (rf.target_name == "Drawable" || rf.target_name == "Hashable")
+                && rf.kind == EdgeKind::Inherits
+        })
         .count();
     assert!(
         non_implements == 0,
         "struct conformances must be Implements, not Inherits; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Drawable"),
         "expected ref to Drawable from struct conformance; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -511,7 +678,10 @@ fn ref_dictionary_type_inner_types() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "UserModel"),
         "expected TypeRef UserModel from dictionary_type value; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -522,7 +692,10 @@ fn ref_function_type_parameter() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "UserInput"),
         "expected TypeRef UserInput from function_type parameter; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -533,10 +706,16 @@ fn debug_measure_swift_coverage() {
         "F:/Work/Projects/TestProjects/swift-icecubes",
         "F:/Work/Projects/TestProjects/swift-package-index",
     ];
-    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = projects
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied();
     let project_path = match project_path {
         Some(p) => p,
-        None => { eprintln!("No Swift test project found"); return; }
+        None => {
+            eprintln!("No Swift test project found");
+            return;
+        }
     };
     eprintln!("Using project: {}", project_path);
     let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
@@ -544,19 +723,43 @@ fn debug_measure_swift_coverage() {
         if cov.language == "swift" {
             eprintln!("=== Swift ===");
             eprintln!("  files: {}", cov.file_count);
-            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
-            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!(
+                "  sym: {:.1}% ({}/{})",
+                cov.symbol_coverage.percent,
+                cov.symbol_coverage.matched_nodes,
+                cov.symbol_coverage.expected_nodes
+            );
+            eprintln!(
+                "  ref: {:.1}% ({}/{})",
+                cov.ref_coverage.percent,
+                cov.ref_coverage.matched_nodes,
+                cov.ref_coverage.expected_nodes
+            );
             eprintln!("  --- symbol kinds (worst first) ---");
             let mut sym_kinds = cov.symbol_kinds.clone();
             sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in sym_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
             eprintln!("  --- ref kinds (worst first) ---");
             let mut ref_kinds = cov.ref_kinds.clone();
             ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in ref_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
         }
     }

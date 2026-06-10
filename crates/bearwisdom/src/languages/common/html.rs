@@ -69,7 +69,11 @@ pub fn extract_script_refs(source: &str) -> Vec<ScriptRef> {
         let attrs = &bytes[tag_start + 7..tag_end];
         if let Some(url) = find_attribute_value(attrs, b"src") {
             if is_extractable_script_url(&url) {
-                refs.push(ScriptRef { url, line, byte_offset: tag_start as u32 });
+                refs.push(ScriptRef {
+                    url,
+                    line,
+                    byte_offset: tag_start as u32,
+                });
             }
         }
         // Advance past the tag; line counter picks up newlines inside the tag.
@@ -429,4 +433,3 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
     };
     (line, col)
 }
-

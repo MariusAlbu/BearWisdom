@@ -45,7 +45,9 @@ fn test_perl_http_rejects_non_http_module() {
 #[test]
 fn test_perl_dbi_select_emits_db_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    let args = vec![CallArg::StringLit("SELECT id, name FROM users WHERE active = 1".to_string())];
+    let args = vec![CallArg::StringLit(
+        "SELECT id, name FROM users WHERE active = 1".to_string(),
+    )];
     match detect_perl_dbi_emission("DBI", "prepare", &args).unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Select),
         _ => panic!("expected DbQuery"),
@@ -55,7 +57,9 @@ fn test_perl_dbi_select_emits_db_select() {
 #[test]
 fn test_perl_dbi_insert_emits_db_insert() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    let args = vec![CallArg::StringLit("INSERT INTO items (a) VALUES (1)".to_string())];
+    let args = vec![CallArg::StringLit(
+        "INSERT INTO items (a) VALUES (1)".to_string(),
+    )];
     match detect_perl_dbi_emission("DBI", "do", &args).unwrap() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Insert),
         _ => panic!("expected DbQuery"),

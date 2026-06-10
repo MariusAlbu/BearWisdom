@@ -10,16 +10,24 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let stem = file_stem(file_path);
     symbols.push(ExtractedSymbol {
-        name: stem.clone(), qualified_name: stem.clone(),
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: stem.clone(),
+        qualified_name: stem.clone(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     // Pass 1: find `templ Name(args)` declarations.
@@ -40,17 +48,18 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     visibility: Some(Visibility::Public),
                     start_line: line_no as u32,
                     end_line: line_no as u32,
-                    start_col: 0, end_col: 0,
+                    start_col: 0,
+                    end_col: 0,
                     signature: Some(trimmed.to_string()),
                     doc_comment: None,
                     scope_path: Some(stem.clone()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
     }
@@ -82,13 +91,16 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         .copied()
                         .unwrap_or(host_index);
                     let line_start = line_starts.get(line_no).copied().unwrap_or(0);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: src_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: line_no as u32,
                         col: 0,
-                        module: None, chain: None,
+                        module: None,
+                        chain: None,
                         byte_offset: line_start + i as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
@@ -101,7 +113,12 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         }
     }
 
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+    ExtractionResult {
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
     }
@@ -110,7 +127,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 fn file_stem(file_path: &str) -> String {
     let norm = file_path.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
+    std::path::Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string()
 }
 
 #[cfg(test)]
@@ -121,7 +142,10 @@ mod tests {
     fn templ_declaration_becomes_function_symbol() {
         let src = "package views\n\ntempl UserCard(user User) {\n  <div>Hi</div>\n}\n";
         let r = extract(src, "views.templ");
-        assert!(r.symbols.iter().any(|s| s.name == "UserCard" && s.kind == SymbolKind::Function));
+        assert!(r
+            .symbols
+            .iter()
+            .any(|s| s.name == "UserCard" && s.kind == SymbolKind::Function));
     }
 
     #[test]

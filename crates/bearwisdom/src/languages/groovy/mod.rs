@@ -10,16 +10,16 @@
 //! - `import_declaration` → Imports
 //! - `method_invocation` → Calls
 
-pub(crate) mod connectors;
-pub(crate) mod keywords;
-pub mod extract;
 mod ast_visit;
 mod calls;
+pub(crate) mod connectors;
+pub mod extract;
 mod flow;
+pub(crate) mod keywords;
 mod node_helpers;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::GROOVY_HOOKS;
@@ -52,17 +52,25 @@ use crate::types::ExtractionResult;
 pub struct GroovyPlugin;
 
 impl LanguagePlugin for GroovyPlugin {
-    fn id(&self) -> &str { "groovy" }
+    fn id(&self) -> &str {
+        "groovy"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["groovy"] }
+    fn language_ids(&self) -> &[&str] {
+        &["groovy"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".groovy", ".gradle"] }
+    fn extensions(&self) -> &[&str] {
+        &[".groovy", ".gradle"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_groovy::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -78,10 +86,7 @@ impl LanguagePlugin for GroovyPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "method_invocation",
-            "import_declaration",
-        ]
+        &["method_invocation", "import_declaration"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -96,8 +101,7 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::GROOVY_HOOKS)
     }
 

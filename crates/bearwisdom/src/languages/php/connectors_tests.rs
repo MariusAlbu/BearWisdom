@@ -115,10 +115,7 @@ fn join_prefix_stack_empty_gives_empty() {
 
 #[test]
 fn join_prefix_stack_single() {
-    assert_eq!(
-        join_prefix_stack(&["api".to_string()]),
-        "/api"
-    );
+    assert_eq!(join_prefix_stack(&["api".to_string()]), "/api");
 }
 
 #[test]
@@ -151,7 +148,10 @@ Route::delete('/users/{id}', [UserController::class, 'destroy']);
 
     let file = make_php_route_file(source);
     let root = file.path().parent().unwrap();
-    let name = format!("routes/{}", file.path().file_name().unwrap().to_str().unwrap());
+    let name = format!(
+        "routes/{}",
+        file.path().file_name().unwrap().to_str().unwrap()
+    );
 
     // Write the file at a path matching the DB record.
     let routes_dir = root.join("routes");
@@ -163,7 +163,10 @@ Route::delete('/users/{id}', [UserController::class, 'destroy']);
     let count = connect(conn, root).unwrap();
     assert_eq!(count, 5, "Expected 5 explicit routes");
 
-    assert_eq!(routes_for_method(conn, "GET"), vec!["/users", "/users/{id}"]);
+    assert_eq!(
+        routes_for_method(conn, "GET"),
+        vec!["/users", "/users/{id}"]
+    );
     assert_eq!(routes_for_method(conn, "POST"), vec!["/users"]);
     assert_eq!(routes_for_method(conn, "PUT"), vec!["/users/{id}"]);
     assert_eq!(routes_for_method(conn, "DELETE"), vec!["/users/{id}"]);
@@ -186,7 +189,10 @@ Route::apiResource('comments', CommentController::class);
 
     let file = make_php_route_file(source);
     let root = file.path().parent().unwrap();
-    let name = format!("routes/{}", file.path().file_name().unwrap().to_str().unwrap());
+    let name = format!(
+        "routes/{}",
+        file.path().file_name().unwrap().to_str().unwrap()
+    );
 
     let routes_dir = root.join("routes");
     std::fs::create_dir_all(&routes_dir).unwrap();
@@ -199,13 +205,21 @@ Route::apiResource('comments', CommentController::class);
 
     // resource expands: index, create, store, show, edit, update, destroy
     let total: i64 = conn
-        .query_row("SELECT COUNT(*) FROM routes WHERE route_template LIKE 'photos%'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM routes WHERE route_template LIKE 'photos%'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(total, 7, "photos resource should have 7 rows");
 
     // apiResource expands: index, store, show, update, destroy (no create/edit)
     let api_total: i64 = conn
-        .query_row("SELECT COUNT(*) FROM routes WHERE route_template LIKE 'comments%'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM routes WHERE route_template LIKE 'comments%'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(api_total, 5, "comments apiResource should have 5 rows");
 
@@ -253,7 +267,10 @@ Route::get('/health', [HealthController::class, 'check']);
 
     let file = make_php_route_file(source);
     let root = file.path().parent().unwrap();
-    let name = format!("routes/{}", file.path().file_name().unwrap().to_str().unwrap());
+    let name = format!(
+        "routes/{}",
+        file.path().file_name().unwrap().to_str().unwrap()
+    );
 
     let routes_dir = root.join("routes");
     std::fs::create_dir_all(&routes_dir).unwrap();
@@ -307,7 +324,10 @@ Route::group(['prefix' => 'admin'], function () {
 
     let file = make_php_route_file(source);
     let root = file.path().parent().unwrap();
-    let name = format!("routes/{}", file.path().file_name().unwrap().to_str().unwrap());
+    let name = format!(
+        "routes/{}",
+        file.path().file_name().unwrap().to_str().unwrap()
+    );
 
     let routes_dir = root.join("routes");
     std::fs::create_dir_all(&routes_dir).unwrap();
@@ -318,9 +338,7 @@ Route::group(['prefix' => 'admin'], function () {
     connect(conn, root).unwrap();
 
     let resolved: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT resolved_route FROM routes")
-            .unwrap();
+        let mut stmt = conn.prepare("SELECT resolved_route FROM routes").unwrap();
         stmt.query_map([], |r| r.get(0))
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -361,7 +379,10 @@ Route::match(['get', 'post'], '/contact', [ContactController::class, 'handle']);
 
     let file = make_php_route_file(source);
     let root = file.path().parent().unwrap();
-    let name = format!("routes/{}", file.path().file_name().unwrap().to_str().unwrap());
+    let name = format!(
+        "routes/{}",
+        file.path().file_name().unwrap().to_str().unwrap()
+    );
 
     let routes_dir = root.join("routes");
     std::fs::create_dir_all(&routes_dir).unwrap();

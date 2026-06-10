@@ -5,8 +5,8 @@
 
 pub mod extract;
 
-mod keywords;
 pub(crate) mod hooks;
+mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::VBA_HOOKS;
@@ -62,9 +62,7 @@ impl LanguagePlugin for VbaPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call_statement",
-        ]
+        &["call_statement"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -79,8 +77,7 @@ impl LanguagePlugin for VbaPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::VBA_HOOKS)
     }
 }

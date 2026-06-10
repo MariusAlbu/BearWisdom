@@ -24,8 +24,7 @@ use rayon::prelude::*;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -41,9 +40,15 @@ pub struct GleamStdlibEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for GleamStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
@@ -60,9 +65,13 @@ impl Ecosystem for GleamStdlibEcosystem {
         walk_gleam_stdlib(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_gleam_stdlib_symbol_index(dep_roots)
@@ -74,7 +83,9 @@ impl Ecosystem for GleamStdlibEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for GleamStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_gleam_stdlib(project_root)
     }
@@ -86,7 +97,9 @@ impl ExternalSourceLocator for GleamStdlibEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<GleamStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(GleamStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(GleamStdlibEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +156,12 @@ fn make_root(dir: PathBuf) -> ExternalDepRoot {
 fn find_in_hex_cache() -> Option<PathBuf> {
     let candidates = hex_cache_bases();
     for base in candidates {
-        if !base.is_dir() { continue }
-        let Ok(entries) = std::fs::read_dir(&base) else { continue };
+        if !base.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
         let mut matches: Vec<PathBuf> = entries
             .flatten()
             .filter_map(|e| {
@@ -157,7 +174,9 @@ fn find_in_hex_cache() -> Option<PathBuf> {
                 }
             })
             .collect();
-        if matches.is_empty() { continue }
+        if matches.is_empty() {
+            continue;
+        }
         matches.sort();
         return matches.into_iter().next_back();
     }
@@ -233,15 +252,13 @@ fn walk_gleam_stdlib(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir(
-    dir: &Path,
-    root: &Path,
-    dep: &ExternalDepRoot,
-    out: &mut Vec<WalkedFile>,
-    depth: u32,
-) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
@@ -255,8 +272,12 @@ fn walk_dir(
             }
             walk_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".gleam") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".gleam") {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -275,7 +296,9 @@ fn walk_dir(
 // Symbol index — delegates to hex::scan_gleam_header via shared function
 // ---------------------------------------------------------------------------
 
-pub(crate) fn build_gleam_stdlib_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_gleam_stdlib_symbol_index(
+    dep_roots: &[ExternalDepRoot],
+) -> SymbolLocationIndex {
     // Collect all .gleam files across dep roots.
     let work: Vec<(String, WalkedFile)> = dep_roots
         .iter()
@@ -326,7 +349,16 @@ fn scan_gleam_top_level_decls(source: &str) -> Vec<String> {
     for line in source.lines() {
         let trimmed = line.trim_start();
         // Only top-level declarations start at column 0.
-        if !line.starts_with(|c: char| c.is_alphanumeric() || c == 'p' || c == 'f' || c == 't' || c == 'c' || c == 'e' || c == 'o' || c == '@') {
+        if !line.starts_with(|c: char| {
+            c.is_alphanumeric()
+                || c == 'p'
+                || c == 'f'
+                || c == 't'
+                || c == 'c'
+                || c == 'e'
+                || c == 'o'
+                || c == '@'
+        }) {
             continue;
         }
         let candidate = strip_pub(trimmed);
@@ -365,7 +397,11 @@ fn extract_decl_name(s: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -413,11 +449,26 @@ pub const empty_list = []
 fn internal_helper(x) { x }
 "#;
         let names = scan_gleam_top_level_decls(src);
-        assert!(names.contains(&"map".to_string()), "missing map in {names:?}");
-        assert!(names.contains(&"Option".to_string()), "missing Option in {names:?}");
-        assert!(names.contains(&"Result".to_string()), "missing Result in {names:?}");
-        assert!(names.contains(&"empty_list".to_string()), "missing empty_list in {names:?}");
-        assert!(names.contains(&"internal_helper".to_string()), "missing internal_helper in {names:?}");
+        assert!(
+            names.contains(&"map".to_string()),
+            "missing map in {names:?}"
+        );
+        assert!(
+            names.contains(&"Option".to_string()),
+            "missing Option in {names:?}"
+        );
+        assert!(
+            names.contains(&"Result".to_string()),
+            "missing Result in {names:?}"
+        );
+        assert!(
+            names.contains(&"empty_list".to_string()),
+            "missing empty_list in {names:?}"
+        );
+        assert!(
+            names.contains(&"internal_helper".to_string()),
+            "missing internal_helper in {names:?}"
+        );
     }
 
     #[test]
@@ -425,15 +476,22 @@ fn internal_helper(x) { x }
         // Simulate what gleam/list.gleam and gleam/option.gleam look like.
         let list_src = "pub fn map(list: List(a), f: fn(a) -> b) -> List(b) { todo }\npub fn filter(list: List(a), f: fn(a) -> Bool) -> List(a) { todo }\n";
         let option_src = "pub type Option(a) {\n  Some(value: a)\n  None\n}\n";
-        let result_src = "pub type Result(value, error) {\n  Ok(value: value)\n  Error(error: error)\n}\n";
+        let result_src =
+            "pub type Result(value, error) {\n  Ok(value: value)\n  Error(error: error)\n}\n";
 
         let list_names = scan_gleam_top_level_decls(list_src);
         let option_names = scan_gleam_top_level_decls(option_src);
         let result_names = scan_gleam_top_level_decls(result_src);
 
         assert!(list_names.contains(&"map".to_string()), "{list_names:?}");
-        assert!(option_names.contains(&"Option".to_string()), "{option_names:?}");
-        assert!(result_names.contains(&"Result".to_string()), "{result_names:?}");
+        assert!(
+            option_names.contains(&"Option".to_string()),
+            "{option_names:?}"
+        );
+        assert!(
+            result_names.contains(&"Result".to_string()),
+            "{result_names:?}"
+        );
     }
 
     #[test]
@@ -443,7 +501,11 @@ fn internal_helper(x) { x }
         let src_gleam = tmp.join("src").join("gleam");
         std::fs::create_dir_all(&src_gleam).unwrap();
         std::fs::write(src_gleam.join("list.gleam"), "pub fn map(l, f) { todo }\n").unwrap();
-        std::fs::write(src_gleam.join("string.gleam"), "pub fn length(s) { todo }\n").unwrap();
+        std::fs::write(
+            src_gleam.join("string.gleam"),
+            "pub fn length(s) { todo }\n",
+        )
+        .unwrap();
         // Noise: should be excluded.
         std::fs::create_dir_all(tmp.join("test")).unwrap();
         std::fs::write(tmp.join("test").join("list_test.gleam"), "// test\n").unwrap();
@@ -459,8 +521,12 @@ fn internal_helper(x) { x }
         let files = walk_gleam_stdlib(&dep);
         assert_eq!(files.len(), 2, "expected 2 files, got {files:?}");
         assert!(files.iter().all(|f| f.language == "gleam"));
-        assert!(files.iter().any(|f| f.relative_path.ends_with("list.gleam")));
-        assert!(files.iter().any(|f| f.relative_path.ends_with("string.gleam")));
+        assert!(files
+            .iter()
+            .any(|f| f.relative_path.ends_with("list.gleam")));
+        assert!(files
+            .iter()
+            .any(|f| f.relative_path.ends_with("string.gleam")));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -499,7 +565,8 @@ fn internal_helper(x) { x }
         // gleam/list.map
         assert!(
             index.locate("gleam_stdlib", "map").is_some(),
-            "map not in index; index has {} entries", index.len()
+            "map not in index; index has {} entries",
+            index.len()
         );
         // gleam/option.Some — type variant, not a function — scanner captures the type name
         assert!(

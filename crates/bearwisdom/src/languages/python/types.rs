@@ -15,7 +15,15 @@ pub(super) fn extract_type_alias_top_level(
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
 ) {
-    extract_type_alias(node, source, symbols, refs, parent_index, qualified_prefix, enclosing_symbol_index);
+    extract_type_alias(
+        node,
+        source,
+        symbols,
+        refs,
+        parent_index,
+        qualified_prefix,
+        enclosing_symbol_index,
+    );
 }
 
 /// Extract `type Point = tuple[int, int]` as a TypeAlias symbol.
@@ -59,12 +67,12 @@ pub(super) fn extract_type_alias(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract TypeRef edges from the aliased type expression.
     // The "right" field holds the aliased type (also wrapped in a "type" node).
@@ -86,7 +94,9 @@ fn extract_type_refs_from_annotation(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && name != "None" {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: symbol_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -95,9 +105,9 @@ fn extract_type_refs_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // `uuid.UUID` or `sqlalchemy.orm.Session` — emit a single ref for the
@@ -113,7 +123,9 @@ fn extract_type_refs_from_annotation(
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: symbol_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -122,9 +134,9 @@ fn extract_type_refs_from_annotation(
                         module,
                         chain: None,
                         byte_offset: attr.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -138,4 +150,3 @@ fn extract_type_refs_from_annotation(
         }
     }
 }
-

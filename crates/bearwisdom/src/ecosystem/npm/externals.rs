@@ -60,8 +60,12 @@ use super::{
 /// 4. Skip Node builtins.
 pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let manifest = NpmManifest;
-    let Some(data) = manifest.read(project_root) else { return Vec::new() };
-    if data.dependencies.is_empty() { return Vec::new() }
+    let Some(data) = manifest.read(project_root) else {
+        return Vec::new();
+    };
+    if data.dependencies.is_empty() {
+        return Vec::new();
+    }
 
     let node_modules_roots = find_node_modules(project_root);
     if node_modules_roots.is_empty() {
@@ -107,7 +111,9 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
     let project_has_scss = scan_for_scss_bounded(project_root, 0);
 
     for dep in &data.dependencies {
-        if builtins.contains(dep.as_str()) { continue }
+        if builtins.contains(dep.as_str()) {
+            continue;
+        }
         if !is_valid_npm_module_path(dep) {
             debug!("npm: skipping invalid dep name `{dep}` from package.json");
             continue;
@@ -139,24 +145,33 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
                 .unwrap_or(false);
             let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
                 let primary = nm.join(dep);
-                if primary.is_dir() && package_declares_globals(&primary) { return true; }
+                if primary.is_dir() && package_declares_globals(&primary) {
+                    return true;
+                }
                 if !dep.starts_with("@types/") {
                     if !dep.starts_with('@') {
                         let types_dir = nm.join("@types").join(dep);
-                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) {
+                            return true;
+                        }
                     } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                         let types_dir = nm.join("@types").join(&escaped);
-                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) {
+                            return true;
+                        }
                     }
                 }
                 false
             });
-            let any_install_ships_scss = project_has_scss && node_modules_roots.iter().any(|nm| {
-                let primary = nm.join(dep);
-                primary.is_dir() && package_ships_scss(&primary)
-            });
-            if !user_imports_dep && !user_imports_companion
-                && !any_install_declares_globals && !any_install_ships_scss
+            let any_install_ships_scss = project_has_scss
+                && node_modules_roots.iter().any(|nm| {
+                    let primary = nm.join(dep);
+                    primary.is_dir() && package_ships_scss(&primary)
+                });
+            if !user_imports_dep
+                && !user_imports_companion
+                && !any_install_declares_globals
+                && !any_install_ships_scss
             {
                 continue;
             }
@@ -186,7 +201,9 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
         let mut pkg_roots: Vec<(PathBuf, String)> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
-            if primary.is_dir() { pkg_roots.push((primary, dep.clone())) }
+            if primary.is_dir() {
+                pkg_roots.push((primary, dep.clone()))
+            }
             if !is_types_only {
                 if !dep.starts_with('@') {
                     let types_dir = nm_root.join("@types").join(dep);
@@ -256,7 +273,9 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
         // Only walk the roots added in the previous pass (or all roots on
         // pass 0). On a fixed graph this converges in 1–4 passes.
         let scan_range = next_pass_start..roots.len();
-        if scan_range.is_empty() { break }
+        if scan_range.is_empty() {
+            break;
+        }
         for idx in scan_range.clone() {
             let r = &roots[idx];
             let entry = match resolve_package_entry_path(r) {
@@ -271,50 +290,56 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
             }
         }
 
-        if transitive_specs.is_empty() { break }
+        if transitive_specs.is_empty() {
+            break;
+        }
         next_pass_start = roots.len();
 
-    for (spec, parent_local_nm) in transitive_specs {
-        // Deep re-export specs like `export * from 'playwright/test'` point
-        // at a submodule of a transitive package — the package name is the
-        // prefix portion, the rest is an in-package path. Reduce the spec to
-        // its package portion: `playwright/test` → `playwright`,
-        // `@types/node/fs/promises` → `@types/node`, `@vitest/expect` →
-        // `@vitest/expect` (no change). Then walk that whole package; any
-        // re-export the user actually relies on is reachable from the
-        // package's regular entry points + the demand-driven BFS that picks
-        // up sibling files. Without this, every cross-package deep
-        // re-export (Playwright → playwright-core, Mongoose's submodule
-        // exports, RxJS's `rxjs/operators`) silently fails to walk the
-        // target package and the chain walker can't find the methods.
-        let package_spec = npm_package_name_from_spec(&spec);
-        if !is_valid_npm_module_path(package_spec) {
-            debug!("npm: skipping invalid transitive spec `{spec}`");
-            continue;
+        for (spec, parent_local_nm) in transitive_specs {
+            // Deep re-export specs like `export * from 'playwright/test'` point
+            // at a submodule of a transitive package — the package name is the
+            // prefix portion, the rest is an in-package path. Reduce the spec to
+            // its package portion: `playwright/test` → `playwright`,
+            // `@types/node/fs/promises` → `@types/node`, `@vitest/expect` →
+            // `@vitest/expect` (no change). Then walk that whole package; any
+            // re-export the user actually relies on is reachable from the
+            // package's regular entry points + the demand-driven BFS that picks
+            // up sibling files. Without this, every cross-package deep
+            // re-export (Playwright → playwright-core, Mongoose's submodule
+            // exports, RxJS's `rxjs/operators`) silently fails to walk the
+            // target package and the chain walker can't find the methods.
+            let package_spec = npm_package_name_from_spec(&spec);
+            if !is_valid_npm_module_path(package_spec) {
+                debug!("npm: skipping invalid transitive spec `{spec}`");
+                continue;
+            }
+            // Try the standard workspace node_modules roots first (npm/yarn
+            // hoist transitives there). Fall back to the parent dep's own
+            // `node_modules/` (pnpm stores them there).
+            let mut probe_roots: Vec<&Path> =
+                node_modules_roots.iter().map(|p| p.as_path()).collect();
+            if !parent_local_nm.as_os_str().is_empty() {
+                probe_roots.push(parent_local_nm.as_path());
+            }
+            for nm_root in probe_roots {
+                let candidate = nm_root.join(package_spec);
+                if !candidate.is_dir() {
+                    continue;
+                }
+                if !seen.insert(candidate.clone()) {
+                    continue;
+                }
+                roots.push(ExternalDepRoot {
+                    module_path: package_spec.to_string(),
+                    version: String::from("unknown"),
+                    root: candidate,
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: Vec::new(),
+                });
+                break; // one canonical install per spec is enough
+            }
         }
-        // Try the standard workspace node_modules roots first (npm/yarn
-        // hoist transitives there). Fall back to the parent dep's own
-        // `node_modules/` (pnpm stores them there).
-        let mut probe_roots: Vec<&Path> =
-            node_modules_roots.iter().map(|p| p.as_path()).collect();
-        if !parent_local_nm.as_os_str().is_empty() {
-            probe_roots.push(parent_local_nm.as_path());
-        }
-        for nm_root in probe_roots {
-            let candidate = nm_root.join(package_spec);
-            if !candidate.is_dir() { continue }
-            if !seen.insert(candidate.clone()) { continue }
-            roots.push(ExternalDepRoot {
-                module_path: package_spec.to_string(),
-                version: String::from("unknown"),
-                root: candidate,
-                ecosystem: LEGACY_ECOSYSTEM_TAG,
-                package_id: None,
-                requested_imports: Vec::new(),
-            });
-            break; // one canonical install per spec is enough
-        }
-    }
     }
 
     roots
@@ -333,7 +358,9 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
 /// container, which only holds packages declared in the consumer's own
 /// `package.json`, missing every transitive.
 pub(crate) fn dep_local_node_modules(dep_root: &Path) -> Option<PathBuf> {
-    let real_root = std::fs::canonicalize(dep_root).ok().unwrap_or_else(|| dep_root.to_path_buf());
+    let real_root = std::fs::canonicalize(dep_root)
+        .ok()
+        .unwrap_or_else(|| dep_root.to_path_buf());
     let parent = real_root.parent()?;
     let parent_name = parent.file_name()?.to_str()?;
     if parent_name.starts_with('@') {
@@ -353,7 +380,9 @@ pub(crate) fn dep_local_node_modules(dep_root: &Path) -> Option<PathBuf> {
 pub(crate) fn definitely_typed_scoped_name(dep: &str) -> Option<String> {
     let rest = dep.strip_prefix('@')?;
     let (scope, name) = rest.split_once('/')?;
-    if scope.is_empty() || name.is_empty() { return None }
+    if scope.is_empty() || name.is_empty() {
+        return None;
+    }
     Some(format!("{scope}__{name}"))
 }
 
@@ -390,7 +419,9 @@ pub(crate) fn discover_ts_externals_scoped(
         }
     }
 
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let node_modules_roots = find_node_modules_with_ancestors(package_abs_path, workspace_root);
     if node_modules_roots.is_empty() {
@@ -417,7 +448,9 @@ pub(crate) fn discover_ts_externals_scoped(
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for dep in &declared {
-        if builtins.contains(dep.as_str()) { continue }
+        if builtins.contains(dep.as_str()) {
+            continue;
+        }
         if !is_valid_npm_module_path(dep) {
             debug!("npm: skipping invalid scoped dep name `{dep}` from package.json");
             continue;
@@ -440,24 +473,33 @@ pub(crate) fn discover_ts_externals_scoped(
                 .unwrap_or(false);
             let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
                 let primary = nm.join(dep);
-                if primary.is_dir() && package_declares_globals(&primary) { return true; }
+                if primary.is_dir() && package_declares_globals(&primary) {
+                    return true;
+                }
                 if !dep.starts_with("@types/") {
                     if !dep.starts_with('@') {
                         let types_dir = nm.join("@types").join(dep);
-                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) {
+                            return true;
+                        }
                     } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                         let types_dir = nm.join("@types").join(&escaped);
-                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) {
+                            return true;
+                        }
                     }
                 }
                 false
             });
-            let any_install_ships_scss = project_has_scss && node_modules_roots.iter().any(|nm| {
-                let primary = nm.join(dep);
-                primary.is_dir() && package_ships_scss(&primary)
-            });
-            if !user_imports_dep && !user_imports_companion
-                && !any_install_declares_globals && !any_install_ships_scss
+            let any_install_ships_scss = project_has_scss
+                && node_modules_roots.iter().any(|nm| {
+                    let primary = nm.join(dep);
+                    primary.is_dir() && package_ships_scss(&primary)
+                });
+            if !user_imports_dep
+                && !user_imports_companion
+                && !any_install_declares_globals
+                && !any_install_ships_scss
             {
                 continue;
             }
@@ -474,7 +516,9 @@ pub(crate) fn discover_ts_externals_scoped(
         let mut pkg_roots: Vec<(PathBuf, String)> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
-            if primary.is_dir() { pkg_roots.push((primary, dep.clone())) }
+            if primary.is_dir() {
+                pkg_roots.push((primary, dep.clone()))
+            }
             if !is_types_only {
                 if !dep.starts_with('@') {
                     let types_dir = nm_root.join("@types").join(dep);
@@ -519,7 +563,9 @@ pub(crate) fn discover_ts_externals_scoped(
         let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
             std::collections::HashSet::new();
         let scan_range = next_pass_start..roots.len();
-        if scan_range.is_empty() { break }
+        if scan_range.is_empty() {
+            break;
+        }
         for idx in scan_range {
             let r = &roots[idx];
             let entry = match resolve_package_entry_path(r) {
@@ -534,7 +580,9 @@ pub(crate) fn discover_ts_externals_scoped(
             }
         }
 
-        if transitive_specs.is_empty() { break }
+        if transitive_specs.is_empty() {
+            break;
+        }
         next_pass_start = roots.len();
         for (spec, parent_local_nm) in transitive_specs {
             // Reduce deep specs (`playwright/test`, `@types/node/fs`) to
@@ -554,8 +602,12 @@ pub(crate) fn discover_ts_externals_scoped(
             }
             for nm_root in probe_roots {
                 let candidate = nm_root.join(package_spec);
-                if !candidate.is_dir() { continue }
-                if !seen.insert(candidate.clone()) { continue }
+                if !candidate.is_dir() {
+                    continue;
+                }
+                if !seen.insert(candidate.clone()) {
+                    continue;
+                }
                 roots.push(ExternalDepRoot {
                     module_path: package_spec.to_string(),
                     version: String::from("unknown"),

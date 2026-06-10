@@ -3,29 +3,42 @@ use crate::db::Database;
 
 /// Insert a file row and return its id.
 fn insert_file(db: &Database, path: &str, lang: &str) -> i64 {
-    db.conn().execute(
-        "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
-        rusqlite::params![path, lang],
-    ).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
+            rusqlite::params![path, lang],
+        )
+        .unwrap();
     db.conn().last_insert_rowid()
 }
 
 /// Insert a symbol row and return its id.
-fn insert_symbol(db: &Database, file_id: i64, name: &str, qname: &str, kind: &str, vis: Option<&str>) -> i64 {
-    db.conn().execute(
-        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility)
+fn insert_symbol(
+    db: &Database,
+    file_id: i64,
+    name: &str,
+    qname: &str,
+    kind: &str,
+    vis: Option<&str>,
+) -> i64 {
+    db.conn()
+        .execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility)
          VALUES (?1, ?2, ?3, ?4, 1, 0, ?5)",
-        rusqlite::params![file_id, name, qname, kind, vis],
-    ).unwrap();
+            rusqlite::params![file_id, name, qname, kind, vis],
+        )
+        .unwrap();
     db.conn().last_insert_rowid()
 }
 
 /// Insert a directed edge.
 fn insert_edge(db: &Database, src: i64, tgt: i64, kind: &str) {
-    db.conn().execute(
-        "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, ?3, 1.0)",
-        rusqlite::params![src, tgt, kind],
-    ).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, ?3, 1.0)",
+            rusqlite::params![src, tgt, kind],
+        )
+        .unwrap();
 }
 
 #[test]
@@ -78,8 +91,15 @@ fn overview_hotspots_ranked_by_incoming() {
 fn overview_entry_points_filters_public() {
     let db = Database::open_in_memory().unwrap();
     let f = insert_file(&db, "a.cs", "csharp");
-    insert_symbol(&db, f, "PubClass",  "App.PubClass",  "class", Some("public"));
-    insert_symbol(&db, f, "PrivClass", "App.PrivClass", "class", Some("private"));
+    insert_symbol(&db, f, "PubClass", "App.PubClass", "class", Some("public"));
+    insert_symbol(
+        &db,
+        f,
+        "PrivClass",
+        "App.PrivClass",
+        "class",
+        Some("private"),
+    );
 
     let ov = get_overview(&db).unwrap();
     assert_eq!(ov.entry_points.len(), 1);
@@ -91,17 +111,14 @@ fn overview_entry_points_filters_public() {
 // ---------------------------------------------------------------
 
 /// Insert a symbol with an explicit origin_language (embedded sub-extraction).
-fn insert_embedded_symbol(
-    db: &Database,
-    file_id: i64,
-    name: &str,
-    origin_lang: &str,
-) -> i64 {
-    db.conn().execute(
-        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, origin_language)
+fn insert_embedded_symbol(db: &Database, file_id: i64, name: &str, origin_lang: &str) -> i64 {
+    db.conn()
+        .execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, origin_language)
          VALUES (?1, ?2, ?2, 'function', 1, 0, ?3)",
-        rusqlite::params![file_id, name, origin_lang],
-    ).unwrap();
+            rusqlite::params![file_id, name, origin_lang],
+        )
+        .unwrap();
     db.conn().last_insert_rowid()
 }
 
@@ -122,17 +139,29 @@ fn l1_language_breakdown_attributes_embedded_symbols_to_sublanguage() {
 
     let ov = get_overview(&db).unwrap();
 
-    let razor = ov.languages.iter().find(|l| l.language == "razor")
+    let razor = ov
+        .languages
+        .iter()
+        .find(|l| l.language == "razor")
         .expect("razor row missing");
     assert_eq!(razor.file_count, 1);
     assert_eq!(razor.symbol_count, 1, "razor host symbol count wrong");
 
-    let csharp = ov.languages.iter().find(|l| l.language == "csharp")
+    let csharp = ov
+        .languages
+        .iter()
+        .find(|l| l.language == "csharp")
         .expect("csharp row missing — embedded language not surfaced");
-    assert_eq!(csharp.file_count, 0, "csharp should have no standalone files");
+    assert_eq!(
+        csharp.file_count, 0,
+        "csharp should have no standalone files"
+    );
     assert_eq!(csharp.symbol_count, 3);
 
-    let js = ov.languages.iter().find(|l| l.language == "javascript")
+    let js = ov
+        .languages
+        .iter()
+        .find(|l| l.language == "javascript")
         .expect("javascript row missing — embedded language not surfaced");
     assert_eq!(js.file_count, 0);
     assert_eq!(js.symbol_count, 2);
@@ -149,9 +178,16 @@ fn l1_language_breakdown_single_language_no_duplicates() {
     insert_symbol(&db, f, "B", "App.B", "class", None);
 
     let ov = get_overview(&db).unwrap();
-    let csharp_rows: Vec<_> = ov.languages.iter()
-        .filter(|l| l.language == "csharp").collect();
-    assert_eq!(csharp_rows.len(), 1, "expected one csharp row, got {csharp_rows:?}");
+    let csharp_rows: Vec<_> = ov
+        .languages
+        .iter()
+        .filter(|l| l.language == "csharp")
+        .collect();
+    assert_eq!(
+        csharp_rows.len(),
+        1,
+        "expected one csharp row, got {csharp_rows:?}"
+    );
     assert_eq!(csharp_rows[0].file_count, 1);
     assert_eq!(csharp_rows[0].symbol_count, 2);
 }

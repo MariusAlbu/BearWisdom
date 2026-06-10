@@ -36,7 +36,11 @@ pub struct ShellCommands {
 impl ShellCommands {
     /// Convenience: same command string for all shells.
     pub const fn same(cmd: &'static str) -> Self {
-        Self { bash: cmd, powershell: cmd, cmd }
+        Self {
+            bash: cmd,
+            powershell: cmd,
+            cmd,
+        }
     }
 }
 
@@ -280,6 +284,9 @@ pub struct ScanOptions {
 
 impl Default for ScanOptions {
     fn default() -> Self {
-        Self { check_sdks: true, max_depth: 3 }
+        Self {
+            check_sdks: true,
+            max_depth: 3,
+        }
     }
 }

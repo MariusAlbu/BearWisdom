@@ -79,9 +79,9 @@ const SDL_FUNCTIONS: &[&str] = &[
     "SDL_RenderCopy",
     "SDL_RenderGeometry",
     "SDL_RenderLines",
-    "SDL_RenderTexture",   // SDL3 name for SDL_RenderCopy equivalent
+    "SDL_RenderTexture", // SDL3 name for SDL_RenderCopy equivalent
     "SDL_RenderSetClipRect",
-    "SDL_SetRenderClipRect",  // SDL3 variant
+    "SDL_SetRenderClipRect", // SDL3 variant
     // OpenGL
     "SDL_GL_SetAttribute",
     "SDL_GL_CreateContext",
@@ -181,8 +181,12 @@ fn project_uses_sdl(project_root: &Path) -> bool {
 }
 
 fn scan_for_sdl_include(dir: &Path, depth: u32) -> bool {
-    if depth > 3 { return false }
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    if depth > 3 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -205,7 +209,8 @@ fn scan_for_sdl_include(dir: &Path, depth: u32) -> bool {
             }
             if let Ok(content) = std::fs::read_to_string(&path) {
                 // Match any SDL include or CMake find_package / FetchContent pattern.
-                if content.contains("<SDL") || content.contains("SDL2") || content.contains("SDL3") {
+                if content.contains("<SDL") || content.contains("SDL2") || content.contains("SDL3")
+                {
                     return true;
                 }
             }
@@ -233,11 +238,11 @@ fn fn_sym(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn enum_sym(name: &str) -> ExtractedSymbol {
@@ -255,11 +260,11 @@ fn enum_sym(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn type_sym(name: &str) -> ExtractedSymbol {
@@ -277,11 +282,11 @@ fn type_sym(name: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -346,9 +351,15 @@ fn synthetic_dep_root() -> ExternalDepRoot {
 pub struct SdlSyntheticsEcosystem;
 
 impl Ecosystem for SdlSyntheticsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // SDL is declared in the C/C++ project's build manifest. Plain
@@ -396,7 +407,9 @@ impl Ecosystem for SdlSyntheticsEcosystem {
         Vec::new()
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn parse_metadata_only(&self, _dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
         Some(vec![synthesize_file()])
@@ -404,7 +417,9 @@ impl Ecosystem for SdlSyntheticsEcosystem {
 }
 
 impl ExternalSourceLocator for SdlSyntheticsEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         if !project_uses_sdl(project_root) {

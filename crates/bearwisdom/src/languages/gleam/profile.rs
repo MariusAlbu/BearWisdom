@@ -10,7 +10,12 @@ const GLEAM_KIND_TABLE: KindTable = &[
     (EdgeKind::Calls, &[SymbolKind::Function]),
     (
         EdgeKind::TypeRef,
-        &[SymbolKind::TypeAlias, SymbolKind::Enum, SymbolKind::Struct, SymbolKind::Module],
+        &[
+            SymbolKind::TypeAlias,
+            SymbolKind::Enum,
+            SymbolKind::Struct,
+            SymbolKind::Module,
+        ],
     ),
 ];
 
@@ -64,7 +69,8 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

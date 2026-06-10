@@ -58,11 +58,11 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     visit_node(&tree.root_node(), source, &mut refs);
 
@@ -102,7 +102,9 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // Custom element with hyphens (Angular component selector pattern)
     if tag.contains('-') && !is_html5_custom_element_builtin(&tag) {
         let pascal = kebab_to_pascal(&tag);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: pascal,
             kind: EdgeKind::Calls,
@@ -118,7 +120,9 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
         && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
     {
         // PascalCase tags (e.g. <UserCard>, <MatButton>) — component usages
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: tag,
             kind: EdgeKind::Calls,
@@ -177,9 +181,7 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
         .unwrap_or_default();
 
     // (event)="handler($event)" — event binding
-    if (attr_name.starts_with('(') && attr_name.ends_with(')'))
-        || attr_name.starts_with("on-")
-    {
+    if (attr_name.starts_with('(') && attr_name.ends_with(')')) || attr_name.starts_with("on-") {
         extract_handler_from_value(&attr_value, node, refs);
         return;
     }
@@ -187,7 +189,9 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // *ngIf / *ngFor / *ngSwitch — structural directives
     if let Some(directive) = attr_name.strip_prefix('*') {
         let class_name = format!("{}Directive", to_pascal_case(directive));
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: class_name,
             kind: EdgeKind::Calls,
@@ -219,22 +223,16 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
 fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<ExtractedRef>) {
     // "handler($event)" → handler
-    let handler = value
-        .split('(')
-        .next()
-        .unwrap_or(value)
-        .trim()
-        .to_string();
+    let handler = value.split('(').next().unwrap_or(value).trim().to_string();
 
-    if handler.is_empty()
-        || handler.contains(' ')
-        || handler.contains('!')
-        || handler.contains('{')
+    if handler.is_empty() || handler.contains(' ') || handler.contains('!') || handler.contains('{')
     {
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: handler,
         kind: EdgeKind::Calls,
@@ -295,7 +293,9 @@ fn extract_pipes_from_expression(
         }
 
         let class_name = format!("{}Pipe", to_pascal_case(&pipe_name));
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: class_name,
             kind: EdgeKind::Calls,
@@ -305,8 +305,8 @@ fn extract_pipes_from_expression(
             byte_offset: part_offset,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                    col: 0,
-});
+            col: 0,
+        });
     }
 }
 
@@ -384,7 +384,9 @@ fn is_valid_identifier(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
-        && s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_' || c == '$')
+        && s.chars()
+            .next()
+            .map_or(false, |c| c.is_alphabetic() || c == '_' || c == '$')
 }
 
 /// Very limited set of custom element registry builtins that have hyphens.
@@ -415,21 +417,30 @@ mod tests {
     fn kebab_case_component_emits_call() {
         let src = r#"<app-header></app-header>"#;
         let targets = calls_targets(src);
-        assert!(targets.contains(&"AppHeader".to_string()), "missing AppHeader: {targets:?}");
+        assert!(
+            targets.contains(&"AppHeader".to_string()),
+            "missing AppHeader: {targets:?}"
+        );
     }
 
     #[test]
     fn pascal_case_component_emits_call() {
         let src = r#"<UserCard [user]="currentUser"></UserCard>"#;
         let targets = calls_targets(src);
-        assert!(targets.contains(&"UserCard".to_string()), "missing UserCard: {targets:?}");
+        assert!(
+            targets.contains(&"UserCard".to_string()),
+            "missing UserCard: {targets:?}"
+        );
     }
 
     #[test]
     fn pascal_case_self_closing_emits_call() {
         let src = r#"<MatButton (click)="save()">Save</MatButton>"#;
         let targets = calls_targets(src);
-        assert!(targets.contains(&"MatButton".to_string()), "missing MatButton: {targets:?}");
+        assert!(
+            targets.contains(&"MatButton".to_string()),
+            "missing MatButton: {targets:?}"
+        );
     }
 
     #[test]
@@ -437,15 +448,24 @@ mod tests {
         let src = r#"<div><p>Hello</p></div>"#;
         let targets = calls_targets(src);
         // lowercase HTML tags should NOT produce Calls edges
-        assert!(!targets.contains(&"Div".to_string()), "div should not produce Calls: {targets:?}");
-        assert!(!targets.contains(&"div".to_string()), "div should not produce Calls: {targets:?}");
+        assert!(
+            !targets.contains(&"Div".to_string()),
+            "div should not produce Calls: {targets:?}"
+        );
+        assert!(
+            !targets.contains(&"div".to_string()),
+            "div should not produce Calls: {targets:?}"
+        );
     }
 
     #[test]
     fn event_binding_emits_call() {
         let src = r#"<button (click)="handleClick()">Click</button>"#;
         let targets = calls_targets(src);
-        assert!(targets.contains(&"handleClick".to_string()), "missing handleClick: {targets:?}");
+        assert!(
+            targets.contains(&"handleClick".to_string()),
+            "missing handleClick: {targets:?}"
+        );
     }
 
     #[test]
@@ -453,7 +473,9 @@ mod tests {
         let src = r#"<div *ngIf="condition">Content</div>"#;
         let targets = calls_targets(src);
         assert!(
-            targets.iter().any(|t| t.contains("NgIf") || t.contains("ngIf")),
+            targets
+                .iter()
+                .any(|t| t.contains("NgIf") || t.contains("ngIf")),
             "missing ngIf directive: {targets:?}"
         );
     }

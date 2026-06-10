@@ -53,16 +53,16 @@
 
 extern crate sqlite_vec;
 
+use anyhow::{Context, Result};
 use bearwisdom::{
-    languages::csharp::connectors as csharp_connectors,
-    full_index,
     db::Database,
+    full_index,
+    languages::csharp::connectors as csharp_connectors,
     query::{
         architecture, blast_radius as blast_radius_mod, call_hierarchy, concepts as concepts_mod,
         definitions, references, search as search_mod, subgraph as subgraph_mod, symbol_info,
     },
 };
-use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -368,39 +368,59 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Index { path, db }                    => cmd_index(&path, db.as_deref()),
-        Command::IncrementalIndex { path, db }            => cmd_incremental_index(&path, &db),
-        Command::References { symbol, db, limit }      => cmd_references(&symbol, &db, limit),
-        Command::Definition { symbol, db }             => cmd_definition(&symbol, &db),
-        Command::Routes { db }                         => cmd_routes(&db),
-        Command::DbMappings { db }                     => cmd_db_mappings(&db),
-        Command::Report { path, db }                   => cmd_report(&path, db.as_deref()),
-        Command::Architecture { db }                   => cmd_architecture(&db),
-        Command::BlastRadius { symbol, db, depth }     => cmd_blast_radius(&symbol, &db, depth),
-        Command::CallsIn { symbol, db, limit }         => cmd_calls_in(&symbol, &db, limit),
-        Command::CallsOut { symbol, db, limit }        => cmd_calls_out(&symbol, &db, limit),
-        Command::SymbolInfo { symbol, db }             => cmd_symbol_info(&symbol, &db),
-        Command::Search { query, db, limit }           => cmd_search(&query, &db, limit),
-        Command::DiscoverConcepts { db }               => cmd_discover_concepts(&db),
-        Command::Concept { name, db, limit }           => cmd_concept(&name, &db, limit),
-        Command::Grep { pattern, project, regex, case_sensitive, lang, limit } =>
-            cmd_grep(&pattern, &project, regex, case_sensitive, lang.as_deref(), limit),
-        Command::ContentSearch { query, db, limit } =>
-            cmd_content_search(&query, &db, limit),
-        Command::FuzzyFile { pattern, db, limit } =>
-            cmd_fuzzy_file(&pattern, &db, limit),
-        Command::FuzzySymbol { pattern, db, limit } =>
-            cmd_fuzzy_symbol(&pattern, &db, limit),
-        Command::HybridSearch { query, db, model, limit } =>
-            cmd_hybrid_search(&query, &db, model.as_deref(), limit),
-        Command::TraceFlow { file, line, db, depth } =>
-            cmd_trace_flow(&file, line, &db, depth),
-        Command::ImportScip { scip, db, project } =>
-            cmd_import_scip(&scip, &db, &project),
-        Command::History { db, limit } =>
-            cmd_history(&db, limit),
-        Command::ExportGraph { db, filter, format, max_nodes } =>
-            cmd_export_graph(&db, filter.as_deref(), &format, max_nodes),
+        Command::Index { path, db } => cmd_index(&path, db.as_deref()),
+        Command::IncrementalIndex { path, db } => cmd_incremental_index(&path, &db),
+        Command::References { symbol, db, limit } => cmd_references(&symbol, &db, limit),
+        Command::Definition { symbol, db } => cmd_definition(&symbol, &db),
+        Command::Routes { db } => cmd_routes(&db),
+        Command::DbMappings { db } => cmd_db_mappings(&db),
+        Command::Report { path, db } => cmd_report(&path, db.as_deref()),
+        Command::Architecture { db } => cmd_architecture(&db),
+        Command::BlastRadius { symbol, db, depth } => cmd_blast_radius(&symbol, &db, depth),
+        Command::CallsIn { symbol, db, limit } => cmd_calls_in(&symbol, &db, limit),
+        Command::CallsOut { symbol, db, limit } => cmd_calls_out(&symbol, &db, limit),
+        Command::SymbolInfo { symbol, db } => cmd_symbol_info(&symbol, &db),
+        Command::Search { query, db, limit } => cmd_search(&query, &db, limit),
+        Command::DiscoverConcepts { db } => cmd_discover_concepts(&db),
+        Command::Concept { name, db, limit } => cmd_concept(&name, &db, limit),
+        Command::Grep {
+            pattern,
+            project,
+            regex,
+            case_sensitive,
+            lang,
+            limit,
+        } => cmd_grep(
+            &pattern,
+            &project,
+            regex,
+            case_sensitive,
+            lang.as_deref(),
+            limit,
+        ),
+        Command::ContentSearch { query, db, limit } => cmd_content_search(&query, &db, limit),
+        Command::FuzzyFile { pattern, db, limit } => cmd_fuzzy_file(&pattern, &db, limit),
+        Command::FuzzySymbol { pattern, db, limit } => cmd_fuzzy_symbol(&pattern, &db, limit),
+        Command::HybridSearch {
+            query,
+            db,
+            model,
+            limit,
+        } => cmd_hybrid_search(&query, &db, model.as_deref(), limit),
+        Command::TraceFlow {
+            file,
+            line,
+            db,
+            depth,
+        } => cmd_trace_flow(&file, line, &db, depth),
+        Command::ImportScip { scip, db, project } => cmd_import_scip(&scip, &db, &project),
+        Command::History { db, limit } => cmd_history(&db, limit),
+        Command::ExportGraph {
+            db,
+            filter,
+            format,
+            max_nodes,
+        } => cmd_export_graph(&db, filter.as_deref(), &format, max_nodes),
     }
 }
 
@@ -442,8 +462,8 @@ fn cmd_index(path: &Path, db_path: Option<&Path>) -> Result<()> {
 }
 
 fn cmd_incremental_index(path: &Path, db_path: &Path) -> Result<()> {
-    let mut db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let mut db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let stats = bearwisdom::incremental_index(&mut db, path, None)?;
 
@@ -460,21 +480,30 @@ fn cmd_incremental_index(path: &Path, db_path: &Path) -> Result<()> {
 }
 
 fn cmd_references(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let refs = references::find_references(&db, symbol, limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== References to '{}' ({} results in {:.1}ms) ===",
-        symbol, refs.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== References to '{}' ({} results in {:.1}ms) ===",
+        symbol,
+        refs.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for r in &refs {
-        println!("  {} {} [{}:{}]  ({}, confidence={:.2})",
-            r.referencing_kind, r.referencing_symbol,
-            r.file_path, r.line,
-            r.edge_kind, r.confidence);
+        println!(
+            "  {} {} [{}:{}]  ({}, confidence={:.2})",
+            r.referencing_kind,
+            r.referencing_symbol,
+            r.file_path,
+            r.line,
+            r.edge_kind,
+            r.confidence
+        );
     }
 
     if refs.is_empty() {
@@ -484,20 +513,26 @@ fn cmd_references(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
 }
 
 fn cmd_definition(symbol: &str, db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let defs = definitions::goto_definition(&db, symbol)?;
     let elapsed = start.elapsed();
 
-    println!("=== Definition of '{}' ({} results in {:.1}ms) ===",
-        symbol, defs.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Definition of '{}' ({} results in {:.1}ms) ===",
+        symbol,
+        defs.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for d in &defs {
         let sig = d.signature.as_deref().unwrap_or("");
-        println!("  {} {} [{}:{}]  {sig}  (confidence={:.2})",
-            d.kind, d.qualified_name, d.file_path, d.line, d.confidence);
+        println!(
+            "  {} {} [{}:{}]  {sig}  (confidence={:.2})",
+            d.kind, d.qualified_name, d.file_path, d.line, d.confidence
+        );
     }
 
     if defs.is_empty() {
@@ -507,28 +542,32 @@ fn cmd_definition(symbol: &str, db_path: &Path) -> Result<()> {
 }
 
 fn cmd_routes(db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let routes = bearwisdom::query::stats::list_routes(&db)?;
     println!("=== HTTP Routes ({}) ===", routes.len());
     for r in &routes {
         let handler = r.handler_name.as_deref().unwrap_or("(unknown)");
-        println!("  {:6}  {}  ->  {}  [{}:{}]",
-            r.http_method, r.route_template, handler, r.file_path, r.line);
+        println!(
+            "  {:6}  {}  ->  {}  [{}:{}]",
+            r.http_method, r.route_template, handler, r.file_path, r.line
+        );
     }
     Ok(())
 }
 
 fn cmd_db_mappings(db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let mappings = csharp_connectors::list_db_mappings(&db)?;
     println!("=== EF Core DB Mappings ({}) ===", mappings.len());
     for m in &mappings {
-        println!("  {}  ->  table={}  [{}]  ({})",
-            m.entity_type, m.table_name, m.file_path, m.source);
+        println!(
+            "  {}  ->  table={}  [{}]  ({})",
+            m.entity_type, m.table_name, m.file_path, m.source
+        );
     }
     Ok(())
 }
@@ -570,11 +609,19 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
     println!("--- Phase 2: Query Benchmarks ---");
 
     let reference_targets = [
-        "CatalogItem", "CatalogDbContext", "ICatalogRepository",
-        "MapCatalogApiV1", "GetCatalogItems", "OrderStatus", "BasketItem",
+        "CatalogItem",
+        "CatalogDbContext",
+        "ICatalogRepository",
+        "MapCatalogApiV1",
+        "GetCatalogItems",
+        "OrderStatus",
+        "BasketItem",
     ];
     let definition_targets = [
-        "CatalogService", "Program", "OrderingContext", "BasketCheckoutEvent",
+        "CatalogService",
+        "Program",
+        "OrderingContext",
+        "BasketCheckoutEvent",
     ];
 
     let mut ref_times: Vec<Duration> = Vec::new();
@@ -587,8 +634,12 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
         let refs = references::find_references(&db, sym, 100)?;
         let elapsed = t.elapsed();
         ref_times.push(elapsed);
-        println!("    {:40} {:4} refs   {:.1}ms",
-            sym, refs.len(), elapsed.as_secs_f64() * 1000.0);
+        println!(
+            "    {:40} {:4} refs   {:.1}ms",
+            sym,
+            refs.len(),
+            elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     println!();
@@ -598,8 +649,12 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
         let defs = definitions::goto_definition(&db, sym)?;
         let elapsed = t.elapsed();
         def_times.push(elapsed);
-        println!("    {:40} {:4} defs   {:.1}ms",
-            sym, defs.len(), elapsed.as_secs_f64() * 1000.0);
+        println!(
+            "    {:40} {:4} defs   {:.1}ms",
+            sym,
+            defs.len(),
+            elapsed.as_secs_f64() * 1000.0
+        );
     }
 
     println!();
@@ -615,14 +670,17 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
 }
 
 fn cmd_architecture(db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let ov = architecture::get_overview(&db)?;
     let elapsed = start.elapsed();
 
-    println!("=== Architecture Overview ({:.1}ms) ===", elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Architecture Overview ({:.1}ms) ===",
+        elapsed.as_secs_f64() * 1000.0
+    );
     println!("  Total files:   {}", ov.total_files);
     println!("  Total symbols: {}", ov.total_symbols);
     println!("  Total edges:   {}", ov.total_edges);
@@ -630,29 +688,39 @@ fn cmd_architecture(db_path: &Path) -> Result<()> {
     println!();
     println!("  Languages:");
     for lang in &ov.languages {
-        println!("    {:15}  {:5} files   {:7} symbols",
-            lang.language, lang.file_count, lang.symbol_count);
+        println!(
+            "    {:15}  {:5} files   {:7} symbols",
+            lang.language, lang.file_count, lang.symbol_count
+        );
     }
 
     println!();
     println!("  Hotspots (top {} by incoming refs):", ov.hotspots.len());
     for (i, h) in ov.hotspots.iter().enumerate() {
-        println!("    {:2}. {:40}  {:5} refs   [{}]",
-            i + 1, h.qualified_name, h.incoming_refs, h.file_path);
+        println!(
+            "    {:2}. {:40}  {:5} refs   [{}]",
+            i + 1,
+            h.qualified_name,
+            h.incoming_refs,
+            h.file_path
+        );
     }
 
     println!();
     println!("  Entry points ({} public symbols):", ov.entry_points.len());
     for ep in &ov.entry_points {
-        println!("    {} {} [{}:{}]", ep.kind, ep.qualified_name, ep.file_path, ep.line);
+        println!(
+            "    {} {} [{}:{}]",
+            ep.kind, ep.qualified_name, ep.file_path, ep.line
+        );
     }
 
     Ok(())
 }
 
 fn cmd_blast_radius(symbol: &str, db_path: &Path, depth: u32) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let result = blast_radius_mod::blast_radius(&db, symbol, depth, 500)?;
@@ -663,16 +731,22 @@ fn cmd_blast_radius(symbol: &str, db_path: &Path, depth: u32) -> Result<()> {
             println!("Symbol '{}' not found in the index.", symbol);
         }
         Some(br) => {
-            println!("=== Blast Radius of '{}' (depth {}, {:.1}ms) ===",
-                br.center.qualified_name, depth, elapsed.as_secs_f64() * 1000.0);
+            println!(
+                "=== Blast Radius of '{}' (depth {}, {:.1}ms) ===",
+                br.center.qualified_name,
+                depth,
+                elapsed.as_secs_f64() * 1000.0
+            );
             println!("  {} affected symbol(s)", br.total_affected);
 
             if br.affected.is_empty() {
                 println!("  (no dependents found)");
             } else {
                 for a in &br.affected {
-                    println!("  depth={} {} {} [{}]  (via {})",
-                        a.depth, a.kind, a.qualified_name, a.file_path, a.edge_kind);
+                    println!(
+                        "  depth={} {} {} [{}]  (via {})",
+                        a.depth, a.kind, a.qualified_name, a.file_path, a.edge_kind
+                    );
                 }
             }
         }
@@ -681,19 +755,25 @@ fn cmd_blast_radius(symbol: &str, db_path: &Path, depth: u32) -> Result<()> {
 }
 
 fn cmd_calls_in(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let items = call_hierarchy::incoming_calls(&db, symbol, limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== Callers of '{}' ({} results in {:.1}ms) ===",
-        symbol, items.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Callers of '{}' ({} results in {:.1}ms) ===",
+        symbol,
+        items.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for item in &items {
-        println!("  {} {} [{}:{}]",
-            item.kind, item.qualified_name, item.file_path, item.line);
+        println!(
+            "  {} {} [{}:{}]",
+            item.kind, item.qualified_name, item.file_path, item.line
+        );
     }
     if items.is_empty() {
         println!("  (no callers found)");
@@ -702,19 +782,25 @@ fn cmd_calls_in(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
 }
 
 fn cmd_calls_out(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let items = call_hierarchy::outgoing_calls(&db, symbol, limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== Callees of '{}' ({} results in {:.1}ms) ===",
-        symbol, items.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Callees of '{}' ({} results in {:.1}ms) ===",
+        symbol,
+        items.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for item in &items {
-        println!("  {} {} [{}:{}]",
-            item.kind, item.qualified_name, item.file_path, item.line);
+        println!(
+            "  {} {} [{}:{}]",
+            item.kind, item.qualified_name, item.file_path, item.line
+        );
     }
     if items.is_empty() {
         println!("  (no callees found)");
@@ -723,15 +809,19 @@ fn cmd_calls_out(symbol: &str, db_path: &Path, limit: usize) -> Result<()> {
 }
 
 fn cmd_symbol_info(symbol: &str, db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let details = symbol_info::symbol_info(&db, symbol, &bearwisdom::query::QueryOptions::full())?;
     let elapsed = start.elapsed();
 
-    println!("=== Symbol Info for '{}' ({} matches in {:.1}ms) ===",
-        symbol, details.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Symbol Info for '{}' ({} matches in {:.1}ms) ===",
+        symbol,
+        details.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     if details.is_empty() {
         println!("  (not found)");
@@ -741,8 +831,14 @@ fn cmd_symbol_info(symbol: &str, db_path: &Path) -> Result<()> {
     for d in &details {
         println!();
         println!("  {} {}", d.kind, d.qualified_name);
-        println!("  File:       {}:{}-{}", d.file_path, d.start_line, d.end_line);
-        println!("  Visibility: {}", d.visibility.as_deref().unwrap_or("(none)"));
+        println!(
+            "  File:       {}:{}-{}",
+            d.file_path, d.start_line, d.end_line
+        );
+        println!(
+            "  Visibility: {}",
+            d.visibility.as_deref().unwrap_or("(none)")
+        );
         if let Some(sig) = &d.signature {
             println!("  Signature:  {sig}");
         }
@@ -750,13 +846,17 @@ fn cmd_symbol_info(symbol: &str, db_path: &Path) -> Result<()> {
             let first_line = doc.lines().next().unwrap_or(doc);
             println!("  Doc:        {first_line}");
         }
-        println!("  Incoming edges: {}  Outgoing edges: {}",
-            d.incoming_edge_count, d.outgoing_edge_count);
+        println!(
+            "  Incoming edges: {}  Outgoing edges: {}",
+            d.incoming_edge_count, d.outgoing_edge_count
+        );
         if !d.children.is_empty() {
             println!("  Children ({}):", d.children.len());
             for c in &d.children {
-                println!("    {} {} [{}:{}]",
-                    c.kind, c.qualified_name, c.file_path, c.line);
+                println!(
+                    "    {} {} [{}:{}]",
+                    c.kind, c.qualified_name, c.file_path, c.line
+                );
             }
         }
     }
@@ -764,20 +864,27 @@ fn cmd_symbol_info(symbol: &str, db_path: &Path) -> Result<()> {
 }
 
 fn cmd_search(query: &str, db_path: &Path, limit: usize) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
-    let results = search_mod::search_symbols(&db, query, limit, &bearwisdom::query::QueryOptions::full())?;
+    let results =
+        search_mod::search_symbols(&db, query, limit, &bearwisdom::query::QueryOptions::full())?;
     let elapsed = start.elapsed();
 
-    println!("=== Search '{}' ({} results in {:.1}ms) ===",
-        query, results.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Search '{}' ({} results in {:.1}ms) ===",
+        query,
+        results.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for r in &results {
         let sig = r.signature.as_deref().unwrap_or("");
-        println!("  [{:.3}] {} {} [{}:{}]  {sig}",
-            r.score, r.kind, r.qualified_name, r.file_path, r.start_line);
+        println!(
+            "  [{:.3}] {} {} [{}:{}]  {sig}",
+            r.score, r.kind, r.qualified_name, r.file_path, r.start_line
+        );
     }
     if results.is_empty() {
         println!("  (no results)");
@@ -786,16 +893,23 @@ fn cmd_search(query: &str, db_path: &Path, limit: usize) -> Result<()> {
 }
 
 fn cmd_discover_concepts(db_path: &Path) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let created = concepts_mod::discover_concepts(&db)?;
     let assigned = concepts_mod::auto_assign_concepts(&db)?;
     let elapsed = start.elapsed();
 
-    println!("=== Concept Discovery ({:.1}ms) ===", elapsed.as_secs_f64() * 1000.0);
-    println!("  {} new concept(s) discovered, {} symbol assignments", created.len(), assigned);
+    println!(
+        "=== Concept Discovery ({:.1}ms) ===",
+        elapsed.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  {} new concept(s) discovered, {} symbol assignments",
+        created.len(),
+        assigned
+    );
 
     for name in &created {
         println!("  {name}");
@@ -805,27 +919,37 @@ fn cmd_discover_concepts(db_path: &Path) -> Result<()> {
     let all = concepts_mod::list_concepts(&db)?;
     println!("  All concepts ({}):", all.len());
     for c in &all {
-        println!("    {:30}  {:5} members  pattern={:?}",
-            c.name, c.member_count, c.auto_pattern.as_deref().unwrap_or("(none)"));
+        println!(
+            "    {:30}  {:5} members  pattern={:?}",
+            c.name,
+            c.member_count,
+            c.auto_pattern.as_deref().unwrap_or("(none)")
+        );
     }
 
     Ok(())
 }
 
 fn cmd_concept(name: &str, db_path: &Path, limit: usize) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let members = concepts_mod::concept_members(&db, name, limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== Concept '{}' ({} members in {:.1}ms) ===",
-        name, members.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Concept '{}' ({} members in {:.1}ms) ===",
+        name,
+        members.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for m in &members {
-        println!("  {} {} [{}:{}]",
-            m.kind, m.qualified_name, m.file_path, m.line);
+        println!(
+            "  {} {} [{}:{}]",
+            m.kind, m.qualified_name, m.file_path, m.line
+        );
     }
     if members.is_empty() {
         println!("  (concept not found or has no members)");
@@ -839,8 +963,8 @@ fn cmd_export_graph(
     format: &str,
     max_nodes: usize,
 ) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
 
@@ -852,23 +976,38 @@ fn cmd_export_graph(
     } else {
         let graph = subgraph_mod::export_graph(&db, filter, max_nodes)?;
         let elapsed = start.elapsed();
-        println!("=== Graph Export ({} nodes, {} edges, {:.1}ms) ===",
-            graph.nodes.len(), graph.edges.len(), elapsed.as_secs_f64() * 1000.0);
+        println!(
+            "=== Graph Export ({} nodes, {} edges, {:.1}ms) ===",
+            graph.nodes.len(),
+            graph.edges.len(),
+            elapsed.as_secs_f64() * 1000.0
+        );
 
         println!();
         println!("  Nodes:");
         for n in &graph.nodes {
             let concept = n.concept.as_deref().unwrap_or("");
-            println!("    {:5}  {} {}  [{}]{}",
-                n.id, n.kind, n.qualified_name, n.file_path,
-                if concept.is_empty() { String::new() } else { format!("  @{concept}") });
+            println!(
+                "    {:5}  {} {}  [{}]{}",
+                n.id,
+                n.kind,
+                n.qualified_name,
+                n.file_path,
+                if concept.is_empty() {
+                    String::new()
+                } else {
+                    format!("  @{concept}")
+                }
+            );
         }
 
         println!();
         println!("  Edges ({}):", graph.edges.len());
         for e in graph.edges.iter().take(100) {
-            println!("    {} --[{}]--> {}  (conf={:.2})",
-                e.source_id, e.kind, e.target_id, e.confidence);
+            println!(
+                "    {} --[{}]--> {}  (conf={:.2})",
+                e.source_id, e.kind, e.target_id, e.confidence
+            );
         }
         if graph.edges.len() > 100 {
             println!("    ... ({} more edges omitted)", graph.edges.len() - 100);
@@ -895,8 +1034,13 @@ fn print_percentiles(label: &str, times: &[Duration]) {
         sorted[idx.min(sorted.len() - 1)]
     };
 
-    println!("{label}:  p50={:.1}ms  p95={:.1}ms  p99={:.1}ms  max={:.1}ms",
-        p(50.0), p(95.0), p(99.0), sorted.last().copied().unwrap_or(0.0));
+    println!(
+        "{label}:  p50={:.1}ms  p95={:.1}ms  p99={:.1}ms  max={:.1}ms",
+        p(50.0),
+        p(95.0),
+        p(99.0),
+        sorted.last().copied().unwrap_or(0.0)
+    );
 }
 
 /// Return a path inside the system temp directory for a scratch database.
@@ -939,8 +1083,12 @@ fn cmd_grep(
     let matches = grep::grep_search(project, pattern, &options, &cancelled)?;
     let elapsed = start.elapsed();
 
-    println!("=== Grep '{}' ({} results in {:.1}ms) ===",
-        pattern, matches.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Grep '{}' ({} results in {:.1}ms) ===",
+        pattern,
+        matches.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for m in &matches {
         println!("  {}:{}: {}", m.file_path, m.line_number, m.line_content);
@@ -958,15 +1106,19 @@ fn cmd_grep(
 fn cmd_content_search(query: &str, db_path: &Path, limit: usize) -> Result<()> {
     use bearwisdom::search::{content_search, scope::SearchScope};
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let results = content_search::search_content(&db, query, &SearchScope::default(), limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== Content search '{}' ({} files in {:.1}ms) ===",
-        query, results.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Content search '{}' ({} files in {:.1}ms) ===",
+        query,
+        results.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for r in &results {
         println!("  [{:.3}] {} ({})", r.score, r.file_path, r.language);
@@ -984,16 +1136,20 @@ fn cmd_content_search(query: &str, db_path: &Path, limit: usize) -> Result<()> {
 fn cmd_fuzzy_file(pattern: &str, db_path: &Path, limit: usize) -> Result<()> {
     use bearwisdom::search::fuzzy::FuzzyIndex;
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let index = FuzzyIndex::from_db(&db)?;
     let matches = index.match_files(pattern, limit);
     let elapsed = start.elapsed();
 
-    println!("=== Fuzzy file '{}' ({} results in {:.1}ms) ===",
-        pattern, matches.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Fuzzy file '{}' ({} results in {:.1}ms) ===",
+        pattern,
+        matches.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for m in &matches {
         println!("  [{:5}] {}", m.score, m.text);
@@ -1011,21 +1167,28 @@ fn cmd_fuzzy_file(pattern: &str, db_path: &Path, limit: usize) -> Result<()> {
 fn cmd_fuzzy_symbol(pattern: &str, db_path: &Path, limit: usize) -> Result<()> {
     use bearwisdom::search::fuzzy::FuzzyIndex;
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let index = FuzzyIndex::from_db(&db)?;
     let matches = index.match_symbols(pattern, limit);
     let elapsed = start.elapsed();
 
-    println!("=== Fuzzy symbol '{}' ({} results in {:.1}ms) ===",
-        pattern, matches.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Fuzzy symbol '{}' ({} results in {:.1}ms) ===",
+        pattern,
+        matches.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for m in &matches {
         let meta = match &m.metadata {
-            bearwisdom::search::fuzzy::FuzzyMetadata::Symbol { kind, file_path, line } =>
-                format!("{kind} [{file_path}:{line}]"),
+            bearwisdom::search::fuzzy::FuzzyMetadata::Symbol {
+                kind,
+                file_path,
+                line,
+            } => format!("{kind} [{file_path}:{line}]"),
             _ => String::new(),
         };
         println!("  [{:5}] {} {}", m.score, m.text, meta);
@@ -1040,11 +1203,16 @@ fn cmd_fuzzy_symbol(pattern: &str, db_path: &Path, limit: usize) -> Result<()> {
 // Hybrid search
 // ---------------------------------------------------------------------------
 
-fn cmd_hybrid_search(query: &str, db_path: &Path, model_dir: Option<&Path>, limit: usize) -> Result<()> {
+fn cmd_hybrid_search(
+    query: &str,
+    db_path: &Path,
+    model_dir: Option<&Path>,
+    limit: usize,
+) -> Result<()> {
     use bearwisdom::search::{embedder::Embedder, hybrid, scope::SearchScope};
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let model_path = model_dir
         .map(|p| p.to_path_buf())
@@ -1057,16 +1225,22 @@ fn cmd_hybrid_search(query: &str, db_path: &Path, model_dir: Option<&Path>, limi
     let results = hybrid::hybrid_search(&db, &mut embedder, query, &SearchScope::default(), limit)?;
     let elapsed = start.elapsed();
 
-    println!("=== Hybrid search '{}' ({} results in {:.1}ms) ===",
-        query, results.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Hybrid search '{}' ({} results in {:.1}ms) ===",
+        query,
+        results.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for r in &results {
         let sym = r.symbol_name.as_deref().unwrap_or("");
         let kind = r.kind.as_deref().unwrap_or("");
         let tr = r.text_rank.map(|t| format!("T{t}")).unwrap_or_default();
         let vr = r.vector_rank.map(|v| format!("V{v}")).unwrap_or_default();
-        println!("  [{:.4}] {kind} {sym} [{}:{}] {tr} {vr}",
-            r.rrf_score, r.file_path, r.start_line);
+        println!(
+            "  [{:.4}] {kind} {sym} [{}:{}] {tr} {vr}",
+            r.rrf_score, r.file_path, r.start_line
+        );
     }
     if results.is_empty() {
         println!("  (no results)");
@@ -1081,22 +1255,30 @@ fn cmd_hybrid_search(query: &str, db_path: &Path, model_dir: Option<&Path>, limi
 fn cmd_trace_flow(file: &str, line: u32, db_path: &Path, depth: u32) -> Result<()> {
     use bearwisdom::search::flow;
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let steps = flow::trace_flow(&db, file, line, depth)?;
     let elapsed = start.elapsed();
 
-    println!("=== Flow trace from {}:{} (depth {}, {} steps in {:.1}ms) ===",
-        file, line, depth, steps.len(), elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== Flow trace from {}:{} (depth {}, {} steps in {:.1}ms) ===",
+        file,
+        line,
+        depth,
+        steps.len(),
+        elapsed.as_secs_f64() * 1000.0
+    );
 
     for s in &steps {
         let sym = s.symbol.as_deref().unwrap_or("?");
         let ln = s.line.map(|l| l.to_string()).unwrap_or_default();
         let proto = s.protocol.as_deref().unwrap_or("");
-        println!("  d={} {} {} [{}:{}] {} {}",
-            s.depth, s.language, sym, s.file_path, ln, s.edge_type, proto);
+        println!(
+            "  d={} {} {} [{}:{}] {} {}",
+            s.depth, s.language, sym, s.file_path, ln, s.edge_type, proto
+        );
     }
     if steps.is_empty() {
         println!("  (no flow edges from this location)");
@@ -1109,15 +1291,17 @@ fn cmd_trace_flow(file: &str, line: u32, db_path: &Path, depth: u32) -> Result<(
 // ---------------------------------------------------------------------------
 
 fn cmd_import_scip(scip_path: &Path, db_path: &Path, project_root: &Path) -> Result<()> {
-
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
     let stats = bearwisdom::import_scip(&db, scip_path, project_root)?;
     let elapsed = start.elapsed();
 
-    println!("=== SCIP Import ({:.1}ms) ===", elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "=== SCIP Import ({:.1}ms) ===",
+        elapsed.as_secs_f64() * 1000.0
+    );
     println!("  Documents processed: {}", stats.documents_processed);
     println!("  Symbols matched:     {}", stats.symbols_matched);
     println!("  Edges created:       {}", stats.edges_created);
@@ -1134,15 +1318,18 @@ fn cmd_import_scip(scip_path: &Path, db_path: &Path, project_root: &Path) -> Res
 fn cmd_history(db_path: &Path, limit: usize) -> Result<()> {
     use bearwisdom::search::history;
 
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open {}", db_path.display()))?;
+    let db =
+        Database::open(db_path).with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let entries = history::recent_searches_db(&db, None, limit)?;
 
     println!("=== Search History ({} entries) ===", entries.len());
     for e in &entries {
         let saved = if e.is_saved { " [saved]" } else { "" };
-        println!("  [{}] {} (type={}, count={}){}", e.id, e.query, e.query_type, e.use_count, saved);
+        println!(
+            "  [{}] {} (type={}, count={}){}",
+            e.id, e.query, e.query_type, e.use_count, saved
+        );
     }
 
     let saved = history::saved_searches_db(&db)?;

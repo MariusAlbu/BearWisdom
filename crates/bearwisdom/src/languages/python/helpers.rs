@@ -120,11 +120,10 @@ pub(super) fn extract_python_type_name(node: &Node, source: &str) -> String {
             }
             String::new()
         }
-        "subscript" => {
-            node.child_by_field_name("value")
-                .map(|v| extract_python_type_name(&v, source))
-                .unwrap_or_default()
-        }
+        "subscript" => node
+            .child_by_field_name("value")
+            .map(|v| extract_python_type_name(&v, source))
+            .unwrap_or_default(),
         // `type` wrapper node: recurse into first named child.
         // In tree-sitter-python, `typed_parameter` type fields are wrapped in a
         // `type` node that contains the actual annotation expression.

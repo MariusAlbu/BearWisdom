@@ -13,12 +13,12 @@
 //! The <script> block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
-pub(crate) mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;
+pub(crate) mod hooks;
+pub(crate) mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::VUE_HOOKS;
 pub use profile::VUE_PROFILE;
@@ -94,14 +94,12 @@ impl LanguagePlugin for VuePlugin {
         Some(&profile::VUE_PROFILE)
     }
 
-    
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::VUE_HOOKS)
     }
-fn populate_project_state(
+    fn populate_project_state(
         &self,
         state: &mut PluginStateBag,
         parsed: &[ParsedFile],

@@ -58,7 +58,8 @@ pub const BUILTINS: &[&str] = &[
     "xor",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some(";;  Better highlighting by referencing to the definition, for variable\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    ";;  Better highlighting by referencing to the definition, for variable\n\
 ;;  references. However, this is not yet supported by neovim\n\
 ;;  See https://tree-sitter.github.io/tree-sitter/syntax-highlighting#local-variables\n\
 \n\
@@ -91,4 +92,5 @@ pub const LOCALS_SCM: Option<&str> = Some(";;  Better highlighting by referencin
 (subtype_declaration . (identifier) @definition.type)\n\
 \n\
 (identifier) @reference\n\
-");
+",
+);

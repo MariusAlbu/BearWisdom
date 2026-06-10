@@ -40,8 +40,16 @@ fn make_otp_fixture(root: &std::path::Path) -> std::path::PathBuf {
 
     let stdlib_src = lib.join("stdlib-5.0").join("src");
     fs::create_dir_all(&stdlib_src).unwrap();
-    fs::write(stdlib_src.join("lists.erl"), "-module(lists).\n-export([map/2]).\n").unwrap();
-    fs::write(stdlib_src.join("io.erl"), "-module(io).\n-export([format/2]).\n").unwrap();
+    fs::write(
+        stdlib_src.join("lists.erl"),
+        "-module(lists).\n-export([map/2]).\n",
+    )
+    .unwrap();
+    fs::write(
+        stdlib_src.join("io.erl"),
+        "-module(io).\n-export([format/2]).\n",
+    )
+    .unwrap();
     fs::write(stdlib_src.join("io.hrl"), "% io header\n").unwrap();
 
     let mnesia_src = lib.join("mnesia-4.0").join("src");
@@ -137,11 +145,15 @@ fn walk_emits_correct_virtual_paths() {
         walked.iter().map(|f| f.relative_path.clone()).collect();
 
     assert!(
-        paths.iter().any(|p| p == "ext:erlang:kernel/gen_server.erl"),
+        paths
+            .iter()
+            .any(|p| p == "ext:erlang:kernel/gen_server.erl"),
         "{paths:?}"
     );
     assert!(
-        paths.iter().any(|p| p == "ext:erlang:kernel/application.erl"),
+        paths
+            .iter()
+            .any(|p| p == "ext:erlang:kernel/application.erl"),
         "{paths:?}"
     );
 }
@@ -161,7 +173,10 @@ fn walk_includes_hrl_files() {
     let paths: std::collections::HashSet<String> =
         walked.iter().map(|f| f.relative_path.clone()).collect();
 
-    assert!(paths.iter().any(|p| p == "ext:erlang:stdlib/io.hrl"), "{paths:?}");
+    assert!(
+        paths.iter().any(|p| p == "ext:erlang:stdlib/io.hrl"),
+        "{paths:?}"
+    );
 }
 
 #[test]
@@ -180,11 +195,16 @@ fn walk_skips_pruned_directories() {
 
     // priv/ and test/ must not appear.
     assert!(
-        paths.iter().all(|p| !p.contains("/priv/") && !p.contains("/test/")),
+        paths
+            .iter()
+            .all(|p| !p.contains("/priv/") && !p.contains("/test/")),
         "pruned dirs leaked into walk: {paths:?}"
     );
     // The top-level mnesia.erl must still appear.
-    assert!(paths.iter().any(|p| *p == "ext:erlang:mnesia/mnesia.erl"), "{paths:?}");
+    assert!(
+        paths.iter().any(|p| *p == "ext:erlang:mnesia/mnesia.erl"),
+        "{paths:?}"
+    );
 }
 
 #[test]
@@ -199,7 +219,11 @@ fn walk_language_is_erlang() {
 
     for dep in &roots {
         for wf in walk(dep) {
-            assert_eq!(wf.language, "erlang", "language mismatch for {}", wf.relative_path);
+            assert_eq!(
+                wf.language, "erlang",
+                "language mismatch for {}",
+                wf.relative_path
+            );
         }
     }
 }
@@ -228,16 +252,22 @@ fn demand_pre_pull_returns_only_substrate_apps() {
     }
     // At least one file per substrate app.
     assert!(
-        pre_pulled.iter().any(|f| f.relative_path.starts_with("ext:erlang:kernel/")),
+        pre_pulled
+            .iter()
+            .any(|f| f.relative_path.starts_with("ext:erlang:kernel/")),
         "no kernel files in pre-pull"
     );
     assert!(
-        pre_pulled.iter().any(|f| f.relative_path.starts_with("ext:erlang:stdlib/")),
+        pre_pulled
+            .iter()
+            .any(|f| f.relative_path.starts_with("ext:erlang:stdlib/")),
         "no stdlib files in pre-pull"
     );
     // mnesia must NOT appear in pre-pull.
     assert!(
-        pre_pulled.iter().all(|f| !f.relative_path.starts_with("ext:erlang:mnesia/")),
+        pre_pulled
+            .iter()
+            .all(|f| !f.relative_path.starts_with("ext:erlang:mnesia/")),
         "mnesia should not be pre-pulled"
     );
 }
@@ -262,7 +292,11 @@ fn extract_module_name_skips_comments() {
 fn extract_module_name_returns_none_for_hrl() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("types.hrl");
-    fs::write(&path, "% header file without module attribute\n-define(X, 1).\n").unwrap();
+    fs::write(
+        &path,
+        "% header file without module attribute\n-define(X, 1).\n",
+    )
+    .unwrap();
     // .hrl files typically have no -module(). None is the expected result.
     let result = extract_module_name(&path);
     assert!(result.is_none(), "unexpected: {result:?}");

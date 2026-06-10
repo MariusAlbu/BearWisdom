@@ -37,9 +37,7 @@ pub(crate) fn is_dom_interface_type(target: &str) -> bool {
     // namespaces. Skipped `Web` / `Media` / `Audio` because user code commonly
     // uses names like `WebhookPayload`, `MediaItem`, `AudioSource` that would
     // false-positive.
-    const PREFIXES: &[&str] = &[
-        "HTML", "SVG", "ARIA", "IDB", "XPath", "MathML",
-    ];
+    const PREFIXES: &[&str] = &["HTML", "SVG", "ARIA", "IDB", "XPath", "MathML"];
     for prefix in PREFIXES {
         if first_seg.starts_with(prefix) {
             let tail = &first_seg[prefix.len()..];
@@ -72,10 +70,10 @@ const HTTP_CLIENT_PACKAGES: &[&str] = &[
     "ofetch",
     "ky",
     "node-fetch",
-    "@vueuse/integrations",  // useAxios wrapper re-exports axios
-    "@nestjs/axios",  // HttpService wraps axios — same verb-on-chain shape
-    "openapi-typescript-fetch",  // Generated declarative HTTP clients
-    "openapi-fetch",  // openapi-typescript companion client
+    "@vueuse/integrations",     // useAxios wrapper re-exports axios
+    "@nestjs/axios",            // HttpService wraps axios — same verb-on-chain shape
+    "openapi-typescript-fetch", // Generated declarative HTTP clients
+    "openapi-fetch",            // openapi-typescript companion client
 ];
 
 /// Returns `true` when `pkg` is a well-known HTTP-client npm package.
@@ -142,8 +140,13 @@ pub(crate) fn is_cron_module(pkg: &str) -> bool {
     let root = pkg.split('/').next().unwrap_or(pkg);
     matches!(
         root,
-        "node-cron" | "cron" | "cron-job.org" | "cron-schedule"
-            | "node-schedule" | "croner" | "bree"
+        "node-cron"
+            | "cron"
+            | "cron-job.org"
+            | "cron-schedule"
+            | "node-schedule"
+            | "croner"
+            | "bree"
     )
 }
 
@@ -160,8 +163,15 @@ pub(crate) fn is_cli_module(pkg: &str) -> bool {
     };
     matches!(
         root,
-        "commander" | "yargs" | "@oclif/core" | "@oclif/command"
-            | "meow" | "cac" | "minimist" | "mri" | "arg"
+        "commander"
+            | "yargs"
+            | "@oclif/core"
+            | "@oclif/command"
+            | "meow"
+            | "cac"
+            | "minimist"
+            | "mri"
+            | "arg"
     )
 }
 
@@ -179,13 +189,7 @@ pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         EdgeKind::Implements => matches!(sym_kind, "interface" | "type_alias"),
         EdgeKind::TypeRef => matches!(
             sym_kind,
-            "class"
-                | "interface"
-                | "enum"
-                | "type_alias"
-                | "function"
-                | "variable"
-                | "namespace"
+            "class" | "interface" | "enum" | "type_alias" | "function" | "variable" | "namespace"
         ),
         EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
         _ => true,

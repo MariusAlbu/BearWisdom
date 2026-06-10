@@ -12,11 +12,11 @@
 //! - `import "path"` / `import name "path"` → Imports edges
 //! - `using expr` → TypeRef edge
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -74,13 +74,12 @@ impl LanguagePlugin for OdinPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call_expression",
-            "using_statement",
-        ]
+        &["call_expression", "using_statement"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -90,8 +89,7 @@ impl LanguagePlugin for OdinPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ODIN_HOOKS)
     }
 }

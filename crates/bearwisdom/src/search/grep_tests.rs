@@ -65,7 +65,11 @@ fn case_insensitive_search() {
 #[test]
 fn whole_word_excludes_partial_matches() {
     let dir = TempDir::new().unwrap();
-    write_file(&dir, "code.rs", "fn foo() {}\nfn foobar() {}\nlet foo_x = 1;\n");
+    write_file(
+        &dir,
+        "code.rs",
+        "fn foo() {}\nfn foobar() {}\nlet foo_x = 1;\n",
+    );
 
     let opts = GrepOptions {
         whole_word: true,

@@ -19,8 +19,8 @@
 //!     identifier references inside `{{ expr }}`, `[prop]="expr"`, and
 //!     `(evt)="expr"` resolve against project symbols.
 
-pub mod extract;
 pub mod embedded;
+pub mod extract;
 pub(crate) mod profile;
 
 pub use profile::ANGULAR_TEMPLATE_PROFILE;
@@ -85,8 +85,7 @@ impl LanguagePlugin for AngularTemplatePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         // angular_template files (`.component.html`) carry component / directive
         // references that need the same resolver and external-classifier as the
         // `angular` plugin: selector-map lookup for resolved targets and a

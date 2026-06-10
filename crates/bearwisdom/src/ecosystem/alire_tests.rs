@@ -14,10 +14,7 @@ fn ecosystem_identity() {
 
 #[test]
 fn legacy_locator_tag_is_alire() {
-    assert_eq!(
-        ExternalSourceLocator::ecosystem(&AlireEcosystem),
-        "alire"
-    );
+    assert_eq!(ExternalSourceLocator::ecosystem(&AlireEcosystem), "alire");
 }
 
 #[test]
@@ -145,14 +142,21 @@ fn discover_externals_returns_roots_for_present_deps() {
     .unwrap();
 
     let saved = std::env::var_os("BEARWISDOM_ALIRE_CACHE");
-    std::env::set_var("BEARWISDOM_ALIRE_CACHE", cache.to_string_lossy().to_string());
+    std::env::set_var(
+        "BEARWISDOM_ALIRE_CACHE",
+        cache.to_string_lossy().to_string(),
+    );
     let roots = discover_alire_externals(&project);
     match saved {
         Some(v) => std::env::set_var("BEARWISDOM_ALIRE_CACHE", v),
         None => std::env::remove_var("BEARWISDOM_ALIRE_CACHE"),
     }
 
-    assert_eq!(roots.len(), 1, "expected one root for `aaa`, got: {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "expected one root for `aaa`, got: {roots:?}"
+    );
     let root = &roots[0];
     assert_eq!(root.module_path, "aaa");
     // Highest version wins: 0.3.0 over 0.2.0.
@@ -172,9 +176,17 @@ fn walk_collects_ads_and_adb_files() {
     std::fs::write(src.join("aaa.adb"), "package body AAA is\nend AAA;\n").unwrap();
     // Should be skipped:
     std::fs::create_dir_all(tmp.join("obj")).unwrap();
-    std::fs::write(tmp.join("obj").join("ignored.ads"), "package Ignored is\nend Ignored;\n").unwrap();
+    std::fs::write(
+        tmp.join("obj").join("ignored.ads"),
+        "package Ignored is\nend Ignored;\n",
+    )
+    .unwrap();
     std::fs::create_dir_all(tmp.join("alire")).unwrap();
-    std::fs::write(tmp.join("alire").join("tracked.ads"), "package Tracked is\nend Tracked;\n").unwrap();
+    std::fs::write(
+        tmp.join("alire").join("tracked.ads"),
+        "package Tracked is\nend Tracked;\n",
+    )
+    .unwrap();
 
     let dep = ExternalDepRoot {
         module_path: "aaa".to_string(),
@@ -185,10 +197,7 @@ fn walk_collects_ads_and_adb_files() {
         requested_imports: Vec::new(),
     };
     let files = walk_alire_root(&dep);
-    let names: Vec<&str> = files
-        .iter()
-        .map(|f| f.relative_path.as_str())
-        .collect();
+    let names: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
     assert!(
         names.iter().any(|n| n.ends_with("aaa.ads")),
         "missing aaa.ads: {names:?}"
@@ -284,10 +293,7 @@ fn resolve_import_strips_trailing_children() {
 fn manifest_reader_kind_is_alire() {
     use crate::ecosystem::manifest::ManifestReader;
     let r = AlireManifest;
-    assert_eq!(
-        r.kind(),
-        crate::ecosystem::manifest::ManifestKind::Alire
-    );
+    assert_eq!(r.kind(), crate::ecosystem::manifest::ManifestKind::Alire);
 }
 
 #[test]

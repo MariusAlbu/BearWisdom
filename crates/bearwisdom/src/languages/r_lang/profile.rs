@@ -3,7 +3,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DispatchAxis, KindTable, LanguageProfile,
+    SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -19,7 +20,10 @@ const R_KIND_TABLE: KindTable = &[
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class]),
-    (EdgeKind::Implements, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::Implements,
+        &[SymbolKind::Class, SymbolKind::Interface],
+    ),
     (
         EdgeKind::TypeRef,
         &[
@@ -31,7 +35,10 @@ const R_KIND_TABLE: KindTable = &[
             SymbolKind::Variable,
         ],
     ),
-    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Function]),
+    (
+        EdgeKind::Instantiates,
+        &[SymbolKind::Class, SymbolKind::Function],
+    ),
 ];
 
 const R_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -81,7 +88,8 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
@@ -93,10 +101,7 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     namespaceless_global_type_lookup: true,
     explicit_member_import: false,
-    constructor_patterns: &[
-        ConstructorPattern::R6DollarNew,
-        ConstructorPattern::S4New,
-    ],
+    constructor_patterns: &[ConstructorPattern::R6DollarNew, ConstructorPattern::S4New],
     class_builder_specs: &[],
     decorator_syntax: None,
     doc_comment_kinds: &["#'"],

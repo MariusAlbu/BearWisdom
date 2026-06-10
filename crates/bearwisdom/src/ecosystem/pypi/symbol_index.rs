@@ -122,8 +122,7 @@ fn collect_assignment_lhs_names(node: &Node, bytes: &[u8], out: &mut Vec<String>
                 out.push(name.to_string());
             }
         }
-        "tuple_pattern" | "list_pattern" | "pattern_list" | "expression_list"
-        | "tuple" => {
+        "tuple_pattern" | "list_pattern" | "pattern_list" | "expression_list" | "tuple" => {
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
                 collect_assignment_lhs_names(&inner, bytes, out);

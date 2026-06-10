@@ -17,5 +17,8 @@ CREATE TABLE orders (
 "#;
     let result = extract(src);
     let table = result.symbols.iter().find(|s| s.name == "orders");
-    assert!(table.is_some(), "expected `orders` table symbol to be extracted");
+    assert!(
+        table.is_some(),
+        "expected `orders` table symbol to be extracted"
+    );
 }

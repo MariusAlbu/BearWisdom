@@ -82,7 +82,9 @@ fn emit_annotation(
 ) {
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -154,7 +156,11 @@ fn extract_first_string_arg(annotation_node: &Node, src: &str) -> Option<String>
 
 fn strip_string(raw: String) -> Option<String> {
     let s = raw.trim_matches('"').trim_matches('\'').to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +210,9 @@ fn extract_cascade_section(
                     if inner.kind() == "identifier" {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::Calls,
@@ -225,7 +233,9 @@ fn extract_cascade_section(
             "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -317,12 +327,12 @@ pub(super) fn push_variable(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +379,9 @@ mod tests {
         let src = "@sealed\n@deprecated\nclass Old {}";
         let refs = type_refs(src);
         assert!(refs.iter().any(|(n, _)| n == "sealed"), "refs: {refs:?}");
-        assert!(refs.iter().any(|(n, _)| n == "deprecated"), "refs: {refs:?}");
+        assert!(
+            refs.iter().any(|(n, _)| n == "deprecated"),
+            "refs: {refs:?}"
+        );
     }
 }
-

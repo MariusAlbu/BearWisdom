@@ -11,7 +11,10 @@ use tree_sitter::{Node, Parser};
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     let mut parser = Parser::new();
-    if parser.set_language(&tree_sitter_swift::LANGUAGE.into()).is_err() {
+    if parser
+        .set_language(&tree_sitter_swift::LANGUAGE.into())
+        .is_err()
+    {
         return Vec::new();
     }
     let Some(tree) = parser.parse(source, None) else {
@@ -97,8 +100,10 @@ mod tests {
     fn swift_multiline_sql_detected() {
         let src = "let q = \"\"\"\nSELECT id FROM users WHERE active = 1\n\"\"\"\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.language_id == "sql"),
-            "expected sql region, got {regions:?}");
+        assert!(
+            regions.iter().any(|r| r.language_id == "sql"),
+            "expected sql region, got {regions:?}"
+        );
     }
 
     #[test]

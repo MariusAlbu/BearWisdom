@@ -37,11 +37,7 @@ use crate::indexer::project_context::ProjectContext;
 /// flow_edges emission.
 ///
 /// Returns the count of routes written to the `routes` table.
-pub fn discover_rails_routes(
-    conn: &Connection,
-    project_root: &Path,
-    ctx: &ProjectContext,
-) -> u32 {
+pub fn discover_rails_routes(conn: &Connection, project_root: &Path, ctx: &ProjectContext) -> u32 {
     if !ctx.has_dependency(ManifestKind::Gemfile, "rails")
         && !ctx.has_dependency(ManifestKind::Gemfile, "railties")
     {
@@ -61,7 +57,9 @@ pub fn discover_rails_routes(
     };
 
     let files: Vec<(i64, String)> = match stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
     {
         Ok(v) => v,
@@ -310,7 +308,10 @@ pub(crate) fn parse_routes_source(source: &str) -> Vec<RouteEntry> {
         // --- bare `do` block (resources ... do, etc.) --------------------------
         // Only push a non-prefix marker if the line opens a block but isn't
         // already handled above as namespace/scope.
-        if re_do.is_match(line_text) && !re_namespace.is_match(line_text) && !re_scope.is_match(line_text) {
+        if re_do.is_match(line_text)
+            && !re_namespace.is_match(line_text)
+            && !re_scope.is_match(line_text)
+        {
             prefix_stack.push((String::new(), false));
             // Fall through — the line may also contain route declarations.
         }
@@ -376,7 +377,9 @@ fn detect_rails_routes(conn: &Connection, project_root: &Path) -> Result<u32> {
         .context("Failed to prepare Rails routes file query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Ruby route files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Ruby route file rows")?;
@@ -490,10 +493,10 @@ pub fn extract_ruby_graphql(
         return Vec::new();
     }
 
-    let re_field = regex::Regex::new(r"^\s*field\s+:(\w+)")
-        .expect("ruby graphql field regex");
-    let re_resolve = regex::Regex::new(r"^\s*def\s+(resolve|query_type|mutation_type|\w+)\s*[\(\n]")
-        .expect("ruby graphql resolve regex");
+    let re_field = regex::Regex::new(r"^\s*field\s+:(\w+)").expect("ruby graphql field regex");
+    let re_resolve =
+        regex::Regex::new(r"^\s*def\s+(resolve|query_type|mutation_type|\w+)\s*[\(\n]")
+            .expect("ruby graphql resolve regex");
     let re_resolver_class = regex::Regex::new(
         r"class\s+\w+\s*<\s*(?:Types::|Resolvers::|Mutations::)?(?:Base)?(?:Resolver|Mutation|Query|Object|Field)\b",
     )

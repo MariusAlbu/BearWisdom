@@ -28,7 +28,10 @@ fn quoted_partial_include_strips_quotes() {
     assert!(
         r.refs.iter().any(|r| r.target_name == "post-card"),
         "quoted partial name should strip quotes; got: {:?}",
-        r.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| r.target_name.as_str())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -39,6 +42,9 @@ fn partial_block_marker_not_emitted_as_partial_import() {
     assert!(
         !r.refs.iter().any(|r| r.target_name == "@partial-block"),
         "@partial-block is a placeholder, not a partial path; got: {:?}",
-        r.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| r.target_name.as_str())
+            .collect::<Vec<_>>()
     );
 }

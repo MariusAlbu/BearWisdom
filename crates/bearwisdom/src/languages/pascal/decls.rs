@@ -26,8 +26,7 @@ pub(super) fn extract_unit(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let name = find_identifier_child(node, src)
-        .unwrap_or_else(|| "unit".to_string());
+    let name = find_identifier_child(node, src).unwrap_or_else(|| "unit".to_string());
     let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
@@ -51,8 +50,7 @@ pub(super) fn extract_program(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let name = find_identifier_child(node, src)
-        .unwrap_or_else(|| "program".to_string());
+    let name = find_identifier_child(node, src).unwrap_or_else(|| "program".to_string());
     let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
@@ -81,8 +79,7 @@ pub(super) fn extract_proc(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = find_proc_name(node, src)
-        .unwrap_or_else(|| "unknown".to_string());
+    let name = find_proc_name(node, src).unwrap_or_else(|| "unknown".to_string());
 
     let sig = first_line_of(node, src);
     let idx = symbols.len();
@@ -158,7 +155,13 @@ pub(super) fn extract_decl_type(
             "type" => {
                 // The `type` child wraps the body expression (declEnum, typeref, etc.)
                 if extract_decl_type_body(
-                    child, src, symbols, refs, parent_index, name.clone(), &node,
+                    child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    name.clone(),
+                    &node,
                 ) {
                     emitted_primary = true;
                 }
@@ -274,7 +277,9 @@ pub(super) fn extract_class(
                         "identifier" => {
                             let parent_name = node_text(tc, src);
                             if !parent_name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: parent_name,
                                     kind: EdgeKind::Inherits,
@@ -283,16 +288,18 @@ pub(super) fn extract_class(
                                     module: None,
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                             break;
                         }
                         "typerefDot" => {
                             let (member, qualifier) = split_dot_node(tc, src);
                             if !member.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: idx,
                                     target_name: member,
                                     kind: EdgeKind::Inherits,
@@ -301,9 +308,9 @@ pub(super) fn extract_class(
                                     module: qualifier,
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                             break;
                         }
@@ -372,8 +379,7 @@ pub(super) fn extract_section(
 
     if has_record {
         // Record type block: emit a Struct symbol for the record itself.
-        let name = find_decl_type_name(node, src)
-            .unwrap_or_else(|| "record".to_string());
+        let name = find_decl_type_name(node, src).unwrap_or_else(|| "record".to_string());
         let sig = first_line_of(node, src);
         let idx = symbols.len();
         symbols.push(make_symbol(
@@ -413,8 +419,7 @@ fn extract_field(
     _refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = find_identifier_child(node, src)
-        .unwrap_or_else(|| "unknown".to_string());
+    let name = find_identifier_child(node, src).unwrap_or_else(|| "unknown".to_string());
     let sig = first_line_of(node, src);
     symbols.push(make_symbol(
         name.clone(),
@@ -444,7 +449,9 @@ fn extract_prop(
     let mut name = None;
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "kProperty" => { saw_keyword = true; }
+            "kProperty" => {
+                saw_keyword = true;
+            }
             "identifier" if saw_keyword && name.is_none() => {
                 name = Some(node_text(child, src));
             }
@@ -494,7 +501,9 @@ pub(super) fn extract_uses(
         if child.kind() == "moduleName" || child.kind() == "identifier" {
             let name = node_text(child, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
@@ -503,9 +512,9 @@ pub(super) fn extract_uses(
                     module: Some(name),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -523,8 +532,7 @@ pub(super) fn extract_var(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = find_identifier_child(node, src)
-        .unwrap_or_else(|| "unknown".to_string());
+    let name = find_identifier_child(node, src).unwrap_or_else(|| "unknown".to_string());
     if name == "unknown" {
         return;
     }
@@ -557,8 +565,7 @@ pub(super) fn extract_const(
     _refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = find_identifier_child(node, src)
-        .unwrap_or_else(|| "unknown".to_string());
+    let name = find_identifier_child(node, src).unwrap_or_else(|| "unknown".to_string());
     if name == "unknown" {
         return;
     }
@@ -572,4 +579,3 @@ pub(super) fn extract_const(
         parent_index,
     ));
 }
-

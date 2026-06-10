@@ -38,11 +38,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let bytes = source.as_bytes();
@@ -96,10 +96,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         line += consumed_lines + skipped;
                         // Advance past `{% endraw %}`: endraw_pos points at
                         // `{`, skip past the closing `%}` of `{% endraw %}`.
-                        let endraw_tag_close =
-                            find_close(bytes, endraw_pos + 2, b'%', b'}')
-                                .map(|c| c + 2)
-                                .unwrap_or(endraw_pos + 2);
+                        let endraw_tag_close = find_close(bytes, endraw_pos + 2, b'%', b'}')
+                            .map(|c| c + 2)
+                            .unwrap_or(endraw_pos + 2);
                         i = endraw_tag_close;
                     } else {
                         line += consumed_lines;
@@ -107,7 +106,15 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     }
                     continue;
                 }
-                handle_directive(body, host_index, line, i as u32, &mut symbols, &mut refs, &file_name);
+                handle_directive(
+                    body,
+                    host_index,
+                    line,
+                    i as u32,
+                    &mut symbols,
+                    &mut refs,
+                    &file_name,
+                );
                 line += consumed_lines;
             }
             i = close + 2;
@@ -123,7 +130,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             };
             if let Some(body) = source.get(body_start..close) {
                 let consumed_lines = body.matches('\n').count() as u32;
-                let trimmed = body.trim().trim_start_matches('-').trim_end_matches('-').trim();
+                let trimmed = body
+                    .trim()
+                    .trim_start_matches('-')
+                    .trim_end_matches('-')
+                    .trim();
                 expr::scan_expression(trimmed, host_index, line, i as u32, &mut refs);
                 line += consumed_lines;
             }
@@ -177,31 +188,46 @@ fn handle_directive(
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
         return;
     }
 
     if let Some(rest) = trimmed.strip_prefix("extends ") {
         if let Some(name) = strip_quotes(rest.trim()) {
-            refs.push(make_imports_ref(host_index, strip_extension(&name), line, byte_offset));
+            refs.push(make_imports_ref(
+                host_index,
+                strip_extension(&name),
+                line,
+                byte_offset,
+            ));
         }
         return;
     }
     if let Some(rest) = trimmed.strip_prefix("include ") {
         if let Some(name) = strip_quotes(rest.trim()) {
-            refs.push(make_imports_ref(host_index, strip_extension(&name), line, byte_offset));
+            refs.push(make_imports_ref(
+                host_index,
+                strip_extension(&name),
+                line,
+                byte_offset,
+            ));
         }
         return;
     }
     if let Some(rest) = trimmed.strip_prefix("import ") {
         let tok = rest.split_whitespace().next().unwrap_or("");
         if let Some(name) = strip_quotes(tok.trim()) {
-            refs.push(make_imports_ref(host_index, strip_extension(&name), line, byte_offset));
+            refs.push(make_imports_ref(
+                host_index,
+                strip_extension(&name),
+                line,
+                byte_offset,
+            ));
         }
         return;
     }
@@ -209,7 +235,12 @@ fn handle_directive(
         // `{% from "lib.j2" import macro_name %}`
         let tok = rest.split_whitespace().next().unwrap_or("");
         if let Some(name) = strip_quotes(tok.trim()) {
-            refs.push(make_imports_ref(host_index, strip_extension(&name), line, byte_offset));
+            refs.push(make_imports_ref(
+                host_index,
+                strip_extension(&name),
+                line,
+                byte_offset,
+            ));
         }
         return;
     }
@@ -285,11 +316,11 @@ fn handle_directive(
                 scope_path: Some(file_name.to_string()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             for param in split_macro_params(after) {
                 if is_valid_jinja_ident(&param) {
                     symbols.push(make_local_var(&param, file_name, host_index, line, trimmed));
@@ -321,11 +352,11 @@ fn make_local_var(
         scope_path: Some(file_name.to_string()),
         parent_index: Some(host_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 /// Locate the position of the top-level ` in ` token in a `for` binding
@@ -401,8 +432,15 @@ fn is_valid_jinja_ident(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-fn make_imports_ref(source_idx: usize, target: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+fn make_imports_ref(
+    source_idx: usize,
+    target: String,
+    line: u32,
+    byte_offset: u32,
+) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -457,8 +495,7 @@ fn find_endraw(bytes: &[u8], from: usize) -> Option<usize> {
 fn strip_quotes(s: &str) -> Option<String> {
     let s = s.trim();
     if s.len() >= 2
-        && (s.starts_with('"') && s.ends_with('"')
-            || s.starts_with('\'') && s.ends_with('\''))
+        && (s.starts_with('"') && s.ends_with('"') || s.starts_with('\'') && s.ends_with('\''))
     {
         Some(s[1..s.len() - 1].to_string())
     } else {

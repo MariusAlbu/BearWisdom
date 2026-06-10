@@ -114,7 +114,8 @@ pub fn score_run(task: &BenchmarkTask, result: &RunResult) -> TaskScore {
     let wall_seconds = result.wall_time_ms as f64 / 1000.0;
     let latency_score = 30.0 / (30.0 + wall_seconds);
 
-    let composite = 0.25 * precision + 0.25 * recall + 0.15 * f1 + 0.20 * efficiency + 0.15 * latency_score;
+    let composite =
+        0.25 * precision + 0.25 * recall + 0.15 * f1 + 0.20 * efficiency + 0.15 * latency_score;
 
     TaskScore {
         task_id: task.id.clone(),

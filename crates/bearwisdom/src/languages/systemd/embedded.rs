@@ -3,8 +3,13 @@
 use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 
 const EXEC_KEYS: &[&str] = &[
-    "ExecStart", "ExecStartPre", "ExecStartPost",
-    "ExecStop", "ExecStopPost", "ExecReload", "ExecCondition",
+    "ExecStart",
+    "ExecStartPre",
+    "ExecStartPost",
+    "ExecStop",
+    "ExecStopPost",
+    "ExecReload",
+    "ExecCondition",
 ];
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
@@ -13,7 +18,9 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
         let trimmed = line.trim_start();
         for key in EXEC_KEYS {
             if let Some(rest) = trimmed.strip_prefix(&format!("{key}=")) {
-                let cmd = rest.trim_start_matches(|c: char| matches!(c, '-' | '+' | '!' | ':' | '@')).trim();
+                let cmd = rest
+                    .trim_start_matches(|c: char| matches!(c, '-' | '+' | '!' | ':' | '@'))
+                    .trim();
                 if !cmd.is_empty() {
                     regions.push(EmbeddedRegion {
                         language_id: "bash".into(),

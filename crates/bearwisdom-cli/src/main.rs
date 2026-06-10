@@ -20,14 +20,11 @@ static ALLOCATOR: bearwisdom::alloc_probe::ProbingAllocator =
 // =============================================================================
 
 use std::path::{Path, PathBuf};
-use std::sync::{
-    atomic::AtomicBool,
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
 use bearwisdom::db::Database;
+use clap::{Parser, Subcommand};
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -370,7 +367,6 @@ enum Commands {
         batch_size: usize,
     },
 
-
     /// Import a SCIP index to upgrade edge confidence (from rust-analyzer, scip-typescript, etc.).
     ImportScip {
         /// Absolute path to the project root.
@@ -589,8 +585,7 @@ fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
         )
         .init();
 
@@ -620,23 +615,29 @@ fn main() {
 
 fn run(command: Commands, full: bool) -> Result<String> {
     match command {
-        Commands::Open { path, no_embed, force } => cmd_open(&path, no_embed, force),
+        Commands::Open {
+            path,
+            no_embed,
+            force,
+        } => cmd_open(&path, no_embed, force),
         Commands::Status { path } => cmd_status(&path),
         Commands::Watch { path, debounce_ms } => cmd_watch(&path, debounce_ms),
 
         Commands::SearchSymbols { path, query, limit } => {
             cmd_search_symbols(&path, &query, limit, full)
         }
-        Commands::FuzzyFiles { path, pattern, limit } => {
-            cmd_fuzzy_files(&path, &pattern, limit)
-        }
-        Commands::FuzzySymbols { path, pattern, limit } => {
-            cmd_fuzzy_symbols(&path, &pattern, limit)
-        }
+        Commands::FuzzyFiles {
+            path,
+            pattern,
+            limit,
+        } => cmd_fuzzy_files(&path, &pattern, limit),
+        Commands::FuzzySymbols {
+            path,
+            pattern,
+            limit,
+        } => cmd_fuzzy_symbols(&path, &pattern, limit),
 
-        Commands::SearchContent { path, query, limit } => {
-            cmd_search_content(&path, &query, limit)
-        }
+        Commands::SearchContent { path, query, limit } => cmd_search_content(&path, &query, limit),
         Commands::Grep {
             path,
             pattern,
@@ -645,7 +646,16 @@ fn run(command: Commands, full: bool) -> Result<String> {
             whole_word,
             lang,
             limit,
-        } => cmd_grep(&path, &pattern, regex, !case_insensitive, whole_word, lang.as_deref(), limit, full),
+        } => cmd_grep(
+            &path,
+            &pattern,
+            regex,
+            !case_insensitive,
+            whole_word,
+            lang.as_deref(),
+            limit,
+            full,
+        ),
         Commands::Hybrid { path, query, limit } => cmd_hybrid(&path, &query, limit),
 
         Commands::FileSymbols { path, file, mode } => {
@@ -653,50 +663,101 @@ fn run(command: Commands, full: bool) -> Result<String> {
             cmd_file_symbols(&path, &file, effective_mode)
         }
         Commands::Definition { path, symbol } => cmd_definition(&path, &symbol),
-        Commands::References { path, symbol, limit } => cmd_references(&path, &symbol, limit),
+        Commands::References {
+            path,
+            symbol,
+            limit,
+        } => cmd_references(&path, &symbol, limit),
 
-        Commands::Diagnostics { path, file, threshold } => cmd_diagnostics(&path, &file, threshold),
-        Commands::DeadCode { path, scope, visibility, include_tests, limit } => {
-            cmd_dead_code(&path, scope.as_deref(), &visibility, include_tests, limit)
-        }
+        Commands::Diagnostics {
+            path,
+            file,
+            threshold,
+        } => cmd_diagnostics(&path, &file, threshold),
+        Commands::DeadCode {
+            path,
+            scope,
+            visibility,
+            include_tests,
+            limit,
+        } => cmd_dead_code(&path, scope.as_deref(), &visibility, include_tests, limit),
         Commands::EntryPoints { path } => cmd_entry_points(&path),
-        Commands::CompleteAt { path, file, line, col, prefix } => {
-            cmd_complete_at(&path, &file, line, col, &prefix, full)
-        }
+        Commands::CompleteAt {
+            path,
+            file,
+            line,
+            col,
+            prefix,
+        } => cmd_complete_at(&path, &file, line, col, &prefix, full),
 
         Commands::Architecture { path } => cmd_architecture(&path),
-        Commands::SmartContext { path, task, budget, depth } => {
-            cmd_smart_context(&path, &task, budget, depth)
-        }
-        Commands::BlastRadius { path, symbol, depth } => cmd_blast_radius(&path, &symbol, depth),
-        Commands::CallsIn { path, symbol, limit } => cmd_calls_in(&path, &symbol, limit),
-        Commands::CallsOut { path, symbol, limit } => cmd_calls_out(&path, &symbol, limit),
+        Commands::SmartContext {
+            path,
+            task,
+            budget,
+            depth,
+        } => cmd_smart_context(&path, &task, budget, depth),
+        Commands::BlastRadius {
+            path,
+            symbol,
+            depth,
+        } => cmd_blast_radius(&path, &symbol, depth),
+        Commands::CallsIn {
+            path,
+            symbol,
+            limit,
+        } => cmd_calls_in(&path, &symbol, limit),
+        Commands::CallsOut {
+            path,
+            symbol,
+            limit,
+        } => cmd_calls_out(&path, &symbol, limit),
         Commands::SymbolInfo { path, symbol } => cmd_symbol_info(&path, &symbol, full),
-        Commands::Investigate { path, symbol, caller_limit, callee_limit, blast_depth } => {
-            cmd_investigate(&path, &symbol, caller_limit, callee_limit, blast_depth)
-        }
+        Commands::Investigate {
+            path,
+            symbol,
+            caller_limit,
+            callee_limit,
+            blast_depth,
+        } => cmd_investigate(&path, &symbol, caller_limit, callee_limit, blast_depth),
 
         Commands::Concepts { path } => cmd_concepts(&path),
         Commands::DiscoverConcepts { path } => cmd_discover_concepts(&path),
-        Commands::ConceptMembers { path, concept, limit } => {
-            cmd_concept_members(&path, &concept, limit)
-        }
+        Commands::ConceptMembers {
+            path,
+            concept,
+            limit,
+        } => cmd_concept_members(&path, &concept, limit),
 
         Commands::Embed { path, batch_size } => cmd_embed(&path, batch_size),
         Commands::ImportScip { path, scip } => cmd_import_scip(&path, &scip),
 
-        Commands::ExportGraph { path, filter, max_nodes } => {
-            cmd_export_graph(&path, filter.as_deref(), max_nodes)
-        }
-        Commands::TraceFlow { path, file, line, depth, direction } => {
-            cmd_trace_flow(&path, &file, line, depth, &direction)
-        }
-        Commands::FullTrace { path, symbol, depth, max_traces } => {
-            cmd_full_trace(&path, symbol.as_deref(), depth, max_traces)
-        }
+        Commands::ExportGraph {
+            path,
+            filter,
+            max_nodes,
+        } => cmd_export_graph(&path, filter.as_deref(), max_nodes),
+        Commands::TraceFlow {
+            path,
+            file,
+            line,
+            depth,
+            direction,
+        } => cmd_trace_flow(&path, &file, line, depth, &direction),
+        Commands::FullTrace {
+            path,
+            symbol,
+            depth,
+            max_traces,
+        } => cmd_full_trace(&path, symbol.as_deref(), depth, max_traces),
         Commands::Reindex { path, force } => cmd_reindex(&path, force),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
-        Commands::QualityCheck { baseline, only_projects, reindex, recapture } => {
+        Commands::QualityCheck {
+            baseline,
+            only_projects,
+            reindex,
+            recapture,
+        } => {
             if recapture {
                 cmd_quality_recapture(&baseline, &only_projects)
             } else {
@@ -704,9 +765,12 @@ fn run(command: Commands, full: bool) -> Result<String> {
             }
         }
 
-        Commands::Hierarchy { path, level, scope, max_nodes } => {
-            cmd_hierarchy(&path, &level, scope.as_deref(), max_nodes)
-        }
+        Commands::Hierarchy {
+            path,
+            level,
+            scope,
+            max_nodes,
+        } => cmd_hierarchy(&path, &level, scope.as_deref(), max_nodes),
 
         Commands::Packages { path } => cmd_packages(&path),
         Commands::Workspace { path } => cmd_workspace(&path),
@@ -715,9 +779,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::LowConfidenceEdges { path, threshold } => {
             cmd_low_confidence_edges(&path, threshold)
         }
-        Commands::UnresolvedClassify { path, samples } => {
-            cmd_unresolved_classify(&path, samples)
-        }
+        Commands::UnresolvedClassify { path, samples } => cmd_unresolved_classify(&path, samples),
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
         Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
     }
@@ -835,25 +897,26 @@ fn pick_index_mode(db: &Database, force: bool) -> IndexMode {
 /// Execute the selected index mode and return IndexStats regardless of path.
 /// GitIncremental returns IncrementalStats which is mapped into IndexStats
 /// shape by re-querying the DB so the two call sites stay unified.
-fn run_index(
-    db: &mut Database,
-    root: &Path,
-    mode: IndexMode,
-) -> Result<bearwisdom::IndexStats> {
+fn run_index(db: &mut Database, root: &Path, mode: IndexMode) -> Result<bearwisdom::IndexStats> {
     match mode {
         IndexMode::Full => {
             eprintln!("Running full index for {} ...", root.display());
-            bearwisdom::full_index(db, root, None, None, None)
-                .context("Full index failed")
+            bearwisdom::full_index(db, root, None, None, None).context("Full index failed")
         }
         IndexMode::GitIncremental => {
-            eprintln!("Running git-aware incremental reindex for {} ...", root.display());
-            let inc = bearwisdom::git_reindex(db, root, None)
-                .context("Git-aware reindex failed")?;
+            eprintln!(
+                "Running git-aware incremental reindex for {} ...",
+                root.display()
+            );
+            let inc =
+                bearwisdom::git_reindex(db, root, None).context("Git-aware reindex failed")?;
             report_incremental(db, &inc)
         }
         IndexMode::HashIncremental => {
-            eprintln!("Running hash-diff incremental reindex for {} ...", root.display());
+            eprintln!(
+                "Running hash-diff incremental reindex for {} ...",
+                root.display()
+            );
             let inc = bearwisdom::incremental_index(db, root, None)
                 .context("Hash-diff reindex failed")?;
             report_incremental(db, &inc)
@@ -870,11 +933,14 @@ fn report_incremental(
 ) -> Result<bearwisdom::IndexStats> {
     eprintln!(
         "Incremental: +{} added, ~{} modified, -{} deleted, {} unchanged in {:.2}s",
-        inc.files_added, inc.files_modified, inc.files_deleted, inc.files_unchanged,
+        inc.files_added,
+        inc.files_modified,
+        inc.files_deleted,
+        inc.files_unchanged,
         inc.duration_ms as f64 / 1000.0,
     );
-    let mut stats = bearwisdom::index_stats(db)
-        .map_err(|e| anyhow::anyhow!("index_stats failed: {e}"))?;
+    let mut stats =
+        bearwisdom::index_stats(db).map_err(|e| anyhow::anyhow!("index_stats failed: {e}"))?;
     stats.duration_ms = inc.duration_ms;
     Ok(stats)
 }
@@ -886,8 +952,9 @@ fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
     let db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
-    let model_dir = resolve_model_dir(&root)
-        .ok_or_else(|| anyhow::anyhow!("No CodeRankEmbed model found. Run scripts/download-model.py first."))?;
+    let model_dir = resolve_model_dir(&root).ok_or_else(|| {
+        anyhow::anyhow!("No CodeRankEmbed model found. Run scripts/download-model.py first.")
+    })?;
 
     eprintln!("Loading model from {} ...", model_dir.display());
     let mut embedder = bearwisdom::search::embedder::Embedder::new(model_dir);
@@ -913,8 +980,7 @@ fn cmd_import_scip(project_path: &str, scip_path: &str) -> Result<String> {
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let scip = PathBuf::from(scip_path);
-    let stats = bearwisdom::import_scip(&db, &scip, &root)
-        .context("SCIP import failed")?;
+    let stats = bearwisdom::import_scip(&db, &scip, &root).context("SCIP import failed")?;
 
     eprintln!(
         "SCIP import: {} docs, {} matched, {} edges created, {} upgraded, {} unmatched",
@@ -952,7 +1018,8 @@ fn cmd_status(project_path: &str) -> Result<String> {
 fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
     use std::time::Duration;
 
-    let root = PathBuf::from(project_path).canonicalize()
+    let root = PathBuf::from(project_path)
+        .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(project_path));
     let db_path = resolve_db_path(&root)?;
 
@@ -1009,7 +1076,11 @@ fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
 
 fn cmd_search_symbols(project_path: &str, query: &str, limit: usize, full: bool) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let opts = if full { bearwisdom::query::QueryOptions::full() } else { bearwisdom::query::QueryOptions::default() };
+    let opts = if full {
+        bearwisdom::query::QueryOptions::full()
+    } else {
+        bearwisdom::query::QueryOptions::default()
+    };
     let results = bearwisdom::query::search::search_symbols(&db, query, limit, &opts)
         .context("search_symbols failed")?;
     ok_json(results)
@@ -1070,9 +1141,8 @@ fn cmd_grep(
         context_lines: 0,
     };
 
-    let mut results =
-        bearwisdom::search::grep::grep_search(&root, pattern, &options, &cancelled)
-            .context("grep_search failed")?;
+    let mut results = bearwisdom::search::grep::grep_search(&root, pattern, &options, &cancelled)
+        .context("grep_search failed")?;
     if !full {
         bearwisdom::search::grep::truncate_matches(&mut results, 120);
     }
@@ -1092,8 +1162,9 @@ fn cmd_hybrid(project_path: &str, query: &str, limit: usize) -> Result<String> {
     );
 
     let scope = bearwisdom::search::scope::SearchScope::default();
-    let results = bearwisdom::search::hybrid::hybrid_search(&db, &mut embedder, query, &scope, limit)
-        .context("hybrid_search failed")?;
+    let results =
+        bearwisdom::search::hybrid::hybrid_search(&db, &mut embedder, query, &scope, limit)
+            .context("hybrid_search failed")?;
     ok_json(results)
 }
 
@@ -1161,10 +1232,18 @@ fn cmd_entry_points(project_path: &str) -> Result<String> {
     ok_json(result)
 }
 
-fn cmd_complete_at(project_path: &str, file_path: &str, line: u32, col: u32, prefix: &str, full: bool) -> Result<String> {
+fn cmd_complete_at(
+    project_path: &str,
+    file_path: &str,
+    line: u32,
+    col: u32,
+    prefix: &str,
+    full: bool,
+) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let results = bearwisdom::query::completion::complete_at(&db, file_path, line, col, prefix, full)
-        .context("completion failed")?;
+    let results =
+        bearwisdom::query::completion::complete_at(&db, file_path, line, col, prefix, full)
+            .context("completion failed")?;
     ok_json(results)
 }
 
@@ -1181,8 +1260,8 @@ fn cmd_smart_context(project_path: &str, task: &str, budget: u32, depth: u32) ->
 
 fn cmd_architecture(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let overview = bearwisdom::query::architecture::get_overview(&db)
-        .context("get_overview failed")?;
+    let overview =
+        bearwisdom::query::architecture::get_overview(&db).context("get_overview failed")?;
     ok_json(overview)
 }
 
@@ -1209,7 +1288,11 @@ fn cmd_calls_out(project_path: &str, symbol: &str, limit: usize) -> Result<Strin
 
 fn cmd_symbol_info(project_path: &str, symbol: &str, full: bool) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let opts = if full { bearwisdom::query::QueryOptions::full() } else { bearwisdom::query::QueryOptions::default() };
+    let opts = if full {
+        bearwisdom::query::QueryOptions::full()
+    } else {
+        bearwisdom::query::QueryOptions::default()
+    };
     let results = bearwisdom::query::symbol_info::symbol_info(&db, symbol, &opts)
         .context("symbol_info failed")?;
     // Return first match or null.
@@ -1244,15 +1327,15 @@ fn cmd_investigate(
 
 fn cmd_concepts(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let concepts = bearwisdom::query::concepts::list_concepts(&db)
-        .context("list_concepts failed")?;
+    let concepts =
+        bearwisdom::query::concepts::list_concepts(&db).context("list_concepts failed")?;
     ok_json(concepts)
 }
 
 fn cmd_discover_concepts(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let created = bearwisdom::query::concepts::discover_concepts(&db)
-        .context("discover_concepts failed")?;
+    let created =
+        bearwisdom::query::concepts::discover_concepts(&db).context("discover_concepts failed")?;
     if let Err(e) = bearwisdom::query::concepts::auto_assign_concepts(&db) {
         eprintln!("Warning: auto_assign_concepts failed: {e}");
     }
@@ -1270,18 +1353,20 @@ fn cmd_concept_members(project_path: &str, concept: &str, limit: usize) -> Resul
 // Graph / Flow
 // ---------------------------------------------------------------------------
 
-fn cmd_export_graph(
-    project_path: &str,
-    filter: Option<&str>,
-    max_nodes: usize,
-) -> Result<String> {
+fn cmd_export_graph(project_path: &str, filter: Option<&str>, max_nodes: usize) -> Result<String> {
     let db = open_existing_db(project_path)?;
     let graph = bearwisdom::query::subgraph::export_graph(&db, filter, max_nodes)
         .context("export_graph failed")?;
     ok_json(graph)
 }
 
-fn cmd_trace_flow(project_path: &str, file: &str, line: u32, depth: u32, direction: &str) -> Result<String> {
+fn cmd_trace_flow(
+    project_path: &str,
+    file: &str,
+    line: u32,
+    depth: u32,
+    direction: &str,
+) -> Result<String> {
     let db = open_existing_db(project_path)?;
     match direction {
         "backward" | "reverse" => {
@@ -1302,7 +1387,12 @@ fn cmd_trace_flow(project_path: &str, file: &str, line: u32, depth: u32, directi
     }
 }
 
-fn cmd_full_trace(project_path: &str, symbol: Option<&str>, depth: u32, max_traces: usize) -> Result<String> {
+fn cmd_full_trace(
+    project_path: &str,
+    symbol: Option<&str>,
+    depth: u32,
+    max_traces: usize,
+) -> Result<String> {
     let db = open_existing_db(project_path)?;
     let result = match symbol {
         Some(sym) => bearwisdom::query::full_trace::trace_from_symbol(&db, sym, depth)
@@ -1360,7 +1450,9 @@ fn current_working_set_mb() -> u64 {
 }
 
 #[cfg(not(windows))]
-fn current_working_set_mb() -> u64 { 0 }
+fn current_working_set_mb() -> u64 {
+    0
+}
 
 fn is_ghost_project(root: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -1406,7 +1498,10 @@ fn resolve_model_dir(project_root: &Path) -> Option<PathBuf> {
         return Some(workspace_model);
     }
     if let Some(home) = dirs::home_dir() {
-        let home_model = home.join(".bearwisdom").join("models").join("CodeRankEmbed");
+        let home_model = home
+            .join(".bearwisdom")
+            .join("models")
+            .join("CodeRankEmbed");
         if home_model.join("tokenizer.json").exists() {
             return Some(home_model);
         }
@@ -1438,10 +1533,16 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
         .collect();
 
     let elapsed_ms = start.elapsed().as_millis() as u64;
-    eprintln!("Done in {:.2}s ({} mode): {} files, {} symbols, {} edges, {} routes, {} flow_edges",
-        elapsed_ms as f64 / 1000.0, mode.label(),
-        stats.file_count, stats.symbol_count, stats.edge_count,
-        stats.route_count, stats.flow_edge_count);
+    eprintln!(
+        "Done in {:.2}s ({} mode): {} files, {} symbols, {} edges, {} routes, {} flow_edges",
+        elapsed_ms as f64 / 1000.0,
+        mode.label(),
+        stats.file_count,
+        stats.symbol_count,
+        stats.edge_count,
+        stats.route_count,
+        stats.flow_edge_count
+    );
 
     ok_json(serde_json::json!({
         "project": root.display().to_string(),
@@ -1457,7 +1558,6 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
         "flow_edge_types": flow_edge_types,
     }))
 }
-
 
 // ---------------------------------------------------------------------------
 // Quality check
@@ -1521,8 +1621,8 @@ fn cmd_quality_check(
                 .with_context(|| format!("Index failed for {name}"))?;
         }
 
-        let db = Database::open(&db_path)
-            .with_context(|| format!("Failed to open DB for {name}"))?;
+        let db =
+            Database::open(&db_path).with_context(|| format!("Failed to open DB for {name}"))?;
 
         // Read current counts via core library.
         let stats = bearwisdom::index_stats(&db)?;
@@ -1532,8 +1632,7 @@ fn cmd_quality_check(
         let flow_edges = stats.flow_edge_count as i64;
         let internal_unresolved = stats.unresolved_ref_count as i64;
         let unresolved_external = stats.unresolved_ref_count_external as i64;
-        let unresolved_flows: i64 =
-            bearwisdom::unresolved_flow_count(&db)? as i64;
+        let unresolved_flows: i64 = bearwisdom::unresolved_flow_count(&db)? as i64;
 
         // Internal-edges count + per-(language, kind) breakdown come from
         // the shared library helper so quality-check and recapture report
@@ -1613,15 +1712,13 @@ fn cmd_quality_check(
                         "min_flow_edges" => flow_edges,
                         k if k.starts_with("min_") && k.ends_with("_edges") => {
                             let edge_type = &k[4..k.len() - 6]; // strip min_ and _edges
-                            bearwisdom::flow_edge_count_by_type(&db, edge_type)
-                                .unwrap_or(0) as i64
+                            bearwisdom::flow_edge_count_by_type(&db, edge_type).unwrap_or(0) as i64
                         }
                         _ => continue,
                     };
                     if current_val < min_val {
-                        proj_regressions.push(format!(
-                            "{key}: expected >={min_val}, got {current_val}"
-                        ));
+                        proj_regressions
+                            .push(format!("{key}: expected >={min_val}, got {current_val}"));
                     }
                 }
             }
@@ -1695,10 +1792,7 @@ fn cmd_quality_check(
 /// and wiping entries silently would hide that intent. Assertion thresholds
 /// are auto-updated to the new captured values so future runs compare
 /// apples-to-apples.
-fn cmd_quality_recapture(
-    baseline_path: &str,
-    only_projects: &[String],
-) -> Result<String> {
+fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Result<String> {
     let baseline_file = PathBuf::from(baseline_path);
     let content = std::fs::read_to_string(&baseline_file)
         .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
@@ -1747,8 +1841,8 @@ fn cmd_quality_recapture(
 
         eprintln!("Reindexing...");
         let db_path = resolve_db_path(&root)?;
-        let mut db = Database::open(&db_path)
-            .with_context(|| format!("Failed to open DB for {name}"))?;
+        let mut db =
+            Database::open(&db_path).with_context(|| format!("Failed to open DB for {name}"))?;
 
         // Capture performance around the actual full_index call so the
         // baseline catches indexing perf regressions. `index_duration_ms`
@@ -1824,9 +1918,11 @@ fn cmd_quality_recapture(
         // quality-check runs compare to the NEW floor, not the old one.
         // Adds `min_resolution_rate` if absent (integer floor of current
         // rate — gives a small headroom against decimal jitter).
-        let assertions = updated
-            .as_object_mut()
-            .and_then(|o| o.entry("assertions".to_string()).or_insert_with(|| serde_json::json!({})).as_object_mut());
+        let assertions = updated.as_object_mut().and_then(|o| {
+            o.entry("assertions".to_string())
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+        });
         if let Some(assertions) = assertions {
             let existing_keys: Vec<String> = assertions.keys().cloned().collect();
             for key in existing_keys {
@@ -1903,13 +1999,10 @@ fn cmd_quality_recapture(
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = if m <= 2 { y + 1 } else { y };
-    baseline["captured_at"] = serde_json::json!(format!(
-        "{:04}-{:02}-{:02}T00:00:00Z",
-        year, m, d
-    ));
+    baseline["captured_at"] = serde_json::json!(format!("{:04}-{:02}-{:02}T00:00:00Z", year, m, d));
 
-    let serialized = serde_json::to_string_pretty(&baseline)
-        .context("Failed to serialize baseline JSON")?;
+    let serialized =
+        serde_json::to_string_pretty(&baseline).context("Failed to serialize baseline JSON")?;
     std::fs::write(&baseline_file, serialized)
         .with_context(|| format!("Failed to write baseline: {}", baseline_file.display()))?;
 
@@ -1947,7 +2040,9 @@ fn cmd_coverage(project: &str, lang_filter: Option<&str>, _top: usize) -> Result
     };
 
     if filtered.is_empty() {
-        return ok_json(serde_json::json!({"languages": [], "message": "No languages with grammars found"}));
+        return ok_json(
+            serde_json::json!({"languages": [], "message": "No languages with grammars found"}),
+        );
     }
 
     let mut summaries = Vec::new();
@@ -2033,16 +2128,16 @@ fn cmd_workspace_graph(project_path: &str) -> Result<String> {
 /// Low-confidence edge report — aggregated by resolver strategy and kind.
 fn cmd_low_confidence_edges(project_path: &str, threshold: f64) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let report = bearwisdom::low_confidence_edges(&db, threshold)
-        .context("low_confidence_edges failed")?;
+    let report =
+        bearwisdom::low_confidence_edges(&db, threshold).context("low_confidence_edges failed")?;
     ok_json(report)
 }
 
 /// Architectural classification of unresolved references.
 fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let report = bearwisdom::classify_unresolved(&db, samples)
-        .context("classify_unresolved failed")?;
+    let report =
+        bearwisdom::classify_unresolved(&db, samples).context("classify_unresolved failed")?;
     ok_json(report)
 }
 
@@ -2059,17 +2154,19 @@ fn cmd_flow_diagnostics(project_path: &str) -> Result<String> {
 }
 
 fn cmd_resolution_gate(project_path: &str) -> Result<String> {
-    use bearwisdom::query::dead_code::{DeadCodeOptions, find_dead_code};
+    use bearwisdom::query::dead_code::{find_dead_code, DeadCodeOptions};
     let db = open_existing_db(project_path)?;
-    let breakdown = bearwisdom::resolution_breakdown(&db)
-        .context("resolution_breakdown failed")?;
+    let breakdown = bearwisdom::resolution_breakdown(&db).context("resolution_breakdown failed")?;
     // Dead-code report is the carrier for `ResolutionHealth.trust_tier` and
     // is computed off the same `CODE_REF_FILTER`-aware metric as the
     // breakdown, so the two sides agree on the rate.
-    let dead = find_dead_code(&db, &DeadCodeOptions {
-        max_results: 0,    // we want the health summary, not the candidate list
-        ..Default::default()
-    })
+    let dead = find_dead_code(
+        &db,
+        &DeadCodeOptions {
+            max_results: 0, // we want the health summary, not the candidate list
+            ..Default::default()
+        },
+    )
     .context("find_dead_code failed")?;
     let payload = serde_json::json!({
         "breakdown": breakdown,

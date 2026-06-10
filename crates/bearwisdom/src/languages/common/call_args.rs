@@ -91,9 +91,7 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         }
         "identifier" => CallArg::Ident(node_text(*node, src)),
         "number" => CallArg::Literal(node_text(*node, src)),
-        "true" | "false" | "null" | "undefined" => {
-            CallArg::Literal(node.kind().to_string())
-        }
+        "true" | "false" | "null" | "undefined" => CallArg::Literal(node.kind().to_string()),
         "object" => {
             let pairs = extract_object_property_pairs(node, src);
             if pairs.is_empty() {
@@ -135,7 +133,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .child_by_field_name("value")
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Await { expr: Box::new(inner) }
+            CallArg::Await {
+                expr: Box::new(inner),
+            }
         }
         "spread_element" => {
             // `...expr` — recurse on the spread operand.
@@ -143,7 +143,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
         "subscript_expression" => {
             // `container[index]` — recurse on both sides.
@@ -184,7 +186,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // lambda's own parameter names so the chain walker can type them from
         // the higher-order method's callback-parameter signature.
         "arrow_function" | "function_expression" | "function_declaration" | "function" => {
-            CallArg::Lambda { params: lambda_param_names(node, src) }
+            CallArg::Lambda {
+                params: lambda_param_names(node, src),
+            }
         }
         _ => CallArg::Other,
     }
@@ -235,7 +239,9 @@ pub fn replace_template_substitutions(raw: &str) -> String {
                     '{' => depth += 1,
                     '}' => {
                         depth -= 1;
-                        if depth == 0 { break; }
+                        if depth == 0 {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -257,16 +263,15 @@ pub fn replace_template_substitutions(raw: &str) -> String {
 /// without interpolation; identifiers, function expressions, member
 /// accesses, and computed values all leave the slot `None`. Computed keys
 /// (`{ [dyn]: v }`) and spread elements (`{ ...rest }`) are skipped.
-fn extract_object_property_pairs(
-    object_node: &Node,
-    src: &[u8],
-) -> Vec<(String, Option<String>)> {
+fn extract_object_property_pairs(object_node: &Node, src: &[u8]) -> Vec<(String, Option<String>)> {
     let mut pairs = Vec::new();
     let mut cursor = object_node.walk();
     for child in object_node.named_children(&mut cursor) {
         match child.kind() {
             "pair" => {
-                let Some(key_node) = child.child_by_field_name("key") else { continue; };
+                let Some(key_node) = child.child_by_field_name("key") else {
+                    continue;
+                };
                 let name = match key_node.kind() {
                     "property_identifier" | "identifier" => node_text(key_node, src),
                     "string" => node_text(key_node, src)
@@ -278,8 +283,9 @@ fn extract_object_property_pairs(
                 if name.is_empty() {
                     continue;
                 }
-                let value = child.child_by_field_name("value").and_then(|v| {
-                    match v.kind() {
+                let value = child
+                    .child_by_field_name("value")
+                    .and_then(|v| match v.kind() {
                         "string" => Some(
                             node_text(v, src)
                                 .trim_start_matches(['"', '\'', '`'])
@@ -299,8 +305,7 @@ fn extract_object_property_pairs(
                             }
                         }
                         _ => None,
-                    }
-                });
+                    });
                 pairs.push((name, value));
             }
             "shorthand_property_identifier" | "property_identifier" => {

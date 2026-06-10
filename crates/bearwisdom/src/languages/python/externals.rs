@@ -37,10 +37,7 @@ fn module_is_external(
 ) -> Option<String> {
     let root = module.split('.').next().unwrap_or(module);
     if let Some(ctx) = project_ctx {
-        if let Some(manifest) = ctx
-            .manifests_for(pkg_id)
-            .get(&ManifestKind::PyProject)
-        {
+        if let Some(manifest) = ctx.manifests_for(pkg_id).get(&ManifestKind::PyProject) {
             if manifest.dependencies.contains(root)
                 || manifest.dependencies.contains(&root.replace('_', "-"))
             {

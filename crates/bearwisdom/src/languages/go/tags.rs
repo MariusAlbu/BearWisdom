@@ -87,10 +87,7 @@ pub(super) fn parse_struct_tags(raw: &str) -> Vec<(String, String)> {
 ///
 /// Example: `[tags: json="name" db="user_name" validate="required"]`
 pub(super) fn format_tags(tags: &[(String, String)]) -> String {
-    let pairs: Vec<String> = tags
-        .iter()
-        .map(|(k, v)| format!("{k}=\"{v}\""))
-        .collect();
+    let pairs: Vec<String> = tags.iter().map(|(k, v)| format!("{k}=\"{v}\"")).collect();
     format!("[tags: {}]", pairs.join(" "))
 }
 
@@ -121,7 +118,10 @@ mod tests {
     fn parse_tag_with_options() {
         // json:"email,omitempty" — the comma-separated options are part of the value
         let tags = parse_struct_tags(r#"`json:"email,omitempty"`"#);
-        assert_eq!(tags, vec![("json".to_string(), "email,omitempty".to_string())]);
+        assert_eq!(
+            tags,
+            vec![("json".to_string(), "email,omitempty".to_string())]
+        );
     }
 
     #[test]

@@ -2,19 +2,11 @@
 // Builtins and locals.scm content for `puppet` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "and",
-    "class",
-    "define",
-    "function",
-    "in",
-    "inherits",
-    "node",
-    "or",
-    "tag",
-    "type",
+    "and", "class", "define", "function", "in", "inherits", "node", "or", "tag", "type",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 \n\
 [\n\
   (block)\n\
@@ -60,4 +52,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
   [(identifier) (class_identifier)] @definition.type)\n\
 \n\
 (assignment . (variable) @definition.var)\n\
-");
+",
+);

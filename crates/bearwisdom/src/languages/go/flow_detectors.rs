@@ -59,7 +59,7 @@ pub(crate) fn detect_go_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url_arg),
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -78,7 +78,7 @@ pub(crate) fn detect_go_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url),
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -97,7 +97,7 @@ pub(crate) fn detect_go_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url),
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -319,10 +319,7 @@ pub(crate) fn detect_go_grpc_chain_emission(
     // either a `Client`-suffixed type identifier or a camelCase local
     // variable (`client`, `userClient`). Rejects single-segment-rooted
     // package calls.
-    if segs.len() == 2
-        && !root.ends_with("Client")
-        && !is_camel_case_local(root)
-    {
+    if segs.len() == 2 && !root.ends_with("Client") && !is_camel_case_local(root) {
         return None;
     }
 
@@ -408,11 +405,37 @@ fn looks_like_grpc_method_name(name: &str) -> bool {
         return false;
     }
     let prefixes = [
-        "Get", "List", "Create", "Update", "Delete", "Stream", "Watch",
-        "Subscribe", "Send", "Publish", "Search", "Find", "Query", "Mutate",
-        "Push", "Pull", "Insert", "Remove", "Add", "Set", "Fetch", "Run",
-        "Exec", "Process", "Apply", "Validate", "Authenticate", "Authorize",
-        "Sync", "Replicate", "Snapshot",
+        "Get",
+        "List",
+        "Create",
+        "Update",
+        "Delete",
+        "Stream",
+        "Watch",
+        "Subscribe",
+        "Send",
+        "Publish",
+        "Search",
+        "Find",
+        "Query",
+        "Mutate",
+        "Push",
+        "Pull",
+        "Insert",
+        "Remove",
+        "Add",
+        "Set",
+        "Fetch",
+        "Run",
+        "Exec",
+        "Process",
+        "Apply",
+        "Validate",
+        "Authenticate",
+        "Authorize",
+        "Sync",
+        "Replicate",
+        "Snapshot",
     ];
     prefixes.iter().any(|p| name.starts_with(p))
 }
@@ -470,7 +493,7 @@ pub(crate) fn detect_go_mailer_emission(
             name: "go.smtp".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -483,7 +506,7 @@ pub(crate) fn detect_go_mailer_emission(
             name: "go.gomail".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     None
@@ -515,7 +538,7 @@ pub(crate) fn detect_go_bgjob_emission(
         name: format!("go.{}", kind_name),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -545,7 +568,7 @@ pub(crate) fn detect_go_mq_emission(
             name: "go.kafka".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     // NATS — `nc.Publish(subject, data)`. The subject is the first string lit.
@@ -559,7 +582,7 @@ pub(crate) fn detect_go_mq_emission(
             name: subject,
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     None
@@ -632,7 +655,7 @@ pub(crate) fn detect_go_gorilla_ws_consumer(
         .to_string(),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -671,6 +694,6 @@ pub(crate) fn detect_go_uds_emission(
         name: path_arg.to_string(),
         role,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }

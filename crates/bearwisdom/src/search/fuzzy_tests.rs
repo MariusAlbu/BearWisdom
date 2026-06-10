@@ -28,7 +28,12 @@ fn make_db_with_data() -> Database {
         .unwrap();
 
     for (name, qname, kind, line) in [
-        ("fetchCatalog", "CatalogService.fetchCatalog", "function", 10u32),
+        (
+            "fetchCatalog",
+            "CatalogService.fetchCatalog",
+            "function",
+            10u32,
+        ),
         ("CatalogService", "CatalogService", "class", 1),
         ("updateItem", "CatalogService.updateItem", "method", 42),
     ] {
@@ -57,7 +62,10 @@ fn match_files_returns_sorted_results() {
     let idx = FuzzyIndex::from_db(&db).unwrap();
 
     let results = idx.match_files("catalog", 10);
-    assert!(!results.is_empty(), "Expected at least one file match for 'catalog'");
+    assert!(
+        !results.is_empty(),
+        "Expected at least one file match for 'catalog'"
+    );
 
     // The catalog file should appear and score highest.
     assert!(
@@ -114,7 +122,11 @@ fn match_symbols_metadata_populated() {
 
     let first = &results[0];
     match &first.metadata {
-        FuzzyMetadata::Symbol { kind, file_path, line } => {
+        FuzzyMetadata::Symbol {
+            kind,
+            file_path,
+            line,
+        } => {
             assert_eq!(kind, "class");
             assert!(file_path.contains("CatalogService"));
             assert_eq!(*line, 1);

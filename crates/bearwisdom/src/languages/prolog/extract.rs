@@ -28,8 +28,8 @@
 // until a '.' terminator is found.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -44,7 +44,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -95,14 +97,26 @@ pub fn extract(source: &str) -> ExtractionResult {
         if clause_ends(&clause_buf) {
             let clause = clause_buf.trim().to_string();
             clause_buf.clear();
-            process_clause(&clause, clause_start_line, clause_start_byte, &mut symbols, &mut refs);
+            process_clause(
+                &clause,
+                clause_start_line,
+                clause_start_byte,
+                &mut symbols,
+                &mut refs,
+            );
         }
     }
 
     // Handle any unterminated final clause.
     if !clause_buf.is_empty() {
         let clause = clause_buf.trim().to_string();
-        process_clause(&clause, clause_start_line, clause_start_byte, &mut symbols, &mut refs);
+        process_clause(
+            &clause,
+            clause_start_line,
+            clause_start_byte,
+            &mut symbols,
+            &mut refs,
+        );
     }
 
     ExtractionResult::new(symbols, refs, false)
@@ -201,13 +215,12 @@ fn process_directive(
             inner[8..].trim_end_matches(')').to_string()
         } else {
             // Path: strip surrounding quotes if present.
-            inner
-                .trim_matches('\'')
-                .trim_matches('"')
-                .to_string()
+            inner.trim_matches('\'').trim_matches('"').to_string()
         };
         if !module_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: module_name.clone(),
                 kind: EdgeKind::Imports,
@@ -215,10 +228,10 @@ fn process_directive(
                 module: Some(module_name),
                 chain: None,
                 byte_offset,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-    col: 0,
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+                col: 0,
+            });
         }
         return;
     }
@@ -251,7 +264,9 @@ fn process_directive(
             inner.trim_matches('\'').trim_matches('"').to_string()
         };
         if !module_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: module_name.clone(),
                 kind: EdgeKind::Imports,
@@ -259,10 +274,10 @@ fn process_directive(
                 module: Some(module_name),
                 chain: None,
                 byte_offset,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-    col: 0,
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+                col: 0,
+            });
         }
         return;
     }
@@ -320,7 +335,9 @@ fn extract_body_goals(
         if is_prolog_operator(functor) {
             continue;
         }
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: source_idx,
             target_name: functor.to_string(),
             kind: EdgeKind::Calls,
@@ -328,10 +345,10 @@ fn extract_body_goals(
             module: None,
             chain: None,
             byte_offset,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
     }
 }
 
@@ -435,7 +452,13 @@ fn extract_op_name(rest: &str) -> Option<String> {
     let third = third.trim_end_matches(')').trim();
     // List form: `[a, b, c]` — take the first.
     let raw = if let Some(stripped) = third.strip_prefix('[') {
-        stripped.split(',').next().unwrap_or(stripped).trim().trim_end_matches(']').trim()
+        stripped
+            .split(',')
+            .next()
+            .unwrap_or(stripped)
+            .trim()
+            .trim_end_matches(']')
+            .trim()
     } else {
         third
     };
@@ -460,7 +483,11 @@ fn extract_first_arg(rest: &str) -> Option<String> {
         .trim_matches('\'')
         .trim_matches('"')
         .to_string();
-    if arg.is_empty() { None } else { Some(arg) }
+    if arg.is_empty() {
+        None
+    } else {
+        Some(arg)
+    }
 }
 
 /// Split a goal conjunction at top-level ',' and ';'.
@@ -610,9 +637,9 @@ fn make_symbol(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

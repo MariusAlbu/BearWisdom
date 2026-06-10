@@ -19,6 +19,8 @@ pub const BUILTINS: &[&str] = &[
     "type",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(required_parameter (identifier) @local.definition)\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(required_parameter (identifier) @local.definition)\n\
 (optional_parameter (identifier) @local.definition)\n\
-");
+",
+);

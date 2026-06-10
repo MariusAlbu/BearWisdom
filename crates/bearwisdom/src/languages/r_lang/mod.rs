@@ -3,9 +3,9 @@
 //! Grammar: tree-sitter-r (in Cargo.toml).
 //! Extraction covers function assignments, S4/R6 class patterns, library imports, and calls.
 
-pub mod keywords;
 pub mod extract;
 pub mod flow;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -32,11 +32,17 @@ mod flow_tests;
 pub struct RLangPlugin;
 
 impl LanguagePlugin for RLangPlugin {
-    fn id(&self) -> &str { "r" }
+    fn id(&self) -> &str {
+        "r"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["r"] }
+    fn language_ids(&self) -> &[&str] {
+        &["r"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".R", ".r", ".Rmd"] }
+    fn extensions(&self) -> &[&str] {
+        &[".R", ".r", ".Rmd"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_r::LANGUAGE.into())
@@ -56,16 +62,11 @@ impl LanguagePlugin for RLangPlugin {
         // ~60% of binary_operator nodes are assignments, which gives reasonable coverage.
         // `call` is excluded: only class/method/test calls produce symbols (~3% match rate),
         // which would drag the aggregate down without reflecting real extraction quality.
-        &[
-            "binary_operator",
-        ]
+        &["binary_operator"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call",
-            "namespace_operator",
-        ]
+        &["call", "namespace_operator"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -80,8 +81,7 @@ impl LanguagePlugin for RLangPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::R_HOOKS)
     }
 

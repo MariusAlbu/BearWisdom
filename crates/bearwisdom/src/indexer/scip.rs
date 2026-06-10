@@ -478,14 +478,13 @@ pub fn import_scip(
             let ref_line = scip_range_start_line(&occ.range);
 
             // Resolve the source symbol — narrowest DB symbol enclosing this line.
-            let source_id =
-                match lookup_narrowest_symbol_at_line(db.conn(), file_id, ref_line)? {
-                    Some(id) => id,
-                    None => {
-                        stats.symbols_unmatched += 1;
-                        continue;
-                    }
-                };
+            let source_id = match lookup_narrowest_symbol_at_line(db.conn(), file_id, ref_line)? {
+                Some(id) => id,
+                None => {
+                    stats.symbols_unmatched += 1;
+                    continue;
+                }
+            };
 
             // Resolve the target symbol from the definition map, falling back
             // to a qualified-name scan.
@@ -518,12 +517,7 @@ pub fn import_scip(
                 continue;
             }
 
-            let changed = upsert_scip_edge(
-                db.conn(),
-                source_id,
-                target_id,
-                ref_line,
-            )?;
+            let changed = upsert_scip_edge(db.conn(), source_id, target_id, ref_line)?;
 
             match changed {
                 EdgeChange::Created => stats.edges_created += 1,
@@ -564,13 +558,8 @@ pub fn import_scip(
 
                 // Relationships don't carry a source line.
                 let edge_kind = scip_relationship_kind(rel);
-                let changed = upsert_edge_by_kind(
-                    db.conn(),
-                    source_id,
-                    target_id,
-                    edge_kind,
-                    None,
-                )?;
+                let changed =
+                    upsert_edge_by_kind(db.conn(), source_id, target_id, edge_kind, None)?;
 
                 match changed {
                     EdgeChange::Created => stats.edges_created += 1,
@@ -647,9 +636,7 @@ fn normalise_doc_path(relative_path: &str, project_root: &Path, scip_root: &str)
         } else {
             format!("{scip_fwd}/")
         };
-        p.strip_prefix(&scip_prefix)
-            .unwrap_or(&p)
-            .to_string()
+        p.strip_prefix(&scip_prefix).unwrap_or(&p).to_string()
     } else {
         p.clone()
     };

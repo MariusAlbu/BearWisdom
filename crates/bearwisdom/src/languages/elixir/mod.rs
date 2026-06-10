@@ -1,12 +1,12 @@
 //! elixir language plugin.
 
-mod helpers;
-pub(crate) mod connectors;
-pub(crate) mod phoenix_routes;
-pub(crate) mod keywords;
-pub mod extract;
 mod calls;
+pub(crate) mod connectors;
 mod directives;
+pub mod extract;
+mod helpers;
+pub(crate) mod keywords;
+pub(crate) mod phoenix_routes;
 mod type_refs;
 
 pub(crate) mod hooks;
@@ -29,24 +29,32 @@ mod coverage_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct ElixirPlugin;
 
 impl LanguagePlugin for ElixirPlugin {
-    fn id(&self) -> &str { "elixir" }
+    fn id(&self) -> &str {
+        "elixir"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["elixir"] }
+    fn language_ids(&self) -> &[&str] {
+        &["elixir"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".ex", ".exs"] }
+    fn extensions(&self) -> &[&str] {
+        &[".ex", ".exs"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_elixir::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -71,10 +79,7 @@ impl LanguagePlugin for ElixirPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "dot",
-            "alias",
-        ]
+        &["dot", "alias"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -96,8 +101,7 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ELIXIR_HOOKS)
     }
 }

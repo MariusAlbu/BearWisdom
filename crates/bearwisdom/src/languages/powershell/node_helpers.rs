@@ -38,9 +38,8 @@ pub(super) fn find_child_text(node: &Node, kind: &str, src: &str) -> Option<Stri
 ///   `emit_dotnet_binding_sentinels`).
 pub(super) fn invokation_module(node: &Node, src: &str) -> Option<String> {
     // Find the first named child by index to avoid borrowing cursor across the match.
-    let first_named_idx = (0..node.child_count()).find(|&i| {
-        node.child(i).map_or(false, |c| c.is_named())
-    })?;
+    let first_named_idx =
+        (0..node.child_count()).find(|&i| node.child(i).map_or(false, |c| c.is_named()))?;
     let first = node.child(first_named_idx)?;
 
     match first.kind() {
@@ -65,13 +64,9 @@ pub(super) fn invokation_module(node: &Node, src: &str) -> Option<String> {
         }
         // Part 1: `$sync["Key"].Method()` — root variable through element_access chain
         // Part 1: `$sync.Form.FindName(...)` — root variable through member_access chain
-        "element_access" | "member_access" => {
-            find_root_variable(&first, src)
-        }
+        "element_access" | "member_access" => find_root_variable(&first, src),
         // Part 3: `(Get-Date).Method()` — cmdlet result synthetic tag
-        "parenthesized_expression" => {
-            extract_cmdlet_tag_from_paren(&first, src)
-        }
+        "parenthesized_expression" => extract_cmdlet_tag_from_paren(&first, src),
         _ => None,
     }
 }
@@ -87,18 +82,25 @@ pub(super) fn find_root_variable(node: &Node, src: &str) -> Option<String> {
     if node.kind() == "variable" {
         let raw = node_text(node, src);
         let stripped = raw.trim_start_matches('$');
-        return if stripped.is_empty() { None } else { Some(stripped.to_string()) };
+        return if stripped.is_empty() {
+            None
+        } else {
+            Some(stripped.to_string())
+        };
     }
     // Recurse into the first named child (the object part of the access).
-    let first_idx = (0..node.child_count()).find(|&i| {
-        node.child(i).map_or(false, |c| c.is_named())
-    })?;
+    let first_idx =
+        (0..node.child_count()).find(|&i| node.child(i).map_or(false, |c| c.is_named()))?;
     let first = node.child(first_idx)?;
     match first.kind() {
         "variable" => {
             let raw = node_text(&first, src);
             let stripped = raw.trim_start_matches('$');
-            if stripped.is_empty() { None } else { Some(stripped.to_string()) }
+            if stripped.is_empty() {
+                None
+            } else {
+                Some(stripped.to_string())
+            }
         }
         "element_access" | "member_access" => find_root_variable(&first, src),
         _ => None,
@@ -126,7 +128,9 @@ fn find_command_tag_recursive(node: &Node, src: &str, depth: usize) -> Option<St
     for child in node.children(&mut cursor) {
         if child.kind() == "command" {
             if let Some(cmd_name) = find_child_text(&child, "command_name", src) {
-                if crate::ecosystem::powershell_cmdlet_types::cmdlet_return_type(&cmd_name).is_some() {
+                if crate::ecosystem::powershell_cmdlet_types::cmdlet_return_type(&cmd_name)
+                    .is_some()
+                {
                     return Some(cmdlet_result_module_tag(&cmd_name));
                 }
             }

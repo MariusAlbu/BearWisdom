@@ -33,9 +33,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::types::{ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility};
 use crate::walker::WalkedFile;
@@ -51,9 +49,15 @@ const LANGUAGES: &[&str] = &["puppet"];
 pub struct PuppetStdlibEcosystem;
 
 impl Ecosystem for PuppetStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("puppet")
@@ -72,14 +76,22 @@ impl Ecosystem for PuppetStdlibEcosystem {
 
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
         let parsed = parse_puppet_gem(&dep.root);
-        if parsed.is_empty() { None } else { Some(parsed) }
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
+        }
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for PuppetStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
 
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_puppet_gem()
@@ -91,14 +103,20 @@ impl ExternalSourceLocator for PuppetStdlibEcosystem {
         for r in roots {
             out.extend(parse_puppet_gem(&r.root));
         }
-        if out.is_empty() { None } else { Some(out) }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PuppetStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(PuppetStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(PuppetStdlibEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +148,9 @@ fn discover_puppet_gem() -> Vec<ExternalDepRoot> {
 fn probe_puppet_gem_root() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_PUPPET_GEM") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(p) = probe_via_gem_env() {
         return Some(p);
@@ -144,7 +164,9 @@ fn probe_via_gem_env() -> Option<PathBuf> {
     //   C:/Ruby32-x64/lib/ruby/gems/3.2.0
     // We then look for `gems/puppet-<version>` inside it.
     let output = Command::new("gem").args(["env", "gemdir"]).output().ok()?;
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let gemdir = PathBuf::from(stdout.trim());
     find_latest_puppet_gem(&gemdir)
@@ -175,10 +197,14 @@ fn probe_standard_gem_paths() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     for parent_str in parents {
         let parent = Path::new(parent_str);
-        let Ok(entries) = std::fs::read_dir(parent) else { continue };
+        let Ok(entries) = std::fs::read_dir(parent) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let versioned = entry.path();
-            if !versioned.is_dir() { continue }
+            if !versioned.is_dir() {
+                continue;
+            }
             if let Some(p) = find_latest_puppet_gem(&versioned) {
                 candidates.push(p);
             }
@@ -190,7 +216,9 @@ fn probe_standard_gem_paths() -> Option<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(&user_gems) {
             for entry in entries.flatten() {
                 let versioned = entry.path();
-                if !versioned.is_dir() { continue }
+                if !versioned.is_dir() {
+                    continue;
+                }
                 if let Some(p) = find_latest_puppet_gem(&versioned) {
                     candidates.push(p);
                 }
@@ -242,17 +270,29 @@ pub(crate) fn parse_puppet_gem(gem_root: &Path) -> Vec<ParsedFile> {
         .join("functions");
     walk_legacy_functions(&legacy_fn_dir, &mut out);
 
-    debug!("puppet-stdlib: emitted {} symbols from {}", out.len(), gem_root.display());
+    debug!(
+        "puppet-stdlib: emitted {} symbols from {}",
+        out.len(),
+        gem_root.display()
+    );
     out
 }
 
 fn walk_resource_types(dir: &Path, out: &mut Vec<ParsedFile>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.ends_with(".rb") { continue }
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".rb") {
+            continue;
+        }
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => continue,
@@ -267,14 +307,19 @@ fn walk_resource_types(dir: &Path, out: &mut Vec<ParsedFile>) {
                 type_name.clone(),
                 SymbolKind::Class,
                 line_idx,
-                Some(format!("/* puppet resource type */ {} {{ ... }}", type_name)),
+                Some(format!(
+                    "/* puppet resource type */ {} {{ ... }}",
+                    type_name
+                )),
             ));
         }
     }
 }
 
 fn walk_modern_functions(root: &Path, dir: &Path, out: &mut Vec<ParsedFile>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
@@ -282,9 +327,15 @@ fn walk_modern_functions(root: &Path, dir: &Path, out: &mut Vec<ParsedFile>) {
             walk_modern_functions(root, &path, out);
             continue;
         }
-        if !ft.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.ends_with(".rb") { continue }
+        if !ft.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".rb") {
+            continue;
+        }
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => continue,
@@ -339,12 +390,20 @@ fn walk_modern_functions(root: &Path, dir: &Path, out: &mut Vec<ParsedFile>) {
 }
 
 fn walk_legacy_functions(dir: &Path, out: &mut Vec<ParsedFile>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.ends_with(".rb") { continue }
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".rb") {
+            continue;
+        }
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => continue,
@@ -396,11 +455,11 @@ fn make_parsed_file(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
+    };
     let mtime = std::fs::metadata(abs_path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -446,7 +505,13 @@ pub(crate) fn find_newtype_calls(content: &str) -> Vec<(u32, String)> {
 /// Match `Puppet::Functions.create_function(:<name>)` — modern function API.
 /// The name may be quoted (`:'mymod::myfn'`).
 pub(crate) fn find_create_function_calls(content: &str) -> Vec<(u32, String)> {
-    find_symbol_arg(content, &["Puppet::Functions.create_function", "Functions.create_function"])
+    find_symbol_arg(
+        content,
+        &[
+            "Puppet::Functions.create_function",
+            "Functions.create_function",
+        ],
+    )
 }
 
 /// Match legacy `newfunction(:<name>, ...)` inside the
@@ -462,7 +527,9 @@ fn find_symbol_arg(content: &str, patterns: &[&str]) -> Vec<(u32, String)> {
     for (idx, line) in content.lines().enumerate() {
         // Cheap pre-filter: must contain at least one of the patterns and a
         // Ruby symbol argument indicator `(:`. Rules out comments/docs.
-        if !patterns.iter().any(|p| line.contains(p)) { continue }
+        if !patterns.iter().any(|p| line.contains(p)) {
+            continue;
+        }
         let Some(pos) = line.find("(:") else { continue };
         let after = &line[pos + 2..];
         // Quoted variant: `:'name'` — strip leading apostrophe, read until
@@ -476,7 +543,9 @@ fn find_symbol_arg(content: &str, patterns: &[&str]) -> Vec<(u32, String)> {
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .collect()
         };
-        if name.is_empty() { continue }
+        if name.is_empty() {
+            continue;
+        }
         out.push((idx as u32, name));
     }
     out

@@ -11,7 +11,6 @@
 use super::extract;
 use crate::types::{EdgeKind, SymbolKind};
 
-
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
 // ---------------------------------------------------------------------------
@@ -20,9 +19,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_function_declaration_produces_function() {
     let r = extract::extract("fn add(a: i32, b: i32) i32 {\n    return a + b;\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "add"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "add"),
         "fn should produce Function(add); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -30,9 +34,14 @@ fn cov_function_declaration_produces_function() {
 fn cov_pub_function_produces_function() {
     let r = extract::extract("pub fn main() void {\n}");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "main"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "main"),
         "pub fn should produce Function(main); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -40,9 +49,14 @@ fn cov_pub_function_produces_function() {
 fn cov_struct_declaration_produces_struct() {
     let r = extract::extract("const Point = struct {\n    x: f32,\n    y: f32,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
         "const struct should produce Struct(Point); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,7 +66,10 @@ fn cov_test_declaration_produces_test() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Test),
         "test block should produce Test symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -104,7 +121,10 @@ fn cov_import_produces_imports_ref() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "@import should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -116,7 +136,9 @@ fn cov_import_produces_imports_ref() {
 #[test]
 fn cov_builtin_calls_do_not_emit() {
     let r = extract::extract("pub fn foo() void {\n    const x: i32 = @intCast(42);\n    helper();\n}\nfn helper() void {}");
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -135,7 +157,9 @@ fn cov_builtin_calls_do_not_emit() {
 #[test]
 fn cov_this_at_toplevel_does_not_emit_call() {
     let r = extract::extract("const Self = @This();");
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -160,7 +184,10 @@ fn assert_coverage_above_95_pct() {
     }
 
     let results = analyze_coverage(project);
-    let cov = results.iter().find(|c| c.language == "zig").expect("zig coverage not found");
+    let cov = results
+        .iter()
+        .find(|c| c.language == "zig")
+        .expect("zig coverage not found");
 
     eprintln!(
         "zig: sym={:.1}% ({}/{}) ref={:.1}% ({}/{}) files={}",
@@ -173,10 +200,16 @@ fn assert_coverage_above_95_pct() {
         cov.file_count,
     );
     for k in &cov.symbol_kinds {
-        eprintln!("  SYM {:>30}: {:.1}% ({}/{})", k.kind, k.percent, k.matched, k.occurrences);
+        eprintln!(
+            "  SYM {:>30}: {:.1}% ({}/{})",
+            k.kind, k.percent, k.matched, k.occurrences
+        );
     }
     for k in &cov.ref_kinds {
-        eprintln!("  REF {:>30}: {:.1}% ({}/{})", k.kind, k.percent, k.matched, k.occurrences);
+        eprintln!(
+            "  REF {:>30}: {:.1}% ({}/{})",
+            k.kind, k.percent, k.matched, k.occurrences
+        );
     }
 
     assert!(
@@ -198,22 +231,34 @@ fn assert_coverage_above_95_pct() {
 /// variable_declaration where value is enum_declaration → Enum
 #[test]
 fn cov_enum_declaration_produces_enum() {
-    let r = extract::extract("const Dir = enum {\n    north,\n    south,\n    east,\n    west,\n};");
+    let r =
+        extract::extract("const Dir = enum {\n    north,\n    south,\n    east,\n    west,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Dir"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "Dir"),
         "const enum should produce Enum(Dir); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// variable_declaration where value is union_declaration → Struct (tagged union)
 #[test]
 fn cov_union_declaration_produces_struct() {
-    let r = extract::extract("const Value = union(enum) {\n    int_val: i64,\n    float_val: f64,\n};");
+    let r =
+        extract::extract("const Value = union(enum) {\n    int_val: i64,\n    float_val: f64,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Value"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Value"),
         "const union should produce Struct(Value); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -222,9 +267,14 @@ fn cov_union_declaration_produces_struct() {
 fn cov_error_set_declaration_produces_enum() {
     let r = extract::extract("const IoError = error {\n    NotFound,\n    PermissionDenied,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "IoError"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "IoError"),
         "const error set should produce Enum(IoError); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -233,9 +283,14 @@ fn cov_error_set_declaration_produces_enum() {
 fn cov_plain_const_produces_variable() {
     let r = extract::extract("const max_size: usize = 1024;");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "max_size"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "max_size"),
         "plain const should produce Variable(max_size); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -244,9 +299,14 @@ fn cov_plain_const_produces_variable() {
 fn cov_var_declaration_produces_variable() {
     let r = extract::extract("var counter: u32 = 0;");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
         "var declaration should produce Variable(counter); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -255,9 +315,14 @@ fn cov_var_declaration_produces_variable() {
 fn cov_struct_field_produces_field() {
     let r = extract::extract("const Vec2 = struct {\n    x: f32,\n    y: f32,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Field && s.name == "x"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Field && s.name == "x"),
         "struct field should produce Field(x); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -266,9 +331,14 @@ fn cov_struct_field_produces_field() {
 fn cov_enum_member_produces_enum_member() {
     let r = extract::extract("const Status = enum {\n    ok,\n    err,\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::EnumMember && s.name == "ok"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::EnumMember && s.name == "ok"),
         "enum member should produce EnumMember(ok); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -279,9 +349,14 @@ fn cov_method_inside_struct_produces_method() {
         "const Counter = struct {\n    count: u32,\n    pub fn increment(self: *Counter) void {\n        self.count += 1;\n    }\n};",
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "increment"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "increment"),
         "fn inside struct should produce Method(increment); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -302,8 +377,14 @@ fn kind_compatible_calls_accepts_variable() {
 /// Existing accepted kinds are unaffected.
 #[test]
 fn kind_compatible_calls_still_accepts_function_and_method() {
-    assert!(super::predicates::kind_compatible(EdgeKind::Calls, "function"));
-    assert!(super::predicates::kind_compatible(EdgeKind::Calls, "method"));
+    assert!(super::predicates::kind_compatible(
+        EdgeKind::Calls,
+        "function"
+    ));
+    assert!(super::predicates::kind_compatible(
+        EdgeKind::Calls,
+        "method"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -313,26 +394,32 @@ fn kind_compatible_calls_still_accepts_function_and_method() {
 /// call_expression in function body (regular identifier call) → Calls
 #[test]
 fn cov_regular_call_in_body_produces_calls() {
-    let r = extract::extract(
-        "pub fn run() void {\n    setup();\n    process();\n}",
-    );
+    let r = extract::extract("pub fn run() void {\n    setup();\n    process();\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup"),
         "identifier call in body should produce Calls(setup); got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// struct field with non-primitive type → TypeRef
 #[test]
 fn cov_struct_field_non_primitive_type_produces_typeref() {
-    let r = extract::extract(
-        "const Node = struct {\n    next: Node,\n    value: u32,\n};",
-    );
+    let r = extract::extract("const Node = struct {\n    next: Node,\n    value: u32,\n};");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Node"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Node"),
         "non-primitive field type should produce TypeRef(Node); got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -344,27 +431,38 @@ fn cov_inline_struct_type_field_no_typeref() {
     let r = extract::extract(
         "const Outer = struct {\n    inner: struct { x: i32 },\n    tag: union(enum) { a, b },\n};",
     );
-    let bogus: Vec<&str> = r.refs.iter()
+    let bogus: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name.starts_with("struct"))
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(bogus.is_empty(), "inline struct types must not emit TypeRef; got {bogus:?}");
+    assert!(
+        bogus.is_empty(),
+        "inline struct types must not emit TypeRef; got {bogus:?}"
+    );
 }
 
 /// Generic field types have their argument list stripped: `ArrayList(u8)` →
 /// TypeRef target is `ArrayList`, not `ArrayList(u8)`.
 #[test]
 fn cov_generic_field_type_stripped() {
-    let r = extract::extract(
-        "const MyList = struct {\n    items: ArrayList(u8),\n};",
-    );
+    let r = extract::extract("const MyList = struct {\n    items: ArrayList(u8),\n};");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList"),
         "generic field type should strip args to ArrayList; got: {:?}",
-        r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).map(|rf| &rf.target_name).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
     assert!(
-        !r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList(u8)"),
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "ArrayList(u8)"),
         "full generic type with args must not appear as TypeRef target"
     );
 }
@@ -373,12 +471,17 @@ fn cov_generic_field_type_stripped() {
 /// must not emit TypeRef.
 #[test]
 fn cov_arbitrary_width_int_no_typeref() {
-    let r = extract::extract(
-        "const Packed = struct {\n    bits: u31,\n    signed: i15,\n};",
-    );
-    let int_typerefs: Vec<&str> = r.refs.iter()
-        .filter(|rf| rf.kind == EdgeKind::TypeRef && (rf.target_name == "u31" || rf.target_name == "i15"))
+    let r = extract::extract("const Packed = struct {\n    bits: u31,\n    signed: i15,\n};");
+    let int_typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| {
+            rf.kind == EdgeKind::TypeRef && (rf.target_name == "u31" || rf.target_name == "i15")
+        })
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(int_typerefs.is_empty(), "arbitrary-width int types must not emit TypeRef; got {int_typerefs:?}");
+    assert!(
+        int_typerefs.is_empty(),
+        "arbitrary-width int types must not emit TypeRef; got {int_typerefs:?}"
+    );
 }

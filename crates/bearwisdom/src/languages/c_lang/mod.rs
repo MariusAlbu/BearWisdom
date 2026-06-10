@@ -2,8 +2,11 @@
 
 mod calls;
 mod declarations;
+pub mod extract;
 mod flow;
 mod helpers;
+pub mod keywords;
+pub mod macro_catalog;
 mod macro_misparse;
 mod preproc;
 mod salvage_callconv;
@@ -16,12 +19,9 @@ mod templates;
 mod type_refs;
 mod typerefs;
 mod visitor;
-pub mod extract;
-pub mod keywords;
-pub mod macro_catalog;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::C_HOOKS;
@@ -48,17 +48,23 @@ mod coverage_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct CLangPlugin;
 
 impl LanguagePlugin for CLangPlugin {
-    fn id(&self) -> &str { "c_lang" }
+    fn id(&self) -> &str {
+        "c_lang"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["c", "cpp"] }
+    fn language_ids(&self) -> &[&str] {
+        &["c", "cpp"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"] }
+    fn extensions(&self) -> &[&str] {
+        &[".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"]
+    }
 
     /// Route per extension so `.c`/`.h` use the C grammar and `.cpp` etc.
     /// use the C++ grammar. Without this override the default impl returns
@@ -83,7 +89,9 @@ impl LanguagePlugin for CLangPlugin {
         }
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::C_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::C_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         extract::extract_with_file(source, file_path, lang_id)
@@ -138,7 +146,10 @@ impl LanguagePlugin for CLangPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &["int", "char", "void", "float", "double", "short", "long", "unsigned", "signed", "size_t", "bool", "auto"]
+        &[
+            "int", "char", "void", "float", "double", "short", "long", "unsigned", "signed",
+            "size_t", "bool", "auto",
+        ]
     }
 
     fn profile(
@@ -149,8 +160,7 @@ impl LanguagePlugin for CLangPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::C_HOOKS)
     }
 

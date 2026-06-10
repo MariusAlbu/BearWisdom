@@ -96,7 +96,11 @@ pub fn full_index(
     mem_probe::probe("01_scan_done");
     let file_count = cs.added.len();
     info!("Found {} source files", file_count);
-    emit("scanning", 1.0, Some(&format!("{} files found", file_count)));
+    emit(
+        "scanning",
+        1.0,
+        Some(&format!("{} files found", file_count)),
+    );
 
     // --- Step 1b: Clear existing data ---
     // For full reindex: DROP + CREATE core tables instead of DELETE.
@@ -105,9 +109,15 @@ pub fn full_index(
     // Virtual tables (symbols_fts, fts_content, vec_chunks) are handled
     // separately to avoid leaving their internal state pointing at stale rowids.
     {
-        let count: i64 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap_or(0);
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+            .unwrap_or(0);
         if count > 0 {
-            info!("Dropping and recreating index tables for full rebuild ({} existing files)", count);
+            info!(
+                "Dropping and recreating index tables for full rebuild ({} existing files)",
+                count
+            );
 
             // Drop vec_chunks first (virtual table — not CASCADE-covered).
             if crate::search::vector_store::vec_table_exists(db.conn()) {
@@ -175,8 +185,7 @@ pub fn full_index(
     // assign_package_ids mutation pass afterward.
     let (packages, workspace_kind) = detect_packages(project_root);
     let written_packages = if !packages.is_empty() {
-        let written = write::write_packages(db, &packages)
-            .context("Failed to write packages")?;
+        let written = write::write_packages(db, &packages).context("Failed to write packages")?;
         info!("Detected {} workspace packages", written.len());
         if let Some(ref kind) = workspace_kind {
             if let Err(e) = changeset::set_meta(db, "workspace_kind", kind) {
@@ -239,6 +248,19 @@ pub fn full_index(
         None
     };
 
+    // Git-submodule subtrees declared in `.gitmodules` are vendored
+    // dependencies — classify their files `origin='external'` (any language) so
+    // the project's own resolution rate isn't measured against vendored library
+    // internals. Read once; the per-file prefix test runs in the streaming loop
+    // alongside the vendored-C content check.
+    let submodule_prefixes = crate::ecosystem::vendored_submodules::submodule_paths(project_root);
+    if !submodule_prefixes.is_empty() {
+        info!(
+            "Detected {} git submodule(s) — classifying their files as vendored externals",
+            submodule_prefixes.len()
+        );
+    }
+
     // --- Steps 3c + 4 + 4a: Streaming parse → write → FTS + chunks + slim ---
     //
     // Bounded-channel pipeline: parser workers on the capped rayon pool
@@ -266,12 +288,10 @@ pub fn full_index(
     // build step. Cloning the Arc is cheap — the underlying RwLock-backed
     // arena lives at the indexer scope so TypeIds flow consistently from
     // parse through resolve.
-    let workspace_arena = std::sync::Arc::new(
-        crate::type_checker::core::types::TypeArena::new(),
-    );
+    let workspace_arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
-    let mut vendored_c_parsed: Vec<ParsedFile> = Vec::new();
+    let mut vendored_parsed: Vec<ParsedFile> = Vec::new();
     let mut file_id_map: write::FileIdMap = std::collections::HashMap::new();
     let mut symbol_id_map: write::SymbolIdMap = std::collections::HashMap::new();
     let mut files_with_errors = 0u32;
@@ -290,9 +310,9 @@ pub fn full_index(
         let arena_for_workers = std::sync::Arc::clone(&workspace_arena);
         scope.spawn(move || {
             pool_for_workers.install(|| {
-                files_for_workers.par_iter().for_each_with(
-                    parse_tx_for_workers,
-                    |tx, w| {
+                files_for_workers
+                    .par_iter()
+                    .for_each_with(parse_tx_for_workers, |tx, w| {
                         match parse_file_with_arena_and_demand(
                             w,
                             registry_for_workers,
@@ -306,8 +326,7 @@ pub fn full_index(
                                 warn!("Failed to parse {}: {e}", w.relative_path);
                             }
                         }
-                    },
-                );
+                    });
             });
             // `parse_tx_for_workers` drops at scope end, closing the channel.
         });
@@ -351,11 +370,7 @@ pub fn full_index(
             // longer deliver to a vanished receiver (see panic_hook.rs).
             let is_vendored_c = matches!(pf.language.as_str(), "c" | "cpp")
                 && match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    is_c_vendored_file(
-                        &pf.language,
-                        &pf.path,
-                        pf.content.as_deref().unwrap_or(""),
-                    )
+                    is_c_vendored_file(&pf.language, &pf.path, pf.content.as_deref().unwrap_or(""))
                 })) {
                     Ok(flag) => flag,
                     Err(e) => {
@@ -373,10 +388,33 @@ pub fn full_index(
                 debug!("C/C++ vendored external: {original}");
             }
 
-            let origin = if is_vendored_c { "external" } else { "internal" };
-            let file_id =
-                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map, /*is_full*/ true, Some(workspace_arena.as_ref()))
-                    .with_context(|| format!("streaming write failed for {}", pf.path))?;
+            // Files inside a declared git-submodule subtree are vendored
+            // dependencies (any language). `is_vendored_c` already prefixed the
+            // C/C++ subset matched by a vendor dir / banner; this catches the
+            // rest by the `.gitmodules` declaration.
+            let is_vendored_submodule = !is_vendored_c
+                && crate::ecosystem::vendored_submodules::is_under_submodule(
+                    &pf.path,
+                    &submodule_prefixes,
+                );
+            if is_vendored_submodule {
+                let original = pf.path.clone();
+                pf.path = format!("ext:submodule:{original}");
+                debug!("git-submodule vendored external: {original}");
+            }
+
+            let is_vendored = is_vendored_c || is_vendored_submodule;
+            let origin = if is_vendored { "external" } else { "internal" };
+            let file_id = write::write_one_parsed_file(
+                &tx,
+                &pf,
+                origin,
+                now,
+                &mut symbol_id_map,
+                /*is_full*/ true,
+                Some(workspace_arena.as_ref()),
+            )
+            .with_context(|| format!("streaming write failed for {}", pf.path))?;
             file_id_map.insert(pf.path.clone(), file_id);
 
             // FTS5 + code chunks: join the outer transaction so we don't
@@ -413,8 +451,8 @@ pub fn full_index(
             // and DbEntity edges respectively.
             pf.content = None;
 
-            if is_vendored_c {
-                vendored_c_parsed.push(pf);
+            if is_vendored {
+                vendored_parsed.push(pf);
             } else {
                 parsed.push(pf);
             }
@@ -432,7 +470,7 @@ pub fn full_index(
 
     info!(
         "Parsed + wrote {} files ({} with syntax errors) via streaming pipeline",
-        parsed.len() + vendored_c_parsed.len(),
+        parsed.len() + vendored_parsed.len(),
         files_with_errors
     );
     info!(
@@ -443,17 +481,21 @@ pub fn full_index(
     info!("Indexed {fts_count} files for FTS5 content search");
     info!("Created {total_chunks} code chunks");
 
-    if !vendored_c_parsed.is_empty() {
+    if !vendored_parsed.is_empty() {
         info!(
-            "Classified {} C/C++ files as vendored externals",
-            vendored_c_parsed.len()
+            "Classified {} files as vendored externals (vendor dirs + git submodules)",
+            vendored_parsed.len()
         );
     }
 
     // L1: per-language audit log — runs on slim parsed (symbols still live
     // until resolve).
     log_language_breakdown(&parsed);
-    emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
+    emit(
+        "parsing",
+        1.0,
+        Some(&format!("{} files parsed", parsed.len())),
+    );
     mem_probe::probe("03_streaming_parse_done");
     emit(
         "indexing_content",
@@ -480,7 +522,10 @@ pub fn full_index(
     // `ParsedFile.package_id` is populated upstream during the workspace
     // package detection pass; files outside any package leave it `None`
     // and contribute to the workspace-wide set only.
-    let language_presence_by_package: std::collections::HashMap<i64, std::collections::HashSet<String>> = {
+    let language_presence_by_package: std::collections::HashMap<
+        i64,
+        std::collections::HashSet<String>,
+    > = {
         let mut map: std::collections::HashMap<i64, std::collections::HashSet<String>> =
             std::collections::HashMap::new();
         for pf in &parsed {
@@ -510,12 +555,7 @@ pub fn full_index(
             if !project_ctx.language_presence.contains(plugin.id()) {
                 continue;
             }
-            plugin.populate_project_state(
-                &mut plugin_state,
-                &parsed,
-                project_root,
-                &project_ctx,
-            );
+            plugin.populate_project_state(&mut plugin_state, &parsed, project_root, &project_ctx);
         }
         project_ctx.plugin_state = plugin_state;
     }
@@ -575,7 +615,11 @@ pub fn full_index(
         demand_driven_roots,
         demand_driven_ecosystems,
     } = parse_external_sources(
-        project_root, registry, &project_ctx, &written_packages, &demand,
+        project_root,
+        registry,
+        &project_ctx,
+        &written_packages,
+        &demand,
         workspace_arena.as_ref(),
     );
     mem_probe::probe("07_external_parsed");
@@ -584,13 +628,14 @@ pub fn full_index(
             "Parsed {} external files from dependency sources",
             external_parsed.len()
         );
-        let (_ext_file_map, ext_symbol_map) =
-            write::write_parsed_files_with_origin(db, &external_parsed, "external", Some(workspace_arena.as_ref()))
-                .context("Failed to write external index")?;
-        info!(
-            "Wrote {} external symbols",
-            ext_symbol_map.len()
-        );
+        let (_ext_file_map, ext_symbol_map) = write::write_parsed_files_with_origin(
+            db,
+            &external_parsed,
+            "external",
+            Some(workspace_arena.as_ref()),
+        )
+        .context("Failed to write external index")?;
+        info!("Wrote {} external symbols", ext_symbol_map.len());
         symbol_id_map.extend(ext_symbol_map);
         for pf in external_parsed.iter_mut() {
             pf.slim_for_resolve();
@@ -612,20 +657,24 @@ pub fn full_index(
     // actually references. Replaces per-library synthetics like
     // `ecosystem/jquery_synthetics.rs` with generic reference following.
     let mut script_tag_parsed = super::script_tag_deps::parse_script_tag_deps(
-        project_root, &parsed, registry, workspace_arena.as_ref(),
+        project_root,
+        &parsed,
+        registry,
+        workspace_arena.as_ref(),
     );
     if !script_tag_parsed.is_empty() {
         info!(
             "Parsed {} script-tag-referenced vendor files",
             script_tag_parsed.len()
         );
-        let (_st_file_map, st_symbol_map) =
-            write::write_parsed_files_with_origin(db, &script_tag_parsed, "external", Some(workspace_arena.as_ref()))
-                .context("Failed to write script-tag external index")?;
-        info!(
-            "Wrote {} script-tag vendor symbols",
-            st_symbol_map.len()
-        );
+        let (_st_file_map, st_symbol_map) = write::write_parsed_files_with_origin(
+            db,
+            &script_tag_parsed,
+            "external",
+            Some(workspace_arena.as_ref()),
+        )
+        .context("Failed to write script-tag external index")?;
+        info!("Wrote {} script-tag vendor symbols", st_symbol_map.len());
         symbol_id_map.extend(st_symbol_map);
         for pf in script_tag_parsed.iter_mut() {
             pf.slim_for_resolve();
@@ -638,15 +687,13 @@ pub fn full_index(
     // Combined slice the resolver sees. External files are skipped by the
     // ref-iteration loop in resolve_and_write but their symbols are still
     // indexed as lookup targets.
-    let total_cap = parsed.len()
-        + external_parsed.len()
-        + script_tag_parsed.len()
-        + vendored_c_parsed.len();
+    let total_cap =
+        parsed.len() + external_parsed.len() + script_tag_parsed.len() + vendored_parsed.len();
     let mut combined_parsed: Vec<ParsedFile> = Vec::with_capacity(total_cap);
     combined_parsed.extend(parsed);
     combined_parsed.extend(external_parsed);
     combined_parsed.extend(script_tag_parsed);
-    combined_parsed.extend(vendored_c_parsed);
+    combined_parsed.extend(vendored_parsed);
     let mut parsed = combined_parsed;
     let mut symbol_id_map = symbol_id_map;
     mem_probe::probe("08_externals_written");
@@ -724,7 +771,11 @@ pub fn full_index(
             &mut symbol_id_map,
             &rstats.chain_misses,
             registry,
-            if symbol_index.is_empty() { None } else { Some(&symbol_index) },
+            if symbol_index.is_empty() {
+                None
+            } else {
+                Some(&symbol_index)
+            },
             workspace_arena.as_ref(),
         )
         .context("Failed to expand chain reachability")?;
@@ -830,9 +881,12 @@ pub fn full_index(
         .context("Failed to flush deferred speculative refs")?;
 
     // Materialize incoming_edge_count once, after the loop settles.
-    resolve::finalize_resolution(db)
-        .context("Failed to finalize resolution")?;
-    emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
+    resolve::finalize_resolution(db).context("Failed to finalize resolution")?;
+    emit(
+        "resolving",
+        1.0,
+        Some(&format!("{} edges resolved", rstats.resolved)),
+    );
     mem_probe::probe("11_resolve_finalized");
 
     // FTS finalize: the bulk load + resolution ran with the symbols_fts triggers
@@ -887,17 +941,56 @@ pub fn full_index(
     let connector_start = Instant::now();
     {
         let conn = db.conn();
-        let n_elixir = crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
-        let n_go = crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
+        let n_elixir =
+            crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
+        let n_go =
+            crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
         let n_java = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
-        let n_php = crate::languages::php::connectors::discover_laravel_routes(conn, project_root, &project_ctx);
-        let n_django = crate::languages::python::connectors::discover_django_routes(conn, project_root, &project_ctx);
-        let n_fastapi = crate::languages::python::connectors::discover_fastapi_routes(conn, project_root, &project_ctx);
-        let n_rails = crate::languages::ruby::connectors::discover_rails_routes(conn, project_root, &project_ctx);
-        let n_nestjs = crate::languages::typescript::connectors::discover_nestjs_routes(conn, project_root, &project_ctx);
-        let n_nextjs = crate::languages::typescript::connectors::discover_nextjs_routes(conn, project_root, &project_ctx);
-        let n_groovy = crate::languages::groovy::connectors::discover_groovy_routes(conn, project_root, &project_ctx);
-        let total = n_elixir + n_go + n_java + n_php + n_django + n_fastapi + n_rails + n_nestjs + n_nextjs + n_groovy;
+        let n_php = crate::languages::php::connectors::discover_laravel_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_django = crate::languages::python::connectors::discover_django_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_fastapi = crate::languages::python::connectors::discover_fastapi_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_rails = crate::languages::ruby::connectors::discover_rails_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_nestjs = crate::languages::typescript::connectors::discover_nestjs_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_nextjs = crate::languages::typescript::connectors::discover_nextjs_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let n_groovy = crate::languages::groovy::connectors::discover_groovy_routes(
+            conn,
+            project_root,
+            &project_ctx,
+        );
+        let total = n_elixir
+            + n_go
+            + n_java
+            + n_php
+            + n_django
+            + n_fastapi
+            + n_rails
+            + n_nestjs
+            + n_nextjs
+            + n_groovy;
         if total > 0 {
             info!(
                 "Route discovery: phoenix={n_elixir} go={n_go} spring={n_java} laravel={n_php} django={n_django} fastapi={n_fastapi} rails={n_rails} nestjs={n_nestjs} nextjs={n_nextjs} groovy={n_groovy} in {:.2}s",
@@ -915,12 +1008,14 @@ pub fn full_index(
     // HttpCall flow edges so they pair against TS/C# producer-side
     // calls.
     {
-        let mut emissions: Vec<(String, u32, crate::indexer::resolve::flow_emit::FlowEmission)> =
-            Vec::new();
-        if let Err(e) = crate::indexer::resolve::append_db_route_consumer_emissions(
-            db.conn(),
-            &mut emissions,
-        ) {
+        let mut emissions: Vec<(
+            String,
+            u32,
+            crate::indexer::resolve::flow_emit::FlowEmission,
+        )> = Vec::new();
+        if let Err(e) =
+            crate::indexer::resolve::append_db_route_consumer_emissions(db.conn(), &mut emissions)
+        {
             warn!("DB-route flow adapter failed: {e}");
         } else if !emissions.is_empty() {
             match crate::indexer::resolve::flush_flow_emissions_public(db.conn(), &emissions) {
@@ -991,25 +1086,22 @@ pub fn full_index(
 // `stage_discover.rs`; these re-exports keep the call-site names short
 // inside `full_index`.
 pub(crate) use super::stage_discover::{
-    collect_package_dep_rows, detect_packages, log_language_breakdown,
-    mark_service_packages,
+    collect_package_dep_rows, detect_packages, log_language_breakdown, mark_service_packages,
 };
-
 
 // Single-file parsing helpers live in `parse_file.rs`. Re-export the
 // public surface (`parse_file`, `parse_file_with_demand`,
 // `is_c_vendored_file`) so other indexer submodules and tests keep the
 // `crate::indexer::full::*` import path they had before the carve.
 pub(crate) use super::parse_file::{
-    is_c_vendored_file, parse_file, parse_file_with_arena_and_demand,
-    parse_file_with_demand,
+    is_c_vendored_file, parse_file, parse_file_with_arena_and_demand, parse_file_with_demand,
 };
 // `panic_message` is consumed by `full_index`'s catch_unwind guards;
 // `is_generated_platform_header` is re-exported so `full_tests.rs` can
 // keep referring to it via `super::*` after the carve.
-use super::parse_file::panic_message;
 #[cfg(test)]
 pub(super) use super::parse_file::is_generated_platform_header;
+use super::parse_file::panic_message;
 
 // External-source discovery and external virtual-path plumbing live in
 // `stage_link.rs`.
@@ -1027,9 +1119,16 @@ pub(crate) fn read_stats(
     duration_ms: u64,
 ) -> Result<IndexStats> {
     let (
-        file_count, symbol_count, edge_count,
-        unresolved_ref_count, unresolved_ref_count_external, external_ref_count,
-        route_count, db_mapping_count, flow_edge_count, package_count,
+        file_count,
+        symbol_count,
+        edge_count,
+        unresolved_ref_count,
+        unresolved_ref_count_external,
+        external_ref_count,
+        route_count,
+        db_mapping_count,
+        flow_edge_count,
+        package_count,
     ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
@@ -1049,11 +1148,20 @@ pub(crate) fn read_stats(
            (SELECT COUNT(*) FROM flow_edges),
            (SELECT COUNT(*) FROM packages)",
         [],
-        |r| Ok((
-            r.get(0)?, r.get(1)?, r.get(2)?,
-            r.get(3)?, r.get(4)?, r.get(5)?,
-            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
-        )),
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+            ))
+        },
     )?;
 
     Ok(IndexStats {

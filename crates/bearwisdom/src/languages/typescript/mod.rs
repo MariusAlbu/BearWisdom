@@ -5,38 +5,38 @@
 //! TSX and JSX use their respective grammars for JSX support.
 
 // Extraction sub-modules
+mod alias_classify;
+mod calls;
 pub mod connectors;
 mod connectors_graphql;
 mod connectors_nestjs;
 mod connectors_nextjs;
 mod connectors_react;
-mod calls;
 pub(crate) mod decorators;
 mod embedded;
 pub(crate) mod flow;
 mod helpers;
 mod imports;
+pub(crate) mod keywords;
 mod narrowing;
 mod params;
-pub(crate) mod keywords;
 mod symbols;
 mod symbols_casts;
 mod symbols_fields;
 mod symbols_variables;
 mod types;
-mod alias_classify;
 
 pub mod extract;
 mod reexports;
-mod type_scan;
 pub(crate) mod selectors;
+mod type_scan;
 
 // Resolution sub-modules
-pub(crate) mod predicates;
-pub mod profile;
-pub mod hooks;
 mod aliases;
 pub(crate) mod flow_detectors;
+pub mod hooks;
+pub(crate) mod predicates;
+pub mod profile;
 
 pub use hooks::TYPESCRIPT_HOOKS;
 pub use profile::TYPESCRIPT_PROFILE;
@@ -58,8 +58,8 @@ mod calls_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 /// TypeScript language plugin — handles "typescript", "tsx", "javascript", "jsx".
 pub struct TypeScriptPlugin;
@@ -103,7 +103,11 @@ impl LanguagePlugin for TypeScriptPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
         let mut result = extract::extract(source, is_tsx);
-        crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        crate::languages::common::append_ember_helper_default_export(
+            file_path,
+            source,
+            &mut result,
+        );
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
     }
@@ -130,16 +134,25 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
-            "class_declaration", "abstract_class_declaration",
+            "class_declaration",
+            "abstract_class_declaration",
             "interface_declaration",
-            "function_declaration", "generator_function_declaration",
-            "method_definition", "abstract_method_signature", "method_signature",
-            "public_field_definition", "property_signature", "field_definition",
+            "function_declaration",
+            "generator_function_declaration",
+            "method_definition",
+            "abstract_method_signature",
+            "method_signature",
+            "public_field_definition",
+            "property_signature",
+            "field_definition",
             "type_alias_declaration",
             "enum_declaration",
-            "lexical_declaration", "variable_declaration",
+            "lexical_declaration",
+            "variable_declaration",
             "internal_module",
-            "construct_signature", "call_signature", "index_signature",
+            "construct_signature",
+            "call_signature",
+            "index_signature",
         ]
     }
 
@@ -151,9 +164,12 @@ impl LanguagePlugin for TypeScriptPlugin {
             // jsx_self_closing_element and jsx_opening_element are intentionally excluded:
             // we only emit refs for PascalCase component tags (~23% of occurrences),
             // not HTML intrinsics (div, span, etc.), so the 1:1 node→ref assumption breaks.
-            "extends_clause", "implements_clause",
-            "type_annotation", "type_identifier",
-            "as_expression", "satisfies_expression",
+            "extends_clause",
+            "implements_clause",
+            "type_annotation",
+            "type_identifier",
+            "as_expression",
+            "satisfies_expression",
             "tagged_template_expression",
         ]
     }
@@ -170,8 +186,7 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&TYPESCRIPT_HOOKS)
     }
 

@@ -7,16 +7,16 @@ mod calls_macros;
 pub(crate) mod decorators;
 mod derives;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod flow_detectors;
 mod helpers;
-mod patterns;
 pub(crate) mod keywords;
+mod patterns;
 mod symbols;
-pub mod extract;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 pub use hooks::RUST_HOOKS;
 pub use profile::RUST_PROFILE;
@@ -38,8 +38,8 @@ mod resolve_tests;
 mod derives_tests;
 
 use crate::languages::{LanguagePlugin, Synthesized};
-use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 
 pub struct RustLangPlugin;
 
@@ -55,18 +55,26 @@ impl LanguagePlugin for RustLangPlugin {
     // language `"rust_lang"`, then `registry.get("rust_lang")` missed and
     // returned the generic fallback plugin — emitting zero Rust symbols
     // for every cargo dep file demand-pulled by `expand.rs`.
-    fn id(&self) -> &str { "rust" }
+    fn id(&self) -> &str {
+        "rust"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["rust"] }
+    fn language_ids(&self) -> &[&str] {
+        &["rust"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".rs"] }
+    fn extensions(&self) -> &[&str] {
+        &[".rs"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_rust::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -145,8 +153,7 @@ impl LanguagePlugin for RustLangPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::RUST_HOOKS)
     }
 

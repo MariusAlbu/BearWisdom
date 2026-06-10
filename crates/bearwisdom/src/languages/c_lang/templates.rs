@@ -41,8 +41,12 @@ pub(super) fn push_template_decl<'a>(
                 emit_template_param_typerefs(&child, src, symbols.len(), refs);
                 param_names = collect_template_param_names(&child, src);
             }
-            "class_specifier" | "struct_specifier" | "union_specifier"
-            | "function_definition" | "alias_declaration" | "declaration"
+            "class_specifier"
+            | "struct_specifier"
+            | "union_specifier"
+            | "function_definition"
+            | "alias_declaration"
+            | "declaration"
             | "concept_definition" => {
                 inner = Some(child);
             }
@@ -57,18 +61,38 @@ pub(super) fn push_template_decl<'a>(
 
     // Push a symbol for the inner declaration.
     let idx = match inner_node.kind() {
-        "class_specifier" => {
-            push_specifier(&inner_node, src, scope_tree, SymbolKind::Class, symbols, parent_index)
-        }
-        "struct_specifier" => {
-            push_specifier(&inner_node, src, scope_tree, SymbolKind::Struct, symbols, parent_index)
-        }
-        "union_specifier" => {
-            push_specifier(&inner_node, src, scope_tree, SymbolKind::Struct, symbols, parent_index)
-        }
-        "function_definition" => {
-            push_function_def(&inner_node, src, scope_tree, language, symbols, parent_index)
-        }
+        "class_specifier" => push_specifier(
+            &inner_node,
+            src,
+            scope_tree,
+            SymbolKind::Class,
+            symbols,
+            parent_index,
+        ),
+        "struct_specifier" => push_specifier(
+            &inner_node,
+            src,
+            scope_tree,
+            SymbolKind::Struct,
+            symbols,
+            parent_index,
+        ),
+        "union_specifier" => push_specifier(
+            &inner_node,
+            src,
+            scope_tree,
+            SymbolKind::Struct,
+            symbols,
+            parent_index,
+        ),
+        "function_definition" => push_function_def(
+            &inner_node,
+            src,
+            scope_tree,
+            language,
+            symbols,
+            parent_index,
+        ),
         "concept_definition" => {
             push_concept_def(&inner_node, src, scope_tree, symbols, parent_index)
         }
@@ -111,7 +135,9 @@ fn collect_template_param_names(param_list: &Node, src: &[u8]) -> Vec<String> {
             | "variadic_type_parameter_declaration" => {
                 // Name is the first `type_identifier`; for default forms
                 // (`typename T = Foo`) it precedes `=`, so `find` stops at `T`.
-                child.children(&mut ic).find(|c| c.kind() == "type_identifier")
+                child
+                    .children(&mut ic)
+                    .find(|c| c.kind() == "type_identifier")
             }
             "template_template_parameter_declaration" => {
                 // `template<...> class T` — the name is the trailing identifier.
@@ -148,7 +174,9 @@ pub(super) fn push_concept_def(
         n
     } else {
         let mut cursor = node.walk();
-        let found = node.children(&mut cursor).find(|c| c.kind() == "identifier");
+        let found = node
+            .children(&mut cursor)
+            .find(|c| c.kind() == "identifier");
         found?
     };
 
@@ -175,12 +203,12 @@ pub(super) fn push_concept_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     Some(idx)
 }
@@ -228,10 +256,14 @@ pub(super) fn push_alias_decl(
     // The name can be: type_identifier, template_type (e.g. `using Foo<T> = Bar`)
     // or qualified_identifier. Skip non-identifier second children.
     let name_node = match node.child(1) {
-        Some(n) if matches!(
-            n.kind(),
-            "type_identifier" | "identifier" | "template_type" | "qualified_identifier"
-        ) => n,
+        Some(n)
+            if matches!(
+                n.kind(),
+                "type_identifier" | "identifier" | "template_type" | "qualified_identifier"
+            ) =>
+        {
+            n
+        }
         _ => return,
     };
     let name = node_text(name_node, src);
@@ -253,12 +285,12 @@ pub(super) fn push_alias_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // TypeRef for the aliased type.
     let mut cursor = node.walk();
@@ -286,7 +318,9 @@ pub(super) fn push_using_decl(
             "qualified_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -295,9 +329,9 @@ pub(super) fn push_using_decl(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 return;
             }

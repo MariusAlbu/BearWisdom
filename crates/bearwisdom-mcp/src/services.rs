@@ -33,8 +33,7 @@ pub struct ServiceCache {
 impl ServiceCache {
     /// Build a new cache with the given capacity and shared service options.
     pub fn new(capacity: usize, options: IndexServiceOptions) -> Self {
-        let cap = NonZeroUsize::new(capacity.max(1))
-            .expect("capacity is clamped to >= 1 above");
+        let cap = NonZeroUsize::new(capacity.max(1)).expect("capacity is clamped to >= 1 above");
         Self {
             inner: Mutex::new(LruCache::new(cap)),
             options,
@@ -62,7 +61,9 @@ impl ServiceCache {
     ///   * `PROJECT_NOT_FOUND` if `project` is missing or not a directory.
     ///   * `INTERNAL_ERROR` if `IndexService::open` fails (DB / watcher).
     pub fn get_or_open(&self, project: &Path) -> Result<Arc<IndexService>, (String, String)> {
-        let canonical = project.canonicalize().unwrap_or_else(|_| project.to_path_buf());
+        let canonical = project
+            .canonicalize()
+            .unwrap_or_else(|_| project.to_path_buf());
 
         if let Some(svc) = self.peek(&canonical) {
             return Ok(svc);
@@ -78,10 +79,18 @@ impl ServiceCache {
             ));
         }
 
-        let db_path = bearwisdom::resolve_db_path(&canonical)
-            .map_err(|e| ("INTERNAL_ERROR".to_string(), format!("resolve db path: {e}")))?;
-        let svc = IndexService::open(&db_path, &canonical, self.options.clone())
-            .map_err(|e| ("INTERNAL_ERROR".to_string(), format!("open IndexService: {e:#}")))?;
+        let db_path = bearwisdom::resolve_db_path(&canonical).map_err(|e| {
+            (
+                "INTERNAL_ERROR".to_string(),
+                format!("resolve db path: {e}"),
+            )
+        })?;
+        let svc = IndexService::open(&db_path, &canonical, self.options.clone()).map_err(|e| {
+            (
+                "INTERNAL_ERROR".to_string(),
+                format!("open IndexService: {e:#}"),
+            )
+        })?;
         let arc = Arc::new(svc);
 
         let mut guard = self.inner.lock().expect("ServiceCache mutex poisoned");

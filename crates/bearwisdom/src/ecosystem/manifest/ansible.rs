@@ -104,7 +104,9 @@ pub fn parse_requirements(content: &str) -> Vec<String> {
 /// the `name:` value, and the `<org>_<name>` composite when the `src:`
 /// value is a URL with an extractable org segment.
 fn extract_entry_prefixes(entry: &serde_yaml::Value) -> Vec<String> {
-    let Some(map) = entry.as_mapping() else { return Vec::new() };
+    let Some(map) = entry.as_mapping() else {
+        return Vec::new();
+    };
     let mut candidates: Vec<String> = Vec::new();
 
     let src_str: Option<&str> = map
@@ -123,12 +125,12 @@ fn extract_entry_prefixes(entry: &serde_yaml::Value) -> Vec<String> {
     }
 
     // `name:` value — the declared role name, used as the base for prefix derivation.
-    let declared_name: Option<String> =
-        map.get(&serde_yaml::Value::String("name".to_string()))
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
+    let declared_name: Option<String> = map
+        .get(&serde_yaml::Value::String("name".to_string()))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     if let Some(ref n) = declared_name {
         candidates.push(n.clone());
@@ -209,9 +211,7 @@ fn normalise_src(src: &str) -> String {
     let basename = basename.strip_suffix(".git").unwrap_or(basename);
 
     // Strip common Ansible role repo-name prefixes.
-    let basename = basename
-        .strip_prefix("ansible-role-")
-        .unwrap_or(basename);
+    let basename = basename.strip_prefix("ansible-role-").unwrap_or(basename);
 
     basename.to_string()
 }

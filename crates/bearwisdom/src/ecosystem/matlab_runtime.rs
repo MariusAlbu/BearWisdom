@@ -44,9 +44,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -57,9 +55,15 @@ const LANGUAGES: &[&str] = &["matlab"];
 pub struct MatlabRuntimeEcosystem;
 
 impl Ecosystem for MatlabRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("matlab")
@@ -75,7 +79,9 @@ impl Ecosystem for MatlabRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for MatlabRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_matlab_toolbox()
     }
@@ -111,16 +117,24 @@ fn discover_matlab_toolbox() -> Vec<ExternalDepRoot> {
 fn probe_matlab_root() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_MATLAB_ROOT") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(env_root) = std::env::var_os("MATLAB_ROOT") {
         let p = PathBuf::from(env_root);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(p) = probe_via_matlab_command() {
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
-    if let Some(p) = probe_standard_install_paths() { return Some(p); }
+    if let Some(p) = probe_standard_install_paths() {
+        return Some(p);
+    }
     None
 }
 
@@ -132,11 +146,15 @@ fn probe_via_matlab_command() -> Option<PathBuf> {
         .args(["-batch", "disp(matlabroot)"])
         .output()
         .ok()?;
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     for line in stdout.lines().rev() {
         let candidate = PathBuf::from(line.trim());
-        if candidate.is_dir() { return Some(candidate); }
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
     }
     None
 }
@@ -148,13 +166,15 @@ fn probe_standard_install_paths() -> Option<PathBuf> {
     let parents = [
         "C:/Program Files/MATLAB",
         "C:/Program Files (x86)/MATLAB",
-        "/Applications",      // macOS — release dirs are `MATLAB_R20XXa.app`
+        "/Applications", // macOS — release dirs are `MATLAB_R20XXa.app`
         "/usr/local/MATLAB",
         "/opt/MATLAB",
     ];
     for parent_str in parents {
         let parent = Path::new(parent_str);
-        let Ok(entries) = std::fs::read_dir(parent) else { continue };
+        let Ok(entries) = std::fs::read_dir(parent) else {
+            continue;
+        };
         let mut releases: Vec<PathBuf> = entries
             .flatten()
             .map(|e| e.path())
@@ -171,7 +191,9 @@ fn probe_standard_install_paths() -> Option<PathBuf> {
 }
 
 fn looks_like_matlab_release_dir(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
     // Matches `R2024a`, `R2024b`, `MATLAB_R2024a.app`, etc.
     name.starts_with('R') && name.contains("20")
         || name.starts_with("MATLAB_R") && name.contains("20")
@@ -186,8 +208,12 @@ fn walk_toolbox_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 fn walk_m_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     // Toolbox trees are deep — `toolbox/matlab/general/private/some.m` is
     // 4 levels in. Cap at 10 to keep walk cost predictable.
-    if depth >= 10 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -197,21 +223,41 @@ fn walk_m_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
                 // helper dirs that don't form the user-callable surface.
                 if matches!(
                     name,
-                    "tests" | "test" | "fixtures" | "examples" | "demo" | "demos"
-                        | "private" | "+private"
-                        | "ja" | "ja_JP" | "ko" | "ko_KR" | "zh_CN" | "zh_TW"
-                        | "+internal" | "internal"
+                    "tests"
+                        | "test"
+                        | "fixtures"
+                        | "examples"
+                        | "demo"
+                        | "demos"
+                        | "private"
+                        | "+private"
+                        | "ja"
+                        | "ja_JP"
+                        | "ko"
+                        | "ko_KR"
+                        | "zh_CN"
+                        | "zh_TW"
+                        | "+internal"
+                        | "internal"
                 ) {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_m_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".m") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".m") {
+                continue;
+            }
             // Skip Contents.m and other noise files.
-            if name == "Contents.m" { continue }
+            if name == "Contents.m" {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:matlab:{display}"),
@@ -225,7 +271,9 @@ fn walk_m_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<MatlabRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(MatlabRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(MatlabRuntimeEcosystem))
+        .clone()
 }
 
 #[cfg(test)]

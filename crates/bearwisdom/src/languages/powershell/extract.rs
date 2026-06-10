@@ -22,7 +22,9 @@
 //   Inherits   — `class_statement` with `:` base type
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 use super::commands::{extract_command, visit_for_calls};
@@ -39,8 +41,8 @@ pub(crate) use super::dotnet_bindings::is_dotnet_type_name;
 
 #[allow(unused_imports)]
 pub(crate) use super::dotnet_bindings::{
-    try_parse_cmdlet_result_chain, try_parse_new_object, try_parse_propagation,
-    try_parse_type_new, try_parse_typed_param,
+    try_parse_cmdlet_result_chain, try_parse_new_object, try_parse_propagation, try_parse_type_new,
+    try_parse_typed_param,
 };
 
 /// Sentinel target name for .NET variable-type binding refs.
@@ -106,7 +108,14 @@ fn visit(
             "function_statement" => {
                 let idx = extract_function_indexed(&child, src, symbols, refs, parent_index);
                 // Recurse into function body for nested functions/commands
-                visit(child, src, symbols, refs, idx.or(parent_index), class_prefix);
+                visit(
+                    child,
+                    src,
+                    symbols,
+                    refs,
+                    idx.or(parent_index),
+                    class_prefix,
+                );
             }
             "class_statement" => {
                 extract_class(&child, src, symbols, refs, parent_index);
@@ -151,7 +160,9 @@ fn visit(
                     });
                 if !name.is_empty() {
                     let module = invokation_module(&child, src);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -160,9 +171,9 @@ fn visit(
                         module,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 visit(child, src, symbols, refs, parent_index, class_prefix);
             }
@@ -207,12 +218,12 @@ fn extract_function_indexed(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     visit_for_calls(node, src, idx, refs);
     Some(idx)
@@ -251,12 +262,12 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract calls inside function body
     visit_for_calls(node, src, idx, refs);
@@ -294,12 +305,12 @@ fn extract_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Detect inheritance: `class Foo : Bar` — the grammar emits two `simple_name`
     // children separated by `:`. The first is the class name (already captured),
@@ -315,7 +326,9 @@ fn extract_class(
                 "simple_name" if saw_colon => {
                     let base = node_text(&child, src).to_string();
                     if !base.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: class_idx,
                             target_name: base,
                             kind: EdgeKind::Inherits,
@@ -324,9 +337,9 @@ fn extract_class(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                     saw_colon = false; // only emit once per `:` separator
                 }
@@ -381,11 +394,11 @@ fn extract_method(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     visit_for_calls(node, src, idx, refs);
 }
@@ -421,11 +434,11 @@ fn extract_property(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -460,12 +473,12 @@ fn extract_enum(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract individual enum members
     let mut cursor = node.walk();
@@ -488,11 +501,11 @@ fn extract_enum(
                         scope_path: None,
                         parent_index: Some(enum_idx),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
         }
@@ -503,12 +516,7 @@ fn extract_enum(
 // Using / Import-Module
 // ---------------------------------------------------------------------------
 
-fn extract_using(
-    node: &Node,
-    src: &str,
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_using(node: &Node, src: &str, source_symbol_index: usize, refs: &mut Vec<ExtractedRef>) {
     // `using namespace Foo.Bar` or `using module MyModule`
     let text = node_text(node, src);
     let line = node.start_position().row as u32;
@@ -523,7 +531,9 @@ fn extract_using(
     };
 
     if !target.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target.clone(),
             kind: EdgeKind::Imports,
@@ -531,10 +541,10 @@ fn extract_using(
             module: Some(target),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
     }
 }
 fn extract_param_block(
@@ -573,12 +583,12 @@ fn extract_script_parameters_recursive(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                 }
             }
         } else {
@@ -610,11 +620,7 @@ fn find_variable_in_subtree(node: &Node, src: &str) -> Option<String> {
     None
 }
 
-fn extract_top_level_assignment(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_top_level_assignment(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     // assignment_expression children: left_assignment_expression, assignement_operator, pipeline
     let lhs = match (0..node.child_count())
         .filter_map(|i| node.child(i))
@@ -648,11 +654,11 @@ fn extract_top_level_assignment(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -728,7 +734,9 @@ fn extract_member_access(
             return;
         }
 
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,

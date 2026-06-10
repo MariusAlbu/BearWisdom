@@ -51,7 +51,9 @@ pub(super) fn extract_decorators(
             // makes decorator refs indistinguishable from imports, and
             // downstream consumers (controller-prefix pre-pass, route-decorator
             // detector) misroute one for the other.
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -60,9 +62,9 @@ pub(super) fn extract_decorators(
                 module: None,
                 chain: None,
                 byte_offset: dec.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args,
-});
+                namespace_segments: Vec::new(),
+                call_args,
+            });
         }
     }
 }
@@ -84,7 +86,11 @@ fn collect_decorator_nodes<'a>(node: &'a Node<'a>) -> Vec<Node<'a>> {
             //     class_declaration
             // Check the parent node first; fall back to direct children.
             let search_node = if let Some(parent) = node.parent() {
-                if parent.kind() == "export_statement" { parent } else { *node }
+                if parent.kind() == "export_statement" {
+                    parent
+                } else {
+                    *node
+                }
             } else {
                 *node
             };
@@ -159,13 +165,21 @@ fn extract_call_name(call_expr: &Node, src: &[u8]) -> Option<String> {
     match func.kind() {
         "identifier" => {
             let name = node_text(func, src);
-            if name.is_empty() { None } else { Some(name) }
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
         }
         "member_expression" => {
             // @Roles.Admin() — use the object name as the primary decorator name.
             let object = func.child_by_field_name("object")?;
             let name = node_text(object, src);
-            if name.is_empty() { None } else { Some(name) }
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
         }
         _ => None,
     }
@@ -284,7 +298,11 @@ fn unquote_string_node(node: &Node, src: &[u8]) -> Option<String> {
         .trim_start_matches('\'')
         .trim_end_matches('\'')
         .to_string();
-    if stripped.is_empty() { None } else { Some(stripped) }
+    if stripped.is_empty() {
+        None
+    } else {
+        Some(stripped)
+    }
 }
 
 /// Split a raw selector string on commas and normalize each part:

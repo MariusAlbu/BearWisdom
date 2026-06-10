@@ -66,9 +66,7 @@ pub fn expand_chain_reachability(
     _packages: &[PackageInfo],
     registry: &LanguageRegistry,
 ) -> Result<ExpansionStats> {
-    expand_chain_reachability_with_index(
-        db, parsed, symbol_id_map, chain_misses, registry, None,
-    )
+    expand_chain_reachability_with_index(db, parsed, symbol_id_map, chain_misses, registry, None)
 }
 
 /// Same as `expand_chain_reachability_with_index` but threads a workspace
@@ -152,8 +150,7 @@ fn expand_chain_reachability_inner(
     let mut new_walked: Vec<WalkedFile> = Vec::new();
     let mut seen_paths: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
-    let mut already_walked: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut already_walked: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut per_file_demand: HashMap<std::path::PathBuf, std::collections::HashSet<String>> =
         HashMap::new();
     for pf in parsed.iter() {
@@ -164,7 +161,9 @@ fn expand_chain_reachability_inner(
 
     for miss in chain_misses {
         let hits = locate_via_symbol_index(index, miss);
-        if hits.is_empty() { continue }
+        if hits.is_empty() {
+            continue;
+        }
         stats.mapped += 1;
         let current_leaf = miss
             .current_type
@@ -178,13 +177,17 @@ fn expand_chain_reachability_inner(
             if !current_leaf.is_empty() {
                 demand_entry.insert(current_leaf.clone());
             }
-            if !seen_paths.insert(path.clone()) { continue }
+            if !seen_paths.insert(path.clone()) {
+                continue;
+            }
             let Some(language) = language_from_file_ext(&path) else {
                 // Extension the indexer can't parse — skip.
                 continue;
             };
             let virtual_path = virtual_path_for_indexed_file(&path, language);
-            if already_walked.contains(&virtual_path) { continue }
+            if already_walked.contains(&virtual_path) {
+                continue;
+            }
             new_walked.push(WalkedFile {
                 relative_path: virtual_path,
                 absolute_path: path,
@@ -340,10 +343,7 @@ fn locate_via_symbol_index(
 ///
 /// Falls back to `ext:idx:<absolute>` when the ecosystem-specific shape
 /// isn't applicable (same as `make_walked_file` in `stage_link`).
-fn virtual_path_for_indexed_file(
-    path: &std::path::Path,
-    language: &str,
-) -> String {
+fn virtual_path_for_indexed_file(path: &std::path::Path, language: &str) -> String {
     super::stage_link::virtual_path_for_pulled(path, language)
         .unwrap_or_else(|| format!("ext:idx:{}", path.to_string_lossy().replace('\\', "/")))
 }

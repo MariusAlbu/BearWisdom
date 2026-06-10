@@ -20,7 +20,10 @@ fn cargo_publish_false_is_not_publishable() {
     );
     let (name, publishable) = read_package_manifest(tmp.path(), "cargo");
     assert_eq!(name.as_deref(), Some("internal-helper"));
-    assert!(!publishable, "publish = false must flip is_publishable to false");
+    assert!(
+        !publishable,
+        "publish = false must flip is_publishable to false"
+    );
 }
 
 #[test]
@@ -32,7 +35,10 @@ fn cargo_publish_empty_array_is_not_publishable() {
         "[package]\nname = \"x\"\npublish = []\n",
     );
     let (_, publishable) = read_package_manifest(tmp.path(), "cargo");
-    assert!(!publishable, "publish = [] must flip is_publishable to false");
+    assert!(
+        !publishable,
+        "publish = [] must flip is_publishable to false"
+    );
 }
 
 #[test]
@@ -69,7 +75,10 @@ fn cargo_publish_registry_list_is_publishable() {
         "[package]\nname = \"x\"\npublish = [\"crates-io\"]\n",
     );
     let (_, publishable) = read_package_manifest(tmp.path(), "cargo");
-    assert!(publishable, "explicit registry list must keep publishable=true");
+    assert!(
+        publishable,
+        "explicit registry list must keep publishable=true"
+    );
 }
 
 #[test]
@@ -83,7 +92,10 @@ fn cargo_publish_in_section_not_outside_it() {
         "[package]\nname = \"x\"\n\n[some.other.section]\npublish = false\n",
     );
     let (_, publishable) = read_package_manifest(tmp.path(), "cargo");
-    assert!(publishable, "publish=false in a non-[package] section must not flip the bit");
+    assert!(
+        publishable,
+        "publish=false in a non-[package] section must not flip the bit"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,11 +130,7 @@ fn npm_private_false_is_publishable() {
 #[test]
 fn npm_no_private_key_is_publishable() {
     let tmp = TempDir::new().unwrap();
-    write(
-        tmp.path(),
-        "package.json",
-        r#"{"name": "@org/lib"}"#,
-    );
+    write(tmp.path(), "package.json", r#"{"name": "@org/lib"}"#);
     let (name, publishable) = read_package_manifest(tmp.path(), "npm");
     assert_eq!(name.as_deref(), Some("@org/lib"));
     assert!(publishable);
@@ -148,7 +156,10 @@ classifiers = [
     );
     let (name, publishable) = read_package_manifest(tmp.path(), "python");
     assert_eq!(name.as_deref(), Some("internal-tool"));
-    assert!(!publishable, "PEP 301 private classifier must flip is_publishable=false");
+    assert!(
+        !publishable,
+        "PEP 301 private classifier must flip is_publishable=false"
+    );
 }
 
 #[test]
@@ -231,13 +242,15 @@ fn workspace_root_hybrid_with_runtime_deps_is_registered() {
 
     let (packages, kind) = detect_packages(tmp.path());
     assert_eq!(kind.as_deref(), Some("npm-workspaces"));
-    let paths: std::collections::HashSet<_> =
-        packages.iter().map(|p| p.path.as_str()).collect();
+    let paths: std::collections::HashSet<_> = packages.iter().map(|p| p.path.as_str()).collect();
     assert!(
         paths.contains("") || paths.contains("."),
         "hybrid root with own runtime deps must register as a package — saw {paths:?}"
     );
-    assert!(paths.contains("e2e"), "workspace member e2e must also register");
+    assert!(
+        paths.contains("e2e"),
+        "workspace member e2e must also register"
+    );
 }
 
 #[test]
@@ -262,8 +275,7 @@ fn workspace_root_pure_controller_with_dev_only_deps_skipped() {
 
     let (packages, kind) = detect_packages(tmp.path());
     assert_eq!(kind.as_deref(), Some("npm-workspaces"));
-    let paths: std::collections::HashSet<_> =
-        packages.iter().map(|p| p.path.as_str()).collect();
+    let paths: std::collections::HashSet<_> = packages.iter().map(|p| p.path.as_str()).collect();
     assert!(
         !paths.contains("") && !paths.contains("."),
         "pure controller (devDeps only) must NOT register as a package — saw {paths:?}"
@@ -294,8 +306,7 @@ fn workspace_root_with_peer_deps_is_registered() {
     );
 
     let (packages, _) = detect_packages(tmp.path());
-    let paths: std::collections::HashSet<_> =
-        packages.iter().map(|p| p.path.as_str()).collect();
+    let paths: std::collections::HashSet<_> = packages.iter().map(|p| p.path.as_str()).collect();
     assert!(
         paths.contains("") || paths.contains("."),
         "root with peerDependencies must register — saw {paths:?}"

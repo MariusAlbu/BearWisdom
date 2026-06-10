@@ -25,7 +25,9 @@ pub(super) fn emit_call_ref(
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         if !target_name.is_empty() && target_name != "undefined" {
             let call_args = extract_call_args(call_node, src);
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name,
                 kind: EdgeKind::Calls,
@@ -34,9 +36,9 @@ pub(super) fn emit_call_ref(
                 module: None,
                 chain,
                 byte_offset: func_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args,
-});
+                namespace_segments: Vec::new(),
+                call_args,
+            });
         }
     }
 }
@@ -70,11 +72,11 @@ pub(super) fn emit_new_ref(
                     type_args: vec![],
                     optional_chaining: false,
                     byte_offset: 0,
-                                    declared_type_id: None,
+                    declared_type_id: None,
                     is_call: false,
                     call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
-}],
+                }],
             });
             // Side-channel synthetic ref: when this `new X(...)` is the
             // initializer of `const/let/var bound = new X(constructor_arg)`,
@@ -88,7 +90,9 @@ pub(super) fn emit_new_ref(
                 first_string_arg_text(new_node, src),
             ) {
                 if matches!(name.as_str(), "Queue" | "Worker") {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: format!("__ts_bgjob_queue_binding__:{}", bound),
                         kind: EdgeKind::Imports,
@@ -102,7 +106,9 @@ pub(super) fn emit_new_ref(
                     });
                 }
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Instantiates,
@@ -111,9 +117,9 @@ pub(super) fn emit_new_ref(
                 module: None,
                 chain,
                 byte_offset: constructor.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args,
-});
+                namespace_segments: Vec::new(),
+                call_args,
+            });
         }
     }
 }
@@ -153,7 +159,8 @@ fn first_string_arg_text(new_node: &Node, src: &[u8]) -> Option<String> {
         "template_string" => {
             // Only flat templates (no substitution) qualify.
             let has_subst = (0..first.child_count()).any(|i| {
-                first.child(i)
+                first
+                    .child(i)
                     .map(|c| c.kind() == "template_substitution")
                     .unwrap_or(false)
             });
@@ -185,20 +192,40 @@ fn emit_config_lookup_ref(
         // `process.env.NODE_ENV` — object is `process.env`, property is the key.
         // `featureFlags.someFlag` — object is `featureFlags`, property is the flag.
         "member_expression" => {
-            let object = match node.child_by_field_name("object") { Some(o) => o, None => return };
-            let property = match node.child_by_field_name("property") { Some(p) => p, None => return };
-            if property.kind() != "property_identifier" { return; }
+            let object = match node.child_by_field_name("object") {
+                Some(o) => o,
+                None => return,
+            };
+            let property = match node.child_by_field_name("property") {
+                Some(p) => p,
+                None => return,
+            };
+            if property.kind() != "property_identifier" {
+                return;
+            }
             let env_match = is_env_object(&object, src);
             let ff_match = !env_match && is_feature_flag_root(&object, src);
-            if !env_match && !ff_match { return; }
+            if !env_match && !ff_match {
+                return;
+            }
             node_text(property, src)
         }
         // `process.env['NODE_ENV']` — subscript with object and a string index.
         "subscript_expression" => {
-            let object = match node.child_by_field_name("object") { Some(o) => o, None => return };
-            let index = match node.child_by_field_name("index") { Some(i) => i, None => return };
-            if !is_env_object(&object, src) { return; }
-            if index.kind() != "string" { return; }
+            let object = match node.child_by_field_name("object") {
+                Some(o) => o,
+                None => return,
+            };
+            let index = match node.child_by_field_name("index") {
+                Some(i) => i,
+                None => return,
+            };
+            if !is_env_object(&object, src) {
+                return;
+            }
+            if index.kind() != "string" {
+                return;
+            }
             node_text(index, src)
                 .trim_start_matches(['"', '\'', '`'])
                 .trim_end_matches(['"', '\'', '`'])
@@ -215,7 +242,9 @@ fn emit_config_lookup_ref(
     // the `unresolved_refs` table even though they have no actual import
     // target. The flow detector still receives them via the dispatcher's
     // Imports-kind chain branch.
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: key,
         kind: EdgeKind::Imports,
@@ -240,11 +269,23 @@ fn is_feature_flag_root(node: &Node, src: &[u8]) -> bool {
         "identifier" => is_ff_identifier_name(&node_text(*node, src)),
         "member_expression" => {
             // `<ff>.value` — peer through.
-            let inner_obj = match node.child_by_field_name("object") { Some(o) => o, None => return false };
-            let inner_prop = match node.child_by_field_name("property") { Some(p) => p, None => return false };
-            if inner_obj.kind() != "identifier" { return false; }
-            if inner_prop.kind() != "property_identifier" { return false; }
-            if node_text(inner_prop, src) != "value" { return false; }
+            let inner_obj = match node.child_by_field_name("object") {
+                Some(o) => o,
+                None => return false,
+            };
+            let inner_prop = match node.child_by_field_name("property") {
+                Some(p) => p,
+                None => return false,
+            };
+            if inner_obj.kind() != "identifier" {
+                return false;
+            }
+            if inner_prop.kind() != "property_identifier" {
+                return false;
+            }
+            if node_text(inner_prop, src) != "value" {
+                return false;
+            }
             is_ff_identifier_name(&node_text(inner_obj, src))
         }
         _ => false,
@@ -253,8 +294,7 @@ fn is_feature_flag_root(node: &Node, src: &[u8]) -> bool {
 
 fn is_ff_identifier_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    matches!(lower.as_str(), "featureflags" | "features" | "flags")
-        || lower.contains("featureflag")
+    matches!(lower.as_str(), "featureflags" | "features" | "flags") || lower.contains("featureflag")
 }
 
 /// Return true when `node` represents the `process.env` or `import.meta.env`
@@ -264,8 +304,14 @@ fn is_env_object(node: &Node, src: &[u8]) -> bool {
     if node.kind() != "member_expression" {
         return false;
     }
-    let object = match node.child_by_field_name("object") { Some(o) => o, None => return false };
-    let property = match node.child_by_field_name("property") { Some(p) => p, None => return false };
+    let object = match node.child_by_field_name("object") {
+        Some(o) => o,
+        None => return false,
+    };
+    let property = match node.child_by_field_name("property") {
+        Some(p) => p,
+        None => return false,
+    };
     if property.kind() != "property_identifier" || node_text(property, src) != "env" {
         return false;
     }
@@ -273,8 +319,14 @@ fn is_env_object(node: &Node, src: &[u8]) -> bool {
         "identifier" => node_text(object, src) == "process",
         "member_expression" => {
             // `import.meta` — `import` keyword as the root, `meta` as the prop.
-            let inner_obj = match object.child_by_field_name("object") { Some(o) => o, None => return false };
-            let inner_prop = match object.child_by_field_name("property") { Some(p) => p, None => return false };
+            let inner_obj = match object.child_by_field_name("object") {
+                Some(o) => o,
+                None => return false,
+            };
+            let inner_prop = match object.child_by_field_name("property") {
+                Some(p) => p,
+                None => return false,
+            };
             inner_obj.kind() == "import"
                 && inner_prop.kind() == "property_identifier"
                 && node_text(inner_prop, src) == "meta"
@@ -301,10 +353,17 @@ pub(super) fn extract_calls(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name_fallback(func_node, src));
 
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &func_node,
+                        refs,
+                    );
                     if !target_name.is_empty() && target_name != "undefined" {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -313,9 +372,9 @@ pub(super) fn extract_calls(
                             module: None,
                             chain,
                             byte_offset: func_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -348,14 +407,20 @@ pub(super) fn extract_calls(
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         // For tagged templates the body is the sole "argument".
-                        let call_args = child.child_by_field_name("template")
+                        let call_args = child
+                            .child_by_field_name("template")
                             .map(|tmpl| {
                                 let raw = node_text(tmpl, src);
                                 let body = raw.trim_matches('`').to_string();
-                                vec![CallArg::TaggedTemplate { tag: target_name.clone(), body }]
+                                vec![CallArg::TaggedTemplate {
+                                    tag: target_name.clone(),
+                                    body,
+                                }]
                             })
                             .unwrap_or_default();
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -364,9 +429,9 @@ pub(super) fn extract_calls(
                             module: None,
                             chain,
                             byte_offset: tag.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 // Recurse for any nested calls inside the template.
@@ -426,7 +491,9 @@ fn emit_arrow_body_member_ref(
     if target.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -462,9 +529,7 @@ pub(super) fn emit_jsx_component_ref(
         return;
     };
     let tag_name = node_text(tag_node, src);
-    if tag_name.is_empty()
-        || !tag_name.chars().next().map_or(false, |c| c.is_uppercase())
-    {
+    if tag_name.is_empty() || !tag_name.chars().next().map_or(false, |c| c.is_uppercase()) {
         return;
     }
     let chain = build_chain(tag_node, src);
@@ -474,7 +539,9 @@ pub(super) fn emit_jsx_component_ref(
         .map(|s| s.name.clone())
         .unwrap_or(tag_name);
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Calls,
@@ -483,9 +550,9 @@ pub(super) fn emit_jsx_component_ref(
         module: None,
         chain,
         byte_offset: tag_node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// Build a structured member access chain from tree-sitter AST nodes.
@@ -526,11 +593,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -543,11 +610,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -567,11 +634,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -587,11 +654,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -606,11 +673,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -625,11 +692,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -645,11 +712,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -663,11 +730,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -693,11 +760,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: is_optional,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -716,11 +783,11 @@ pub(super) fn build_chain_inner(
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -826,12 +893,25 @@ pub(super) fn build_chain_inner(
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "as" | "satisfies" | "<" | ">" | "readonly" => {}
-                    "type_identifier" | "predefined_type" | "generic_type"
-                    | "union_type" | "intersection_type" | "literal_type"
-                    | "tuple_type" | "array_type" | "object_type" | "type_predicate"
-                    | "function_type" | "constructor_type" | "conditional_type"
-                    | "indexed_access_type" | "lookup_type" | "mapped_type"
-                    | "template_literal_type" | "type_query" | "this_type" => {
+                    "type_identifier"
+                    | "predefined_type"
+                    | "generic_type"
+                    | "union_type"
+                    | "intersection_type"
+                    | "literal_type"
+                    | "tuple_type"
+                    | "array_type"
+                    | "object_type"
+                    | "type_predicate"
+                    | "function_type"
+                    | "constructor_type"
+                    | "conditional_type"
+                    | "indexed_access_type"
+                    | "lookup_type"
+                    | "mapped_type"
+                    | "template_literal_type"
+                    | "type_query"
+                    | "this_type" => {
                         if target.is_none() {
                             target = Some(child);
                         }
@@ -921,7 +1001,9 @@ fn sanitize_callee_text(raw: &str) -> String {
 /// any punctuation that would never resolve to a real symbol.
 fn is_js_identifier(s: &str) -> bool {
     let mut chars = s.chars();
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !(first.is_alphabetic() || first == '_' || first == '$') {
         return false;
     }

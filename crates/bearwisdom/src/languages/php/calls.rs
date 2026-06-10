@@ -176,9 +176,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // closure's own positional parameter names (without the `$` sigil) so
         // the chain walker can type them from the higher-order method's
         // callback-parameter signature.
-        "arrow_function" | "anonymous_function" => {
-            CallArg::Lambda { params: php_lambda_param_names(node, src) }
-        }
+        "arrow_function" | "anonymous_function" => CallArg::Lambda {
+            params: php_lambda_param_names(node, src),
+        },
         _ => CallArg::Other,
     }
 }
@@ -254,8 +254,15 @@ pub(super) fn extract_calls_from_body(
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
                     let call_args = extract_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &name_node,
+                        refs,
+                    );
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: callee,
                         kind: EdgeKind::Calls,
@@ -278,8 +285,15 @@ pub(super) fn extract_calls_from_body(
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
                     let call_args = extract_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &name_node,
+                        refs,
+                    );
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: callee,
                         kind: EdgeKind::Calls,
@@ -317,7 +331,9 @@ pub(super) fn extract_calls_from_body(
                 };
                 if let Some(cls_node) = cls_node_opt {
                     let cls_name = node_text(&cls_node, src);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: cls_name,
                         kind: EdgeKind::Instantiates,
@@ -337,7 +353,9 @@ pub(super) fn extract_calls_from_body(
                     let callee = node_text(&fn_node, src);
                     let simple = callee.rsplit('\\').next().unwrap_or(&callee).to_string();
                     let call_args = extract_call_args(&child, src);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: simple,
                         kind: EdgeKind::Calls,
@@ -376,8 +394,10 @@ pub(super) fn extract_calls_from_body(
             }
 
             // `include 'file.php'` / `require_once 'config.php'` — emit Imports edge.
-            "include_expression" | "include_once_expression"
-            | "require_expression" | "require_once_expression" => {
+            "include_expression"
+            | "include_once_expression"
+            | "require_expression"
+            | "require_once_expression" => {
                 extract_include_require(&child, src, refs, source_symbol_index);
             }
 
@@ -426,7 +446,9 @@ pub(super) fn extract_include_require(
             } else {
                 None
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -483,8 +505,8 @@ pub(super) fn extract_foreach_vars(
     qualified_prefix: &str,
     source_symbol_index: usize,
 ) {
-    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
     use super::helpers::{qualify, scope_from_prefix};
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 
     // Value field: `$value` (or `$key => $value` — the value is the last binding).
     if let Some(value_node) = node.child_by_field_name("value") {
@@ -524,12 +546,12 @@ pub(super) fn extract_foreach_vars(
                     doc_comment: None,
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
         }
     }
@@ -542,8 +564,8 @@ fn push_php_foreach_var(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
-    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
     use super::helpers::{qualify, scope_from_prefix};
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 
     // Resolve the effective variable_name node.
     let var_found: Option<tree_sitter::Node>;
@@ -582,12 +604,12 @@ fn push_php_foreach_var(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -602,8 +624,8 @@ pub(super) fn extract_try_catch_types(
     qualified_prefix: &str,
     source_symbol_index: usize,
 ) {
-    use crate::types::{EdgeKind, ExtractedSymbol, SymbolKind, Visibility};
     use super::helpers::{qualify, scope_from_prefix};
+    use crate::types::{EdgeKind, ExtractedSymbol, SymbolKind, Visibility};
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -636,12 +658,12 @@ pub(super) fn extract_try_catch_types(
                             doc_comment: None,
                             scope_path: scope_from_prefix(qualified_prefix),
                             parent_index,
-                                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
                     }
                 }
                 // Recurse into catch body.
@@ -678,7 +700,9 @@ fn extract_catch_type_refs(
             let name = node_text(node, src);
             let simple = name.rsplit('\\').next().unwrap_or(&name).to_string();
             if !simple.is_empty() {
-                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(crate::types::ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -718,8 +742,8 @@ pub(super) fn extract_list_destructuring(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
-    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
     use super::helpers::{qualify, scope_from_prefix};
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -741,12 +765,12 @@ pub(super) fn extract_list_destructuring(
                         doc_comment: None,
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                 }
             }
             // Nested array destructure element.
@@ -810,12 +834,26 @@ pub(super) fn extract_type_refs_from_php_type(
             if !simple.is_empty()
                 && !matches!(
                     simple.as_str(),
-                    "string" | "int" | "float" | "bool" | "array" | "object" | "null"
-                        | "void" | "never" | "mixed" | "callable" | "iterable"
-                        | "self" | "static" | "parent"
+                    "string"
+                        | "int"
+                        | "float"
+                        | "bool"
+                        | "array"
+                        | "object"
+                        | "null"
+                        | "void"
+                        | "never"
+                        | "mixed"
+                        | "callable"
+                        | "iterable"
+                        | "self"
+                        | "static"
+                        | "parent"
                 )
             {
-                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(crate::types::ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -864,11 +902,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -881,11 +919,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -901,11 +939,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -921,11 +959,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -945,11 +983,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             segments.push(ChainSegment {
                 name: node_text(&name_node, src),
                 node_kind: "static_call_expression".to_string(),
@@ -958,11 +996,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -988,7 +1026,13 @@ pub(super) fn extract_use_declaration(
             }
             "qualified_name" | "name" => {
                 let full = node_text(&child, src);
-                push_fq_import(full, child.start_position().row as u32, child.start_byte() as u32, refs, current_symbol_count);
+                push_fq_import(
+                    full,
+                    child.start_position().row as u32,
+                    child.start_byte() as u32,
+                    refs,
+                    current_symbol_count,
+                );
             }
             _ => {}
         }
@@ -1005,7 +1049,13 @@ fn push_use_ref_for_name(
     for child in node.children(&mut cursor) {
         if child.kind() == "qualified_name" || child.kind() == "name" {
             let full = node_text(&child, src);
-            push_fq_import(full, child.start_position().row as u32, child.start_byte() as u32, refs, current_symbol_count);
+            push_fq_import(
+                full,
+                child.start_position().row as u32,
+                child.start_byte() as u32,
+                refs,
+                current_symbol_count,
+            );
             return;
         }
     }
@@ -1026,7 +1076,9 @@ fn push_fq_import(
     } else {
         None
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -1036,8 +1088,8 @@ fn push_fq_import(
         byte_offset,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-});
+        col: 0,
+    });
 }
 
 pub(super) fn extract_trait_use(
@@ -1057,7 +1109,9 @@ pub(super) fn extract_trait_use(
             } else {
                 None
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: current_symbol_count.saturating_sub(1),
                 target_name: target,
                 kind: EdgeKind::Implements,

@@ -25,11 +25,7 @@ const PROBE_SUBDIRS: &[&str] = &[
 ///
 /// Returns relative paths (as strings) for any entry-point file that exists.
 /// `max_depth` controls how many levels of subdirectory nesting to probe.
-pub fn find_entry_points(
-    root: &Path,
-    entry_point_files: &[&str],
-    max_depth: usize,
-) -> Vec<String> {
+pub fn find_entry_points(root: &Path, entry_point_files: &[&str], max_depth: usize) -> Vec<String> {
     let mut found = Vec::new();
 
     // Check root first.
@@ -62,12 +58,7 @@ pub fn find_entry_points(
     found
 }
 
-fn check_dir(
-    dir: &Path,
-    root: &Path,
-    entry_point_files: &[&str],
-    found: &mut Vec<String>,
-) {
+fn check_dir(dir: &Path, root: &Path, entry_point_files: &[&str], found: &mut Vec<String>) {
     for ep in entry_point_files {
         // Support simple glob patterns like "*.csproj".
         if ep.contains('*') {

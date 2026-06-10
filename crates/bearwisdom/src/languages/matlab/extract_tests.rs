@@ -78,8 +78,7 @@ fn cst_probe_for_statement_iterator_structure() {
                     let mut ic = for_child.walk();
                     for iter_child in for_child.children(&mut ic) {
                         if iter_child.kind() == "identifier" {
-                            loop_var =
-                                Some(iter_child.utf8_text(src_bytes).unwrap().to_owned());
+                            loop_var = Some(iter_child.utf8_text(src_bytes).unwrap().to_owned());
                             break 'outer;
                         }
                     }
@@ -186,7 +185,11 @@ fn non_local_call_still_emitted() {
     assert!(
         result.refs.iter().any(|r| r.target_name == "zeros"),
         "expected ref for zeros; got {:?}",
-        result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -316,7 +319,9 @@ fn cst_probe_init_function_range() {
     let b = bindings(src);
     let x_bindings: Vec<_> = b.iter().filter(|(n, _, _)| n == "X").collect();
     assert!(
-        x_bindings.iter().any(|(_, start, end)| 14 >= *start && 14 <= *end),
+        x_bindings
+            .iter()
+            .any(|(_, start, end)| 14 >= *start && 14 <= *end),
         "expected X binding to cover line 14; x_bindings={x_bindings:?}, fn_ranges={fn_ranges:?}"
     );
     let result = extract(src);
@@ -380,12 +385,18 @@ fn cst_probe_real_kmeans_structure() {
                 .child_by_field_name("name")
                 .map(|n| n.utf8_text(src_bytes).unwrap().to_owned())
                 .unwrap_or_default();
-            fn_ranges.push((name, child.start_position().row as u32, child.end_position().row as u32));
+            fn_ranges.push((
+                name,
+                child.start_position().row as u32,
+                child.end_position().row as u32,
+            ));
         }
     }
     let b = bindings(src);
     let x_bindings: Vec<_> = b.iter().filter(|(n, _, _)| n == "X").collect();
-    let covered = x_bindings.iter().any(|(_, start, end)| 23 >= *start && 23 <= *end);
+    let covered = x_bindings
+        .iter()
+        .any(|(_, start, end)| 23 >= *start && 23 <= *end);
     assert!(
         covered,
         "X binding does NOT cover line 23; fn_ranges={fn_ranges:?}, x_bindings={x_bindings:?}"
@@ -399,12 +410,20 @@ fn top_level_script_calls_not_over_filtered() {
     assert!(
         result.refs.iter().any(|r| r.target_name == "foo"),
         "expected ref for foo in top-level script; got {:?}",
-        result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
     );
     assert!(
         result.refs.iter().any(|r| r.target_name == "rand"),
         "expected ref for rand in top-level script; got {:?}",
-        result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -424,7 +443,11 @@ fn lambda_params_not_emitted_as_refs() {
     assert!(
         result.refs.iter().any(|r| r.target_name == "cellfun"),
         "expected ref for cellfun; got {:?}",
-        result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -456,11 +479,17 @@ fn is_truncated_not_firing_on_normal_prmlt_calls() {
         "end\n",
     );
     let result = extract(src);
-    for expected in &["assert", "numel", "reshape", "min", "max", "sparse", "nonzeros", "dot", "log2", "mean"] {
+    for expected in &[
+        "assert", "numel", "reshape", "min", "max", "sparse", "nonzeros", "dot", "log2", "mean",
+    ] {
         assert!(
             result.refs.iter().any(|r| r.target_name == *expected),
             "expected ref for {expected}; got refs: {:?}",
-            result.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+            result
+                .refs
+                .iter()
+                .map(|r| r.target_name.as_str())
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -493,11 +522,29 @@ fn prmlt_kmeans_all_expected_refs_present() {
         "end\n",
     );
     let result = extract(src);
-    for expected in &["init", "numel", "zeros", "any", "unique", "normalize", "sparse", "min", "dot", "sum", "size", "randperm", "all"] {
+    for expected in &[
+        "init",
+        "numel",
+        "zeros",
+        "any",
+        "unique",
+        "normalize",
+        "sparse",
+        "min",
+        "dot",
+        "sum",
+        "size",
+        "randperm",
+        "all",
+    ] {
         assert!(
             result.refs.iter().any(|r| r.target_name == *expected),
             "expected ref for {expected}; got refs: {:?}",
-            result.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+            result
+                .refs
+                .iter()
+                .map(|r| r.target_name.as_str())
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -590,7 +637,11 @@ fn field_assignment_rhs_calls_still_emitted() {
     assert!(
         result.refs.iter().any(|r| r.target_name == "zeros"),
         "expected Calls ref for zeros to survive; got {:?}",
-        result.refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -615,11 +666,18 @@ fn indexed_field_assignment_common_name_not_suppressed_globally() {
     assert!(
         !min_refs.is_empty(),
         "expected Calls ref for min(data); got refs: {:?}",
-        result_val.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+        result_val
+            .refs
+            .iter()
+            .map(|r| r.target_name.as_str())
+            .collect::<Vec<_>>()
     );
     // `computeMin` on the RHS of the field assignment must also survive.
     assert!(
-        result_val.refs.iter().any(|r| r.target_name == "computeMin"),
+        result_val
+            .refs
+            .iter()
+            .any(|r| r.target_name == "computeMin"),
         "expected Calls ref for computeMin (RHS of field assignment)"
     );
 }

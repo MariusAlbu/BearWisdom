@@ -8,7 +8,10 @@ fn id_matches() {
 
 #[test]
 fn structural_choices() {
-    assert_eq!(JAVA_PROFILE.supertype_discovery, SupertypeDiscovery::Explicit);
+    assert_eq!(
+        JAVA_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Explicit
+    );
     assert_eq!(JAVA_PROFILE.dispatch_axis, DispatchAxis::Receiver);
     assert!(JAVA_PROFILE.has_generics);
     // java.util.Optional is a class with explicit unwrap methods; engine
@@ -30,6 +33,9 @@ fn primitives_include_jvm_built_in_types() {
         .map(|(n, _)| *n)
         .collect();
     for canonical in ["int", "long", "boolean", "void", "String"] {
-        assert!(names.contains(&canonical), "missing Java primitive: {canonical}");
+        assert!(
+            names.contains(&canonical),
+            "missing Java primitive: {canonical}"
+        );
     }
 }

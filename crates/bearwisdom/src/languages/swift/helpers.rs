@@ -60,19 +60,27 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
             "modifier" => {
                 let text = node_text(child, src);
                 match text.trim() {
-                    "public"      => return Some(Visibility::Public),
-                    "private"     => return Some(Visibility::Private),
+                    "public" => return Some(Visibility::Public),
+                    "private" => return Some(Visibility::Private),
                     "fileprivate" => return Some(Visibility::Private),
-                    "internal"    => return Some(Visibility::Internal),
-                    _             => {}
+                    "internal" => return Some(Visibility::Internal),
+                    _ => {}
                 }
             }
             "visibility_modifier" | "access_level_modifier" => {
                 let text = node_text(child, src);
-                if text.contains("public")      { return Some(Visibility::Public);   }
-                if text.contains("private")     { return Some(Visibility::Private);  }
-                if text.contains("fileprivate") { return Some(Visibility::Private);  }
-                if text.contains("internal")    { return Some(Visibility::Internal); }
+                if text.contains("public") {
+                    return Some(Visibility::Public);
+                }
+                if text.contains("private") {
+                    return Some(Visibility::Private);
+                }
+                if text.contains("fileprivate") {
+                    return Some(Visibility::Private);
+                }
+                if text.contains("internal") {
+                    return Some(Visibility::Internal);
+                }
             }
             _ => {}
         }
@@ -101,22 +109,22 @@ pub(super) fn extract_doc_comment(node: &Node, src: &[u8]) -> Option<String> {
 pub(super) fn swift_type_decl_kind(node: &Node, src: &[u8]) -> SymbolKind {
     if let Some(kw_node) = node.child_by_field_name("declaration_kind") {
         return match kw_node.kind() {
-            "struct"    => SymbolKind::Struct,
-            "enum"      => SymbolKind::Enum,
+            "struct" => SymbolKind::Struct,
+            "enum" => SymbolKind::Enum,
             "extension" => SymbolKind::Namespace,
-            "actor"     => SymbolKind::Class,
-            _           => SymbolKind::Class,
+            "actor" => SymbolKind::Class,
+            _ => SymbolKind::Class,
         };
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "struct"    => return SymbolKind::Struct,
-            "enum"      => return SymbolKind::Enum,
-            "class"     => return SymbolKind::Class,
-            "actor"     => return SymbolKind::Class,
+            "struct" => return SymbolKind::Struct,
+            "enum" => return SymbolKind::Enum,
+            "class" => return SymbolKind::Class,
+            "actor" => return SymbolKind::Class,
             "extension" => return SymbolKind::Namespace,
-            _           => {}
+            _ => {}
         }
     }
     SymbolKind::Class

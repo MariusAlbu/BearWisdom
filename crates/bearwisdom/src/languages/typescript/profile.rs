@@ -70,7 +70,11 @@ const TS_KIND_TABLE: KindTable = &[
     ),
     (
         EdgeKind::Instantiates,
-        &[SymbolKind::Class, SymbolKind::Interface, SymbolKind::Function],
+        &[
+            SymbolKind::Class,
+            SymbolKind::Interface,
+            SymbolKind::Function,
+        ],
     ),
 ];
 
@@ -158,7 +162,8 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     import_resolution: None,
     // Harvest the extractor's `TypeRef`-with-module import refs and the
     // post-pass call refs that carry a `module` into the file's import table.
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     // Relative (`./x`) modules bind by exact name + kind in the resolved file;
     // bare specifiers route to ByNameUnderModuleDir (the qname-rewrite path).
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
@@ -177,11 +182,12 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // (`rxjs/operators` → `rxjs`); a bare specifier never directory-matches a
     // same-named project file.
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
-        definitely_typed: true,
-        deep_import_peel: true,
-        decline_bare_directory_match: true,
-    },
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+            definitely_typed: true,
+            deep_import_peel: true,
+            decline_bare_directory_match: true,
+        },
     workspace_packages: true,
     // Declaration merging: interface + variable under one qname.
     overload_pick_all: true,
@@ -197,10 +203,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     namespaceless_global_type_lookup: false,
     explicit_member_import: false,
-    constructor_patterns: &[
-        ConstructorPattern::New,
-        ConstructorPattern::CallableClass,
-    ],
+    constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),
     doc_comment_kinds: &["/**"],

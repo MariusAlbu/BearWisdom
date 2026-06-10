@@ -22,7 +22,9 @@ use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 pub struct RebarManifest;
 
 impl ManifestReader for RebarManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Rebar }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Rebar
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         for name in &["rebar.config", "rebar3.config"] {
@@ -46,8 +48,12 @@ impl ManifestReader for RebarManifest {
 }
 
 fn collect_rebar_configs(dir: &Path, out: &mut Vec<ReaderEntry>, depth: u32) {
-    if depth > 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -81,9 +87,13 @@ fn collect_rebar_configs(dir: &Path, out: &mut Vec<ReaderEntry>, depth: u32) {
 pub fn parse_rebar_deps(content: &str) -> Vec<String> {
     let mut out = Vec::new();
     // Find the `{deps,` opening then read the matched `[` block.
-    let Some(deps_idx) = content.find("{deps,") else { return out };
+    let Some(deps_idx) = content.find("{deps,") else {
+        return out;
+    };
     let after = &content[deps_idx + 6..];
-    let Some(list_start) = after.find('[') else { return out };
+    let Some(list_start) = after.find('[') else {
+        return out;
+    };
     let list_body = &after[list_start + 1..];
     // Find matching `]`, respecting nested brackets.
     let mut depth: i32 = 1;
@@ -93,12 +103,17 @@ pub fn parse_rebar_deps(content: &str) -> Vec<String> {
             '[' | '{' | '(' => depth += 1,
             ']' | '}' | ')' => {
                 depth -= 1;
-                if depth == 0 { end = i; break }
+                if depth == 0 {
+                    end = i;
+                    break;
+                }
             }
             _ => {}
         }
     }
-    if end == 0 { return out }
+    if end == 0 {
+        return out;
+    }
     let body = &list_body[..end];
     // Top-level commas split deps, but commas inside nested {...} mustn't.
     let entries = split_top_level(body, ',');
@@ -106,17 +121,22 @@ pub fn parse_rebar_deps(content: &str) -> Vec<String> {
         let trimmed = entry.trim().trim_start_matches(['\n', ' ', '\t']);
         // Strip line comments.
         let no_comment = trimmed.split('%').next().unwrap_or(trimmed).trim();
-        if no_comment.is_empty() { continue }
+        if no_comment.is_empty() {
+            continue;
+        }
         // `{name, ...}` shape — take name token before first comma inside.
-        if let Some(inner) = no_comment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        if let Some(inner) = no_comment
+            .strip_prefix('{')
+            .and_then(|s| s.strip_suffix('}'))
+        {
             let name = inner.split(',').next().unwrap_or("").trim();
-            if !name.is_empty() { out.push(name.to_string()) }
+            if !name.is_empty() {
+                out.push(name.to_string())
+            }
         } else {
             // Bare atom or quoted atom.
             let name = no_comment.trim_matches('\'').trim();
-            if !name.is_empty()
-                && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-            {
+            if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 out.push(name.to_string());
             }
         }
@@ -139,7 +159,9 @@ fn split_top_level(s: &str, sep: char) -> Vec<&str> {
             _ => {}
         }
     }
-    if last < s.len() { parts.push(&s[last..]) }
+    if last < s.len() {
+        parts.push(&s[last..])
+    }
     parts
 }
 

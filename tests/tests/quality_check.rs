@@ -107,9 +107,7 @@ fn compare_against_baseline(
                     _ => continue,
                 };
                 if current_val < min_val {
-                    regressions.push(format!(
-                        "{key}: expected >={min_val}, got {current_val}"
-                    ));
+                    regressions.push(format!("{key}: expected >={min_val}, got {current_val}"));
                 }
             }
         }
@@ -329,14 +327,14 @@ fn test_quality_check_multiple_projects_partial_regression() {
     let (reg_a, _) = compare_against_baseline(&stats, &baseline_a);
     let (reg_b, _) = compare_against_baseline(&stats, &baseline_b);
 
-    let total_projects_with_regressions = [&reg_a, &reg_b]
-        .iter()
-        .filter(|r| !r.is_empty())
-        .count();
+    let total_projects_with_regressions = [&reg_a, &reg_b].iter().filter(|r| !r.is_empty()).count();
 
     assert!(reg_a.is_empty(), "project-a must pass: {reg_a:?}");
     assert!(!reg_b.is_empty(), "project-b must fail (symbols inflated)");
-    assert_eq!(total_projects_with_regressions, 1, "exactly one project must fail");
+    assert_eq!(
+        total_projects_with_regressions, 1,
+        "exactly one project must fail"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -33,12 +33,18 @@ fn normalize_already_canonical() {
 
 #[test]
 fn normalize_multiple_params() {
-    assert_eq!(normalize("/api/users/:id/posts/:postId"), "/api/users/{}/posts/{}");
+    assert_eq!(
+        normalize("/api/users/:id/posts/:postId"),
+        "/api/users/{}/posts/{}"
+    );
 }
 
 #[test]
 fn normalize_multiple_params_mixed_syntax() {
-    assert_eq!(normalize("/api/users/{userId}/posts/:postId"), "/api/users/{}/posts/{}");
+    assert_eq!(
+        normalize("/api/users/{userId}/posts/:postId"),
+        "/api/users/{}/posts/{}"
+    );
 }
 
 #[test]
@@ -79,7 +85,10 @@ fn normalize_query_string_with_param_stripped() {
 
 #[test]
 fn normalize_spring_path_variable() {
-    assert_eq!(normalize("/api/items/{itemId}/reviews/{reviewId}"), "/api/items/{}/reviews/{}");
+    assert_eq!(
+        normalize("/api/items/{itemId}/reviews/{reviewId}"),
+        "/api/items/{}/reviews/{}"
+    );
 }
 
 #[test]
@@ -206,10 +215,7 @@ fn normalize_strips_scheme_and_host() {
 
 #[test]
 fn normalize_strips_scheme_host_and_template_backticks() {
-    assert_eq!(
-        normalize("`http://localhost:{}/hello`"),
-        "/hello",
-    );
+    assert_eq!(normalize("`http://localhost:{}/hello`"), "/hello",);
 }
 
 #[test]
@@ -243,10 +249,7 @@ fn normalize_preserves_path_param_first_segment() {
 
 #[test]
 fn normalize_strips_query_string_after_template_replacement() {
-    assert_eq!(
-        normalize("`{}/api/font?{}`"),
-        "/api/font",
-    );
+    assert_eq!(normalize("`{}/api/font?{}`"), "/api/font",);
 }
 
 #[test]

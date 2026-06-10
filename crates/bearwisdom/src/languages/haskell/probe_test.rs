@@ -11,10 +11,16 @@ fn import_alias_captured_in_target_name() {
     let imp = r.refs.iter().find(|rf| rf.kind == EdgeKind::Imports);
     assert!(imp.is_some(), "expected an Imports ref; got: {:?}", r.refs);
     let imp = imp.unwrap();
-    assert_eq!(imp.target_name, "T", "alias should be target_name; got {:?}", imp.target_name);
     assert_eq!(
-        imp.module.as_deref(), Some("Data.Text"),
-        "module should be the full module name; got {:?}", imp.module
+        imp.target_name, "T",
+        "alias should be target_name; got {:?}",
+        imp.target_name
+    );
+    assert_eq!(
+        imp.module.as_deref(),
+        Some("Data.Text"),
+        "module should be the full module name; got {:?}",
+        imp.module
     );
 }
 
@@ -37,16 +43,25 @@ fn dotted_variable_split_into_module_and_name() {
     // the last `.` and produce target_name="isPrefixOf", module=Some("T").
     let src = "module M where\nf x y = T.isPrefixOf x y\n";
     let r = crate::languages::haskell::extract::extract(src);
-    let call = r.refs.iter().find(|rf| {
-        rf.kind == EdgeKind::Calls && rf.target_name == "isPrefixOf"
-    });
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "isPrefixOf");
     assert!(
         call.is_some(),
         "expected Calls ref to 'isPrefixOf'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind, &rf.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind, &rf.module))
+            .collect::<Vec<_>>()
     );
     let call = call.unwrap();
-    assert_eq!(call.module.as_deref(), Some("T"), "expected module=Some(\"T\"); got {:?}", call.module);
+    assert_eq!(
+        call.module.as_deref(),
+        Some("T"),
+        "expected module=Some(\"T\"); got {:?}",
+        call.module
+    );
 }
 
 #[test]
@@ -59,11 +74,16 @@ class Num a where
     (+), (-), (*) :: a -> a -> a
 "#;
     let r = crate::languages::haskell::extract::extract(src);
-    let names: Vec<(&str, SymbolKind)> =
-        r.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+    let names: Vec<(&str, SymbolKind)> = r
+        .symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect();
     for op in ["==", "/=", "+", "-", "*"] {
         assert!(
-            names.iter().any(|(n, k)| *n == op && matches!(k, SymbolKind::Method)),
+            names
+                .iter()
+                .any(|(n, k)| *n == op && matches!(k, SymbolKind::Method)),
             "expected {op} as Method symbol from class declaration; got: {names:?}"
         );
     }
@@ -76,8 +96,12 @@ class Num a where
 /// recorded tyvar set directly.
 fn sig_generics(sig: Option<&str>) -> Vec<String> {
     let sig = sig.unwrap_or("");
-    let Some(start) = sig.find('<') else { return Vec::new() };
-    let Some(end_rel) = sig[start..].find('>') else { return Vec::new() };
+    let Some(start) = sig.find('<') else {
+        return Vec::new();
+    };
+    let Some(end_rel) = sig[start..].find('>') else {
+        return Vec::new();
+    };
     sig[start + 1..start + end_rel]
         .split(',')
         .map(|s| s.trim().to_string())
@@ -135,7 +159,11 @@ fn constraint_class_name_not_a_tyvar() {
     // type-constructor reference to the wrong declaring symbol.
     let src = "f :: Ord a => a -> a -> Bool\nf x y = x == y\n";
     let r = crate::languages::haskell::extract::extract(src);
-    let f = r.symbols.iter().find(|s| s.name == "f" && s.signature.is_some()).unwrap();
+    let f = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "f" && s.signature.is_some())
+        .unwrap();
     let gens = sig_generics(f.signature.as_deref());
     assert!(
         !gens.iter().any(|p| p == "Ord"),
@@ -151,7 +179,11 @@ fn forall_quantified_tyvars_collected() {
     // constraint tyvars).
     let src = "h :: forall a b. (Eq a) => a -> b -> Bool\n";
     let r = crate::languages::haskell::extract::extract(src);
-    let h = r.symbols.iter().find(|s| s.name == "h" && s.signature.is_some()).unwrap();
+    let h = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "h" && s.signature.is_some())
+        .unwrap();
     let gens = sig_generics(h.signature.as_deref());
     assert!(
         gens.iter().any(|p| p == "a") && gens.iter().any(|p| p == "b"),
@@ -203,4 +235,3 @@ fn data_with_operator_constructor_emits_cons() {
         "expected `[]` nullary constructor; got {names:?}"
     );
 }
-

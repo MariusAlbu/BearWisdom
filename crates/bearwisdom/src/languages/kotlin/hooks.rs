@@ -12,9 +12,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -155,11 +153,17 @@ pub(crate) fn detect_kotlin_exposed_emission(
     }
     let root = segs[0].name.as_str();
     let leaf = segs.last()?.name.as_str();
-    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+    if !root
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
+    {
         return None;
     }
     let op = match leaf {
-        "select" | "selectAll" | "selectBatched" | "find" | "findById" | "all" | "count" => DbQueryOp::Select,
+        "select" | "selectAll" | "selectBatched" | "find" | "findById" | "all" | "count" => {
+            DbQueryOp::Select
+        }
         "insert" | "insertAndGetId" | "batchInsert" => DbQueryOp::Insert,
         "update" | "batchUpdate" => DbQueryOp::Update,
         "delete" | "deleteWhere" | "deleteAll" => DbQueryOp::Delete,
@@ -186,11 +190,17 @@ pub(crate) fn detect_kotlin_grpc_stub_emission(
         return None;
     }
     let ctor = segs[1].name.as_str();
-    if !matches!(ctor, "newBlockingStub" | "newFutureStub" | "newStub" | "newCoroutineStub") {
+    if !matches!(
+        ctor,
+        "newBlockingStub" | "newFutureStub" | "newStub" | "newCoroutineStub"
+    ) {
         return None;
     }
     let leaf = segs.last()?.name.as_str();
-    if matches!(leaf, "newBlockingStub" | "newFutureStub" | "newStub" | "newCoroutineStub") {
+    if matches!(
+        leaf,
+        "newBlockingStub" | "newFutureStub" | "newStub" | "newCoroutineStub"
+    ) {
         return None;
     }
     let service = root
@@ -224,8 +234,7 @@ pub(crate) fn infer_external_inner(
                     if manifest.dependencies.iter().any(|group_id| {
                         import_path == group_id
                             || import_path.starts_with(group_id.as_str())
-                                && import_path.as_bytes().get(group_id.len())
-                                    == Some(&b'.')
+                                && import_path.as_bytes().get(group_id.len()) == Some(&b'.')
                     }) {
                         return Some(import_path.to_string());
                     }
@@ -264,7 +273,8 @@ pub(crate) fn infer_external_inner(
         if ns.is_empty() {
             continue;
         }
-        if !import.is_wildcard && import.imported_name != *target
+        if !import.is_wildcard
+            && import.imported_name != *target
             && import.alias.as_deref() != Some(target.as_str())
         {
             continue;
@@ -311,7 +321,9 @@ pub(crate) fn infer_external_inner_with_lookup(
     // aren't on the manifest's group-id prefix list.
     let target = &ref_ctx.extracted_ref.target_name;
     for import in &file_ctx.imports {
-        let Some(ns) = import.module_path.as_deref() else { continue };
+        let Some(ns) = import.module_path.as_deref() else {
+            continue;
+        };
         if ns.is_empty() {
             continue;
         }
@@ -353,10 +365,7 @@ pub(crate) fn detect_flow_inner(
     let Some(chain) = r.chain.as_ref() else {
         // Ktor `routing { get("/x") { ... } }` lands as a bare Calls ref
         // with target_name = "get"/"post"/etc., no chain.
-        if let Some(em) = detect_kotlin_ktor_route_emission(
-            r.target_name.as_str(),
-            &r.call_args,
-        ) {
+        if let Some(em) = detect_kotlin_ktor_route_emission(r.target_name.as_str(), &r.call_args) {
             return vec![em];
         }
         return Vec::new();

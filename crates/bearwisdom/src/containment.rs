@@ -50,10 +50,15 @@ pub fn normalize_qnames_from_parents(symbols: &mut [ExtractedSymbol]) {
             continue;
         }
         let parent_qname = symbols[p].qualified_name.clone();
-        if !qname_dropped_outer_prefix(&symbols[i].qualified_name, &symbols[i].name, &parent_qname) {
+        if !qname_dropped_outer_prefix(&symbols[i].qualified_name, &symbols[i].name, &parent_qname)
+        {
             continue;
         }
-        let sep = if parent_qname.contains("::") { "::" } else { "." };
+        let sep = if parent_qname.contains("::") {
+            "::"
+        } else {
+            "."
+        };
         symbols[i].qualified_name = format!("{parent_qname}{sep}{}", symbols[i].name);
         symbols[i].scope_path = Some(parent_qname);
     }

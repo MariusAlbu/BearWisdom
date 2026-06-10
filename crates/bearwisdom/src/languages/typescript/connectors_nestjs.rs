@@ -72,7 +72,9 @@ pub(super) fn extract_nestjs_routes(
         .context("Failed to prepare TypeScript files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query TypeScript files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect TypeScript file rows")?;
@@ -235,7 +237,10 @@ mod tests {
         let re = NestRegexes::build();
         let line = "@Controller()";
         let cap = re.controller.captures(line).unwrap();
-        assert!(cap.get(1).is_none(), "no-arg controller should have no prefix group");
+        assert!(
+            cap.get(1).is_none(),
+            "no-arg controller should have no prefix group"
+        );
     }
 
     #[test]
@@ -335,7 +340,14 @@ export class UsersController {
 "#;
         let re = NestRegexes::build();
         let mut routes = Vec::new();
-        extract_routes_from_source(conn, source, 1, "src/users/users.controller.ts", &re, &mut routes);
+        extract_routes_from_source(
+            conn,
+            source,
+            1,
+            "src/users/users.controller.ts",
+            &re,
+            &mut routes,
+        );
 
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].http_method, "GET");
@@ -478,7 +490,14 @@ export class ItemsController {
 "#;
         let re = NestRegexes::build();
         let mut routes = Vec::new();
-        extract_routes_from_source(conn, source, 1, "src/items/items.controller.ts", &re, &mut routes);
+        extract_routes_from_source(
+            conn,
+            source,
+            1,
+            "src/items/items.controller.ts",
+            &re,
+            &mut routes,
+        );
 
         assert_eq!(routes.len(), 6);
         let methods: Vec<&str> = routes.iter().map(|r| r.http_method.as_str()).collect();

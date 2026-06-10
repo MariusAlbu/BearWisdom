@@ -38,15 +38,25 @@ pub(super) fn parse_cargo_lock(content: &str) -> Vec<CargoLockEntry> {
             current_is_registry = false;
             continue;
         }
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
-        let Some(eq) = trimmed.find(" = ") else { continue };
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some(eq) = trimmed.find(" = ") else {
+            continue;
+        };
         let key = trimmed[..eq].trim();
         let rest = trimmed[eq + 3..].trim();
         let value = rest.trim_matches('"');
         match key {
-            "name" => { current_name = Some(value.to_string()); }
-            "version" => { current_version = Some(value.to_string()); }
-            "source" => { current_is_registry = value.starts_with("registry+"); }
+            "name" => {
+                current_name = Some(value.to_string());
+            }
+            "version" => {
+                current_version = Some(value.to_string());
+            }
+            "source" => {
+                current_is_registry = value.starts_with("registry+");
+            }
             _ => {}
         }
     }
@@ -62,7 +72,9 @@ fn find_cargo_lock(start: &Path) -> Option<PathBuf> {
     let mut current = start;
     for _ in 0..8 {
         let lock = current.join("Cargo.lock");
-        if lock.is_file() { return Some(lock) }
+        if lock.is_file() {
+            return Some(lock);
+        }
         current = current.parent()?;
     }
     None
@@ -73,8 +85,12 @@ fn find_cargo_lock_descend(start: &Path) -> Option<PathBuf> {
 }
 
 fn find_cargo_lock_descend_bounded(dir: &Path, depth: u8) -> Option<PathBuf> {
-    if depth > 2 { return None }
-    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    if depth > 2 {
+        return None;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return None;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_file() && path.file_name().and_then(|n| n.to_str()) == Some("Cargo.lock") {
@@ -103,11 +119,15 @@ fn cargo_registry_src_dirs() -> Vec<PathBuf> {
     } else {
         return dirs;
     };
-    if !src_root.is_dir() { return dirs }
+    if !src_root.is_dir() {
+        return dirs;
+    }
     if let Ok(entries) = std::fs::read_dir(&src_root) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() { dirs.push(path) }
+            if path.is_dir() {
+                dirs.push(path)
+            }
         }
     }
     dirs
@@ -126,33 +146,51 @@ pub(super) fn split_crate_dir_name(s: &str) -> Option<(String, String)> {
 }
 
 pub(super) fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let lock_path = find_cargo_lock(project_root)
-        .or_else(|| find_cargo_lock_descend(project_root));
+    let lock_path = find_cargo_lock(project_root).or_else(|| find_cargo_lock_descend(project_root));
 
     let packages: Vec<CargoLockEntry> = if let Some(ref lp) = lock_path {
         if let Ok(content) = std::fs::read_to_string(lp) {
             let parsed = parse_cargo_lock(&content);
             if !parsed.is_empty() {
-                debug!("Rust: loaded {} packages from {}", parsed.len(), lp.display());
+                debug!(
+                    "Rust: loaded {} packages from {}",
+                    parsed.len(),
+                    lp.display()
+                );
                 parsed
-            } else { Vec::new() }
-        } else { Vec::new() }
-    } else { Vec::new() };
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
 
     let use_fallback = packages.is_empty();
     let toml_names: Vec<String> = if use_fallback {
         let cargo_toml = project_root.join("Cargo.toml");
-        if !cargo_toml.is_file() { return Vec::new() }
+        if !cargo_toml.is_file() {
+            return Vec::new();
+        }
         match std::fs::read_to_string(&cargo_toml) {
             Ok(content) => {
                 let deps = parse_cargo_dependencies(&content);
-                if deps.is_empty() { return Vec::new() }
-                debug!("Rust: no Cargo.lock; {} declared deps from Cargo.toml", deps.len());
+                if deps.is_empty() {
+                    return Vec::new();
+                }
+                debug!(
+                    "Rust: no Cargo.lock; {} declared deps from Cargo.toml",
+                    deps.len()
+                );
                 deps
             }
             Err(_) => return Vec::new(),
         }
-    } else { Vec::new() };
+    } else {
+        Vec::new()
+    };
 
     let src_dirs = cargo_registry_src_dirs();
     if src_dirs.is_empty() {
@@ -165,7 +203,9 @@ pub(super) fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
         if let Ok(entries) = std::fs::read_dir(src_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() { all_crate_dirs.push(path) }
+                if path.is_dir() {
+                    all_crate_dirs.push(path)
+                }
             }
         }
     }
@@ -214,9 +254,13 @@ pub(super) fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
             std::collections::HashMap::with_capacity(all_crate_dirs.len());
 
         for path in &all_crate_dirs {
-            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if let Some((name, version)) = split_crate_dir_name(dir_name) {
-                dir_index.entry((name, version)).or_insert_with(|| path.clone());
+                dir_index
+                    .entry((name, version))
+                    .or_insert_with(|| path.clone());
             }
         }
 

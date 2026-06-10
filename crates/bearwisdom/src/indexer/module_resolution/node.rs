@@ -121,7 +121,11 @@ fn join_paths(dir: &str, tail: &str) -> String {
     if dir.is_empty() || dir == "." {
         tail
     } else {
-        format!("{}/{}", dir.trim_end_matches('/'), tail.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            dir.trim_end_matches('/'),
+            tail.trim_start_matches('/')
+        )
     }
 }
 
@@ -152,10 +156,7 @@ fn normalise_path(path: &str) -> String {
 fn try_resolve(base: &str, file_paths: &[&str]) -> Option<String> {
     // If the specifier already includes a known extension, try exact + suffix.
     if EXTENSIONS.iter().any(|e| base.ends_with(e)) {
-        if let Some(&p) = file_paths
-            .iter()
-            .find(|&&p| path_matches(p, base))
-        {
+        if let Some(&p) = file_paths.iter().find(|&&p| path_matches(p, base)) {
             return Some(p.to_string());
         }
     }
@@ -395,7 +396,10 @@ mod tests {
         let cases: &[(&str, &str)] = &[
             ("./Button", "apps/web/src/components/Card.tsx"),
             ("../utils/helpers", "apps/web/src/components/Card.tsx"),
-            ("../../packages/shared/src/index", "apps/web/src/pages/index.tsx"),
+            (
+                "../../packages/shared/src/index",
+                "apps/web/src/pages/index.tsx",
+            ),
             ("@/components/Button", "apps/web/src/pages/index.tsx"),
             ("react", "apps/web/src/pages/index.tsx"), // external → None
         ];

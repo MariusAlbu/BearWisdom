@@ -27,10 +27,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "nim";
 pub struct NimbleEcosystem;
 
 impl Ecosystem for NimbleEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
         // Nim packages use `<pkg>.nimble` (extension match).
@@ -62,33 +70,33 @@ impl Ecosystem for NimbleEcosystem {
         walk_nim_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn resolve_import(
-        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
-    ) -> Vec<WalkedFile> { walk_nim_narrowed(dep) }
-    fn resolve_symbol(
-        &self, dep: &ExternalDepRoot, _f: &str,
-    ) -> Vec<WalkedFile> { walk_nim_narrowed(dep) }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn resolve_import(&self, dep: &ExternalDepRoot, _p: &str, _s: &[&str]) -> Vec<WalkedFile> {
+        walk_nim_narrowed(dep)
+    }
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _f: &str) -> Vec<WalkedFile> {
+        walk_nim_narrowed(dep)
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_nim_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         nim_stdlib_pre_pull(dep_roots)
     }
 }
 
 impl ExternalSourceLocator for NimbleEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_nim_externals(project_root)
     }
@@ -118,7 +126,9 @@ impl crate::ecosystem::manifest::ManifestReader for NimbleManifest {
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let deps = parse_nimble_requires(project_root);
-        if deps.is_empty() { return None }
+        if deps.is_empty() {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
         Some(data)
@@ -131,9 +141,7 @@ impl crate::ecosystem::manifest::ManifestReader for NimbleManifest {
 
 pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let declared = parse_nimble_requires(project_root);
-    let user_imports: Vec<String> = collect_nim_user_imports(project_root)
-        .into_iter()
-        .collect();
+    let user_imports: Vec<String> = collect_nim_user_imports(project_root).into_iter().collect();
 
     let mut roots = Vec::new();
     // Track which declared deps were satisfied from pkgs2 to avoid re-adding
@@ -158,9 +166,11 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 matches.sort();
                 if let Some(best) = matches.pop() {
                     let version = best
-                        .file_name().and_then(|n| n.to_str())
+                        .file_name()
+                        .and_then(|n| n.to_str())
                         .and_then(|n| n.strip_prefix(&prefix))
-                        .unwrap_or("").to_string();
+                        .unwrap_or("")
+                        .to_string();
                     resolved.insert(dep_name.clone());
                     roots.push(ExternalDepRoot {
                         module_path: dep_name.clone(),
@@ -188,14 +198,18 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             if let Ok(entries) = std::fs::read_dir(&pkgcache) {
                 let all_cache: Vec<_> = entries.flatten().collect();
                 for dep_name in &declared {
-                    if resolved.contains(dep_name) { continue }
+                    if resolved.contains(dep_name) {
+                        continue;
+                    }
                     // Match: dir name (lowercased) ends with the dep name or
                     // dep name prefixed with the dep name string.
                     let dep_lower = dep_name.to_lowercase();
                     let mut matches: Vec<PathBuf> = all_cache
                         .iter()
                         .filter(|e| {
-                            if !e.path().is_dir() { return false; }
+                            if !e.path().is_dir() {
+                                return false;
+                            }
                             let n = e.file_name();
                             let s = n.to_string_lossy().to_lowercase();
                             // `githubcom_org<depname>` or `githubcom_org<depname>_<commit>`
@@ -210,7 +224,9 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         let has_entry = best.join(format!("{dep_name}.nim")).is_file()
                             || best.join("src").join(format!("{dep_name}.nim")).is_file()
                             || best.join(dep_name.as_str()).is_dir();
-                        if !has_entry { continue }
+                        if !has_entry {
+                            continue;
+                        }
                         resolved.insert(dep_name.clone());
                         roots.push(ExternalDepRoot {
                             module_path: dep_name.clone(),
@@ -252,12 +268,16 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 fn find_nim_stdlib() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_NIM_STDLIB") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     for env_key in ["NIM_HOME", "NIMHOME"] {
         if let Some(home) = std::env::var_os(env_key) {
             let lib = PathBuf::from(home).join("lib");
-            if lib.is_dir() { return Some(lib); }
+            if lib.is_dir() {
+                return Some(lib);
+            }
         }
     }
 
@@ -281,16 +301,16 @@ fn find_nim_stdlib() -> Option<PathBuf> {
         );
         for line in combined.lines() {
             let raw = line.trim();
-            if raw.is_empty() { continue }
+            if raw.is_empty() {
+                continue;
+            }
             // Skip log/config noise — only consider lines that look like
             // absolute paths (Windows drive letter or POSIX root).
-            let looks_absolute = raw
-                .chars()
-                .nth(1)
-                .map(|c| c == ':')
-                .unwrap_or(false)
-                || raw.starts_with('/');
-            if !looks_absolute { continue }
+            let looks_absolute =
+                raw.chars().nth(1).map(|c| c == ':').unwrap_or(false) || raw.starts_with('/');
+            if !looks_absolute {
+                continue;
+            }
             let candidate = PathBuf::from(raw);
             // Walk up from `<install>/lib/<subdir>` to `<install>/lib`.
             // Only accept a parent named `lib` so deeper paths
@@ -305,12 +325,16 @@ fn find_nim_stdlib() -> Option<PathBuf> {
         }
         None
     };
-    if let Some(p) = probe("nim") { return Some(p); }
+    if let Some(p) = probe("nim") {
+        return Some(p);
+    }
     // Windows shims are `.bat` files; std::process::Command doesn't apply
     // PATHEXT so try the explicit name.
     #[cfg(windows)]
     {
-        if let Some(p) = probe("nim.bat") { return Some(p); }
+        if let Some(p) = probe("nim.bat") {
+            return Some(p);
+        }
     }
 
     None
@@ -327,21 +351,34 @@ fn collect_nim_user_imports(project_root: &Path) -> std::collections::HashSet<St
 }
 
 fn scan_nim_imports(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(name, ".git" | "nimcache" | "tests" | "test" | "examples")
-                    || name.starts_with('.') { continue }
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_nim_imports(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".nim") { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".nim") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_nim_imports(&content, out);
         }
     }
@@ -368,8 +405,14 @@ fn extract_nim_imports(content: &str, out: &mut std::collections::HashSet<String
                 let inner = &rest[open + 1..close];
                 for sel in inner.split(',') {
                     let sel = sel.trim();
-                    if sel.is_empty() { continue }
-                    out.insert(if prefix.is_empty() { sel.to_string() } else { format!("{prefix}/{sel}") });
+                    if sel.is_empty() {
+                        continue;
+                    }
+                    out.insert(if prefix.is_empty() {
+                        sel.to_string()
+                    } else {
+                        format!("{prefix}/{sel}")
+                    });
                 }
                 continue;
             }
@@ -377,10 +420,14 @@ fn extract_nim_imports(content: &str, out: &mut std::collections::HashSet<String
         // Comma-separated: `import foo, bar`
         for part in rest.split(',') {
             let part = part.trim();
-            if part.is_empty() { continue }
+            if part.is_empty() {
+                continue;
+            }
             // `foo as F` → drop alias
             let head = part.split(" as ").next().unwrap_or("").trim();
-            if head.is_empty() { continue }
+            if head.is_empty() {
+                continue;
+            }
             out.insert(head.to_string());
         }
     }
@@ -388,7 +435,9 @@ fn extract_nim_imports(content: &str, out: &mut std::collections::HashSet<String
 
 fn nim_module_to_path_tail(module: &str) -> Option<String> {
     let cleaned = module.trim();
-    if cleaned.is_empty() { return None }
+    if cleaned.is_empty() {
+        return None;
+    }
     // `std/strutils` / `pkg/foo` / `foo` → all map to file paths.
     Some(format!("{}.nim", cleaned.replace('.', "/")))
 }
@@ -401,7 +450,9 @@ fn nim_module_to_path_tail(module: &str) -> Option<String> {
 fn nim_module_path_tails(module: &str) -> Vec<String> {
     let mut out = Vec::new();
     let cleaned = module.trim();
-    if cleaned.is_empty() { return out; }
+    if cleaned.is_empty() {
+        return out;
+    }
     let primary = cleaned.replace('.', "/");
     out.push(format!("{primary}.nim"));
     // `std/strutils` → leaf "strutils.nim"
@@ -419,13 +470,17 @@ fn nim_module_path_tails(module: &str) -> Vec<String> {
 }
 
 fn walk_nim_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    if dep.requested_imports.is_empty() { return walk_nim_root(dep); }
+    if dep.requested_imports.is_empty() {
+        return walk_nim_root(dep);
+    }
     let tails: std::collections::HashSet<String> = dep
         .requested_imports
         .iter()
         .flat_map(|m| nim_module_path_tails(m))
         .collect();
-    if tails.is_empty() { return walk_nim_root(dep); }
+    if tails.is_empty() {
+        return walk_nim_root(dep);
+    }
 
     let mut out = Vec::new();
     walk_nim_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
@@ -440,8 +495,12 @@ fn walk_nim_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
     let mut any_match = false;
@@ -451,17 +510,27 @@ fn walk_nim_narrowed_dir(
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "test" | "examples" | "docs" | "nimcache") || name.starts_with('.') { continue }
+                if matches!(name, "tests" | "test" | "examples" | "docs" | "nimcache")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".nim") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".nim") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
-            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            if tails.iter().any(|t| rel_sub.ends_with(t)) {
+                any_match = true;
+            }
             dir_files.push((path, rel_sub));
         }
     }
@@ -481,23 +550,38 @@ fn walk_nim_narrowed_dir(
 }
 
 pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return Vec::new();
+    };
     let nimble_file = entries
         .flatten()
         .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("nimble"));
-    let Some(entry) = nimble_file else { return Vec::new() };
-    let Ok(content) = std::fs::read_to_string(entry.path()) else { return Vec::new() };
+    let Some(entry) = nimble_file else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(entry.path()) else {
+        return Vec::new();
+    };
 
     let mut deps = Vec::new();
     let mut record_dep = |raw: &str, deps: &mut Vec<String>| {
         let dep = raw.trim();
-        if dep.is_empty() { return }
+        if dep.is_empty() {
+            return;
+        }
         // Skip https:// URLs — they're not simple package names.
-        if dep.starts_with("https://") || dep.starts_with("http://") { return }
+        if dep.starts_with("https://") || dep.starts_with("http://") {
+            return;
+        }
         let name = dep
-            .split(|c: char| c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace())
-            .next().unwrap_or("").trim();
-        if !name.is_empty() && name != "nim"
+            .split(|c: char| {
+                c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace()
+            })
+            .next()
+            .unwrap_or("")
+            .trim();
+        if !name.is_empty()
+            && name != "nim"
             && name.chars().all(|c| c.is_alphanumeric() || c == '_')
             && !deps.iter().any(|d| d == name)
         {
@@ -525,7 +609,7 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
     // tracking whether the previous requires-carrying line ended with `,` or
     // `\` (implicit continuation), or whether we entered a `(` block.
     let mut in_requires = false; // comma-continuation mode (no parens)
-    let mut in_block = false;    // explicit `requires(` block
+    let mut in_block = false; // explicit `requires(` block
     for line in content.lines() {
         let trimmed = line.trim();
 
@@ -537,14 +621,21 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
                 in_requires = false;
             }
             // Strip the keyword + opening paren before scanning quoted args.
-            let after_kw = trimmed.trim_start_matches("requires").trim_start_matches('(');
+            let after_kw = trimmed
+                .trim_start_matches("requires")
+                .trim_start_matches('(');
             for part in after_kw.split('"') {
                 record_dep(part, &mut deps);
             }
             // Comma-continuation: the line (or its visible content after
             // stripping comments) ends with `,` or `\` — subsequent
             // indented lines belong to the same requires statement.
-            let visible = after_kw.split('#').next().unwrap_or("").trim_end_matches('\\').trim();
+            let visible = after_kw
+                .split('#')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('\\')
+                .trim();
             in_requires = !in_block && visible.ends_with(',');
             continue;
         }
@@ -566,8 +657,10 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
         if in_requires {
             // A line that is not indented and is not a continuation (no leading
             // whitespace and not just a comma or quote) ends the block.
-            if !trimmed.is_empty() && !line.starts_with(char::is_whitespace)
-                && !trimmed.starts_with('"') && !trimmed.starts_with(',')
+            if !trimmed.is_empty()
+                && !line.starts_with(char::is_whitespace)
+                && !trimmed.starts_with('"')
+                && !trimmed.starts_with(',')
             {
                 in_requires = false;
                 continue;
@@ -576,7 +669,12 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
                 record_dep(part, &mut deps);
             }
             // Keep continuation mode while the line ends with `,`.
-            let visible = trimmed.split('#').next().unwrap_or("").trim_end_matches('\\').trim();
+            let visible = trimmed
+                .split('#')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('\\')
+                .trim();
             if !visible.ends_with(',') {
                 in_requires = false;
             }
@@ -588,15 +686,23 @@ pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
 fn find_nimble_pkgs_dir() -> Option<PathBuf> {
     if let Ok(nimble_dir) = std::env::var("NIMBLE_DIR") {
         let p = PathBuf::from(&nimble_dir).join("pkgs2");
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
         let p = PathBuf::from(nimble_dir).join("pkgs");
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     let home = dirs::home_dir()?;
     let pkgs2 = home.join(".nimble").join("pkgs2");
-    if pkgs2.is_dir() { return Some(pkgs2) }
+    if pkgs2.is_dir() {
+        return Some(pkgs2);
+    }
     let pkgs = home.join(".nimble").join("pkgs");
-    if pkgs.is_dir() { return Some(pkgs) }
+    if pkgs.is_dir() {
+        return Some(pkgs);
+    }
     None
 }
 
@@ -610,22 +716,40 @@ fn walk_nim_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(name, "tests" | "test" | "examples" | "docs" | "nimcache")
                     || name.starts_with('.')
-                { continue }
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".nim") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".nim") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -646,12 +770,7 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
 /// Subdirectories of the Nim stdlib pre-pulled unconditionally for every
 /// Nim project. These contain the modules most commonly imported (`strutils`,
 /// `sequtils`, `tables`, `math`, `os`, `json`, …). Relative to `<lib>/`.
-const STDLIB_PRE_PULL_SUBDIRS: &[&str] = &[
-    "system",
-    "pure",
-    "core",
-    "std",
-];
+const STDLIB_PRE_PULL_SUBDIRS: &[&str] = &["system", "pure", "core", "std"];
 
 /// Walk the stdlib subdirs and the main entry file of every nimble package dep,
 /// returning WalkedFiles for eager parsing. Called by the demand-driven pipeline
@@ -671,7 +790,11 @@ fn nim_stdlib_pre_pull(dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
             let sys = root.join("system.nim");
             if sys.is_file() {
                 let rel = format!("ext:nim:{}/system.nim", dep.module_path);
-                out.push(WalkedFile { relative_path: rel, absolute_path: sys, language: "nim" });
+                out.push(WalkedFile {
+                    relative_path: rel,
+                    absolute_path: sys,
+                    language: "nim",
+                });
             }
             for sub in STDLIB_PRE_PULL_SUBDIRS {
                 let dir = root.join(sub);
@@ -789,8 +912,17 @@ pub(crate) fn scan_nim_header(source: &str) -> Vec<String> {
 
 fn next_nim_keyword(line: &str) -> Option<&'static str> {
     for kw in &[
-        "proc", "func", "method", "iterator", "converter", "template",
-        "macro", "type", "const", "var", "let",
+        "proc",
+        "func",
+        "method",
+        "iterator",
+        "converter",
+        "template",
+        "macro",
+        "type",
+        "const",
+        "var",
+        "let",
     ] {
         if line.starts_with(kw) {
             // Must be followed by whitespace or `*` to avoid matching
@@ -818,7 +950,11 @@ fn extract_nim_identifier(rest: &str) -> String {
     let mut name = String::new();
     name.push(first);
     for c in chars {
-        if c.is_alphanumeric() || c == '_' { name.push(c) } else { break }
+        if c.is_alphanumeric() || c == '_' {
+            name.push(c)
+        } else {
+            break;
+        }
     }
     name
 }
@@ -826,4 +962,3 @@ fn extract_nim_identifier(rest: &str) -> String {
 #[cfg(test)]
 #[path = "nimble_tests.rs"]
 mod tests;
-

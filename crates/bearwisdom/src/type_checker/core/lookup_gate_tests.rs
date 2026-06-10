@@ -9,8 +9,8 @@
 use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{
-    infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap,
-    Type, TypeArena,
+    infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap, Type,
+    TypeArena,
 };
 use crate::type_checker::profile::language_profile::{
     LanguageProfile, SupertypeDiscovery, DEFAULT_PROFILE,
@@ -109,7 +109,13 @@ impl SymbolLookup for ParsedFileLookup {
         let matches: Vec<&SymbolInfo> = self
             .types
             .iter()
-            .filter(|s| s.name == name && matches!(s.kind.as_str(), "class" | "interface" | "trait" | "struct" | "enum" | "type_alias"))
+            .filter(|s| {
+                s.name == name
+                    && matches!(
+                        s.kind.as_str(),
+                        "class" | "interface" | "trait" | "struct" | "enum" | "type_alias"
+                    )
+            })
             .collect();
         if matches.len() == 1 {
             std::slice::from_ref(matches[0])
@@ -165,11 +171,8 @@ export class User {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -182,7 +185,14 @@ export class User {
 
     let user_ty = arena.class("User");
     let greet = members
-        .lookup(user_ty, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            user_ty,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("greet method resolves on User");
     assert_eq!(greet.name, "greet");
     assert_eq!(greet.qualified_name, "User.greet");
@@ -205,11 +215,8 @@ export class Admin extends User {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -222,7 +229,14 @@ export class Admin extends User {
 
     let admin_ty = arena.class("Admin");
     let greet = members
-        .lookup(admin_ty, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            admin_ty,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("greet inherited from User resolves on Admin");
     assert_eq!(greet.qualified_name, "User.greet");
 }
@@ -242,11 +256,8 @@ export class HelloGreeter implements Greeter {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -260,7 +271,14 @@ export class HelloGreeter implements Greeter {
     // Direct hit on HelloGreeter.greet.
     let hg_ty = arena.class("HelloGreeter");
     let m = members
-        .lookup(hg_ty, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            hg_ty,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("greet on HelloGreeter");
     assert_eq!(m.qualified_name, "HelloGreeter.greet");
 
@@ -268,7 +286,14 @@ export class HelloGreeter implements Greeter {
     // the interface is itself a direct member of the interface symbol.
     let g_ty = arena.class("Greeter");
     let gm = members
-        .lookup(g_ty, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            g_ty,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("greet on Greeter interface");
     assert_eq!(gm.qualified_name, "Greeter.greet");
 }
@@ -293,11 +318,8 @@ export interface Identified {
     let sym_ids = deterministic_ids(&pf);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let types = SymbolTypeMap::build_from_parsed_files(
         std::slice::from_ref(&pf),
         &sym_ids,
@@ -432,11 +454,8 @@ func (f *FileBuffer) Close() error {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
 
     let symbol_types = SymbolTypeMap::build_from_parsed_files(
         std::slice::from_ref(&pf),
@@ -525,11 +544,8 @@ export interface Foo {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -542,11 +558,25 @@ export interface Foo {
 
     let foo_ty = arena.class("Foo");
     let a = members
-        .lookup(foo_ty, "a", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            foo_ty,
+            "a",
+            EdgeKind::Reads,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("member `a` from the first interface declaration resolves on Foo");
     assert_eq!(a.qualified_name, "Foo.a");
     let b = members
-        .lookup(foo_ty, "b", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            foo_ty,
+            "b",
+            EdgeKind::Reads,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("member `b` from the merged second interface declaration resolves on Foo");
     assert_eq!(b.qualified_name, "Foo.b");
 }
@@ -570,11 +600,8 @@ export namespace Cfg {
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -587,11 +614,25 @@ export namespace Cfg {
 
     let cfg_ty = arena.class("Cfg");
     let interface_member = members
-        .lookup(cfg_ty, "timeout", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            cfg_ty,
+            "timeout",
+            EdgeKind::Reads,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("interface member `timeout` resolves on Cfg");
     assert_eq!(interface_member.qualified_name, "Cfg.timeout");
     let namespace_member = members
-        .lookup(cfg_ty, "DEFAULT_TIMEOUT", EdgeKind::Reads, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            cfg_ty,
+            "DEFAULT_TIMEOUT",
+            EdgeKind::Reads,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("namespace member `DEFAULT_TIMEOUT` pools under the same Cfg owner");
     assert_eq!(namespace_member.qualified_name, "Cfg.DEFAULT_TIMEOUT");
 }
@@ -606,11 +647,8 @@ export class User { name: string; }
     let lookup = ParsedFileLookup::from(&pf, &sym_ids);
 
     let mut arena = crate::type_checker::core::TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &mut arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &mut arena);
     let symbol_types = SymbolTypeMap::new();
     let graph = SupertypeGraph::build(
         std::slice::from_ref(&pf),
@@ -623,6 +661,13 @@ export class User { name: string; }
 
     let user = arena.class("User");
     assert!(members
-        .lookup(user, "doesNotExist", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            user,
+            "doesNotExist",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE
+        )
         .is_none());
 }

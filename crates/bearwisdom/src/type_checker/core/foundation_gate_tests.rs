@@ -5,7 +5,7 @@
 
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{SymbolIdMap, SymbolTypeMap, Type, TypeArena};
-use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{ParsedFile, SymbolKind};
 
 fn wrap_as_parsed_file(path: &str, source: &str) -> ParsedFile {
@@ -136,5 +136,8 @@ fn build_skips_symbols_missing_from_id_map() {
         &mut arena,
         &DEFAULT_PROFILE,
     );
-    assert!(map.is_empty(), "no symbols recorded when sym_id_map is empty");
+    assert!(
+        map.is_empty(),
+        "no symbols recorded when sym_id_map is empty"
+    );
 }

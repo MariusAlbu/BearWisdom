@@ -55,7 +55,9 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
     .unwrap();
 
     let mut host = empty_parsed("src/WebApp/Views/Shared/_Layout.cshtml", "razor");
-    host.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    host.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "~/lib/jquery/jquery.js".to_string(),
         kind: EdgeKind::Imports,
@@ -64,9 +66,9 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
         module: Some("~/lib/jquery/jquery.js".to_string()),
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let registry = crate::languages::default_registry();
     let arena = crate::type_checker::core::types::TypeArena::new();
@@ -92,7 +94,9 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
         "http://localhost/foo.js",
         "//cdn.example.com/vue.js",
     ] {
-        host.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        host.refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: url.to_string(),
             kind: EdgeKind::Imports,
@@ -101,9 +105,9 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
             module: Some(url.to_string()),
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     let registry = crate::languages::default_registry();
@@ -125,7 +129,9 @@ fn relative_url_resolves_against_host_dir() {
     .unwrap();
 
     let mut host = empty_parsed("pages/index.html", "html");
-    host.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    host.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "app.js".to_string(),
         kind: EdgeKind::Imports,
@@ -134,9 +140,9 @@ fn relative_url_resolves_against_host_dir() {
         module: Some("app.js".to_string()),
         chain: None,
         byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let registry = crate::languages::default_registry();
     let arena = crate::type_checker::core::types::TypeArena::new();
@@ -159,7 +165,9 @@ fn already_parsed_file_not_duplicated() {
 
     let host = {
         let mut pf = empty_parsed("index.html", "html");
-        pf.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        pf.refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: "js/app.js".to_string(),
             kind: EdgeKind::Imports,
@@ -168,9 +176,9 @@ fn already_parsed_file_not_duplicated() {
             module: Some("js/app.js".to_string()),
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
         pf
     };
     let already_parsed = empty_parsed("js/app.js", "javascript");

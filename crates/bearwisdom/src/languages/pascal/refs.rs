@@ -29,7 +29,9 @@ pub(super) fn extract_typeref(
             "identifier" => {
                 let name = node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -38,9 +40,9 @@ pub(super) fn extract_typeref(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 return; // one ref per typeref is enough
             }
@@ -48,7 +50,9 @@ pub(super) fn extract_typeref(
                 // Qualified type: Unit.Type — split into qualifier + member
                 let (member, qualifier) = split_dot_node(child, src);
                 if !member.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: member,
                         kind: EdgeKind::Calls,
@@ -57,9 +61,9 @@ pub(super) fn extract_typeref(
                         module: qualifier,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 return;
             }
@@ -85,7 +89,9 @@ pub(super) fn extract_call(
     if let Some(callee) = callee_opt {
         let (name, module) = resolve_call_target(callee, src);
         if !name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -94,9 +100,9 @@ pub(super) fn extract_call(
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -117,7 +123,9 @@ fn resolve_call_target(node: Node, src: &str) -> (String, Option<String>) {
         // Chained call: take the outer call's entity
         "exprCall" => {
             let inner = node.child_by_field_name("entity").or_else(|| node.child(0));
-            inner.map(|n| resolve_call_target(n, src)).unwrap_or_default()
+            inner
+                .map(|n| resolve_call_target(n, src))
+                .unwrap_or_default()
         }
         // Parenthesised expression — unwrap
         "exprParens" => {
@@ -130,13 +138,19 @@ fn resolve_call_target(node: Node, src: &str) -> (String, Option<String>) {
         // Subscript / bracket access: take entity
         "exprBrackets" | "exprSubscript" => {
             let inner = node.child_by_field_name("entity").or_else(|| node.child(0));
-            inner.map(|n| resolve_call_target(n, src)).unwrap_or_default()
+            inner
+                .map(|n| resolve_call_target(n, src))
+                .unwrap_or_default()
         }
         // `inherited` keyword call: `inherited Create(...)` → use "inherited"
         "inherited" => ("inherited".to_string(), None),
         _ => {
             let t = node_text(node, src);
-            if !t.is_empty() { (t, None) } else { (String::new(), None) }
+            if !t.is_empty() {
+                (t, None)
+            } else {
+                (String::new(), None)
+            }
         }
     }
 }
@@ -149,13 +163,25 @@ fn resolve_call_target(node: Node, src: &str) -> (String, Option<String>) {
 pub(super) fn split_dot_node(node: Node, src: &str) -> (String, Option<String>) {
     let count = node.named_child_count();
     if count >= 2 {
-        let qualifier = node.named_child(0).map(|n| node_text(n, src)).unwrap_or_default();
-        let member    = node.named_child(count - 1).map(|n| node_text(n, src)).unwrap_or_default();
+        let qualifier = node
+            .named_child(0)
+            .map(|n| node_text(n, src))
+            .unwrap_or_default();
+        let member = node
+            .named_child(count - 1)
+            .map(|n| node_text(n, src))
+            .unwrap_or_default();
         if !member.is_empty() {
-            return (member, if qualifier.is_empty() { None } else { Some(qualifier) });
+            return (
+                member,
+                if qualifier.is_empty() {
+                    None
+                } else {
+                    Some(qualifier)
+                },
+            );
         }
     }
     // Fallback: return full text as target_name with no module
     (node_text(node, src), None)
 }
-

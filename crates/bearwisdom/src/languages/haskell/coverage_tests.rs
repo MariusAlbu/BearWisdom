@@ -28,7 +28,11 @@ fn cov_function_emits_function_symbol() {
     let src = "foo :: Int -> Int\nfoo x = x + 1\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "foo");
-    assert!(sym.is_some(), "expected Function 'foo'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'foo'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -37,8 +41,15 @@ fn cov_function_emits_function_symbol() {
 fn cov_module_header_emits_namespace() {
     let src = "module Main where\n";
     let r = extract::extract(src);
-    let ns = r.symbols.iter().find(|s| s.kind == SymbolKind::Namespace && s.name == "Main");
-    assert!(ns.is_some(), "expected Namespace symbol 'Main' from module header; got: {:?}", r.symbols);
+    let ns = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Namespace && s.name == "Main");
+    assert!(
+        ns.is_some(),
+        "expected Namespace symbol 'Main' from module header; got: {:?}",
+        r.symbols
+    );
 }
 
 /// data_type → SymbolKind::Struct
@@ -47,7 +58,11 @@ fn cov_data_type_emits_struct() {
     let src = "data Shape = Circle Float | Square Float\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Shape");
-    assert!(sym.is_some(), "expected Struct 'Shape'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'Shape'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -57,7 +72,11 @@ fn cov_newtype_emits_struct() {
     let src = "newtype Name = Name String\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Name");
-    assert!(sym.is_some(), "expected Struct 'Name' from newtype; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'Name' from newtype; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -67,7 +86,11 @@ fn cov_class_emits_interface() {
     let src = "class Eq a where\n  eq :: a -> a -> Bool\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Eq");
-    assert!(sym.is_some(), "expected Interface 'Eq' from class; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Interface 'Eq' from class; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Interface);
 }
 
@@ -78,7 +101,11 @@ fn cov_instance_emits_class() {
     let r = extract::extract(src);
     // instance emits a Class symbol; name includes both class and type names
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
-    assert!(sym.is_some(), "expected Class symbol from instance; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class symbol from instance; got: {:?}",
+        r.symbols
+    );
 }
 
 /// type_synomym → SymbolKind::TypeAlias
@@ -87,7 +114,11 @@ fn cov_type_synomym_emits_type_alias() {
     let src = "type Name = String\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Name");
-    assert!(sym.is_some(), "expected TypeAlias 'Name' from type_synomym; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'Name' from type_synomym; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -173,11 +204,17 @@ fn cov_infix_does_not_crash() {
 fn ref_qualified_call() {
     let src = "module M where\nimport qualified Data.Map as Map\nf x = Map.lookup x Map.empty\n";
     let r = extract::extract(src);
-    let rf = r.refs.iter().find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
     assert!(
         rf.is_some(),
         "expected Calls ref to 'lookup'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -191,11 +228,17 @@ fn ref_qualified_call() {
 fn ref_nested_qualified_call() {
     let src = "module M where\nf x = Data.Map.lookup x Data.Map.empty\n";
     let r = extract::extract(src);
-    let rf = r.refs.iter().find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
     assert!(
         rf.is_some(),
         "expected Calls ref to 'lookup'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -214,7 +257,11 @@ fn cov_data_family_emits_struct() {
     let src = "data family XMap v\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "XMap");
-    assert!(sym.is_some(), "expected Struct 'XMap' from data_family; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'XMap' from data_family; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -224,7 +271,11 @@ fn cov_type_family_emits_type_alias() {
     let src = "type family Elem c\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Elem");
-    assert!(sym.is_some(), "expected TypeAlias 'Elem' from type_family; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'Elem' from type_family; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -254,17 +305,31 @@ fn cov_data_constructor_emits_enum_member() {
     let r = extract::extract(src);
     // data_type itself
     let sym = r.symbols.iter().find(|s| s.name == "Shape");
-    assert!(sym.is_some(), "expected Struct 'Shape'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'Shape'; got: {:?}",
+        r.symbols
+    );
     // constructors
     assert!(
-        r.symbols.iter().any(|s| s.name == "Circle" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Circle" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Circle'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Square" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Square" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Square'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -280,10 +345,17 @@ fn cov_gadt_constructor_emits_enum_member() {
     let r = extract::extract(src);
     // Verify no panic and constructors are extracted
     assert!(
-        r.symbols.iter().any(|s| s.name == "Lit" && s.kind == SymbolKind::EnumMember)
-        || r.symbols.iter().any(|s| s.name == "Add" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Lit" && s.kind == SymbolKind::EnumMember)
+            || r.symbols
+                .iter()
+                .any(|s| s.name == "Add" && s.kind == SymbolKind::EnumMember),
         "expected at least one gadt_constructor EnumMember (Lit or Add); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -298,13 +370,17 @@ fn cov_gadt_constructor_emits_enum_member() {
 fn ref_instance_emits_implements() {
     let src = "instance Show Bool where\n  show True = \"True\"\n  show False = \"False\"\n";
     let r = extract::extract(src);
-    let imp = r.refs.iter().find(|rf| {
-        rf.kind == EdgeKind::Implements && rf.target_name == "Show"
-    });
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "Show");
     assert!(
         imp.is_some(),
         "expected Implements ref to 'Show' from instance; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -314,10 +390,17 @@ fn ref_deriving_emits_implements() {
     let src = "data Foo = Foo deriving (Show, Eq)\n";
     let r = extract::extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Show"))
-        || r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Eq")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Show"))
+            || r.refs
+                .iter()
+                .any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Eq")),
         "expected Implements ref to 'Show' or 'Eq' from deriving; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -331,7 +414,10 @@ fn cov_class_method_emits_method() {
     assert!(
         method.is_some(),
         "expected at least one Method symbol from class body; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -345,7 +431,10 @@ fn cov_instance_method_emits_method() {
     assert!(
         method.is_some(),
         "expected at least one Method symbol from instance body; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -379,10 +468,14 @@ fn debug_probe_haskell_data_type_grammar() {
         let indent = "  ".repeat(depth);
         let text = if node.child_count() == 0 {
             format!(" = {:?}", &src[node.start_byte()..node.end_byte()])
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         eprintln!("{}[{}]{}", indent, node.kind(), text);
         let mut cursor = node.walk();
-        for child in node.children(&mut cursor) { pt(child, src, depth + 1); }
+        for child in node.children(&mut cursor) {
+            pt(child, src, depth + 1);
+        }
     }
     pt(tree.root_node(), src, 0);
 }
@@ -399,10 +492,14 @@ fn debug_probe_haskell_deriving_grammar() {
         let indent = "  ".repeat(depth);
         let text = if node.child_count() == 0 {
             format!(" = {:?}", &src[node.start_byte()..node.end_byte()])
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         eprintln!("{}[{}]{}", indent, node.kind(), text);
         let mut cursor = node.walk();
-        for child in node.children(&mut cursor) { pt(child, src, depth + 1); }
+        for child in node.children(&mut cursor) {
+            pt(child, src, depth + 1);
+        }
     }
     pt(tree.root_node(), src, 0);
 }

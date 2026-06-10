@@ -21,7 +21,9 @@ use crate::indexer::project_context::ProjectContext;
 
 use super::connectors_nestjs::extract_nestjs_routes;
 use super::connectors_nextjs::_nextjs_routes_inner;
-use super::connectors_react::{react_create_concepts, react_find_story_mappings, react_find_zustand_stores};
+use super::connectors_react::{
+    react_create_concepts, react_find_story_mappings, react_find_zustand_stores,
+};
 
 pub use super::connectors_graphql::extract_typescript_graphql;
 pub use super::connectors_nestjs::NestRoute;
@@ -36,11 +38,7 @@ pub use super::connectors_react::{StoryMapping, ZustandStore};
 /// handles downstream flow_edges emission.
 ///
 /// Returns the count of routes written to the `routes` table.
-pub fn discover_nestjs_routes(
-    conn: &Connection,
-    project_root: &Path,
-    ctx: &ProjectContext,
-) -> u32 {
+pub fn discover_nestjs_routes(conn: &Connection, project_root: &Path, ctx: &ProjectContext) -> u32 {
     if !ctx.has_dependency(ManifestKind::Npm, "@nestjs/core")
         && !ctx.has_dependency(ManifestKind::Npm, "@nestjs/common")
     {
@@ -78,11 +76,7 @@ pub fn discover_nestjs_routes(
 /// resolve/mod.rs handles downstream flow_edges emission.
 ///
 /// Returns the count of routes written to the `routes` table.
-pub fn discover_nextjs_routes(
-    conn: &Connection,
-    project_root: &Path,
-    ctx: &ProjectContext,
-) -> u32 {
+pub fn discover_nextjs_routes(conn: &Connection, project_root: &Path, ctx: &ProjectContext) -> u32 {
     if !ctx.has_dependency(ManifestKind::Npm, "next") {
         return 0;
     }
@@ -148,16 +142,14 @@ pub fn run_react_patterns(conn: &rusqlite::Connection, project_root: &std::path:
     use tracing::warn;
 
     match react_find_zustand_stores(conn, project_root) {
-        Ok(stores) => {
-            match react_find_story_mappings(conn, project_root) {
-                Ok(stories) if !stores.is_empty() || !stories.is_empty() => {
-                    let _ = react_create_concepts(conn, &stores, &stories)
-                        .map_err(|e| warn!("React concept creation: {e}"));
-                }
-                Err(e) => warn!("Story mapping: {e}"),
-                _ => {}
+        Ok(stores) => match react_find_story_mappings(conn, project_root) {
+            Ok(stories) if !stores.is_empty() || !stories.is_empty() => {
+                let _ = react_create_concepts(conn, &stores, &stories)
+                    .map_err(|e| warn!("React concept creation: {e}"));
             }
-        }
+            Err(e) => warn!("Story mapping: {e}"),
+            _ => {}
+        },
         Err(e) => warn!("Zustand store detection: {e}"),
     }
 }

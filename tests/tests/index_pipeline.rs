@@ -12,9 +12,19 @@ fn index_csharp_project() {
 
     let stats = full_index(&mut db, project.path(), None, None, None).unwrap();
 
-    assert!(stats.file_count >= 4, "expected at least 4 C# files, got {}", stats.file_count);
-    assert!(stats.symbol_count > 0, "expected symbols from C# extraction");
-    assert_eq!(stats.files_with_errors, 0, "no files should have parse errors");
+    assert!(
+        stats.file_count >= 4,
+        "expected at least 4 C# files, got {}",
+        stats.file_count
+    );
+    assert!(
+        stats.symbol_count > 0,
+        "expected symbols from C# extraction"
+    );
+    assert_eq!(
+        stats.files_with_errors, 0,
+        "no files should have parse errors"
+    );
 }
 
 #[test]
@@ -24,8 +34,15 @@ fn index_python_project() {
 
     let stats = full_index(&mut db, project.path(), None, None, None).unwrap();
 
-    assert!(stats.file_count >= 2, "expected at least 2 Python files, got {}", stats.file_count);
-    assert!(stats.symbol_count > 0, "expected symbols from Python extraction");
+    assert!(
+        stats.file_count >= 2,
+        "expected at least 2 Python files, got {}",
+        stats.file_count
+    );
+    assert!(
+        stats.symbol_count > 0,
+        "expected symbols from Python extraction"
+    );
 }
 
 #[test]
@@ -35,8 +52,15 @@ fn index_typescript_project() {
 
     let stats = full_index(&mut db, project.path(), None, None, None).unwrap();
 
-    assert!(stats.file_count >= 2, "expected at least 2 TypeScript files, got {}", stats.file_count);
-    assert!(stats.symbol_count > 0, "expected symbols from TypeScript extraction");
+    assert!(
+        stats.file_count >= 2,
+        "expected at least 2 TypeScript files, got {}",
+        stats.file_count
+    );
+    assert!(
+        stats.symbol_count > 0,
+        "expected symbols from TypeScript extraction"
+    );
 }
 
 #[test]
@@ -52,7 +76,9 @@ fn index_multi_language_project() {
 
 #[test]
 fn index_empty_directory() {
-    let project = TestProject { dir: tempfile::TempDir::new().unwrap() };
+    let project = TestProject {
+        dir: tempfile::TempDir::new().unwrap(),
+    };
     let mut db = TestProject::in_memory_db();
 
     let stats = full_index(&mut db, project.path(), None, None, None).unwrap();
@@ -79,7 +105,10 @@ fn index_with_progress_callback() {
     assert!(stats.symbol_count > 0);
 
     let captured = steps.lock().unwrap();
-    assert!(!captured.is_empty(), "progress callback should have been invoked");
+    assert!(
+        !captured.is_empty(),
+        "progress callback should have been invoked"
+    );
 }
 
 #[test]
@@ -91,7 +120,10 @@ fn index_produces_edges() {
 
     // The C# fixture has implements (ProductRepository : IProductRepository),
     // type_ref / calls edges, and import references.
-    assert!(stats.edge_count > 0, "expected edges from C# relationships, got 0");
+    assert!(
+        stats.edge_count > 0,
+        "expected edges from C# relationships, got 0"
+    );
 }
 
 #[test]
@@ -113,14 +145,18 @@ fn index_with_file_backed_db_exercises_parallel_connectors() {
     let src_dir = project_dir.path().join("src");
     std::fs::create_dir_all(&src_dir).unwrap();
 
-    std::fs::write(src_dir.join("Service.cs"), r#"
+    std::fs::write(
+        src_dir.join("Service.cs"),
+        r#"
 namespace App {
     public class CatalogService {
         public void GetItems() { }
         public void GetById(int id) { }
     }
 }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let db_dir = project_dir.path().join(".bearwisdom");
     std::fs::create_dir_all(&db_dir).unwrap();
@@ -133,7 +169,15 @@ namespace App {
 
     let stats = full_index(&mut db, project_dir.path(), None, None, None).unwrap();
 
-    assert!(stats.file_count >= 1, "Expected at least 1 file, got {}", stats.file_count);
-    assert!(stats.symbol_count >= 2, "Expected at least 2 symbols, got {}", stats.symbol_count);
+    assert!(
+        stats.file_count >= 1,
+        "Expected at least 1 file, got {}",
+        stats.file_count
+    );
+    assert!(
+        stats.symbol_count >= 2,
+        "Expected at least 2 symbols, got {}",
+        stats.symbol_count
+    );
     assert!(stats.duration_ms > 0);
 }

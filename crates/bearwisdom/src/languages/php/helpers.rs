@@ -28,7 +28,11 @@ pub(super) fn qualify_ns(name: &str, prefix: &str) -> String {
 }
 
 pub(super) fn scope_from_prefix(prefix: &str) -> Option<String> {
-    if prefix.is_empty() { None } else { Some(prefix.to_string()) }
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix.to_string())
+    }
 }
 
 /// Read the visibility modifier of a method or property declaration.
@@ -74,12 +78,22 @@ pub(super) fn build_class_signature(
 
     let base = node
         .child_by_field_name("base_clause")
-        .map(|b| format!(" extends {}", node_text(&b, src).trim_start_matches("extends ").trim()))
+        .map(|b| {
+            format!(
+                " extends {}",
+                node_text(&b, src).trim_start_matches("extends ").trim()
+            )
+        })
         .unwrap_or_default();
 
     let impls = node
         .child_by_field_name("class_implements")
-        .map(|i| format!(" implements {}", node_text(&i, src).trim_start_matches("implements ").trim()))
+        .map(|i| {
+            format!(
+                " implements {}",
+                node_text(&i, src).trim_start_matches("implements ").trim()
+            )
+        })
         .unwrap_or_default();
 
     Some(format!("{keyword} {name}{base}{impls}"))

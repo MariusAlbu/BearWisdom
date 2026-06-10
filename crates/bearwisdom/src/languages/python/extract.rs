@@ -2,11 +2,10 @@
 // parser/extractors/python/mod.rs  —  Python symbol and reference extractor
 // =============================================================================
 
-
+use super::helpers::node_text;
 use super::{assignments, calls, helpers, statements, symbols, types};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
-use super::helpers::node_text;
 use rustc_hash::FxHashSet;
 use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
@@ -14,8 +13,6 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
-
-
 
 /// Extract all symbols and references from Python source code.
 pub fn extract(source: &str) -> ExtractionResult {
@@ -56,7 +53,15 @@ pub fn extract(source: &str) -> ExtractionResult {
     let dunder_all = collect_dunder_all(root, source);
 
     extract_from_node(
-        root, source, &mut syms, &mut refs, None, "", false, &import_map, &dunder_all,
+        root,
+        source,
+        &mut syms,
+        &mut refs,
+        None,
+        "",
+        false,
+        &import_map,
+        &dunder_all,
     );
 
     // Second pass: scan the full CST for `type` nodes and emit TypeRef for
@@ -201,8 +206,7 @@ fn collect_string_literals(node: &Node, source: &str, out: &mut FxHashSet<String
 /// quote-stripping in `calls::strip_python_string` for the names that appear in
 /// an `__all__` list.
 fn strip_python_string_literal(raw: &str) -> String {
-    let trimmed = raw
-        .trim_start_matches(['b', 'r', 'f', 'B', 'R', 'F', 'u', 'U']);
+    let trimmed = raw.trim_start_matches(['b', 'r', 'f', 'B', 'R', 'F', 'u', 'U']);
     trimmed
         .trim_start_matches("\"\"\"")
         .trim_end_matches("\"\"\"")
@@ -293,7 +297,9 @@ pub(super) fn extract_from_node(
                         "dotted_name" | "identifier" => {
                             let name = helpers::node_text(&fc, source);
                             if !name.is_empty() && name != "__future__" {
-                                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(crate::types::ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: owner,
                                     target_name: name,
                                     kind: crate::types::EdgeKind::Imports,
@@ -347,12 +353,7 @@ pub(super) fn extract_from_node(
                 );
                 // Extract TypeRef from variable type annotations:
                 // `items: List[str] = []` — the `assignment.type` field.
-                extract_annotation_type_refs(
-                    &child,
-                    source,
-                    parent_index.unwrap_or(0),
-                    refs,
-                );
+                extract_annotation_type_refs(&child, source, parent_index.unwrap_or(0), refs);
             }
 
             // `foo()` / `bar.baz()` at module or class body level.
@@ -454,9 +455,14 @@ fn emit_type_ref_from_annotation(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty()
-                && !matches!(name.as_str(), "None" | "int" | "str" | "float" | "bool" | "bytes")
+                && !matches!(
+                    name.as_str(),
+                    "None" | "int" | "str" | "float" | "bool" | "bytes"
+                )
             {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -465,9 +471,9 @@ fn emit_type_ref_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // `uuid.UUID` / `sqlalchemy.orm.Session` — emit a single qualified ref
@@ -481,7 +487,9 @@ fn emit_type_ref_from_annotation(
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -490,9 +498,9 @@ fn emit_type_ref_from_annotation(
                         module,
                         chain: None,
                         byte_offset: attr.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -533,7 +541,9 @@ fn scan_type_annotation_nodes(
                 // annotations (e.g. bare `str`) emit nothing — there's no real
                 // target to reference.
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -549,7 +559,9 @@ fn scan_type_annotation_nodes(
             }
             "generic_type" | "union_type" if child.is_named() => {
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -581,10 +593,26 @@ fn emit_type_ref_from_type_node(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty()
-                && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
-                    | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
+                && !matches!(
+                    name.as_str(),
+                    "int"
+                        | "float"
+                        | "str"
+                        | "bool"
+                        | "bytes"
+                        | "None"
+                        | "list"
+                        | "dict"
+                        | "set"
+                        | "tuple"
+                        | "type"
+                        | "object"
+                        | "complex"
+                )
             {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -593,9 +621,9 @@ fn emit_type_ref_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         _ => {
@@ -611,15 +639,26 @@ fn emit_type_ref_from_type_node(
 
 /// Walk a `type` node and return the first non-builtin identifier found.
 /// Returns `None` only if everything inside is a builtin (e.g. bare `str`).
-fn collect_first_nonbuiltin_type_name(
-    node: &tree_sitter::Node,
-    source: &str,
-) -> Option<String> {
+fn collect_first_nonbuiltin_type_name(node: &tree_sitter::Node, source: &str) -> Option<String> {
     if node.kind() == "identifier" {
         let name = node_text(node, source);
         if !name.is_empty()
-            && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
-                | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
+            && !matches!(
+                name.as_str(),
+                "int"
+                    | "float"
+                    | "str"
+                    | "bool"
+                    | "bytes"
+                    | "None"
+                    | "list"
+                    | "dict"
+                    | "set"
+                    | "tuple"
+                    | "type"
+                    | "object"
+                    | "complex"
+            )
         {
             return Some(name);
         }
@@ -639,4 +678,3 @@ fn collect_first_nonbuiltin_type_name(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

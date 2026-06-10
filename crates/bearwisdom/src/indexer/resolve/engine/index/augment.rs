@@ -24,12 +24,11 @@ use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
-    parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args,
-    resolve_type_name_in_scope,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
+    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
 };
-use super::{common_prefix_len, is_type_like_kind};
 use super::SymbolIndex;
+use super::{common_prefix_len, is_type_like_kind};
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
 
 impl SymbolIndex {
@@ -73,21 +72,28 @@ impl SymbolIndex {
                     name: sym.name.clone(),
                     qualified_name: sym.qualified_name.clone(),
                     kind: sym.kind.as_str().to_string(),
-                    visibility: sym.visibility.as_ref().map(|v| format!("{v:?}").to_lowercase()),
+                    visibility: sym
+                        .visibility
+                        .as_ref()
+                        .map(|v| format!("{v:?}").to_lowercase()),
                     file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
                     package_id: pf.package_id,
                     signature: sym.signature.clone(),
                 };
 
-                self.by_name.entry(sym.name.clone()).or_default().push(info.clone());
+                self.by_name
+                    .entry(sym.name.clone())
+                    .or_default()
+                    .push(info.clone());
 
                 match self.by_qname.entry(sym.qualified_name.clone()) {
                     std::collections::btree_map::Entry::Vacant(e) => {
                         e.insert(info.clone());
                     }
                     std::collections::btree_map::Entry::Occupied(occ) => {
-                        let entry = self.qname_duplicates
+                        let entry = self
+                            .qname_duplicates
                             .entry(sym.qualified_name.clone())
                             .or_insert_with(|| vec![occ.get().clone()]);
                         entry.push(info.clone());
@@ -136,7 +142,10 @@ impl SymbolIndex {
                     .push(info.clone());
 
                 if let Some(pkg_id) = info.package_id {
-                    self.by_package.entry(pkg_id).or_default().push(info.clone());
+                    self.by_package
+                        .entry(pkg_id)
+                        .or_default()
+                        .push(info.clone());
                 }
             }
         }
@@ -163,7 +172,10 @@ impl SymbolIndex {
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
                 let type_refs = &type_refs_by_sym[sym_idx];
                 match sym.kind {
-                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable | SymbolKind::Parameter => {
+                    SymbolKind::Property
+                    | SymbolKind::Field
+                    | SymbolKind::Variable
+                    | SymbolKind::Parameter => {
                         if let Some(first) = type_refs.first() {
                             let resolved = resolve_type_name_in_scope(
                                 first,
@@ -178,7 +190,8 @@ impl SymbolIndex {
                                 self.type_info
                                     .entry(sym.qualified_name.clone())
                                     .or_default()
-                                    .type_args = type_refs[1..].iter().map(|s| s.to_string()).collect();
+                                    .type_args =
+                                    type_refs[1..].iter().map(|s| s.to_string()).collect();
                             }
                         } else if is_jvm_language(&pf.language) {
                             // A JVM field has no TypeRef (externals emit no refs);
@@ -211,24 +224,25 @@ impl SymbolIndex {
                     }
                     SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
                         let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
-                            parse_return_type_from_signature(s).or_else(|| {
-                                if sym.kind == SymbolKind::Constructor {
-                                    None
-                                } else {
-                                    parse_return_type_positional(s)
-                                }
-                            })
-                            .or_else(|| {
-                                // JVM bytecode descriptor (`(params)Ret`, Maven /
-                                // `.class` metadata): decode the return element
-                                // type. Gated on the JVM language set so it never
-                                // perturbs the colon/arrow path.
-                                if is_jvm_language(&pf.language) {
-                                    parse_return_type_from_jvm_descriptor(s)
-                                } else {
-                                    None
-                                }
-                            })
+                            parse_return_type_from_signature(s)
+                                .or_else(|| {
+                                    if sym.kind == SymbolKind::Constructor {
+                                        None
+                                    } else {
+                                        parse_return_type_positional(s)
+                                    }
+                                })
+                                .or_else(|| {
+                                    // JVM bytecode descriptor (`(params)Ret`, Maven /
+                                    // `.class` metadata): decode the return element
+                                    // type. Gated on the JVM language set so it never
+                                    // perturbs the colon/arrow path.
+                                    if is_jvm_language(&pf.language) {
+                                        parse_return_type_from_jvm_descriptor(s)
+                                    } else {
+                                        None
+                                    }
+                                })
                         });
                         // A signature that parses to a generic application
                         // (`Repository<User>`) yields an unambiguous head + args.
@@ -258,7 +272,10 @@ impl SymbolIndex {
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                            let ti = self
+                                .type_info
+                                .entry(sym.qualified_name.clone())
+                                .or_default();
                             ti.return_type = Some(resolved);
                             ti.return_type_args = args;
                         } else {
@@ -310,8 +327,12 @@ impl SymbolIndex {
             for sym in &pf.symbols {
                 if !matches!(
                     sym.kind,
-                    SymbolKind::Class | SymbolKind::Interface | SymbolKind::Struct
-                        | SymbolKind::TypeAlias | SymbolKind::Function | SymbolKind::Method
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Struct
+                        | SymbolKind::TypeAlias
+                        | SymbolKind::Function
+                        | SymbolKind::Method
                 ) {
                     continue;
                 }
@@ -352,13 +373,15 @@ impl SymbolIndex {
                 };
                 if !matches!(
                     child_sym.kind,
-                    SymbolKind::Class | SymbolKind::Interface | SymbolKind::Trait | SymbolKind::Struct
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Trait
+                        | SymbolKind::Struct
                 ) {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;
-                let Some(&child_id) =
-                    symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
+                let Some(&child_id) = symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
                 else {
                     continue;
                 };
@@ -366,18 +389,29 @@ impl SymbolIndex {
                     continue;
                 }
                 let parent_simple = r.target_name.trim_start_matches('\\');
-                let candidates = self.by_name.get(parent_simple).map(|v| v.as_slice()).unwrap_or(&[]);
+                let candidates = self
+                    .by_name
+                    .get(parent_simple)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
                 if candidates.is_empty() {
                     continue;
                 }
-                let child_ns = child_qname.rfind('.').map(|i| &child_qname[..i]).unwrap_or("");
+                let child_ns = child_qname
+                    .rfind('.')
+                    .map(|i| &child_qname[..i])
+                    .unwrap_or("");
                 let best = if candidates.len() == 1 {
                     &candidates[0]
                 } else {
                     candidates
                         .iter()
                         .max_by_key(|c| {
-                            let cns = c.qualified_name.rfind('.').map(|i| &c.qualified_name[..i]).unwrap_or("");
+                            let cns = c
+                                .qualified_name
+                                .rfind('.')
+                                .map(|i| &c.qualified_name[..i])
+                                .unwrap_or("");
                             common_prefix_len(child_ns, cns)
                         })
                         .unwrap_or(&candidates[0])
@@ -390,7 +424,8 @@ impl SymbolIndex {
         for pf in new_files {
             for (selector, class_qname) in &pf.component_selectors {
                 if !selector.is_empty() && !class_qname.is_empty() {
-                    self.angular_selectors.insert(selector.clone(), class_qname.clone());
+                    self.angular_selectors
+                        .insert(selector.clone(), class_qname.clone());
                 }
             }
         }
@@ -476,13 +511,12 @@ impl SymbolIndex {
                         .get(i)
                         .and_then(|b| b.as_deref())
                         .map(|b| arena.intern_type_str(b));
-                    let param = arena.intern_generic(
-                        crate::type_checker::core::types::GenericParamData {
+                    let param =
+                        arena.intern_generic(crate::type_checker::core::types::GenericParamData {
                             name: name.clone(),
                             owner_symbol_index: owner_id,
                             bound,
-                        },
-                    );
+                        });
                     arena.intern(crate::type_checker::core::types::Type::Generic { param })
                 })
                 .collect();
@@ -585,7 +619,18 @@ impl SymbolIndex {
         };
 
         for row in rows {
-            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id, signature, containing_id_col)) = row
+            let Ok((
+                id,
+                name,
+                qname,
+                kind,
+                file_path,
+                scope_path,
+                visibility,
+                package_id,
+                signature,
+                containing_id_col,
+            )) = row
             else {
                 continue;
             };
@@ -616,7 +661,10 @@ impl SymbolIndex {
                 signature,
             };
 
-            self.by_name.entry(name.clone()).or_default().push(info.clone());
+            self.by_name
+                .entry(name.clone())
+                .or_default()
+                .push(info.clone());
             self.by_qname.insert(qname.clone(), info.clone());
             // Id spine + persisted containment edge for this unchanged-file
             // symbol — finally consuming the `containing_id` column for symbols
@@ -626,7 +674,10 @@ impl SymbolIndex {
                 self.containing_id.insert(id, pid);
             }
             if let Some(pkg_id) = info.package_id {
-                self.by_package.entry(pkg_id).or_default().push(info.clone());
+                self.by_package
+                    .entry(pkg_id)
+                    .or_default()
+                    .push(info.clone());
             }
             let parent_key: String = match qname.rfind('.') {
                 Some(idx) => qname[..idx].to_string(),

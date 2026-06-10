@@ -71,7 +71,15 @@ fn rebuild_seeds_routes_contributor() {
 fn rebuild_seeds_flow_edges_event_and_di() {
     let db = open();
     let f = insert_file(&db, "Handler.cs", "csharp");
-    let event = insert_symbol(&db, f, "OnEvent", "App.OnEvent", "method", 10, Some("public"));
+    let event = insert_symbol(
+        &db,
+        f,
+        "OnEvent",
+        "App.OnEvent",
+        "method",
+        10,
+        Some("public"),
+    );
     let di = insert_symbol(&db, f, "Bind", "App.Bind", "method", 20, Some("public"));
 
     db.conn()
@@ -136,12 +144,31 @@ fn exported_api_requires_publishable_package() {
         db.conn().last_insert_rowid()
     };
 
-    let api = insert_symbol(&db, f_pub, "api", "mypkg::api", "function", 1, Some("public"));
-    let internal = insert_symbol(&db, f_priv, "helper", "internal::helper", "function", 1, Some("public"));
+    let api = insert_symbol(
+        &db,
+        f_pub,
+        "api",
+        "mypkg::api",
+        "function",
+        1,
+        Some("public"),
+    );
+    let internal = insert_symbol(
+        &db,
+        f_priv,
+        "helper",
+        "internal::helper",
+        "function",
+        1,
+        Some("public"),
+    );
 
     rebuild_entry_points(&db).unwrap();
     let ids = load_entry_point_ids_for_exclusion(&db).unwrap();
-    assert!(ids.contains(&api), "public symbol in publishable pkg must be an entry point");
+    assert!(
+        ids.contains(&api),
+        "public symbol in publishable pkg must be an entry point"
+    );
     assert!(
         !ids.contains(&internal),
         "public symbol in is_publishable=0 pkg must NOT be an entry point",
@@ -152,8 +179,24 @@ fn exported_api_requires_publishable_package() {
 fn lifecycle_contributor_seeds_known_hooks() {
     let db = open();
     let f = insert_file(&db, "comp.ts", "typescript");
-    let hook = insert_symbol(&db, f, "ngOnInit", "Comp.ngOnInit", "method", 1, Some("public"));
-    let plain = insert_symbol(&db, f, "doStuff", "Comp.doStuff", "method", 10, Some("public"));
+    let hook = insert_symbol(
+        &db,
+        f,
+        "ngOnInit",
+        "Comp.ngOnInit",
+        "method",
+        1,
+        Some("public"),
+    );
+    let plain = insert_symbol(
+        &db,
+        f,
+        "doStuff",
+        "Comp.doStuff",
+        "method",
+        10,
+        Some("public"),
+    );
 
     rebuild_entry_points(&db).unwrap();
     let ids = load_entry_point_ids_for_exclusion(&db).unwrap();
@@ -173,7 +216,10 @@ fn test_functions_excluded_from_dead_code_exclusion_set() {
 
     rebuild_entry_points(&db).unwrap();
     let ids = load_entry_point_ids_for_exclusion(&db).unwrap();
-    assert!(!ids.contains(&t), "test functions are not in the exclusion set");
+    assert!(
+        !ids.contains(&t),
+        "test functions are not in the exclusion set"
+    );
 
     // But the test contributor DID emit a row — find_entry_points report sees it.
     let count: i64 = db
@@ -192,7 +238,15 @@ fn report_includes_test_functions_but_not_lifecycle() {
     let db = open();
     let f = insert_file(&db, "src/foo.spec.ts", "typescript");
     insert_symbol(&db, f, "test_login", "test_login", "function", 1, None);
-    insert_symbol(&db, f, "ngOnInit", "X.ngOnInit", "method", 10, Some("public"));
+    insert_symbol(
+        &db,
+        f,
+        "ngOnInit",
+        "X.ngOnInit",
+        "method",
+        10,
+        Some("public"),
+    );
 
     let report = find_entry_points(&db).unwrap();
     assert!(report
@@ -327,8 +381,24 @@ fn user_roots_json_anchors_qname_matches() {
 
     // Three symbols matching the three pattern types.
     let f1 = insert_file(&db, "app/lib.rs", "rust");
-    let dyn_handler = insert_symbol(&db, f1, "dyn_handler", "app::dyn_handler", "function", 1, None);
-    let plugin_init = insert_symbol(&db, f1, "plugin_init", "app::plugin_init", "function", 2, None);
+    let dyn_handler = insert_symbol(
+        &db,
+        f1,
+        "dyn_handler",
+        "app::dyn_handler",
+        "function",
+        1,
+        None,
+    );
+    let plugin_init = insert_symbol(
+        &db,
+        f1,
+        "plugin_init",
+        "app::plugin_init",
+        "function",
+        2,
+        None,
+    );
     let plain = insert_symbol(&db, f1, "plain_fn", "app::plain_fn", "function", 3, None);
 
     let f2 = insert_file(&db, "src/handlers/users.ts", "typescript");
@@ -338,8 +408,14 @@ fn user_roots_json_anchors_qname_matches() {
     let ids = load_entry_point_ids_for_exclusion(&db).unwrap();
     assert!(ids.contains(&dyn_handler), "qname match must anchor");
     assert!(ids.contains(&plugin_init), "name glob match must anchor");
-    assert!(ids.contains(&handler), "file glob match must anchor every symbol in matched files");
-    assert!(!ids.contains(&plain), "non-matched symbol must NOT be anchored");
+    assert!(
+        ids.contains(&handler),
+        "file glob match must anchor every symbol in matched files"
+    );
+    assert!(
+        !ids.contains(&plain),
+        "non-matched symbol must NOT be anchored"
+    );
 }
 
 #[test]
@@ -349,7 +425,10 @@ fn user_roots_missing_file_silently_succeeds() {
     let db = open();
     rebuild_entry_points(&db).unwrap();
     let ids = load_entry_point_ids_for_exclusion(&db).unwrap();
-    assert!(ids.is_empty(), "in-memory DB must produce no user-roots rows");
+    assert!(
+        ids.is_empty(),
+        "in-memory DB must produce no user-roots rows"
+    );
 }
 
 /// A method on a NON-exported class (private to its module) must NOT

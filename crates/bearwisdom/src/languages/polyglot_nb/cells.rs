@@ -80,7 +80,9 @@ fn parse_marker(line: &[u8]) -> Option<String> {
     }
     // Remainder must be whitespace (ignore kernel options after the
     // ident — e.g. `#!csharp --display-name "Foo"`).
-    let ident = std::str::from_utf8(&line[start..i]).ok()?.to_ascii_lowercase();
+    let ident = std::str::from_utf8(&line[start..i])
+        .ok()?
+        .to_ascii_lowercase();
     Some(ident)
 }
 

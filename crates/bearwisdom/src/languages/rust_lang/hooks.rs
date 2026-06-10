@@ -14,18 +14,17 @@
 //     bgjob, tonic gRPC, UDS) plus the let-binding-propagation rewrite.
 // =============================================================================
 pub(crate) use super::flow_detectors::{
-    detect_rust_actix_resource_emission, detect_rust_apalis_bgjob, detect_rust_async_graphql_attribute,
-    detect_rust_axum_route_emission, detect_rust_axum_ws_consumer, detect_rust_diesel_emission,
-    detect_rust_lettre_mailer, detect_rust_rdkafka_mq, detect_rust_redis_config_lookup,
-    detect_rust_reqwest_emission, detect_rust_route_attribute_emission, detect_rust_sqlx_macro_emission,
+    detect_rust_actix_resource_emission, detect_rust_apalis_bgjob,
+    detect_rust_async_graphql_attribute, detect_rust_axum_route_emission,
+    detect_rust_axum_ws_consumer, detect_rust_diesel_emission, detect_rust_lettre_mailer,
+    detect_rust_rdkafka_mq, detect_rust_redis_config_lookup, detect_rust_reqwest_emission,
+    detect_rust_route_attribute_emission, detect_rust_sqlx_macro_emission,
     detect_rust_tauri_command_attribute, detect_rust_tonic_emission, detect_rust_uds_emission,
 };
 use super::{keywords, predicates};
 use crate::ecosystem::manifest::ManifestKind;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
 use crate::indexer::project_context::ProjectContext;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::types::{EdgeKind, ParsedFile};
 
 pub(super) fn infer_external_inner(
@@ -36,73 +35,118 @@ pub(super) fn infer_external_inner(
 ) -> Option<String> {
     let target = &ref_ctx.extracted_ref.target_name;
 
-        // Import refs: `use serde::Deserialize` → classify by the first crate segment.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            // First segment of a `::` path identifies the crate.
-            let first = import_path.split("::").next().unwrap_or(import_path);
-            if matches!(first, "crate" | "self" | "super") {
-                return None; // internal
+    // Import refs: `use serde::Deserialize` → classify by the first crate segment.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+        // First segment of a `::` path identifies the crate.
+        let first = import_path.split("::").next().unwrap_or(import_path);
+        if matches!(first, "crate" | "self" | "super") {
+            return None; // internal
+        }
+        if keywords::STDLIB_CRATES.contains(&first) {
+            return Some("std".to_string());
+        }
+        let name = first;
+        // Manifest-driven: check Cargo.toml dependencies first.
+        // Crate names may use hyphens in Cargo.toml but underscores in source.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Cargo)
+            {
+                if manifest.dependencies.contains(name)
+                    || manifest.dependencies.contains(&name.replace('_', "-"))
+                {
+                    return Some(first.to_string());
+                }
             }
+        }
+        let is_ext = match project_ctx {
+            Some(ctx) => is_manifest_rust_crate(ctx, name),
+            None => true, // conservative: treat as external
+        };
+        if is_ext {
+            return Some(first.to_string());
+        }
+        return None;
+    }
+
+    // Bare `::`-paths without a matching `use` import (e.g. inline
+    // `anyhow::anyhow!()` or `tracing::info!()`): consult Cargo.toml.
+    // The manifest is authoritative for crate attribution.
+    if target.contains("::") {
+        let first = target.split("::").next().unwrap_or("");
+        if !first.is_empty() && !matches!(first, "crate" | "self" | "super") {
             if keywords::STDLIB_CRATES.contains(&first) {
                 return Some("std".to_string());
             }
-            let name = first;
-            // Manifest-driven: check Cargo.toml dependencies first.
-            // Crate names may use hyphens in Cargo.toml but underscores in source.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
-                    if manifest.dependencies.contains(name)
-                        || manifest.dependencies.contains(&name.replace('_', "-"))
-                    {
-                        return Some(first.to_string());
-                    }
-                }
-            }
-            let is_ext = match project_ctx {
-                Some(ctx) => is_manifest_rust_crate(ctx, name),
-                None => true, // conservative: treat as external
-            };
-            if is_ext {
-                return Some(first.to_string());
-            }
-            return None;
-        }
-
-        // Bare `::`-paths without a matching `use` import (e.g. inline
-        // `anyhow::anyhow!()` or `tracing::info!()`): consult Cargo.toml.
-        // The manifest is authoritative for crate attribution.
-        if target.contains("::") {
-            let first = target.split("::").next().unwrap_or("");
-            if !first.is_empty() && !matches!(first, "crate" | "self" | "super") {
-                if keywords::STDLIB_CRATES.contains(&first) {
-                    return Some("std".to_string());
-                }
-                if let Some(ctx) = project_ctx {
-                    if is_manifest_rust_crate(ctx, first) {
-                        return Some(first.to_string());
-                    }
+                if is_manifest_rust_crate(ctx, first) {
+                    return Some(first.to_string());
                 }
             }
         }
+    }
 
-        // For non-import refs, check if the target came from an external import.
-        // Walk the file's import list, matching either:
-        //   - the simple target name (`use serde::Deserialize;` → `Deserialize`)
-        //   - the first segment of the ref's module path (`fmt::Formatter`
-        //     with `use std::fmt;` → `fmt`)
-        let normalized = predicates::normalize_path(target);
-        let simple = normalized.split('.').next_back().unwrap_or(&normalized);
-        let module_root = ref_ctx
-            .extracted_ref
-            .module
-            .as_deref()
-            .and_then(|m| m.split("::").next())
-            .filter(|s| !s.is_empty());
+    // For non-import refs, check if the target came from an external import.
+    // Walk the file's import list, matching either:
+    //   - the simple target name (`use serde::Deserialize;` → `Deserialize`)
+    //   - the first segment of the ref's module path (`fmt::Formatter`
+    //     with `use std::fmt;` → `fmt`)
+    let normalized = predicates::normalize_path(target);
+    let simple = normalized.split('.').next_back().unwrap_or(&normalized);
+    let module_root = ref_ctx
+        .extracted_ref
+        .module
+        .as_deref()
+        .and_then(|m| m.split("::").next())
+        .filter(|s| !s.is_empty());
 
+    for import in &file_ctx.imports {
+        if import.imported_name != simple && Some(import.imported_name.as_str()) != module_root {
+            continue;
+        }
+        let Some(ref mod_path) = import.module_path else {
+            continue;
+        };
+        let first = mod_path.split("::").next().unwrap_or(mod_path);
+        if matches!(first, "crate" | "self" | "super") {
+            continue;
+        }
+        if keywords::STDLIB_CRATES.contains(&first) {
+            return Some("std".to_string());
+        }
+        let name = first;
+        // Manifest-driven check.
+        if let Some(ctx) = project_ctx {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Cargo)
+            {
+                if manifest.dependencies.contains(name)
+                    || manifest.dependencies.contains(&name.replace('_', "-"))
+                {
+                    return Some(first.to_string());
+                }
+            }
+        }
+        let is_ext = match project_ctx {
+            Some(ctx) => is_manifest_rust_crate(ctx, name),
+            None => true,
+        };
+        if is_ext {
+            return Some(first.to_string());
+        }
+    }
+
+    // Structural fallback: any walk-imports candidate from a crate
+    // the index has no symbols for is external. Catches re-exports
+    // (`pub use foo::Bar` where Bar lives in an external crate that
+    // isn't in the symbol set) and dev-deps that the manifest pass
+    // missed. Only fires when called via the `_with_lookup` variant.
+    if let Some(lookup) = lookup {
         for import in &file_ctx.imports {
-            if import.imported_name != simple
-                && Some(import.imported_name.as_str()) != module_root
+            if import.imported_name != simple && Some(import.imported_name.as_str()) != module_root
             {
                 continue;
             }
@@ -113,115 +157,73 @@ pub(super) fn infer_external_inner(
             if matches!(first, "crate" | "self" | "super") {
                 continue;
             }
-            if keywords::STDLIB_CRATES.contains(&first) {
-                return Some("std".to_string());
-            }
-            let name = first;
-            // Manifest-driven check.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
-                    if manifest.dependencies.contains(name)
-                        || manifest.dependencies.contains(&name.replace('_', "-"))
-                    {
-                        return Some(first.to_string());
-                    }
-                }
-            }
-            let is_ext = match project_ctx {
-                Some(ctx) => is_manifest_rust_crate(ctx, name),
-                None => true,
-            };
-            if is_ext {
+            if !lookup.has_in_namespace(first) {
                 return Some(first.to_string());
             }
         }
+    }
 
-        // Structural fallback: any walk-imports candidate from a crate
-        // the index has no symbols for is external. Catches re-exports
-        // (`pub use foo::Bar` where Bar lives in an external crate that
-        // isn't in the symbol set) and dev-deps that the manifest pass
-        // missed. Only fires when called via the `_with_lookup` variant.
+    // Wildcard-import fallback: `use proptest::prelude::*;` brings
+    // arbitrary names into scope. As the last resort, attribute
+    // unresolved targets to the first external wildcard-imported
+    // crate (manifest-known or has_in_namespace external). Lossy
+    // attribution by design — without trait/symbol resolution
+    // through external `.rs`, we can't tell which wildcard sourced
+    // the name. Still better than `unresolved_refs`.
+    for import in &file_ctx.imports {
+        if !import.is_wildcard {
+            continue;
+        }
+        let Some(ref mod_path) = import.module_path else {
+            continue;
+        };
+        let first = mod_path.split("::").next().unwrap_or(mod_path);
+        if matches!(first, "crate" | "self" | "super") {
+            continue;
+        }
+        if keywords::STDLIB_CRATES.contains(&first) {
+            return Some("std".to_string());
+        }
+        if let Some(ctx) = project_ctx {
+            if is_manifest_rust_crate(ctx, first) {
+                return Some(first.to_string());
+            }
+        }
         if let Some(lookup) = lookup {
+            if !lookup.has_in_namespace(first) {
+                return Some(first.to_string());
+            }
+        }
+    }
+
+    // Builder chain propagation: if the ref has a chain and the root segment
+    // was imported from an external crate, classify the whole chain external.
+    if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+        if chain_ref.segments.len() >= 2 {
+            let root = &chain_ref.segments[0].name;
             for import in &file_ctx.imports {
-                if import.imported_name != simple
-                    && Some(import.imported_name.as_str()) != module_root
-                {
+                if import.imported_name != root.as_str() {
                     continue;
                 }
-                let Some(ref mod_path) = import.module_path else {
-                    continue;
-                };
-                let first = mod_path.split("::").next().unwrap_or(mod_path);
-                if matches!(first, "crate" | "self" | "super") {
-                    continue;
-                }
-                if !lookup.has_in_namespace(first) {
-                    return Some(first.to_string());
-                }
-            }
-        }
-
-        // Wildcard-import fallback: `use proptest::prelude::*;` brings
-        // arbitrary names into scope. As the last resort, attribute
-        // unresolved targets to the first external wildcard-imported
-        // crate (manifest-known or has_in_namespace external). Lossy
-        // attribution by design — without trait/symbol resolution
-        // through external `.rs`, we can't tell which wildcard sourced
-        // the name. Still better than `unresolved_refs`.
-        for import in &file_ctx.imports {
-            if !import.is_wildcard {
-                continue;
-            }
-            let Some(ref mod_path) = import.module_path else {
-                continue;
-            };
-            let first = mod_path.split("::").next().unwrap_or(mod_path);
-            if matches!(first, "crate" | "self" | "super") {
-                continue;
-            }
-            if keywords::STDLIB_CRATES.contains(&first) {
-                return Some("std".to_string());
-            }
-            if let Some(ctx) = project_ctx {
-                if is_manifest_rust_crate(ctx, first) {
-                    return Some(first.to_string());
-                }
-            }
-            if let Some(lookup) = lookup {
-                if !lookup.has_in_namespace(first) {
-                    return Some(first.to_string());
-                }
-            }
-        }
-
-        // Builder chain propagation: if the ref has a chain and the root segment
-        // was imported from an external crate, classify the whole chain external.
-        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if chain_ref.segments.len() >= 2 {
-                let root = &chain_ref.segments[0].name;
-                for import in &file_ctx.imports {
-                    if import.imported_name != root.as_str() {
-                        continue;
-                    }
-                    if let Some(ref mod_path) = import.module_path {
-                        let first = mod_path.split("::").next().unwrap_or(mod_path);
-                        let is_ext = if matches!(first, "crate" | "self" | "super") {
-                            false
-                        } else if keywords::STDLIB_CRATES.contains(&first) {
-                            true
-                        } else {
-                            match project_ctx {
-                                Some(ctx) => is_manifest_rust_crate(ctx, first),
-                                None => true,
-                            }
-                        };
-                        if is_ext {
-                            return Some(format!("{}.*", first));
+                if let Some(ref mod_path) = import.module_path {
+                    let first = mod_path.split("::").next().unwrap_or(mod_path);
+                    let is_ext = if matches!(first, "crate" | "self" | "super") {
+                        false
+                    } else if keywords::STDLIB_CRATES.contains(&first) {
+                        true
+                    } else {
+                        match project_ctx {
+                            Some(ctx) => is_manifest_rust_crate(ctx, first),
+                            None => true,
                         }
+                    };
+                    if is_ext {
+                        return Some(format!("{}.*", first));
                     }
                 }
             }
         }
+    }
 
     // Final externals-index fallback: if every project import / wildcard /
     // chain check failed, try a by-name lookup. When `target_name` matches
@@ -239,9 +241,7 @@ pub(super) fn infer_external_inner(
     if let Some(lookup) = lookup {
         let matches = lookup.by_name(target);
         if !matches.is_empty() {
-            let all_external = matches
-                .iter()
-                .all(|s| s.file_path.starts_with("ext:"));
+            let all_external = matches.iter().all(|s| s.file_path.starts_with("ext:"));
             if all_external {
                 // Pick a representative crate from the first match's file path.
                 // `ext:rust:.../core/src/str/mod.rs` → `core`. Fall back to
@@ -269,10 +269,7 @@ fn classify_external_path_as_crate(path: &str) -> Option<String> {
     //   ext:rust:<other>                                              → "std" fallback
     let stripped = path.strip_prefix("ext:rust:").unwrap_or(path);
     // Find a `/library/` segment (rust-stdlib).
-    if let Some(rest) = stripped
-        .split_once("/library/")
-        .map(|(_, after)| after)
-    {
+    if let Some(rest) = stripped.split_once("/library/").map(|(_, after)| after) {
         if let Some(crate_seg) = rest.split('/').next() {
             if !crate_seg.is_empty() {
                 return Some(crate_seg.to_string());
@@ -328,8 +325,12 @@ pub(crate) fn detect_flow_inner_with_lookup(
     // type ends with `Client`, rewrite the chain with the type as the
     // new root and rerun the Tonic detector.
     let r = &ref_ctx.extracted_ref;
-    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+    let Some(root_seg) = chain.segments.first() else {
+        return Vec::new();
+    };
     if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
         return Vec::new();
     }
@@ -357,11 +358,11 @@ pub(crate) fn detect_flow_inner_with_lookup(
             type_args: vec![],
             optional_chaining: false,
             byte_offset: 0,
-                        declared_type_id: None,
+            declared_type_id: None,
             is_call: false,
             call_args: Vec::new(),
             type_arg_ids: Vec::new(),
-},
+        },
         crate::types::ChainSegment {
             name: "new".to_string(),
             node_kind: "rewritten_var".to_string(),
@@ -370,14 +371,16 @@ pub(crate) fn detect_flow_inner_with_lookup(
             type_args: vec![],
             optional_chaining: false,
             byte_offset: 0,
-                        declared_type_id: None,
+            declared_type_id: None,
             is_call: false,
             call_args: Vec::new(),
             type_arg_ids: Vec::new(),
-},
+        },
     ];
     new_segments.extend(chain.segments.iter().skip(1).cloned());
-    let rewritten = crate::types::MemberChain { segments: new_segments };
+    let rewritten = crate::types::MemberChain {
+        segments: new_segments,
+    };
     if let Some(em) = detect_rust_tonic_emission(&rewritten) {
         return vec![em];
     }
@@ -397,10 +400,9 @@ pub(crate) fn detect_flow_inner(
     // Decorators emit a TypeRef with target_name=<verb> and module=URL
     // for actix-web / Rocket `#[get("/x")]` style declarations.
     if r.kind == EdgeKind::TypeRef {
-        if let Some(em) = detect_rust_route_attribute_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(em) =
+            detect_rust_route_attribute_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![em];
         }
         if let Some(em) = detect_rust_tauri_command_attribute(r.target_name.as_str()) {
@@ -426,11 +428,9 @@ pub(crate) fn detect_flow_inner(
     // `target_name` carrying the verb. `call_args` holds the entity
     // name (for query_as) and the SQL string (parsed from the macro
     // body by `extract_macro_string_args`).
-    if let Some(em) = detect_rust_sqlx_macro_emission(
-        r.target_name.as_str(),
-        r.module.as_deref(),
-        &r.call_args,
-    ) {
+    if let Some(em) =
+        detect_rust_sqlx_macro_emission(r.target_name.as_str(), r.module.as_deref(), &r.call_args)
+    {
         return vec![em];
     }
 
@@ -539,7 +539,6 @@ pub(crate) fn build_file_context_inner(
         file_namespace,
     }
 }
-
 
 // =============================================================================
 // LanguageEngineHooks impl + static instance.

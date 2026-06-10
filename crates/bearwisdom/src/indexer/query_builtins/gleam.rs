@@ -27,7 +27,8 @@ pub const BUILTINS: &[&str] = &[
     "use",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 (block) @local.scope\n\
 \n\
 (function) @local.scope\n\
@@ -44,4 +45,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
 \n\
 ; References\n\
 (identifier) @local.reference\n\
-");
+",
+);

@@ -79,7 +79,10 @@ impl TypeEnvironment {
 
     /// Check if a name is a bound type parameter.
     pub fn is_bound(&self, name: &str) -> bool {
-        self.bindings.iter().rev().any(|scope| scope.contains_key(name))
+        self.bindings
+            .iter()
+            .rev()
+            .any(|scope| scope.contains_key(name))
     }
 
     /// Enter a new generic context for `type_name` with the given concrete args.

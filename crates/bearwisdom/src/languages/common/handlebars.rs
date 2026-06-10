@@ -60,11 +60,11 @@ pub fn append_ember_helper_default_export(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 /// Detect a Handlebars-callable export and return (stem, signature_hint)
@@ -139,7 +139,6 @@ fn is_ghost_style_theme_helper(source: &str) -> bool {
         || source.contains("handlebars\").SafeString")
 }
 
-
 // ---------------------------------------------------------------------------
 // Handlebars.RegisterHelper("name", ...) — runtime registration scan
 //
@@ -182,11 +181,11 @@ pub fn append_handlebars_register_helper_globals(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -211,7 +210,9 @@ fn scan_register_helper_names(source: &str) -> Vec<String> {
         }
         if let Some(after_open) = matched_len {
             let mut j = i + after_open;
-            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n' || bytes[j] == b'\r') {
+            while j < bytes.len()
+                && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n' || bytes[j] == b'\r')
+            {
                 j += 1;
             }
             if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
@@ -229,7 +230,9 @@ fn scan_register_helper_names(source: &str) -> Vec<String> {
                     if let Ok(name) = std::str::from_utf8(&bytes[start..k]) {
                         let trimmed = name.trim();
                         if !trimmed.is_empty()
-                            && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                            && trimmed
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
                         {
                             out.push(trimmed.to_string());
                         }
@@ -246,12 +249,12 @@ fn scan_register_helper_names(source: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::amd::{append_amd_define_imports, scan_amd_define_pairs};
     use super::super::html::{
         extract_astro_frontmatter, extract_html_script_style_regions, extract_script_refs,
     };
     use super::super::jquery::append_jquery_fn_plugin_globals;
+    use super::*;
     use crate::types::EmbeddedOrigin;
 
     #[test]
@@ -290,9 +293,13 @@ mod tests {
     fn json_ld_script_is_skipped() {
         // application/ld+json is not executable JavaScript; sub-dispatch would
         // treat it as JS and emit garbage. The helper must drop it.
-        let src = "<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\"}</script>\n";
+        let src =
+            "<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\"}</script>\n";
         let regions = extract_html_script_style_regions(src);
-        assert!(regions.is_empty(), "ld+json must be skipped, not sub-parsed");
+        assert!(
+            regions.is_empty(),
+            "ld+json must be skipped, not sub-parsed"
+        );
     }
 
     #[test]
@@ -463,12 +470,9 @@ mod tests {
     #[test]
     fn ember_helper_appends_npm_globals_symbol() {
         let mut r = empty_result();
-        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
-        append_ember_helper_default_export(
-            "ghost/admin/app/helpers/gh-pluralize.js",
-            src,
-            &mut r,
-        );
+        let src =
+            "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export("ghost/admin/app/helpers/gh-pluralize.js", src, &mut r);
         let sym = r
             .symbols
             .iter()
@@ -482,11 +486,7 @@ mod tests {
     fn ember_helper_skipped_when_no_ember_import() {
         let mut r = empty_result();
         let src = "// just a regular module\nexport function thing() { return 1; }";
-        append_ember_helper_default_export(
-            "myproject/app/helpers/random.js",
-            src,
-            &mut r,
-        );
+        append_ember_helper_default_export("myproject/app/helpers/random.js", src, &mut r);
         assert!(
             r.symbols.is_empty(),
             "non-Ember files in helpers/ should not get the synthetic; got: {:?}",
@@ -497,12 +497,9 @@ mod tests {
     #[test]
     fn ember_helper_skipped_outside_app_helpers_dir() {
         let mut r = empty_result();
-        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
-        append_ember_helper_default_export(
-            "ghost/admin/app/lib/random.js",
-            src,
-            &mut r,
-        );
+        let src =
+            "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export("ghost/admin/app/lib/random.js", src, &mut r);
         assert!(r.symbols.is_empty());
     }
 
@@ -512,7 +509,8 @@ mod tests {
         // (rewritten to `blog.post_card` by the Handlebars wrapper). That's a
         // dotted lookup, not a bare-name fallback target — out of scope here.
         let mut r = empty_result();
-        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        let src =
+            "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
         append_ember_helper_default_export(
             "ghost/admin/app/helpers/blog/post-card.js",
             src,
@@ -524,31 +522,24 @@ mod tests {
     #[test]
     fn ember_helper_handles_typescript_extension() {
         let mut r = empty_result();
-        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
-        append_ember_helper_default_export(
-            "myapp/app/helpers/format-date.ts",
-            src,
-            &mut r,
-        );
+        let src =
+            "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export("myapp/app/helpers/format-date.ts", src, &mut r);
         assert!(r.symbols.iter().any(|s| s.name == "format_date"));
     }
 
     #[test]
     fn ember_helper_idempotent_on_repeat_calls() {
         let mut r = empty_result();
-        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
-        append_ember_helper_default_export(
-            "myapp/app/helpers/eq.js",
-            src,
-            &mut r,
-        );
-        append_ember_helper_default_export(
-            "myapp/app/helpers/eq.js",
-            src,
-            &mut r,
-        );
+        let src =
+            "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export("myapp/app/helpers/eq.js", src, &mut r);
+        append_ember_helper_default_export("myapp/app/helpers/eq.js", src, &mut r);
         assert_eq!(
-            r.symbols.iter().filter(|s| s.qualified_name == "__npm_globals__.eq").count(),
+            r.symbols
+                .iter()
+                .filter(|s| s.qualified_name == "__npm_globals__.eq")
+                .count(),
             1,
             "duplicate detection should keep the symbol unique"
         );
@@ -575,12 +566,9 @@ mod tests {
     #[test]
     fn ember_modifier_via_render_modifiers_import() {
         let mut r = empty_result();
-        let src = "import { modifier } from 'ember-modifier';\nexport default modifier((el) => {});";
-        append_ember_helper_default_export(
-            "myapp/app/modifiers/on-key.js",
-            src,
-            &mut r,
-        );
+        let src =
+            "import { modifier } from 'ember-modifier';\nexport default modifier((el) => {});";
+        append_ember_helper_default_export("myapp/app/modifiers/on-key.js", src, &mut r);
         assert!(r.symbols.iter().any(|s| s.name == "on_key"));
     }
 
@@ -606,11 +594,7 @@ mod tests {
     fn ghost_theme_helper_via_register_helper_pattern() {
         let mut r = empty_result();
         let src = "const Handlebars = require('handlebars');\nHandlebars.registerHelper('formatDate', function(d) { return d; });\nmodule.exports = formatDate;";
-        append_ember_helper_default_export(
-            "myapp/lib/helpers/format-date.js",
-            src,
-            &mut r,
-        );
+        append_ember_helper_default_export("myapp/lib/helpers/format-date.js", src, &mut r);
         assert!(
             r.symbols.iter().any(|s| s.name == "format_date"),
             "Handlebars.registerHelper pattern should activate detection"
@@ -623,11 +607,7 @@ mod tests {
         // A folder named `helpers/` but with no Handlebars signal — could be
         // a generic JS utility module. Don't claim it as a template helper.
         let src = "export function helper() {}\nexport default helper;";
-        append_ember_helper_default_export(
-            "src/helpers/utility.js",
-            src,
-            &mut r,
-        );
+        append_ember_helper_default_export("src/helpers/utility.js", src, &mut r);
         assert!(r.symbols.is_empty(), "no Handlebars signal → no synthetic");
     }
 
@@ -638,11 +618,13 @@ mod tests {
     #[test]
     fn register_helper_csharp_double_quoted_captures_name() {
         let mut r = empty_result();
-        let src = "Handlebars.RegisterHelper(\"usd\", (writer, ctx, args) => writer.Write(args[0]));";
+        let src =
+            "Handlebars.RegisterHelper(\"usd\", (writer, ctx, args) => writer.Write(args[0]));";
         append_handlebars_register_helper_globals(src, &mut r);
-        assert!(r.symbols.iter().any(|s|
-            s.name == "usd" && s.qualified_name == "__npm_globals__.usd"
-        ));
+        assert!(r
+            .symbols
+            .iter()
+            .any(|s| s.name == "usd" && s.qualified_name == "__npm_globals__.usd"));
     }
 
     #[test]
@@ -650,9 +632,10 @@ mod tests {
         let mut r = empty_result();
         let src = "Handlebars.registerHelper('format-date', function(d) { return d; });";
         append_handlebars_register_helper_globals(src, &mut r);
-        assert!(r.symbols.iter().any(|s|
-            s.name == "format_date" && s.qualified_name == "__npm_globals__.format_date"
-        ));
+        assert!(r
+            .symbols
+            .iter()
+            .any(|s| s.name == "format_date" && s.qualified_name == "__npm_globals__.format_date"));
     }
 
     #[test]
@@ -698,8 +681,10 @@ mod tests {
     fn amd_define_emits_imports_per_dep() {
         let src = "define([ \"jquery\", \"./config\", \"preferences\" ],\n        function($, config, preferences) { return $.fn; });";
         let pairs = scan_amd_define_pairs(src);
-        let by_dep: std::collections::HashMap<&str, &str> =
-            pairs.iter().map(|(d, p, _)| (d.as_str(), p.as_str())).collect();
+        let by_dep: std::collections::HashMap<&str, &str> = pairs
+            .iter()
+            .map(|(d, p, _)| (d.as_str(), p.as_str()))
+            .collect();
         assert_eq!(by_dep.get("jquery"), Some(&"$"));
         assert_eq!(by_dep.get("./config"), Some(&"config"));
         assert_eq!(by_dep.get("preferences"), Some(&"preferences"));
@@ -765,8 +750,8 @@ mod tests {
         let mut r = empty_result();
         let src = "$.fn.prologEditor = function(method) { return this; };";
         append_jquery_fn_plugin_globals(src, &mut r);
-        assert!(r.symbols.iter().any(|s|
-            s.name == "prologEditor" && s.qualified_name == "__npm_globals__.prologEditor"
+        assert!(r.symbols.iter().any(
+            |s| s.name == "prologEditor" && s.qualified_name == "__npm_globals__.prologEditor"
         ));
     }
 

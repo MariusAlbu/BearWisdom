@@ -11,14 +11,10 @@ fn file_host_symbol_named_after_stem() {
 
 #[test]
 fn element_id_becomes_anchor_symbol() {
-    let src = r#"<html><body><section id="intro">Hi</section><div id="footer"></div></body></html>"#;
+    let src =
+        r#"<html><body><section id="intro">Hi</section><div id="footer"></div></body></html>"#;
     let r = extract(src, "page.html");
-    let ids: Vec<&str> = r
-        .symbols
-        .iter()
-        .skip(1)
-        .map(|s| s.name.as_str())
-        .collect();
+    let ids: Vec<&str> = r.symbols.iter().skip(1).map(|s| s.name.as_str()).collect();
     assert!(ids.contains(&"intro"));
     assert!(ids.contains(&"footer"));
 }
@@ -47,7 +43,11 @@ fn generator_meta_skips_extraction() {
 </body>
 </html>"#;
     let r = extract(src, "docs/Browser-1.0.0.html");
-    assert!(r.symbols.is_empty(), "generated HTML must produce no symbols, got {:?}", r.symbols);
+    assert!(
+        r.symbols.is_empty(),
+        "generated HTML must produce no symbols, got {:?}",
+        r.symbols
+    );
     assert!(r.refs.is_empty());
 }
 
@@ -74,7 +74,10 @@ fn ordinary_html_not_skipped() {
 <html><head><meta charset="utf-8"><title>Hi</title></head>
 <body><h1 id="hero">Hello</h1></body></html>"#;
     let r = extract(src, "page.html");
-    assert!(!r.symbols.is_empty(), "ordinary HTML must still extract anchors");
+    assert!(
+        !r.symbols.is_empty(),
+        "ordinary HTML must still extract anchors"
+    );
     assert!(r.symbols.iter().any(|s| s.name == "hero"));
 }
 
@@ -87,7 +90,9 @@ fn custom_element_tag_emits_pascalcase_calls_ref() {
     let src = "<html><body><user-card></user-card></body></html>";
     let r = extract(src, "page.html");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
         "custom element <user-card> should emit a Calls ref to UserCard, got {:?}",
         r.refs
     );
@@ -114,5 +119,8 @@ fn generator_meta_outside_first_16kb_not_detected() {
     src.push_str(r#"<meta name="generator" content="late marker">"#);
     src.push_str("</body></html>");
     let r = extract(&src, "page.html");
-    assert!(!r.symbols.is_empty(), "marker past 16KB shouldn't bail extraction");
+    assert!(
+        !r.symbols.is_empty(),
+        "marker past 16KB shouldn't bail extraction"
+    );
 }

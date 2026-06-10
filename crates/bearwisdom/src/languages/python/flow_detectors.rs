@@ -37,7 +37,9 @@ pub(crate) fn detect_python_redis_lookup(
         CallArg::StringLit(s) if !s.is_empty() => Some(s.clone()),
         _ => None,
     })?;
-    Some(FlowEmission::ConfigLookup { key: format!("redis:{}", key) })
+    Some(FlowEmission::ConfigLookup {
+        key: format!("redis:{}", key),
+    })
 }
 
 pub(crate) fn detect_python_bgjob_emission(
@@ -54,7 +56,8 @@ pub(crate) fn detect_python_bgjob_emission(
     let leaf = segs.last()?.name.as_str();
     let root = segs[0].name.as_str();
     let is_bg = matches!(leaf, "delay" | "apply_async" | "send_with_options")
-        || (leaf == "enqueue" && (root == "queue" || root.ends_with("Queue") || root.ends_with("queue")));
+        || (leaf == "enqueue"
+            && (root == "queue" || root.ends_with("Queue") || root.ends_with("queue")));
     if !is_bg {
         return None;
     }
@@ -63,7 +66,7 @@ pub(crate) fn detect_python_bgjob_emission(
         name: format!("py.{}", root),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -74,8 +77,15 @@ pub(crate) fn detect_python_mailer_emission(
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     // Django: `send_mail(...)`, `EmailMessage(...).send()`, `mail.send_mass_mail`.
     // Flask-Mail: `mail.send(msg)`. Generic SMTP: `smtp.send_message`.
-    let leaf = chain.segments.last().map(|s| s.name.as_str()).unwrap_or(target_name);
-    if !matches!(leaf, "send" | "send_message" | "send_mail" | "send_mass_mail" | "send_html_mail") {
+    let leaf = chain
+        .segments
+        .last()
+        .map(|s| s.name.as_str())
+        .unwrap_or(target_name);
+    if !matches!(
+        leaf,
+        "send" | "send_message" | "send_mail" | "send_mass_mail" | "send_html_mail"
+    ) {
         return None;
     }
     // Restrict to chains whose root looks mail-related.
@@ -91,7 +101,7 @@ pub(crate) fn detect_python_mailer_emission(
         name: format!("py.{}", root),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -127,7 +137,7 @@ pub(crate) fn detect_python_route_decorator_emission(
             name,
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     let method = match verb_seg {
@@ -149,7 +159,7 @@ pub(crate) fn detect_python_route_decorator_emission(
         name,
         role: ChannelRole::Consumer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -213,13 +223,16 @@ pub(crate) fn detect_python_http_chain_emission(
         name,
         role: ChannelRole::Producer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
 fn file_imports_python_http_library(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let m = imp.module_path.as_deref().unwrap_or(imp.imported_name.as_str());
+        let m = imp
+            .module_path
+            .as_deref()
+            .unwrap_or(imp.imported_name.as_str());
         matches!(
             m.split('.').next().unwrap_or(m),
             "requests" | "httpx" | "aiohttp" | "urllib3" | "urllib" | "fastapi"
@@ -229,21 +242,30 @@ fn file_imports_python_http_library(file_ctx: &FileContext) -> bool {
 
 fn file_imports_python_django(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let m = imp.module_path.as_deref().unwrap_or(imp.imported_name.as_str());
+        let m = imp
+            .module_path
+            .as_deref()
+            .unwrap_or(imp.imported_name.as_str());
         m.split('.').next().unwrap_or(m) == "django"
     })
 }
 
 pub(crate) fn file_imports_python_channels(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let m = imp.module_path.as_deref().unwrap_or(imp.imported_name.as_str());
+        let m = imp
+            .module_path
+            .as_deref()
+            .unwrap_or(imp.imported_name.as_str());
         m.split('.').next().unwrap_or(m) == "channels"
     })
 }
 
 fn file_imports_python_sqlalchemy(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let m = imp.module_path.as_deref().unwrap_or(imp.imported_name.as_str());
+        let m = imp
+            .module_path
+            .as_deref()
+            .unwrap_or(imp.imported_name.as_str());
         let root = m.split('.').next().unwrap_or(m);
         root == "sqlalchemy" || root == "sqlmodel"
     })
@@ -287,7 +309,7 @@ pub(crate) fn detect_python_graphql_decorator_emission(
         name: format!("{}:{}", last, source_symbol_name),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -313,7 +335,7 @@ pub(crate) fn detect_python_channels_consumer_inheritance(
         name: "py.channels".to_string(),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -350,7 +372,7 @@ pub(crate) fn detect_python_channels_path_emission(
         name,
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -389,7 +411,7 @@ pub(crate) fn detect_python_django_path_emission(
         name,
         role: ChannelRole::Consumer,
         method: Some(HttpMethod::Any),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -608,9 +630,7 @@ fn namespaced_python_entity(name: &str) -> String {
     format!("py.{}", name)
 }
 
-fn sqlalchemy_op_from_leaf(
-    name: &str,
-) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
+fn sqlalchemy_op_from_leaf(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
         "filter" | "filter_by" | "first" | "all" | "one" | "one_or_none" | "scalar" | "get"
@@ -622,9 +642,7 @@ fn sqlalchemy_op_from_leaf(
     })
 }
 
-fn django_op_from_leaf(
-    name: &str,
-) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
+fn django_op_from_leaf(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
         "filter" | "all" | "get" | "exclude" | "first" | "last" | "exists" | "count" | "values"
@@ -638,7 +656,9 @@ fn django_op_from_leaf(
 }
 
 fn is_pascal_case_first(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 // ---------------------------------------------------------------------------

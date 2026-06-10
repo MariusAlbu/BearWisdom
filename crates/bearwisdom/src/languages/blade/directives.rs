@@ -12,14 +12,14 @@ use crate::types::SymbolKind;
 /// the `SymbolKind` we record for it. Symbol name is the first string
 /// argument (e.g. `@section("content")` → name `"content"`).
 pub static DEFINING_DIRECTIVES: &[(&str, SymbolKind)] = &[
-    ("section",   SymbolKind::Method),    // a content slot definition
-    ("push",      SymbolKind::Method),    // append to a stack
-    ("prepend",   SymbolKind::Method),    // prepend to a stack
-    ("stack",     SymbolKind::Field),     // declare a stack outlet
-    ("component", SymbolKind::Class),     // anonymous component definition
-    ("slot",      SymbolKind::Field),     // named slot inside a component
-    ("hasSection",SymbolKind::Method),    // section query — still names a section
-    ("yield",     SymbolKind::Field),     // outlet for a section
+    ("section", SymbolKind::Method),    // a content slot definition
+    ("push", SymbolKind::Method),       // append to a stack
+    ("prepend", SymbolKind::Method),    // prepend to a stack
+    ("stack", SymbolKind::Field),       // declare a stack outlet
+    ("component", SymbolKind::Class),   // anonymous component definition
+    ("slot", SymbolKind::Field),        // named slot inside a component
+    ("hasSection", SymbolKind::Method), // section query — still names a section
+    ("yield", SymbolKind::Field),       // outlet for a section
 ];
 
 /// Directives that emit a REFERENCE to an external template by name.

@@ -129,7 +129,8 @@ pub const BUILTINS: &[&str] = &[
     "with",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some(";; when using @local.reference, tree-sitter seems to \n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    ";; when using @local.reference, tree-sitter seems to \n\
 ;; apply the scope from the identifier it has looked up,\n\
 ;; which makes sense for most languages.\n\
 ;; however, we want to highlight things as function based on their call-site,\n\
@@ -162,4 +163,5 @@ pub const LOCALS_SCM: Option<&str> = Some(";; when using @local.reference, tree-
 ;) @local.scope\n\
 ;\n\
 ;(identifier) @local.reference \n\
-");
+",
+);

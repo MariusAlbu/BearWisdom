@@ -4,22 +4,22 @@ mod call_sites;
 mod calls;
 mod chain;
 mod embedded;
-mod refs;
+pub mod extract;
 pub(crate) mod flow;
 mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
-mod symbols;
+mod refs;
 mod statements;
+mod symbols;
 mod tags;
 mod type_refs;
 mod types;
-pub mod extract;
 
+pub mod connectors;
 pub mod hooks;
 mod predicates;
 pub mod profile;
-pub mod connectors;
 
 pub use hooks::GO_HOOKS;
 pub use profile::GO_PROFILE;
@@ -41,24 +41,32 @@ mod resolve_tests;
 mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct GoPlugin;
 
 impl LanguagePlugin for GoPlugin {
-    fn id(&self) -> &str { "go" }
+    fn id(&self) -> &str {
+        "go"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["go"] }
+    fn language_ids(&self) -> &[&str] {
+        &["go"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".go"] }
+    fn extensions(&self) -> &[&str] {
+        &[".go"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_go::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -113,8 +121,7 @@ impl LanguagePlugin for GoPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&GO_HOOKS)
     }
 

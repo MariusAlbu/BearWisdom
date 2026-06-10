@@ -73,11 +73,12 @@ pub(super) fn extract_go_doc_comment(node: &Node, source: &str) -> Option<String
 pub(super) fn build_fn_signature_from_source(node: &Node, source: &str) -> Option<String> {
     let text = node_text(node, source);
     let first_line = text.lines().next()?;
-    let sig = first_line
-        .trim_end_matches('{')
-        .trim_end()
-        .to_string();
-    if sig.is_empty() { None } else { Some(sig) }
+    let sig = first_line.trim_end_matches('{').trim_end().to_string();
+    if sig.is_empty() {
+        None
+    } else {
+        Some(sig)
+    }
 }
 
 /// Build a signature for a `method_elem` from its source.
@@ -85,7 +86,11 @@ pub(super) fn build_fn_signature_from_source(node: &Node, source: &str) -> Optio
 /// Form: `MethodName(params) result`
 pub(super) fn build_method_elem_signature(node: &Node, source: &str) -> Option<String> {
     let text = node_text(node, source);
-    if text.is_empty() { None } else { Some(text) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /// Extract the base type name from a `pointer_type` node (`*Foo` → `"Foo"`).
@@ -108,12 +113,28 @@ pub(super) fn pointer_type_name(node: &Node, source: &str) -> String {
 pub(super) fn is_go_builtin_type(name: &str) -> bool {
     matches!(
         name,
-        "bool" | "byte" | "complex64" | "complex128" | "error"
-            | "float32" | "float64"
-            | "int" | "int8" | "int16" | "int32" | "int64"
-            | "rune" | "string" | "uint" | "uint8" | "uint16"
-            | "uint32" | "uint64" | "uintptr"
-            | "any" | "comparable"
+        "bool"
+            | "byte"
+            | "complex64"
+            | "complex128"
+            | "error"
+            | "float32"
+            | "float64"
+            | "int"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "rune"
+            | "string"
+            | "uint"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uintptr"
+            | "any"
+            | "comparable"
     )
 }
 
@@ -160,7 +181,9 @@ pub(super) fn extract_go_type_name(node: &Node, source: &str) -> String {
             // `map[K]V` — extract value type (second named child).
             let named: Vec<_> = {
                 let mut cursor = node.walk();
-                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+                node.children(&mut cursor)
+                    .filter(|c| c.is_named())
+                    .collect()
             };
             if named.len() >= 2 {
                 return extract_go_type_name(&named[1], source);
@@ -176,7 +199,9 @@ pub(super) fn extract_go_type_name(node: &Node, source: &str) -> String {
             // Fallback: last named child.
             let named: Vec<_> = {
                 let mut cursor = node.walk();
-                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+                node.children(&mut cursor)
+                    .filter(|c| c.is_named())
+                    .collect()
             };
             if let Some(last) = named.last() {
                 return extract_go_type_name(last, source);
@@ -245,7 +270,9 @@ pub(super) fn extract_function_type_refs(
                             if let Some(tn) = type_node {
                                 let name = extract_go_type_name(&tn, source);
                                 if !name.is_empty() && !is_go_builtin_type(&name) {
-                                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(crate::types::ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
@@ -254,9 +281,9 @@ pub(super) fn extract_function_type_refs(
                                         module: None,
                                         chain: None,
                                         byte_offset: tn.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
+                                    });
                                 }
                             }
                         }
@@ -264,7 +291,9 @@ pub(super) fn extract_function_type_refs(
                             // Bare type in result or single-type result.
                             let name = extract_go_type_name(&param_child, source);
                             if !name.is_empty() && !is_go_builtin_type(&name) {
-                                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(crate::types::ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -273,9 +302,9 @@ pub(super) fn extract_function_type_refs(
                                     module: None,
                                     chain: None,
                                     byte_offset: param_child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }

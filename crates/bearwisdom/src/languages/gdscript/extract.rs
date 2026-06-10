@@ -19,7 +19,9 @@
 //   Calls      — `call` nodes
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -37,7 +39,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    visit(tree.root_node(), source, &mut symbols, &mut refs, None, false);
+    visit(
+        tree.root_node(),
+        source,
+        &mut symbols,
+        &mut refs,
+        None,
+        false,
+    );
 
     ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -120,10 +129,7 @@ fn extract_class_name_stmt(
     // and never resolves.
     let extends = node.child_by_field_name("extends").map(|n| {
         let text = node_text(&n, src);
-        text.trim()
-            .trim_start_matches("extends")
-            .trim()
-            .to_string()
+        text.trim().trim_start_matches("extends").trim().to_string()
     });
 
     let sig = match &extends {
@@ -144,18 +150,20 @@ fn extract_class_name_stmt(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(base) = extends {
         if base.is_empty() {
             return;
         }
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: base,
             kind: EdgeKind::Inherits,
@@ -163,10 +171,10 @@ fn extract_class_name_stmt(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
     }
 }
 
@@ -186,15 +194,13 @@ fn extract_extends_stmt(
     // case `.trim_start_matches("extends")` won't match and the literal
     // `extends X` text ends up as the inherits target.
     let text = node_text(node, src);
-    let base = text
-        .trim()
-        .trim_start_matches("extends")
-        .trim()
-        .to_string();
+    let base = text.trim().trim_start_matches("extends").trim().to_string();
     if base.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: base,
         kind: EdgeKind::Inherits,
@@ -203,9 +209,9 @@ fn extract_extends_stmt(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -229,10 +235,7 @@ fn extract_inner_class(
 
     let extends = node.child_by_field_name("extends").map(|n| {
         let text = node_text(&n, src);
-        text.trim()
-            .trim_start_matches("extends")
-            .trim()
-            .to_string()
+        text.trim().trim_start_matches("extends").trim().to_string()
     });
 
     symbols.push(ExtractedSymbol {
@@ -248,16 +251,18 @@ fn extract_inner_class(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(base) = extends {
         if !base.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: base,
                 kind: EdgeKind::Inherits,
@@ -267,8 +272,8 @@ fn extract_inner_class(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                            col: 0,
-});
+                col: 0,
+            });
         }
     }
 
@@ -293,7 +298,11 @@ fn extract_function(
         None => return,
     };
 
-    let kind = if inside_class { SymbolKind::Method } else { SymbolKind::Function };
+    let kind = if inside_class {
+        SymbolKind::Method
+    } else {
+        SymbolKind::Function
+    };
     let line = node.start_position().row as u32;
     let idx = symbols.len();
 
@@ -310,12 +319,12 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     collect_calls(node, src, idx, refs);
     // Walk function body for nested variable declarations, const, and enum nodes.
@@ -345,12 +354,12 @@ fn extract_constructor(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     collect_calls(node, src, idx, refs);
     // Walk constructor body for nested variable declarations.
@@ -387,12 +396,12 @@ fn extract_signal(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -425,12 +434,12 @@ fn extract_export_var(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -485,12 +494,12 @@ fn extract_variable(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Walk the initializer for calls so `preload(...)` / `load(...)` on the
     // RHS emits its Imports edge via collect_calls.
@@ -556,12 +565,12 @@ fn extract_const(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // `const Foo := preload(...)` — walk the initializer so the preload call
     // emits its Imports edge via collect_calls.
@@ -579,7 +588,8 @@ fn extract_enum(
     parent_index: Option<usize>,
 ) {
     // Anonymous enums (`enum { A, B }`) have no name field — use a placeholder.
-    let name = node.child_by_field_name("name")
+    let name = node
+        .child_by_field_name("name")
         .map(|n| node_text(&n, src).to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "<anonymous_enum>".to_string());
@@ -599,12 +609,12 @@ fn extract_enum(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +633,9 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                 };
                 if !name.is_empty() {
                     let line = child.start_position().row as u32;
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name.clone(),
                         kind: EdgeKind::Calls,
@@ -631,10 +643,10 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-    col: 0,
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                        col: 0,
+                    });
 
                     // `preload("res://path/to/foo.gd")` and `load(...)` bring another
                     // script/scene file into scope. The call itself is a builtin that
@@ -656,7 +668,9 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                 .trim_end_matches(".tres")
                                 .to_string();
                             if !target.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: target,
                                     kind: EdgeKind::Imports,
@@ -664,10 +678,10 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                     module: Some(normalized),
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-    col: 0,
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                    col: 0,
+                                });
                             }
                         }
                     }

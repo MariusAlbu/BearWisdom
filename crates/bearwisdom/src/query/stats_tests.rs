@@ -31,13 +31,7 @@ fn seed_symbol(db: &Database, file_id: i64, name: &str, origin: &str) -> i64 {
     db.conn().last_insert_rowid()
 }
 
-fn seed_unresolved(
-    db: &Database,
-    source_id: i64,
-    target_name: &str,
-    kind: &str,
-    from_snippet: u8,
-) {
+fn seed_unresolved(db: &Database, source_id: i64, target_name: &str, kind: &str, from_snippet: u8) {
     db.conn()
         .execute(
             "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line, from_snippet)
@@ -114,7 +108,13 @@ fn external_known_unhydrated_excluded_from_precision_denominator() {
     let callee = seed_symbol(&db, f, "callee", "internal");
 
     seed_edge(&db, caller, callee);
-    seed_external(&db, caller, "useQuery", "calls", "ext:@tanstack/react-query");
+    seed_external(
+        &db,
+        caller,
+        "useQuery",
+        "calls",
+        "ext:@tanstack/react-query",
+    );
     seed_external(&db, caller, "axios", "calls", "ext:axios");
 
     let rb = resolution_breakdown(&db).unwrap();
@@ -122,7 +122,10 @@ fn external_known_unhydrated_excluded_from_precision_denominator() {
     assert_eq!(rb.internal_edges, 1);
     assert_eq!(rb.external_known_unhydrated, 2);
     assert_eq!(rb.internal_unresolved, 0);
-    assert_eq!(rb.precision, 100.0, "unhydrated deps must not count as failures");
+    assert_eq!(
+        rb.precision, 100.0,
+        "unhydrated deps must not count as failures"
+    );
 }
 
 #[test]
@@ -140,9 +143,17 @@ fn resolution_breakdown_excludes_markdown_imports() {
     seed_unresolved(&db, s_ts, "MissingType", "type_ref", 0);
 
     let rb = resolution_breakdown(&db).unwrap();
-    assert_eq!(rb.internal_unresolved, 1, "expected only the TS row to count");
+    assert_eq!(
+        rb.internal_unresolved, 1,
+        "expected only the TS row to count"
+    );
     assert!(rb.unresolved_by_lang_kind.get("markdown.imports").is_none());
-    assert_eq!(rb.unresolved_by_lang_kind.get("typescript.type_ref").copied(), Some(1));
+    assert_eq!(
+        rb.unresolved_by_lang_kind
+            .get("typescript.type_ref")
+            .copied(),
+        Some(1)
+    );
 }
 
 #[test]
@@ -168,7 +179,10 @@ fn resolution_breakdown_keeps_mdx_calls() {
 
     let rb = resolution_breakdown(&db).unwrap();
     assert_eq!(rb.internal_unresolved, 1);
-    assert_eq!(rb.unresolved_by_lang_kind.get("mdx.calls").copied(), Some(1));
+    assert_eq!(
+        rb.unresolved_by_lang_kind.get("mdx.calls").copied(),
+        Some(1)
+    );
 }
 
 #[test]
@@ -253,11 +267,56 @@ fn flow_diagnostics_counts_paired_vs_single_ended() {
 
     // Two paired (target_file_id present), three single-ended. Distinct
     // source_lines so the unique-index dedup doesn't collapse them.
-    seed_flow_edge(&db, f1, 10, Some(f2), "http_call", Some("rest"), Some("/api/x"), Some("typescript"));
-    seed_flow_edge(&db, f1, 11, Some(f2), "http_call", Some("rest"), Some("/api/y"), Some("typescript"));
-    seed_flow_edge(&db, f1, 12, None, "http_call", Some("rest"), Some("/api/missing"), Some("typescript"));
-    seed_flow_edge(&db, f1, 13, None, "http_call", Some("rest"), Some("/api/missing"), Some("typescript"));
-    seed_flow_edge(&db, f1, 14, None, "rpc_call", Some("grpc"), Some("UserService/Get"), Some("typescript"));
+    seed_flow_edge(
+        &db,
+        f1,
+        10,
+        Some(f2),
+        "http_call",
+        Some("rest"),
+        Some("/api/x"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        11,
+        Some(f2),
+        "http_call",
+        Some("rest"),
+        Some("/api/y"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        12,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/missing"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        13,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/missing"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        14,
+        None,
+        "rpc_call",
+        Some("grpc"),
+        Some("UserService/Get"),
+        Some("typescript"),
+    );
 
     let report = flow_diagnostics(&db).unwrap();
 
@@ -284,18 +343,60 @@ fn flow_diagnostics_groups_single_ended_examples() {
 
     // Three single-ended rows sharing one URL — should collapse to one
     // worklist entry with count=3.
-    seed_flow_edge(&db, f1, 10, None, "http_call", Some("rest"), Some("/api/users"), Some("typescript"));
-    seed_flow_edge(&db, f1, 11, None, "http_call", Some("rest"), Some("/api/users"), Some("typescript"));
-    seed_flow_edge(&db, f1, 12, None, "http_call", Some("rest"), Some("/api/users"), Some("typescript"));
+    seed_flow_edge(
+        &db,
+        f1,
+        10,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/users"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        11,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/users"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f1,
+        12,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/users"),
+        Some("typescript"),
+    );
     // One single-ended row with a different URL — separate entry.
-    seed_flow_edge(&db, f1, 13, None, "http_call", Some("rest"), Some("/api/orders"), Some("typescript"));
+    seed_flow_edge(
+        &db,
+        f1,
+        13,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/api/orders"),
+        Some("typescript"),
+    );
 
     let report = flow_diagnostics(&db).unwrap();
 
     assert_eq!(report.top_single_ended.len(), 2);
-    assert_eq!(report.top_single_ended[0].url_pattern.as_deref(), Some("/api/users"));
+    assert_eq!(
+        report.top_single_ended[0].url_pattern.as_deref(),
+        Some("/api/users")
+    );
     assert_eq!(report.top_single_ended[0].count, 3);
-    assert_eq!(report.top_single_ended[1].url_pattern.as_deref(), Some("/api/orders"));
+    assert_eq!(
+        report.top_single_ended[1].url_pattern.as_deref(),
+        Some("/api/orders")
+    );
     assert_eq!(report.top_single_ended[1].count, 1);
 }
 
@@ -306,9 +407,36 @@ fn flow_diagnostics_by_source_language() {
     let f_cs = seed_file(&db, "src/b.cs", "csharp", "internal");
     let f_target = seed_file(&db, "src/c.go", "go", "internal");
 
-    seed_flow_edge(&db, f_ts, 10, Some(f_target), "http_call", Some("rest"), Some("/a"), Some("typescript"));
-    seed_flow_edge(&db, f_ts, 11, None, "http_call", Some("rest"), Some("/b"), Some("typescript"));
-    seed_flow_edge(&db, f_cs, 12, None, "rpc_call", Some("grpc"), Some("Svc/M"), Some("csharp"));
+    seed_flow_edge(
+        &db,
+        f_ts,
+        10,
+        Some(f_target),
+        "http_call",
+        Some("rest"),
+        Some("/a"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f_ts,
+        11,
+        None,
+        "http_call",
+        Some("rest"),
+        Some("/b"),
+        Some("typescript"),
+    );
+    seed_flow_edge(
+        &db,
+        f_cs,
+        12,
+        None,
+        "rpc_call",
+        Some("grpc"),
+        Some("Svc/M"),
+        Some("csharp"),
+    );
 
     let report = flow_diagnostics(&db).unwrap();
 
@@ -325,12 +453,18 @@ fn flow_diagnostics_by_source_language() {
 
 #[test]
 fn flow_pairing_rate_handles_empty_bucket() {
-    let p = FlowPairing { paired: 0, single_ended: 0 };
+    let p = FlowPairing {
+        paired: 0,
+        single_ended: 0,
+    };
     assert_eq!(p.pairing_rate(), 100.0);
 }
 
 #[test]
 fn flow_pairing_rate_rounds_to_two_decimals() {
-    let p = FlowPairing { paired: 1, single_ended: 2 };
+    let p = FlowPairing {
+        paired: 1,
+        single_ended: 2,
+    };
     assert_eq!(p.pairing_rate(), 33.33);
 }

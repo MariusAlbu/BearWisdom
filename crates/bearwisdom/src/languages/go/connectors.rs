@@ -43,12 +43,12 @@ use crate::indexer::project_context::ProjectContext;
 /// flow_edges emission.
 ///
 /// Returns the count of routes written to the `routes` table.
-pub fn discover_go_routes(
-    conn: &Connection,
-    project_root: &Path,
-    ctx: &ProjectContext,
-) -> u32 {
-    if ctx.manifest(ManifestKind::GoMod).and_then(|m| m.module_path.as_ref()).is_none() {
+pub fn discover_go_routes(conn: &Connection, project_root: &Path, ctx: &ProjectContext) -> u32 {
+    if ctx
+        .manifest(ManifestKind::GoMod)
+        .and_then(|m| m.module_path.as_ref())
+        .is_none()
+    {
         return 0;
     }
     let routes = match extract_go_routes_pub(conn, project_root) {
@@ -89,10 +89,8 @@ fn build_handle_func_regex() -> Regex {
 ///
 /// Capture groups: (1) receiver var, (2) HTTP method (uppercase), (3) path, (4) handler.
 fn build_gin_style_regex() -> Regex {
-    Regex::new(
-        r#"(\w+)\.(GET|POST|PUT|DELETE|PATCH)\s*\(\s*"([^"]+)"\s*,\s*(\w+)"#,
-    )
-    .expect("go gin-style regex is valid")
+    Regex::new(r#"(\w+)\.(GET|POST|PUT|DELETE|PATCH)\s*\(\s*"([^"]+)"\s*,\s*(\w+)"#)
+        .expect("go gin-style regex is valid")
 }
 
 /// Matches Chi / httprouter title-case variants:
@@ -100,10 +98,8 @@ fn build_gin_style_regex() -> Regex {
 ///
 /// Capture groups: (1) receiver var, (2) HTTP method (title-case), (3) path, (4) handler.
 fn build_chi_style_regex() -> Regex {
-    Regex::new(
-        r#"(\w+)\.(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]+)"\s*,\s*(\w+)"#,
-    )
-    .expect("go chi-style regex is valid")
+    Regex::new(r#"(\w+)\.(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]+)"\s*,\s*(\w+)"#)
+        .expect("go chi-style regex is valid")
 }
 
 /// Matches generic HandleFunc with an explicit method constant as first arg:
@@ -111,10 +107,8 @@ fn build_chi_style_regex() -> Regex {
 ///
 /// Capture groups: (1) receiver var, (2) method name (e.g. "MethodGet"), (3) path, (4) handler.
 fn build_method_handle_func_regex() -> Regex {
-    Regex::new(
-        r#"(\w+)\.HandleFunc\s*\(\s*http\.(\w+)\s*,\s*"([^"]+)"\s*,\s*(\w+)"#,
-    )
-    .expect("go method HandleFunc regex is valid")
+    Regex::new(r#"(\w+)\.HandleFunc\s*\(\s*http\.(\w+)\s*,\s*"([^"]+)"\s*,\s*(\w+)"#)
+        .expect("go method HandleFunc regex is valid")
 }
 
 /// Matches group prefix declarations:
@@ -123,8 +117,7 @@ fn build_method_handle_func_regex() -> Regex {
 ///
 /// Capture groups: (1) variable name, (2) prefix path.
 fn build_group_regex() -> Regex {
-    Regex::new(r#"(\w+)\s*:=\s*\w+\.Group\s*\(\s*"([^"]+)""#)
-        .expect("go Group regex is valid")
+    Regex::new(r#"(\w+)\s*:=\s*\w+\.Group\s*\(\s*"([^"]+)""#).expect("go Group regex is valid")
 }
 
 // ---------------------------------------------------------------------------
@@ -157,10 +150,7 @@ fn method_const_to_verb(constant: &str) -> String {
         "MethodPatch" => "PATCH".to_string(),
         "MethodHead" => "HEAD".to_string(),
         "MethodOptions" => "OPTIONS".to_string(),
-        other => other
-            .strip_prefix("Method")
-            .unwrap_or(other)
-            .to_uppercase(),
+        other => other.strip_prefix("Method").unwrap_or(other).to_uppercase(),
     }
 }
 
@@ -438,7 +428,9 @@ pub(crate) fn extract_go_routes_pub(
         .context("Failed to prepare Go files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Go files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Go file rows")?;
@@ -475,7 +467,9 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
         .context("Failed to prepare Go files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Go files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Go file rows")?;

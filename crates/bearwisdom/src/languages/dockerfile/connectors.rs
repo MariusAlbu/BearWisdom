@@ -62,13 +62,19 @@ fn docker_compose_connect(db: &Database, project_root: &Path) -> Result<u32> {
 
     let conn = db.conn();
     let mut total = 0u32;
-    tracing::debug!("docker_compose: found {} compose files", compose_files.len());
+    tracing::debug!(
+        "docker_compose: found {} compose files",
+        compose_files.len()
+    );
 
     for compose_path in compose_files {
         let content = match std::fs::read_to_string(&compose_path) {
             Ok(c) => c,
             Err(e) => {
-                warn!("docker_compose: cannot read {}: {e}", compose_path.display());
+                warn!(
+                    "docker_compose: cannot read {}: {e}",
+                    compose_path.display()
+                );
                 continue;
             }
         };
@@ -76,7 +82,10 @@ fn docker_compose_connect(db: &Database, project_root: &Path) -> Result<u32> {
         let doc: Value = match serde_yaml::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
-                warn!("docker_compose: failed to parse {}: {e}", compose_path.display());
+                warn!(
+                    "docker_compose: failed to parse {}: {e}",
+                    compose_path.display()
+                );
                 continue;
             }
         };
@@ -255,26 +264,33 @@ fn extract_services_with_packages(
             let ctx = b
                 .as_str()
                 .map(|s| s.to_string())
-                .or_else(|| b.get("context").and_then(|c| c.as_str()).map(|s| s.to_string()))
+                .or_else(|| {
+                    b.get("context")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_string())
+                })
                 .unwrap_or_else(|| ".".to_string());
 
-            dc_resolve_package_id(conn, project_root, compose_dir, &ctx)
-                .or_else(|| {
-                    b.get("dockerfile")
-                        .and_then(|d| d.as_str())
-                        .and_then(|df| {
-                            let df_dir = Path::new(df).parent()?;
-                            if df_dir.as_os_str().is_empty() {
-                                return None;
-                            }
-                            let df_rel = df_dir.to_string_lossy().replace('\\', "/");
-                            dc_resolve_package_id(conn, project_root, compose_dir, &df_rel)
-                        })
+            dc_resolve_package_id(conn, project_root, compose_dir, &ctx).or_else(|| {
+                b.get("dockerfile").and_then(|d| d.as_str()).and_then(|df| {
+                    let df_dir = Path::new(df).parent()?;
+                    if df_dir.as_os_str().is_empty() {
+                        return None;
+                    }
+                    let df_rel = df_dir.to_string_lossy().replace('\\', "/");
+                    dc_resolve_package_id(conn, project_root, compose_dir, &df_rel)
                 })
+            })
         });
 
         let depends_on = collect_depends_on(svc_val);
-        services.insert(service_name, ServiceInfo { package_id, depends_on });
+        services.insert(
+            service_name,
+            ServiceInfo {
+                package_id,
+                depends_on,
+            },
+        );
     }
 
     services
@@ -344,7 +360,10 @@ const DOCKERFILE_SUFFIXES: &[&str] = &[".dockerfile", ".Dockerfile"];
 ///
 /// Called from `full.rs` after packages are written; the result is used to set
 /// `is_service = 1` on matching packages.
-pub fn detect_dockerfiles(conn: &rusqlite::Connection, project_root: &Path) -> Vec<(String, String)> {
+pub fn detect_dockerfiles(
+    conn: &rusqlite::Connection,
+    project_root: &Path,
+) -> Vec<(String, String)> {
     let packages = match load_package_paths(conn) {
         Ok(p) => p,
         Err(e) => {
@@ -389,7 +408,9 @@ fn scan_dockerfiles(project_root: &Path) -> Vec<String> {
 }
 
 fn scan_dir_for_dockerfiles(root: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
-    if depth > 5 { return; }
+    if depth > 5 {
+        return;
+    }
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -398,7 +419,9 @@ fn scan_dir_for_dockerfiles(root: &Path, dir: &Path, out: &mut Vec<String>, dept
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
-            if should_skip_dir(&name) { continue; }
+            if should_skip_dir(&name) {
+                continue;
+            }
             scan_dir_for_dockerfiles(root, &path, out, depth + 1);
             continue;
         }
@@ -412,12 +435,18 @@ fn scan_dir_for_dockerfiles(root: &Path, dir: &Path, out: &mut Vec<String>, dept
 }
 
 fn is_dockerfile_name(name: &str) -> bool {
-    if DOCKERFILE_NAMES.contains(&name) { return true; }
+    if DOCKERFILE_NAMES.contains(&name) {
+        return true;
+    }
     for prefix in DOCKERFILE_PREFIXES {
-        if name.starts_with(prefix) { return true; }
+        if name.starts_with(prefix) {
+            return true;
+        }
     }
     for suffix in DOCKERFILE_SUFFIXES {
-        if name.ends_with(suffix) { return true; }
+        if name.ends_with(suffix) {
+            return true;
+        }
     }
     false
 }
@@ -425,9 +454,18 @@ fn is_dockerfile_name(name: &str) -> bool {
 fn should_skip_dir(name: &str) -> bool {
     matches!(
         name,
-        "node_modules" | "target" | ".git" | ".svn" | "vendor"
-            | "__pycache__" | ".venv" | "venv" | "dist" | "build"
-            | ".idea" | ".vscode"
+        "node_modules"
+            | "target"
+            | ".git"
+            | ".svn"
+            | "vendor"
+            | "__pycache__"
+            | ".venv"
+            | "venv"
+            | "dist"
+            | "build"
+            | ".idea"
+            | ".vscode"
     )
 }
 
@@ -435,7 +473,9 @@ fn load_package_paths(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<Strin
     let mut stmt = conn.prepare("SELECT path FROM packages")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     let mut paths = Vec::new();
-    for row in rows { paths.push(row?); }
+    for row in rows {
+        paths.push(row?);
+    }
     Ok(paths)
 }
 
@@ -564,7 +604,10 @@ services:
 
         assert_eq!(services["api"].package_id, Some(1));
         assert_eq!(services["db"].package_id, Some(2));
-        assert_eq!(services["cache"].package_id, None, "image-only service has no package");
+        assert_eq!(
+            services["cache"].package_id, None,
+            "image-only service has no package"
+        );
         assert!(services["api"].depends_on.contains(&"db".to_string()));
     }
 

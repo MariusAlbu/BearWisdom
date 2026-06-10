@@ -73,9 +73,7 @@ pub(crate) fn detect_clj_http_producer(
     };
     let url = call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }
@@ -99,9 +97,7 @@ pub(crate) fn detect_clj_jdbc_db_query(
         return None;
     }
     let op = match target {
-        "execute!" | "execute-one!" | "query" | "find-by-keys" | "get-by-id" => {
-            DbQueryOp::Select
-        }
+        "execute!" | "execute-one!" | "query" | "find-by-keys" | "get-by-id" => DbQueryOp::Select,
         "insert!" | "insert-multi!" => DbQueryOp::Insert,
         "update!" => DbQueryOp::Update,
         "delete!" => DbQueryOp::Delete,

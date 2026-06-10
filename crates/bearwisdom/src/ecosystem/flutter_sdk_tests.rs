@@ -12,7 +12,11 @@ fn ecosystem_identity() {
 fn activation_is_pubspec_flutter_dep() {
     let e = FlutterSdkEcosystem;
     match e.activation() {
-        EcosystemActivation::ManifestFieldContains { manifest_glob, field_path, value } => {
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob,
+            field_path,
+            value,
+        } => {
             assert_eq!(manifest_glob, "**/pubspec.yaml");
             assert_eq!(field_path, "dependencies");
             assert_eq!(value, "flutter");
@@ -32,11 +36,14 @@ fn supports_reachability_and_demand_driven() {
 fn locate_roots_empty_on_missing_sdk() {
     // Must not panic when Flutter SDK is absent.
     let e = FlutterSdkEcosystem;
-    let _ = Ecosystem::locate_roots(&e, &LocateContext {
-        project_root: std::path::Path::new("."),
-        manifests: &Default::default(),
-        active_ecosystems: &[],
-    });
+    let _ = Ecosystem::locate_roots(
+        &e,
+        &LocateContext {
+            project_root: std::path::Path::new("."),
+            manifests: &Default::default(),
+            active_ecosystems: &[],
+        },
+    );
 }
 
 #[test]

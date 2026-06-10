@@ -15,12 +15,31 @@ use crate::types::{EdgeKind, SymbolKind};
 const GO_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method],
+        // Variable: a closure-valued local (`f := func(){}; f()`) is invoked
+        // through the binding, not a declared function.
+        &[
+            SymbolKind::Function,
+            SymbolKind::Method,
+            SymbolKind::Variable,
+        ],
+    ),
+    (
+        EdgeKind::Reads,
+        &[
+            SymbolKind::Variable,
+            SymbolKind::Field,
+            SymbolKind::Function,
+            SymbolKind::Method,
+            SymbolKind::EnumMember,
+        ],
     ),
     // Go has no `extends` — type embedding looks like `Inherits` in the
     // extractor but the surface form is different. Permissive listing
     // covers both interpretations.
-    (EdgeKind::Inherits, &[SymbolKind::Struct, SymbolKind::Interface]),
+    (
+        EdgeKind::Inherits,
+        &[SymbolKind::Struct, SymbolKind::Interface],
+    ),
     (EdgeKind::Implements, &[SymbolKind::Interface]),
     (
         EdgeKind::TypeRef,
@@ -109,7 +128,8 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

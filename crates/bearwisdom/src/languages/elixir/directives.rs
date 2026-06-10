@@ -99,10 +99,17 @@ pub(super) fn extract_directive(
                         "alias" | "identifier" => {
                             let name = node_text(arg, src);
                             if !name.is_empty() {
-                                let module = if name.contains('.') { Some(name.clone()) } else { None };
-                                let default_simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                                let module = if name.contains('.') {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                };
+                                let default_simple =
+                                    name.rsplit('.').next().unwrap_or(&name).to_string();
                                 let simple = as_alias.clone().unwrap_or(default_simple);
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: current_symbol_count,
                                     target_name: simple,
                                     kind: EdgeKind::Imports,
@@ -111,9 +118,9 @@ pub(super) fn extract_directive(
                                     module,
                                     chain: None,
                                     byte_offset: arg.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                                 emitted = true;
                             }
                         }
@@ -124,9 +131,16 @@ pub(super) fn extract_directive(
                                 if item.kind() == "alias" || item.kind() == "identifier" {
                                     let name = node_text(item, src);
                                     if !name.is_empty() {
-                                        let module = if name.contains('.') { Some(name.clone()) } else { None };
-                                        let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                        let module = if name.contains('.') {
+                                            Some(name.clone())
+                                        } else {
+                                            None
+                                        };
+                                        let simple =
+                                            name.rsplit('.').next().unwrap_or(&name).to_string();
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index: current_symbol_count,
                                             target_name: simple,
                                             kind: EdgeKind::Imports,
@@ -135,9 +149,9 @@ pub(super) fn extract_directive(
                                             module,
                                             chain: None,
                                             byte_offset: item.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
                                         emitted = true;
                                     }
                                 }
@@ -147,7 +161,12 @@ pub(super) fn extract_directive(
                         //   arguments → dot { alias "MyApp" . tuple "{User, Post}" }
                         // The `dot` node has the module prefix and the right-side tuple of names.
                         "dot" => {
-                            emitted |= extract_qualified_multi_alias(&arg, src, current_symbol_count, refs);
+                            emitted |= extract_qualified_multi_alias(
+                                &arg,
+                                src,
+                                current_symbol_count,
+                                refs,
+                            );
                         }
                         _ => {}
                     }
@@ -163,9 +182,15 @@ pub(super) fn extract_directive(
         if target.is_empty() {
             return;
         }
-        let module = if target.contains('.') { Some(target.clone()) } else { None };
+        let module = if target.contains('.') {
+            Some(target.clone())
+        } else {
+            None
+        };
         let simple = target.rsplit('.').next().unwrap_or(&target).to_string();
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,
             kind: EdgeKind::Imports,
@@ -174,9 +199,9 @@ pub(super) fn extract_directive(
             module,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -230,7 +255,9 @@ fn extract_qualified_multi_alias(
                 let simple_name = node_text(item, src);
                 if !simple_name.is_empty() {
                     let full_module = format!("{prefix}.{simple_name}");
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: simple_name,
                         kind: EdgeKind::Imports,
@@ -239,9 +266,9 @@ fn extract_qualified_multi_alias(
                         module: Some(full_module),
                         chain: None,
                         byte_offset: item.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                     emitted = true;
                 }
             }
@@ -250,7 +277,9 @@ fn extract_qualified_multi_alias(
         // Fallback: `alias MyApp.User` as binary_operator form.
         let name = format!("{prefix}.{}", node_text(*right, src));
         let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,
             kind: EdgeKind::Imports,
@@ -259,9 +288,9 @@ fn extract_qualified_multi_alias(
             module: Some(name),
             chain: None,
             byte_offset: right.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
         emitted = true;
     }
 

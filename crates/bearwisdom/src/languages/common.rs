@@ -9,8 +9,8 @@
 
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
-    ChainSegment, EmbeddedOrigin, EmbeddedRegion, ExtractionResult, MemberChain,
-    SegmentKind, SymbolKind,
+    ChainSegment, EmbeddedOrigin, EmbeddedRegion, ExtractionResult, MemberChain, SegmentKind,
+    SymbolKind,
 };
 use tree_sitter::{Node, Parser};
 
@@ -36,11 +36,7 @@ use tree_sitter::{Node, Parser};
 ///
 /// Idempotent: skips symbols whose `return_type` / `param_types` are
 /// already populated.
-pub fn populate_return_type_ids(
-    result: &mut ExtractionResult,
-    arena: &TypeArena,
-    lang_id: &str,
-) {
+pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena, lang_id: &str) {
     for sym in &mut result.symbols {
         match sym.kind {
             SymbolKind::Class
@@ -54,7 +50,9 @@ pub fn populate_return_type_ids(
                 }
             }
             SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
-                let Some(sig) = sym.signature.as_deref() else { continue };
+                let Some(sig) = sym.signature.as_deref() else {
+                    continue;
+                };
                 if sym.return_type.is_none() {
                     if let Some(rt) =
                         crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature_for_lang(
@@ -88,7 +86,9 @@ pub fn populate_return_type_ids(
                 if sym.declared_type.is_some() {
                     continue;
                 }
-                let Some(sig) = sym.signature.as_deref() else { continue };
+                let Some(sig) = sym.signature.as_deref() else {
+                    continue;
+                };
                 if let Some(ty) =
                     crate::indexer::resolve::engine::chain_walker::parse_declared_type_from_signature_for_lang(
                         sig,
@@ -138,11 +138,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -155,11 +155,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -183,11 +183,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: is_optional,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -205,11 +205,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -294,7 +294,9 @@ fn js_parameter_list_binds(params: Node, src: &[u8], name: &str) -> bool {
 
 fn js_pattern_binds_name(node: Node, src: &[u8], name: &str) -> bool {
     match node.kind() {
-        "identifier" | "shorthand_property_identifier_pattern" => node_text_bytes(node, src) == name,
+        "identifier" | "shorthand_property_identifier_pattern" => {
+            node_text_bytes(node, src) == name
+        }
         "rest_pattern" | "spread_element" => node
             .named_child(0)
             .map(|c| js_pattern_binds_name(c, src, name))
@@ -368,8 +370,15 @@ pub fn emit_chain_type_ref(
         return;
     }
     let type_seg = &c.segments[c.segments.len() - 2];
-    if type_seg.name.chars().next().map_or(false, |ch| ch.is_uppercase()) {
-        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+    if type_seg
+        .name
+        .chars()
+        .next()
+        .map_or(false, |ch| ch.is_uppercase())
+    {
+        refs.push(crate::types::ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: type_seg.name.clone(),
             kind: crate::types::EdgeKind::TypeRef,
@@ -384,15 +393,18 @@ pub fn emit_chain_type_ref(
     }
 }
 
-
-mod html;
-mod handlebars;
 mod amd;
-mod jquery;
 mod call_args;
+mod handlebars;
+mod html;
+mod jquery;
 
-pub use html::{extract_script_refs, extract_html_script_style_regions, extract_astro_frontmatter, ScriptRef};
-pub use handlebars::{append_ember_helper_default_export, append_handlebars_register_helper_globals};
 pub use amd::append_amd_define_imports;
-pub use jquery::append_jquery_fn_plugin_globals;
 pub use call_args::{extract_call_args, replace_template_substitutions};
+pub use handlebars::{
+    append_ember_helper_default_export, append_handlebars_register_helper_globals,
+};
+pub use html::{
+    extract_astro_frontmatter, extract_html_script_style_regions, extract_script_refs, ScriptRef,
+};
+pub use jquery::append_jquery_fn_plugin_globals;

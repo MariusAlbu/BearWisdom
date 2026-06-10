@@ -148,7 +148,9 @@ fn query_entries<P: rusqlite::Params>(
     sql: &str,
     params: P,
 ) -> Result<Vec<SearchHistoryEntry>> {
-    let mut stmt = conn.prepare(sql).context("Failed to prepare history query")?;
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare history query")?;
     let rows = stmt
         .query_map(params, |row| {
             Ok(SearchHistoryEntry {

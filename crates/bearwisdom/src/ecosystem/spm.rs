@@ -32,10 +32,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "swift";
 pub struct SpmEcosystem;
 
 impl Ecosystem for SpmEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // Package.swift is SPM. Podfile is CocoaPods, but we don't have a
@@ -45,7 +53,7 @@ impl Ecosystem for SpmEcosystem {
         &[
             ("Package.swift", "swift"),
             ("Project.swift", "swift"),
-            ("Podfile",       "cocoapods"),
+            ("Podfile", "cocoapods"),
         ]
     }
 
@@ -70,7 +78,9 @@ impl Ecosystem for SpmEcosystem {
         walk_swift_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -81,26 +91,23 @@ impl Ecosystem for SpmEcosystem {
         walk_swift_narrowed(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         walk_swift_narrowed(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_swift_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for SpmEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_swift_externals(project_root)
     }
@@ -122,11 +129,15 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 pub struct SwiftPMManifest;
 
 impl ManifestReader for SwiftPMManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::SwiftPM }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::SwiftPM
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let package_swift = project_root.join("Package.swift");
-        if !package_swift.is_file() { return None }
+        if !package_swift.is_file() {
+            return None;
+        }
         let content = std::fs::read_to_string(&package_swift).ok()?;
         let mut data = ManifestData::default();
         for name in parse_swift_package_deps(&content) {
@@ -140,13 +151,20 @@ pub fn parse_swift_package_deps(content: &str) -> Vec<String> {
     let mut packages = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if !trimmed.contains(".package(") { continue }
+        if !trimmed.contains(".package(") {
+            continue;
+        }
         if let Some(name) = extract_swift_string_arg(trimmed, "name:") {
-            if is_valid_package_name(&name) { packages.push(name); continue }
+            if is_valid_package_name(&name) {
+                packages.push(name);
+                continue;
+            }
         }
         if let Some(url) = extract_swift_string_arg(trimmed, "url:") {
             if let Some(name) = name_from_url(&url) {
-                if is_valid_package_name(&name) { packages.push(name); }
+                if is_valid_package_name(&name) {
+                    packages.push(name);
+                }
             }
         }
     }
@@ -165,12 +183,18 @@ fn extract_swift_string_arg(line: &str, arg_name: &str) -> Option<String> {
 fn name_from_url(url: &str) -> Option<String> {
     let last = url.trim_end_matches('/').rsplit('/').next()?;
     let name = last.trim_end_matches(".git");
-    if name.is_empty() { None } else { Some(name.to_string()) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn is_valid_package_name(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 // ===========================================================================
@@ -214,16 +238,26 @@ pub fn discover_swift_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         let package_swift = project_root.join("Package.swift");
         let content = std::fs::read_to_string(&package_swift).ok()?;
         let deps = parse_swift_package_deps(&content);
-        if deps.is_empty() { return None }
-        debug!("Swift: using {} deps from Package.swift (no Package.resolved)", deps.len());
+        if deps.is_empty() {
+            return None;
+        }
+        debug!(
+            "Swift: using {} deps from Package.swift (no Package.resolved)",
+            deps.len()
+        );
         Some(deps.into_iter().map(|name| (name, String::new())).collect())
     });
 
     let Some(pins) = pins else {
-        debug!("Swift: no Package.resolved or Package.swift at {}", project_root.display());
+        debug!(
+            "Swift: no Package.resolved or Package.swift at {}",
+            project_root.display()
+        );
         return Vec::new();
     };
-    if pins.is_empty() { return Vec::new() }
+    if pins.is_empty() {
+        return Vec::new();
+    }
 
     let checkout_roots = find_checkout_roots(project_root);
     if checkout_roots.is_empty() {
@@ -265,22 +299,30 @@ fn find_and_parse_package_resolved(project_root: &Path) -> Option<Vec<(String, S
     if let Ok(entries) = std::fs::read_dir(project_root) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() { continue }
+            if !path.is_dir() {
+                continue;
+            }
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.ends_with(".xcodeproj") {
                 candidates.push(
-                    path.join("project.xcworkspace").join("xcshareddata")
-                        .join("swiftpm").join("Package.resolved"),
+                    path.join("project.xcworkspace")
+                        .join("xcshareddata")
+                        .join("swiftpm")
+                        .join("Package.resolved"),
                 );
             } else if name.ends_with(".xcworkspace") {
                 candidates.push(
-                    path.join("xcshareddata").join("swiftpm").join("Package.resolved"),
+                    path.join("xcshareddata")
+                        .join("swiftpm")
+                        .join("Package.resolved"),
                 );
             }
         }
     }
     for path in &candidates {
-        if !path.is_file() { continue }
+        if !path.is_file() {
+            continue;
+        }
         if let Some(pins) = parse_package_resolved(path) {
             debug!("Swift: parsed {} pins from {}", pins.len(), path.display());
             return Some(pins);
@@ -292,23 +334,38 @@ fn find_and_parse_package_resolved(project_root: &Path) -> Option<Vec<(String, S
 fn find_checkout_roots(project_root: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     let build_checkouts = project_root.join(".build").join("checkouts");
-    if build_checkouts.is_dir() { roots.push(build_checkouts) }
+    if build_checkouts.is_dir() {
+        roots.push(build_checkouts)
+    }
     let local_sp = project_root.join("SourcePackages").join("checkouts");
-    if local_sp.is_dir() { roots.push(local_sp) }
+    if local_sp.is_dir() {
+        roots.push(local_sp)
+    }
     if let Some(home) = dirs::home_dir() {
-        let derived_data = home.join("Library").join("Developer").join("Xcode").join("DerivedData");
+        let derived_data = home
+            .join("Library")
+            .join("Developer")
+            .join("Xcode")
+            .join("DerivedData");
         if derived_data.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&derived_data) {
                 for entry in entries.flatten() {
                     let sp = entry.path().join("SourcePackages").join("checkouts");
-                    if sp.is_dir() { roots.push(sp) }
+                    if sp.is_dir() {
+                        roots.push(sp)
+                    }
                 }
             }
         }
     }
     if let Some(local_app) = std::env::var_os("LOCALAPPDATA") {
-        let win_sp = PathBuf::from(local_app).join("swift").join("SourcePackages").join("checkouts");
-        if win_sp.is_dir() { roots.push(win_sp) }
+        let win_sp = PathBuf::from(local_app)
+            .join("swift")
+            .join("SourcePackages")
+            .join("checkouts");
+        if win_sp.is_dir() {
+            roots.push(win_sp)
+        }
     }
     roots
 }
@@ -336,8 +393,12 @@ fn scan_swift_imports_recursive(
     out: &mut std::collections::HashSet<String>,
     depth: usize,
 ) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -345,15 +406,29 @@ fn scan_swift_imports_recursive(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    ".git" | ".build" | "DerivedData" | "Carthage" | "Pods"
-                        | "build" | "node_modules"
-                ) || name.starts_with('.') { continue }
+                    ".git"
+                        | ".build"
+                        | "DerivedData"
+                        | "Carthage"
+                        | "Pods"
+                        | "build"
+                        | "node_modules"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_swift_imports_recursive(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".swift") { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".swift") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_swift_imports_from_source(&content, out);
         }
     }
@@ -361,18 +436,20 @@ fn scan_swift_imports_recursive(
 
 /// Parse `import Foo`, `import struct Foo.Bar`, `@_exported import Foo`,
 /// `@testable import Foo`. Stores just the top-level module name.
-fn extract_swift_imports_from_source(
-    content: &str,
-    out: &mut std::collections::HashSet<String>,
-) {
+fn extract_swift_imports_from_source(content: &str, out: &mut std::collections::HashSet<String>) {
     for raw in content.lines() {
         let mut line = raw.trim();
         // Drop attribute prefixes: `@_exported`, `@testable`.
         while let Some(attr_end) = line.strip_prefix('@') {
             let after = attr_end.split_whitespace().next().unwrap_or("");
-            line = line.strip_prefix(&format!("@{after}")).unwrap_or(line).trim();
+            line = line
+                .strip_prefix(&format!("@{after}"))
+                .unwrap_or(line)
+                .trim();
         }
-        let Some(rest) = line.strip_prefix("import ") else { continue };
+        let Some(rest) = line.strip_prefix("import ") else {
+            continue;
+        };
         let rest = rest
             .trim_start_matches("struct ")
             .trim_start_matches("class ")
@@ -384,8 +461,12 @@ fn extract_swift_imports_from_source(
             .trim_start_matches("let ")
             .trim();
         let module = rest.split('.').next().unwrap_or("").trim();
-        if module.is_empty() { continue }
-        if !module.chars().next().map_or(false, |c| c.is_alphabetic()) { continue }
+        if module.is_empty() {
+            continue;
+        }
+        if !module.chars().next().map_or(false, |c| c.is_alphabetic()) {
+            continue;
+        }
         out.insert(module.to_string());
     }
 }
@@ -403,25 +484,36 @@ fn walk_swift_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         // either imported it (walk it) or didn't (skip).
         let pkg_name_match = modules.iter().any(|m| {
             m.eq_ignore_ascii_case(&dep.module_path)
-                || dep.module_path
+                || dep
+                    .module_path
                     .trim_end_matches(".git")
                     .ends_with(m.as_str())
         });
-        if !pkg_name_match { return Vec::new() }
+        if !pkg_name_match {
+            return Vec::new();
+        }
         return walk_swift_root(dep);
     }
 
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&sources) else { return walk_swift_root(dep) };
+    let Ok(entries) = std::fs::read_dir(&sources) else {
+        return walk_swift_root(dep);
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(target_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !path.is_dir() { continue }
+        let Some(target_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !path.is_dir() {
+            continue;
+        }
         // Match by exact name OR case-insensitive (a few packages camelCase
         // their target dir while user imports the module by exact name).
         if !modules.contains(&target_name.to_string())
             && !modules.iter().any(|m| m.eq_ignore_ascii_case(target_name))
-        { continue }
+        {
+            continue;
+        }
         walk_dir_bounded(&path, &dep.root, dep, &mut out, 0);
     }
     out
@@ -434,28 +526,52 @@ fn walk_swift_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 fn walk_swift_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     let sources = dep.root.join("Sources");
-    let walk_root = if sources.is_dir() { sources } else { dep.root.clone() };
+    let walk_root = if sources.is_dir() {
+        sources
+    } else {
+        dep.root.clone()
+    };
     walk_dir_bounded(&walk_root, &dep.root, dep, &mut out, 0);
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(name, "Tests" | "tests" | "Examples" | "Benchmarks")
                     || name.starts_with('.')
-                { continue }
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".swift") { continue }
-            if name.ends_with("Tests.swift") || name.ends_with("Test.swift") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".swift") {
+                continue;
+            }
+            if name.ends_with("Tests.swift") || name.ends_with("Test.swift") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -656,7 +772,11 @@ mod tests {
         std::fs::create_dir_all(sources.join("Vapor")).unwrap();
         std::fs::create_dir_all(sources.join("RoutingKit")).unwrap();
         std::fs::create_dir_all(sources.join("Internal")).unwrap();
-        std::fs::write(sources.join("Vapor/Application.swift"), "class Application {}\n").unwrap();
+        std::fs::write(
+            sources.join("Vapor/Application.swift"),
+            "class Application {}\n",
+        )
+        .unwrap();
         std::fs::write(sources.join("RoutingKit/Router.swift"), "class Router {}\n").unwrap();
         std::fs::write(sources.join("Internal/Hidden.swift"), "class Hidden {}\n").unwrap();
 

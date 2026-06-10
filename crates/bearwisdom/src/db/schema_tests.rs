@@ -20,10 +20,24 @@ fn schema_creates_all_tables() {
         .collect();
 
     for expected in &[
-        "files", "symbols", "edges", "unresolved_refs", "external_refs", "imports",
-        "routes", "db_mappings", "annotations", "concepts", "concept_members",
-        "lsp_edge_meta", "code_chunks", "flow_edges", "search_history",
-        "entry_points", "reachability", "package_resolution_health",
+        "files",
+        "symbols",
+        "edges",
+        "unresolved_refs",
+        "external_refs",
+        "imports",
+        "routes",
+        "db_mappings",
+        "annotations",
+        "concepts",
+        "concept_members",
+        "lsp_edge_meta",
+        "code_chunks",
+        "flow_edges",
+        "search_history",
+        "entry_points",
+        "reachability",
+        "package_resolution_health",
     ] {
         assert!(
             tables.contains(&expected.to_string()),
@@ -47,7 +61,10 @@ fn packages_has_is_publishable_default_true() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(v, 1, "is_publishable must default to 1 (publishable) for back-compat");
+    assert_eq!(
+        v, 1,
+        "is_publishable must default to 1 (publishable) for back-compat"
+    );
 }
 
 #[test]
@@ -91,7 +108,11 @@ fn entry_points_composite_pk_allows_multi_contributor_rooting() {
     assert!(dup.is_err(), "(symbol_id, kind, source) must be unique");
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM entry_points WHERE symbol_id = ?1", [sym], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM entry_points WHERE symbol_id = ?1",
+            [sym],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, 2);
 }
@@ -119,7 +140,8 @@ fn entry_points_cascade_when_symbol_deleted() {
     )
     .unwrap();
 
-    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym]).unwrap();
+    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym])
+        .unwrap();
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM entry_points", [], |r| r.get(0))
         .unwrap();
@@ -163,7 +185,8 @@ fn reachability_round_trip() {
     assert_eq!(via.as_deref(), Some("dispatch_candidate"));
 
     // Symbol delete must cascade.
-    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym]).unwrap();
+    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym])
+        .unwrap();
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM reachability", [], |r| r.get(0))
         .unwrap();
@@ -198,11 +221,17 @@ fn package_resolution_health_round_trip() {
     assert!((rate - 97.5).abs() < 1e-9);
     assert_eq!(tier, "review");
 
-    conn.execute("DELETE FROM packages WHERE id = ?1", [pkg]).unwrap();
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM package_resolution_health", [], |r| r.get(0))
+    conn.execute("DELETE FROM packages WHERE id = ?1", [pkg])
         .unwrap();
-    assert_eq!(count, 0, "package_resolution_health must cascade on package delete");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM package_resolution_health", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "package_resolution_health must cascade on package delete"
+    );
 }
 
 #[test]
@@ -220,21 +249,28 @@ fn cascade_delete_removes_symbols_when_file_deleted() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h1', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let file_id: i64 = conn.last_insert_rowid();
 
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'Foo', 'NS.Foo', 'class', 1, 0)",
         [file_id],
-    ).unwrap();
+    )
+    .unwrap();
 
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0)).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(count, 1);
 
-    conn.execute("DELETE FROM files WHERE id = ?1", [file_id]).unwrap();
+    conn.execute("DELETE FROM files WHERE id = ?1", [file_id])
+        .unwrap();
 
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0)).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(count, 0, "Symbols should cascade-delete with file");
 }
 
@@ -244,7 +280,8 @@ fn fts5_trigger_indexes_new_symbols() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('x.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let file_id: i64 = conn.last_insert_rowid();
 
     // Insert a symbol — the symbols_ai trigger should add it to FTS.
@@ -252,7 +289,8 @@ fn fts5_trigger_indexes_new_symbols() {
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'MyService', 'App.MyService', 'class', 1, 0)",
         [file_id],
-    ).unwrap();
+    )
+    .unwrap();
 
     // FTS5 MATCH query should find it.
     let count: i64 = conn
@@ -271,31 +309,43 @@ fn fts5_trigger_removes_deleted_symbols() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('x.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let file_id: i64 = conn.last_insert_rowid();
 
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'DeleteMe', 'App.DeleteMe', 'class', 1, 0)",
         [file_id],
-    ).unwrap();
+    )
+    .unwrap();
     let sym_id: i64 = conn.last_insert_rowid();
 
     // Confirm it is findable.
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
-        [], |r| r.get(0),
-    ).unwrap();
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(count, 1);
 
     // Delete the symbol — the symbols_ad trigger should remove from FTS.
-    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym_id]).unwrap();
+    conn.execute("DELETE FROM symbols WHERE id = ?1", [sym_id])
+        .unwrap();
 
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
-        [], |r| r.get(0),
-    ).unwrap();
-    assert_eq!(count, 0, "FTS5 trigger should have removed the deleted symbol");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "FTS5 trigger should have removed the deleted symbol"
+    );
 }
 
 #[test]
@@ -348,7 +398,8 @@ fn unique_edge_constraint_prevents_duplicates() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h1', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let file_id: i64 = conn.last_insert_rowid();
 
     for (name, qname) in [("Foo", "NS.Foo"), ("Bar", "NS.Bar")] {
@@ -356,11 +407,16 @@ fn unique_edge_constraint_prevents_duplicates() {
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, ?2, ?3, 'class', 1, 0)",
             rusqlite::params![file_id, name, qname],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
-    let src: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Foo'", [], |r| r.get(0)).unwrap();
-    let tgt: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Bar'", [], |r| r.get(0)).unwrap();
+    let src: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Foo'", [], |r| r.get(0))
+        .unwrap();
+    let tgt: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Bar'", [], |r| r.get(0))
+        .unwrap();
 
     conn.execute(
         "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 5, 1.0)",
@@ -371,5 +427,8 @@ fn unique_edge_constraint_prevents_duplicates() {
         "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 5, 1.0)",
         rusqlite::params![src, tgt],
     );
-    assert!(result.is_err(), "Duplicate edge should fail UNIQUE constraint");
+    assert!(
+        result.is_err(),
+        "Duplicate edge should fail UNIQUE constraint"
+    );
 }

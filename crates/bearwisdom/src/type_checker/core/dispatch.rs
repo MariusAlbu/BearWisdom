@@ -63,12 +63,24 @@ pub fn select_method(
 ) -> Option<SymbolInfo> {
     match profile.dispatch_axis {
         DispatchAxis::Receiver => select_receiver(query, members, supertypes, arena, profile),
-        DispatchAxis::MultiArg => {
-            select_multi_arg(query, members, supertypes, symbol_types, arena, profile, lookup)
-        }
-        DispatchAxis::ReturnType => {
-            select_return_type(query, members, supertypes, symbol_types, arena, profile, lookup)
-        }
+        DispatchAxis::MultiArg => select_multi_arg(
+            query,
+            members,
+            supertypes,
+            symbol_types,
+            arena,
+            profile,
+            lookup,
+        ),
+        DispatchAxis::ReturnType => select_return_type(
+            query,
+            members,
+            supertypes,
+            symbol_types,
+            arena,
+            profile,
+            lookup,
+        ),
     }
 }
 
@@ -153,7 +165,13 @@ pub(crate) fn arg_assignable_candidates(
         match view.param_types() {
             Some(params) => {
                 if args_assignable(
-                    params, arg_types, arena, lookup, members, symbol_types, prims,
+                    params,
+                    arg_types,
+                    arena,
+                    lookup,
+                    members,
+                    symbol_types,
+                    prims,
                 ) {
                     matches.push(candidate);
                 }
@@ -199,7 +217,15 @@ fn most_specific_index(
             }
             let dominates = pi.iter().zip(pj.iter()).all(|(a, b)| {
                 matches!(
-                    is_assignable_to_typed_with(*a, *b, arena, lookup, members, symbol_types, prims),
+                    is_assignable_to_typed_with(
+                        *a,
+                        *b,
+                        arena,
+                        lookup,
+                        members,
+                        symbol_types,
+                        prims
+                    ),
                     SubtypeResult::Yes
                 )
             });
@@ -256,17 +282,15 @@ fn candidates<'a>(
     members: &'a MembersIndex,
     supertypes: &'a SupertypeGraph,
 ) -> impl Iterator<Item = SymbolInfo> + 'a {
-    supertypes
-        .walk_up(query.receiver)
-        .flat_map(move |t| {
-            members
-                .direct_of(t)
-                .iter()
-                .chain(members.extensions_of(t).iter())
-                .filter(move |s| s.name == query.method_name)
-                .cloned()
-                .collect::<Vec<_>>()
-        })
+    supertypes.walk_up(query.receiver).flat_map(move |t| {
+        members
+            .direct_of(t)
+            .iter()
+            .chain(members.extensions_of(t).iter())
+            .filter(move |s| s.name == query.method_name)
+            .cloned()
+            .collect::<Vec<_>>()
+    })
 }
 
 /// Resolve a call's argument expressions to their types, for overload
@@ -315,7 +339,10 @@ fn resolve_arg_type(
         // `cond ? then : else` — type both value branches; commit only when both
         // resolve to the SAME non-Unknown type. A divergent or partly-Unknown
         // ternary stays Unknown rather than picking a branch.
-        CallArg::Ternary { then_branch, else_branch } => {
+        CallArg::Ternary {
+            then_branch,
+            else_branch,
+        } => {
             let t = resolve_arg_type(then_branch, arena, lookup, profile);
             let e = resolve_arg_type(else_branch, arena, lookup, profile);
             if t == e && !is_unknown(t, arena) {
@@ -408,7 +435,10 @@ fn resolve_array_literal(
     match elem {
         Some(t) => {
             let base = arena.class("Array");
-            arena.intern(Type::Apply { base, args: vec![t] })
+            arena.intern(Type::Apply {
+                base,
+                args: vec![t],
+            })
         }
         None => arena.intern(Type::Unknown),
     }
@@ -582,9 +612,7 @@ fn resolve_binary(
 ) -> TypeId {
     let unknown = arena.intern(Type::Unknown);
     match op {
-        "==" | "!=" | "===" | "!==" | "<" | ">" | "<=" | ">=" => {
-            arena.primitive(PrimKind::Bool)
-        }
+        "==" | "!=" | "===" | "!==" | "<" | ">" | "<=" | ">=" => arena.primitive(PrimKind::Bool),
         "&&" | "||" | "??" => {
             // The result is one of the operands, not a guaranteed Bool. Commit
             // to the operand type only when both sides agree on the same

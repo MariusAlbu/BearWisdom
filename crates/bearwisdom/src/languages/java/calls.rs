@@ -3,7 +3,10 @@
 // =============================================================================
 
 use super::helpers::{node_text, type_node_simple_name};
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
+    SymbolKind,
+};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
@@ -59,8 +62,11 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         }
         "identifier" => CallArg::Ident(node_text(*node, src)),
         "field_access" => CallArg::Other,
-        "decimal_integer_literal" | "hex_integer_literal" | "binary_integer_literal"
-        | "octal_integer_literal" | "decimal_floating_point_literal"
+        "decimal_integer_literal"
+        | "hex_integer_literal"
+        | "binary_integer_literal"
+        | "octal_integer_literal"
+        | "decimal_floating_point_literal"
         | "hex_floating_point_literal" => CallArg::Literal(node_text(*node, src)),
         "true" | "false" | "null_literal" => CallArg::Literal(node_text(*node, src)),
         // `cond ? consequence : alternative` — the condition's type does not
@@ -147,7 +153,9 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // `x -> x.f()`, `(a, b) -> g(a, b)`, `(String s) -> h(s)` — capture the
         // lambda's own positional parameter names so the chain walker can type
         // them from the higher-order method's callback-parameter signature.
-        "lambda_expression" => CallArg::Lambda { params: lambda_arg_param_names(node, src) },
+        "lambda_expression" => CallArg::Lambda {
+            params: lambda_arg_param_names(node, src),
+        },
         _ => CallArg::Other,
     }
 }
@@ -219,10 +227,17 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| node_text(name_node, src));
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &name_node,
+                        refs,
+                    );
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -231,14 +246,20 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: name_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args,
-});
+                            namespace_segments: Vec::new(),
+                            call_args,
+                        });
                     }
                 }
                 // Recurse into arguments — nested calls.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -247,7 +268,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(type_node) = child.child_by_field_name("type") {
                     let name = type_node_simple_name(type_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Instantiates,
@@ -256,13 +279,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -271,7 +300,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 // Emit Variable symbols for lambda parameters, then recurse into the body.
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_lambda_params(&child, src, source_symbol_index, syms);
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -279,17 +314,35 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // `if (user instanceof Admin admin)` — Java 16+ pattern matching instanceof.
             // Also handles older `if (user instanceof Admin)` without a pattern variable.
             "instanceof_expression" => {
-                extract_instanceof_refs(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+                extract_instanceof_refs(
+                    &child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                    symbols.as_deref_mut(),
+                );
                 // Don't recurse further — the instanceof_expression has no nested bodies.
             }
 
             // `catch (IOException | SQLException e)` — emit TypeRef for the exception type(s)
             // and a Variable symbol for the catch binding.
             "catch_clause" => {
-                extract_catch_clause_refs(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+                extract_catch_clause_refs(
+                    &child,
+                    src,
+                    source_symbol_index,
+                    refs,
+                    symbols.as_deref_mut(),
+                );
                 // Recurse into the catch body for nested calls.
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -298,8 +351,20 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // `try (Resource r = new Resource())` — emit TypeRef and Variable for each resource.
             "try_with_resources_statement" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_try_with_resources_refs(&child, src, source_symbol_index, refs, Some(syms));
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_try_with_resources_refs(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_try_with_resources_refs(&child, src, source_symbol_index, refs, None);
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -310,7 +375,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "cast_expression" => {
                 extract_cast_expression_refs(&child, src, source_symbol_index, refs);
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -327,7 +398,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
             "enhanced_for_statement" => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_enhanced_for_refs(&child, src, source_symbol_index, refs, Some(syms));
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_enhanced_for_refs(&child, src, source_symbol_index, refs, None);
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -369,7 +446,9 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     found
                 };
                 if !target.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -378,12 +457,18 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -391,7 +476,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             "conditional_expression" => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -399,7 +490,13 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
                 } else {
                     extract_calls_from_body(&child, src, source_symbol_index, refs);
                 }
@@ -446,7 +543,9 @@ fn extract_catch_clause_refs(
                     for type_node in param_child.children(&mut tc) {
                         let name = super::helpers::type_node_simple_name(type_node, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -455,9 +554,9 @@ fn extract_catch_clause_refs(
                                 module: None,
                                 chain: None,
                                 byte_offset: type_node.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                 }
@@ -472,7 +571,11 @@ fn extract_catch_clause_refs(
         }
 
         if let (Some((name, binding_node)), Some(syms)) = (binding_name, symbols) {
-            syms.push(make_variable_symbol(name, &binding_node, source_symbol_index));
+            syms.push(make_variable_symbol(
+                name,
+                &binding_node,
+                source_symbol_index,
+            ));
             // Only one catch_formal_parameter per catch clause.
             break;
         }
@@ -501,13 +604,16 @@ fn extract_try_with_resources_refs(
                 }
                 // resource: type identifier = expression
                 let type_node = res.child_by_field_name("type");
-                let name_node = res.child_by_field_name("name")
+                let name_node = res
+                    .child_by_field_name("name")
                     .or_else(|| res.child_by_field_name("name"));
 
                 if let Some(tn) = type_node {
                     let type_name = super::helpers::type_node_simple_name(tn, src);
                     if !type_name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: type_name,
                             kind: EdgeKind::TypeRef,
@@ -516,9 +622,9 @@ fn extract_try_with_resources_refs(
                             module: None,
                             chain: None,
                             byte_offset: tn.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
 
@@ -547,7 +653,9 @@ fn extract_cast_expression_refs(
     if let Some(type_node) = node.child_by_field_name("type") {
         let name = super::helpers::type_node_simple_name(type_node, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -556,9 +664,9 @@ fn extract_cast_expression_refs(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -584,7 +692,8 @@ fn extract_method_reference_calls(
     // The method name is the last identifier after `::`.
     // In tree-sitter-java the `::` is an anonymous token, and the method name
     // is the last named child or a child named `name`.
-    let method_name = node.child_by_field_name("name")
+    let method_name = node
+        .child_by_field_name("name")
         .map(|n| node_text(n, src))
         .or_else(|| {
             // Fall back: scan all named children and take the last identifier.
@@ -600,7 +709,9 @@ fn extract_method_reference_calls(
 
     if let Some(name) = method_name {
         if !name.is_empty() && name != "new" {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -609,28 +720,31 @@ fn extract_method_reference_calls(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
     // Also emit TypeRef for the receiver type if it's a type reference.
     // `String::valueOf` — the first child before `::` is `String`.
-    let receiver = node.child_by_field_name("object")
-        .or_else(|| {
-            let children: Vec<_> = {
-                let mut cursor = node.walk();
-                node.children(&mut cursor).collect()
-            };
-            children.into_iter().find(|c| c.kind() == "type_identifier" || c.kind() == "identifier")
-        });
+    let receiver = node.child_by_field_name("object").or_else(|| {
+        let children: Vec<_> = {
+            let mut cursor = node.walk();
+            node.children(&mut cursor).collect()
+        };
+        children
+            .into_iter()
+            .find(|c| c.kind() == "type_identifier" || c.kind() == "identifier")
+    });
 
     if let Some(recv) = receiver {
         if recv.kind() == "type_identifier" {
             let name = node_text(recv, src);
             if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -639,9 +753,9 @@ fn extract_method_reference_calls(
                     module: None,
                     chain: None,
                     byte_offset: recv.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -665,7 +779,9 @@ fn extract_enhanced_for_refs(
     if let Some(tn) = type_node {
         let type_name = super::helpers::type_node_simple_name(tn, src);
         if !type_name.is_empty() && !super::helpers::is_java_primitive(&type_name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -674,9 +790,9 @@ fn extract_enhanced_for_refs(
                 module: None,
                 chain: None,
                 byte_offset: tn.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -714,7 +830,9 @@ fn extract_class_literal_ref(
         }
         let name = super::helpers::type_node_simple_name(child, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -723,9 +841,9 @@ fn extract_class_literal_ref(
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         break;
     }
@@ -778,7 +896,9 @@ fn extract_instanceof_refs(
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: type_name.clone(),
         kind: EdgeKind::TypeRef,
@@ -787,9 +907,9 @@ fn extract_instanceof_refs(
         module: None,
         chain: None,
         byte_offset: type_node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     // Pattern variable: the identifier after the type, if present.
     // `user instanceof Admin admin` → emit Variable symbol `admin` with TypeRef to Admin.
@@ -803,7 +923,9 @@ fn extract_instanceof_refs(
                 if !var_name.is_empty() {
                     let var_idx = syms.len();
                     syms.push(make_variable_symbol(var_name, &c, source_symbol_index));
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: var_idx,
                         target_name: type_name.clone(),
                         kind: EdgeKind::TypeRef,
@@ -812,9 +934,9 @@ fn extract_instanceof_refs(
                         module: None,
                         chain: None,
                         byte_offset: c.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 break;
             }
@@ -887,7 +1009,12 @@ fn make_param_symbol(name: String, node: &Node, parent_index: usize) -> Extracte
     make_extracted_symbol(name, node, parent_index, SymbolKind::Parameter)
 }
 
-fn make_extracted_symbol(name: String, node: &Node, parent_index: usize, kind: SymbolKind) -> ExtractedSymbol {
+fn make_extracted_symbol(
+    name: String,
+    node: &Node,
+    parent_index: usize,
+    kind: SymbolKind,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.clone(),
         qualified_name: name,
@@ -902,11 +1029,11 @@ fn make_extracted_symbol(name: String, node: &Node, parent_index: usize, kind: S
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -947,11 +1074,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -964,11 +1091,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -981,11 +1108,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -1003,11 +1130,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -1024,11 +1151,11 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 

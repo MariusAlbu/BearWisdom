@@ -26,9 +26,14 @@ fn cov_function_def_produces_function() {
     let src = "function(my_func arg1)\n  message(\"hello\")\nendfunction()";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "my_func"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "my_func"),
         "function_def should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -37,9 +42,14 @@ fn cov_macro_def_produces_function() {
     let src = "macro(my_macro)\n  message(\"macro\")\nendmacro()";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "my_macro"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "my_macro"),
         "macro_def should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -61,9 +71,14 @@ fn cov_set_command_produces_variable() {
     let src = "set(MY_VAR hello)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MY_VAR"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "MY_VAR"),
         "set() should produce Variable 'MY_VAR'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -72,9 +87,14 @@ fn cov_set_command_cache_produces_variable() {
     let src = "set(INSTALL_DIR \"/usr\" CACHE PATH \"Install prefix\")";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "INSTALL_DIR"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "INSTALL_DIR"),
         "set() with CACHE should produce Variable 'INSTALL_DIR'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -87,9 +107,14 @@ fn cov_option_command_produces_variable() {
     let src = "option(ENABLE_TESTS \"Enable unit tests\" ON)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "ENABLE_TESTS"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "ENABLE_TESTS"),
         "option() should produce Variable 'ENABLE_TESTS'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -102,9 +127,14 @@ fn cov_add_executable_produces_function() {
     let src = "add_executable(myapp main.cpp util.cpp)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "myapp"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "myapp"),
         "add_executable() should produce Function 'myapp'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -113,9 +143,14 @@ fn cov_add_library_produces_function() {
     let src = "add_library(mylib STATIC lib.cpp)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "mylib"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "mylib"),
         "add_library() should produce Function 'mylib'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -124,9 +159,14 @@ fn cov_add_custom_target_produces_function() {
     let src = "add_custom_target(generate_headers COMMAND python gen.py)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "generate_headers"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "generate_headers"),
         "add_custom_target() should produce Function 'generate_headers'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -139,9 +179,14 @@ fn cov_project_command_produces_namespace() {
     let src = "project(MyProject VERSION 1.0)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace && s.name == "MyProject"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Namespace && s.name == "MyProject"),
         "project() should produce Namespace 'MyProject'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -154,9 +199,14 @@ fn cov_include_command_produces_imports() {
     let src = "include(GNUInstallDirs)";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "GNUInstallDirs"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "GNUInstallDirs"),
         "include() should produce Imports ref to 'GNUInstallDirs'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -167,7 +217,10 @@ fn cov_include_command_file_path_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "include() with file path should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -180,9 +233,14 @@ fn cov_find_package_produces_imports() {
     let src = "find_package(OpenSSL REQUIRED)";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "OpenSSL"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "OpenSSL"),
         "find_package() should produce Imports ref to 'OpenSSL'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -195,9 +253,14 @@ fn cov_add_subdirectory_produces_imports() {
     let src = "add_subdirectory(src)";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "src"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "src"),
         "add_subdirectory() should produce Imports ref to 'src'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -216,7 +279,9 @@ fn cov_target_link_libraries_produces_calls() {
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
-        calls.iter().any(|&n| n.contains("OpenSSL") || n.contains("SSL")),
+        calls
+            .iter()
+            .any(|&n| n.contains("OpenSSL") || n.contains("SSL")),
         "target_link_libraries should produce Calls edge to OpenSSL lib; got: {calls:?}"
     );
 }
@@ -247,9 +312,14 @@ fn cov_variable_ref_produces_typeref() {
     let src = "set(SRC_DIR src)\nadd_subdirectory(${SRC_DIR})";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "SRC_DIR"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "SRC_DIR"),
         "variable_ref should produce TypeRef to 'SRC_DIR'; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -263,15 +333,23 @@ fn cov_command_inside_function_body_produces_calls() {
     let r = extract::extract(src, lang());
     // The function itself must be extracted.
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "setup_project"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "setup_project"),
         "function_def should produce Function 'setup_project'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     // Commands inside the body should produce Calls refs.
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "commands inside function body should produce Calls refs; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -297,7 +375,9 @@ fn cov_add_test_command_produces_function() {
 fn cov_function_parameters_produce_variables() {
     let src = "function(setup_project NAME VERSION)\n  message(${NAME} ${VERSION})\nendfunction()";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -311,7 +391,9 @@ fn cov_function_parameters_produce_variables() {
 fn cov_macro_parameters_produce_variables() {
     let src = "macro(my_macro KEY VALUE)\n  set(MAP_${KEY} ${VALUE})\nendmacro()";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -330,9 +412,14 @@ fn cov_foreach_loop_var_produces_variable() {
     let src = "foreach(PACKAGE IN LISTS deps)\n  message(${PACKAGE})\nendforeach()";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "PACKAGE"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "PACKAGE"),
         "foreach loop var PACKAGE should be Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -345,9 +432,14 @@ fn cov_string_tolower_output_var_produces_variable() {
     let src = "string(TOLOWER ${NAME} lower_case_name)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "lower_case_name"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "lower_case_name"),
         "string(TOLOWER) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -356,9 +448,14 @@ fn cov_string_sha1_output_var_produces_variable() {
     let src = "string(SHA1 origin_hash \"some data\")";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "origin_hash"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "origin_hash"),
         "string(SHA1) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -367,9 +464,14 @@ fn cov_string_substring_output_var_produces_variable() {
     let src = "string(SUBSTRING \"${origin_hash}\" 0 8 short_hash)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "short_hash"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "short_hash"),
         "string(SUBSTRING) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -382,7 +484,9 @@ fn cov_string_replace_output_var_is_third_arg() {
     // string(REPLACE <match> <replace> <out_var> <input...>)
     let src = r#"string(REPLACE " " ";" EXTRA_ARGS "${ARGN}")"#;
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -397,7 +501,9 @@ fn cov_string_append_output_var_is_first_arg() {
     // string(APPEND <string_var> ...) — string_var is index 1
     let src = r##"string(APPEND PRETTY_OUT_VAR "#")"##;
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -416,9 +522,14 @@ fn cov_math_expr_output_var_produces_variable() {
     let src = "math(EXPR result \"1 + 2\")";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
         "math(EXPR) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -431,9 +542,14 @@ fn cov_get_filename_component_output_var_produces_variable() {
     let src = "get_filename_component(SCRIPT_DIR \"${CMAKE_CURRENT_LIST_FILE}\" DIRECTORY)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "SCRIPT_DIR"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "SCRIPT_DIR"),
         "get_filename_component output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -446,9 +562,14 @@ fn cov_find_program_output_var_produces_variable() {
     let src = "find_program(CPPCHECK_BIN cppcheck)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "CPPCHECK_BIN"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "CPPCHECK_BIN"),
         "find_program output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -457,9 +578,14 @@ fn cov_find_library_output_var_produces_variable() {
     let src = "find_library(MATH_LIB m)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MATH_LIB"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "MATH_LIB"),
         "find_library output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -472,9 +598,14 @@ fn cov_file_glob_output_var_produces_variable() {
     let src = "file(GLOB ALL_SOURCE_FILES \"src/*.cpp\")";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "ALL_SOURCE_FILES"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "ALL_SOURCE_FILES"),
         "file(GLOB ...) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -483,9 +614,14 @@ fn cov_file_read_output_var_produces_variable() {
     let src = "file(READ \"version.txt\" VERSION_STRING)";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "VERSION_STRING"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "VERSION_STRING"),
         "file(READ ...) output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -495,13 +631,23 @@ fn cov_file_read_output_var_produces_variable() {
 
 #[test]
 fn cov_cmake_parse_arguments_emits_prefix_variables() {
-    let src = "cmake_parse_arguments(MY_FN \"REQUIRED;OPTIONAL\" \"NAME;VERSION\" \"SOURCES\" ${ARGN})";
+    let src =
+        "cmake_parse_arguments(MY_FN \"REQUIRED;OPTIONAL\" \"NAME;VERSION\" \"SOURCES\" ${ARGN})";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
-    for expected in ["MY_FN", "MY_FN_REQUIRED", "MY_FN_OPTIONAL", "MY_FN_NAME", "MY_FN_VERSION", "MY_FN_SOURCES"] {
+    for expected in [
+        "MY_FN",
+        "MY_FN_REQUIRED",
+        "MY_FN_OPTIONAL",
+        "MY_FN_NAME",
+        "MY_FN_VERSION",
+        "MY_FN_SOURCES",
+    ] {
         assert!(
             var_names.contains(&expected),
             "cmake_parse_arguments should emit Variable {expected}; got: {var_names:?}",
@@ -513,7 +659,9 @@ fn cov_cmake_parse_arguments_emits_prefix_variables() {
 fn cov_cmake_parse_arguments_parse_argv_form() {
     let src = "cmake_parse_arguments(PARSE_ARGV 1 ARG \"\" \"SOURCE_DIR;BINARY_DIR\" \"\")";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -531,7 +679,9 @@ fn cov_cmake_parse_arguments_parse_argv_form() {
 fn cov_execute_process_output_variables_produce_variables() {
     let src = "execute_process(COMMAND git rev-parse HEAD OUTPUT_VARIABLE GIT_SHA RESULT_VARIABLE GIT_RES)";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -549,7 +699,9 @@ fn cov_execute_process_output_variables_produce_variables() {
 fn cov_find_package_emits_found_variable() {
     let src = "find_package(OpenSSL REQUIRED)";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -563,7 +715,9 @@ fn cov_find_package_emits_found_variable() {
 fn cov_find_package_emits_libraries_and_include_dirs() {
     let src = "find_package(Protobuf REQUIRED)";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -581,7 +735,9 @@ fn cov_find_package_emits_libraries_and_include_dirs() {
 fn cov_find_package_git_emits_executable() {
     let src = "find_package(Git REQUIRED)";
     let r = extract::extract(src, lang());
-    let var_names: Vec<&str> = r.symbols.iter()
+    let var_names: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
@@ -600,9 +756,14 @@ fn cov_separate_arguments_output_var_produces_variable() {
     let src = "separate_arguments(tmp_args UNIX_COMMAND ${CPPCHECK_ARG})";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "tmp_args"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "tmp_args"),
         "separate_arguments output should be Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -613,7 +774,10 @@ fn cov_separate_arguments_output_var_produces_variable() {
 #[test]
 fn builtin_argc_is_recognized() {
     assert!(is_cmake_builtin("ARGC"), "ARGC must be a builtin");
-    assert!(is_cmake_builtin("argc"), "argc (lowercase) must be a builtin");
+    assert!(
+        is_cmake_builtin("argc"),
+        "argc (lowercase) must be a builtin"
+    );
 }
 
 #[test]
@@ -626,14 +790,26 @@ fn builtin_argn_argv_are_recognized() {
 
 #[test]
 fn builtin_cmake_prefix_is_recognized() {
-    assert!(is_cmake_builtin("CMAKE_CURRENT_SOURCE_DIR"), "cmake_ prefix must be builtin");
-    assert!(is_cmake_builtin("FETCHCONTENT_BASE_DIR"), "fetchcontent_ prefix must be builtin");
+    assert!(
+        is_cmake_builtin("CMAKE_CURRENT_SOURCE_DIR"),
+        "cmake_ prefix must be builtin"
+    );
+    assert!(
+        is_cmake_builtin("FETCHCONTENT_BASE_DIR"),
+        "fetchcontent_ prefix must be builtin"
+    );
 }
 
 #[test]
 fn non_builtin_user_var_not_recognized() {
-    assert!(!is_cmake_builtin("MY_PROJECT_DIR"), "user variable must not be builtin");
-    assert!(!is_cmake_builtin("adder"), "project target must not be builtin");
+    assert!(
+        !is_cmake_builtin("MY_PROJECT_DIR"),
+        "user variable must not be builtin"
+    );
+    assert!(
+        !is_cmake_builtin("adder"),
+        "project target must not be builtin"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -643,10 +819,22 @@ fn non_builtin_user_var_not_recognized() {
 #[test]
 fn builtin_cpm_prefix_is_recognized() {
     assert!(is_cmake_builtin("CPM_PATH"), "CPM_PATH must be a builtin");
-    assert!(is_cmake_builtin("CPM_ARGS_SOURCE_DIR"), "CPM_ARGS_SOURCE_DIR must be a builtin");
-    assert!(is_cmake_builtin("CPM_DECLARATION_foo"), "CPM_DECLARATION_foo must be a builtin");
-    assert!(is_cmake_builtin("CPM_DOWNLOAD_mylib"), "CPM_DOWNLOAD_mylib must be a builtin");
-    assert!(is_cmake_builtin("cpm_path"), "cpm_ lowercase must be a builtin");
+    assert!(
+        is_cmake_builtin("CPM_ARGS_SOURCE_DIR"),
+        "CPM_ARGS_SOURCE_DIR must be a builtin"
+    );
+    assert!(
+        is_cmake_builtin("CPM_DECLARATION_foo"),
+        "CPM_DECLARATION_foo must be a builtin"
+    );
+    assert!(
+        is_cmake_builtin("CPM_DOWNLOAD_mylib"),
+        "CPM_DOWNLOAD_mylib must be a builtin"
+    );
+    assert!(
+        is_cmake_builtin("cpm_path"),
+        "cpm_ lowercase must be a builtin"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -658,7 +846,9 @@ fn nested_variable_ref_artifact_not_emitted() {
     // `${${CPM_ARGS_NAME}_SOURCE_DIR}` — the inner extraction leaks `}` into the name.
     let src = r#"message("${${CPM_ARGS_NAME}_SOURCE_DIR}")"#;
     let r = extract::extract(src, lang());
-    let type_ref_names: Vec<&str> = r.refs.iter()
+    let type_ref_names: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::TypeRef)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -676,9 +866,18 @@ fn nested_variable_ref_artifact_not_emitted() {
 fn cpm_prefixed_variable_ref_not_in_unresolved() {
     // ${CPM_PATH} appears as a variable_ref but is_cmake_builtin suppresses it
     // before it reaches unresolved_refs — the resolver marks it external.
-    assert!(is_cmake_builtin("CPM_PATH"), "CPM_PATH is a CPM cache variable");
-    assert!(is_cmake_builtin("CPM_ARGS_SOURCE_DIR"), "CPM_ARGS_SOURCE_DIR is a CPM arg");
-    assert!(is_cmake_builtin("CPM_DECLARATION_mylib"), "CPM_DECLARATION_* is CPM-injected");
+    assert!(
+        is_cmake_builtin("CPM_PATH"),
+        "CPM_PATH is a CPM cache variable"
+    );
+    assert!(
+        is_cmake_builtin("CPM_ARGS_SOURCE_DIR"),
+        "CPM_ARGS_SOURCE_DIR is a CPM arg"
+    );
+    assert!(
+        is_cmake_builtin("CPM_DECLARATION_mylib"),
+        "CPM_DECLARATION_* is CPM-injected"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +891,9 @@ fn cpm_source_dir_suffix_variable_ref_emitted_without_closing_brace() {
     // not a malformed target containing `}`.
     let src = "include_directories(${lua_SOURCE_DIR}/src)";
     let r = extract::extract(src, lang());
-    let type_ref_names: Vec<&str> = r.refs.iter()
+    let type_ref_names: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::TypeRef)
         .map(|rf| rf.target_name.as_str())
         .collect();

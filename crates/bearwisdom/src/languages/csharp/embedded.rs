@@ -15,7 +15,10 @@ use tree_sitter::{Node, Parser};
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     let mut parser = Parser::new();
-    if parser.set_language(&tree_sitter_c_sharp::LANGUAGE.into()).is_err() {
+    if parser
+        .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
+        .is_err()
+    {
         return Vec::new();
     }
     let Some(tree) = parser.parse(source, None) else {

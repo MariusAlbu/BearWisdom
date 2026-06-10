@@ -79,7 +79,12 @@ static CYPRESS: TfDescriptor = TfDescriptor {
 static MOCHA: TfDescriptor = TfDescriptor {
     name: "mocha",
     display_name: "Mocha",
-    config_files: &[".mocharc.js", ".mocharc.ts", ".mocharc.json", ".mocharc.yml"],
+    config_files: &[
+        ".mocharc.js",
+        ".mocharc.ts",
+        ".mocharc.json",
+        ".mocharc.yml",
+    ],
     config_content_match: None,
     package_json_dep: Some("mocha"),
     discovery_cmd: None,
@@ -104,8 +109,22 @@ pub static TYPESCRIPT: LanguageDescriptor = LanguageDescriptor {
     file_extensions: &[".ts", ".tsx", ".mts", ".cts"],
     filenames: &[],
     aliases: &["ts", "tsx"],
-    exclude_dirs: &["node_modules", ".next", ".nuxt", ".output", ".svelte-kit", "dist", ".turbo"],
-    entry_point_files: &["tsconfig.json", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+    exclude_dirs: &[
+        "node_modules",
+        ".next",
+        ".nuxt",
+        ".output",
+        ".svelte-kit",
+        "dist",
+        ".turbo",
+    ],
+    entry_point_files: &[
+        "tsconfig.json",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+    ],
     sdk: Some(SdkDescriptor {
         name: "Node.js",
         version_command: "node",

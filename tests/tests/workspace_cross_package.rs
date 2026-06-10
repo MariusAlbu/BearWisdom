@@ -29,7 +29,11 @@ fn build_pnpm_workspace() -> TempDir {
         "package.json",
         r#"{"name":"monorepo","private":true,"workspaces":["packages/*"]}"#,
     );
-    write_file(root, "pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n");
+    write_file(
+        root,
+        "pnpm-workspace.yaml",
+        "packages:\n  - \"packages/*\"\n",
+    );
 
     write_file(
         root,

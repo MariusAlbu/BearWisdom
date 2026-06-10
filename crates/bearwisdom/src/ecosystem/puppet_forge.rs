@@ -39,10 +39,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "puppet-forge";
 pub struct PuppetForgeEcosystem;
 
 impl Ecosystem for PuppetForgeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Project deps via `metadata.json` and/or `Puppetfile`. A bare
@@ -64,11 +72,15 @@ impl Ecosystem for PuppetForgeEcosystem {
         build_puppet_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for PuppetForgeEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_puppet_externals(project_root)
     }
@@ -80,7 +92,9 @@ impl ExternalSourceLocator for PuppetForgeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PuppetForgeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(PuppetForgeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(PuppetForgeEcosystem))
+        .clone()
 }
 
 // =============================================================================
@@ -160,7 +174,9 @@ fn parse_metadata_json_deps(content: &str, out: &mut Vec<String>) {
     let mut in_deps = false;
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("\"dependencies\"") { in_deps = true; }
+        if trimmed.contains("\"dependencies\"") {
+            in_deps = true;
+        }
         if in_deps {
             // Look for "name": "author-module"
             if let Some(name) = extract_json_string_field(trimmed, "name") {
@@ -169,7 +185,9 @@ fn parse_metadata_json_deps(content: &str, out: &mut Vec<String>) {
                 }
             }
             // End of dependencies array
-            if trimmed == "]" || trimmed == "]," { in_deps = false; }
+            if trimmed == "]" || trimmed == "]," {
+                in_deps = false;
+            }
         }
     }
 }
@@ -181,11 +199,17 @@ fn extract_json_string_field<'a>(line: &'a str, key: &str) -> Option<String> {
     let after = &line[key_pos + search.len()..];
     let colon_pos = after.find(':')?;
     let after_colon = after[colon_pos + 1..].trim();
-    if !after_colon.starts_with('"') { return None; }
+    if !after_colon.starts_with('"') {
+        return None;
+    }
     let inner = &after_colon[1..];
     let end = inner.find('"')?;
     let val = inner[..end].trim().to_string();
-    if val.is_empty() { None } else { Some(val) }
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
 }
 
 /// Parse `mod 'author/module'` or `mod 'author-module'` lines from a Puppetfile.
@@ -193,7 +217,9 @@ fn parse_puppetfile_deps(content: &str, out: &mut Vec<String>) {
     for line in content.lines() {
         let trimmed = line.trim();
         // Skip comments and blank lines.
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
         // `mod 'puppetlabs/stdlib', '>=4.13.1'` or `mod "author-module"`
         let rest = match trimmed
             .strip_prefix("mod ")
@@ -228,12 +254,16 @@ fn modules_search_dirs(project_root: &Path) -> Vec<PathBuf> {
 
     if let Some(explicit) = std::env::var_os("BEARWISDOM_PUPPET_MODULES") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { dirs.push(p); }
+        if p.is_dir() {
+            dirs.push(p);
+        }
     }
 
     if let Some(home) = dirs::home_dir() {
         let p = home.join(".puppetlabs").join("puppet").join("modules");
-        if p.is_dir() { dirs.push(p); }
+        if p.is_dir() {
+            dirs.push(p);
+        }
     }
 
     for fixed in [
@@ -241,12 +271,16 @@ fn modules_search_dirs(project_root: &Path) -> Vec<PathBuf> {
         "/etc/puppetlabs/code/environments/production/modules",
     ] {
         let p = PathBuf::from(fixed);
-        if p.is_dir() { dirs.push(p); }
+        if p.is_dir() {
+            dirs.push(p);
+        }
     }
 
     // Project-local modules/ dir (common for r10k environments).
     let local = project_root.join("modules");
-    if local.is_dir() { dirs.push(local); }
+    if local.is_dir() {
+        dirs.push(local);
+    }
 
     dirs
 }
@@ -254,7 +288,9 @@ fn modules_search_dirs(project_root: &Path) -> Vec<PathBuf> {
 /// Read the version from a module's metadata.json, fall back to empty string.
 fn read_module_version(module_root: &Path) -> String {
     let meta = module_root.join("metadata.json");
-    let Ok(content) = std::fs::read_to_string(&meta) else { return String::new() };
+    let Ok(content) = std::fs::read_to_string(&meta) else {
+        return String::new();
+    };
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(ver) = extract_json_string_field(trimmed, "version") {
@@ -275,7 +311,9 @@ fn walk_puppet_module(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     for sub in PUPPET_SOURCE_DIRS {
         let dir = dep.root.join(sub);
-        if !dir.is_dir() { continue }
+        if !dir.is_dir() {
+            continue;
+        }
         walk_dir_bounded(&dir, &dep.root, dep, &mut out, 0);
     }
     out
@@ -288,16 +326,24 @@ fn walk_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".pp") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".pp") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -319,7 +365,9 @@ fn build_puppet_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationInd
     let mut index = SymbolLocationIndex::new();
     for dep in dep_roots {
         for wf in walk_puppet_module(dep) {
-            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else { continue };
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                continue;
+            };
             for name in scan_puppet_header(&src) {
                 index.insert(dep.module_path.clone(), name, wf.absolute_path.clone());
             }
@@ -334,7 +382,9 @@ pub(crate) fn scan_puppet_header(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
         for kw in &["class ", "define ", "function ", "type ", "plan "] {
             if let Some(rest) = trimmed.strip_prefix(kw) {
                 let name = rest
@@ -366,11 +416,15 @@ pub(crate) fn scan_puppet_header(source: &str) -> Vec<String> {
 pub struct PuppetMetadataManifest;
 
 impl ManifestReader for PuppetMetadataManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Puppet }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Puppet
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let slugs = collect_declared_modules(project_root);
-        if slugs.is_empty() { return None }
+        if slugs.is_empty() {
+            return None;
+        }
         let mut data = ManifestData::default();
         for slug in slugs {
             let bare = slug

@@ -127,9 +127,13 @@ fn extends_sibling_layout_resolves() {
 #[test]
 fn include_with_parent_dir_resolves() {
     let header = make_pug_file("shared/header.pug", "header", vec![]);
-    let page = make_pug_file("views/page.pug", "page", vec![import_ref("../shared/header")]);
-    let res = build_index_and_resolve(&[&header, &page], &page)
-        .expect("../shared/header should resolve");
+    let page = make_pug_file(
+        "views/page.pug",
+        "page",
+        vec![import_ref("../shared/header")],
+    );
+    let res =
+        build_index_and_resolve(&[&header, &page], &page).expect("../shared/header should resolve");
     assert_eq!(res.strategy, "pug_template_include");
 }
 

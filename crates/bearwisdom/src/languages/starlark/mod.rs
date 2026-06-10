@@ -4,11 +4,11 @@
 //! recognises Starlark's `def`, `load()`, rule assignments, and calls.
 
 pub mod embedded;
-pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
-pub(crate) mod profile;
+pub mod keywords;
 mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::STARLARK_HOOKS;
 pub use profile::STARLARK_PROFILE;
@@ -24,11 +24,17 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct StarlarkPlugin;
 
 impl LanguagePlugin for StarlarkPlugin {
-    fn id(&self) -> &str { "starlark" }
+    fn id(&self) -> &str {
+        "starlark"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["starlark"] }
+    fn language_ids(&self) -> &[&str] {
+        &["starlark"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".bzl", ".star"] }
+    fn extensions(&self) -> &[&str] {
+        &[".bzl", ".star"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_starlark::LANGUAGE.into())
@@ -52,19 +58,16 @@ impl LanguagePlugin for StarlarkPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "function_definition",
-            "assignment",
-        ]
+        &["function_definition", "assignment"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call",
-        ]
+        &["call"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -74,8 +77,7 @@ impl LanguagePlugin for StarlarkPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::STARLARK_HOOKS)
     }
 }

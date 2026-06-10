@@ -82,11 +82,11 @@ pub(super) fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                             scope_path: None,
                             parent_index: None,
                             byte_offset: 0,
-                                                    declared_type: None,
+                            declared_type: None,
                             return_type: None,
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
-});
+                        });
                     }
                 }
                 i = k;
@@ -115,16 +115,21 @@ pub(super) fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<Ex
         }
         let rest = &trimmed[1..];
         // Name runs until `{`, `,`, `:`, whitespace, or end-of-line.
-        let name: &str = rest.split(|c: char| {
-            c == '{' || c == ',' || c == ':' || c == ' ' || c == '\t' || c == '\r'
-        }).next().unwrap_or("");
+        let name: &str = rest
+            .split(|c: char| c == '{' || c == ',' || c == ':' || c == ' ' || c == '\t' || c == '\r')
+            .next()
+            .unwrap_or("");
         if name.is_empty() {
             continue;
         }
         // Reject names that contain SCSS interpolation or look like property
         // values, pseudo-elements, or other non-identifier fragments.
-        if name.contains('#') || name.contains('$') || name.contains('(')
-            || name.contains(')') || name.contains('[') || name.contains('/')
+        if name.contains('#')
+            || name.contains('$')
+            || name.contains('(')
+            || name.contains(')')
+            || name.contains('[')
+            || name.contains('/')
             || name.contains('\\')
         {
             continue;
@@ -154,11 +159,11 @@ pub(super) fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<Ex
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -168,7 +173,10 @@ pub(super) fn recover_class_symbols_from_text(source: &str, symbols: &mut Vec<Ex
 /// The indented Sass syntax uses `=name` for mixin definitions instead of
 /// `@mixin name { }`. The SCSS grammar does not handle this form, so `.sass`
 /// files run this scan alongside `recover_mixin_symbols_from_text`.
-pub(super) fn recover_sass_indented_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
+pub(super) fn recover_sass_indented_symbols_from_text(
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
     for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
         if !trimmed.starts_with('=') {
@@ -199,11 +207,11 @@ pub(super) fn recover_sass_indented_symbols_from_text(source: &str, symbols: &mu
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }

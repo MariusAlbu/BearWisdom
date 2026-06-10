@@ -17,7 +17,11 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_function_definition_posix_emits_function() {
     let r = extract::extract("foo() { bar; }");
     let sym = r.symbols.iter().find(|s| s.name == "foo");
-    assert!(sym.is_some(), "expected Function symbol 'foo'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function symbol 'foo'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -26,7 +30,11 @@ fn cov_function_definition_posix_emits_function() {
 fn cov_function_definition_keyword_emits_function() {
     let r = extract::extract("function deploy { echo done; }");
     let sym = r.symbols.iter().find(|s| s.name == "deploy");
-    assert!(sym.is_some(), "expected Function symbol 'deploy'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function symbol 'deploy'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -35,7 +43,11 @@ fn cov_function_definition_keyword_emits_function() {
 fn cov_variable_assignment_file_scope_emits_variable() {
     let r = extract::extract("VERSION=1.0.0\n");
     let sym = r.symbols.iter().find(|s| s.name == "VERSION");
-    assert!(sym.is_some(), "expected Variable symbol 'VERSION'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable symbol 'VERSION'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -44,7 +56,11 @@ fn cov_variable_assignment_file_scope_emits_variable() {
 fn cov_variable_assignment_inside_if_emits_variable() {
     let r = extract::extract("if [ -n \"$X\" ]; then\n    RESULT=ok\nfi\n");
     let sym = r.symbols.iter().find(|s| s.name == "RESULT");
-    assert!(sym.is_some(), "expected Variable 'RESULT' inside if; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'RESULT' inside if; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -53,7 +69,11 @@ fn cov_variable_assignment_inside_if_emits_variable() {
 fn cov_variable_assignment_inside_for_emits_variable() {
     let r = extract::extract("for i in 1 2 3; do\n    IDX=$i\ndone\n");
     let sym = r.symbols.iter().find(|s| s.name == "IDX");
-    assert!(sym.is_some(), "expected Variable 'IDX' inside for; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'IDX' inside for; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -62,7 +82,11 @@ fn cov_variable_assignment_inside_for_emits_variable() {
 fn cov_variable_assignment_inside_function_emits_variable() {
     let r = extract::extract("setup() {\n    SETUP_DONE=1\n}\n");
     let sym = r.symbols.iter().find(|s| s.name == "SETUP_DONE");
-    assert!(sym.is_some(), "expected Variable 'SETUP_DONE' inside function; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'SETUP_DONE' inside function; got: {:?}",
+        r.symbols
+    );
 }
 
 /// declaration_command with declare → extracts the variable_assignment child
@@ -70,7 +94,11 @@ fn cov_variable_assignment_inside_function_emits_variable() {
 fn cov_declaration_command_declare_emits_variable() {
     let r = extract::extract("declare -r MAX=100\n");
     let sym = r.symbols.iter().find(|s| s.name == "MAX");
-    assert!(sym.is_some(), "expected Variable 'MAX' from declare; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'MAX' from declare; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -79,7 +107,11 @@ fn cov_declaration_command_declare_emits_variable() {
 fn cov_declaration_command_export_emits_variable() {
     let r = extract::extract("export PATH_EXT=/usr/local/bin\n");
     let sym = r.symbols.iter().find(|s| s.name == "PATH_EXT");
-    assert!(sym.is_some(), "expected Variable 'PATH_EXT' from export; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'PATH_EXT' from export; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -88,7 +120,11 @@ fn cov_declaration_command_export_emits_variable() {
 fn cov_declaration_command_local_inside_function_emits_variable() {
     let r = extract::extract("setup() {\n    local TMPDIR=/tmp/work\n}\n");
     let sym = r.symbols.iter().find(|s| s.name == "TMPDIR");
-    assert!(sym.is_some(), "expected Variable 'TMPDIR' from local; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'TMPDIR' from local; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -115,7 +151,10 @@ fn cov_command_inside_function_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"bar"), "expected Calls ref to 'bar'; got: {calls:?}");
+    assert!(
+        calls.contains(&"bar"),
+        "expected Calls ref to 'bar'; got: {calls:?}"
+    );
 }
 
 /// command → EdgeKind::Calls  (command at top-level / script scope)
@@ -128,8 +167,14 @@ fn cov_command_at_top_level_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"deploy_app"), "expected Calls ref to 'deploy_app' at top level; got: {calls:?}");
-    assert!(calls.contains(&"notify"), "expected Calls ref to 'notify' at top level; got: {calls:?}");
+    assert!(
+        calls.contains(&"deploy_app"),
+        "expected Calls ref to 'deploy_app' at top level; got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"notify"),
+        "expected Calls ref to 'notify' at top level; got: {calls:?}"
+    );
 }
 
 /// command → EdgeKind::Calls for common external tools (git, make, curl)
@@ -142,9 +187,18 @@ fn cov_command_external_tools_emit_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"git"), "expected Calls ref to 'git'; got: {calls:?}");
-    assert!(calls.contains(&"make"), "expected Calls ref to 'make'; got: {calls:?}");
-    assert!(calls.contains(&"curl"), "expected Calls ref to 'curl'; got: {calls:?}");
+    assert!(
+        calls.contains(&"git"),
+        "expected Calls ref to 'git'; got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"make"),
+        "expected Calls ref to 'make'; got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"curl"),
+        "expected Calls ref to 'curl'; got: {calls:?}"
+    );
 }
 
 /// command inside a for loop → EdgeKind::Calls
@@ -157,7 +211,10 @@ fn cov_command_inside_for_loop_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"process_file"), "expected Calls ref to 'process_file'; got: {calls:?}");
+    assert!(
+        calls.contains(&"process_file"),
+        "expected Calls ref to 'process_file'; got: {calls:?}"
+    );
 }
 
 /// command_substitution — command inside `$(...)` emits a Calls ref
@@ -170,7 +227,10 @@ fn cov_command_substitution_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"get_value"), "expected Calls ref to 'get_value' from $(...); got: {calls:?}");
+    assert!(
+        calls.contains(&"get_value"),
+        "expected Calls ref to 'get_value' from $(...); got: {calls:?}"
+    );
 }
 
 /// command_substitution inside a function body → Calls ref
@@ -195,17 +255,27 @@ fn cov_command_substitution_does_not_prevent_function_extraction() {
     let src = "foo() { result=$(get_value); }\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "foo");
-    assert!(sym.is_some(), "expected Function 'foo' even with command_substitution body; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'foo' even with command_substitution body; got: {:?}",
+        r.symbols
+    );
 }
 /// declaration_command with bare export (no assignment) → extracts variable by name
 #[test]
 fn cov_declaration_command_bare_export_emits_variable() {
-    let r = extract::extract("export GITEA_TEST_E2E_DOMAIN
+    let r = extract::extract(
+        "export GITEA_TEST_E2E_DOMAIN
 export GITEA_TEST_E2E_URL
-");
+",
+    );
     // Each bare export should emit a Variable symbol at its line
     let domain = r.symbols.iter().find(|s| s.name == "GITEA_TEST_E2E_DOMAIN");
-    assert!(domain.is_some(), "expected Variable 'GITEA_TEST_E2E_DOMAIN' from bare export; got: {:?}", r.symbols);
+    assert!(
+        domain.is_some(),
+        "expected Variable 'GITEA_TEST_E2E_DOMAIN' from bare export; got: {:?}",
+        r.symbols
+    );
     assert_eq!(domain.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -226,7 +296,10 @@ fn cov_source_command_emits_imports() {
     assert!(
         !imports.is_empty(),
         "expected Imports ref from 'source ./lib.sh'; got refs: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -243,7 +316,10 @@ fn cov_dot_source_command_emits_imports() {
     assert!(
         !imports.is_empty(),
         "expected Imports ref from '. ./utils.sh'; got refs: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -254,7 +330,10 @@ fn cov_source_inside_function_emits_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from 'source ./config.sh' inside function; got refs: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -263,7 +342,11 @@ fn cov_source_inside_function_emits_imports() {
 fn cov_declaration_command_declare_array_emits_variable() {
     let r = extract::extract("declare -a ITEMS=()\n");
     let sym = r.symbols.iter().find(|s| s.name == "ITEMS");
-    assert!(sym.is_some(), "expected Variable 'ITEMS' from declare -a; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'ITEMS' from declare -a; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -272,7 +355,11 @@ fn cov_declaration_command_declare_array_emits_variable() {
 fn cov_declaration_command_typeset_emits_variable() {
     let r = extract::extract("typeset -i COUNTER=0\n");
     let sym = r.symbols.iter().find(|s| s.name == "COUNTER");
-    assert!(sym.is_some(), "expected Variable 'COUNTER' from typeset; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'COUNTER' from typeset; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
@@ -281,6 +368,10 @@ fn cov_declaration_command_typeset_emits_variable() {
 fn cov_declaration_command_readonly_emits_variable() {
     let r = extract::extract("readonly VERSION=2.0\n");
     let sym = r.symbols.iter().find(|s| s.name == "VERSION");
-    assert!(sym.is_some(), "expected Variable 'VERSION' from readonly; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'VERSION' from readonly; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }

@@ -51,7 +51,8 @@ pub const BUILTINS: &[&str] = &[
     "yield",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 ;-------\n\
 \n\
 [\n\
@@ -74,4 +75,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
 ;------------\n\
 \n\
 (identifier) @local.reference\n\
-");
+",
+);

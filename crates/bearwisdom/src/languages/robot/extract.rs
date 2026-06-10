@@ -15,8 +15,8 @@
 //   Calls     — keyword invocations inside test cases and keyword bodies
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Section {
@@ -49,9 +49,9 @@ pub fn extract(source: &str) -> ExtractionResult {
     };
     let mut section = Section::None;
     let mut current_item: Option<usize> = None; // index into symbols of current kw/tc
-    // Suite-level `Test Template    <Keyword>` from `*** Settings ***`.
-    // Applies to EVERY test in the file; per-test `[Template]` can
-    // override (including `[Template]    NONE` to disable for one test).
+                                                // Suite-level `Test Template    <Keyword>` from `*** Settings ***`.
+                                                // Applies to EVERY test in the file; per-test `[Template]` can
+                                                // override (including `[Template]    NONE` to disable for one test).
     let mut suite_template_active: bool = false;
     // Tracks `[Template]    <Keyword>` for the active test or keyword. When
     // set, every subsequent body row is positional ARG data for the
@@ -87,14 +87,17 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // per-test default is "template active" unless a test
                 // explicitly resets via `[Template]    NONE`.
                 if let Some(rest) = strip_setting_keyword(trimmed, "Test Template") {
-                    suite_template_active =
-                        !rest.is_empty() && !rest.eq_ignore_ascii_case("NONE");
+                    suite_template_active = !rest.is_empty() && !rest.eq_ignore_ascii_case("NONE");
                 }
             }
             Section::Variables => {
                 if let Some(var_name) = extract_variable_name(trimmed) {
                     symbols.push(make_symbol(
-                        var_name.clone(), var_name, SymbolKind::Variable, i as u32, None,
+                        var_name.clone(),
+                        var_name,
+                        SymbolKind::Variable,
+                        i as u32,
+                        None,
                     ));
                     current_item = Some(symbols.len() - 1);
                 }
@@ -104,7 +107,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 if !line.starts_with(' ') && !line.starts_with('\t') {
                     let name = trimmed.to_string();
                     symbols.push(make_symbol(
-                        name.clone(), name, SymbolKind::Test, i as u32, None,
+                        name.clone(),
+                        name,
+                        SymbolKind::Test,
+                        i as u32,
+                        None,
                     ));
                     current_item = Some(symbols.len() - 1);
                     template_active = suite_template_active;
@@ -123,7 +130,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 if !line.starts_with(' ') && !line.starts_with('\t') {
                     let name = trimmed.to_string();
                     symbols.push(make_symbol(
-                        name.clone(), name, SymbolKind::Function, i as u32, None,
+                        name.clone(),
+                        name,
+                        SymbolKind::Function,
+                        i as u32,
+                        None,
                     ));
                     current_item = Some(symbols.len() - 1);
                     template_active = suite_template_active;
@@ -188,7 +199,9 @@ fn extract_settings_line(
             if let Some(target) = cells.get(1) {
                 let t = target.trim().to_string();
                 if !t.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: t.clone(),
                         kind: EdgeKind::Imports,
@@ -309,7 +322,9 @@ fn emit_keyword_call(
     } else {
         (None, keyword_name.to_string())
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Calls,
@@ -350,8 +365,21 @@ fn extract_keyword_invocation(
     //   `VAR`  — Robot 6+ inline variable assignment, not a keyword call
     if matches!(
         kw,
-        "FOR" | "END" | "IF" | "ELSE" | "ELSE IF" | "WHILE" | "TRY" | "EXCEPT" | "FINALLY"
-            | "RETURN" | "BREAK" | "CONTINUE" | "..." | "\\END" | "VAR"
+        "FOR"
+            | "END"
+            | "IF"
+            | "ELSE"
+            | "ELSE IF"
+            | "WHILE"
+            | "TRY"
+            | "EXCEPT"
+            | "FINALLY"
+            | "RETURN"
+            | "BREAK"
+            | "CONTINUE"
+            | "..."
+            | "\\END"
+            | "VAR"
     ) {
         return;
     }
@@ -364,8 +392,7 @@ fn extract_keyword_invocation(
     // last receive variable; the next cell is the actual keyword. The old
     // `cells.get(1)` shortcut grabbed the second receive var (`${item} =`)
     // and emitted IT as a Calls ref — bogus.
-    let kw_starts_with_var =
-        kw.starts_with('$') || kw.starts_with('@') || kw.starts_with('&');
+    let kw_starts_with_var = kw.starts_with('$') || kw.starts_with('@') || kw.starts_with('&');
     let keyword_name = if kw_starts_with_var {
         match cells.iter().position(|c| c.trim().ends_with('=')) {
             Some(idx) => cells.get(idx + 1).map(|s| s.trim()).unwrap_or(""),
@@ -403,7 +430,9 @@ fn extract_keyword_invocation(
         (None, keyword_name.to_string())
     };
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name,
         kind: EdgeKind::Calls,
@@ -454,7 +483,9 @@ fn split_cells(line: &str) -> Vec<&str> {
         } else if bytes[i] == b' ' && i + 1 < bytes.len() && bytes[i + 1] == b' ' {
             cells.push(&line[start..i]);
             // Skip all consecutive spaces
-            while i < bytes.len() && bytes[i] == b' ' { i += 1; }
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
             start = i;
         } else {
             i += 1;
@@ -488,9 +519,9 @@ fn make_symbol(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

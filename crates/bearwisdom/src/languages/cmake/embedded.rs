@@ -44,22 +44,17 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
 /// any trailing `)` stripped.
 fn extract_command(line: &str) -> Option<&str> {
     for kw in COMMAND_KEYWORDS {
-        let Some(kw_pos) = line.find(kw) else { continue };
+        let Some(kw_pos) = line.find(kw) else {
+            continue;
+        };
         // Preceding char must be whitespace, `(`, or start-of-line.
-        let prev_ok = kw_pos == 0
-            || matches!(
-                line.as_bytes()[kw_pos - 1],
-                b' ' | b'\t' | b'('
-            );
+        let prev_ok = kw_pos == 0 || matches!(line.as_bytes()[kw_pos - 1], b' ' | b'\t' | b'(');
         if !prev_ok {
             continue;
         }
         let after = &line[kw_pos + kw.len()..];
         // Following char must be whitespace (end-of-keyword boundary).
-        let is_whitespace_next = after
-            .chars()
-            .next()
-            .map_or(false, |c| c.is_whitespace());
+        let is_whitespace_next = after.chars().next().map_or(false, |c| c.is_whitespace());
         if !is_whitespace_next {
             continue;
         }
@@ -78,9 +73,11 @@ mod tests {
 
     #[test]
     fn add_custom_command_emits_build_tool_shell() {
-        let src = "add_custom_command(\n  OUTPUT foo.h\n  COMMAND python gen.py --output foo.h\n)\n";
+        let src =
+            "add_custom_command(\n  OUTPUT foo.h\n  COMMAND python gen.py --output foo.h\n)\n";
         let regions = detect_regions(src);
-        let shell: Vec<_> = regions.iter()
+        let shell: Vec<_> = regions
+            .iter()
             .filter(|r| r.origin == EmbeddedOrigin::BuildToolShell)
             .collect();
         assert_eq!(shell.len(), 1);
@@ -95,7 +92,9 @@ mod tests {
         // scanner captures everything to EOL which includes OUTPUT_VAR.
         // That's acceptable — bash grammar tolerates extra args.
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("git rev-parse HEAD")));
+        assert!(regions
+            .iter()
+            .any(|r| r.text.contains("git rev-parse HEAD")));
     }
 
     #[test]

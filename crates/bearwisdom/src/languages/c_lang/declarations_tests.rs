@@ -21,7 +21,10 @@ HRESULT HRESULT() {
             .any(|s| s.name == "HRESULT"
                 && matches!(s.kind, SymbolKind::Function | SymbolKind::Method)),
         "function whose name == return type must be suppressed: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -57,9 +60,14 @@ typedef struct IUnknownVtbl {
 "#;
     let r = extract::extract(src, "cpp");
     assert!(
-        !r.symbols.iter().any(|s| (s.name == "HRESULT" || s.name == "ULONG")
-            && matches!(s.kind, SymbolKind::Function | SymbolKind::Method)),
+        !r.symbols
+            .iter()
+            .any(|s| (s.name == "HRESULT" || s.name == "ULONG")
+                && matches!(s.kind, SymbolKind::Function | SymbolKind::Method)),
         "return-type token leaked as a function/method symbol: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }

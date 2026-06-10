@@ -20,9 +20,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_function_declaration_produces_function() {
     let r = extract::extract("fn main() void = {\n\treturn;\n};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "main"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "main"),
         "fn declaration should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -30,9 +35,14 @@ fn cov_function_declaration_produces_function() {
 fn cov_export_function_produces_function() {
     let r = extract::extract("export fn greet(name: str) void = {};");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "greet"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "greet"),
         "export fn should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -40,9 +50,14 @@ fn cov_export_function_produces_function() {
 fn cov_type_struct_produces_struct() {
     let r = extract::extract("type Point = struct { x: i32, y: i32 };");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Point"),
         "type struct should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -50,9 +65,14 @@ fn cov_type_struct_produces_struct() {
 fn cov_const_declaration_produces_variable() {
     let r = extract::extract("def MAX: size = 100;");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MAX"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "MAX"),
         "def (const) should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -61,9 +81,14 @@ fn cov_const_declaration_produces_variable() {
 fn cov_type_enum_produces_enum() {
     let r = extract::extract("type Color = enum { Red, Green, Blue };");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Color"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "Color"),
         "type enum should produce Enum; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -72,9 +97,14 @@ fn cov_type_enum_produces_enum() {
 fn cov_type_union_produces_struct() {
     let r = extract::extract("type NumOrStr = union { n: i64, s: str };");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "NumOrStr"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "NumOrStr"),
         "type union should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -83,9 +113,14 @@ fn cov_type_union_produces_struct() {
 fn cov_type_alias_produces_typealias() {
     let r = extract::extract("type MySize = size;");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::TypeAlias && s.name == "MySize"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::TypeAlias && s.name == "MySize"),
         "type alias should produce TypeAlias; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -94,9 +129,14 @@ fn cov_type_alias_produces_typealias() {
 fn cov_global_let_declaration_produces_variable() {
     let r = extract::extract("let counter: i32 = 0;");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
         "let declaration should produce Variable; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -108,9 +148,14 @@ fn cov_test_fn_separate_lines_produces_test() {
     let src = "@test\nfn test_addition() void = {\n\tassert(1 + 1 == 2);\n};";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Test && s.name == "test_addition"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Test && s.name == "test_addition"),
         "@test fn (attribute on its own line) should produce Test symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -120,9 +165,14 @@ fn cov_test_fn_single_line_produces_test() {
     let src = "@test fn test_multiply() void = {\n\tassert(2 * 3 == 6);\n};";
     let r = extract::extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Test && s.name == "test_multiply"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Test && s.name == "test_multiply"),
         "@test fn (single line) should produce Test symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -131,9 +181,14 @@ fn cov_test_fn_single_line_produces_test() {
 fn cov_export_type_struct_produces_struct() {
     let r = extract::extract("export type Rect = struct { w: i32, h: i32 };");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Rect"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct && s.name == "Rect"),
         "export type struct should produce Struct; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -146,9 +201,14 @@ fn cov_export_type_struct_produces_struct() {
 fn cov_use_statement_produces_imports() {
     let r = extract::extract("use fmt;");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "fmt"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "fmt"),
         "use statement should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -157,9 +217,14 @@ fn cov_use_statement_produces_imports() {
 fn cov_use_scoped_path_produces_imports() {
     let r = extract::extract("use hare::io;");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "hare::io"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "hare::io"),
         "scoped use should produce Imports ref with full path; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -171,6 +236,9 @@ fn cov_use_selective_import_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "selective use should produce at least one Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }

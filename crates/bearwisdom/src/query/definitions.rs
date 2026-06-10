@@ -28,26 +28,30 @@ pub fn goto_definition(db: &Database, query: &str) -> QueryResult<Vec<Definition
 
     // --- Strategy 1: exact qualified name ---
     {
-        let mut stmt = conn.prepare(
-            "SELECT name, qualified_name, kind, f.path, s.line, s.col, s.signature
+        let mut stmt = conn
+            .prepare(
+                "SELECT name, qualified_name, kind, f.path, s.line, s.col, s.signature
              FROM symbols s
              JOIN files f ON s.file_id = f.id
              WHERE s.qualified_name = ?1
              ORDER BY s.line",
-        ).context("Failed to prepare qualified name query")?;
+            )
+            .context("Failed to prepare qualified name query")?;
 
-        let rows = stmt.query_map([query], |row| {
-            Ok(DefinitionResult {
-                name: row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind: row.get(2)?,
-                file_path: row.get(3)?,
-                line: row.get(4)?,
-                col: row.get(5)?,
-                signature: row.get(6)?,
-                confidence: 1.0,
+        let rows = stmt
+            .query_map([query], |row| {
+                Ok(DefinitionResult {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                    col: row.get(5)?,
+                    signature: row.get(6)?,
+                    confidence: 1.0,
+                })
             })
-        }).context("Failed to execute qualified name query")?;
+            .context("Failed to execute qualified name query")?;
 
         for row in rows {
             results.push(row?);
@@ -64,26 +68,30 @@ pub fn goto_definition(db: &Database, query: &str) -> QueryResult<Vec<Definition
     let simple_name = query.rsplit('.').next().unwrap_or(query);
 
     {
-        let mut stmt = conn.prepare(
-            "SELECT name, qualified_name, kind, f.path, s.line, s.col, s.signature
+        let mut stmt = conn
+            .prepare(
+                "SELECT name, qualified_name, kind, f.path, s.line, s.col, s.signature
              FROM symbols s
              JOIN files f ON s.file_id = f.id
              WHERE s.name = ?1
              ORDER BY s.line",
-        ).context("Failed to prepare simple name query")?;
+            )
+            .context("Failed to prepare simple name query")?;
 
-        let rows = stmt.query_map([simple_name], |row| {
-            Ok(DefinitionResult {
-                name: row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind: row.get(2)?,
-                file_path: row.get(3)?,
-                line: row.get(4)?,
-                col: row.get(5)?,
-                signature: row.get(6)?,
-                confidence: 0.7, // lower confidence — may be ambiguous
+        let rows = stmt
+            .query_map([simple_name], |row| {
+                Ok(DefinitionResult {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                    col: row.get(5)?,
+                    signature: row.get(6)?,
+                    confidence: 0.7, // lower confidence — may be ambiguous
+                })
             })
-        }).context("Failed to execute simple name query")?;
+            .context("Failed to execute simple name query")?;
 
         for row in rows {
             results.push(row?);

@@ -40,7 +40,9 @@ pub(super) fn extract_decorators(
     for child in decorated_def_node.children(&mut cursor) {
         if child.kind() == "decorator" {
             if let Some((name, first_arg)) = parse_decorator(&child, source) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -49,9 +51,9 @@ pub(super) fn extract_decorators(
                     module: first_arg,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -169,7 +171,10 @@ mod tests {
     fn decorator_no_args_call() {
         let src = "@login_required()\ndef view():\n    pass\n";
         let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "login_required"), "refs: {dr:?}");
+        assert!(
+            dr.iter().any(|(n, _)| n == "login_required"),
+            "refs: {dr:?}"
+        );
     }
 
     #[test]
@@ -177,7 +182,10 @@ mod tests {
         let src = "@csrf_exempt\n@login_required\ndef action():\n    pass\n";
         let dr = decorator_refs(src);
         assert!(dr.iter().any(|(n, _)| n == "csrf_exempt"), "refs: {dr:?}");
-        assert!(dr.iter().any(|(n, _)| n == "login_required"), "refs: {dr:?}");
+        assert!(
+            dr.iter().any(|(n, _)| n == "login_required"),
+            "refs: {dr:?}"
+        );
     }
 
     #[test]

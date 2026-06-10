@@ -46,12 +46,10 @@ pub(super) fn extract_base_types(
                 // `type` field is the base name. Unwrap to the name node so the
                 // `Inherits` edge forms the same as a bare `: Base`.
                 let base = match base.kind() {
-                    "primary_constructor_base_type" => {
-                        match base.child_by_field_name("type") {
-                            Some(t) => t,
-                            None => continue,
-                        }
-                    }
+                    "primary_constructor_base_type" => match base.child_by_field_name("type") {
+                        Some(t) => t,
+                        None => continue,
+                    },
                     _ => base,
                 };
                 match base.kind() {
@@ -68,7 +66,9 @@ pub(super) fn extract_base_types(
                         if looks_like_interface(&name) {
                             // Don't flip first_concrete for interfaces.
                         }
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind,
@@ -77,9 +77,9 @@ pub(super) fn extract_base_types(
                             module: None,
                             chain: None,
                             byte_offset: base.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         // Also extract TypeRefs from generic type arguments in base types.
                         // e.g. `class Repo : BaseRepository<User>` → also emit TypeRef to User.
                         if base.kind() == "generic_name" {
@@ -88,7 +88,9 @@ pub(super) fn extract_base_types(
                                 if b_child.kind() == "type_argument_list" {
                                     let mut tc = b_child.walk();
                                     for arg in b_child.children(&mut tc) {
-                                        extract_type_refs_from_type_node(arg, src, source_idx, refs);
+                                        extract_type_refs_from_type_node(
+                                            arg, src, source_idx, refs,
+                                        );
                                     }
                                 }
                             }
@@ -122,7 +124,9 @@ pub(super) fn extract_type_refs_from_type_node(
         "identifier" => {
             let name = node_text(type_node, src);
             if !name.is_empty() && !is_builtin_type(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -131,16 +135,18 @@ pub(super) fn extract_type_refs_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "qualified_name" => {
             let full = node_text(type_node, src);
             let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
             if !simple.is_empty() && !is_builtin_type(&simple) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -149,9 +155,9 @@ pub(super) fn extract_type_refs_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         "generic_name" => {
@@ -163,7 +169,9 @@ pub(super) fn extract_type_refs_from_type_node(
                     "identifier" => {
                         let name = node_text(child, src);
                         if !name.is_empty() && !is_builtin_type(&name) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -172,9 +180,9 @@ pub(super) fn extract_type_refs_from_type_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "type_argument_list" => {
@@ -307,12 +315,12 @@ pub(super) fn extract_csharp_typed_params_as_symbols(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Emit a TypeRef from the param symbol to its type.
         extract_type_refs_from_type_node(type_node, src, param_idx, refs);
@@ -347,11 +355,10 @@ pub(super) fn csharp_param_type_name(node: Node, src: &[u8]) -> String {
             }
             String::new()
         }
-        "array_type" => {
-            node.child_by_field_name("type")
-                .map(|t| csharp_param_type_name(t, src))
-                .unwrap_or_default()
-        }
+        "array_type" => node
+            .child_by_field_name("type")
+            .map(|t| csharp_param_type_name(t, src))
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }

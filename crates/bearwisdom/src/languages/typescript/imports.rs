@@ -9,7 +9,13 @@ pub(super) fn push_import(
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    push_import_refs(node, src, current_symbol_count, refs, PushImportOpts::TYPESCRIPT);
+    push_import_refs(
+        node,
+        src,
+        current_symbol_count,
+        refs,
+        PushImportOpts::TYPESCRIPT,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +83,9 @@ fn push_heritage_refs(
                     i += 1;
                 }
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: target,
                 kind,

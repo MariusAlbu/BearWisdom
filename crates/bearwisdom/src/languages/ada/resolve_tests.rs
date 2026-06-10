@@ -158,7 +158,10 @@ fn receiver_field_chain_resolves_through_generic_walker() {
     let files = vec![ada_parsed_file("hw/timers.adb", RECEIVER_CHAIN_SRC)];
     let (res, id_map) = resolve_first_chain_call(&files, 0);
     let res = res.expect("This.Port.CCER should resolve through the chain walker");
-    let ccer = id_map[&("hw/timers.adb".to_string(), "Timers.Port_Type.CCER".to_string())];
+    let ccer = id_map[&(
+        "hw/timers.adb".to_string(),
+        "Timers.Port_Type.CCER".to_string(),
+    )];
     assert_eq!(
         res.target_symbol_id, ccer,
         "expected the chain to bind the CCER component"

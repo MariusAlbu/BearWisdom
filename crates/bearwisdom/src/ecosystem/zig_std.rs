@@ -15,9 +15,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::walker::WalkedFile;
@@ -29,9 +27,15 @@ const LANGUAGES: &[&str] = &["zig"];
 pub struct ZigStdEcosystem;
 
 impl Ecosystem for ZigStdEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
@@ -48,20 +52,23 @@ impl Ecosystem for ZigStdEcosystem {
         walk_std_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::zig_pkg::build_zig_symbol_index_pub(dep_roots)
     }
 }
 
 impl ExternalSourceLocator for ZigStdEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_zig_stdlib()
     }
@@ -101,7 +108,9 @@ fn probe_std_dir() -> Option<PathBuf> {
     for var in ["ZIG_LIB_DIR", "BEARWISDOM_ZIG_STDLIB"] {
         if let Ok(val) = std::env::var(var) {
             let p = PathBuf::from(val);
-            if p.is_dir() { return Some(p); }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
 
@@ -111,7 +120,9 @@ fn probe_std_dir() -> Option<PathBuf> {
             let base = PathBuf::from(val);
             for sub in ["lib/std", "lib/zig/std"] {
                 let p = base.join(sub);
-                if p.is_dir() { return Some(p); }
+                if p.is_dir() {
+                    return Some(p);
+                }
             }
         }
     }
@@ -124,7 +135,9 @@ fn probe_std_dir() -> Option<PathBuf> {
     // 4. Well-known platform paths.
     let candidates = platform_candidates();
     for p in candidates {
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     None
@@ -140,17 +153,25 @@ fn find_zig_from_path() -> Option<PathBuf> {
             let s = String::from_utf8(output.stdout).ok()?;
             let lib = PathBuf::from(s.trim());
             let std_dir = lib.join("std");
-            if std_dir.is_dir() { return Some(std_dir); }
+            if std_dir.is_dir() {
+                return Some(std_dir);
+            }
             // Some builds put it at lib root.
-            if lib.join("std.zig").is_file() { return Some(lib); }
+            if lib.join("std.zig").is_file() {
+                return Some(lib);
+            }
         }
     }
 
     // Fallback: resolve the binary via `which` and walk up to find lib/std.
-    let which_out = Command::new("which").arg("zig").output()
+    let which_out = Command::new("which")
+        .arg("zig")
+        .output()
         .or_else(|_| Command::new("where").arg("zig").output())
         .ok()?;
-    if !which_out.status.success() { return None; }
+    if !which_out.status.success() {
+        return None;
+    }
     let raw = String::from_utf8(which_out.stdout).ok()?;
     let bin_path = PathBuf::from(raw.lines().next()?.trim());
     let mut dir = bin_path.parent()?;
@@ -158,7 +179,9 @@ fn find_zig_from_path() -> Option<PathBuf> {
     for _ in 0..3 {
         for sub in ["lib/std", "lib/zig/std"] {
             let p = dir.join(sub);
-            if p.is_dir() { return Some(p); }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
         dir = dir.parent()?;
     }
@@ -208,22 +231,36 @@ fn walk_std_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 fn walk_dir(dir: &Path, root: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     // depth 0 = std/, depth 1 = std/fs/ — at most one level of subdirectory.
     // depth 2 would be std/fs/sub/ which is deeper than needed.
-    if depth > 1 { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 1 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "debug") { continue; }
-                if name.starts_with('.') { continue; }
+                if matches!(name, "test" | "tests" | "debug") {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, root, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".zig") { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".zig") {
+                continue;
+            }
             // Skip test files (test_*.zig, *_test.zig).
-            if name.starts_with("test_") || name.ends_with("_test.zig") { continue; }
+            if name.starts_with("test_") || name.ends_with("_test.zig") {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(r) => r.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -272,12 +309,16 @@ mod tests {
     fn make_synthetic_stdlib(tmp: &Path) {
         // std/mem.zig
         let mem = tmp.join("mem.zig");
-        std::fs::write(&mem, "\
+        std::fs::write(
+            &mem,
+            "\
 pub const Allocator = struct {};\n\
 pub const Alignment = u29;\n\
 pub fn alloc(a: *Allocator, n: usize) ![]u8 { _ = a; _ = n; return error.OutOfMemory; }\n\
 pub fn copy(comptime T: type, dest: []T, src: []const T) void { _ = dest; _ = src; }\n\
-").unwrap();
+",
+        )
+        .unwrap();
 
         // std/fs.zig
         let fs = tmp.join("fs.zig");
@@ -290,26 +331,38 @@ pub fn openFileAbsolute(path: []const u8, flags: File.OpenFlags) !File { _ = pat
 
         // std/array_list.zig (ArrayList lives here in the real stdlib)
         let al = tmp.join("array_list.zig");
-        std::fs::write(&al, "\
+        std::fs::write(
+            &al,
+            "\
 pub fn ArrayList(comptime T: type) type { _ = T; return struct{}; }\n\
 pub fn ArrayListUnmanaged(comptime T: type) type { _ = T; return struct{}; }\n\
-").unwrap();
+",
+        )
+        .unwrap();
 
         // std/io.zig
         let io = tmp.join("io.zig");
-        std::fs::write(&io, "\
+        std::fs::write(
+            &io,
+            "\
 pub const Writer = struct {};\n\
 pub const Reader = struct {};\n\
 pub fn getStdOut() Writer { return .{}; }\n\
-").unwrap();
+",
+        )
+        .unwrap();
 
         // std/fs/ subdirectory (depth-1 check)
         std::fs::create_dir_all(tmp.join("fs")).unwrap();
         let fs_file = tmp.join("fs").join("file.zig");
-        std::fs::write(&fs_file, "\
+        std::fs::write(
+            &fs_file,
+            "\
 pub const OpenFlags = struct {};\n\
 pub const CreateFlags = struct {};\n\
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
@@ -344,7 +397,9 @@ pub const CreateFlags = struct {};\n\
             "array_list.zig missing"
         );
         assert!(
-            rel_paths.iter().any(|p| p.contains("fs/file.zig") || p.contains("fs\\file.zig")),
+            rel_paths
+                .iter()
+                .any(|p| p.contains("fs/file.zig") || p.contains("fs\\file.zig")),
             "fs/file.zig (depth-1 submodule) missing; got: {rel_paths:?}"
         );
 
@@ -427,8 +482,14 @@ pub const CreateFlags = struct {};\n\
             .collect();
 
         assert!(names.contains(&"mem.zig"), "mem.zig should be included");
-        assert!(!names.contains(&"test_mem.zig"), "test_mem.zig should be excluded");
-        assert!(!names.contains(&"deep.zig"), "depth-3 file should be excluded");
+        assert!(
+            !names.contains(&"test_mem.zig"),
+            "test_mem.zig should be excluded"
+        );
+        assert!(
+            !names.contains(&"deep.zig"),
+            "depth-3 file should be excluded"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

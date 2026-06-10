@@ -65,13 +65,15 @@ pub fn auto_assign_concepts(db: &Database) -> QueryResult<u32> {
 
     // Fetch all concepts that have an auto_pattern.
     let patterns: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, auto_pattern FROM concepts WHERE auto_pattern IS NOT NULL"
-        ).context("Failed to prepare concept pattern query")?;
+        let mut stmt = conn
+            .prepare("SELECT id, auto_pattern FROM concepts WHERE auto_pattern IS NOT NULL")
+            .context("Failed to prepare concept pattern query")?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        }).context("Failed to execute concept pattern query")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .context("Failed to execute concept pattern query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect concept patterns")?
@@ -91,13 +93,15 @@ pub fn auto_assign_concepts(db: &Database) -> QueryResult<u32> {
 
         // Find all symbols whose qualified_name starts with this prefix.
         // INSERT OR IGNORE skips symbols that are already assigned.
-        let inserted = conn.execute(
-            "INSERT OR IGNORE INTO concept_members (concept_id, symbol_id, auto_assigned)
+        let inserted = conn
+            .execute(
+                "INSERT OR IGNORE INTO concept_members (concept_id, symbol_id, auto_assigned)
              SELECT ?1, id, 1
              FROM symbols
              WHERE qualified_name LIKE ?2 ESCAPE '\\'",
-            rusqlite::params![concept_id, format!("{prefix}%")],
-        ).with_context(|| format!("Failed to auto-assign concept {concept_id}"))?;
+                rusqlite::params![concept_id, format!("{prefix}%")],
+            )
+            .with_context(|| format!("Failed to auto-assign concept {concept_id}"))?;
 
         inserted_total += inserted as u32;
     }
@@ -110,8 +114,9 @@ pub fn list_concepts(db: &Database) -> QueryResult<Vec<ConceptSummary>> {
     let _timer = db.timer("list_concepts");
     let conn = db.conn();
 
-    let mut stmt = conn.prepare(
-        "SELECT c.id,
+    let mut stmt = conn
+        .prepare(
+            "SELECT c.id,
                 c.name,
                 c.description,
                 c.auto_pattern,
@@ -120,19 +125,23 @@ pub fn list_concepts(db: &Database) -> QueryResult<Vec<ConceptSummary>> {
          LEFT JOIN concept_members cm ON cm.concept_id = c.id
          GROUP BY c.id
          ORDER BY c.name",
-    ).context("Failed to prepare list_concepts query")?;
+        )
+        .context("Failed to prepare list_concepts query")?;
 
-    let rows = stmt.query_map([], |row| {
-        Ok(ConceptSummary {
-            id:           row.get(0)?,
-            name:         row.get(1)?,
-            description:  row.get(2)?,
-            auto_pattern: row.get(3)?,
-            member_count: row.get(4)?,
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ConceptSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                auto_pattern: row.get(3)?,
+                member_count: row.get(4)?,
+            })
         })
-    }).context("Failed to execute list_concepts query")?;
+        .context("Failed to execute list_concepts query")?;
 
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect concept list")?)
 }
 
@@ -147,7 +156,11 @@ pub fn concept_members(
     let _timer = db.timer("concept_members");
     let conn = db.conn();
 
-    let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
+    let limit_clause = if limit > 0 {
+        format!("LIMIT {limit}")
+    } else {
+        String::new()
+    };
 
     let sql = format!(
         "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
@@ -160,20 +173,24 @@ pub fn concept_members(
          {limit_clause}"
     );
 
-    let mut stmt = conn.prepare(&sql)
+    let mut stmt = conn
+        .prepare(&sql)
         .context("Failed to prepare concept_members query")?;
 
-    let rows = stmt.query_map([concept_name], |row| {
-        Ok(SymbolSummary {
-            name:           row.get(0)?,
-            qualified_name: row.get(1)?,
-            kind:           row.get(2)?,
-            file_path:      row.get(3)?,
-            line:           row.get(4)?,
+    let rows = stmt
+        .query_map([concept_name], |row| {
+            Ok(SymbolSummary {
+                name: row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
+                line: row.get(4)?,
+            })
         })
-    }).context("Failed to execute concept_members query")?;
+        .context("Failed to execute concept_members query")?;
 
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect concept members")?)
 }
 
@@ -191,27 +208,28 @@ pub fn concept_subgraph(
     // Quick check: does the concept have any members?
     // We use this to avoid running the heavier export_graph when there is nothing to return.
     let conn = db.conn();
-    let member_count: u32 = conn.query_row(
-        "SELECT COUNT(*) FROM concept_members cm
+    let member_count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM concept_members cm
          JOIN concepts c ON c.id = cm.concept_id
          WHERE c.name = ?1",
-        [concept_name],
-        |r| r.get(0),
-    ).context("Failed to count concept members for subgraph")?;
+            [concept_name],
+            |r| r.get(0),
+        )
+        .context("Failed to count concept members for subgraph")?;
 
     if member_count == 0 {
-        return Ok(SubgraphResult { nodes: vec![], edges: vec![] });
+        return Ok(SubgraphResult {
+            nodes: vec![],
+            edges: vec![],
+        });
     }
 
     // A generous node cap: max_depth * 1000 or at least 500.
     let node_cap = (max_depth as usize * 1000).max(500);
 
     // Use the subgraph exporter with the "@concept_name" filter.
-    crate::query::subgraph::export_graph(
-        db,
-        Some(&format!("@{concept_name}")),
-        node_cap,
-    )
+    crate::query::subgraph::export_graph(db, Some(&format!("@{concept_name}")), node_cap)
 }
 
 /// Groups symbols by the first 2 directory segments of their file path and
@@ -314,17 +332,20 @@ pub fn discover_concepts(db: &Database) -> QueryResult<Vec<String>> {
     // The WHERE clause ensures we only process names with at least two dots
     // (three components).
     let prefixes: Vec<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT
                  substr(qualified_name, 1,
                      instr(qualified_name, '.') +
                      instr(substr(qualified_name, instr(qualified_name, '.') + 1), '.') - 1
                  ) AS prefix
              FROM symbols
              WHERE qualified_name LIKE '%.%.%'",
-        ).context("Failed to prepare prefix discovery query")?;
+            )
+            .context("Failed to prepare prefix discovery query")?;
 
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
             .context("Failed to execute prefix discovery query")?;
 
         rows.filter_map(|r| r.ok())
@@ -338,11 +359,13 @@ pub fn discover_concepts(db: &Database) -> QueryResult<Vec<String>> {
         let auto_pattern = format!("{prefix}.*");
 
         // Insert only if the concept doesn't already exist.
-        let rows_affected = conn.execute(
-            "INSERT OR IGNORE INTO concepts (name, auto_pattern, created_at)
+        let rows_affected = conn
+            .execute(
+                "INSERT OR IGNORE INTO concepts (name, auto_pattern, created_at)
              VALUES (?1, ?2, strftime('%s', 'now'))",
-            rusqlite::params![prefix, auto_pattern],
-        ).with_context(|| format!("Failed to insert concept '{prefix}'"))?;
+                rusqlite::params![prefix, auto_pattern],
+            )
+            .with_context(|| format!("Failed to insert concept '{prefix}'"))?;
 
         if rows_affected > 0 {
             created.push(prefix.clone());

@@ -22,8 +22,8 @@ pub mod common;
 pub mod registry;
 pub mod string_dsl;
 
-use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 
 // Re-export the shared utility from common so existing callers using
 // `crate::languages::emit_chain_type_ref` continue to work without changes.
@@ -66,7 +66,11 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Returning `None` is equivalent to "this extension is not mine" — the
     /// registry falls back to the next plugin claiming the same extension.
     fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
-        if self.extensions().iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+        if self
+            .extensions()
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(ext))
+        {
             // Default to the first declared `language_ids` entry — that's
             // what the registry's `by_lang_id` is keyed on. Falling back to
             // `self.id()` (as the previous default did) silently routed
@@ -77,7 +81,10 @@ pub trait LanguagePlugin: Send + Sync + 'static {
             // splits .c vs .cpp — must override this method to pick per
             // extension; the default is for single-id plugins where any
             // member of the list is correct.
-            self.language_ids().first().copied().or_else(|| Some(self.id()))
+            self.language_ids()
+                .first()
+                .copied()
+                .or_else(|| Some(self.id()))
         } else {
             None
         }
@@ -199,11 +206,15 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 
     /// Node kinds that SHOULD produce symbols, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
 
     /// Node kinds that SHOULD produce refs/edges, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
 
     /// Language-intrinsic names: keywords, operators, compiler intrinsics,
     /// primitive types without indexable source, syntax literals, and
@@ -213,7 +224,9 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// the TypeRef denominator. Never includes stdlib function names,
     /// framework DSL names, or package-API names — those come from indexed
     /// ecosystems.
-    fn keywords(&self) -> &'static [&'static str] { &[] }
+    fn keywords(&self) -> &'static [&'static str] {
+        &[]
+    }
 
     /// File-pairing rule: given a file path this plugin claims, return the
     /// companion file whose imports should be merged in when resolving refs
@@ -242,7 +255,9 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// count the outermost call. Declaring `("apply_expression", "apply_expression")`
     /// here tells the coverage walker to skip inner apply nodes whose parent is also
     /// an apply.
-    fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] { &[] }
+    fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] {
+        &[]
+    }
 
     /// Return the language profile for this plugin, if one is defined.
     ///
@@ -267,8 +282,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// behaviour return `None` and the engine binds a no-op default.
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         None
     }
 
@@ -287,7 +301,8 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _db: &crate::db::Database,
         _project_root: &std::path::Path,
         _ctx: &crate::indexer::project_context::ProjectContext,
-    ) {}
+    ) {
+    }
 
     /// Contribute reachability entry-points for this language. Each row
     /// names a symbol that anchors the dead-code BFS — `main`, exported
@@ -347,7 +362,6 @@ pub mod bash;
 pub mod bicep;
 pub mod blade;
 pub mod c_lang;
-mod generic;
 pub mod cmake;
 pub mod crontab;
 pub mod csharp;
@@ -358,9 +372,10 @@ pub mod ejs;
 pub mod elixir;
 pub mod erb;
 pub mod freemarker;
+mod generic;
+pub mod gleam;
 pub mod go;
 pub mod gotemplate;
-pub mod gleam;
 pub mod graphql;
 pub mod gsp;
 pub mod haml;
@@ -406,10 +421,10 @@ pub mod shakespeare;
 pub mod slim;
 pub mod smarty;
 pub mod sql;
-pub mod systemd;
 pub mod starlark;
 pub mod svelte;
 pub mod swift;
+pub mod systemd;
 pub mod templ;
 pub mod thymeleaf;
 pub mod twig;
@@ -431,12 +446,12 @@ pub mod matlab;
 pub mod ocaml;
 pub mod vbnet;
 // --- Wave 7 plugins (SO 2025 top languages) ---
-pub mod powershell;
-pub mod groovy;
-pub mod perl;
 pub mod erlang;
 pub mod fsharp;
 pub mod gdscript;
+pub mod groovy;
+pub mod perl;
+pub mod powershell;
 
 static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     // The generic plugin handles any language with a tree-sitter grammar
@@ -570,7 +585,6 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
 pub fn default_registry() -> &'static LanguageRegistry {
     &DEFAULT_REGISTRY
 }
-
 
 // collect_plugin_connectors / drive_connector / drive_connector_incremental
 // removed — all `impl Connector for X` blocks across language plugins were

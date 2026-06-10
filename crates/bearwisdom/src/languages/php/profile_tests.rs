@@ -28,21 +28,49 @@ fn php_profile_self_keywords_cover_receiver_forms() {
 #[test]
 fn php_calls_accepts_function_method_constructor() {
     let t = PHP_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Method));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Constructor));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Method
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Constructor
+    ));
 }
 
 #[test]
 fn php_implements_accepts_interface_only() {
     let t = PHP_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Interface));
-    assert!(!KindCompatibility::check(t, EdgeKind::Implements, SymbolKind::Class));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Interface
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Implements,
+        SymbolKind::Class
+    ));
 }
 
 #[test]
 fn php_instantiates_accepts_class_only() {
     let t = PHP_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Class));
-    assert!(!KindCompatibility::check(t, EdgeKind::Instantiates, SymbolKind::Interface));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Instantiates,
+        SymbolKind::Class
+    ));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Instantiates,
+        SymbolKind::Interface
+    ));
 }

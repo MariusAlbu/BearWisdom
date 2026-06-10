@@ -9,17 +9,17 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use bearwisdom::{
-    ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
-    PackageStats, PatternMatch, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
-    WorkspaceGraphEdge, WorkspaceOverview,
-};
 use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
 use bearwisdom::query::dead_code::{DeadCodeReport, EntryPointKind, EntryPointsReport};
 use bearwisdom::query::diagnostics::{FileDiagnostics, WorkspaceDiagnostics};
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::types::ReferenceResult;
+use bearwisdom::{
+    ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
+    PackageStats, PatternMatch, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
+    WorkspaceGraphEdge, WorkspaceOverview,
+};
 
 // ---------------------------------------------------------------------------
 // Core formatter
@@ -56,7 +56,11 @@ impl CompactFormatter {
     /// Construct a formatter sized for `n` expected results. Inline mode is
     /// chosen automatically when `n == 1`.
     fn for_count(n: usize) -> Self {
-        if n == 1 { Self::new_inline() } else { Self::new() }
+        if n == 1 {
+            Self::new_inline()
+        } else {
+            Self::new()
+        }
     }
 
     /// Register a file path and return its compact ID (e.g. "F1") — or, in
@@ -141,7 +145,11 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
     // Languages
     body.push_str("#languages\n");
     for l in &overview.languages {
-        let _ = writeln!(body, "{}|{}files|{}sym", l.language, l.file_count, l.symbol_count);
+        let _ = writeln!(
+            body,
+            "{}|{}files|{}sym",
+            l.language, l.file_count, l.symbol_count
+        );
     }
 
     // Routes
@@ -152,10 +160,18 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
             let line = r.line.map_or(String::new(), |l| format!(":{l}"));
             match &r.handler {
                 Some(h) if !h.is_empty() => {
-                    let _ = writeln!(body, "{} {}→{}|{}{}", r.http_method, r.route_template, h, fr, line);
+                    let _ = writeln!(
+                        body,
+                        "{} {}→{}|{}{}",
+                        r.http_method, r.route_template, h, fr, line
+                    );
                 }
                 _ => {
-                    let _ = writeln!(body, "{} {}|{}{}", r.http_method, r.route_template, fr, line);
+                    let _ = writeln!(
+                        body,
+                        "{} {}|{}{}",
+                        r.http_method, r.route_template, fr, line
+                    );
                 }
             }
         }
@@ -166,7 +182,11 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
         body.push_str("\n#hotspots\n");
         for h in &overview.hotspots {
             let fr = f.fref(&h.file_path);
-            let _ = writeln!(body, "{}|{}|{}|refs:{}", h.name, h.kind, fr, h.incoming_refs);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}|refs:{}",
+                h.name, h.kind, fr, h.incoming_refs
+            );
         }
     }
 
@@ -199,10 +219,18 @@ pub fn search(results: &[SearchResult], requested_limit: usize) -> String {
     body.push_str("#results\n");
     for r in results {
         let fr = f.fref(&r.file_path);
-        let _ = writeln!(body, "{}|{}|{}:{}|{:.2}", r.name, r.kind, fr, r.start_line, r.score);
+        let _ = writeln!(
+            body,
+            "{}|{}|{}:{}|{:.2}",
+            r.name, r.kind, fr, r.start_line, r.score
+        );
     }
 
-    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let meta = meta_with_truncation(
+        format!("count:{}", results.len()),
+        results.len(),
+        requested_limit,
+    );
     let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
@@ -223,7 +251,11 @@ pub fn grep(results: &[GrepMatch], requested_limit: usize) -> String {
         let _ = writeln!(body, "{}:{}|{}", fr, m.line_number, m.line_content);
     }
 
-    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let meta = meta_with_truncation(
+        format!("count:{}", results.len()),
+        results.len(),
+        requested_limit,
+    );
     let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
@@ -244,7 +276,13 @@ pub fn symbol_info(results: &[SymbolDetail]) -> String {
         let _ = write!(
             body,
             "{}|{}|{}:{}-{}|in:{}|out:{}",
-            s.name, s.kind, fr, s.start_line, s.end_line, s.incoming_edge_count, s.outgoing_edge_count
+            s.name,
+            s.kind,
+            fr,
+            s.start_line,
+            s.end_line,
+            s.incoming_edge_count,
+            s.outgoing_edge_count
         );
         if let Some(v) = &s.visibility {
             let _ = write!(body, "|{v}");
@@ -292,7 +330,11 @@ pub fn references(results: &[ReferenceResult], requested_limit: usize) -> String
         );
     }
 
-    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let meta = meta_with_truncation(
+        format!("count:{}", results.len()),
+        results.len(),
+        requested_limit,
+    );
     let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
@@ -312,7 +354,11 @@ pub fn call_hierarchy(results: &[CallHierarchyItem], requested_limit: usize) -> 
         let _ = writeln!(body, "{}", fmt_call_item(&mut f, c));
     }
 
-    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let meta = meta_with_truncation(
+        format!("count:{}", results.len()),
+        results.len(),
+        requested_limit,
+    );
     let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
@@ -357,7 +403,11 @@ pub fn blast_radius(result: &BlastRadiusResult) -> String {
     body.push_str("\n#affected\n");
     for a in &result.affected {
         let fr = f.fref(&a.file_path);
-        let _ = write!(body, "{}|{}|{}|d{}|{}", a.name, a.kind, fr, a.depth, a.edge_kind);
+        let _ = write!(
+            body,
+            "{}|{}|{}|d{}|{}",
+            a.name, a.kind, fr, a.depth, a.edge_kind
+        );
         if let Some(pkg) = &a.package {
             let _ = write!(body, "|pkg:{pkg}");
         }
@@ -385,7 +435,11 @@ pub fn investigate(result: &InvestigateResult) -> String {
     // Symbol
     body.push_str("#symbol\n");
     let fr = f.fref(&result.symbol.file_path);
-    let _ = write!(body, "{}|{}|{}:{}", result.symbol.name, result.symbol.kind, fr, result.symbol.line);
+    let _ = write!(
+        body,
+        "{}|{}|{}:{}",
+        result.symbol.name, result.symbol.kind, fr, result.symbol.line
+    );
     if let Some(sig) = &result.symbol.signature {
         let _ = write!(body, "\n  sig: {sig}");
     }
@@ -413,7 +467,11 @@ pub fn investigate(result: &InvestigateResult) -> String {
         let _ = writeln!(body, "total:{}", br.total_affected);
         for a in &br.affected {
             let afr = f.fref(&a.file_path);
-            let _ = write!(body, "{}|{}|{}|d{}|{}", a.name, a.kind, afr, a.depth, a.edge_kind);
+            let _ = write!(
+                body,
+                "{}|{}|{}|d{}|{}",
+                a.name, a.kind, afr, a.depth, a.edge_kind
+            );
             if let Some(pkg) = &a.package {
                 let _ = write!(body, "|pkg:{pkg}");
             }
@@ -443,7 +501,11 @@ pub fn smart_context(result: &SmartContextResult) -> String {
     body.push_str("#symbols\n");
     for s in &result.symbols {
         let fr = f.fref(&s.file_path);
-        let _ = writeln!(body, "{}|{}|{}:{}|{:.2}|{}", s.name, s.kind, fr, s.line, s.score, s.reason);
+        let _ = writeln!(
+            body,
+            "{}|{}|{}:{}|{:.2}|{}",
+            s.name, s.kind, fr, s.line, s.score, s.reason
+        );
     }
 
     // Key files
@@ -601,7 +663,12 @@ pub fn packages(results: &[PackageStats]) -> String {
     for p in results {
         let kind = p.kind.as_deref().unwrap_or("-");
         let resolution = match p.resolved_pct {
-            Some(pct) => format!("|resolved:{:.1}%({}/{})", pct * 100.0, p.resolved_refs, p.resolved_refs + p.unresolved_refs),
+            Some(pct) => format!(
+                "|resolved:{:.1}%({}/{})",
+                pct * 100.0,
+                p.resolved_refs,
+                p.resolved_refs + p.unresolved_refs
+            ),
             None => String::new(),
         };
         let _ = writeln!(
@@ -632,7 +699,11 @@ pub fn workspace(overview: &WorkspaceOverview) -> String {
         body.push_str("\n#shared_hotspots\n");
         for h in &overview.shared_hotspots {
             let fr = f.fref(&h.file_path);
-            let _ = writeln!(body, "{}|{}|{}|refs:{}", h.name, h.kind, fr, h.incoming_refs);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}|refs:{}",
+                h.name, h.kind, fr, h.incoming_refs
+            );
         }
     }
 
@@ -694,12 +765,7 @@ pub fn pattern(results: &[PatternMatch], requested_limit: usize) -> String {
     for m in results {
         let fr = f.fref(&m.file_path);
         // Snippet may contain newlines — replace with spaces so it stays one row.
-        let snippet_one_line: String = m
-            .snippet
-            .replace('\n', " ")
-            .chars()
-            .take(120)
-            .collect();
+        let snippet_one_line: String = m.snippet.replace('\n', " ").chars().take(120).collect();
         let cap = if m.capture_name.is_empty() {
             String::new()
         } else {
@@ -712,7 +778,11 @@ pub fn pattern(results: &[PatternMatch], requested_limit: usize) -> String {
         );
     }
 
-    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let meta = meta_with_truncation(
+        format!("count:{}", results.len()),
+        results.len(),
+        requested_limit,
+    );
     let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
@@ -785,28 +855,44 @@ pub fn quality_check(rb: &ResolutionBreakdown) -> String {
     if !rb.unresolved_by_origin_language.is_empty() {
         body.push_str("\n#unresolved_by_origin_lang\n");
         for (lang, count) in &rb.unresolved_by_origin_language {
-            let key = if lang.is_empty() { "<host>" } else { lang.as_str() };
+            let key = if lang.is_empty() {
+                "<host>"
+            } else {
+                lang.as_str()
+            };
             let _ = writeln!(body, "{key}|{count}");
         }
     }
     if !rb.unresolved_by_package.is_empty() {
         body.push_str("\n#unresolved_by_package\n");
         for (pkg, count) in &rb.unresolved_by_package {
-            let key = if pkg.is_empty() { "<no_pkg>" } else { pkg.as_str() };
+            let key = if pkg.is_empty() {
+                "<no_pkg>"
+            } else {
+                pkg.as_str()
+            };
             let _ = writeln!(body, "{key}|{count}");
         }
     }
     if !rb.resolved_by_strategy.is_empty() {
         body.push_str("\n#resolved_by_strategy\n");
         for (strategy, count) in &rb.resolved_by_strategy {
-            let key = if strategy.is_empty() { "<unknown>" } else { strategy.as_str() };
+            let key = if strategy.is_empty() {
+                "<unknown>"
+            } else {
+                strategy.as_str()
+            };
             let _ = writeln!(body, "{key}|{count}");
         }
     }
     if !rb.top_unresolved_targets.is_empty() {
         body.push_str("\n#top_unresolved\n");
         for t in &rb.top_unresolved_targets {
-            let _ = writeln!(body, "{}|{}|{}|{}", t.target_name, t.language, t.kind, t.count);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}|{}",
+                t.target_name, t.language, t.kind, t.count
+            );
         }
     }
 

@@ -69,10 +69,7 @@ impl ChangeSet {
 /// Used for the first index or a forced rebuild.  `pre_walked` allows callers
 /// to supply an already-walked file list (e.g. from profile scanning) to skip
 /// a redundant directory traversal.
-pub fn full_scan(
-    project_root: &Path,
-    pre_walked: Option<Vec<WalkedFile>>,
-) -> Result<ChangeSet> {
+pub fn full_scan(project_root: &Path, pre_walked: Option<Vec<WalkedFile>>) -> Result<ChangeSet> {
     let mut files = match pre_walked {
         Some(f) => {
             info!("Using pre-walked file list ({} files)", f.len());
@@ -119,12 +116,17 @@ pub fn full_scan(
     // handles unresolved refs gracefully, and the user sees all of
     // their project rather than a build-config-determined slice.
     if let Some(tu_set) = crate::ecosystem::compile_commands::tu_file_set(project_root) {
-        let total_sources = files.iter().filter(|w| is_c_or_cpp_source(&w.relative_path)).count();
+        let total_sources = files
+            .iter()
+            .filter(|w| is_c_or_cpp_source(&w.relative_path))
+            .count();
         let proposed_drops: Vec<usize> = files
             .iter()
             .enumerate()
             .filter(|(_, w)| {
-                if !is_c_or_cpp_source(&w.relative_path) { return false }
+                if !is_c_or_cpp_source(&w.relative_path) {
+                    return false;
+                }
                 let canonical = w
                     .absolute_path
                     .canonicalize()
@@ -159,7 +161,13 @@ pub fn full_scan(
             files = files
                 .into_iter()
                 .enumerate()
-                .filter_map(|(idx, w)| if drop_set.contains(&idx) { None } else { Some(w) })
+                .filter_map(|(idx, w)| {
+                    if drop_set.contains(&idx) {
+                        None
+                    } else {
+                        Some(w)
+                    }
+                })
                 .collect();
             info!(
                 "FullScan: TU allowlist dropped {} C/C++ source file(s) absent from compile_commands.json",
@@ -325,10 +333,7 @@ pub fn hash_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
 ///
 /// This is the fast path — no tree walk, no hashing.  The caller supplies
 /// exactly which files changed and how.
-pub fn from_file_events(
-    project_root: &Path,
-    changes: &[FileChangeEvent],
-) -> Result<ChangeSet> {
+pub fn from_file_events(project_root: &Path, changes: &[FileChangeEvent]) -> Result<ChangeSet> {
     let mut changeset = ChangeSet::default();
 
     for change in changes {
@@ -341,10 +346,7 @@ pub fn from_file_events(
 
                 // Race: file deleted between watcher event and reindex.
                 if !abs_path.exists() {
-                    debug!(
-                        "File no longer exists, skipping: {}",
-                        change.relative_path
-                    );
+                    debug!("File no longer exists, skipping: {}", change.relative_path);
                     continue;
                 }
 
@@ -537,10 +539,7 @@ fn apply_diff_line(line: &str, project_root: &Path, changeset: &mut ChangeSet) {
 /// Add working-tree changes to the changeset:
 ///   1. Tracked files modified or deleted vs HEAD (`git diff --name-status HEAD`).
 ///   2. Untracked files honoring .gitignore (`git ls-files --others --exclude-standard`).
-fn apply_working_tree_changes(
-    project_root: &Path,
-    changeset: &mut ChangeSet,
-) -> Result<()> {
+fn apply_working_tree_changes(project_root: &Path, changeset: &mut ChangeSet) -> Result<()> {
     // Tracked working-tree changes.
     let diff_output = std::process::Command::new("git")
         .args(["diff", "--name-status", "--no-renames", "HEAD"])
@@ -620,9 +619,13 @@ fn deduplicate_changeset(cs: &mut ChangeSet) {
 
     // Pass 2: when a path appears in both `added` and `modified`, prefer
     // `modified` (working-tree edit on top of a committed add).
-    let modified_paths: HashSet<String> =
-        cs.modified.iter().map(|w| w.relative_path.clone()).collect();
-    cs.added.retain(|w| !modified_paths.contains(&w.relative_path));
+    let modified_paths: HashSet<String> = cs
+        .modified
+        .iter()
+        .map(|w| w.relative_path.clone())
+        .collect();
+    cs.added
+        .retain(|w| !modified_paths.contains(&w.relative_path));
 
     // Pass 3: a live add/mod always supersedes a stale delete.
     let live_paths: HashSet<String> = cs

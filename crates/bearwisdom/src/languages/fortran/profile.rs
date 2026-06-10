@@ -7,10 +7,7 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::{EdgeKind, SymbolKind};
 
 const FORTRAN_KIND_TABLE: KindTable = &[
-    (
-        EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method],
-    ),
+    (EdgeKind::Calls, &[SymbolKind::Function, SymbolKind::Method]),
     (EdgeKind::TypeRef, &[SymbolKind::Struct, SymbolKind::Module]),
 ];
 
@@ -70,7 +67,8 @@ pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
@@ -80,7 +78,7 @@ pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup: true,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

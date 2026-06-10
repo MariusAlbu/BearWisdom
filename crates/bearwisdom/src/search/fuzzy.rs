@@ -34,8 +34,14 @@ pub struct FuzzyMatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FuzzyMetadata {
-    File { language: String },
-    Symbol { kind: String, file_path: String, line: u32 },
+    File {
+        language: String,
+    },
+    Symbol {
+        kind: String,
+        file_path: String,
+        line: u32,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +70,9 @@ impl FuzzyIndex {
             .context("Failed to prepare files query for FuzzyIndex")?;
 
         let file_entries: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .context("Failed to query files for FuzzyIndex")?
             .collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect file entries")?;
@@ -99,7 +107,10 @@ impl FuzzyIndex {
             "FuzzyIndex loaded"
         );
 
-        Ok(Self { file_entries, symbol_entries })
+        Ok(Self {
+            file_entries,
+            symbol_entries,
+        })
     }
 
     /// Fuzzy-match file paths against `pattern`.
@@ -112,13 +123,11 @@ impl FuzzyIndex {
 
         // Use path-aware config: bonus for path separators.
         let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
-        let pat =
-            Pattern::parse(pattern, CaseMatching::Smart, Normalization::Smart);
+        let pat = Pattern::parse(pattern, CaseMatching::Smart, Normalization::Smart);
 
         // match_list returns Vec<(&str, u16)> sorted by score descending.
         // We need the indices too, so we score first then re-run for indices.
-        let candidates: Vec<&str> =
-            self.file_entries.iter().map(|(p, _)| p.as_str()).collect();
+        let candidates: Vec<&str> = self.file_entries.iter().map(|(p, _)| p.as_str()).collect();
 
         let scored = pat.match_list(candidates, &mut matcher);
 
@@ -158,11 +167,13 @@ impl FuzzyIndex {
         }
 
         let mut matcher = Matcher::new(Config::DEFAULT);
-        let pat =
-            Pattern::parse(pattern, CaseMatching::Smart, Normalization::Smart);
+        let pat = Pattern::parse(pattern, CaseMatching::Smart, Normalization::Smart);
 
-        let candidates: Vec<&str> =
-            self.symbol_entries.iter().map(|(n, _, _, _)| n.as_str()).collect();
+        let candidates: Vec<&str> = self
+            .symbol_entries
+            .iter()
+            .map(|(n, _, _, _)| n.as_str())
+            .collect();
 
         let scored = pat.match_list(candidates, &mut matcher);
 
@@ -170,10 +181,7 @@ impl FuzzyIndex {
             .into_iter()
             .take(limit)
             .filter_map(|(qname, score)| {
-                let entry = self
-                    .symbol_entries
-                    .iter()
-                    .find(|(n, _, _, _)| n == qname)?;
+                let entry = self.symbol_entries.iter().find(|(n, _, _, _)| n == qname)?;
 
                 let (_, kind, file_path, line) = entry;
                 let indices = extract_indices(qname, pattern, false);

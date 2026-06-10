@@ -24,7 +24,14 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Sym
     }
 }
 
-fn sym_sig(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>, sig: &str) -> SymbolInfo {
+fn sym_sig(
+    id: i64,
+    name: &str,
+    qname: &str,
+    kind: &str,
+    scope: Option<&str>,
+    sig: &str,
+) -> SymbolInfo {
     SymbolInfo {
         signature: Some(sig.to_string()),
         ..sym(id, name, qname, kind, scope)
@@ -41,28 +48,84 @@ fn overload_selected_by_arity() {
     let svc = arena.class("Svc");
     let mut index = MembersIndex::new();
     // Two `process` overloads on the same type, distinct arities.
-    index.add_direct(svc, sym_sig(1, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
-    index.add_direct(svc, sym_sig(2, "process", "Svc.process", "method", Some("Svc"), "process(x, y)"));
+    index.add_direct(
+        svc,
+        sym_sig(
+            1,
+            "process",
+            "Svc.process",
+            "method",
+            Some("Svc"),
+            "process(x)",
+        ),
+    );
+    index.add_direct(
+        svc,
+        sym_sig(
+            2,
+            "process",
+            "Svc.process",
+            "method",
+            Some("Svc"),
+            "process(x, y)",
+        ),
+    );
     let graph = empty_supertypes();
 
     let two = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(2), None)
+        .lookup_with_binding(
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            Some(2),
+            None,
+        )
         .expect("hit");
     assert_eq!(two.0.id, 2, "two args should pick the two-param overload");
 
     let one = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1), None)
+        .lookup_with_binding(
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            Some(1),
+            None,
+        )
         .expect("hit");
     assert_eq!(one.0.id, 1, "one arg should pick the one-param overload");
 
     // Unknown arity, and an arity that matches no overload, both fall back to
     // the first declared — the pre-arity behavior.
     let unknown = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, None, None)
+        .lookup_with_binding(
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            None,
+            None,
+        )
         .expect("hit");
     assert_eq!(unknown.0.id, 1);
     let no_match = index
-        .lookup_with_binding(svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(3), None)
+        .lookup_with_binding(
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            Some(3),
+            None,
+        )
         .expect("hit");
     assert_eq!(no_match.0.id, 1);
 }
@@ -140,11 +203,43 @@ fn overload_selected_by_arg_type() {
     let str_ty = arena.primitive(PrimKind::Str);
     let mut index = MembersIndex::new();
     // Two same-arity `process` overloads, distinguished only by parameter type.
-    index.add_direct(svc, sym_sig(1, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
-    index.add_direct(svc, sym_sig(2, "process", "Svc.process", "method", Some("Svc"), "process(x)"));
+    index.add_direct(
+        svc,
+        sym_sig(
+            1,
+            "process",
+            "Svc.process",
+            "method",
+            Some("Svc"),
+            "process(x)",
+        ),
+    );
+    index.add_direct(
+        svc,
+        sym_sig(
+            2,
+            "process",
+            "Svc.process",
+            "method",
+            Some("Svc"),
+            "process(x)",
+        ),
+    );
     let mut symbol_types = SymbolTypeMap::new();
-    symbol_types.insert(1, SymbolTypeData { param_types: vec![int_ty], ..Default::default() });
-    symbol_types.insert(2, SymbolTypeData { param_types: vec![str_ty], ..Default::default() });
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            param_types: vec![int_ty],
+            ..Default::default()
+        },
+    );
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            param_types: vec![str_ty],
+            ..Default::default()
+        },
+    );
     let graph = empty_supertypes();
     let lookup = NullLookup::new();
 
@@ -152,8 +247,18 @@ fn overload_selected_by_arg_type() {
     let str_args = [str_ty];
     let by_str = index
         .lookup_with_binding(
-            svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1),
-            Some(ArgTypes { arg_types: &str_args, symbol_types: &symbol_types, lookup: &lookup }),
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            Some(1),
+            Some(ArgTypes {
+                arg_types: &str_args,
+                symbol_types: &symbol_types,
+                lookup: &lookup,
+            }),
         )
         .expect("hit");
     assert_eq!(by_str.0.id, 2, "string arg should pick the Str overload");
@@ -162,8 +267,18 @@ fn overload_selected_by_arg_type() {
     let int_args = [int_ty];
     let by_int = index
         .lookup_with_binding(
-            svc, "process", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE, Some(1),
-            Some(ArgTypes { arg_types: &int_args, symbol_types: &symbol_types, lookup: &lookup }),
+            svc,
+            "process",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+            Some(1),
+            Some(ArgTypes {
+                arg_types: &int_args,
+                symbol_types: &symbol_types,
+                lookup: &lookup,
+            }),
         )
         .expect("hit");
     assert_eq!(by_int.0.id, 1, "int arg should pick the Int overload");
@@ -197,7 +312,14 @@ fn direct_member_lookup_hits() {
 
     let graph = empty_supertypes();
     let found = index
-        .lookup(user, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            user,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("should hit");
     assert_eq!(found.id, 1);
     assert_eq!(found.qualified_name, "User.greet");
@@ -236,7 +358,14 @@ fn lookup_walks_supertypes_for_inherited_members() {
     graph.add_edge(admin, user);
 
     let found = index
-        .lookup(admin, "greet", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            admin,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("inherited member");
     assert_eq!(found.id, 1);
 }
@@ -378,17 +507,34 @@ fn union_requires_member_in_every_branch() {
     let mut index = MembersIndex::new();
     index.add_direct(user, sym(1, "id", "User.id", "field", Some("User")));
     // Admin missing id intentionally.
-    index.add_direct(admin, sym(2, "level", "Admin.level", "field", Some("Admin")));
+    index.add_direct(
+        admin,
+        sym(2, "level", "Admin.level", "field", Some("Admin")),
+    );
 
     let graph = empty_supertypes();
     assert!(index
-        .lookup(union, "id", EdgeKind::TypeRef, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            union,
+            "id",
+            EdgeKind::TypeRef,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE
+        )
         .is_none());
 
     // Now add id to Admin too — union resolves.
     index.add_direct(admin, sym(3, "id", "Admin.id", "field", Some("Admin")));
     let found = index
-        .lookup(union, "id", EdgeKind::TypeRef, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            union,
+            "id",
+            EdgeKind::TypeRef,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("union has id everywhere");
     // First branch's match wins.
     assert_eq!(found.id, 1);
@@ -403,7 +549,10 @@ fn intersection_takes_first_matching_branch() {
 
     let mut index = MembersIndex::new();
     // Only Admin has level.
-    index.add_direct(admin, sym(7, "level", "Admin.level", "field", Some("Admin")));
+    index.add_direct(
+        admin,
+        sym(7, "level", "Admin.level", "field", Some("Admin")),
+    );
 
     let graph = empty_supertypes();
     let found = index
@@ -474,9 +623,9 @@ fn function_and_tuple_and_literal_carry_no_members() {
         return_: int_ty,
     });
     let tup_ty = arena.intern(Type::Tuple(vec![int_ty, int_ty]));
-    let lit_ty = arena.intern(Type::Literal(crate::type_checker::core::types::LitValue::Str(
-        "x".into(),
-    )));
+    let lit_ty = arena.intern(Type::Literal(
+        crate::type_checker::core::types::LitValue::Str("x".into()),
+    ));
     let unk = arena.intern(Type::Unknown);
 
     let index = MembersIndex::new();
@@ -523,7 +672,14 @@ fn restrictive_kind_table_filters_incompatible_kinds() {
 
     let graph = empty_supertypes();
     let found = index
-        .lookup(user, "greet", EdgeKind::Calls, &graph, &arena, &strict_profile)
+        .lookup(
+            user,
+            "greet",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &strict_profile,
+        )
         .expect("method should resolve despite field shadowing the name");
     assert_eq!(found.id, 2, "field skipped by kind filter; method wins");
 }
@@ -601,11 +757,7 @@ fn generic_type_members_keyed_under_both_bare_and_parameterized() {
     sym_ids.insert(("lib.rs".to_string(), 0), 7);
 
     let arena = TypeArena::new();
-    let index = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &arena,
-    );
+    let index = MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &arena);
 
     let bare = arena.class("IndexWriter");
     let parameterized = arena.class("IndexWriter<D>");
@@ -670,15 +822,15 @@ fn non_generic_type_members_keyed_once() {
     sym_ids.insert(("lib.rs".to_string(), 0), 9);
 
     let arena = TypeArena::new();
-    let index = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &arena,
-    );
+    let index = MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &arena);
 
     let searcher = arena.class("Searcher");
     assert_eq!(
-        index.direct_of(searcher).iter().filter(|m| m.id == 9).count(),
+        index
+            .direct_of(searcher)
+            .iter()
+            .filter(|m| m.id == 9)
+            .count(),
         1,
         "non-generic member is keyed exactly once"
     );
@@ -738,11 +890,7 @@ fn scope_less_extension_keyed_under_receiver_for_opted_in_language() {
     sym_ids.insert(("Ext.kt".to_string(), 0), 11);
 
     let arena = TypeArena::new();
-    let index = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &arena,
-    );
+    let index = MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &arena);
 
     let string_ty = arena.class("String");
     assert!(
@@ -804,11 +952,7 @@ fn scope_less_extension_ignored_for_non_opted_in_language() {
     sym_ids.insert(("lib.rs".to_string(), 0), 12);
 
     let arena = TypeArena::new();
-    let index = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&pf),
-        &sym_ids,
-        &arena,
-    );
+    let index = MembersIndex::build_from_parsed_files(std::slice::from_ref(&pf), &sym_ids, &arena);
 
     let string_ty = arena.class("String");
     assert!(
@@ -818,7 +962,12 @@ fn scope_less_extension_ignored_for_non_opted_in_language() {
 }
 
 /// A `ParsedFile` carrying the given symbols and refs, defaulting the rest.
-fn parsed(path: &str, language: &str, symbols: Vec<crate::types::ExtractedSymbol>, refs: Vec<crate::types::ExtractedRef>) -> crate::types::ParsedFile {
+fn parsed(
+    path: &str,
+    language: &str,
+    symbols: Vec<crate::types::ExtractedSymbol>,
+    refs: Vec<crate::types::ExtractedRef>,
+) -> crate::types::ParsedFile {
     crate::types::ParsedFile {
         path: path.to_string(),
         language: language.to_string(),
@@ -844,7 +993,12 @@ fn parsed(path: &str, language: &str, symbols: Vec<crate::types::ExtractedSymbol
     }
 }
 
-fn ex_sym(name: &str, qname: &str, kind: crate::types::SymbolKind, scope: Option<&str>) -> crate::types::ExtractedSymbol {
+fn ex_sym(
+    name: &str,
+    qname: &str,
+    kind: crate::types::SymbolKind,
+    scope: Option<&str>,
+) -> crate::types::ExtractedSymbol {
     crate::types::ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -932,13 +1086,30 @@ fn external_trait_default_method_is_reachable_from_implementing_type() {
 
     let lookup = NullLookup::new();
     let symbol_types = SymbolTypeMap::new();
-    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let found = members
-        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            dog,
+            "hello",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("external trait default method must be reachable from the implementing type");
-    assert_eq!(found.id, 101, "resolves to the trait's default-method body symbol");
+    assert_eq!(
+        found.id, 101,
+        "resolves to the trait's default-method body symbol"
+    );
 }
 
 #[test]
@@ -962,7 +1133,12 @@ fn external_supertrait_default_method_is_reachable_transitively() {
         "rust",
         vec![
             ex_sym("Base", "Base", SymbolKind::Trait, None),
-            ex_sym("base_method", "Base.base_method", SymbolKind::Function, Some("Base")),
+            ex_sym(
+                "base_method",
+                "Base.base_method",
+                SymbolKind::Function,
+                Some("Base"),
+            ),
         ],
         Vec::new(),
     );
@@ -976,7 +1152,12 @@ fn external_supertrait_default_method_is_reachable_transitively() {
         "rust",
         vec![
             ex_sym("Derived", "Derived", SymbolKind::Trait, None),
-            ex_sym("derived_method", "Derived.derived_method", SymbolKind::Function, Some("Derived")),
+            ex_sym(
+                "derived_method",
+                "Derived.derived_method",
+                SymbolKind::Function,
+                Some("Derived"),
+            ),
         ],
         vec![ex_ref(0, "Base", EdgeKind::Inherits)],
     );
@@ -1010,19 +1191,43 @@ fn external_supertrait_default_method_is_reachable_transitively() {
 
     let lookup = NullLookup::new();
     let symbol_types = SymbolTypeMap::new();
-    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     // The directly-implemented trait's default resolves (single hop).
     let derived = members
-        .lookup(dog, "derived_method", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            dog,
+            "derived_method",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("directly-implemented trait's default method must be reachable");
     assert_eq!(derived.id, 103);
     // The SUPERTRAIT's default resolves through the transitive ext:→ext: hop.
     let base = members
-        .lookup(dog, "base_method", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            dog,
+            "base_method",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("external supertrait default method must be reachable transitively");
-    assert_eq!(base.id, 101, "resolves to the supertrait's default-method body symbol");
+    assert_eq!(
+        base.id, 101,
+        "resolves to the supertrait's default-method body symbol"
+    );
 }
 
 #[test]
@@ -1048,11 +1253,8 @@ fn external_non_trait_member_still_skipped() {
     sym_ids.insert(("ext:rust:curl/lib.rs".to_string(), 1), 301);
 
     let arena = TypeArena::new();
-    let members = MembersIndex::build_from_parsed_files(
-        std::slice::from_ref(&ext_file),
-        &sym_ids,
-        &arena,
-    );
+    let members =
+        MembersIndex::build_from_parsed_files(std::slice::from_ref(&ext_file), &sym_ids, &arena);
 
     let curl = arena.class("Curl");
     assert!(
@@ -1095,7 +1297,10 @@ impl SymbolLookup for TypePoolLookup {
         &self.empty
     }
     fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_short.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        self.by_short
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -1150,7 +1355,12 @@ fn external_trait_default_method_reachable_when_short_name_collides_with_struct(
         "rust",
         vec![
             ex_sym("Greet", "mycrate.Greet", SymbolKind::Trait, None),
-            ex_sym("hello", "mycrate.Greet.hello", SymbolKind::Function, Some("mycrate.Greet")),
+            ex_sym(
+                "hello",
+                "mycrate.Greet.hello",
+                SymbolKind::Function,
+                Some("mycrate.Greet"),
+            ),
         ],
         Vec::new(),
     );
@@ -1185,13 +1395,30 @@ fn external_trait_default_method_reachable_when_short_name_collides_with_struct(
         sym(999, "Greet", "other.Greet", "struct", None),
     ]);
     let symbol_types = SymbolTypeMap::new();
-    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     let found = members
-        .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+        .lookup(
+            dog,
+            "hello",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
         .expect("Implements edge must resolve to the unique trait despite the same-named struct");
-    assert_eq!(found.id, 101, "resolves to the trait's default-method body symbol");
+    assert_eq!(
+        found.id, 101,
+        "resolves to the trait's default-method body symbol"
+    );
 }
 
 #[test]
@@ -1209,7 +1436,12 @@ fn external_trait_short_name_collides_with_another_trait_declines() {
         "rust",
         vec![
             ex_sym("Greet", "mycrate.Greet", SymbolKind::Trait, None),
-            ex_sym("hello", "mycrate.Greet.hello", SymbolKind::Function, Some("mycrate.Greet")),
+            ex_sym(
+                "hello",
+                "mycrate.Greet.hello",
+                SymbolKind::Function,
+                Some("mycrate.Greet"),
+            ),
         ],
         Vec::new(),
     );
@@ -1243,12 +1475,26 @@ fn external_trait_short_name_collides_with_another_trait_declines() {
         sym(998, "Greet", "other.Greet", "trait", None),
     ]);
     let symbol_types = SymbolTypeMap::new();
-    let graph = SupertypeGraph::build(&slice, &arena, &DEFAULT_PROFILE, &members, &symbol_types, &lookup);
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
 
     let dog = arena.class("Dog");
     assert!(
         members
-            .lookup(dog, "hello", EdgeKind::Calls, &graph, &arena, &DEFAULT_PROFILE)
+            .lookup(
+                dog,
+                "hello",
+                EdgeKind::Calls,
+                &graph,
+                &arena,
+                &DEFAULT_PROFILE
+            )
             .is_none(),
         "two same-named traits are ambiguous — decline, do not bind a wrong trait's default"
     );
@@ -1274,18 +1520,12 @@ fn this_extension_target_handles_generic_receiver() {
 
 #[test]
 fn this_extension_target_returns_none_for_regular_method() {
-    assert_eq!(
-        super::this_extension_target("int Add(int a, int b)"),
-        None
-    );
+    assert_eq!(super::this_extension_target("int Add(int a, int b)"), None);
 }
 
 #[test]
 fn this_extension_target_returns_none_for_empty_params() {
-    assert_eq!(
-        super::this_extension_target("void DoWork()"),
-        None
-    );
+    assert_eq!(super::this_extension_target("void DoWork()"), None);
 }
 
 #[test]
@@ -1321,7 +1561,12 @@ fn project_struct_structurally_satisfies_external_interface() {
         "go",
         vec![
             ex_sym("Reader", "io.Reader", SymbolKind::Interface, None),
-            ex_sym("Read", "io.Reader.Read", SymbolKind::Method, Some("io.Reader")),
+            ex_sym(
+                "Read",
+                "io.Reader.Read",
+                SymbolKind::Method,
+                Some("io.Reader"),
+            ),
         ],
         Vec::new(),
     );
@@ -1331,7 +1576,12 @@ fn project_struct_structurally_satisfies_external_interface() {
         "go",
         vec![
             ex_sym("MyReader", "MyReader", SymbolKind::Struct, None),
-            ex_sym("Read", "MyReader.Read", SymbolKind::Method, Some("MyReader")),
+            ex_sym(
+                "Read",
+                "MyReader.Read",
+                SymbolKind::Method,
+                Some("MyReader"),
+            ),
         ],
         Vec::new(),
     );

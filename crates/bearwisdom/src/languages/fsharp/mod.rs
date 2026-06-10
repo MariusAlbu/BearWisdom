@@ -12,9 +12,9 @@
 //! - `module_defn` / `named_module` / `namespace` → Namespace
 //! - `import_decl` → Imports (open declarations)
 
+pub(crate) mod hooks;
 pub(crate) mod keywords;
 mod predicates;
-pub(crate) mod hooks;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -23,8 +23,8 @@ mod resolve_tests;
 
 pub use hooks::FSHARP_HOOKS;
 pub use profile::FSHARP_PROFILE;
-pub mod extract;
 mod applications;
+pub mod extract;
 mod type_defs;
 
 #[cfg(test)]
@@ -38,17 +38,25 @@ use crate::types::ExtractionResult;
 pub struct FSharpPlugin;
 
 impl LanguagePlugin for FSharpPlugin {
-    fn id(&self) -> &str { "fsharp" }
+    fn id(&self) -> &str {
+        "fsharp"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["fsharp"] }
+    fn language_ids(&self) -> &[&str] {
+        &["fsharp"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".fs", ".fsi", ".fsx"] }
+    fn extensions(&self) -> &[&str] {
+        &[".fs", ".fsi", ".fsx"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_fsharp::LANGUAGE_FSHARP.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -65,11 +73,7 @@ impl LanguagePlugin for FSharpPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "application_expression",
-            "dot_expression",
-            "import_decl",
-        ]
+        &["application_expression", "dot_expression", "import_decl"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -84,8 +88,7 @@ impl LanguagePlugin for FSharpPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::FSHARP_HOOKS)
     }
 }

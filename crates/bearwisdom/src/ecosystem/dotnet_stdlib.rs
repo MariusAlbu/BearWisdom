@@ -16,9 +16,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -29,9 +27,15 @@ const LANGUAGES: &[&str] = &["csharp", "fsharp", "vbnet"];
 pub struct DotnetStdlibEcosystem;
 
 impl Ecosystem for DotnetStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // PowerShell runs on .NET — every cmdlet is a .NET type and PS scripts
@@ -62,22 +66,34 @@ impl Ecosystem for DotnetStdlibEcosystem {
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<crate::types::ParsedFile>> {
         // Defer to NuGet's existing DLL→ParsedFile helper. Skip if the
         // probe returned a non-dir for any reason.
-        if !dep.root.is_dir() { return None; }
+        if !dep.root.is_dir() {
+            return None;
+        }
         let mut dlls: Vec<PathBuf> = Vec::new();
         collect_dlls(&dep.root, &mut dlls);
-        if dlls.is_empty() { return None; }
+        if dlls.is_empty() {
+            return None;
+        }
         let mut out = Vec::new();
         for dll in dlls.iter().take(400) {
-            let Some(stem) = dll.file_stem().and_then(|s| s.to_str()) else { continue };
+            let Some(stem) = dll.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
             match super::nuget::parse_dotnet_dll_public(dll, stem, "csharp") {
                 Ok(pf) => out.push(pf),
                 Err(e) => debug!("dotnet-stdlib: skip {}: {}", stem, e),
             }
         }
-        if out.is_empty() { None } else { Some(out) }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -91,7 +107,9 @@ impl Ecosystem for DotnetStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for DotnetStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_dotnet_stdlib()
     }
@@ -103,7 +121,11 @@ impl ExternalSourceLocator for DotnetStdlibEcosystem {
                 out.extend(parsed);
             }
         }
-        if out.is_empty() { None } else { Some(out) }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 }
 
@@ -126,11 +148,15 @@ fn discover_dotnet_stdlib() -> Vec<ExternalDepRoot> {
 fn probe_shared_framework_dir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_DOTNET_STDLIB") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     let dotnet_root = probe_dotnet_root()?;
     let shared = dotnet_root.join("shared").join("Microsoft.NETCore.App");
-    if !shared.is_dir() { return None; }
+    if !shared.is_dir() {
+        return None;
+    }
     let entries = std::fs::read_dir(&shared).ok()?;
     let mut versions: Vec<PathBuf> = entries
         .flatten()
@@ -144,7 +170,9 @@ fn probe_shared_framework_dir() -> Option<PathBuf> {
 fn probe_dotnet_root() -> Option<PathBuf> {
     if let Ok(val) = std::env::var("DOTNET_ROOT") {
         let p = PathBuf::from(val);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     // Ask `dotnet --info`.
     if let Ok(output) = Command::new("dotnet").arg("--info").output() {
@@ -157,7 +185,9 @@ fn probe_dotnet_root() -> Option<PathBuf> {
                     let p = PathBuf::from(rest.trim());
                     // Walk up to the dotnet root (parent of sdk/).
                     if let Some(sdk_parent) = p.parent().and_then(|p| p.parent()) {
-                        if sdk_parent.is_dir() { return Some(sdk_parent.to_path_buf()); }
+                        if sdk_parent.is_dir() {
+                            return Some(sdk_parent.to_path_buf());
+                        }
                     }
                 }
             }
@@ -171,20 +201,31 @@ fn probe_dotnet_root() -> Option<PathBuf> {
         "/usr/local/share/dotnet",
     ] {
         let p = PathBuf::from(candidate);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }
 
 fn collect_dlls(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.ends_with(".dll") { continue }
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".dll") {
+            continue;
+        }
         // Skip native / runtime DLLs that don't carry managed metadata.
-        if name.starts_with("api-ms-") || name.starts_with("Microsoft.DiaSymReader")
+        if name.starts_with("api-ms-")
+            || name.starts_with("Microsoft.DiaSymReader")
             || name.ends_with(".Native.dll")
         {
             continue;
@@ -196,5 +237,7 @@ fn collect_dlls(dir: &Path, out: &mut Vec<PathBuf>) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<DotnetStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(DotnetStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(DotnetStdlibEcosystem))
+        .clone()
 }

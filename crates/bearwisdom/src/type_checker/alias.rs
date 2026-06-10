@@ -20,9 +20,7 @@ use crate::indexer::resolve::engine::SymbolLookup;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena, TypeId};
-use crate::type_checker::subtype::{
-    is_assignable_to, is_assignable_to_typed, SubtypeResult,
-};
+use crate::type_checker::subtype::{is_assignable_to, is_assignable_to_typed, SubtypeResult};
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::AliasTarget;
 use rustc_hash::FxHashMap;
@@ -177,11 +175,7 @@ pub fn expand_alias(
             } => {
                 let resolved_check = env.resolve(check);
                 let resolved_extends = env.resolve(extends);
-                let next = match is_assignable_to(
-                    &resolved_check,
-                    &resolved_extends,
-                    lookup,
-                ) {
+                let next = match is_assignable_to(&resolved_check, &resolved_extends, lookup) {
                     Some(true) => true_branch,
                     Some(false) => false_branch,
                     None => return None,
@@ -300,10 +294,7 @@ pub type AliasIndex = FxHashMap<TypeId, AliasTarget>;
 /// extractors into a TypeId-keyed map. Each alias qname is interned as a
 /// Class TypeId so subsequent lookups match the same TypeId the chain walker
 /// holds.
-pub fn build_alias_index(
-    pairs: &[(String, AliasTarget)],
-    arena: &TypeArena,
-) -> AliasIndex {
+pub fn build_alias_index(pairs: &[(String, AliasTarget)], arena: &TypeArena) -> AliasIndex {
     let mut idx = AliasIndex::with_capacity_and_hasher(pairs.len(), Default::default());
     for (name, target) in pairs {
         let id = arena.class(name);
@@ -369,7 +360,9 @@ pub fn expand_alias_typed(
         }
         AliasTarget::IndexedAccess { object, key } => {
             let member_qname = format!("{object}.{key}");
-            let resolved = lookup.field_type_name(&member_qname).map(|s| s.to_string())?;
+            let resolved = lookup
+                .field_type_name(&member_qname)
+                .map(|s| s.to_string())?;
             Some(arena.class(&resolved))
         }
         AliasTarget::Mapped {
@@ -389,7 +382,8 @@ pub fn expand_alias_typed(
         } => {
             let check_id = arena.class(&check);
             let extends_id = arena.class(&extends);
-            match is_assignable_to_typed(check_id, extends_id, arena, lookup, members, symbol_types) {
+            match is_assignable_to_typed(check_id, extends_id, arena, lookup, members, symbol_types)
+            {
                 SubtypeResult::Yes => Some(arena.class(&true_branch)),
                 SubtypeResult::No => Some(arena.class(&false_branch)),
                 SubtypeResult::Unknown => None,

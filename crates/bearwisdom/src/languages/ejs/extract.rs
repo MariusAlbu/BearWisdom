@@ -31,11 +31,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}];
+    }];
 
     let refs = collect_include_refs(source);
 
@@ -79,7 +79,9 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
         // decide what's reachable. False positives (`include` inside a
         // string literal in HTML body) are rare in practice and produce
         // an unresolved Imports ref, not a wrong call edge.
-        let Some(rel) = source[i..].find("include(") else { break };
+        let Some(rel) = source[i..].find("include(") else {
+            break;
+        };
         let absolute = i + rel;
         // Verify the preceding identifier boundary — we want `include(`
         // standing alone, not `_include(` / `xinclude(`.
@@ -91,7 +93,7 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
             }
         }
         let arg_start = absolute + 8; // after `include(`
-        // Skip whitespace.
+                                      // Skip whitespace.
         let mut j = arg_start;
         while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n') {
             j += 1;
@@ -126,7 +128,9 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
         let target = raw.trim();
         if !target.is_empty() {
             let line = line_at(bytes, absolute);
-            out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            out.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: target.to_string(),
                 kind: EdgeKind::Imports,
@@ -136,8 +140,8 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
                 byte_offset: absolute as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                            col: 0,
-});
+                col: 0,
+            });
         }
         i = k + 1;
     }

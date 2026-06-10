@@ -39,9 +39,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -52,9 +50,15 @@ const LANGUAGES: &[&str] = &["lua"];
 pub struct NvimRuntimeEcosystem;
 
 impl Ecosystem for NvimRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Lua is used in many non-Neovim contexts (game scripting, OpenResty,
@@ -80,7 +84,9 @@ impl Ecosystem for NvimRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for NvimRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_nvim_runtime()
     }
@@ -109,18 +115,24 @@ fn probe_runtime_dir() -> Option<PathBuf> {
     // 1. Explicit override via env var.
     if let Some(explicit) = std::env::var_os("BEARWISDOM_NVIM_RUNTIME") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() && has_lua_subdir(&p) { return Some(p); }
+        if p.is_dir() && has_lua_subdir(&p) {
+            return Some(p);
+        }
     }
     // 2. $VIMRUNTIME set by Neovim itself (running inside `:terminal` etc.).
     if let Some(env_runtime) = std::env::var_os("VIMRUNTIME") {
         let p = PathBuf::from(env_runtime);
-        if p.is_dir() && has_lua_subdir(&p) { return Some(p); }
+        if p.is_dir() && has_lua_subdir(&p) {
+            return Some(p);
+        }
     }
     // 3. Query an installed `nvim` binary directly. Bounded — failures
     //    (binary missing, --headless not supported, timeout) all degrade
     //    to the next probe step.
     if let Some(p) = probe_via_nvim_command() {
-        if has_lua_subdir(&p) { return Some(p); }
+        if has_lua_subdir(&p) {
+            return Some(p);
+        }
     }
     // 4. Standard install paths.
     for candidate in [
@@ -132,7 +144,9 @@ fn probe_runtime_dir() -> Option<PathBuf> {
         "C:/Program Files (x86)/Neovim/share/nvim/runtime",
     ] {
         let p = PathBuf::from(candidate);
-        if p.is_dir() && has_lua_subdir(&p) { return Some(p); }
+        if p.is_dir() && has_lua_subdir(&p) {
+            return Some(p);
+        }
     }
     None
 }
@@ -155,7 +169,9 @@ fn probe_via_nvim_command() -> Option<PathBuf> {
         String::from_utf8_lossy(&output.stdout).to_string()
     };
     let trimmed = combined.trim();
-    if trimmed.is_empty() { return None; }
+    if trimmed.is_empty() {
+        return None;
+    }
     // Multi-line outputs occasionally happen (errors before the echo);
     // pick the last non-empty line that points at an existing directory.
     for line in trimmed.lines().rev() {
@@ -181,8 +197,12 @@ fn walk_runtime_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 }
 
 fn walk_lua_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 8 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 8 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -193,12 +213,18 @@ fn walk_lua_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
                 if matches!(name, "test" | "tests" | "fixtures" | "spec" | "specs") {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_lua_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".lua") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".lua") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:nvim:{display}"),
@@ -212,7 +238,9 @@ fn walk_lua_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<NvimRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(NvimRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(NvimRuntimeEcosystem))
+        .clone()
 }
 
 #[cfg(test)]

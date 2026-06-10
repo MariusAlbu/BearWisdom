@@ -735,12 +735,7 @@ fn function_name_node<'a>(
     None
 }
 
-fn run_type_guard_query(
-    root: &Node,
-    src: &[u8],
-    cfg: &FlowConfig,
-    meta: &mut FlowMeta,
-) {
+fn run_type_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut FlowMeta) {
     if cfg.type_guard_query.trim().is_empty() {
         return;
     }
@@ -792,12 +787,7 @@ fn run_type_guard_query(
     }
 }
 
-fn run_discriminant_guard_query(
-    root: &Node,
-    src: &[u8],
-    cfg: &FlowConfig,
-    meta: &mut FlowMeta,
-) {
+fn run_discriminant_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut FlowMeta) {
     if cfg.discriminant_guard_query.trim().is_empty() {
         return;
     }
@@ -910,12 +900,7 @@ fn is_early_exit_consequence(if_node: &Node) -> bool {
     false
 }
 
-fn run_type_args_query(
-    root: &Node,
-    src: &[u8],
-    cfg: &FlowConfig,
-    refs: &mut [ExtractedRef],
-) {
+fn run_type_args_query(root: &Node, src: &[u8], cfg: &FlowConfig, refs: &mut [ExtractedRef]) {
     if cfg.type_args_query.trim().is_empty() {
         return;
     }
@@ -954,8 +939,12 @@ fn run_type_args_query(
 
         // Locate the ref whose chain's last segment matches this method node.
         for r in refs.iter_mut() {
-            let Some(chain) = r.chain.as_mut() else { continue };
-            let Some(last) = chain.segments.last_mut() else { continue };
+            let Some(chain) = r.chain.as_mut() else {
+                continue;
+            };
+            let Some(last) = chain.segments.last_mut() else {
+                continue;
+            };
             if last.name != method_name {
                 continue;
             }
@@ -970,7 +959,8 @@ fn run_type_args_query(
             break;
         }
     }
-    let _ = ChainSegment { // silence unused import in release builds
+    let _ = ChainSegment {
+        // silence unused import in release builds
         name: String::new(),
         node_kind: String::new(),
         kind: crate::types::SegmentKind::Identifier,
@@ -978,11 +968,11 @@ fn run_type_args_query(
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset: 0,
-            declared_type_id: None,
+        declared_type_id: None,
         is_call: false,
         call_args: Vec::new(),
         type_arg_ids: Vec::new(),
-};
+    };
 }
 
 /// Strip surrounding quotes from a literal type string (used in

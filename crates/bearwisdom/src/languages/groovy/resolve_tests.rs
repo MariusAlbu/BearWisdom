@@ -2,7 +2,7 @@
 // groovy/resolve_tests.rs — unit tests for Groovy hooks (GORM flow emission).
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext};
+use crate::indexer::resolve::engine::FileContext;
 
 // ---------------------------------------------------------------------------
 // Goal 31 — GORM flow emission
@@ -19,16 +19,20 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
                 node_kind: "test".to_string(),
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
@@ -38,7 +42,10 @@ fn test_groovy_gorm_findall_emits_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let chain = make_chain(&["User", "findAll"]);
     match detect_groovy_gorm_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "groovy.User");
             assert_eq!(operation, DbQueryOp::Select);
         }

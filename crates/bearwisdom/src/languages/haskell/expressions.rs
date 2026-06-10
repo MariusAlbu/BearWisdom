@@ -35,8 +35,15 @@ pub(super) fn extract_apply(
                     continue;
                 }
                 match child.kind() {
-                    "variable" | "name" | "constructor" | "qualified" | "prefix_id"
-                    | "operator" | "operator_name" | "apply" | "parenthesized_expression" => {
+                    "variable"
+                    | "name"
+                    | "constructor"
+                    | "qualified"
+                    | "prefix_id"
+                    | "operator"
+                    | "operator_name"
+                    | "apply"
+                    | "parenthesized_expression" => {
                         let (t, m) = extract_apply_target(child, src);
                         if !t.is_empty() {
                             result = (t, m);
@@ -69,7 +76,9 @@ pub(super) fn extract_apply(
     if fname.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: fname,
         kind: EdgeKind::Calls,
@@ -78,9 +87,9 @@ pub(super) fn extract_apply(
         module: fmodule,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// Returns `(function_name, module_qualifier)` for the given callee node.
@@ -108,7 +117,8 @@ fn extract_apply_target(node: Node, src: &[u8]) -> (String, Option<String>) {
             // `module` contains a `module` node whose text is the full qualifier
             // (e.g. "Data.Map" for `Data.Map.lookup`).
             // `id` is the final function name.
-            let id = node.child_by_field_name("id")
+            let id = node
+                .child_by_field_name("id")
                 .map(|n| node_text(n, src))
                 .unwrap_or_else(|| {
                     let count = node.named_child_count();
@@ -122,7 +132,8 @@ fn extract_apply_target(node: Node, src: &[u8]) -> (String, Option<String>) {
                 });
             // The `module` field node spans the qualifier including the trailing
             // `.` separator (e.g. "Map." or "Data.Map."). Strip the trailing dot.
-            let module = node.child_by_field_name("module")
+            let module = node
+                .child_by_field_name("module")
                 .map(|n| node_text(n, src).trim_end_matches('.').to_string())
                 .filter(|s| !s.is_empty());
             (id, module)
@@ -157,21 +168,24 @@ pub(super) fn extract_infix(
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
     // infix: left operator right
     // The operator field holds the infix function name (backtick or operator)
-    let op_node = node.child_by_field_name("operator")
-        .or_else(|| {
-            // Fallback: find the operator child — check all children (named or anonymous)
-            let count = node.child_count();
-            if count >= 3 {
-                // Middle child (index 1 in 3-child infix: left op right)
-                node.child(1)
+    let op_node = node.child_by_field_name("operator").or_else(|| {
+        // Fallback: find the operator child — check all children (named or anonymous)
+        let count = node.child_count();
+        if count >= 3 {
+            // Middle child (index 1 in 3-child infix: left op right)
+            node.child(1)
+        } else {
+            // Second named child fallback
+            let mut cursor = node.walk();
+            let children: Vec<Node> = node.children(&mut cursor).collect();
+            let named: Vec<Node> = children.into_iter().filter(|c| c.is_named()).collect();
+            if named.len() >= 2 {
+                Some(named[1])
             } else {
-                // Second named child fallback
-                let mut cursor = node.walk();
-                let children: Vec<Node> = node.children(&mut cursor).collect();
-                let named: Vec<Node> = children.into_iter().filter(|c| c.is_named()).collect();
-                if named.len() >= 2 { Some(named[1]) } else { None }
+                None
             }
-        });
+        }
+    });
 
     let op_text = op_node
         .map(|n| {
@@ -185,7 +199,9 @@ pub(super) fn extract_infix(
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: op_text,
         kind: EdgeKind::Calls,
@@ -194,7 +210,7 @@ pub(super) fn extract_infix(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }

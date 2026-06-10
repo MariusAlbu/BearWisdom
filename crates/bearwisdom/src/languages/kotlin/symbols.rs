@@ -54,7 +54,8 @@ pub(super) fn extract_enum_class_body(
             "enum_entry" => {
                 // tree-sitter-kotlin-ng may use a `name` field or a direct
                 // `simple_identifier` child — handle both.
-                let name_opt = child.child_by_field_name("name")
+                let name_opt = child
+                    .child_by_field_name("name")
                     .map(|n| node_text(n, src))
                     .or_else(|| {
                         let mut cc = child.walk();
@@ -85,14 +86,18 @@ pub(super) fn extract_enum_class_body(
                         end_col: child.end_position().column as u32,
                         signature: None,
                         doc_comment: None,
-                        scope_path: if enum_qname.is_empty() { None } else { Some(enum_qname.clone()) },
+                        scope_path: if enum_qname.is_empty() {
+                            None
+                        } else {
+                            Some(enum_qname.clone())
+                        },
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                 }
             }
             _ => {
@@ -122,10 +127,10 @@ pub(super) fn push_type_decl(
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
-        SymbolKind::Class     => "class",
+        SymbolKind::Class => "class",
         SymbolKind::Interface => "interface",
-        SymbolKind::Enum      => "enum class",
-        _                     => "class",
+        SymbolKind::Enum => "enum class",
+        _ => "class",
     };
 
     let visibility = detect_visibility(node, src);
@@ -148,12 +153,12 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -201,9 +206,7 @@ pub(super) fn push_function_decl(
             let declared = find_child_by_kind(node, "function_value_parameters")
                 .map(|p| node_text(p, src))
                 .unwrap_or_default();
-            let inner = declared
-                .strip_prefix('(')
-                .and_then(|s| s.strip_suffix(')'));
+            let inner = declared.strip_prefix('(').and_then(|s| s.strip_suffix(')'));
             let param_list = match inner {
                 Some(rest) if !rest.trim().is_empty() => format!("(this {recv}, {rest})"),
                 _ => format!("(this {recv})"),
@@ -227,12 +230,12 @@ pub(super) fn push_function_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -292,14 +295,18 @@ pub(super) fn push_property_decl(
         });
     let name = match name {
         Some(n) => n,
-        None    => return,
+        None => return,
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
-    let kw = if node_text(*node, src).trim_start().starts_with("val") { "val" } else { "var" };
+    let kw = if node_text(*node, src).trim_start().starts_with("val") {
+        "val"
+    } else {
+        "var"
+    };
     let ty = node
         .child_by_field_name("type")
         .map(|t| format!(": {}", node_text(t, src)))
@@ -318,12 +325,12 @@ pub(super) fn push_property_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit a Class symbol for a `companion object [Name]` declaration.
@@ -359,12 +366,12 @@ pub(super) fn push_companion_object(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -411,12 +418,12 @@ pub(super) fn extract_primary_constructor_params(
                 doc_comment: extract_doc_comment(&child, src),
                 scope_path,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
 
             let mut pc = child.walk();
             for inner in child.children(&mut pc) {
@@ -425,7 +432,12 @@ pub(super) fn extract_primary_constructor_params(
                     for param in inner.children(&mut cc) {
                         if param.kind() == "class_parameter" {
                             extract_class_parameter(
-                                &param, src, scope_tree, symbols, refs, parent_index,
+                                &param,
+                                src,
+                                scope_tree,
+                                symbols,
+                                refs,
+                                parent_index,
                             );
                         }
                     }
@@ -485,7 +497,9 @@ fn extract_class_parameter(
         // Extract the simple name from the type node and emit a TypeRef directly.
         let type_name = super::calls::kotlin_type_name(&tn, src);
         if !type_name.is_empty() {
-            refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(crate::types::ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: type_name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -494,9 +508,9 @@ fn extract_class_parameter(
                 module: None,
                 chain: None,
                 byte_offset: tn.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -523,12 +537,12 @@ fn extract_class_parameter(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit TypeRef edges for upper bounds of `type_parameter` nodes inside a
@@ -577,7 +591,10 @@ pub(super) fn push_secondary_constructor(
     parent_index: Option<usize>,
 ) {
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let class_name = scope.map(|s| s.name.as_str()).unwrap_or("constructor").to_string();
+    let class_name = scope
+        .map(|s| s.name.as_str())
+        .unwrap_or("constructor")
+        .to_string();
     let qualified_name = scope_tree::qualify(&class_name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
@@ -598,12 +615,12 @@ pub(super) fn push_secondary_constructor(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +661,9 @@ pub(super) fn emit_import(
                 if parts.is_empty() {
                     let full = node_text(child, src);
                     let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -653,13 +672,15 @@ pub(super) fn emit_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
                     let full = parts.join(".");
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -668,16 +689,18 @@ pub(super) fn emit_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 return;
             }
             "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -686,9 +709,9 @@ pub(super) fn emit_import(
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
             _ => {}
@@ -721,7 +744,9 @@ pub(super) fn extract_delegation_specifiers(
                             } else {
                                 EdgeKind::Implements
                             };
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: source_idx,
                                 target_name: name,
                                 kind,
@@ -730,9 +755,9 @@ pub(super) fn extract_delegation_specifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: spec.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -827,12 +852,12 @@ pub(super) fn push_getter_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Extract a setter declaration as a Method symbol.
@@ -875,10 +900,10 @@ pub(super) fn push_setter_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }

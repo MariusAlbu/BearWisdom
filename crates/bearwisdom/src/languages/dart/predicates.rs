@@ -71,7 +71,6 @@ pub(super) fn is_relative_dart_import(uri: &str) -> bool {
     uri.starts_with('.') || (!uri.starts_with("dart:") && !uri.starts_with("package:"))
 }
 
-
 /// Dart primitive type names + universal language tokens that the
 /// extractor emits as type_identifier nodes. Filtered at extract time.
 /// Stdlib types (String, List, Map, Future, Stream, ...) flow through

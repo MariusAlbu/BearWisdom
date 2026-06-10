@@ -63,10 +63,9 @@ pub fn discover_laravel_routes(
     project_root: &Path,
     ctx: &ProjectContext,
 ) -> u32 {
-    if !ctx
-        .manifest(ManifestKind::Composer)
-        .map_or(false, |m| m.dependencies.iter().any(|p| p.contains("laravel")))
-    {
+    if !ctx.manifest(ManifestKind::Composer).map_or(false, |m| {
+        m.dependencies.iter().any(|p| p.contains("laravel"))
+    }) {
         return 0;
     }
     let routes = match extract_laravel_routes_pub(conn, project_root) {
@@ -102,19 +101,15 @@ pub fn discover_laravel_routes(
 ///   Route::(get|post|put|patch|delete|options|any)('path', handler)
 /// Captures: (1) http verb, (2) route path
 fn build_explicit_route_regex() -> Regex {
-    Regex::new(
-        r#"Route::(get|post|put|patch|delete|options|any)\s*\(\s*['"]([^'"]+)['"]"#,
-    )
-    .expect("laravel explicit route regex is valid")
+    Regex::new(r#"Route::(get|post|put|patch|delete|options|any)\s*\(\s*['"]([^'"]+)['"]"#)
+        .expect("laravel explicit route regex is valid")
 }
 
 /// Matches Route::match(['get','post'], '/path', handler)
 /// Captures: (1) raw methods list, (2) route path
 fn build_match_route_regex() -> Regex {
-    Regex::new(
-        r#"Route::match\s*\(\s*\[([^\]]+)\]\s*,\s*['"]([^'"]+)['"]"#,
-    )
-    .expect("laravel match route regex is valid")
+    Regex::new(r#"Route::match\s*\(\s*\[([^\]]+)\]\s*,\s*['"]([^'"]+)['"]"#)
+        .expect("laravel match route regex is valid")
 }
 
 /// Matches Route::resource('name', Controller::class) or with ::class omitted.
@@ -158,21 +153,21 @@ fn build_group_close_regex() -> Regex {
 
 /// The seven standard resourceful routes for `Route::resource`.
 const RESOURCE_ROUTES: &[(&str, &str, &str)] = &[
-    ("GET", "",        "index"),
+    ("GET", "", "index"),
     ("GET", "/create", "create"),
-    ("POST", "",       "store"),
-    ("GET", "/{id}",   "show"),
+    ("POST", "", "store"),
+    ("GET", "/{id}", "show"),
     ("GET", "/{id}/edit", "edit"),
-    ("PUT", "/{id}",   "update"),
+    ("PUT", "/{id}", "update"),
     ("DELETE", "/{id}", "destroy"),
 ];
 
 /// The five API resourceful routes for `Route::apiResource` (no create/edit).
 const API_RESOURCE_ROUTES: &[(&str, &str, &str)] = &[
-    ("GET", "",        "index"),
-    ("POST", "",       "store"),
-    ("GET", "/{id}",   "show"),
-    ("PUT", "/{id}",   "update"),
+    ("GET", "", "index"),
+    ("POST", "", "store"),
+    ("GET", "/{id}", "show"),
+    ("PUT", "/{id}", "update"),
     ("DELETE", "/{id}", "destroy"),
 ];
 
@@ -304,11 +299,7 @@ fn resolve_symbol(conn: &Connection, handler_hint: &str) -> Option<i64> {
 
 /// Scan a single PHP file and insert all detected routes.
 /// Returns the number of route rows inserted.
-fn scan_file(
-    conn: &Connection,
-    file_id: i64,
-    source: &str,
-) -> u32 {
+fn scan_file(conn: &Connection, file_id: i64, source: &str) -> u32 {
     let re_explicit = build_explicit_route_regex();
     let re_match = build_match_route_regex();
     let re_resource = build_resource_regex();
@@ -337,9 +328,7 @@ fn scan_file(
 
         // Detect a prefix on this line (may be on same line as ->group() or
         // on the preceding line for fluent chains).
-        let pending_prefix: Option<String> = re_prefix
-            .captures(line)
-            .map(|cap| cap[1].to_string());
+        let pending_prefix: Option<String> = re_prefix.captures(line).map(|cap| cap[1].to_string());
 
         // Detect group opening on this line.
         let opens_group = re_group_open.is_match(line);
@@ -386,7 +375,9 @@ fn scan_file(
             let resolved = resolve_route(&active_prefix, &template);
             let symbol_id = resolve_symbol(conn, line);
 
-            if insert_route(conn, file_id, symbol_id, &verb, &template, &resolved, line_no) {
+            if insert_route(
+                conn, file_id, symbol_id, &verb, &template, &resolved, line_no,
+            ) {
                 inserted += 1;
                 debug!(verb = %verb, route = %resolved, line = line_no, "Laravel route inserted");
             }
@@ -407,12 +398,18 @@ fn scan_file(
                 .split(',')
                 .filter_map(|s| {
                     let trimmed = s.trim().trim_matches(|c: char| c == '\'' || c == '"');
-                    if trimmed.is_empty() { None } else { Some(trimmed.to_uppercase()) }
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_uppercase())
+                    }
                 })
                 .collect();
 
             for verb in &methods {
-                if insert_route(conn, file_id, symbol_id, verb, &template, &resolved, line_no) {
+                if insert_route(
+                    conn, file_id, symbol_id, verb, &template, &resolved, line_no,
+                ) {
                     inserted += 1;
                     debug!(verb = %verb, route = %resolved, line = line_no, "Laravel match route inserted");
                 }
@@ -495,7 +492,9 @@ pub(crate) fn extract_laravel_routes_pub(
         .context("Failed to prepare Laravel route file query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query PHP route files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect PHP route file rows")?;
@@ -549,9 +548,8 @@ fn extract_laravel_routes_from_source(
         let line_no = (line_idx + 1) as u32;
         let active_prefix = join_prefix_stack(&prefix_stack);
 
-        let pending_prefix: Option<String> = re_prefix_re
-            .captures(line)
-            .map(|cap| cap[1].to_string());
+        let pending_prefix: Option<String> =
+            re_prefix_re.captures(line).map(|cap| cap[1].to_string());
 
         let opens_group = re_group_open.is_match(line);
 
@@ -588,7 +586,13 @@ fn extract_laravel_routes_from_source(
             let template = cap[2].to_string();
             let resolved = resolve_route(&active_prefix, &template);
             let symbol_id = resolve_symbol(conn, line);
-            out.push(LaravelRoute { file_id, symbol_id, http_method: verb, resolved_route: resolved, line: line_no });
+            out.push(LaravelRoute {
+                file_id,
+                symbol_id,
+                http_method: verb,
+                resolved_route: resolved,
+                line: line_no,
+            });
             continue;
         }
 
@@ -601,11 +605,21 @@ fn extract_laravel_routes_from_source(
                 .split(',')
                 .filter_map(|s| {
                     let trimmed = s.trim().trim_matches(|c: char| c == '\'' || c == '"');
-                    if trimmed.is_empty() { None } else { Some(trimmed.to_uppercase()) }
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_uppercase())
+                    }
                 })
                 .collect();
             for verb in methods {
-                out.push(LaravelRoute { file_id, symbol_id, http_method: verb, resolved_route: resolved.clone(), line: line_no });
+                out.push(LaravelRoute {
+                    file_id,
+                    symbol_id,
+                    http_method: verb,
+                    resolved_route: resolved.clone(),
+                    line: line_no,
+                });
             }
             continue;
         }
@@ -615,7 +629,13 @@ fn extract_laravel_routes_from_source(
             let base = resource_base_path(&name, &active_prefix);
             for (verb, suffix, _action) in RESOURCE_ROUTES {
                 let resolved = format!("{base}{suffix}");
-                out.push(LaravelRoute { file_id, symbol_id: None, http_method: verb.to_string(), resolved_route: resolved, line: line_no });
+                out.push(LaravelRoute {
+                    file_id,
+                    symbol_id: None,
+                    http_method: verb.to_string(),
+                    resolved_route: resolved,
+                    line: line_no,
+                });
             }
             continue;
         }
@@ -625,7 +645,13 @@ fn extract_laravel_routes_from_source(
             let base = resource_base_path(&name, &active_prefix);
             for (verb, suffix, _action) in API_RESOURCE_ROUTES {
                 let resolved = format!("{base}{suffix}");
-                out.push(LaravelRoute { file_id, symbol_id: None, http_method: verb.to_string(), resolved_route: resolved, line: line_no });
+                out.push(LaravelRoute {
+                    file_id,
+                    symbol_id: None,
+                    http_method: verb.to_string(),
+                    resolved_route: resolved,
+                    line: line_no,
+                });
             }
             continue;
         }
@@ -646,7 +672,9 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
         .context("Failed to prepare Laravel route file query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query PHP route files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect PHP route file rows")?;

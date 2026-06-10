@@ -130,12 +130,10 @@ pub fn investigate(
     };
 
     // --- Callers ---
-    let callers = call_hierarchy::incoming_calls(db, &name, opts.caller_limit)
-        .unwrap_or_default();
+    let callers = call_hierarchy::incoming_calls(db, &name, opts.caller_limit).unwrap_or_default();
 
     // --- Callees ---
-    let callees = call_hierarchy::outgoing_calls(db, &name, opts.callee_limit)
-        .unwrap_or_default();
+    let callees = call_hierarchy::outgoing_calls(db, &name, opts.callee_limit).unwrap_or_default();
 
     // --- Blast radius ---
     let blast_radius = blast_radius::blast_radius(db, symbol_name, opts.blast_depth, 500)
@@ -180,11 +178,13 @@ mod tests {
         ).unwrap();
         let file_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, signature)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, signature)
              VALUES (?1, 'do_work', 'mod::do_work', 'function', 10, 0, 'fn do_work()')",
-            [file_id],
-        ).unwrap();
+                [file_id],
+            )
+            .unwrap();
 
         let result = investigate(&db, "do_work", &InvestigateOptions::default()).unwrap();
         assert!(result.is_some());

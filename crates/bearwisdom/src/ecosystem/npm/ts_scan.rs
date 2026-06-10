@@ -139,7 +139,9 @@ pub(crate) fn scan_vue_global_components(source: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for m in module_re.find_iter(source) {
         let open_brace = m.end() - 1;
-        let Some(close) = find_matching_brace(bytes, open_brace) else { continue };
+        let Some(close) = find_matching_brace(bytes, open_brace) else {
+            continue;
+        };
         let module_block = &source[open_brace + 1..close];
 
         // Find `interface GlobalComponents` (with optional `export`/`extends`)
@@ -151,13 +153,15 @@ pub(crate) fn scan_vue_global_components(source: &str) -> Vec<String> {
         let iface_block_bytes = module_block.as_bytes();
         for cap in iface_re.find_iter(module_block) {
             let body_open = cap.end() - 1;
-            let Some(body_close) = find_matching_brace(iface_block_bytes, body_open) else { continue };
+            let Some(body_close) = find_matching_brace(iface_block_bytes, body_open) else {
+                continue;
+            };
             let body = &module_block[body_open + 1..body_close];
             // Property declarations: `Name: <type>` or `Name?: <type>`.
             // Skip nested braces (e.g. mapped types) by only matching at the
             // shallow level — naïve approach via line-anchored regex.
-            let prop_re = regex::Regex::new(r"(?m)^\s*([A-Za-z_$][\w$]*)\s*\??\s*:")
-                .expect("property regex");
+            let prop_re =
+                regex::Regex::new(r"(?m)^\s*([A-Za-z_$][\w$]*)\s*\??\s*:").expect("property regex");
             for prop_cap in prop_re.captures_iter(body) {
                 out.push(prop_cap[1].to_string());
             }
@@ -199,10 +203,7 @@ pub(crate) fn collect_imports(
                 // `import X from 'mod'` — default import.
                 "identifier" => {
                     if let Ok(name) = piece.utf8_text(bytes) {
-                        out.insert(
-                            name.to_string(),
-                            (module.clone(), "default".to_string()),
-                        );
+                        out.insert(name.to_string(), (module.clone(), "default".to_string()));
                     }
                 }
                 // `import { X, Y as Y2 } from 'mod'`
@@ -218,12 +219,13 @@ pub(crate) fn collect_imports(
                         let (Some(on), Some(ln)) = (orig_node, local_node) else {
                             continue;
                         };
-                        let Ok(original) = on.utf8_text(bytes) else { continue };
-                        let Ok(local) = ln.utf8_text(bytes) else { continue };
-                        out.insert(
-                            local.to_string(),
-                            (module.clone(), original.to_string()),
-                        );
+                        let Ok(original) = on.utf8_text(bytes) else {
+                            continue;
+                        };
+                        let Ok(local) = ln.utf8_text(bytes) else {
+                            continue;
+                        };
+                        out.insert(local.to_string(), (module.clone(), original.to_string()));
                     }
                 }
                 // `import * as ns from 'mod'`
@@ -232,10 +234,7 @@ pub(crate) fn collect_imports(
                     for n in piece.children(&mut sc) {
                         if n.kind() == "identifier" {
                             if let Ok(name) = n.utf8_text(bytes) {
-                                out.insert(
-                                    name.to_string(),
-                                    (module.clone(), "*".to_string()),
-                                );
+                                out.insert(name.to_string(), (module.clone(), "*".to_string()));
                             }
                         }
                     }
@@ -522,8 +521,12 @@ pub(crate) fn collect_file_exports(
                             let (Some(on), Some(en)) = (orig_node, exposed_node) else {
                                 continue;
                             };
-                            let Ok(original) = on.utf8_text(bytes) else { continue };
-                            let Ok(exposed) = en.utf8_text(bytes) else { continue };
+                            let Ok(original) = on.utf8_text(bytes) else {
+                                continue;
+                            };
+                            let Ok(exposed) = en.utf8_text(bytes) else {
+                                continue;
+                            };
                             // Three cases for the source:
                             //   (a) `export { X } from 'mod'` — direct re-export.
                             //   (b) `export { X }` with no `from`, but X was
@@ -554,9 +557,7 @@ pub(crate) fn collect_file_exports(
                                 // (c) — genuinely local.
                                 ExportSource::Local
                             };
-                            out.named
-                                .entry(exposed.to_string())
-                                .or_insert(source);
+                            out.named.entry(exposed.to_string()).or_insert(source);
                         }
                     }
                     _ => {

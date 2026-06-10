@@ -78,7 +78,11 @@ pub fn search_symbols(
     // Cap the limit — an unbounded FTS query on a large index is expensive.
     let effective_limit = if limit == 0 { 500 } else { limit.min(500) };
 
-    let sig_col = if opts.include_signature { "s.signature" } else { "NULL" };
+    let sig_col = if opts.include_signature {
+        "s.signature"
+    } else {
+        "NULL"
+    };
 
     // --- Primary: FTS5 query ---
     // `rank` in FTS5 is a negative BM25 score; ORDER BY rank ascending puts
@@ -101,20 +105,23 @@ pub fn search_symbols(
          LIMIT {effective_limit}"
     );
 
-    let mut stmt = conn.prepare(&fts_sql)
+    let mut stmt = conn
+        .prepare(&fts_sql)
         .context("Failed to prepare FTS5 search query")?;
 
-    let rows = stmt.query_map([query], |row| {
-        Ok(SearchResult {
-            name:          row.get(0)?,
-            qualified_name: row.get(1)?,
-            kind:          row.get(2)?,
-            file_path:     row.get(3)?,
-            start_line:    row.get(4)?,
-            signature:     row.get(5)?,
-            score:         row.get(6)?,
+    let rows = stmt
+        .query_map([query], |row| {
+            Ok(SearchResult {
+                name: row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
+                start_line: row.get(4)?,
+                signature: row.get(5)?,
+                score: row.get(6)?,
+            })
         })
-    }).context("Failed to execute FTS5 search query")?;
+        .context("Failed to execute FTS5 search query")?;
 
     let results: rusqlite::Result<Vec<SearchResult>> = rows.collect();
 
@@ -151,22 +158,26 @@ pub fn search_symbols(
          LIMIT {effective_limit}"
     );
 
-    let mut stmt = conn.prepare(&like_sql)
+    let mut stmt = conn
+        .prepare(&like_sql)
         .context("Failed to prepare LIKE fallback query")?;
 
-    let rows = stmt.query_map([&like_pattern], |row| {
-        Ok(SearchResult {
-            name:          row.get(0)?,
-            qualified_name: row.get(1)?,
-            kind:          row.get(2)?,
-            file_path:     row.get(3)?,
-            start_line:    row.get(4)?,
-            signature:     row.get(5)?,
-            score:         row.get(6)?,
+    let rows = stmt
+        .query_map([&like_pattern], |row| {
+            Ok(SearchResult {
+                name: row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
+                start_line: row.get(4)?,
+                signature: row.get(5)?,
+                score: row.get(6)?,
+            })
         })
-    }).context("Failed to execute LIKE fallback query")?;
+        .context("Failed to execute LIKE fallback query")?;
 
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect LIKE fallback results")?)
 }
 

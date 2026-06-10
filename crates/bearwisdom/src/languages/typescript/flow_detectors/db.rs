@@ -18,9 +18,7 @@ use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
 use super::first_arg_string;
 
-pub(crate) fn detect_db_query_emission(
-    chain: &crate::types::MemberChain,
-) -> Option<FlowEmission> {
+pub(crate) fn detect_db_query_emission(chain: &crate::types::MemberChain) -> Option<FlowEmission> {
     // Production path runs through the imports-aware variant; this no-imports
     // wrapper exists for unit tests that don't need the gating semantics.
     detect_db_query_emission_inner(chain, true)
@@ -114,7 +112,9 @@ fn detect_db_query_emission_inner(
 /// against type imports of the same names from unrelated packages.
 pub(super) fn file_imports_orm_decorator_package(file_imports: &[ImportEntry]) -> bool {
     file_imports.iter().any(|imp| {
-        let Some(m) = imp.module_path.as_deref() else { return false; };
+        let Some(m) = imp.module_path.as_deref() else {
+            return false;
+        };
         m == "typeorm"
             || m.starts_with("typeorm/")
             || m == "sequelize-typescript"
@@ -127,7 +127,9 @@ pub(super) fn file_imports_orm_decorator_package(file_imports: &[ImportEntry]) -
 
 fn file_imports_mongoose_or_sequelize(file_imports: &[ImportEntry]) -> bool {
     file_imports.iter().any(|imp| {
-        let Some(m) = imp.module_path.as_deref() else { return false; };
+        let Some(m) = imp.module_path.as_deref() else {
+            return false;
+        };
         m == "mongoose"
             || m.starts_with("mongoose/")
             || m == "sequelize"
@@ -148,26 +150,47 @@ fn classify_orm_op(name: &str) -> DbQueryOp {
     let lower = name.to_ascii_lowercase();
     match lower.as_str() {
         // Compound Select forms not covered by from_method_name's literal set.
-        "findbyid" | "findbypk" | "findunique" | "findfirst" | "findany"
-        | "findfirstorthrow" | "finduniqueorthrow" | "findoneorfail"
-        | "findoneby" | "findonebyorfail" | "findandcount" | "findandcountby"
-        | "findby" | "findandcountall" | "estimateddocumentcount"
-        | "countdocuments" | "countby" | "distinct" | "aggregate" | "groupby"
-        | "has" | "exist" => DbQueryOp::Select,
+        "findbyid"
+        | "findbypk"
+        | "findunique"
+        | "findfirst"
+        | "findany"
+        | "findfirstorthrow"
+        | "finduniqueorthrow"
+        | "findoneorfail"
+        | "findoneby"
+        | "findonebyorfail"
+        | "findandcount"
+        | "findandcountby"
+        | "findby"
+        | "findandcountall"
+        | "estimateddocumentcount"
+        | "countdocuments"
+        | "countby"
+        | "distinct"
+        | "aggregate"
+        | "groupby"
+        | "has"
+        | "exist" => DbQueryOp::Select,
 
         // Compound Insert forms.
-        "createmany" | "createmanyandreturn" | "bulkcreate" | "insertmany"
-        | "bulkbuild" => DbQueryOp::Insert,
+        "createmany" | "createmanyandreturn" | "bulkcreate" | "insertmany" | "bulkbuild" => {
+            DbQueryOp::Insert
+        }
 
         // Compound Update forms.
-        "updatemany" | "updatemanyandreturn" | "updateone" | "replaceone"
-        | "findbyidandupdate" | "findoneandupdate" | "findoneandreplace"
+        "updatemany"
+        | "updatemanyandreturn"
+        | "updateone"
+        | "replaceone"
+        | "findbyidandupdate"
+        | "findoneandupdate"
+        | "findoneandreplace"
         | "softrestore" => DbQueryOp::Update,
 
         // Compound Delete forms.
-        "deletemany" | "deleteone" | "destroyall" | "truncate"
-        | "softdelete" | "softremove" | "findbyidanddelete"
-        | "findbyidandremove" | "findoneanddelete" | "findoneandremove" => {
+        "deletemany" | "deleteone" | "destroyall" | "truncate" | "softdelete" | "softremove"
+        | "findbyidanddelete" | "findbyidandremove" | "findoneanddelete" | "findoneandremove" => {
             DbQueryOp::Delete
         }
 

@@ -92,11 +92,11 @@ impl Database {
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(AuditSessionSummary {
-                session_id:   row.get(0)?,
-                call_count:   row.get(1)?,
+                session_id: row.get(0)?,
+                call_count: row.get(1)?,
                 total_tokens: row.get(2)?,
-                first_ts:     row.get(3)?,
-                last_ts:      row.get(4)?,
+                first_ts: row.get(3)?,
+                last_ts: row.get(4)?,
             })
         })?;
         rows.collect()
@@ -119,14 +119,14 @@ impl Database {
         )?;
         let rows = stmt.query_map(rusqlite::params![session_id, limit, offset], |row| {
             Ok(AuditRecord {
-                id:             row.get(0)?,
-                session_id:     row.get(1)?,
-                tool_name:      row.get(2)?,
-                params_json:    row.get(3)?,
-                response_json:  row.get(4)?,
-                duration_ms:    row.get(5)?,
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                tool_name: row.get(2)?,
+                params_json: row.get(3)?,
+                response_json: row.get(4)?,
+                duration_ms: row.get(5)?,
                 token_estimate: row.get(6)?,
-                ts:             row.get(7)?,
+                ts: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -145,14 +145,14 @@ impl Database {
         )?;
         let rows = stmt.query_map(rusqlite::params![after_id], |row| {
             Ok(AuditRecord {
-                id:             row.get(0)?,
-                session_id:     row.get(1)?,
-                tool_name:      row.get(2)?,
-                params_json:    row.get(3)?,
-                response_json:  row.get(4)?,
-                duration_ms:    row.get(5)?,
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                tool_name: row.get(2)?,
+                params_json: row.get(3)?,
+                response_json: row.get(4)?,
+                duration_ms: row.get(5)?,
                 token_estimate: row.get(6)?,
-                ts:             row.get(7)?,
+                ts: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -178,7 +178,9 @@ impl Database {
              ORDER BY cnt DESC",
         )?;
         let calls_by_tool: Vec<(String, i64)> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
             .filter_map(|r| r.ok())
             .collect();
 

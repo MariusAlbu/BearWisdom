@@ -60,7 +60,13 @@ pub static JAVA: LanguageDescriptor = LanguageDescriptor {
     filenames: &[],
     aliases: &[],
     exclude_dirs: &["build", "target", ".gradle", "out"],
-    entry_point_files: &["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+    entry_point_files: &[
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+    ],
     sdk: Some(SdkDescriptor {
         name: "Java (JDK)",
         version_command: "java",

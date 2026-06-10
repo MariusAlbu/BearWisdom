@@ -110,11 +110,8 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
         // (child_kind, parent_kind) pairs: skip counting the child as a ref site
         // when its direct parent has the given kind (e.g., Nix inner apply nodes
         // inside curried application chains).
-        let nested_skip: FxHashSet<(&str, &str)> = plugin
-            .nested_ref_skip_pairs()
-            .iter()
-            .copied()
-            .collect();
+        let nested_skip: FxHashSet<(&str, &str)> =
+            plugin.nested_ref_skip_pairs().iter().copied().collect();
         let has_rules = !sym_kinds.is_empty() || !ref_kinds.is_empty();
 
         // Per-node-kind counters
@@ -152,9 +149,17 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 if rp.ends_with(".tsx") || rp.ends_with(".jsx") {
                     // Force the TSX variant for files that need JSX support.
                     // If the plugin doesn't support "tsx", fall back to `lang`.
-                    if plugin.grammar("tsx").is_some() { "tsx" } else { lang.as_str() }
+                    if plugin.grammar("tsx").is_some() {
+                        "tsx"
+                    } else {
+                        lang.as_str()
+                    }
                 } else if rp.ends_with(".jsx") {
-                    if plugin.grammar("jsx").is_some() { "jsx" } else { lang.as_str() }
+                    if plugin.grammar("jsx").is_some() {
+                        "jsx"
+                    } else {
+                        lang.as_str()
+                    }
                 } else {
                     lang.as_str()
                 }
@@ -387,8 +392,17 @@ fn walk_and_classify(
     ref_by_line: &mut FxHashMap<String, Vec<u32>>,
 ) {
     walk_and_classify_inner(
-        node, src, sym_kinds, ref_kinds, builtins, nested_skip,
-        sym_counts, ref_counts, structural_counts, sym_by_line, ref_by_line,
+        node,
+        src,
+        sym_kinds,
+        ref_kinds,
+        builtins,
+        nested_skip,
+        sym_counts,
+        ref_counts,
+        structural_counts,
+        sym_by_line,
+        ref_by_line,
         None,
     );
 }
@@ -439,8 +453,10 @@ fn walk_and_classify_inner(
         } else {
             // Skip builtin type_identifiers from the count — extractors correctly
             // don't emit TypeRef for these, so including them inflates the denominator.
-            let is_type_id = kind == "type_identifier" || kind == "user_type"
-                || kind == "named_type" || kind == "constant";
+            let is_type_id = kind == "type_identifier"
+                || kind == "user_type"
+                || kind == "named_type"
+                || kind == "constant";
             if is_type_id && !builtins.is_empty() {
                 let text = node.utf8_text(src).unwrap_or("");
                 // For qualified types like "std.io.Result", check the last segment
@@ -453,23 +469,21 @@ fn walk_and_classify_inner(
                 }
             } else if sym_kinds.contains(kind) {
                 *sym_counts.entry(kind.to_string()).or_insert(0) += 1;
-                sym_by_line
-                    .entry(kind.to_string())
-                    .or_default()
-                    .push(line);
+                sym_by_line.entry(kind.to_string()).or_default().push(line);
             } else if ref_kinds.contains(kind) {
                 *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
-                ref_by_line
-                    .entry(kind.to_string())
-                    .or_default()
-                    .push(line);
+                ref_by_line.entry(kind.to_string()).or_default().push(line);
             } else {
                 *structural_counts.entry(kind.to_string()).or_insert(0) += 1;
             }
         }
     }
 
-    let node_kind = if node.is_named() { Some(node.kind()) } else { None };
+    let node_kind = if node.is_named() {
+        Some(node.kind())
+    } else {
+        None
+    };
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         walk_and_classify_inner(
@@ -498,7 +512,10 @@ mod tests {
     fn debug_measure_all_language_coverage() {
         // (project_path, language_id)
         let projects: &[(&str, &str)] = &[
-            ("F:/Work/Projects/TestProjects/java-spring-petclinic", "java"),
+            (
+                "F:/Work/Projects/TestProjects/java-spring-petclinic",
+                "java",
+            ),
             ("F:/Work/Projects/TestProjects/react-calcom", "typescript"),
             ("F:/Work/Projects/TestProjects/ruby-discourse", "ruby"),
             ("F:/Work/Projects/TestProjects/scala-lila", "scala"),
@@ -523,7 +540,8 @@ mod tests {
             match cov {
                 None => eprintln!("NO DATA: {} [{}]", project, lang_filter),
                 Some(c) => {
-                    let sym_ok = c.symbol_coverage.percent < 0.0 || c.symbol_coverage.percent >= 95.0;
+                    let sym_ok =
+                        c.symbol_coverage.percent < 0.0 || c.symbol_coverage.percent >= 95.0;
                     let ref_ok = c.ref_coverage.percent < 0.0 || c.ref_coverage.percent >= 95.0;
                     let sym_flag = if sym_ok { "✓" } else { "✗" };
                     let ref_flag = if ref_ok { "✓" } else { "✗" };
@@ -540,14 +558,24 @@ mod tests {
                         let mut sk = c.symbol_kinds.clone();
                         sk.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
                         for k in sk.iter().take(3) {
-                            eprintln!("  SYM GAP  {}: {:.1}% miss={}", k.kind, k.percent, k.occurrences - k.matched);
+                            eprintln!(
+                                "  SYM GAP  {}: {:.1}% miss={}",
+                                k.kind,
+                                k.percent,
+                                k.occurrences - k.matched
+                            );
                         }
                     }
                     if !ref_ok {
                         let mut rk = c.ref_kinds.clone();
                         rk.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
                         for k in rk.iter().take(3) {
-                            eprintln!("  REF GAP  {}: {:.1}% miss={}", k.kind, k.percent, k.occurrences - k.matched);
+                            eprintln!(
+                                "  REF GAP  {}: {:.1}% miss={}",
+                                k.kind,
+                                k.percent,
+                                k.occurrences - k.matched
+                            );
                         }
                     }
                 }

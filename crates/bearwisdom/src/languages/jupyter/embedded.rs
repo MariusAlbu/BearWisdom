@@ -91,7 +91,9 @@ mod tests {
         let regions = detect_regions(src);
         assert_eq!(regions.len(), 2);
         assert!(regions.iter().all(|r| r.language_id == "python"));
-        assert!(regions.iter().all(|r| r.origin == EmbeddedOrigin::NotebookCell));
+        assert!(regions
+            .iter()
+            .all(|r| r.origin == EmbeddedOrigin::NotebookCell));
     }
 
     #[test]

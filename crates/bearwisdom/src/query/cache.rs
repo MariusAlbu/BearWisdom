@@ -242,7 +242,10 @@ mod tests {
         // Insert "C"; LRU ("A") should be evicted.
         cache.put_symbol_info("C".to_string(), "c".to_string());
 
-        assert!(cache.get_symbol_info("A").is_none(), "A should have been evicted");
+        assert!(
+            cache.get_symbol_info("A").is_none(),
+            "A should have been evicted"
+        );
         assert!(cache.get_symbol_info("B").is_some());
         assert!(cache.get_symbol_info("C").is_some());
     }

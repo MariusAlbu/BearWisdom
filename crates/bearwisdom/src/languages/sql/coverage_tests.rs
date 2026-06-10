@@ -17,7 +17,6 @@
 use super::extract;
 use crate::types::{EdgeKind, SymbolKind};
 
-
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
 // ---------------------------------------------------------------------------
@@ -27,7 +26,11 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_create_table_emits_struct() {
     let r = extract::extract("CREATE TABLE users (id INT);");
     let sym = r.symbols.iter().find(|s| s.name == "users");
-    assert!(sym.is_some(), "expected Struct 'users'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'users'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -35,10 +38,24 @@ fn cov_create_table_emits_struct() {
 #[test]
 fn cov_column_def_emits_field() {
     let r = extract::extract("CREATE TABLE orders (id INT, total DECIMAL);");
-    let id_field = r.symbols.iter().find(|s| s.name == "id" && s.kind == SymbolKind::Field);
-    assert!(id_field.is_some(), "expected Field 'id'; got: {:?}", r.symbols);
-    let total_field = r.symbols.iter().find(|s| s.name == "total" && s.kind == SymbolKind::Field);
-    assert!(total_field.is_some(), "expected Field 'total'; got: {:?}", r.symbols);
+    let id_field = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "id" && s.kind == SymbolKind::Field);
+    assert!(
+        id_field.is_some(),
+        "expected Field 'id'; got: {:?}",
+        r.symbols
+    );
+    let total_field = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "total" && s.kind == SymbolKind::Field);
+    assert!(
+        total_field.is_some(),
+        "expected Field 'total'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// create_view → SymbolKind::Class
@@ -46,7 +63,11 @@ fn cov_column_def_emits_field() {
 fn cov_create_view_emits_class() {
     let r = extract::extract("CREATE VIEW active_users AS SELECT * FROM users WHERE active = 1;");
     let sym = r.symbols.iter().find(|s| s.name == "active_users");
-    assert!(sym.is_some(), "expected Class 'active_users' from CREATE VIEW; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class 'active_users' from CREATE VIEW; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Class);
 }
 
@@ -74,10 +95,21 @@ fn cov_common_table_expression_does_not_crash() {
 fn cov_create_index_emits_variable_and_ref() {
     let r = extract::extract("CREATE INDEX idx_name ON users (name);");
     let sym = r.symbols.iter().find(|s| s.name == "idx_name");
-    assert!(sym.is_some(), "expected Variable 'idx_name' from CREATE INDEX; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'idx_name' from CREATE INDEX; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, crate::types::SymbolKind::Variable);
-    let table_ref = r.refs.iter().find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
-    assert!(table_ref.is_some(), "expected TypeRef to 'users' from CREATE INDEX; got: {:?}", r.refs);
+    let table_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
+    assert!(
+        table_ref.is_some(),
+        "expected TypeRef to 'users' from CREATE INDEX; got: {:?}",
+        r.refs
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,8 +127,15 @@ fn cov_foreign_key_emits_type_ref() {
     let has_table = r.symbols.iter().any(|s| s.name == "orders");
     assert!(has_table, "expected Struct 'orders'; got: {:?}", r.symbols);
     // FK reference should produce a TypeRef to 'users'.
-    let fk_ref = r.refs.iter().find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
-    assert!(fk_ref.is_some(), "expected TypeRef to 'users' from FK REFERENCES; got: {:?}", r.refs);
+    let fk_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
+    assert!(
+        fk_ref.is_some(),
+        "expected TypeRef to 'users' from FK REFERENCES; got: {:?}",
+        r.refs
+    );
 }
 
 /// table_or_subquery — table reference in a query; extractor should handle
@@ -132,8 +171,15 @@ fn cov_type_name_custom_column_does_not_crash() {
 fn cov_create_function_emits_function() {
     let src = "CREATE FUNCTION get_count() RETURNS INTEGER AS $$ SELECT 1 $$ LANGUAGE sql;";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "get_count" && s.kind == SymbolKind::Function);
-    assert!(sym.is_some(), "expected Function 'get_count' from CREATE FUNCTION; got: {:?}", r.symbols);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "get_count" && s.kind == SymbolKind::Function);
+    assert!(
+        sym.is_some(),
+        "expected Function 'get_count' from CREATE FUNCTION; got: {:?}",
+        r.symbols
+    );
 }
 
 /// create_table with IF NOT EXISTS — name still extracted correctly
@@ -141,8 +187,15 @@ fn cov_create_function_emits_function() {
 fn cov_create_table_if_not_exists_emits_struct() {
     let src = "CREATE TABLE IF NOT EXISTS sessions (token TEXT);";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "sessions" && s.kind == SymbolKind::Struct);
-    assert!(sym.is_some(), "expected Struct 'sessions' with IF NOT EXISTS; got: {:?}", r.symbols);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "sessions" && s.kind == SymbolKind::Struct);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'sessions' with IF NOT EXISTS; got: {:?}",
+        r.symbols
+    );
 }
 
 /// Multiple columns in a table — all emitted as Field
@@ -150,11 +203,16 @@ fn cov_create_table_if_not_exists_emits_struct() {
 fn cov_multiple_columns_all_emitted_as_field() {
     let src = "CREATE TABLE products (id INT, name TEXT, price DECIMAL, active BOOLEAN);";
     let r = extract::extract(src);
-    let fields: Vec<&str> = r.symbols.iter()
+    let fields: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Field)
         .map(|s| s.name.as_str())
         .collect();
     for expected in &["id", "name", "price", "active"] {
-        assert!(fields.contains(expected), "expected Field '{expected}'; got: {fields:?}");
+        assert!(
+            fields.contains(expected),
+            "expected Field '{expected}'; got: {fields:?}"
+        );
     }
 }

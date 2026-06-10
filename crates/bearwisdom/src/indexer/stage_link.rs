@@ -27,7 +27,9 @@ use rayon::prelude::*;
 use tracing::{debug, info};
 
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
-use crate::ecosystem::{default_locator, default_registry, Ecosystem, EcosystemKind, SymbolLocationIndex};
+use crate::ecosystem::{
+    default_locator, default_registry, Ecosystem, EcosystemKind, SymbolLocationIndex,
+};
 use crate::languages::LanguageRegistry;
 use crate::types::{EdgeKind, PackageInfo, ParsedFile};
 use crate::walker::WalkedFile;
@@ -94,7 +96,10 @@ pub(crate) fn parse_external_sources(
     // for unrelated backend packages in the same monorepo.
     let per_package_locators: HashMap<
         i64,
-        Vec<(crate::ecosystem::EcosystemId, Arc<dyn ExternalSourceLocator>)>,
+        Vec<(
+            crate::ecosystem::EcosystemId,
+            Arc<dyn ExternalSourceLocator>,
+        )>,
     > = ctx
         .active_ecosystems_by_package
         .iter()
@@ -141,8 +146,7 @@ pub(crate) fn parse_external_sources(
                 locators.as_slice()
             };
             for (id, locator) in pkg_locators {
-                let roots =
-                    locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
+                let roots = locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
                 if !roots.is_empty() {
                     debug!(
                         "Package {} (id={}): {} external {} roots",
@@ -292,8 +296,7 @@ pub(crate) fn parse_external_sources(
                     pre_pull.len()
                 );
                 if let Some(locator) = locator_by_ecosystem.get(tag) {
-                    walked_owners
-                        .extend(std::iter::repeat(locator.clone()).take(pre_pull.len()));
+                    walked_owners.extend(std::iter::repeat(locator.clone()).take(pre_pull.len()));
                 }
                 walked.extend(pre_pull);
             }
@@ -335,11 +338,8 @@ pub(crate) fn parse_external_sources(
     let results: Vec<Result<ParsedFile>> = walked
         .par_iter()
         .map(|w| {
-            let per_file_demand = lookup_demand_for_walked(
-                &w.relative_path,
-                demand,
-                &ambient_globals_packages,
-            );
+            let per_file_demand =
+                lookup_demand_for_walked(&w.relative_path, demand, &ambient_globals_packages);
             super::full::parse_file_with_arena_and_demand(w, registry, per_file_demand, type_arena)
         })
         .collect();
@@ -464,7 +464,9 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
                 s.strip_prefix(&format!("{root}/"))?.to_string()
             };
             let parts: Vec<&str> = after.splitn(4, '/').collect();
-            if parts.is_empty() { return None }
+            if parts.is_empty() {
+                return None;
+            }
             let (pkg, rel) = if parts[0].starts_with('@') && parts.len() >= 3 {
                 (format!("{}/{}", parts[0], parts[1]), parts[2..].join("/"))
             } else {
@@ -516,12 +518,12 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
                 // which always starts with a digit.
                 let pkg: String = dir_name
                     .split('-')
-                    .take_while(|part| {
-                        part.chars().next().map_or(false, |c| !c.is_ascii_digit())
-                    })
+                    .take_while(|part| part.chars().next().map_or(false, |c| !c.is_ascii_digit()))
                     .collect::<Vec<_>>()
                     .join("-");
-                if pkg.is_empty() || rel.is_empty() { return None; }
+                if pkg.is_empty() || rel.is_empty() {
+                    return None;
+                }
                 return Some(format!("ext:nim:{pkg}/{rel}"));
             }
             // Stdlib: path contains `/lib/` and is under a Nim install.
@@ -606,8 +608,7 @@ fn is_ambient_global_external(
     )) {
         return true;
     }
-    let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(&normalized)
-    else {
+    let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(&normalized) else {
         return false;
     };
     ambient_globals_packages.contains(pkg)

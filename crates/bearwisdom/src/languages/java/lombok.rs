@@ -56,11 +56,27 @@ impl Accessors {
 fn accessors_for(annotation: &str) -> Option<Accessors> {
     let bare = annotation.rsplit('.').next().unwrap_or(annotation);
     match bare {
-        "Data" => Some(Accessors { getter: true, setter: true, ..Default::default() }),
-        "Value" => Some(Accessors { getter: true, ..Default::default() }), // immutable
-        "Getter" => Some(Accessors { getter: true, ..Default::default() }),
-        "Setter" => Some(Accessors { setter: true, ..Default::default() }),
-        "Builder" => Some(Accessors { builder: true, ..Default::default() }),
+        "Data" => Some(Accessors {
+            getter: true,
+            setter: true,
+            ..Default::default()
+        }),
+        "Value" => Some(Accessors {
+            getter: true,
+            ..Default::default()
+        }), // immutable
+        "Getter" => Some(Accessors {
+            getter: true,
+            ..Default::default()
+        }),
+        "Setter" => Some(Accessors {
+            setter: true,
+            ..Default::default()
+        }),
+        "Builder" => Some(Accessors {
+            builder: true,
+            ..Default::default()
+        }),
         _ => None,
     }
 }
@@ -131,14 +147,23 @@ pub(super) fn synthesize_lombok_accessors(
             } else {
                 format!("get{cap}")
             };
-            let sym = make_synth(&name, SymbolKind::Method, format!("{ty} {name}()"), class_qname, sym.start_line);
+            let sym = make_synth(
+                &name,
+                SymbolKind::Method,
+                format!("{ty} {name}()"),
+                class_qname,
+                sym.start_line,
+            );
             emit.push(sym, Some(&field_type));
         }
         if acc.setter {
             // Lombok setters return void — no return-type ref.
             let name = format!("set{cap}");
             let sig = format!("void {}({} {})", name, ty, sym.name);
-            emit.push(make_synth(&name, SymbolKind::Method, sig, class_qname, sym.start_line), None);
+            emit.push(
+                make_synth(&name, SymbolKind::Method, sig, class_qname, sym.start_line),
+                None,
+            );
         }
     }
 
@@ -154,7 +179,10 @@ pub(super) fn synthesize_lombok_accessors(
         emit_builder(class_qname, symbols, &mut emit);
     }
 
-    Synthesized { symbols: emit.out, refs: emit.refs }
+    Synthesized {
+        symbols: emit.out,
+        refs: emit.refs,
+    }
 }
 
 /// Emit the `@Builder` machinery for one class: a static `builder()` returning
@@ -172,11 +200,23 @@ fn emit_builder(class_qname: &str, symbols: &[ExtractedSymbol], emit: &mut Emit)
         .map_or(0, |s| s.start_line);
 
     // `static {Simple}Builder builder()` on the owning class → returns the builder.
-    let builder_method = make_synth("builder", SymbolKind::Method, format!("{builder_name} builder()"), class_qname, line);
+    let builder_method = make_synth(
+        "builder",
+        SymbolKind::Method,
+        format!("{builder_name} builder()"),
+        class_qname,
+        line,
+    );
     emit.push(builder_method, Some(&builder_qname));
     // The nested builder class (no return type).
     emit.push(
-        make_synth(&builder_name, SymbolKind::Class, format!("class {builder_name}"), class_qname, line),
+        make_synth(
+            &builder_name,
+            SymbolKind::Class,
+            format!("class {builder_name}"),
+            class_qname,
+            line,
+        ),
         None,
     );
     // A fluent setter per field, returning the builder for chaining.
@@ -185,21 +225,42 @@ fn emit_builder(class_qname: &str, symbols: &[ExtractedSymbol], emit: &mut Emit)
             continue;
         }
         let ty = field_type_of(sym);
-        let sig = format!("{} {}({} {})", builder_name, sym.name, ret_type(&ty), sym.name);
+        let sig = format!(
+            "{} {}({} {})",
+            builder_name,
+            sym.name,
+            ret_type(&ty),
+            sym.name
+        );
         emit.push(
-            make_synth(&sym.name, SymbolKind::Method, sig, &builder_qname, sym.start_line),
+            make_synth(
+                &sym.name,
+                SymbolKind::Method,
+                sig,
+                &builder_qname,
+                sym.start_line,
+            ),
             Some(&builder_qname),
         );
     }
     // `{Simple} build()` on the builder class → returns the owning class.
     emit.push(
-        make_synth("build", SymbolKind::Method, format!("{simple} build()"), &builder_qname, line),
+        make_synth(
+            "build",
+            SymbolKind::Method,
+            format!("{simple} build()"),
+            &builder_qname,
+            line,
+        ),
         Some(class_qname),
     );
 }
 
 fn is_type_decl(kind: SymbolKind) -> bool {
-    matches!(kind, SymbolKind::Class | SymbolKind::Interface | SymbolKind::Enum)
+    matches!(
+        kind,
+        SymbolKind::Class | SymbolKind::Interface | SymbolKind::Enum
+    )
 }
 
 /// A field's `signature` is `"{type} {name}"`; strip the trailing ` {name}` to

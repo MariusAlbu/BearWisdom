@@ -74,7 +74,10 @@ pub(crate) fn detect_decorator_flow_emission_with_imports(
     // decorator usage. The extractor reuses `r.module` for both semantics
     // and they're otherwise indistinguishable from this layer.
     if let Some(arg) = first_arg {
-        if file_imports.iter().any(|imp| imp.module_path.as_deref() == Some(arg)) {
+        if file_imports
+            .iter()
+            .any(|imp| imp.module_path.as_deref() == Some(arg))
+        {
             return None;
         }
     }
@@ -90,7 +93,11 @@ fn detect_decorator_flow_emission_inner(
         first_arg
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
-            .or_else(|| class_context.filter(|c| !c.is_empty()).map(|c| c.to_string()))
+            .or_else(|| {
+                class_context
+                    .filter(|c| !c.is_empty())
+                    .map(|c| c.to_string())
+            })
     };
     match decorator_name {
         // NestJS authorization decorators
@@ -139,7 +146,7 @@ fn detect_decorator_flow_emission_inner(
             name: first_arg.unwrap_or("").to_string(),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         }),
         // NestJS WebSocket Consumer — `@SubscribeMessage('event')` on a
         // gateway method handles inbound WS messages keyed on the event name.
@@ -151,14 +158,14 @@ fn detect_decorator_flow_emission_inner(
             name: first_arg.unwrap_or("").to_string(),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         }),
         "WebSocketGateway" => Some(FlowEmission::NamedChannel {
             kind: NamedChannelKind::WebSocket,
             name: class_context.unwrap_or("ts.nestjs.gateway").to_string(),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         }),
         _ => None,
     }
@@ -213,7 +220,7 @@ pub(crate) fn detect_grpc_decorator_flow_emission(
         name: canonical_rpc_key(&service_norm, &method),
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -258,7 +265,7 @@ pub(crate) fn detect_addservice_object_keys(
             name: canonical_rpc_key(&service, method),
             role: ChannelRole::Consumer,
             method: None,
-        streaming: None,
+            streaming: None,
         })
         .collect();
     Some(emissions)
@@ -320,9 +327,18 @@ pub(crate) fn detect_route_decorator_flow_emission(
     // module_path it's never a real URL path — treat it as no argument and
     // let the controller prefix carry the route.
     let arg_is_import_source = first_arg
-        .map(|a| file_ctx.imports.iter().any(|imp| imp.module_path.as_deref() == Some(a)))
+        .map(|a| {
+            file_ctx
+                .imports
+                .iter()
+                .any(|imp| imp.module_path.as_deref() == Some(a))
+        })
         .unwrap_or(false);
-    let path_arg: Option<&str> = if arg_is_import_source { None } else { first_arg };
+    let path_arg: Option<&str> = if arg_is_import_source {
+        None
+    } else {
+        first_arg
+    };
 
     let class_qname = method_qname
         .rsplit_once('.')
@@ -344,7 +360,7 @@ pub(crate) fn detect_route_decorator_flow_emission(
         name: normalized,
         role: ChannelRole::Consumer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -354,7 +370,9 @@ pub(crate) fn detect_route_decorator_flow_emission(
 /// generic libraries) and must not be misread as routing decorators.
 fn file_imports_nest_decorator_package(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let Some(m) = imp.module_path.as_deref() else { return false; };
+        let Some(m) = imp.module_path.as_deref() else {
+            return false;
+        };
         m == "@nestjs/common"
             || m.starts_with("@nestjs/common/")
             || m == "@nestjs/microservices"
@@ -418,4 +436,3 @@ pub(crate) fn join_route_segments(prefix: &str, path: &str) -> String {
         }
     }
 }
-

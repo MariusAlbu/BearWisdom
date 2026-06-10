@@ -47,8 +47,14 @@ pub(super) fn synthesize_symbols(
 ) -> Synthesized {
     let mut out = synthesize_record_members(source, symbols, refs);
     merge(&mut out, synthesize_mvvm_members(source, symbols, refs));
-    merge(&mut out, synthesize_observable_object_members(source, symbols, refs));
-    merge(&mut out, synthesize_json_serializer_context_members(symbols, refs));
+    merge(
+        &mut out,
+        synthesize_observable_object_members(source, symbols, refs),
+    );
+    merge(
+        &mut out,
+        synthesize_json_serializer_context_members(symbols, refs),
+    );
     out
 }
 
@@ -109,8 +115,10 @@ pub(super) fn synthesize_record_members(
         }
 
         // `void Deconstruct(out T1 P1, out T2 P2, ...)`.
-        let rendered: Vec<String> =
-            params.iter().map(|p| format!("out {} {}", p.ty, p.name)).collect();
+        let rendered: Vec<String> = params
+            .iter()
+            .map(|p| format!("out {} {}", p.ty, p.name))
+            .collect();
         let signature = format!("void Deconstruct({})", rendered.join(", "));
         out_symbols.push(make_synth(
             "Deconstruct",
@@ -121,7 +129,10 @@ pub(super) fn synthesize_record_members(
         ));
     }
 
-    Synthesized { symbols: out_symbols, refs: Vec::new() }
+    Synthesized {
+        symbols: out_symbols,
+        refs: Vec::new(),
+    }
 }
 
 /// One `out`-parameter of a synthesized Deconstruct: a positional property's
@@ -149,7 +160,10 @@ fn positional_out_params(
                 && s.scope_path.as_deref() == Some(record_qname)
                 && span.contains(s.start_line, s.start_col, lines)
         })
-        .map(|p| OutParam { ty: property_type(p), name: p.name.clone() })
+        .map(|p| OutParam {
+            ty: property_type(p),
+            name: p.name.clone(),
+        })
         .collect()
 }
 
@@ -246,7 +260,10 @@ pub(super) fn synthesize_mvvm_members(
         }
     }
 
-    Synthesized { symbols: emit.out, refs: emit.refs }
+    Synthesized {
+        symbols: emit.out,
+        refs: emit.refs,
+    }
 }
 
 /// `[ObservableProperty] private {Type} _name;` → `public {Type} Name {get;set;}`
@@ -267,7 +284,11 @@ fn synthesize_observable_property(field: &ExtractedSymbol, emit: &mut MvvmEmit) 
         return;
     }
 
-    let ty = if field_type.is_empty() { "object" } else { field_type.as_str() };
+    let ty = if field_type.is_empty() {
+        "object"
+    } else {
+        field_type.as_str()
+    };
     let prop = make_synth(
         &prop_name,
         SymbolKind::Property,
@@ -278,9 +299,21 @@ fn synthesize_observable_property(field: &ExtractedSymbol, emit: &mut MvvmEmit) 
     emit.push(prop, Some(&field_type));
 
     // `partial void On{Name}Changing(value)` / `On{Name}Changed(value)`.
-    for hook in [format!("On{prop_name}Changing"), format!("On{prop_name}Changed")] {
+    for hook in [
+        format!("On{prop_name}Changing"),
+        format!("On{prop_name}Changed"),
+    ] {
         let sig = format!("void {hook}({ty} value)");
-        emit.push(make_synth(&hook, SymbolKind::Method, sig, class_qname, field.start_line), None);
+        emit.push(
+            make_synth(
+                &hook,
+                SymbolKind::Method,
+                sig,
+                class_qname,
+                field.start_line,
+            ),
+            None,
+        );
     }
 }
 
@@ -361,8 +394,11 @@ fn synthesize_relay_command(method: &ExtractedSymbol, lines: &[&str], emit: &mut
 const OBSERVABLE_OBJECT_ATTRS: &[&str] = &["ObservableObject", "INotifyPropertyChanged"];
 
 /// MVVM Toolkit base classes that carry the change-notification surface.
-const OBSERVABLE_OBJECT_BASES: &[&str] =
-    &["ObservableObject", "ObservableValidator", "ObservableRecipient"];
+const OBSERVABLE_OBJECT_BASES: &[&str] = &[
+    "ObservableObject",
+    "ObservableValidator",
+    "ObservableRecipient",
+];
 
 /// The change-notification surface common to every observable host — synthesized
 /// whenever any host marker (attribute or base) is recognized. `bool SetProperty`
@@ -381,7 +417,10 @@ const VALIDATOR_MEMBERS: &[(&str, &str)] = &[
     ("ValidateAllProperties", "void ValidateAllProperties()"),
     ("ClearAllErrors", "void ClearAllErrors()"),
     ("GetErrors", "IEnumerable GetErrors(string propertyName)"),
-    ("TrySetProperty", "bool TrySetProperty(ref T field, T newValue)"),
+    (
+        "TrySetProperty",
+        "bool TrySetProperty(ref T field, T newValue)",
+    ),
 ];
 
 /// The messaging surface `ObservableRecipient` adds. `Messenger` returns the
@@ -389,7 +428,10 @@ const VALIDATOR_MEMBERS: &[(&str, &str)] = &[
 /// bool/void → no ref.
 const RECIPIENT_MEMBERS: &[(&str, &str)] = &[
     ("IsActive", "bool IsActive"),
-    ("Broadcast", "void Broadcast(T oldValue, T newValue, string propertyName)"),
+    (
+        "Broadcast",
+        "void Broadcast(T oldValue, T newValue, string propertyName)",
+    ),
     ("OnActivated", "void OnActivated()"),
     ("OnDeactivated", "void OnDeactivated()"),
 ];
@@ -416,7 +458,13 @@ pub(super) fn synthesize_observable_object_members(
 
         for (name, sig) in COMMON_NOTIFY_MEMBERS {
             emit.push(
-                make_synth(name, SymbolKind::Method, sig.to_string(), class_qname, sym.start_line),
+                make_synth(
+                    name,
+                    SymbolKind::Method,
+                    sig.to_string(),
+                    class_qname,
+                    sym.start_line,
+                ),
                 None,
             );
         }
@@ -448,7 +496,10 @@ pub(super) fn synthesize_observable_object_members(
         }
     }
 
-    Synthesized { symbols: emit.out, refs: emit.refs }
+    Synthesized {
+        symbols: emit.out,
+        refs: emit.refs,
+    }
 }
 
 /// Which base-specific MVVM surfaces a recognized observable host carries. The
@@ -491,7 +542,10 @@ fn observable_object_host(class_idx: usize, refs: &[ExtractedRef]) -> Option<Obs
             _ => {}
         }
     }
-    is_host.then_some(ObservableHost { validator, recipient })
+    is_host.then_some(ObservableHost {
+        validator,
+        recipient,
+    })
 }
 
 // =============================================================================
@@ -539,8 +593,11 @@ const JSON_SERIALIZER_CONTEXT_BASE: &str = "JsonSerializerContext";
 /// Attribute heads emitted as class-index `TypeRef`s that are NOT serializable
 /// types — excluded before treating the remaining class-index `TypeRef`s as the
 /// `typeof(T)` serializable-type args.
-const JSON_CONTEXT_ATTR_HEADS: &[&str] =
-    &["JsonSerializable", "JsonSourceGenerationOptions", JSON_SERIALIZER_CONTEXT_BASE];
+const JSON_CONTEXT_ATTR_HEADS: &[&str] = &[
+    "JsonSerializable",
+    "JsonSourceGenerationOptions",
+    JSON_SERIALIZER_CONTEXT_BASE,
+];
 
 /// The external head every per-type property returns: `JsonTypeInfo<T>`.
 const JSON_TYPE_INFO_HEAD: &str = "JsonTypeInfo";
@@ -584,7 +641,10 @@ pub(super) fn synthesize_json_serializer_context_members(
         }
     }
 
-    Synthesized { symbols: emit.out, refs: emit.refs }
+    Synthesized {
+        symbols: emit.out,
+        refs: emit.refs,
+    }
 }
 
 /// Whether the class at symbol index `class_idx` inherits `JsonSerializerContext`
@@ -649,7 +709,10 @@ fn observable_property_name(field_name: &str) -> String {
 /// signature's return-type head covers the Task-returning non-async form.
 fn is_async_command(method: &ExtractedSymbol, lines: &[&str]) -> bool {
     if let Some(line) = lines.get(method.start_line as usize) {
-        if line.split(|c: char| !c.is_alphanumeric()).any(|w| w == "async") {
+        if line
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| w == "async")
+        {
             return true;
         }
     }
@@ -773,9 +836,24 @@ fn type_head(t: &str) -> &str {
 fn is_csharp_primitive(t: &str) -> bool {
     matches!(
         t,
-        "bool" | "byte" | "sbyte" | "short" | "ushort" | "int" | "uint" | "long" | "ulong"
-            | "float" | "double" | "decimal" | "char" | "string" | "object" | "void"
-            | "nint" | "nuint"
+        "bool"
+            | "byte"
+            | "sbyte"
+            | "short"
+            | "ushort"
+            | "int"
+            | "uint"
+            | "long"
+            | "ulong"
+            | "float"
+            | "double"
+            | "decimal"
+            | "char"
+            | "string"
+            | "object"
+            | "void"
+            | "nint"
+            | "nuint"
     )
 }
 
@@ -935,7 +1013,10 @@ fn param_list_span(sym: &ExtractedSymbol, lines: &[&str]) -> Option<ParamSpan> {
         j += 1;
     };
 
-    Some(ParamSpan { open: open + 1, close })
+    Some(ParamSpan {
+        open: open + 1,
+        close,
+    })
 }
 
 /// Absolute char offset of `name`'s first occurrence at or after the start of

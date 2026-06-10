@@ -106,17 +106,11 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 ///
 /// Each binding is scoped to the enclosing declaration's line range so
 /// uses outside (or in sibling scopes) still resolve normally.
-fn collect_local_var_scopes(
-    node: Node,
-    src: &str,
-    out: &mut Vec<(String, u32, u32)>,
-) {
+fn collect_local_var_scopes(node: Node, src: &str, out: &mut Vec<(String, u32, u32)>) {
     let kind = node.kind();
     let is_param_container = matches!(
         kind,
-        "class_definition"
-            | "defined_resource_type"
-            | "function_declaration"
+        "class_definition" | "defined_resource_type" | "function_declaration"
     );
     if is_param_container {
         let start_line = node.start_position().row as u32;
@@ -349,11 +343,11 @@ pub(super) fn make_symbol(
         scope_path: None,
         parent_index,
         byte_offset: node.start_byte() as u32,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 pub(super) fn node_text(node: Node, src: &str) -> String {

@@ -49,30 +49,35 @@ pub fn write_db_mapping(
         "INSERT OR IGNORE INTO db_mappings (symbol_id, table_name, entity_type, source)
          VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![symbol_id, table_name, entity_type, source.as_str()],
-    ).context("Failed to write db_mapping")?;
+    )
+    .context("Failed to write db_mapping")?;
     Ok(())
 }
 
 /// Load all db_mapping records with their entity class file locations.
 pub fn list_db_mappings(db: &Database) -> anyhow::Result<Vec<DbMapping>> {
     let conn = db.conn();
-    let mut stmt = conn.prepare(
-        "SELECT dm.id, dm.entity_type, dm.table_name, dm.source, f.path
+    let mut stmt = conn
+        .prepare(
+            "SELECT dm.id, dm.entity_type, dm.table_name, dm.source, f.path
          FROM db_mappings dm
          JOIN symbols s ON dm.symbol_id = s.id
          JOIN files f ON s.file_id = f.id
          ORDER BY dm.entity_type",
-    ).context("Failed to prepare db_mappings query")?;
+        )
+        .context("Failed to prepare db_mappings query")?;
 
-    let rows = stmt.query_map([], |row| {
-        Ok(DbMapping {
-            id: row.get(0)?,
-            entity_type: row.get(1)?,
-            table_name: row.get(2)?,
-            source: row.get(3)?,
-            file_path: row.get(4)?,
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(DbMapping {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                table_name: row.get(2)?,
+                source: row.get(3)?,
+                file_path: row.get(4)?,
+            })
         })
-    }).context("Failed to execute db_mappings query")?;
+        .context("Failed to execute db_mappings query")?;
 
     rows.map(|r| r.context("Failed to read db_mapping row"))
         .collect()
@@ -81,12 +86,12 @@ pub fn list_db_mappings(db: &Database) -> anyhow::Result<Vec<DbMapping>> {
 fn ef_apply_table_name_conventions(db: &Database) -> anyhow::Result<()> {
     let conn = db.conn();
     let to_update: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, entity_type FROM db_mappings WHERE source = 'convention'",
-        ).context("Failed to prepare convention mapping query")?;
-        let rows: rusqlite::Result<Vec<(i64, String)>> =
-            stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
-                .collect();
+        let mut stmt = conn
+            .prepare("SELECT id, entity_type FROM db_mappings WHERE source = 'convention'")
+            .context("Failed to prepare convention mapping query")?;
+        let rows: rusqlite::Result<Vec<(i64, String)>> = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+            .collect();
         rows.context("Failed to collect convention mappings")?
     };
 
@@ -95,7 +100,8 @@ fn ef_apply_table_name_conventions(db: &Database) -> anyhow::Result<()> {
         conn.execute(
             "UPDATE db_mappings SET table_name = ?1 WHERE id = ?2",
             rusqlite::params![table_name, id],
-        ).context("Failed to update table_name")?;
+        )
+        .context("Failed to update table_name")?;
     }
     Ok(())
 }
@@ -103,28 +109,31 @@ fn ef_apply_table_name_conventions(db: &Database) -> anyhow::Result<()> {
 fn ef_create_db_entity_edges(db: &Database) -> anyhow::Result<()> {
     let conn = db.conn();
     let mappings: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT symbol_id, entity_type FROM db_mappings",
-        ).context("Failed to prepare db_mappings edge query")?;
-        let rows: rusqlite::Result<Vec<(i64, String)>> =
-            stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
-                .collect();
+        let mut stmt = conn
+            .prepare("SELECT symbol_id, entity_type FROM db_mappings")
+            .context("Failed to prepare db_mappings edge query")?;
+        let rows: rusqlite::Result<Vec<(i64, String)>> = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+            .collect();
         rows.context("Failed to collect db_mappings for edge creation")?
     };
 
     for (dbset_sym_id, entity_type) in mappings {
-        let entity_sym_id: Option<i64> = conn.query_row(
-            "SELECT id FROM symbols WHERE name = ?1 AND kind = 'class' LIMIT 1",
-            [&entity_type],
-            |r| r.get(0),
-        ).ok();
+        let entity_sym_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM symbols WHERE name = ?1 AND kind = 'class' LIMIT 1",
+                [&entity_type],
+                |r| r.get(0),
+            )
+            .ok();
 
         if let Some(entity_id) = entity_sym_id {
             conn.execute(
                 "INSERT OR IGNORE INTO edges (source_id, target_id, kind, source_line, confidence)
                  VALUES (?1, ?2, 'db_entity', NULL, 1.0)",
                 rusqlite::params![dbset_sym_id, entity_id],
-            ).context("Failed to insert db_entity edge")?;
+            )
+            .context("Failed to insert db_entity edge")?;
         }
     }
     Ok(())
@@ -141,13 +150,19 @@ pub fn ef_pluralise(name: &str) -> String {
         return name.to_string();
     }
     let lower = name.to_lowercase();
-    if lower.ends_with('y') && !lower.ends_with("ay") && !lower.ends_with("ey")
-        && !lower.ends_with("oy") && !lower.ends_with("uy")
+    if lower.ends_with('y')
+        && !lower.ends_with("ay")
+        && !lower.ends_with("ey")
+        && !lower.ends_with("oy")
+        && !lower.ends_with("uy")
     {
         return format!("{}ies", &name[..name.len() - 1]);
     }
-    if lower.ends_with('s') || lower.ends_with('x') || lower.ends_with('z')
-        || lower.ends_with("ch") || lower.ends_with("sh")
+    if lower.ends_with('s')
+        || lower.ends_with('x')
+        || lower.ends_with('z')
+        || lower.ends_with("ch")
+        || lower.ends_with("sh")
     {
         return format!("{name}es");
     }
@@ -206,10 +221,18 @@ mod ef_core_tests {
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'Items', 'CatalogDbContext.Items', 'property', 5, 0)",
             [file_id],
-        ).unwrap();
+        )
+        .unwrap();
         let sym_id: i64 = conn.last_insert_rowid();
 
-        write_db_mapping(conn, sym_id, "CatalogItem", "CatalogItem", DbMappingSource::Convention).unwrap();
+        write_db_mapping(
+            conn,
+            sym_id,
+            "CatalogItem",
+            "CatalogItem",
+            DbMappingSource::Convention,
+        )
+        .unwrap();
         ef_core_connect(&db).unwrap();
 
         let mappings = list_db_mappings(&db).unwrap();

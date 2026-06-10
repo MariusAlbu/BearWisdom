@@ -36,14 +36,8 @@ use crate::walker::WalkedFile;
 /// project source.
 ///
 /// Returns an additive set — caller merges with the primary list.
-pub fn pull_gitignored_imports(
-    project_root: &Path,
-    primary: &[WalkedFile],
-) -> Vec<WalkedFile> {
-    let walked_abs: HashSet<PathBuf> = primary
-        .iter()
-        .map(|f| f.absolute_path.clone())
-        .collect();
+pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> Vec<WalkedFile> {
+    let walked_abs: HashSet<PathBuf> = primary.iter().map(|f| f.absolute_path.clone()).collect();
 
     let project_root_canonical = project_root
         .canonicalize()
@@ -65,11 +59,9 @@ pub fn pull_gitignored_imports(
             if !is_path_specifier(&spec) {
                 continue;
             }
-            for resolved in resolve_to_existing_files(
-                &file.absolute_path,
-                &project_root_canonical,
-                &spec,
-            ) {
+            for resolved in
+                resolve_to_existing_files(&file.absolute_path, &project_root_canonical, &spec)
+            {
                 if walked_abs.contains(&resolved) || found.contains(&resolved) {
                     continue;
                 }
@@ -103,7 +95,10 @@ pub fn pull_gitignored_imports(
 }
 
 fn is_ecmascript_family(lang: &str) -> bool {
-    matches!(lang, "typescript" | "tsx" | "javascript" | "jsx" | "vue" | "svelte" | "astro" | "mdx")
+    matches!(
+        lang,
+        "typescript" | "tsx" | "javascript" | "jsx" | "vue" | "svelte" | "astro" | "mdx"
+    )
 }
 
 /// Looks like a filesystem path (not a bare specifier).
@@ -132,11 +127,7 @@ fn is_path_specifier(spec: &str) -> bool {
 /// Try every conventional resolution of `spec` against `from_file`'s dir
 /// AND `project_root`. Returns every path that exists on disk AND is a
 /// regular file (or an `index` file inside a directory).
-fn resolve_to_existing_files(
-    from_file: &Path,
-    project_root: &Path,
-    spec: &str,
-) -> Vec<PathBuf> {
+fn resolve_to_existing_files(from_file: &Path, project_root: &Path, spec: &str) -> Vec<PathBuf> {
     let bases: Vec<PathBuf> = if spec.starts_with("./") || spec.starts_with("../") {
         // File-relative.
         vec![from_file.parent().unwrap_or(Path::new(".")).to_path_buf()]
@@ -149,7 +140,9 @@ fn resolve_to_existing_files(
     };
 
     let cleaned = spec.trim_start_matches('/');
-    let exts = [".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro", ".mdx"];
+    let exts = [
+        ".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro", ".mdx",
+    ];
     let mut out = Vec::new();
     for base in bases {
         let candidate = base.join(cleaned);
@@ -189,8 +182,18 @@ fn is_under_project_root(path: &Path, project_root: &Path) -> bool {
 /// pulling library source into the internal index.
 fn has_hard_excluded_component(path: &Path) -> bool {
     const HARD_EXCLUDES: &[&str] = &[
-        "node_modules", "target", ".git", ".next", ".nuxt", ".svelte-kit",
-        ".turbo", ".vercel", ".cache", "__pycache__", "venv", ".venv",
+        "node_modules",
+        "target",
+        ".git",
+        ".next",
+        ".nuxt",
+        ".svelte-kit",
+        ".turbo",
+        ".vercel",
+        ".cache",
+        "__pycache__",
+        "venv",
+        ".venv",
     ];
     path.components().any(|c| {
         c.as_os_str()
@@ -230,11 +233,7 @@ fn scan_import_specifiers(source: &str) -> Vec<String> {
     });
     let mut out = Vec::new();
     for cap in re.captures_iter(source) {
-        if let Some(m) = cap
-            .get(1)
-            .or_else(|| cap.get(2))
-            .or_else(|| cap.get(3))
-        {
+        if let Some(m) = cap.get(1).or_else(|| cap.get(2)).or_else(|| cap.get(3)) {
             out.push(m.as_str().to_string());
         }
     }

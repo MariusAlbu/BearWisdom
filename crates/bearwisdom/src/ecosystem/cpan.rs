@@ -26,10 +26,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "perl";
 pub struct CpanEcosystem;
 
 impl Ecosystem for CpanEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
     fn activation(&self) -> EcosystemActivation {
         // Project deps via `cpanfile`. A bare directory of `.pl`/`.pm`
         // files with no manifest can't be resolved against external
@@ -41,31 +49,38 @@ impl Ecosystem for CpanEcosystem {
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
         discover_perl_externals(ctx.project_root)
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_perl_root(dep) }
-    fn supports_reachability(&self) -> bool { true }
-    fn resolve_import(
-        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
-    ) -> Vec<WalkedFile> { walk_perl_narrowed(dep) }
-    fn resolve_symbol(
-        &self, dep: &ExternalDepRoot, _f: &str,
-    ) -> Vec<WalkedFile> { walk_perl_narrowed(dep) }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_perl_root(dep)
+    }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn resolve_import(&self, dep: &ExternalDepRoot, _p: &str, _s: &[&str]) -> Vec<WalkedFile> {
+        walk_perl_narrowed(dep)
+    }
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _f: &str) -> Vec<WalkedFile> {
+        walk_perl_narrowed(dep)
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_perl_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for CpanEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_perl_externals(project_root)
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_perl_root(dep) }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_perl_root(dep)
+    }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
@@ -89,10 +104,14 @@ impl crate::ecosystem::manifest::ManifestReader for CpanfileManifest {
 
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let cpanfile = project_root.join("cpanfile");
-        if !cpanfile.is_file() { return None }
+        if !cpanfile.is_file() {
+            return None;
+        }
         let content = std::fs::read_to_string(&cpanfile).ok()?;
         let deps = parse_cpanfile_requires(&content);
-        if deps.is_empty() { return None }
+        if deps.is_empty() {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
         Some(data)
@@ -101,17 +120,23 @@ impl crate::ecosystem::manifest::ManifestReader for CpanfileManifest {
 
 pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let cpanfile = project_root.join("cpanfile");
-    if !cpanfile.is_file() { return Vec::new() }
-    let Ok(content) = std::fs::read_to_string(&cpanfile) else { return Vec::new() };
+    if !cpanfile.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&cpanfile) else {
+        return Vec::new();
+    };
     let declared = parse_cpanfile_requires(&content);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let lib_dirs = perl_lib_dirs(project_root);
-    if lib_dirs.is_empty() { return Vec::new() }
+    if lib_dirs.is_empty() {
+        return Vec::new();
+    }
 
-    let user_uses: Vec<String> = collect_perl_user_uses(project_root)
-        .into_iter()
-        .collect();
+    let user_uses: Vec<String> = collect_perl_user_uses(project_root).into_iter().collect();
 
     let mut roots = Vec::new();
     for module_name in &declared {
@@ -154,23 +179,38 @@ fn collect_perl_user_uses(project_root: &Path) -> std::collections::HashSet<Stri
 }
 
 fn scan_perl_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, ".git" | "local" | "blib" | "t" | "xt") || name.starts_with('.') { continue }
+                if matches!(name, ".git" | "local" | "blib" | "t" | "xt") || name.starts_with('.') {
+                    continue;
+                }
             }
             scan_perl_uses(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".pm") || name.ends_with(".pl") || name.ends_with(".t")) { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".pm") || name.ends_with(".pl") || name.ends_with(".t")) {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             for raw in content.lines() {
                 let line = raw.trim();
-                let rest = match line.strip_prefix("use ").or_else(|| line.strip_prefix("require ")) {
+                let rest = match line
+                    .strip_prefix("use ")
+                    .or_else(|| line.strip_prefix("require "))
+                {
                     Some(r) => r,
                     None => continue,
                 };
@@ -179,8 +219,20 @@ fn scan_perl_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth
                     .next()
                     .unwrap_or("")
                     .trim();
-                if head.is_empty() || !head.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) { continue }
-                if matches!(head, "strict" | "warnings" | "utf8" | "feature" | "lib" | "vars" | "constant") { continue }
+                if head.is_empty()
+                    || !head
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_alphabetic())
+                {
+                    continue;
+                }
+                if matches!(
+                    head,
+                    "strict" | "warnings" | "utf8" | "feature" | "lib" | "vars" | "constant"
+                ) {
+                    continue;
+                }
                 out.insert(head.to_string());
             }
         }
@@ -189,18 +241,24 @@ fn scan_perl_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth
 
 fn perl_fqn_to_path_tail(fqn: &str) -> Option<String> {
     let cleaned = fqn.trim();
-    if cleaned.is_empty() { return None }
+    if cleaned.is_empty() {
+        return None;
+    }
     Some(format!("{}.pm", cleaned.replace("::", "/")))
 }
 
 fn walk_perl_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    if dep.requested_imports.is_empty() { return walk_perl_root(dep); }
+    if dep.requested_imports.is_empty() {
+        return walk_perl_root(dep);
+    }
     let tails: std::collections::HashSet<String> = dep
         .requested_imports
         .iter()
         .filter_map(|f| perl_fqn_to_path_tail(f))
         .collect();
-    if tails.is_empty() { return walk_perl_root(dep); }
+    if tails.is_empty() {
+        return walk_perl_root(dep);
+    }
 
     let mut out = Vec::new();
     walk_perl_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
@@ -215,8 +273,12 @@ fn walk_perl_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
     let mut any_match = false;
@@ -226,17 +288,25 @@ fn walk_perl_narrowed_dir(
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') { continue }
+                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".pm") || name.ends_with(".pl")) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".pm") || name.ends_with(".pl")) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
-            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            if tails.iter().any(|t| rel_sub.ends_with(t)) {
+                any_match = true;
+            }
             dir_files.push((path, rel_sub));
         }
     }
@@ -259,14 +329,19 @@ pub fn parse_cpanfile_requires(content: &str) -> Vec<String> {
     let mut deps = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with('#') { continue }
+        if trimmed.starts_with('#') {
+            continue;
+        }
         if trimmed.starts_with("requires") {
             let rest = trimmed["requires".len()..].trim();
-            let name = rest.trim_start_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace());
+            let name =
+                rest.trim_start_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace());
             if let Some(end) = name.find(|c: char| c == '\'' || c == '"' || c == ',' || c == ';') {
                 let module = &name[..end];
                 if !module.is_empty() && module != "perl" {
-                    if !deps.contains(&module.to_string()) { deps.push(module.to_string()) }
+                    if !deps.contains(&module.to_string()) {
+                        deps.push(module.to_string())
+                    }
                 }
             }
         }
@@ -277,12 +352,16 @@ pub fn parse_cpanfile_requires(content: &str) -> Vec<String> {
 fn perl_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let local = project_root.join("local").join("lib").join("perl5");
-    if local.is_dir() { dirs.push(local) }
+    if local.is_dir() {
+        dirs.push(local)
+    }
     for var in &["PERL5LIB", "PERL_LOCAL_LIB_ROOT"] {
         if let Ok(val) = std::env::var(var) {
             for p in val.split(if cfg!(windows) { ';' } else { ':' }) {
                 let pb = PathBuf::from(p);
-                if pb.is_dir() { dirs.push(pb) }
+                if pb.is_dir() {
+                    dirs.push(pb)
+                }
             }
         }
     }
@@ -295,20 +374,38 @@ fn walk_perl_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') { continue }
+                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".pm") || name.ends_with(".pl")) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".pm") || name.ends_with(".pl")) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -380,7 +477,9 @@ pub(crate) fn scan_perl_header(source: &str) -> Vec<String> {
                 // Also store the last `::`-separated segment so `use Foo::Bar;`
                 // can resolve via find_by_name("Bar").
                 if let Some(last) = pkg.rsplit("::").next() {
-                    if last != pkg { out.push(last.to_string()) }
+                    if last != pkg {
+                        out.push(last.to_string())
+                    }
                 }
             }
         } else if let Some(rest) = t.strip_prefix("sub ") {
@@ -426,7 +525,10 @@ requires 'Data::Censor' => '0.04';
 
     #[test]
     fn perl_fqn_to_path_tail_converts_colons() {
-        assert_eq!(perl_fqn_to_path_tail("Foo::Bar"), Some("Foo/Bar.pm".to_string()));
+        assert_eq!(
+            perl_fqn_to_path_tail("Foo::Bar"),
+            Some("Foo/Bar.pm".to_string())
+        );
         assert_eq!(perl_fqn_to_path_tail("Carp"), Some("Carp.pm".to_string()));
     }
 

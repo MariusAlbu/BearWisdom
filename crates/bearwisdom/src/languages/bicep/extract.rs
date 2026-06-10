@@ -51,7 +51,13 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 
     // Second pass: collect all resource_declaration nodes not yet matched
     let res_lines: std::collections::HashSet<u32> = symbols.iter().map(|s| s.start_line).collect();
-    collect_all_resource_declarations(tree.root_node(), source, &res_lines, &mut symbols, &mut refs);
+    collect_all_resource_declarations(
+        tree.root_node(),
+        source,
+        &res_lines,
+        &mut symbols,
+        &mut refs,
+    );
 
     // Third pass: collect all call_expression nodes for ref coverage
     collect_all_call_expressions(tree.root_node(), source, &mut refs);
@@ -86,8 +92,13 @@ fn visit_infrastructure(
             }
             "using_statement" => extract_using_statement(&child, src, refs),
             // Recurse into container nodes that may hold nested resource_declarations
-            "object" | "object_property" | "for_statement" | "if_statement"
-            | "decorators" | "array" | "parenthesized_expression" => {
+            "object"
+            | "object_property"
+            | "for_statement"
+            | "if_statement"
+            | "decorators"
+            | "array"
+            | "parenthesized_expression" => {
                 visit_infrastructure(child, src, symbols, refs);
             }
             _ => {}
@@ -130,7 +141,9 @@ fn extract_resource_declaration(
     // Emit a TypeRef for the ARM resource type string (e.g. 'Microsoft.Web/sites@2022-03-01').
     if let Some(type_str) = res_type {
         if is_valid_resource_type_string(&type_str) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: type_str,
                 kind: EdgeKind::TypeRef,
@@ -139,9 +152,9 @@ fn extract_resource_declaration(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -182,7 +195,9 @@ fn extract_module_declaration(
 
     // Emit an Imports edge for the module path.
     if let Some(path) = module_path {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -191,9 +206,9 @@ fn extract_module_declaration(
             module: Some(path),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     extract_calls_in_subtree(node, src, idx, refs);
@@ -203,11 +218,7 @@ fn extract_module_declaration(
 // param <name> <type> [= default]  →  Variable
 // ---------------------------------------------------------------------------
 
-fn extract_parameter_declaration(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_parameter_declaration(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_identifier(node, src) {
         Some(n) => n,
         None => return,
@@ -231,11 +242,7 @@ fn extract_parameter_declaration(
 // var <name> = <expr>  →  Variable
 // ---------------------------------------------------------------------------
 
-fn extract_variable_declaration(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_variable_declaration(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_identifier(node, src) {
         Some(n) => n,
         None => return,
@@ -255,11 +262,7 @@ fn extract_variable_declaration(
 // output <name> <type> = <expr>  →  Variable
 // ---------------------------------------------------------------------------
 
-fn extract_output_declaration(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_output_declaration(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_identifier(node, src) {
         Some(n) => n,
         None => return,
@@ -280,11 +283,7 @@ fn extract_output_declaration(
 // type <name> = <type>  →  TypeAlias
 // ---------------------------------------------------------------------------
 
-fn extract_type_declaration(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_type_declaration(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_identifier(node, src) {
         Some(n) => n,
         None => return,
@@ -359,11 +358,7 @@ fn find_function_name(node: &Node, src: &str) -> Option<String> {
 // metadata <name> = <value>  →  Variable
 // ---------------------------------------------------------------------------
 
-fn extract_metadata_declaration(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_metadata_declaration(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
     let name = match find_identifier(node, src) {
         Some(n) => n,
         None => return,
@@ -383,14 +378,12 @@ fn extract_metadata_declaration(
 // import / using → Imports
 // ---------------------------------------------------------------------------
 
-fn extract_import_statement(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_import_statement(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // The import path is a string literal child.
     if let Some(path) = find_string_literal(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -399,19 +392,17 @@ fn extract_import_statement(
             module: Some(path),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
-fn extract_using_statement(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_using_statement(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if let Some(path) = find_string_literal(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: path.clone(),
             kind: EdgeKind::Imports,
@@ -420,9 +411,9 @@ fn extract_using_statement(
             module: Some(path),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -440,7 +431,9 @@ fn extract_calls_in_subtree(
         if let Some(func) = node.child_by_field_name("function") {
             let name = node_text(func, src);
             if is_valid_call_target(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -449,9 +442,9 @@ fn extract_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else {
             // Fallback: first identifier child.
@@ -460,7 +453,9 @@ fn extract_calls_in_subtree(
                 if child.kind() == "identifier" {
                     let name = node_text(child, src);
                     if is_valid_call_target(&name) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -469,9 +464,9 @@ fn extract_calls_in_subtree(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         break;
                     }
                 }
@@ -555,11 +550,11 @@ fn make_symbol(
         scope_path: None,
         parent_index,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 /// Walk the entire tree and emit a Class symbol for every `resource_declaration` node
@@ -579,23 +574,29 @@ fn collect_all_resource_declarations(
             extract_resource_declaration(&node, src, symbols, refs);
             // If extractor didn't emit anything, emit a fallback symbol at the node line
             if symbols.len() == prev_len {
-                let name = find_identifier(&node, src)
-                    .unwrap_or_else(|| {
-                        // Take first identifier from node text before the string literal
-                        let raw = node_text(node, src);
-                        raw.split_whitespace()
+                let name = find_identifier(&node, src).unwrap_or_else(|| {
+                    // Take first identifier from node text before the string literal
+                    let raw = node_text(node, src);
+                    raw.split_whitespace()
                             .nth(1) // token after "resource"
                             .unwrap_or("resource")
                             .trim_end_matches('\'')
                             .trim_end_matches('"')
                             .to_string()
-                    });
+                });
                 symbols.push(make_symbol(
                     name.clone(),
                     name,
                     SymbolKind::Class,
                     &node,
-                    Some(node_text(node, src).lines().next().unwrap_or("resource").trim().to_string()),
+                    Some(
+                        node_text(node, src)
+                            .lines()
+                            .next()
+                            .unwrap_or("resource")
+                            .trim()
+                            .to_string(),
+                    ),
                     None,
                 ));
             }
@@ -617,11 +618,7 @@ fn collect_all_resource_declarations(
 /// This second pass ensures coverage correlation finds a ref for every
 /// call_expression occurrence (the ref_node_kind), even those not inside
 /// declarations already processed by extract_calls_in_subtree.
-fn collect_all_call_expressions(
-    node: Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn collect_all_call_expressions(node: Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if node.kind() == "call_expression" {
         let name = if let Some(func) = node.child_by_field_name("function") {
             node_text(func, src)
@@ -638,7 +635,9 @@ fn collect_all_call_expressions(
             name
         };
         if is_valid_call_target(&name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -647,9 +646,9 @@ fn collect_all_call_expressions(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         // Don't recurse further into call_expression — avoid double-counting nested calls
         return;

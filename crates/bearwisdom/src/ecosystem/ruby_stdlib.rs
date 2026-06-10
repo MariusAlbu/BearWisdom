@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -25,9 +23,15 @@ const LANGUAGES: &[&str] = &["ruby"];
 pub struct RubyStdlibEcosystem;
 
 impl Ecosystem for RubyStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("ruby")
@@ -41,9 +45,13 @@ impl Ecosystem for RubyStdlibEcosystem {
         walk_ruby_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -54,7 +62,9 @@ impl Ecosystem for RubyStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for RubyStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ruby_stdlib()
     }
@@ -82,7 +92,9 @@ fn discover_ruby_stdlib() -> Vec<ExternalDepRoot> {
 fn probe_rubylibdir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_RUBY_STDLIB") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     for bin in ["ruby"] {
         let Ok(output) = Command::new(bin)
@@ -91,12 +103,18 @@ fn probe_rubylibdir() -> Option<PathBuf> {
         else {
             continue;
         };
-        if !output.status.success() { continue }
+        if !output.status.success() {
+            continue;
+        }
         let s = String::from_utf8(output.stdout).ok()?;
         let trimmed = s.trim();
-        if trimmed.is_empty() { continue }
+        if trimmed.is_empty() {
+            continue;
+        }
         let p = PathBuf::from(trimmed);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }
@@ -108,20 +126,32 @@ fn walk_ruby_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "spec") { continue }
-                if name.starts_with('.') { continue }
+                if matches!(name, "test" | "tests" | "spec") {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".rb") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".rb") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:ruby:{}", display),
@@ -135,5 +165,7 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<RubyStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(RubyStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(RubyStdlibEcosystem))
+        .clone()
 }

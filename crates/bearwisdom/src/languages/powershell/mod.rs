@@ -10,10 +10,10 @@
 //! - `class_property_definition` → Property
 //! - `using_statement` / `Import-Module` commands → Imports
 
-pub mod keywords;
-pub mod extract;
 mod commands;
 mod dotnet_bindings;
+pub mod extract;
+pub mod keywords;
 mod node_helpers;
 
 pub(crate) mod hooks;
@@ -37,17 +37,25 @@ use crate::types::ExtractionResult;
 pub struct PowerShellPlugin;
 
 impl LanguagePlugin for PowerShellPlugin {
-    fn id(&self) -> &str { "powershell" }
+    fn id(&self) -> &str {
+        "powershell"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["powershell"] }
+    fn language_ids(&self) -> &[&str] {
+        &["powershell"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".ps1", ".psm1", ".psd1"] }
+    fn extensions(&self) -> &[&str] {
+        &[".ps1", ".psm1", ".psd1"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_powershell::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -64,11 +72,7 @@ impl LanguagePlugin for PowerShellPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "command",
-            "invokation_expression",
-            "using_statement",
-        ]
+        &["command", "invokation_expression", "using_statement"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -83,8 +87,7 @@ impl LanguagePlugin for PowerShellPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::POWERSHELL_HOOKS)
     }
 }

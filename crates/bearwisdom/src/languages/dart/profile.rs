@@ -4,8 +4,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
+    LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -18,10 +18,7 @@ const DART_KIND_TABLE: KindTable = &[
             SymbolKind::Constructor,
         ],
     ),
-    (
-        EdgeKind::Inherits,
-        &[SymbolKind::Class],
-    ),
+    (EdgeKind::Inherits, &[SymbolKind::Class]),
     (
         EdgeKind::Implements,
         &[SymbolKind::Class, SymbolKind::Interface],
@@ -95,7 +92,8 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
@@ -107,10 +105,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     namespaceless_global_type_lookup: false,
     explicit_member_import: false,
-    constructor_patterns: &[
-        ConstructorPattern::New,
-        ConstructorPattern::CallableClass,
-    ],
+    constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),
     doc_comment_kinds: &["///"],

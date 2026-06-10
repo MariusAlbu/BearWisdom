@@ -19,7 +19,9 @@ const DART_EXPORT_MAX_DEPTH: u32 = 3;
 
 pub(super) fn resolve_dart_package_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let entry = dep.root.join(format!("{}.dart", dep.module_path));
-    if !entry.is_file() { return Vec::new() }
+    if !entry.is_file() {
+        return Vec::new();
+    }
 
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -34,8 +36,12 @@ fn expand_dart_exports_into(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: u32,
 ) {
-    if !seen.insert(file.to_path_buf()) { return }
-    if !file.is_file() { return }
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    if !file.is_file() {
+        return;
+    }
 
     let rel_sub = match file.strip_prefix(&dep.root) {
         Ok(p) => p.to_string_lossy().replace('\\', "/"),
@@ -47,9 +53,13 @@ fn expand_dart_exports_into(
         language: "dart",
     });
 
-    if depth >= DART_EXPORT_MAX_DEPTH { return }
+    if depth >= DART_EXPORT_MAX_DEPTH {
+        return;
+    }
 
-    let Ok(src) = std::fs::read_to_string(file) else { return };
+    let Ok(src) = std::fs::read_to_string(file) else {
+        return;
+    };
     for spec in extract_dart_exports(&src, &dep.module_path) {
         let Some(next) = resolve_dart_relative_path(file, &dep.root, &spec) else {
             continue;
@@ -78,12 +88,18 @@ pub(super) fn extract_dart_exports(src: &str, this_pkg: &str) -> Vec<String> {
             continue;
         };
         let rest = kind.trim_start();
-        let Some(q) = rest.chars().next() else { continue };
-        if q != '\'' && q != '"' { continue }
+        let Some(q) = rest.chars().next() else {
+            continue;
+        };
+        if q != '\'' && q != '"' {
+            continue;
+        }
         let inner = &rest[1..];
         let Some(end) = inner.find(q) else { continue };
         let spec = &inner[..end];
-        if spec.is_empty() { continue }
+        if spec.is_empty() {
+            continue;
+        }
         // package:<this_pkg>/sub/file.dart → sub/file.dart (in-package)
         let in_pkg_prefix = format!("package:{}/", this_pkg);
         if let Some(stripped) = spec.strip_prefix(&in_pkg_prefix) {
@@ -91,7 +107,9 @@ pub(super) fn extract_dart_exports(src: &str, this_pkg: &str) -> Vec<String> {
             continue;
         }
         // Other package:foo/... → skip (separate dep root)
-        if spec.starts_with("package:") || spec.starts_with("dart:") { continue }
+        if spec.starts_with("package:") || spec.starts_with("dart:") {
+            continue;
+        }
         // Plain relative path
         out.push(spec.to_string());
     }
@@ -110,9 +128,13 @@ fn resolve_dart_relative_path(from_file: &Path, lib_root: &Path, spec: &str) -> 
         from_file.parent()?.to_path_buf()
     };
     let candidate = base.join(spec);
-    if candidate.is_file() { return Some(candidate) }
+    if candidate.is_file() {
+        return Some(candidate);
+    }
     // Try lib_root-rooted resolution (for in-package absolute specs).
     let from_lib = lib_root.join(spec);
-    if from_lib.is_file() { return Some(from_lib) }
+    if from_lib.is_file() {
+        return Some(from_lib);
+    }
     None
 }

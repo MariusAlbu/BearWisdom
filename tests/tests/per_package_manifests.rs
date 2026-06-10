@@ -22,10 +22,7 @@ fn write_file(root: &Path, rel: &str, content: &str) {
     fs::write(full, content).unwrap();
 }
 
-fn names_of<'a>(
-    manifests: &'a [PackageManifest],
-    kind: ManifestKind,
-) -> HashSet<&'a str> {
+fn names_of<'a>(manifests: &'a [PackageManifest], kind: ManifestKind) -> HashSet<&'a str> {
     manifests
         .iter()
         .filter(|m| m.kind == kind)
@@ -261,7 +258,10 @@ fn dotnet_solution_multi_csproj() {
     // Per-project SDK type is distinct — each project declares its own.
     let web = csproj.iter().find(|m| m.name == "WebApi").unwrap();
     assert_eq!(web.data.sdk_type.as_deref(), Some("web"));
-    assert!(web.data.dependencies.contains("Microsoft.EntityFrameworkCore"));
+    assert!(web
+        .data
+        .dependencies
+        .contains("Microsoft.EntityFrameworkCore"));
     assert!(!web.data.dependencies.contains("MassTransit"));
     assert!(!web.data.dependencies.contains("xunit"));
 
@@ -416,11 +416,7 @@ fn pubspec_multi_package() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    write_file(
-        root,
-        "pubspec.yaml",
-        "name: root_workspace\n",
-    );
+    write_file(root, "pubspec.yaml", "name: root_workspace\n");
     write_file(
         root,
         "packages/app/pubspec.yaml",
@@ -629,6 +625,9 @@ fn path_invariants() {
         "package path should start with 'apps', got {:?}",
         web.path
     );
-    assert!(web.manifest_path.is_absolute(), "manifest_path must be absolute");
+    assert!(
+        web.manifest_path.is_absolute(),
+        "manifest_path must be absolute"
+    );
     assert!(web.manifest_path.ends_with("package.json"));
 }

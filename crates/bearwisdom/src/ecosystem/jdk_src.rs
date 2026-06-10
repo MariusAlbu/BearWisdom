@@ -15,9 +15,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, ExternalDepRoot, ExternalSourceLocator,
 };
@@ -30,9 +28,15 @@ const LANGUAGES: &[&str] = &["java", "kotlin", "scala", "clojure"];
 pub struct JdkSrcEcosystem;
 
 impl Ecosystem for JdkSrcEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
@@ -52,9 +56,13 @@ impl Ecosystem for JdkSrcEcosystem {
         super::maven::walk_generic_jvm_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -89,7 +97,9 @@ impl Ecosystem for JdkSrcEcosystem {
 }
 
 impl ExternalSourceLocator for JdkSrcEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_jdk_src_roots()
     }
@@ -132,12 +142,21 @@ fn jdk_src_cache_dir() -> Option<PathBuf> {
         return Some(p);
     }
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        let p = PathBuf::from(local).join("bearwisdom").join("jdk-src-cache");
-        if std::fs::create_dir_all(&p).is_ok() { return Some(p); }
+        let p = PathBuf::from(local)
+            .join("bearwisdom")
+            .join("jdk-src-cache");
+        if std::fs::create_dir_all(&p).is_ok() {
+            return Some(p);
+        }
     }
     if let Some(home) = std::env::var_os("HOME") {
-        let p = PathBuf::from(home).join(".cache").join("bearwisdom").join("jdk-src-cache");
-        if std::fs::create_dir_all(&p).is_ok() { return Some(p); }
+        let p = PathBuf::from(home)
+            .join(".cache")
+            .join("bearwisdom")
+            .join("jdk-src-cache");
+        if std::fs::create_dir_all(&p).is_ok() {
+            return Some(p);
+        }
     }
     None
 }
@@ -145,15 +164,21 @@ fn jdk_src_cache_dir() -> Option<PathBuf> {
 fn probe_src_zip() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_JDK_SRC_ZIP") {
         let p = PathBuf::from(explicit);
-        if p.is_file() { return Some(p); }
+        if p.is_file() {
+            return Some(p);
+        }
     }
     let home = std::env::var_os("JAVA_HOME").map(PathBuf::from)?;
     // JDK 9+: $JAVA_HOME/lib/src.zip
     let modern = home.join("lib").join("src.zip");
-    if modern.is_file() { return Some(modern); }
+    if modern.is_file() {
+        return Some(modern);
+    }
     // Legacy JDK 8: $JAVA_HOME/src.zip
     let legacy = home.join("src.zip");
-    if legacy.is_file() { return Some(legacy); }
+    if legacy.is_file() {
+        return Some(legacy);
+    }
     None
 }
 
@@ -166,14 +191,20 @@ fn collect_java_lang_files(
     out: &mut Vec<WalkedFile>,
 ) {
     let java_lang = dep.root.join("java.base").join("java").join("lang");
-    let Ok(entries) = std::fs::read_dir(&java_lang) else { return };
+    let Ok(entries) = std::fs::read_dir(&java_lang) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if !file_type.is_file() {
             continue;
         }
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         if !name.ends_with(".java") {
             continue;
         }

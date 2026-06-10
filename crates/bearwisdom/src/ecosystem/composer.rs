@@ -29,10 +29,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "php";
 pub struct ComposerEcosystem;
 
 impl Ecosystem for ComposerEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("composer.json", "php")]
@@ -61,7 +69,9 @@ impl Ecosystem for ComposerEcosystem {
         walk_php_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -72,26 +82,23 @@ impl Ecosystem for ComposerEcosystem {
         walk_php_narrowed(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         walk_php_narrowed(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_php_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for ComposerEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_php_externals(project_root)
     }
@@ -113,14 +120,19 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 pub struct ComposerManifest;
 
 impl ManifestReader for ComposerManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Composer }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Composer
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let entries = self.read_all(project_root);
-        if entries.is_empty() { return None }
+        if entries.is_empty() {
+            return None;
+        }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
     }
@@ -130,22 +142,36 @@ impl ManifestReader for ComposerManifest {
         collect_composer_files(project_root, &mut paths, 0);
         let mut out = Vec::new();
         for manifest_path in paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
             let mut data = ManifestData::default();
             let (name, deps) = parse_composer_json(&content);
-            for pkg in deps { data.dependencies.insert(pkg); }
+            for pkg in deps {
+                data.dependencies.insert(pkg);
+            }
             let package_dir = manifest_path
-                .parent().map(|p| p.to_path_buf())
+                .parent()
+                .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| project_root.to_path_buf());
-            out.push(ReaderEntry { package_dir, manifest_path, data, name });
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
         }
         out
     }
 }
 
 fn collect_composer_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -154,7 +180,9 @@ fn collect_composer_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             if matches!(
                 name.as_ref(),
                 ".git" | "vendor" | "node_modules" | "target" | "bin" | "obj"
-            ) { continue }
+            ) {
+                continue;
+            }
             collect_composer_files(&path, out, depth + 1);
         } else if entry.file_name() == "composer.json" {
             out.push(path);
@@ -166,17 +194,24 @@ fn parse_composer_json(content: &str) -> (Option<String>, Vec<String>) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
         return (None, Vec::new());
     };
-    let Some(obj) = value.as_object() else { return (None, Vec::new()) };
-    let name = obj.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let Some(obj) = value.as_object() else {
+        return (None, Vec::new());
+    };
+    let name = obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let mut packages = Vec::new();
     for key in &["require", "require-dev"] {
         if let Some(serde_json::Value::Object(deps)) = obj.get(*key) {
             for pkg_name in deps.keys() {
-                if pkg_name == "php"
-                    || pkg_name.starts_with("ext-")
-                    || pkg_name.starts_with("lib-")
-                { continue }
-                if !pkg_name.is_empty() { packages.push(pkg_name.clone()) }
+                if pkg_name == "php" || pkg_name.starts_with("ext-") || pkg_name.starts_with("lib-")
+                {
+                    continue;
+                }
+                if !pkg_name.is_empty() {
+                    packages.push(pkg_name.clone())
+                }
             }
         }
     }
@@ -193,20 +228,26 @@ pub fn parse_composer_json_deps(content: &str) -> Vec<String> {
 
 pub fn discover_php_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let composer_path = project_root.join("composer.json");
-    if !composer_path.is_file() { return Vec::new() }
-    let Ok(content) = std::fs::read_to_string(&composer_path) else { return Vec::new() };
+    if !composer_path.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&composer_path) else {
+        return Vec::new();
+    };
     let declared = parse_composer_json_deps(&content);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let vendor = project_root.join("vendor");
-    if !vendor.is_dir() { return Vec::new() }
+    if !vendor.is_dir() {
+        return Vec::new();
+    }
 
     // R3: collect every `use X\Y\Z;` statement from project PHP code once.
     // Each vendor package's dep root carries the full set; walk_php_narrowed
     // filters to files whose path matches one of these FQNs.
-    let user_uses: Vec<String> = collect_php_user_uses(project_root)
-        .into_iter()
-        .collect();
+    let user_uses: Vec<String> = collect_php_user_uses(project_root).into_iter().collect();
 
     let mut roots = Vec::new();
     for dep in &declared {
@@ -267,13 +308,13 @@ fn collect_php_user_uses(project_root: &Path) -> std::collections::HashSet<Strin
     uses
 }
 
-fn scan_php_uses_recursive(
-    dir: &Path,
-    out: &mut std::collections::HashSet<String>,
-    depth: usize,
-) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn scan_php_uses_recursive(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -281,15 +322,32 @@ fn scan_php_uses_recursive(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    ".git" | "vendor" | "node_modules" | "storage" | "bootstrap"
-                        | "public" | "var" | "tmp" | "cache" | "build"
-                ) || name.starts_with('.') { continue }
+                    ".git"
+                        | "vendor"
+                        | "node_modules"
+                        | "storage"
+                        | "bootstrap"
+                        | "public"
+                        | "var"
+                        | "tmp"
+                        | "cache"
+                        | "build"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_php_uses_recursive(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".php") { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".php") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_php_uses_from_source(&content, out);
         }
     }
@@ -298,10 +356,7 @@ fn scan_php_uses_recursive(
 /// Parse `use Foo\Bar\Baz;` / `use Foo\Bar\{Baz, Qux};` / `use Foo\Bar as B;` /
 /// `use function Foo\bar;` / `use const Foo\X;`. Scala-like brace blocks (PHP
 /// group use declaration) are exploded into individual FQNs.
-fn extract_php_uses_from_source(
-    content: &str,
-    out: &mut std::collections::HashSet<String>,
-) {
+fn extract_php_uses_from_source(content: &str, out: &mut std::collections::HashSet<String>) {
     for raw in content.lines() {
         let line = raw.trim();
         let rest = match line.strip_prefix("use ") {
@@ -310,21 +365,28 @@ fn extract_php_uses_from_source(
         };
         // Strip trailing `;` and inline comment.
         let rest = rest.split(';').next().unwrap_or("").trim();
-        let rest = rest.trim_start_matches("function ")
+        let rest = rest
+            .trim_start_matches("function ")
             .trim_start_matches("const ")
             .trim();
-        if rest.is_empty() { continue }
+        if rest.is_empty() {
+            continue;
+        }
 
         // Group use: `Foo\Bar\{Baz, Qux as Q, SubNs\Thing}`
         if let Some(brace_open) = rest.find('{') {
             if let Some(brace_close) = rest.find('}') {
                 let prefix = rest[..brace_open].trim_end_matches('\\').trim();
-                if prefix.is_empty() { continue }
+                if prefix.is_empty() {
+                    continue;
+                }
                 let inner = &rest[brace_open + 1..brace_close];
                 for sel in inner.split(',') {
                     let sel = sel.trim();
                     let head = sel.split(" as ").next().unwrap_or("").trim();
-                    if head.is_empty() { continue }
+                    if head.is_empty() {
+                        continue;
+                    }
                     out.insert(format!("{prefix}\\{head}"));
                 }
                 continue;
@@ -333,7 +395,9 @@ fn extract_php_uses_from_source(
 
         // Single use: strip `as Alias`.
         let head = rest.split(" as ").next().unwrap_or("").trim();
-        if head.is_empty() { continue }
+        if head.is_empty() {
+            continue;
+        }
         out.insert(head.trim_start_matches('\\').to_string());
     }
 }
@@ -345,7 +409,9 @@ fn extract_php_uses_from_source(
 /// needing to parse each package's composer autoload PSR-4 map.
 fn php_fqn_to_path_suffix(fqn: &str) -> Option<String> {
     let cleaned = fqn.trim().trim_start_matches('\\');
-    if cleaned.is_empty() { return None }
+    if cleaned.is_empty() {
+        return None;
+    }
     let parts: Vec<&str> = cleaned.split('\\').filter(|p| !p.is_empty()).collect();
     match parts.len() {
         0 => None,
@@ -388,26 +454,42 @@ fn walk_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut any_match = false;
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "test" | "Tests" | "Test" | "vendor" | "docs" | "examples")
-                    || name.starts_with('.')
-                { continue }
+                if matches!(
+                    name,
+                    "tests" | "test" | "Tests" | "Test" | "vendor" | "docs" | "examples"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".php") { continue }
-            if name.ends_with("Test.php") || name.ends_with("Tests.php") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".php") {
+                continue;
+            }
+            if name.ends_with("Test.php") || name.ends_with("Tests.php") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -438,23 +520,45 @@ fn walk_narrowed_dir(
     }
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "test" | "Tests" | "Test" | "vendor" | "docs" | "examples")
-                    || name.starts_with('.')
-                { continue }
+                if matches!(
+                    name,
+                    "tests" | "test" | "Tests" | "Test" | "vendor" | "docs" | "examples"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".php") { continue }
-            if name.ends_with("Test.php") || name.ends_with("Tests.php") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".php") {
+                continue;
+            }
+            if name.ends_with("Test.php") || name.ends_with("Tests.php") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -524,7 +628,9 @@ fn scan_php_header(source: &str) -> Vec<String> {
 }
 
 fn walk_php_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) {
-    if depth > 4 { return }
+    if depth > 4 {
+        return;
+    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -543,8 +649,10 @@ fn walk_php_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) 
                     }
                 }
             }
-            "namespace_definition" | "namespace_use_declaration"
-            | "program" | "compound_statement" => {
+            "namespace_definition"
+            | "namespace_use_declaration"
+            | "program"
+            | "compound_statement" => {
                 // Recurse — namespaces wrap their contents in a block.
                 walk_php_decls(&child, bytes, out, depth + 1);
             }
@@ -556,7 +664,9 @@ fn walk_php_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) 
 fn find_first_name_child<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == kind { return Some(child) }
+        if child.kind() == kind {
+            return Some(child);
+        }
     }
     None
 }
@@ -594,10 +704,22 @@ mod tests {
         let tmp = std::env::temp_dir().join("bw-test-composer-discover");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("composer.json"), r#"{"require":{"laravel/framework":"^11.0"}}"#).unwrap();
-        let vendor = tmp.join("vendor").join("laravel").join("framework").join("src");
+        std::fs::write(
+            tmp.join("composer.json"),
+            r#"{"require":{"laravel/framework":"^11.0"}}"#,
+        )
+        .unwrap();
+        let vendor = tmp
+            .join("vendor")
+            .join("laravel")
+            .join("framework")
+            .join("src");
         std::fs::create_dir_all(&vendor).unwrap();
-        std::fs::write(vendor.join("Application.php"), "<?php class Application {}\n").unwrap();
+        std::fs::write(
+            vendor.join("Application.php"),
+            "<?php class Application {}\n",
+        )
+        .unwrap();
 
         let roots = discover_php_externals(&tmp);
         assert_eq!(roots.len(), 1);
@@ -668,7 +790,8 @@ mod tests {
         std::fs::write(
             src.join("HttpFoundation/Request.php"),
             "<?php class Request {}\n",
-        ).unwrap();
+        )
+        .unwrap();
         // Same-namespace sibling: included by virtue of Request matching. This
         // mirrors how PHP files reference same-namespace classes without a
         // `use` statement — walking the matched file but not its sibling
@@ -676,12 +799,10 @@ mod tests {
         std::fs::write(
             src.join("HttpFoundation/Response.php"),
             "<?php class Response {}\n",
-        ).unwrap();
+        )
+        .unwrap();
         // Unrelated package (no matching FQN): must not be walked.
-        std::fs::write(
-            src.join("Unrelated/Thing.php"),
-            "<?php class Thing {}\n",
-        ).unwrap();
+        std::fs::write(src.join("Unrelated/Thing.php"), "<?php class Thing {}\n").unwrap();
 
         let dep = ExternalDepRoot {
             module_path: "symfony/http-foundation".to_string(),
@@ -689,9 +810,7 @@ mod tests {
             root: dep_root.clone(),
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
-            requested_imports: vec![
-                "Symfony\\Component\\HttpFoundation\\Request".to_string(),
-            ],
+            requested_imports: vec!["Symfony\\Component\\HttpFoundation\\Request".to_string()],
         };
         let files = walk_php_narrowed(&dep);
         let paths: std::collections::HashSet<_> =

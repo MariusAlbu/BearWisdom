@@ -32,7 +32,8 @@ fn call_args_variable_becomes_ident() {
     let src = "<?php fetch($url);";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -65,7 +66,8 @@ fn call_args_array_literal_produces_array_literal_variant() {
     let src = "<?php f([$x, $y]);";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { elements } if elements.len() == 2)),
         "expected ArrayLiteral with 2 elements, got: {args:?}"
     );
 }
@@ -76,7 +78,8 @@ fn call_args_array_function_form_produces_array_literal_variant() {
     let src = "<?php f(array($x, $y));";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array() arg, got: {args:?}"
     );
 }
@@ -98,7 +101,8 @@ fn call_args_subscript_expression_produces_index_access_variant() {
     let src = "<?php f($arr[$i]);";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for subscript arg, got: {args:?}"
     );
 }
@@ -109,7 +113,8 @@ fn call_args_binary_expression_produces_binary_variant() {
     let src = "<?php f($a + $b);";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\", got: {args:?}"
     );
 }
@@ -120,7 +125,8 @@ fn call_args_string_concat_produces_binary_variant() {
     let src = "<?php f($a . $b);";
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == ".")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == ".")),
         "expected Binary variant with op \".\", got: {args:?}"
     );
 }

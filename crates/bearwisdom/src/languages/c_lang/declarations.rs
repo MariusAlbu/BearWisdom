@@ -4,7 +4,7 @@
 // =============================================================================
 
 use super::helpers::{
-    detect_visibility, enclosing_scope, extract_doc_comment, extract_declarator_name,
+    detect_visibility, enclosing_scope, extract_declarator_name, extract_doc_comment,
     find_child_by_kind, first_type_identifier, is_constructor_name, node_text,
 };
 use super::typerefs::{
@@ -79,12 +79,12 @@ pub(super) fn push_function_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -115,10 +115,10 @@ pub(super) fn push_specifier(
         // Anonymous struct/union/enum — emit with a synthetic name so the
         // coverage engine can match this node.
         let kw = match kind {
-            SymbolKind::Class  => "class",
+            SymbolKind::Class => "class",
             SymbolKind::Struct => "struct",
-            SymbolKind::Enum   => "enum",
-            _                  => "struct",
+            SymbolKind::Enum => "enum",
+            _ => "struct",
         };
         format!("__anon_{kw}_{}", node.start_position().row)
     };
@@ -128,10 +128,10 @@ pub(super) fn push_specifier(
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
-        SymbolKind::Class  => "class",
+        SymbolKind::Class => "class",
         SymbolKind::Struct => "struct",
-        SymbolKind::Enum   => "enum",
-        _                  => "struct",
+        SymbolKind::Enum => "enum",
+        _ => "struct",
     };
 
     let idx = symbols.len();
@@ -148,12 +148,12 @@ pub(super) fn push_specifier(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -185,12 +185,12 @@ pub(super) fn push_namespace(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -215,9 +215,13 @@ pub(super) fn push_namespace_alias(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let Some(name_node) = node.child_by_field_name("name") else { return };
+    let Some(name_node) = node.child_by_field_name("name") else {
+        return;
+    };
     let name = node_text(name_node, src);
-    if name.is_empty() { return }
+    if name.is_empty() {
+        return;
+    }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = scope_tree::qualify(&name, scope);
@@ -237,12 +241,12 @@ pub(super) fn push_namespace_alias(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef for each `namespace_identifier` after the `=`. The first
     // child past the `=` token is the target; nested namespace targets
@@ -251,7 +255,9 @@ pub(super) fn push_namespace_alias(
     let mut past_equals = false;
     for child in node.children(&mut cursor) {
         if !past_equals {
-            if child.kind() == "=" { past_equals = true; }
+            if child.kind() == "=" {
+                past_equals = true;
+            }
             continue;
         }
         emit_namespace_target_refs(&child, src, idx, refs);
@@ -267,7 +273,9 @@ fn emit_namespace_target_refs(
     if matches!(node.kind(), "namespace_identifier" | "type_identifier") {
         let name = node_text(*node, src);
         if !name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: EdgeKind::TypeRef,
@@ -401,12 +409,12 @@ pub(super) fn push_typedef(
             doc_comment: extract_doc_comment(node, src),
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
         return;
     }
 
@@ -423,10 +431,16 @@ pub(super) fn push_typedef(
     //   ALL declarators in the list are alias names.
     // - Otherwise, only the last one is the alias (the earlier ones are the
     //   source type chain, e.g. `typedef const unsigned long * Foo`).
-    let aliases_start = if has_specifier_body { 0 } else { declarators.len().saturating_sub(1) };
+    let aliases_start = if has_specifier_body {
+        0
+    } else {
+        declarators.len().saturating_sub(1)
+    };
 
     for decl in &declarators[aliases_start..] {
-        let Some(name) = first_type_identifier(decl, src) else { continue; };
+        let Some(name) = first_type_identifier(decl, src) else {
+            continue;
+        };
         let qualified_name = scope_tree::qualify(&name, scope);
         symbols.push(ExtractedSymbol {
             name: name.clone(),
@@ -441,12 +455,12 @@ pub(super) fn push_typedef(
             doc_comment: doc.clone(),
             scope_path: scope_path.clone(),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
     }
 }
 
@@ -490,11 +504,13 @@ pub(super) fn push_declaration(
             // `field_identifier` — struct/union member names in C grammar
             "identifier" | "field_identifier" => Some(node_text(child, src)),
             // Declarator variants that wrap an identifier
-            "init_declarator" | "pointer_declarator" | "reference_declarator"
-            | "array_declarator" | "parenthesized_declarator"
-            | "function_declarator" | "abstract_function_declarator" => {
-                first_type_identifier(&child, src)
-            }
+            "init_declarator"
+            | "pointer_declarator"
+            | "reference_declarator"
+            | "array_declarator"
+            | "parenthesized_declarator"
+            | "function_declarator"
+            | "abstract_function_declarator" => first_type_identifier(&child, src),
             // C++17 structured bindings: `auto [a, b] = expr;`
             "structured_binding_declarator" => first_type_identifier(&child, src),
             _ => None,
@@ -534,12 +550,12 @@ pub(super) fn push_declaration(
                 doc_comment: None,
                 scope_path: scope_path.clone(),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -580,12 +596,12 @@ pub(super) fn extract_enum_body(
                     doc_comment: None,
                     scope_path: scope_tree::scope_path(scope),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
         }
     }
@@ -604,7 +620,9 @@ pub(super) fn push_include(
                 let raw = node_text(child, src);
                 let path = raw.trim_matches('"').trim_matches('<').trim_matches('>');
                 let target_name = path.rsplit('/').next().unwrap_or(path).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name,
                     kind: EdgeKind::Imports,
@@ -613,9 +631,9 @@ pub(super) fn push_include(
                     module: Some(path.to_string()),
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
             _ => {}

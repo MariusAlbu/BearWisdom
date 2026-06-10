@@ -27,9 +27,9 @@
 pub mod embedded;
 pub mod extract;
 pub mod fenced;
+pub(crate) mod hooks;
 pub mod host_scan;
 pub mod info_string;
-pub(crate) mod hooks;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -99,8 +99,7 @@ impl LanguagePlugin for MarkdownPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::MARKDOWN_HOOKS)
     }
 }

@@ -13,7 +13,9 @@
 
 use std::path::Path;
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -35,11 +37,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Scan for `{% tag ... %}` constructs.
     let bytes = source.as_bytes();
@@ -47,12 +49,22 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     while i < bytes.len() {
         if has_prefix(bytes, i, b"{%") {
             // Skip optional `-` whitespace control marker.
-            let body_start = if bytes.get(i + 2) == Some(&b'-') { i + 3 } else { i + 2 };
+            let body_start = if bytes.get(i + 2) == Some(&b'-') {
+                i + 3
+            } else {
+                i + 2
+            };
             // Find matching `%}` (also skip trailing `-`).
             let close = find_subseq(bytes, body_start, b"%}");
-            if close.is_none() { break; }
+            if close.is_none() {
+                break;
+            }
             let close = close.unwrap();
-            let body_end = if close > 0 && bytes[close - 1] == b'-' { close - 1 } else { close };
+            let body_end = if close > 0 && bytes[close - 1] == b'-' {
+                close - 1
+            } else {
+                close
+            };
             if body_end > body_start {
                 if let Some(body) = std::str::from_utf8(&bytes[body_start..body_end]).ok() {
                     handle_tag(
@@ -81,7 +93,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     }
 
     ExtractionResult {
-        symbols, refs,
+        symbols,
+        refs,
         routes: Vec::new(),
         db_sets: Vec::new(),
         has_errors: false,
@@ -120,11 +133,11 @@ fn handle_tag(
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
         "macro" => {
@@ -143,16 +156,18 @@ fn handle_tag(
                     scope_path: Some(template_name.to_string()),
                     parent_index: Some(host_index),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
         "extends" | "include" | "embed" => {
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,
@@ -162,14 +177,16 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
         "use" | "import" => {
             // `{% use "components/forms.html.twig" %}` — first string arg.
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,
@@ -179,8 +196,8 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
         "from" => {
@@ -188,7 +205,9 @@ fn handle_tag(
             // is the template; the imports themselves are macro names we
             // don't separately track (they're scoped lookups).
             if let Some(target) = read_string_arg(rest) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name: template_name_from_twig_arg(&target),
                     kind: EdgeKind::Imports,
@@ -198,8 +217,8 @@ fn handle_tag(
                     byte_offset,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
         _ => {}
@@ -213,7 +232,11 @@ fn read_ident(s: &str) -> Option<String> {
         .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_'))
         .map(|(i, _)| i)
         .unwrap_or(trimmed.len());
-    if end == 0 { None } else { Some(trimmed[..end].to_string()) }
+    if end == 0 {
+        None
+    } else {
+        Some(trimmed[..end].to_string())
+    }
 }
 
 fn read_string_arg(s: &str) -> Option<String> {
@@ -232,7 +255,9 @@ fn read_string_arg(s: &str) -> Option<String> {
             _ => i += 1,
         }
     }
-    if i >= bytes.len() { return None; }
+    if i >= bytes.len() {
+        return None;
+    }
     Some(trimmed[1..i].to_string())
 }
 
@@ -240,7 +265,8 @@ fn read_string_arg(s: &str) -> Option<String> {
 /// to dotted identifiers `x.y` so they line up with the qualified_name
 /// used for the host file symbol.
 fn template_name_from_twig_arg(arg: &str) -> String {
-    let stem = arg.strip_suffix(".html.twig")
+    let stem = arg
+        .strip_suffix(".html.twig")
         .or_else(|| arg.strip_suffix(".twig"))
         .unwrap_or(arg);
     stem.replace('/', ".")
@@ -279,18 +305,24 @@ fn strip_twig_ext(name: &str) -> &str {
 fn line_at(bytes: &[u8], pos: usize) -> u32 {
     let mut line: u32 = 0;
     for b in bytes.iter().take(pos) {
-        if *b == b'\n' { line += 1; }
+        if *b == b'\n' {
+            line += 1;
+        }
     }
     line
 }
 
 fn has_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     &bytes[start..start + needle.len()] == needle
 }
 
 fn find_subseq(bytes: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || start > bytes.len() { return None; }
+    if needle.is_empty() || start > bytes.len() {
+        return None;
+    }
     let end = bytes.len().saturating_sub(needle.len()) + 1;
     (start..end).find(|&i| bytes[i..].starts_with(needle))
 }
@@ -315,7 +347,10 @@ mod tests {
     fn block_yields_method_symbol() {
         let src = "{% block content %}\n<h1>x</h1>\n{% endblock %}";
         let r = extract(src, "templates/page.html.twig");
-        let block = r.symbols.iter().find(|s| s.name == "content")
+        let block = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "content")
             .expect("content block missing");
         assert_eq!(block.kind, SymbolKind::Method);
         assert_eq!(block.qualified_name, "page.content");
@@ -325,7 +360,10 @@ mod tests {
     fn macro_yields_function_symbol() {
         let src = "{% macro greeting(name) %}Hi {{ name }}{% endmacro %}";
         let r = extract(src, "templates/macros.html.twig");
-        let m = r.symbols.iter().find(|s| s.name == "greeting")
+        let m = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "greeting")
             .expect("macro missing");
         assert_eq!(m.kind, SymbolKind::Function);
     }

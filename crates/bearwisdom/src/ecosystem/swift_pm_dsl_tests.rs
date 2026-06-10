@@ -52,7 +52,11 @@ fn walk_manifest_api_picks_only_public_swiftinterface() {
         "// private — ignored\n",
     )
     .unwrap();
-    fs::write(manifest_dir.join("PackageDescription.swiftmodule"), "binary").unwrap();
+    fs::write(
+        manifest_dir.join("PackageDescription.swiftmodule"),
+        "binary",
+    )
+    .unwrap();
 
     let dep = ExternalDepRoot {
         module_path: "PackageDescription".into(),
@@ -63,7 +67,11 @@ fn walk_manifest_api_picks_only_public_swiftinterface() {
         requested_imports: Vec::new(),
     };
     let walked = walk_manifest_api(&dep);
-    assert_eq!(walked.len(), 1, "expected only public .swiftinterface; got {walked:?}");
+    assert_eq!(
+        walked.len(),
+        1,
+        "expected only public .swiftinterface; got {walked:?}"
+    );
     let file_name = walked[0]
         .absolute_path
         .file_name()

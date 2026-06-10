@@ -186,9 +186,10 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
             // dedup-by-path lost every entry past the first, so qualified
             // calls like `libraryscope.Suite.Should Be Registered` had no
             // matching import to anchor `is_library_import` against.
-            if !all.iter().any(|l| {
-                l.library_name == lib.library_name && l.py_file_path == lib.py_file_path
-            }) {
+            if !all
+                .iter()
+                .any(|l| l.library_name == lib.library_name && l.py_file_path == lib.py_file_path)
+            {
                 all.push(lib.clone());
             }
         }
@@ -206,8 +207,7 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
                     // Dedup by `(library_name, py_file_path)`; multiple
                     // dotted Library imports map to the same `.py` file.
                     if !all.iter().any(|l| {
-                        l.library_name == lib.library_name
-                            && l.py_file_path == lib.py_file_path
+                        l.library_name == lib.library_name && l.py_file_path == lib.py_file_path
                     }) {
                         all.push(lib.clone());
                     }
@@ -333,11 +333,7 @@ fn resolve_library_to_py(
 
 /// Resolve a Resource basename (`atest_resource.robot`) to its full
 /// project path (`atest/resources/atest_resource.robot`).
-fn resolve_basename(
-    basename: &str,
-    importer_path: &str,
-    candidates: &[&str],
-) -> Option<String> {
+fn resolve_basename(basename: &str, importer_path: &str, candidates: &[&str]) -> Option<String> {
     pick_best_match(basename, importer_path, candidates)
 }
 
@@ -353,9 +349,9 @@ fn pick_best_match(
     importer_path: &str,
     candidates: &[&str],
 ) -> Option<String> {
-    let importer_dir = Path::new(importer_path).parent().map(|p| {
-        p.to_string_lossy().replace('\\', "/")
-    });
+    let importer_dir = Path::new(importer_path)
+        .parent()
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
     // Normalise the target down to just the file-name suffix. The
     // extractor preserves whatever the user wrote (`../runner/x.robot`),
     // but candidates are full project paths whose basenames never carry

@@ -25,15 +25,17 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -43,8 +45,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -97,7 +99,13 @@ fn bare_anyhow_path_attributed_to_anyhow_not_std() {
     let ctx = cargo_ctx_with(&["anyhow"]);
     let file = make_file(
         "src/lib.rs",
-        vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+        vec![make_symbol(
+            "root",
+            "root",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
         vec![make_ref(0, "anyhow::anyhow", EdgeKind::Calls, 5)],
     );
 
@@ -111,10 +119,15 @@ fn bare_anyhow_path_attributed_to_anyhow_not_std() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+            &[],
+            &std::collections::HashMap::new(),
+        );
         crate::languages::rust_lang::hooks::RustHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert_eq!(ns.as_deref(), Some("anyhow"));
@@ -127,7 +140,13 @@ fn bare_hyphenated_crate_normalized_to_underscore() {
     let ctx = cargo_ctx_with(&["serde-json"]);
     let file = make_file(
         "src/lib.rs",
-        vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+        vec![make_symbol(
+            "root",
+            "root",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
         vec![make_ref(0, "serde_json::json", EdgeKind::Calls, 5)],
     );
 
@@ -141,10 +160,15 @@ fn bare_hyphenated_crate_normalized_to_underscore() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+            &[],
+            &std::collections::HashMap::new(),
+        );
         crate::languages::rust_lang::hooks::RustHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert_eq!(ns.as_deref(), Some("serde_json"));
@@ -155,8 +179,19 @@ fn bare_stdlib_path_still_routes_to_std() {
     let ctx = cargo_ctx_with(&[]);
     let file = make_file(
         "src/lib.rs",
-        vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
-        vec![make_ref(0, "std::collections::HashMap", EdgeKind::TypeRef, 5)],
+        vec![make_symbol(
+            "root",
+            "root",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_ref(
+            0,
+            "std::collections::HashMap",
+            EdgeKind::TypeRef,
+            5,
+        )],
     );
 
     let file_ctx = build_file_context_inner(&file, Some(&ctx));
@@ -169,10 +204,15 @@ fn bare_stdlib_path_still_routes_to_std() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+            &[],
+            &std::collections::HashMap::new(),
+        );
         crate::languages::rust_lang::hooks::RustHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert_eq!(ns.as_deref(), Some("std"));
@@ -183,7 +223,13 @@ fn bare_crate_path_internal_not_attributed_external() {
     let ctx = cargo_ctx_with(&["anyhow"]);
     let file = make_file(
         "src/lib.rs",
-        vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+        vec![make_symbol(
+            "root",
+            "root",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
         vec![make_ref(0, "crate::models::User", EdgeKind::TypeRef, 5)],
     );
 
@@ -197,13 +243,21 @@ fn bare_crate_path_internal_not_attributed_external() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+            &[],
+            &std::collections::HashMap::new(),
+        );
         crate::languages::rust_lang::hooks::RustHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
-    assert!(ns.is_none(), "crate:: paths should not be classified external");
+    assert!(
+        ns.is_none(),
+        "crate:: paths should not be classified external"
+    );
 }
 
 #[test]
@@ -214,7 +268,13 @@ fn unknown_bare_path_not_attributed_when_not_in_manifest() {
     let ctx = cargo_ctx_with(&["serde"]); // anyhow NOT declared
     let file = make_file(
         "src/lib.rs",
-        vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+        vec![make_symbol(
+            "root",
+            "root",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
         vec![make_ref(0, "anyhow::anyhow", EdgeKind::Calls, 5)],
     );
 
@@ -228,10 +288,15 @@ fn unknown_bare_path_not_attributed_when_not_in_manifest() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &std::collections::HashMap::new());
+        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+            &[],
+            &std::collections::HashMap::new(),
+        );
         crate::languages::rust_lang::hooks::RustHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(
@@ -256,11 +321,11 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
@@ -269,8 +334,8 @@ fn make_chain(segments: &[(&str, SegmentKind)]) -> MemberChain {
 
 #[test]
 fn test_rust_axum_router_route_emits_consumer_http() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_axum_route_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
@@ -279,7 +344,9 @@ fn test_rust_axum_router_route_emits_consumer_http() {
     ]);
     let args = vec![CallArg::StringLit("/api/users".to_string()), CallArg::Other];
     match detect_rust_axum_route_emission(&chain, &args).unwrap() {
-        FlowEmission::NamedChannel { kind, name, role, .. } => {
+        FlowEmission::NamedChannel {
+            kind, name, role, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/api/users");
@@ -290,8 +357,8 @@ fn test_rust_axum_router_route_emits_consumer_http() {
 
 #[test]
 fn test_rust_axum_route_reads_verb_from_second_arg() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_rust_axum_route_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     let chain = make_chain(&[
         ("Router", SegmentKind::Identifier),
@@ -338,12 +405,20 @@ fn test_rust_axum_route_rejects_non_router_root() {
 
 #[test]
 fn test_rust_route_attribute_emits_consumer_http() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
     use super::hooks::detect_rust_route_attribute_emission;
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let em = detect_rust_route_attribute_emission("get", Some("/api/users")).unwrap();
     match em {
-        FlowEmission::NamedChannel { kind, name, role, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            name,
+            role,
+            method,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/api/users");
@@ -379,8 +454,10 @@ fn test_rust_actix_web_resource_emits_consumer() {
 
 #[test]
 fn test_rust_reqwest_client_get_emits_producer_http() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
     use super::hooks::detect_rust_reqwest_emission;
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let chain = make_chain(&[
         ("client", SegmentKind::Identifier),
@@ -388,7 +465,13 @@ fn test_rust_reqwest_client_get_emits_producer_http() {
     ]);
     let args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_rust_reqwest_emission(&chain, &args).unwrap() {
-        FlowEmission::NamedChannel { kind, name, role, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            name,
+            role,
+            method,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users");
@@ -400,14 +483,16 @@ fn test_rust_reqwest_client_get_emits_producer_http() {
 
 #[test]
 fn test_rust_reqwest_post_with_absolute_url() {
-    use crate::indexer::resolve::flow_emit::HttpMethod;
     use super::hooks::detect_rust_reqwest_emission;
+    use crate::indexer::resolve::flow_emit::HttpMethod;
 
     let chain = make_chain(&[
         ("client", SegmentKind::Identifier),
         ("post", SegmentKind::Property),
     ]);
-    let args = vec![CallArg::StringLit("https://api.example.com/items".to_string())];
+    let args = vec![CallArg::StringLit(
+        "https://api.example.com/items".to_string(),
+    )];
     let em = detect_rust_reqwest_emission(&chain, &args).unwrap();
     if let crate::indexer::resolve::flow_emit::FlowEmission::NamedChannel { method, .. } = em {
         assert_eq!(method, Some(HttpMethod::Post));
@@ -434,12 +519,17 @@ fn test_rust_reqwest_rejects_router_root() {
 
 #[test]
 fn test_rust_sqlx_query_select_emits_db_query() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_rust_sqlx_macro_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
-    let args = vec![CallArg::StringLit("SELECT * FROM users WHERE id = $1".to_string())];
+    let args = vec![CallArg::StringLit(
+        "SELECT * FROM users WHERE id = $1".to_string(),
+    )];
     match detect_rust_sqlx_macro_emission("query", Some("sqlx"), &args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rs.users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -449,8 +539,8 @@ fn test_rust_sqlx_query_select_emits_db_query() {
 
 #[test]
 fn test_rust_sqlx_query_as_uses_entity_arg() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_rust_sqlx_macro_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     // `sqlx::query_as!(User, "SELECT * FROM users")`.
     let args = vec![
@@ -458,7 +548,10 @@ fn test_rust_sqlx_query_as_uses_entity_arg() {
         CallArg::StringLit("SELECT * FROM users".to_string()),
     ];
     match detect_rust_sqlx_macro_emission("query_as", Some("sqlx"), &args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rs.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -468,12 +561,17 @@ fn test_rust_sqlx_query_as_uses_entity_arg() {
 
 #[test]
 fn test_rust_sqlx_query_insert_op() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_rust_sqlx_macro_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
-    let args = vec![CallArg::StringLit("INSERT INTO items (a) VALUES ($1)".to_string())];
+    let args = vec![CallArg::StringLit(
+        "INSERT INTO items (a) VALUES ($1)".to_string(),
+    )];
     match detect_rust_sqlx_macro_emission("query", Some("sqlx"), &args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rs.items");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -485,8 +583,8 @@ fn test_rust_sqlx_query_insert_op() {
 
 #[test]
 fn test_rust_diesel_table_first_emits_db_query() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_rust_diesel_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     // `users::table.filter(...).first(&conn)`.
     let chain = make_chain(&[
@@ -496,7 +594,10 @@ fn test_rust_diesel_table_first_emits_db_query() {
         ("first", SegmentKind::Property),
     ]);
     match detect_rust_diesel_emission(&chain).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "rs.users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -533,8 +634,8 @@ fn test_rust_diesel_no_table_segment_returns_none() {
 
 #[test]
 fn test_rust_tonic_client_method_emits_rpc_call() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_tonic_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
     let chain = make_chain(&[
         ("HelloServiceClient", SegmentKind::Identifier),
@@ -542,7 +643,9 @@ fn test_rust_tonic_client_method_emits_rpc_call() {
         ("say_hello", SegmentKind::Property),
     ]);
     match detect_rust_tonic_emission(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, name, role, .. } => {
+        FlowEmission::NamedChannel {
+            kind, name, role, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "HelloService.say_hello");
@@ -600,30 +703,84 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
 
     struct VarLookup;
     impl SymbolLookup for VarLookup {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn field_type_name(&self, qname: &str) -> Option<&str> {
-            if qname == "main.c" { Some("HelloServiceClient") } else { None }
+        fn by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
         }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &[] }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+            None
+        }
+        fn members_of(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+            Vec::new()
+        }
+        fn has_in_namespace(&self, _: &str) -> bool {
+            false
+        }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn field_type_name(&self, qname: &str) -> Option<&str> {
+            if qname == "main.c" {
+                Some("HelloServiceClient")
+            } else {
+                None
+            }
+        }
+        fn return_type_name(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn generic_params(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] {
+            &[]
+        }
+        fn is_external_name(&self, _: &str, _: &str) -> bool {
+            false
+        }
     }
 
     let chain = MemberChain {
         segments: vec![
-            ChainSegment { name: "c".to_string(), node_kind: "identifier".to_string(), kind: SegmentKind::Identifier, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new(), call_args: Vec::new() },
-            ChainSegment { name: "say_hello".to_string(), node_kind: "field_expression".to_string(), kind: SegmentKind::Property, declared_type: None, type_args: vec![], optional_chaining: false, byte_offset: 0, declared_type_id: None, is_call: false, type_arg_ids: Vec::new(), call_args: Vec::new() },
+            ChainSegment {
+                name: "c".to_string(),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                is_call: false,
+                type_arg_ids: Vec::new(),
+                call_args: Vec::new(),
+            },
+            ChainSegment {
+                name: "say_hello".to_string(),
+                node_kind: "field_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                is_call: false,
+                type_arg_ids: Vec::new(),
+                call_args: Vec::new(),
+            },
         ],
     };
-    let extracted_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let extracted_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "say_hello".to_string(),
         kind: EdgeKind::Calls,
@@ -640,16 +797,20 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         qualified_name: "main".to_string(),
         kind: SymbolKind::Function,
         visibility: Some(Visibility::Public),
-        start_line: 1, end_line: 1, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None,
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
         scope_path: Some("main".to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
+    };
     let ref_ctx = RefContext {
         extracted_ref: &extracted_ref,
         source_symbol: &source_symbol,
@@ -664,7 +825,13 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
     };
     let emissions = super::hooks::detect_flow_inner_with_lookup(&file_ctx, &ref_ctx, &VarLookup);
     assert!(
-        matches!(emissions.first(), Some(FlowEmission::NamedChannel { kind: NamedChannelKind::RpcCall, .. })),
+        matches!(
+            emissions.first(),
+            Some(FlowEmission::NamedChannel {
+                kind: NamedChannelKind::RpcCall,
+                ..
+            })
+        ),
         "expected RpcCall via let-binding propagation, got {emissions:?}"
     );
 }
@@ -712,14 +879,16 @@ fn test_rust_reqwest_no_emit_for_server_root() {
 
 #[test]
 fn test_rust_apalis_storage_push_emits_bgjob() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_apalis_bgjob;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&[
         ("MemoryStorage", SegmentKind::Identifier),
         ("push", SegmentKind::Property),
     ]);
     match detect_rust_apalis_bgjob(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::BgJob));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "rs.apalis");
@@ -730,8 +899,8 @@ fn test_rust_apalis_storage_push_emits_bgjob() {
 
 #[test]
 fn test_rust_rdkafka_producer_send_emits_mq() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_rdkafka_mq;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&[
         ("producer", SegmentKind::Identifier),
         ("send", SegmentKind::Property),
@@ -747,8 +916,8 @@ fn test_rust_rdkafka_producer_send_emits_mq() {
 
 #[test]
 fn test_rust_lapin_basic_publish_emits_mq() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_rdkafka_mq;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&[
         ("channel", SegmentKind::Identifier),
         ("basic_publish", SegmentKind::Property),
@@ -764,8 +933,8 @@ fn test_rust_lapin_basic_publish_emits_mq() {
 
 #[test]
 fn test_rust_redis_get_emits_config_lookup() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_rust_redis_config_lookup;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
     let chain = make_chain(&[
         ("con", SegmentKind::Identifier),
         ("get", SegmentKind::Property),
@@ -779,15 +948,17 @@ fn test_rust_redis_get_emits_config_lookup() {
 
 #[test]
 fn test_rust_uds_listener_bind_emits_ipc_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_uds_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&[
         ("UnixListener", SegmentKind::Identifier),
         ("bind", SegmentKind::Property),
     ]);
     let args = vec![CallArg::StringLit("/tmp/app.sock".to_string())];
     match detect_rust_uds_emission(&chain, &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::IpcCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/tmp/app.sock");
@@ -798,8 +969,8 @@ fn test_rust_uds_listener_bind_emits_ipc_consumer() {
 
 #[test]
 fn test_rust_uds_stream_connect_emits_ipc_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
     use super::hooks::detect_rust_uds_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
     let chain = make_chain(&[
         ("UnixStream", SegmentKind::Identifier),
         ("connect", SegmentKind::Property),
@@ -813,8 +984,8 @@ fn test_rust_uds_stream_connect_emits_ipc_producer() {
 
 #[test]
 fn test_rust_axum_ws_on_upgrade_emits_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_axum_ws_consumer;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&[
         ("ws", SegmentKind::Identifier),
         ("on_upgrade", SegmentKind::Property),
@@ -830,10 +1001,12 @@ fn test_rust_axum_ws_on_upgrade_emits_consumer() {
 
 #[test]
 fn test_rust_async_graphql_object_emits_graphql_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_rust_async_graphql_attribute;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_rust_async_graphql_attribute("Object").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::GraphQLOp));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "rs.graphql.query");
@@ -844,8 +1017,8 @@ fn test_rust_async_graphql_object_emits_graphql_consumer() {
 
 #[test]
 fn test_rust_async_graphql_subscription_emits_subscription() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_rust_async_graphql_attribute;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
     match detect_rust_async_graphql_attribute("Subscription").unwrap() {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "rs.graphql.subscription"),
         _ => panic!("expected NamedChannel"),
@@ -875,9 +1048,7 @@ mod prelude {
     use std::collections::HashMap;
 
     fn stdlib_path(rel: &str) -> String {
-        format!(
-            "ext:idx:C:/toolchain/lib/rustlib/src/rust/library/{rel}"
-        )
+        format!("ext:idx:C:/toolchain/lib/rustlib/src/rust/library/{rel}")
     }
 
     fn external_file(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
@@ -958,16 +1129,27 @@ mod prelude {
         let files = vec![
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
-                vec![make_symbol("Vec", "Vec", SymbolKind::Struct, Visibility::Public, None)],
+                vec![make_symbol(
+                    "Vec",
+                    "Vec",
+                    SymbolKind::Struct,
+                    Visibility::Public,
+                    None,
+                )],
             ),
             make_file(
                 "src/lib.rs",
-                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_symbol(
+                    "root",
+                    "root",
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    None,
+                )],
                 vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
             ),
         ];
-        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files)
-            .expect("Vec must resolve");
+        let res = run_resolve(&cargo_ctx_with(&[]), 1, &files).expect("Vec must resolve");
         assert_eq!(res.strategy, "default_ambient_package");
     }
 
@@ -999,11 +1181,23 @@ mod prelude {
             ),
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
-                vec![make_symbol("Vec", "Vec", SymbolKind::Struct, Visibility::Public, None)],
+                vec![make_symbol(
+                    "Vec",
+                    "Vec",
+                    SymbolKind::Struct,
+                    Visibility::Public,
+                    None,
+                )],
             ),
             make_file(
                 "src/lib.rs",
-                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_symbol(
+                    "root",
+                    "root",
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    None,
+                )],
                 vec![make_ref(0, "Vec", EdgeKind::TypeRef, 5)],
             ),
         ];
@@ -1022,7 +1216,13 @@ mod prelude {
             external_file(
                 &stdlib_path("core/src/option.rs"),
                 vec![
-                    make_symbol("Option", "Option", SymbolKind::Enum, Visibility::Public, None),
+                    make_symbol(
+                        "Option",
+                        "Option",
+                        SymbolKind::Enum,
+                        Visibility::Public,
+                        None,
+                    ),
                     make_symbol(
                         "Some",
                         "Option.Some",
@@ -1034,7 +1234,13 @@ mod prelude {
             ),
             make_file(
                 "src/lib.rs",
-                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_symbol(
+                    "root",
+                    "root",
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    None,
+                )],
                 vec![make_ref(0, "Some", EdgeKind::Calls, 5)],
             ),
         ];
@@ -1053,11 +1259,23 @@ mod prelude {
         let files = vec![
             external_file(
                 &stdlib_path("alloc/src/vec/mod.rs"),
-                vec![make_symbol("MyType", "MyType", SymbolKind::Struct, Visibility::Public, None)],
+                vec![make_symbol(
+                    "MyType",
+                    "MyType",
+                    SymbolKind::Struct,
+                    Visibility::Public,
+                    None,
+                )],
             ),
             make_file(
                 "src/lib.rs",
-                vec![make_symbol("root", "root", SymbolKind::Function, Visibility::Public, None)],
+                vec![make_symbol(
+                    "root",
+                    "root",
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    None,
+                )],
                 vec![make_ref(0, "MyType", EdgeKind::TypeRef, 5)],
             ),
         ];

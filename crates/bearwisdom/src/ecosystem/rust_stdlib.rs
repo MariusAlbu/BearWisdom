@@ -14,9 +14,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -33,9 +31,15 @@ const STDLIB_CRATES: &[&str] = &["std", "core", "alloc", "proc_macro"];
 pub struct RustStdlibEcosystem;
 
 impl Ecosystem for RustStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("rust")
@@ -49,9 +53,13 @@ impl Ecosystem for RustStdlibEcosystem {
         walk_rust_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -73,7 +81,9 @@ impl Ecosystem for RustStdlibEcosystem {
         for dep in dep_roots {
             for rel in PRELUDE_MACRO_FILES {
                 let abs = dep.root.join(rel);
-                if !abs.is_file() { continue }
+                if !abs.is_file() {
+                    continue;
+                }
                 let display = abs.to_string_lossy().replace('\\', "/");
                 out.push(crate::walker::WalkedFile {
                     relative_path: format!("ext:rust:{}", display),
@@ -89,14 +99,12 @@ impl Ecosystem for RustStdlibEcosystem {
 /// Files containing prelude `macro_rules!` definitions, expressed relative
 /// to a stdlib crate's `src/` root. Each `ExternalDepRoot` points at one
 /// crate's `src/` directory (std, core, alloc, proc_macro).
-const PRELUDE_MACRO_FILES: &[&str] = &[
-    "macros.rs",
-    "macros/mod.rs",
-    "fmt/macros.rs",
-];
+const PRELUDE_MACRO_FILES: &[&str] = &["macros.rs", "macros/mod.rs", "fmt/macros.rs"];
 
 impl ExternalSourceLocator for RustStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_rust_stdlib_roots()
     }
@@ -106,8 +114,15 @@ impl ExternalSourceLocator for RustStdlibEcosystem {
 }
 
 fn discover_rust_stdlib_roots() -> Vec<ExternalDepRoot> {
-    let Some(sysroot) = rustc_sysroot() else { return Vec::new() };
-    let library_dir = sysroot.join("lib").join("rustlib").join("src").join("rust").join("library");
+    let Some(sysroot) = rustc_sysroot() else {
+        return Vec::new();
+    };
+    let library_dir = sysroot
+        .join("lib")
+        .join("rustlib")
+        .join("src")
+        .join("rust")
+        .join("library");
     if !library_dir.is_dir() {
         debug!(
             "rust-stdlib: source tree not found at {}; install `rustup component add rust-src`",
@@ -118,7 +133,9 @@ fn discover_rust_stdlib_roots() -> Vec<ExternalDepRoot> {
     let mut roots = Vec::new();
     for crate_name in STDLIB_CRATES {
         let crate_dir = library_dir.join(crate_name).join("src");
-        if !crate_dir.is_dir() { continue }
+        if !crate_dir.is_dir() {
+            continue;
+        }
         roots.push(ExternalDepRoot {
             module_path: crate_name.to_string(),
             version: String::new(),
@@ -134,19 +151,26 @@ fn discover_rust_stdlib_roots() -> Vec<ExternalDepRoot> {
 fn rustc_sysroot() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_RUST_SYSROOT") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     // Try rustc.
-    let output = Command::new("rustc")
-        .arg("--print=sysroot")
-        .output()
-        .ok()?;
-    if !output.status.success() { return None }
+    let output = Command::new("rustc").arg("--print=sysroot").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let path = String::from_utf8(output.stdout).ok()?;
     let trimmed = path.trim();
-    if trimmed.is_empty() { return None }
+    if trimmed.is_empty() {
+        return None;
+    }
     let p = PathBuf::from(trimmed);
-    if p.is_dir() { Some(p) } else { None }
+    if p.is_dir() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 fn walk_rust_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
@@ -156,20 +180,32 @@ fn walk_rust_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 16 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 16 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "benches" | "examples") { continue }
-                if name.starts_with('.') { continue }
+                if matches!(name, "tests" | "benches" | "examples") {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".rs") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".rs") {
+                continue;
+            }
             if name == "lib.rs" || name == "mod.rs" || !name.starts_with("tests") {
                 let display = path.to_string_lossy().replace('\\', "/");
                 let rel = format!("ext:rust:{}", display);
@@ -186,5 +222,7 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<RustStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(RustStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(RustStdlibEcosystem))
+        .clone()
 }

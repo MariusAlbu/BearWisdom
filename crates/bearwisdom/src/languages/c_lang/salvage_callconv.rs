@@ -48,8 +48,7 @@ pub(super) fn salvage_missed_msvc_calling_convention_decls(
         "CALLBACK",
     ];
 
-    let mut existing: HashSet<String> =
-        symbols.iter().map(|s| s.name.clone()).collect();
+    let mut existing: HashSet<String> = symbols.iter().map(|s| s.name.clone()).collect();
 
     let lines: Vec<&str> = source.lines().collect();
     for (line_idx, line) in lines.iter().enumerate() {
@@ -78,10 +77,14 @@ pub(super) fn salvage_missed_msvc_calling_convention_decls(
             // Walk back through whitespace-only lines.
             let mut j = line_idx;
             let prev_conv = loop {
-                if j == 0 { break None; }
+                if j == 0 {
+                    break None;
+                }
                 j -= 1;
                 let prev = lines[j].trim();
-                if prev.is_empty() { continue; }
+                if prev.is_empty() {
+                    continue;
+                }
                 break Some(prev);
             };
             let Some(prev) = prev_conv else { continue };
@@ -115,11 +118,11 @@ fn push_salvaged_function(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     existing.insert(name.to_string());
 }
 
@@ -140,8 +143,12 @@ fn scan_bare_funcname_paren(line: &str) -> Option<&str> {
         i += 1;
     }
     let end = i;
-    if end == start { return None }
-    if i >= bytes.len() || bytes[i] != b'(' { return None }
+    if end == start {
+        return None;
+    }
+    if i >= bytes.len() || bytes[i] != b'(' {
+        return None;
+    }
     Some(&line[start..end])
 }
 
@@ -152,12 +159,9 @@ fn line_has_trailing_declaration_macro(line: &str, conventions: &[&str]) -> bool
         while let Some(rel) = line[search_from..].find(conv) {
             let conv_start = search_from + rel;
             let conv_end = conv_start + conv.len();
-            let before_ok = conv_start == 0
-                || !is_ident_byte(bytes[conv_start - 1]);
+            let before_ok = conv_start == 0 || !is_ident_byte(bytes[conv_start - 1]);
             let after_byte = bytes.get(conv_end).copied();
-            let after_ok = after_byte
-                .map(|b| !is_ident_byte(b))
-                .unwrap_or(true);
+            let after_ok = after_byte.map(|b| !is_ident_byte(b)).unwrap_or(true);
             if !before_ok || !after_ok {
                 search_from = conv_end;
                 continue;
@@ -190,10 +194,7 @@ fn line_has_trailing_declaration_macro(line: &str, conventions: &[&str]) -> bool
 /// occurrence where the token after IDENT isn't `(` (e.g. typedef
 /// usage `typedef int (__cdecl* CB)(...)` where the convention sits
 /// before a `*`, not before an identifier).
-fn scan_calling_convention_decl_name<'a>(
-    line: &'a str,
-    conventions: &[&str],
-) -> Option<&'a str> {
+fn scan_calling_convention_decl_name<'a>(line: &'a str, conventions: &[&str]) -> Option<&'a str> {
     let bytes = line.as_bytes();
     for conv in conventions {
         let mut search_from = 0;
@@ -202,12 +203,9 @@ fn scan_calling_convention_decl_name<'a>(
             let conv_end = conv_start + conv.len();
             // The convention must be a whole token — bounded by
             // non-ident chars (or start/end of line).
-            let before_ok = conv_start == 0
-                || !is_ident_byte(bytes[conv_start - 1]);
+            let before_ok = conv_start == 0 || !is_ident_byte(bytes[conv_start - 1]);
             let after_byte = bytes.get(conv_end).copied();
-            let after_ok = after_byte
-                .map(|b| !is_ident_byte(b))
-                .unwrap_or(false);
+            let after_ok = after_byte.map(|b| !is_ident_byte(b)).unwrap_or(false);
             if !before_ok || !after_ok {
                 search_from = conv_end;
                 continue;

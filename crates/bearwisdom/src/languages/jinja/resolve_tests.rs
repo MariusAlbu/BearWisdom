@@ -16,7 +16,10 @@ fn ctx_with_roles(role_names: &[&str]) -> ProjectContext {
     for &name in role_names {
         deps.insert(name.to_string());
     }
-    let data = ManifestData { dependencies: deps, ..Default::default() };
+    let data = ManifestData {
+        dependencies: deps,
+        ..Default::default()
+    };
     let mut manifests = HashMap::new();
     manifests.insert(ManifestKind::AnsibleRequirements, data);
     ProjectContext {
@@ -194,11 +197,7 @@ fn extends_binds_template_path_to_file_stem_class() {
     // `{% extends "base.j2" %}` — the extractor strips the extension, so the
     // target is `base`; the candidate re-appends `.j2` and binds the
     // referenced template's file-stem class regardless of its name.
-    let target = make_file(
-        "templates/base.j2",
-        vec![make_class_symbol("base")],
-        vec![],
-    );
+    let target = make_file("templates/base.j2", vec![make_class_symbol("base")], vec![]);
     let source = make_file(
         "templates/page.j2",
         vec![make_class_symbol("page")],

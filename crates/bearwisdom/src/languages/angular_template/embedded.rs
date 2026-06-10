@@ -88,16 +88,11 @@ fn collect_binding_attributes(source: &str, regions: &mut Vec<EmbeddedRegion>) {
                     let trimmed = text.trim();
                     if !trimmed.is_empty() {
                         let (line, col) = line_col_at(bytes, expr_start);
-                        let is_structural =
-                            b == b'*' && trimmed.starts_with("let ");
+                        let is_structural = b == b'*' && trimmed.starts_with("let ");
                         let wrapped = if is_structural {
-                            format!(
-                                "function __NgExpr{idx}() {{ for ({trimmed}) {{}} }}\n"
-                            )
+                            format!("function __NgExpr{idx}() {{ for ({trimmed}) {{}} }}\n")
                         } else {
-                            format!(
-                                "function __NgExpr{idx}() {{ return ({trimmed}); }}\n"
-                            )
+                            format!("function __NgExpr{idx}() {{ return ({trimmed}); }}\n")
                         };
                         regions.push(EmbeddedRegion {
                             language_id: "typescript".to_string(),
@@ -165,7 +160,9 @@ fn find_attr_expression(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
         i += 1; // past `)`
     } else {
         // `*directive` — advance past identifier.
-        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_') {
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
+        {
             i += 1;
         }
     }

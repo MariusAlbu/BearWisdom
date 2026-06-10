@@ -3,12 +3,12 @@
 //! Uses the dedicated SCSS tree-sitter grammar (tree-sitter-scss-local),
 //! compiled from MSVC-compatible pre-expanded C source.
 
-pub(crate) mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
-pub mod keywords;
 pub mod extract;
 mod handlers;
+pub(crate) mod hooks;
+pub mod keywords;
+pub(crate) mod predicates;
+pub(crate) mod profile;
 mod recovery;
 
 pub use hooks::SCSS_HOOKS;
@@ -68,7 +68,9 @@ impl LanguagePlugin for ScssPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -78,8 +80,7 @@ impl LanguagePlugin for ScssPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::SCSS_HOOKS)
     }
 }

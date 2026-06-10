@@ -33,25 +33,92 @@ use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibili
 
 /// Zig primitive types — skip TypeRef for these.
 const PRIMITIVES: &[&str] = &[
-    "bool", "void", "noreturn", "type", "anyerror", "anyframe", "anytype",
-    "comptime_int", "comptime_float",
-    "i8", "i16", "i32", "i64", "i128", "isize",
-    "u8", "u16", "u32", "u64", "u128", "usize",
-    "f16", "f32", "f64", "f80", "f128",
-    "c_short", "c_int", "c_long", "c_longlong",
-    "c_ushort", "c_uint", "c_ulong", "c_ulonglong",
-    "c_char", "c_longdouble",
+    "bool",
+    "void",
+    "noreturn",
+    "type",
+    "anyerror",
+    "anyframe",
+    "anytype",
+    "comptime_int",
+    "comptime_float",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+    "f16",
+    "f32",
+    "f64",
+    "f80",
+    "f128",
+    "c_short",
+    "c_int",
+    "c_long",
+    "c_longlong",
+    "c_ushort",
+    "c_uint",
+    "c_ulong",
+    "c_ulonglong",
+    "c_char",
+    "c_longdouble",
 ];
 
 /// Zig keywords and built-ins that should not be treated as call targets.
 const ZIG_KEYWORDS: &[&str] = &[
-    "if", "else", "while", "for", "switch", "return", "break", "continue",
-    "defer", "errdefer", "try", "catch", "orelse", "and", "or", "not",
-    "const", "var", "comptime", "pub", "extern", "export", "inline",
-    "packed", "align", "noalias", "volatile", "allowzero", "noinline",
-    "async", "await", "suspend", "nosuspend", "anytype", "usingnamespace",
-    "test", "fn", "struct", "enum", "union", "error", "opaque",
-    "true", "false", "null", "undefined",
+    "if",
+    "else",
+    "while",
+    "for",
+    "switch",
+    "return",
+    "break",
+    "continue",
+    "defer",
+    "errdefer",
+    "try",
+    "catch",
+    "orelse",
+    "and",
+    "or",
+    "not",
+    "const",
+    "var",
+    "comptime",
+    "pub",
+    "extern",
+    "export",
+    "inline",
+    "packed",
+    "align",
+    "noalias",
+    "volatile",
+    "allowzero",
+    "noinline",
+    "async",
+    "await",
+    "suspend",
+    "nosuspend",
+    "anytype",
+    "usingnamespace",
+    "test",
+    "fn",
+    "struct",
+    "enum",
+    "union",
+    "error",
+    "opaque",
+    "true",
+    "false",
+    "null",
+    "undefined",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -112,11 +179,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             i = end_line as usize + 1;
             continue;
         }
@@ -130,7 +197,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 name: fn_name.clone(),
                 qualified_name: fn_name.clone(),
                 kind: SymbolKind::Function,
-                visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                visibility: Some(if is_pub {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                }),
                 start_line,
                 end_line,
                 start_col: 0,
@@ -140,24 +211,29 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             // Scan body lines for call expressions
             extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs, &line_starts);
             // Deep-scan the body for anonymous struct blocks (e.g. `return struct { ... }`,
             // `=> struct { ... }`) that contain nested fn/method declarations.
-            extract_anon_struct_fns(&body_lines, fn_idx, &mut symbols, &mut refs, &line_starts);
+            extract_anon_struct_fns(
+                &body_lines,
+                fn_idx,
+                "",
+                &mut symbols,
+                &mut refs,
+                &line_starts,
+            );
             i = end_line as usize + 1;
             continue;
         }
 
         // --- const/var declaration ---
-        if let Some((decl_name, is_pub, container, import_path)) =
-            parse_var_declaration(trimmed)
-        {
+        if let Some((decl_name, is_pub, container, import_path)) = parse_var_declaration(trimmed) {
             let start_line = i as u32;
 
             // @import case
@@ -167,7 +243,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     name: decl_name.clone(),
                     qualified_name: decl_name.clone(),
                     kind: SymbolKind::Variable,
-                    visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                    visibility: Some(if is_pub {
+                        Visibility::Public
+                    } else {
+                        Visibility::Private
+                    }),
                     start_line,
                     end_line: start_line,
                     start_col: 0,
@@ -177,12 +257,14 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                });
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: decl_idx,
                     target_name: path,
                     kind: EdgeKind::Imports,
@@ -206,25 +288,41 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         name: decl_name.clone(),
                         qualified_name: decl_name.clone(),
                         kind: SymbolKind::Struct,
-                        visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                        visibility: Some(if is_pub {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        }),
                         start_line,
                         end_line,
                         start_col: 0,
                         end_col: 0,
                         signature: Some(format!(
                             "const {decl_name} = {}",
-                            if container == ContainerKind::Union { "union" } else { "struct" }
+                            if container == ContainerKind::Union {
+                                "union"
+                            } else {
+                                "struct"
+                            }
                         )),
                         doc_comment: doc,
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
-                    extract_struct_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
+                    });
+                    extract_struct_body(
+                        &body_lines,
+                        start_line,
+                        parent_idx,
+                        &decl_name,
+                        &mut symbols,
+                        &mut refs,
+                        &line_starts,
+                    );
                     i = end_line as usize + 1;
                     continue;
                 }
@@ -235,25 +333,41 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         name: decl_name.clone(),
                         qualified_name: decl_name.clone(),
                         kind: SymbolKind::Enum,
-                        visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                        visibility: Some(if is_pub {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        }),
                         start_line,
                         end_line,
                         start_col: 0,
                         end_col: 0,
                         signature: Some(format!(
                             "const {decl_name} = {}",
-                            if container == ContainerKind::Error { "error" } else { "enum" }
+                            if container == ContainerKind::Error {
+                                "error"
+                            } else {
+                                "enum"
+                            }
                         )),
                         doc_comment: doc,
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
-                    extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs, &line_starts);
+                    });
+                    extract_enum_body(
+                        &body_lines,
+                        start_line,
+                        parent_idx,
+                        &decl_name,
+                        &mut symbols,
+                        &mut refs,
+                        &line_starts,
+                    );
                     i = end_line as usize + 1;
                     continue;
                 }
@@ -264,7 +378,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         name: decl_name.clone(),
                         qualified_name: decl_name.clone(),
                         kind: SymbolKind::Variable,
-                        visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                        visibility: Some(if is_pub {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        }),
                         start_line,
                         end_line: start_line,
                         start_col: 0,
@@ -274,11 +392,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                     // Scan the declaration line for @builtin( calls
                     // (e.g. `const X = @This()`, `const X = @cImport({...})`,
                     //        `const X = @Vector(2, f32)`)
@@ -301,6 +419,7 @@ fn extract_struct_body(
     body_lines: &[(u32, &str)],
     _base_line: u32,
     parent_idx: usize,
+    parent_qname: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     line_starts: &[u32],
@@ -315,6 +434,30 @@ fn extract_struct_body(
             continue;
         }
 
+        // Nested container decl → child Struct/Enum with a parent-qualified qname.
+        // `pub const Encoded = enum {...}` inside `Register` becomes a symbol
+        // `Register.Encoded`, so a dotted type-ref `Register.Encoded` binds.
+        if let Some((decl_name, is_pub, container, import_path)) = parse_var_declaration(trimmed) {
+            if import_path.is_none() && container != ContainerKind::None {
+                extract_nested_container(
+                    body_lines,
+                    j,
+                    line_num,
+                    &decl_name,
+                    is_pub,
+                    container,
+                    parent_idx,
+                    parent_qname,
+                    symbols,
+                    refs,
+                    line_starts,
+                );
+                // Advance past this nested block.
+                j = nested_block_end(body_lines, j) + 1;
+                continue;
+            }
+        }
+
         // Nested fn → Method
         if let Some((fn_name, is_pub, signature)) = parse_fn_declaration(trimmed) {
             // Find the extent of this nested fn within body_lines
@@ -324,8 +467,9 @@ fn extract_struct_body(
             // Count braces from this line forward
             for (k, (_, bl)) in body_lines[start_j..].iter().enumerate() {
                 for ch in bl.chars() {
-                    if ch == '{' { depth += 1; }
-                    else if ch == '}' {
+                    if ch == '{' {
+                        depth += 1;
+                    } else if ch == '}' {
                         depth -= 1;
                         if depth <= 0 {
                             end_j = start_j + k;
@@ -333,15 +477,21 @@ fn extract_struct_body(
                         }
                     }
                 }
-                if depth <= 0 { break; }
+                if depth <= 0 {
+                    break;
+                }
             }
 
             let fn_idx = symbols.len();
             symbols.push(ExtractedSymbol {
                 name: fn_name.clone(),
-                qualified_name: fn_name.clone(),
+                qualified_name: child_qname(parent_qname, &fn_name),
                 kind: SymbolKind::Method,
-                visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                visibility: Some(if is_pub {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                }),
                 start_line: line_num,
                 end_line: body_lines.get(end_j).map(|(l, _)| *l).unwrap_or(line_num),
                 start_col: 0,
@@ -351,11 +501,11 @@ fn extract_struct_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // Scan body for calls
             if end_j > start_j {
@@ -372,7 +522,7 @@ fn extract_struct_body(
             let field_idx = symbols.len();
             symbols.push(ExtractedSymbol {
                 name: field_name.clone(),
-                qualified_name: field_name.clone(),
+                qualified_name: child_qname(parent_qname, &field_name),
                 kind: SymbolKind::Field,
                 visibility: Some(Visibility::Public),
                 start_line: line_num,
@@ -384,15 +534,22 @@ fn extract_struct_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // Emit TypeRef for non-primitive types
-            if !is_primitive(&type_name) && type_name.chars().next().map_or(false, |c| c.is_alphanumeric() || c == '_') {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            if !is_primitive(&type_name)
+                && type_name
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_alphanumeric() || c == '_')
+            {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: field_idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -419,6 +576,7 @@ fn extract_enum_body(
     body_lines: &[(u32, &str)],
     _base_line: u32,
     parent_idx: usize,
+    parent_qname: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     _line_starts: &[u32],
@@ -432,14 +590,36 @@ fn extract_enum_body(
             continue;
         }
 
+        // Nested container decl → child Struct/Enum with a parent-qualified qname.
+        if let Some((decl_name, is_pub, container, import_path)) = parse_var_declaration(trimmed) {
+            if import_path.is_none() && container != ContainerKind::None {
+                extract_nested_container(
+                    body_lines,
+                    j,
+                    line_num,
+                    &decl_name,
+                    is_pub,
+                    container,
+                    parent_idx,
+                    parent_qname,
+                    symbols,
+                    refs,
+                    _line_starts,
+                );
+                j = nested_block_end(body_lines, j) + 1;
+                continue;
+            }
+        }
+
         // fn declarations inside enum bodies (Zig allows methods on enums)
         if let Some((fn_name, is_pub, signature)) = parse_fn_declaration(trimmed) {
             let mut depth = 0i32;
             let mut end_j = j;
             for (k, (_, bl)) in body_lines[j..].iter().enumerate() {
                 for ch in bl.chars() {
-                    if ch == '{' { depth += 1; }
-                    else if ch == '}' {
+                    if ch == '{' {
+                        depth += 1;
+                    } else if ch == '}' {
                         depth -= 1;
                         if depth <= 0 {
                             end_j = j + k;
@@ -447,15 +627,21 @@ fn extract_enum_body(
                         }
                     }
                 }
-                if depth <= 0 { break; }
+                if depth <= 0 {
+                    break;
+                }
             }
 
             let fn_idx = symbols.len();
             symbols.push(ExtractedSymbol {
                 name: fn_name.clone(),
-                qualified_name: fn_name.clone(),
+                qualified_name: child_qname(parent_qname, &fn_name),
                 kind: SymbolKind::Method,
-                visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                visibility: Some(if is_pub {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                }),
                 start_line: line_num,
                 end_line: body_lines.get(end_j).map(|(l, _)| *l).unwrap_or(line_num),
                 start_col: 0,
@@ -465,11 +651,11 @@ fn extract_enum_body(
                 scope_path: None,
                 parent_index: Some(parent_idx),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             if end_j > j {
                 let fn_body = &body_lines[j + 1..end_j];
@@ -492,7 +678,7 @@ fn extract_enum_body(
         }
         symbols.push(ExtractedSymbol {
             name: member.to_string(),
-            qualified_name: member.to_string(),
+            qualified_name: child_qname(parent_qname, member),
             kind: SymbolKind::EnumMember,
             visibility: Some(Visibility::Public),
             start_line: line_num,
@@ -504,13 +690,152 @@ fn extract_enum_body(
             scope_path: None,
             parent_index: Some(parent_idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         j += 1;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Nested container extraction (shared by struct and enum bodies)
+// ---------------------------------------------------------------------------
+
+/// Emit a nested `const X = struct/enum/union/error { ... }` declaration found
+/// inside a container body as a child symbol whose qualified_name is
+/// `{parent_qname}.{name}`, then recurse into its body with that qname so
+/// further nesting and members stay parent-qualified.
+#[allow(clippy::too_many_arguments)]
+fn extract_nested_container(
+    body_lines: &[(u32, &str)],
+    start_j: usize,
+    line_num: u32,
+    decl_name: &str,
+    is_pub: bool,
+    container: ContainerKind,
+    parent_idx: usize,
+    parent_qname: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    line_starts: &[u32],
+) {
+    let end_j = nested_block_end(body_lines, start_j);
+    let qname = child_qname(parent_qname, decl_name);
+
+    // Inner body lines: everything strictly between the opening and closing brace.
+    let inner: Vec<(u32, &str)> = if end_j > start_j {
+        body_lines[start_j + 1..=end_j.min(body_lines.len() - 1)]
+            .iter()
+            .copied()
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let (kind, keyword) = match container {
+        ContainerKind::Struct | ContainerKind::Union => (
+            SymbolKind::Struct,
+            if container == ContainerKind::Union {
+                "union"
+            } else {
+                "struct"
+            },
+        ),
+        ContainerKind::Enum | ContainerKind::Error => (
+            SymbolKind::Enum,
+            if container == ContainerKind::Error {
+                "error"
+            } else {
+                "enum"
+            },
+        ),
+        ContainerKind::None => return,
+    };
+
+    let child_idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: decl_name.to_string(),
+        qualified_name: qname.clone(),
+        kind,
+        visibility: Some(if is_pub {
+            Visibility::Public
+        } else {
+            Visibility::Private
+        }),
+        start_line: line_num,
+        end_line: body_lines.get(end_j).map(|(l, _)| *l).unwrap_or(line_num),
+        start_col: 0,
+        end_col: 0,
+        signature: Some(format!("const {decl_name} = {keyword}")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: Some(parent_idx),
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
+
+    match kind {
+        SymbolKind::Struct => {
+            extract_struct_body(
+                &inner,
+                line_num,
+                child_idx,
+                &qname,
+                symbols,
+                refs,
+                line_starts,
+            );
+        }
+        SymbolKind::Enum => {
+            extract_enum_body(
+                &inner,
+                line_num,
+                child_idx,
+                &qname,
+                symbols,
+                refs,
+                line_starts,
+            );
+        }
+        _ => {}
+    }
+}
+
+/// Build a child symbol's qualified_name. When the enclosing container is
+/// named (`parent_qname` non-empty) the child is parent-qualified
+/// (`Register.Encoded`); for an anonymous container (a `return struct { ... }`
+/// factory has no name) the child keeps its flat name.
+fn child_qname(parent_qname: &str, name: &str) -> String {
+    if parent_qname.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_qname}.{name}")
+    }
+}
+
+/// Index within `body_lines` of the line carrying the brace that closes the
+/// container block opened at `start_j`. Returns `start_j` for a single-line
+/// `{}` block.
+fn nested_block_end(body_lines: &[(u32, &str)], start_j: usize) -> usize {
+    let mut depth = 0i32;
+    for (k, (_, bl)) in body_lines[start_j..].iter().enumerate() {
+        for ch in bl.chars() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth <= 0 {
+                    return start_j + k;
+                }
+            }
+        }
+    }
+    body_lines.len().saturating_sub(1)
 }
 
 /// Used to be `extract_builtin_calls_from_line` — emitted Calls refs for
@@ -542,6 +867,7 @@ fn extract_builtin_calls_from_line(
 fn extract_anon_struct_fns(
     body_lines: &[(u32, &str)],
     parent_fn_idx: usize,
+    parent_qname: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     line_starts: &[u32],
@@ -589,14 +915,31 @@ fn extract_anon_struct_fns(
                     if in_struct && k > 0 && depth > 0 {
                         struct_body.push((*ln, bl));
                     }
-                    if depth <= 0 && in_struct { break; }
+                    if depth <= 0 && in_struct {
+                        break;
+                    }
                 }
 
                 if !struct_body.is_empty() {
                     // Extract fn declarations from the struct body
-                    extract_struct_body(&struct_body, line_num, parent_fn_idx, symbols, refs, line_starts);
+                    extract_struct_body(
+                        &struct_body,
+                        line_num,
+                        parent_fn_idx,
+                        parent_qname,
+                        symbols,
+                        refs,
+                        line_starts,
+                    );
                     // Recurse for deeper nesting
-                    extract_anon_struct_fns(&struct_body, parent_fn_idx, symbols, refs, line_starts);
+                    extract_anon_struct_fns(
+                        &struct_body,
+                        parent_fn_idx,
+                        parent_qname,
+                        symbols,
+                        refs,
+                        line_starts,
+                    );
                 }
 
                 j = end_j + 1;
@@ -620,7 +963,6 @@ fn find_struct_open_brace(trimmed: &str) -> Option<usize> {
     }
     None
 }
-
 
 // ---------------------------------------------------------------------------
 // Call extraction from body lines
@@ -708,7 +1050,9 @@ fn extract_call_identifiers(
         // Check if followed immediately by `(`
         if i < bytes.len() && bytes[i] == b'(' {
             if !ZIG_KEYWORDS.contains(&ident) && !is_primitive(ident) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: ident.to_string(),
                     kind: EdgeKind::Calls,
@@ -856,7 +1200,8 @@ fn parse_var_declaration(line: &str) -> Option<(String, bool, ContainerKind, Opt
     }
 
     // Container types
-    let container = if rhs.starts_with("struct ") || rhs.starts_with("struct{") || rhs == "struct{}" {
+    let container = if rhs.starts_with("struct ") || rhs.starts_with("struct{") || rhs == "struct{}"
+    {
         ContainerKind::Struct
     } else if rhs.starts_with("packed struct") || rhs.starts_with("extern struct") {
         ContainerKind::Struct
@@ -932,8 +1277,9 @@ fn skip_block_collecting<'a>(lines: &'a [&'a str], start: usize) -> (u32, Vec<(u
     for (k, &line) in lines[start..].iter().enumerate() {
         let abs = start + k;
         for ch in line.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
                 depth -= 1;
                 if depth <= 0 {
                     end = abs as u32;
@@ -956,8 +1302,9 @@ fn skip_block_collecting_owned(lines: &[&str], start: usize) -> (u32, Vec<(u32, 
     for (k, &line) in lines[start..].iter().enumerate() {
         let abs = start + k;
         for ch in line.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
                 depth -= 1;
                 if depth <= 0 {
                     end = abs as u32;

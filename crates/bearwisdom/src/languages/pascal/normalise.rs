@@ -75,7 +75,9 @@ fn normalise_variant_record_end_paren(src: &str) -> String {
         if trimmed.ends_with('(') && trimmed.contains(": (") {
             // Look ahead for `<name> : record` on the next non-blank line.
             let mut j = i + 1;
-            while j < n && lines[j].trim().is_empty() { j += 1; }
+            while j < n && lines[j].trim().is_empty() {
+                j += 1;
+            }
 
             if j < n {
                 let inner = lines[j].trim().to_ascii_lowercase();
@@ -98,22 +100,34 @@ fn normalise_variant_record_end_paren(src: &str) -> String {
                     while k < n {
                         let tl = lines[k].trim().to_ascii_lowercase();
                         // Crude depth tracking: `record`, `begin`, `case` open; `end` closes.
-                        if tl.starts_with("record") || tl.starts_with("begin") { depth += 1; }
-                        if tl == "end;" || tl == "end" { depth -= 1; }
-                        if depth == 0 { break; }
+                        if tl.starts_with("record") || tl.starts_with("begin") {
+                            depth += 1;
+                        }
+                        if tl == "end;" || tl == "end" {
+                            depth -= 1;
+                        }
+                        if depth == 0 {
+                            break;
+                        }
                         k += 1;
                     }
                     // k now points to the `end;` line of the anonymous record.
                     // Skip past blank lines and the closing `)` or `);`.
                     let mut m = k + 1;
-                    while m < n && lines[m].trim().is_empty() { m += 1; }
+                    while m < n && lines[m].trim().is_empty() {
+                        m += 1;
+                    }
                     if m < n && (lines[m].trim() == ");" || lines[m].trim() == ")") {
                         // Replacement: keep the case arm prefix up to `(`, replace body.
                         let prefix_end = line.rfind('(').unwrap_or(line.len());
                         let prefix = &line[..prefix_end];
                         // Preserve the field name from the original (not lowercased).
                         let orig_inner = lines[j].trim();
-                        let orig_field = if let Some(pos) = orig_inner.find(": record").or_else(|| orig_inner.find(": RECORD")).or_else(|| orig_inner.find(":record")) {
+                        let orig_field = if let Some(pos) = orig_inner
+                            .find(": record")
+                            .or_else(|| orig_inner.find(": RECORD"))
+                            .or_else(|| orig_inner.find(":record"))
+                        {
                             orig_inner[..pos].trim()
                         } else {
                             &field_name
@@ -171,7 +185,10 @@ fn normalise_ifdef_type_keywords(src: &str) -> String {
         let pp_start = i;
         let pp_end = match out[i..].iter().position(|&b| b == b'}') {
             Some(p) => i + p + 1,
-            None => { i += 1; continue; }
+            None => {
+                i += 1;
+                continue;
+            }
         };
 
         // Extract the pp keyword (e.g. "ifdef", "if ", "ifndef", "ifopt")
@@ -191,35 +208,47 @@ fn normalise_ifdef_type_keywords(src: &str) -> String {
         // After the opening `{$ifdef COND}`, consume whitespace/newlines, then check
         // for a type keyword immediately followed by either `{$else}` or `{$ifend}`.
         let mut j = pp_end;
-        while j < src_len && (out[j] == b' ' || out[j] == b'\t' || out[j] == b'\r' || out[j] == b'\n') {
+        while j < src_len
+            && (out[j] == b' ' || out[j] == b'\t' || out[j] == b'\r' || out[j] == b'\n')
+        {
             j += 1;
         }
 
         // Check if a type keyword starts here.
         let kw1 = TYPE_KWS.iter().find(|&&kw| {
             out[j..].starts_with(kw.as_bytes())
-            && (j + kw.len() >= src_len
-                || !out[j + kw.len()].is_ascii_alphanumeric())
+                && (j + kw.len() >= src_len || !out[j + kw.len()].is_ascii_alphanumeric())
         });
 
         let kw1 = match kw1 {
             Some(k) => k,
-            None => { i = pp_end; continue; }
+            None => {
+                i = pp_end;
+                continue;
+            }
         };
 
         let kw1_end = j + kw1.len();
 
         // After kw1, consume whitespace, then expect `{$else}` or `{$ifend}`/`{$endif}`.
         let mut k = kw1_end;
-        while k < src_len && (out[k] == b' ' || out[k] == b'\t' || out[k] == b'\r' || out[k] == b'\n') {
+        while k < src_len
+            && (out[k] == b' ' || out[k] == b'\t' || out[k] == b'\r' || out[k] == b'\n')
+        {
             k += 1;
         }
 
-        if k >= src_len || out[k] != b'{' { i = pp_end; continue; }
+        if k >= src_len || out[k] != b'{' {
+            i = pp_end;
+            continue;
+        }
         let pp2_start = k;
         let pp2_end = match out[k..].iter().position(|&b| b == b'}') {
             Some(p) => k + p + 1,
-            None => { i = pp_end; continue; }
+            None => {
+                i = pp_end;
+                continue;
+            }
         };
         let pp2_inner = std::str::from_utf8(&out[pp2_start + 2..pp2_end - 1])
             .unwrap_or("")
@@ -229,43 +258,58 @@ fn normalise_ifdef_type_keywords(src: &str) -> String {
         // Case 1: `{$else}` — has an else branch
         if pp2_inner.starts_with("else") {
             let mut m = pp2_end;
-            while m < src_len && (out[m] == b' ' || out[m] == b'\t' || out[m] == b'\r' || out[m] == b'\n') {
+            while m < src_len
+                && (out[m] == b' ' || out[m] == b'\t' || out[m] == b'\r' || out[m] == b'\n')
+            {
                 m += 1;
             }
             let kw2 = TYPE_KWS.iter().find(|&&kw| {
                 out[m..].starts_with(kw.as_bytes())
-                && (m + kw.len() >= src_len
-                    || !out[m + kw.len()].is_ascii_alphanumeric())
+                    && (m + kw.len() >= src_len || !out[m + kw.len()].is_ascii_alphanumeric())
             });
             let kw2 = match kw2 {
                 Some(k) => k,
-                None => { i = pp_end; continue; }
+                None => {
+                    i = pp_end;
+                    continue;
+                }
             };
             let kw2_end = m + kw2.len();
 
             // After kw2, expect `{$endif}` or `{$ifend}`
             let mut n = kw2_end;
-            while n < src_len && (out[n] == b' ' || out[n] == b'\t' || out[n] == b'\r' || out[n] == b'\n') {
+            while n < src_len
+                && (out[n] == b' ' || out[n] == b'\t' || out[n] == b'\r' || out[n] == b'\n')
+            {
                 n += 1;
             }
-            if n >= src_len || out[n] != b'{' { i = pp_end; continue; }
+            if n >= src_len || out[n] != b'{' {
+                i = pp_end;
+                continue;
+            }
             let pp3_end = match out[n..].iter().position(|&b| b == b'}') {
                 Some(p) => n + p + 1,
-                None => { i = pp_end; continue; }
+                None => {
+                    i = pp_end;
+                    continue;
+                }
             };
             let pp3_inner = std::str::from_utf8(&out[n + 2..pp3_end - 1])
                 .unwrap_or("")
                 .trim_start()
                 .to_ascii_lowercase();
             if !pp3_inner.starts_with("endif") && !pp3_inner.starts_with("ifend") {
-                i = pp_end; continue;
+                i = pp_end;
+                continue;
             }
 
             // Replace the span [pp_start..pp3_end] with kw2 + spaces.
             let span_len = pp3_end - pp_start;
             let replacement: Vec<u8> = {
                 let mut v: Vec<u8> = kw2.bytes().collect();
-                while v.len() < span_len { v.push(b' '); }
+                while v.len() < span_len {
+                    v.push(b' ');
+                }
                 v.truncate(span_len);
                 v
             };
@@ -277,7 +321,9 @@ fn normalise_ifdef_type_keywords(src: &str) -> String {
             let span_len = pp2_end - pp_start;
             let replacement: Vec<u8> = {
                 let mut v: Vec<u8> = kw1.bytes().collect();
-                while v.len() < span_len { v.push(b' '); }
+                while v.len() < span_len {
+                    v.push(b' ');
+                }
                 v.truncate(span_len);
                 v
             };
@@ -331,12 +377,18 @@ fn normalise_specialize_generics(src: &str) -> String {
             // Find the closing `}`.
             let pp1_end = match out[i..].iter().position(|&b| b == b'}') {
                 Some(p) => i + p + 1,
-                None => { i += 1; continue; }
+                None => {
+                    i += 1;
+                    continue;
+                }
             };
             // Check that this is an ifdef/ifndef opener.
             let pp1_inner = std::str::from_utf8(&out[i + 2..pp1_end - 1])
-                .unwrap_or("").trim_start().to_ascii_lowercase();
-            if !pp1_inner.starts_with("ifdef") && !pp1_inner.starts_with("ifndef")
+                .unwrap_or("")
+                .trim_start()
+                .to_ascii_lowercase();
+            if !pp1_inner.starts_with("ifdef")
+                && !pp1_inner.starts_with("ifndef")
                 && !pp1_inner.starts_with("if ")
             {
                 i = pp1_end;
@@ -344,7 +396,9 @@ fn normalise_specialize_generics(src: &str) -> String {
             }
             // Skip whitespace after the opener.
             let mut j = pp1_end;
-            while j < len && matches!(out[j], b' ' | b'\t' | b'\r' | b'\n') { j += 1; }
+            while j < len && matches!(out[j], b' ' | b'\t' | b'\r' | b'\n') {
+                j += 1;
+            }
             // Check for `specialize` keyword.
             if !out[j..].starts_with(b"specialize") {
                 i = pp1_end;
@@ -353,22 +407,34 @@ fn normalise_specialize_generics(src: &str) -> String {
             let spec_end = j + b"specialize".len();
             // Skip whitespace after `specialize`.
             let mut k = spec_end;
-            while k < len && matches!(out[k], b' ' | b'\t' | b'\r' | b'\n') { k += 1; }
+            while k < len && matches!(out[k], b' ' | b'\t' | b'\r' | b'\n') {
+                k += 1;
+            }
             // Expect `{$endif}` or `{$ifend}`.
-            if k >= len || out[k] != b'{' { i = pp1_end; continue; }
+            if k >= len || out[k] != b'{' {
+                i = pp1_end;
+                continue;
+            }
             let pp2_end = match out[k..].iter().position(|&b| b == b'}') {
                 Some(p) => k + p + 1,
-                None => { i = pp1_end; continue; }
+                None => {
+                    i = pp1_end;
+                    continue;
+                }
             };
             let pp2_inner = std::str::from_utf8(&out[k + 2..pp2_end - 1])
-                .unwrap_or("").trim_start().to_ascii_lowercase();
+                .unwrap_or("")
+                .trim_start()
+                .to_ascii_lowercase();
             if !pp2_inner.starts_with("endif") && !pp2_inner.starts_with("ifend") {
                 i = pp1_end;
                 continue;
             }
             // Replace the entire `{$ifdef...}specialize{$endif}` span with spaces.
             for idx in i..pp2_end {
-                if out[idx] != b'\n' && out[idx] != b'\r' { out[idx] = b' '; }
+                if out[idx] != b'\n' && out[idx] != b'\r' {
+                    out[idx] = b' ';
+                }
             }
             i = pp2_end;
         }
@@ -409,12 +475,18 @@ fn normalise_specialize_generics(src: &str) -> String {
             if prev_ok && ident_starts_upper {
                 // Require the first non-whitespace character after `<` to be an
                 // UPPERCASE letter (generic type argument is a Pascal type name).
-                let next_ident = ((i + 1)..len).find_map(|k| {
-                    let c = bytes[k];
-                    if matches!(c, b' ' | b'\t' | b'\r' | b'\n') { None }
-                    else if c.is_ascii_uppercase() || c == b'_' { Some(true) }
-                    else { Some(false) }
-                }).unwrap_or(false);
+                let next_ident = ((i + 1)..len)
+                    .find_map(|k| {
+                        let c = bytes[k];
+                        if matches!(c, b' ' | b'\t' | b'\r' | b'\n') {
+                            None
+                        } else if c.is_ascii_uppercase() || c == b'_' {
+                            Some(true)
+                        } else {
+                            Some(false)
+                        }
+                    })
+                    .unwrap_or(false);
 
                 if next_ident {
                     // Locate the matching `>` tracking nesting depth.
@@ -434,12 +506,18 @@ fn normalise_specialize_generics(src: &str) -> String {
                         // This distinguishes generic type argument lists
                         // `TypeName<T1,T2>)` from comparison expressions where
                         // `>` is followed by an identifier, operator, or `;`.
-                        let closes_paren = ((j)..len).find_map(|k| {
-                            let c = bytes[k];
-                            if matches!(c, b' ' | b'\t' | b'\r' | b'\n') { None }
-                            else if c == b')' { Some(true) }
-                            else { Some(false) }
-                        }).unwrap_or(false);
+                        let closes_paren = ((j)..len)
+                            .find_map(|k| {
+                                let c = bytes[k];
+                                if matches!(c, b' ' | b'\t' | b'\r' | b'\n') {
+                                    None
+                                } else if c == b')' {
+                                    Some(true)
+                                } else {
+                                    Some(false)
+                                }
+                            })
+                            .unwrap_or(false);
                         if closes_paren {
                             // Replace the entire `<…>` span (positions i..j)
                             // with a single space at position i and fill the
@@ -465,4 +543,3 @@ fn normalise_specialize_generics(src: &str) -> String {
 
     String::from_utf8(out).unwrap_or_else(|_| src.to_string())
 }
-

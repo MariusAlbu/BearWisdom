@@ -8,7 +8,11 @@ fn extract(src: &str, path: &str) -> crate::types::ExtractionResult {
 #[test]
 fn file_emits_stem_class_symbol() {
     let r = extract("<p>hi</p>", "/views/page.ejs");
-    let class = r.symbols.iter().find(|s| s.kind == SymbolKind::Class).unwrap();
+    let class = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Class)
+        .unwrap();
     assert_eq!(class.name, "page");
 }
 
@@ -36,7 +40,11 @@ fn include_with_double_quotes_works() {
 fn multiple_includes_each_emit_a_ref() {
     let src = "<%- include('./partials/header') %>\n<p>x</p>\n<%- include('./partials/footer') %>";
     let r = extract(src, "/views/index.ejs");
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert_eq!(imports.len(), 2);
     let names: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
     assert!(names.contains(&"./partials/header"));
@@ -56,7 +64,11 @@ fn identifier_suffixed_include_is_ignored() {
     // `xinclude(...)` is not the runtime include — must not be captured.
     let src = "<% xinclude('not-a-partial') %>";
     let r = extract(src, "/views/x.ejs");
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert!(imports.is_empty(), "got: {:?}", imports);
 }
 

@@ -58,12 +58,29 @@ pub fn looks_like_sql(body: &str) -> bool {
     let first_keyword = first_non_comment_line(body);
     let lower = first_keyword.to_ascii_lowercase();
     const KEYWORDS: &[&str] = &[
-        "select ", "insert into ", "insert ", "update ", "delete from ",
-        "delete ", "create table ", "create index ", "create view ",
-        "create or replace ", "create procedure ", "create function ",
-        "drop table ", "drop index ", "drop view ", "drop procedure ",
-        "alter table ", "alter index ", "alter view ",
-        "with ", "truncate ", "merge into ", "merge ",
+        "select ",
+        "insert into ",
+        "insert ",
+        "update ",
+        "delete from ",
+        "delete ",
+        "create table ",
+        "create index ",
+        "create view ",
+        "create or replace ",
+        "create procedure ",
+        "create function ",
+        "drop table ",
+        "drop index ",
+        "drop view ",
+        "drop procedure ",
+        "alter table ",
+        "alter index ",
+        "alter view ",
+        "with ",
+        "truncate ",
+        "merge into ",
+        "merge ",
     ];
     if !KEYWORDS.iter().any(|kw| lower.starts_with(kw)) {
         return false;
@@ -72,8 +89,18 @@ pub fn looks_like_sql(body: &str) -> bool {
     // ON, GROUP BY, to filter `SELECT x` one-liners and random prose
     // that happens to start with a keyword.
     let lower_full = body.to_ascii_lowercase();
-    let structural_tokens = [" from ", " into ", " values", " set ", " where ",
-        " join ", " on ", " group by", " order by", " returning "];
+    let structural_tokens = [
+        " from ",
+        " into ",
+        " values",
+        " set ",
+        " where ",
+        " join ",
+        " on ",
+        " group by",
+        " order by",
+        " returning ",
+    ];
     structural_tokens.iter().any(|tok| lower_full.contains(tok))
 }
 
@@ -108,9 +135,10 @@ pub fn looks_like_html(body: &str) -> bool {
     }
     // Look for `<word` followed by `>` and at least one closing tag
     // `</word>` OR a self-closing `/>` to avoid `<T>` Rust/TS generics.
-    let has_open = body.as_bytes().windows(2).any(|w| {
-        w[0] == b'<' && (w[1].is_ascii_alphabetic() || w[1] == b'!')
-    });
+    let has_open = body
+        .as_bytes()
+        .windows(2)
+        .any(|w| w[0] == b'<' && (w[1].is_ascii_alphabetic() || w[1] == b'!'));
     let has_close = body.contains("</") || body.contains("/>");
     has_open && has_close
 }

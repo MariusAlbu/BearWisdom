@@ -9,16 +9,23 @@ use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 pub struct PyProjectManifest;
 
 impl ManifestReader for PyProjectManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::PyProject }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::PyProject
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let mut manifest_files: Vec<(PathBuf, &str)> = Vec::new();
         collect_python_manifests(project_root, &mut manifest_files, 0);
-        if manifest_files.is_empty() { return None }
+        if manifest_files.is_empty() {
+            return None;
+        }
 
         let mut data = ManifestData::default();
         for (path, kind) in &manifest_files {
-            let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
             let names = match *kind {
                 "pyproject" => parse_pyproject_deps(&content),
                 "requirements" => parse_requirements_txt(&content),
@@ -33,13 +40,13 @@ impl ManifestReader for PyProjectManifest {
     }
 }
 
-fn collect_python_manifests<'a>(
-    dir: &Path,
-    out: &mut Vec<(PathBuf, &'a str)>,
-    depth: usize,
-) {
-    if depth > 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn collect_python_manifests<'a>(dir: &Path, out: &mut Vec<(PathBuf, &'a str)>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -47,9 +54,19 @@ fn collect_python_manifests<'a>(
             let name = name.to_string_lossy();
             if matches!(
                 name.as_ref(),
-                ".git" | "node_modules" | "target" | "__pycache__"
-                    | ".venv" | "venv" | ".tox" | "dist" | "build" | ".eggs"
-            ) { continue }
+                ".git"
+                    | "node_modules"
+                    | "target"
+                    | "__pycache__"
+                    | ".venv"
+                    | "venv"
+                    | ".tox"
+                    | "dist"
+                    | "build"
+                    | ".eggs"
+            ) {
+                continue;
+            }
             collect_python_manifests(&path, out, depth + 1);
         } else {
             let file_name = entry.file_name();
@@ -62,7 +79,9 @@ fn collect_python_manifests<'a>(
                 "requirements"
             } else if name == "Pipfile" {
                 "pipfile"
-            } else { continue };
+            } else {
+                continue;
+            };
             out.push((path, kind));
         }
     }
@@ -112,14 +131,24 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
             let data = if rest.starts_with('[') {
                 let inner = rest.trim_start_matches('[');
                 inner.trim_end_matches(']')
-            } else { rest };
-            for name in extract_pep508_names(data) { packages.push(name) }
-            if rest.contains(']') { in_array = false }
+            } else {
+                rest
+            };
+            for name in extract_pep508_names(data) {
+                packages.push(name)
+            }
+            if rest.contains(']') {
+                in_array = false
+            }
             continue;
         }
         if in_array {
-            if trimmed.starts_with(']') { in_array = false }
-            for name in extract_pep508_names(trimmed) { packages.push(name) }
+            if trimmed.starts_with(']') {
+                in_array = false
+            }
+            for name in extract_pep508_names(trimmed) {
+                packages.push(name)
+            }
             continue;
         }
         if in_deps && !trimmed.starts_with('[') && trimmed.contains('=') {
@@ -139,17 +168,19 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
             let value = value_part.trim();
             if !key.is_empty()
                 && key != "python"
-                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
             {
                 if value.starts_with('[') {
                     // PEP 735 / optional-dependencies array. Same
                     // dependencies-array machinery as above — the
                     // following lines hold PEP 508 strings until `]`.
                     in_array = !value.contains(']');
-                    let inner = value
-                        .trim_start_matches('[')
-                        .trim_end_matches(']');
-                    for name in extract_pep508_names(inner) { packages.push(name) }
+                    let inner = value.trim_start_matches('[').trim_end_matches(']');
+                    for name in extract_pep508_names(inner) {
+                        packages.push(name)
+                    }
                 } else {
                     packages.push(key.to_string());
                 }
@@ -162,13 +193,17 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
 fn extract_pep508_names(s: &str) -> Vec<String> {
     let mut names = Vec::new();
     for part in s.split(',') {
-        let part = part.trim().trim_matches(|c| c == '"' || c == '\'' || c == ']');
+        let part = part
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'' || c == ']');
         let end = part
             .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '~' | '!' | ';' | '@' | ' '))
             .unwrap_or(part.len());
         let name = part[..end].trim();
         if !name.is_empty()
-            && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
         {
             names.push(name.to_string());
         }
@@ -185,13 +220,17 @@ pub fn parse_requirements_txt(content: &str) -> Vec<String> {
             || trimmed.starts_with('-')
             || trimmed.starts_with("git+")
             || trimmed.starts_with("http")
-        { continue }
+        {
+            continue;
+        }
         let without_comment = trimmed.split('#').next().unwrap_or(trimmed).trim();
         let end = without_comment
             .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '!' | ';' | '@' | ' '))
             .unwrap_or(without_comment.len());
         let name = without_comment[..end].trim();
-        if !name.is_empty() { packages.push(name.to_string()) }
+        if !name.is_empty() {
+            packages.push(name.to_string())
+        }
     }
     packages
 }
@@ -205,11 +244,15 @@ pub fn parse_pipfile_deps(content: &str) -> Vec<String> {
             in_section = matches!(trimmed, "[packages]" | "[dev-packages]");
             continue;
         }
-        if !in_section || trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if !in_section || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
         if let Some(eq_pos) = trimmed.find('=') {
             let key = trimmed[..eq_pos].trim();
             if !key.is_empty()
-                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
             {
                 packages.push(key.to_string());
             }

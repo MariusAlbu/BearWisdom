@@ -43,8 +43,8 @@ use std::sync::Arc;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    Platform, SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -59,9 +59,15 @@ const POSIX_TAG: &str = "posix-headers";
 pub struct PosixHeadersEcosystem;
 
 impl Ecosystem for PosixHeadersEcosystem {
-    fn id(&self) -> EcosystemId { POSIX_ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
+    fn id(&self) -> EcosystemId {
+        POSIX_ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        &["c", "cpp"]
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // POSIX-style headers are available wherever the toolchain is
@@ -94,16 +100,19 @@ impl Ecosystem for PosixHeadersEcosystem {
         Vec::new()
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     // /usr/include is a workspace-level "the OS provides this" fact.
-    fn is_workspace_global(&self) -> bool { true }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_c_header_index(dep_roots)
     }
 
@@ -122,7 +131,9 @@ impl Ecosystem for PosixHeadersEcosystem {
 }
 
 impl ExternalSourceLocator for PosixHeadersEcosystem {
-    fn ecosystem(&self) -> &'static str { POSIX_TAG }
+    fn ecosystem(&self) -> &'static str {
+        POSIX_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_posix_include()
     }
@@ -196,7 +207,9 @@ fn discover_mingw_msys_includes() -> Vec<PathBuf> {
         roots.push(PathBuf::from(prefix));
     }
     for env in ["MSYS2_ROOT", "MINGW_PREFIX", "MINGW_ROOT", "MINGW_HOME"] {
-        if let Some(p) = std::env::var_os(env) { roots.push(PathBuf::from(p)); }
+        if let Some(p) = std::env::var_os(env) {
+            roots.push(PathBuf::from(p));
+        }
     }
 
     // Conventional install bases. The exact subdir name varies by
@@ -219,7 +232,9 @@ fn discover_mingw_msys_includes() -> Vec<PathBuf> {
             for entry in entries.flatten() {
                 if entry.file_type().map(|f| f.is_dir()).unwrap_or(false) {
                     let current = entry.path().join("current");
-                    if current.is_dir() { roots.push(current); }
+                    if current.is_dir() {
+                        roots.push(current);
+                    }
                 }
             }
         }
@@ -234,7 +249,9 @@ fn discover_mingw_msys_includes() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
     for root in roots {
-        if !root.is_dir() { continue }
+        if !root.is_dir() {
+            continue;
+        }
         find_includes_with_stdio_h(&root, 4, &mut out, &mut seen);
     }
     out
@@ -247,18 +264,35 @@ fn find_includes_with_stdio_h(
     out: &mut Vec<PathBuf>,
     seen: &mut std::collections::HashSet<PathBuf>,
 ) {
-    if depth == 0 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth == 0 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() { continue }
+        if !ft.is_dir() {
+            continue;
+        }
         let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         // Skip noise — toolchain output dirs, package managers, source
         // trees that aren't header roots.
-        if matches!(name, "bin" | "lib" | "libexec" | "share" | "doc" | "etc"
-            | "var" | "tmp" | "src" | "manifest" | "licenses")
-        {
+        if matches!(
+            name,
+            "bin"
+                | "lib"
+                | "libexec"
+                | "share"
+                | "doc"
+                | "etc"
+                | "var"
+                | "tmp"
+                | "src"
+                | "manifest"
+                | "licenses"
+        ) {
             continue;
         }
         if name == "include" {
@@ -282,10 +316,14 @@ fn discover_wsl_includes() -> Vec<PathBuf> {
     // distro that exposes `/usr/include`.
     for prefix in [r"\\wsl$", r"\\wsl.localhost"] {
         let base = PathBuf::from(prefix);
-        let Ok(entries) = std::fs::read_dir(&base) else { continue };
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let Ok(ft) = entry.file_type() else { continue };
-            if !ft.is_dir() { continue }
+            if !ft.is_dir() {
+                continue;
+            }
             let candidate = entry.path().join("usr").join("include");
             if candidate.is_dir() && seen.insert(candidate.clone()) {
                 out.push(candidate);
@@ -298,7 +336,9 @@ fn discover_wsl_includes() -> Vec<PathBuf> {
 pub fn posix_shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PosixHeadersEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(PosixHeadersEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(PosixHeadersEcosystem))
+        .clone()
 }
 
 // MSVC / Windows SDK headers live in `ecosystem/msvc_sdk.rs`. The shared
@@ -326,9 +366,15 @@ const VCPKG_TAG: &str = "vcpkg-headers";
 pub struct VcpkgHeadersEcosystem;
 
 impl Ecosystem for VcpkgHeadersEcosystem {
-    fn id(&self) -> EcosystemId { VCPKG_ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
+    fn id(&self) -> EcosystemId {
+        VCPKG_ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        &["c", "cpp"]
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
@@ -350,17 +396,20 @@ impl Ecosystem for VcpkgHeadersEcosystem {
         Vec::new()
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     // vcpkg's `installed/<triplet>/include` is workspace-level — one
     // installation supplies headers for every translation unit in the build.
-    fn is_workspace_global(&self) -> bool { true }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_c_header_index(dep_roots)
     }
 
@@ -379,7 +428,9 @@ impl Ecosystem for VcpkgHeadersEcosystem {
 }
 
 impl ExternalSourceLocator for VcpkgHeadersEcosystem {
-    fn ecosystem(&self) -> &'static str { VCPKG_TAG }
+    fn ecosystem(&self) -> &'static str {
+        VCPKG_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_vcpkg_include()
     }
@@ -426,17 +477,12 @@ fn discover_vcpkg_include() -> Vec<ExternalDepRoot> {
             "C:/tools/vcpkg",
         ]
     } else {
-        &[
-            "/usr/local/share/vcpkg",
-            "/opt/vcpkg",
-        ]
+        &["/usr/local/share/vcpkg", "/opt/vcpkg"]
     };
     for d in defaults {
         candidates.push(PathBuf::from(d));
     }
-    if let Some(home) = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-    {
+    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
         candidates.push(PathBuf::from(home).join("vcpkg"));
     }
 
@@ -447,7 +493,9 @@ fn discover_vcpkg_include() -> Vec<ExternalDepRoot> {
             continue;
         }
         let installed = cand.join("installed");
-        let Ok(entries) = std::fs::read_dir(&installed) else { continue };
+        let Ok(entries) = std::fs::read_dir(&installed) else {
+            continue;
+        };
         for e in entries.flatten() {
             let triplet_dir = e.path();
             let include = triplet_dir.join("include");
@@ -471,7 +519,9 @@ fn discover_vcpkg_include() -> Vec<ExternalDepRoot> {
 pub fn vcpkg_shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<VcpkgHeadersEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(VcpkgHeadersEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(VcpkgHeadersEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +545,9 @@ pub(super) fn make_root(dir: &Path, tag: &'static str) -> ExternalDepRoot {
 /// version would multiply the symbol-index size with no benefit — the
 /// newest is the one the compiler picks unless the user asks otherwise.
 pub(super) fn newest_sdk_versions(include: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(include) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(include) else {
+        return Vec::new();
+    };
     let mut versions: Vec<PathBuf> = entries
         .flatten()
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
@@ -540,14 +592,13 @@ pub(super) fn build_c_header_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocat
 ///     non-whitespace tokens must be `#include` followed by a
 ///     `"..."` or `<...>` target. Anything else (LICENSE, README,
 ///     Makefile) fails the check and is skipped.
-fn collect_headers_rec(
-    root: &Path,
-    dir: &Path,
-    idx: &mut SymbolLocationIndex,
-    depth: u32,
-) {
-    if depth >= 10 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn collect_headers_rec(root: &Path, dir: &Path, idx: &mut SymbolLocationIndex, depth: u32) {
+    if depth >= 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -555,13 +606,19 @@ fn collect_headers_rec(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 // Historical skip — vendor test fixtures sometimes drop noisy
                 // sub-dirs inside /usr/include. Harmless on SDK trees.
-                if matches!(name, "tests" | "test") { continue }
+                if matches!(name, "tests" | "test") {
+                    continue;
+                }
             }
             collect_headers_rec(root, &path, idx, depth + 1);
             continue;
         }
-        if !ft.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !ft.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         let is_real_header = name.ends_with(".h")
             || name.ends_with(".hpp")
             || name.ends_with(".hxx")
@@ -595,9 +652,13 @@ fn collect_headers_rec(
             && !is_wrapper
             && !name.contains('.')
             && is_cpp_stdlib_header_name(name);
-        if !is_real_header && !is_wrapper && !is_cpp_stdlib_header { continue }
+        if !is_real_header && !is_wrapper && !is_cpp_stdlib_header {
+            continue;
+        }
 
-        let Ok(rel) = path.strip_prefix(root) else { continue };
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
         let rel_str = rel.to_string_lossy().replace('\\', "/");
 
         // For wrappers we register the alias names pointing at the *real*
@@ -619,7 +680,11 @@ fn collect_headers_rec(
                 // if the target file isn't on disk.
                 let wrapper_dir = path.parent().unwrap_or(&path);
                 let resolved = wrapper_dir.join(tgt);
-                if resolved.is_file() { resolved } else { path.clone() }
+                if resolved.is_file() {
+                    resolved
+                } else {
+                    path.clone()
+                }
             }
             None => path.clone(),
         };
@@ -650,7 +715,11 @@ fn collect_headers_rec(
         // class lives.
         if is_wrapper {
             let basename = rel_str.rsplit_once('/').map(|(_, b)| b).unwrap_or(&rel_str);
-            idx.insert(basename.to_string(), basename.to_string(), target_path.clone());
+            idx.insert(
+                basename.to_string(),
+                basename.to_string(),
+                target_path.clone(),
+            );
         }
         // Windows filesystem is case-insensitive but the SymbolLocationIndex
         // is a case-sensitive HashMap. On Windows, a project's
@@ -682,10 +751,14 @@ fn collect_headers_rec(
 /// Length floor of 2 chars filters single-letter junk. No upper bound
 /// — header names can run up to ~30 chars (`condition_variable`).
 fn is_cpp_stdlib_header_name(name: &str) -> bool {
-    if name.len() < 2 { return false }
+    if name.len() < 2 {
+        return false;
+    }
     let mut chars = name.chars();
     let first = chars.next().unwrap();
-    if !first.is_ascii_lowercase() { return false }
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
     chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
@@ -742,7 +815,9 @@ fn parse_include_target(text: &str) -> Option<String> {
         // // line comment
         if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
             i += 2;
-            while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
             continue;
         }
         // /* block comment */
@@ -751,21 +826,35 @@ fn parse_include_target(text: &str) -> Option<String> {
             while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
                 i += 1;
             }
-            if i + 1 < bytes.len() { i += 2; }
+            if i + 1 < bytes.len() {
+                i += 2;
+            }
             continue;
         }
         // Must be a `#` next, then the literal token `include`.
-        if b != b'#' { return None }
+        if b != b'#' {
+            return None;
+        }
         i += 1;
         // Skip whitespace between # and `include` — `# include` is legal C.
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+            i += 1;
+        }
         let kw = b"include";
-        if i + kw.len() > bytes.len() || &bytes[i..i + kw.len()] != kw { return None }
+        if i + kw.len() > bytes.len() || &bytes[i..i + kw.len()] != kw {
+            return None;
+        }
         i += kw.len();
         // Mandatory whitespace before target.
-        if i >= bytes.len() || !(bytes[i] == b' ' || bytes[i] == b'\t') { return None }
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
-        if i >= bytes.len() { return None }
+        if i >= bytes.len() || !(bytes[i] == b' ' || bytes[i] == b'\t') {
+            return None;
+        }
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
         let (open, close) = match bytes[i] {
             b'"' => (b'"', b'"'),
             b'<' => (b'<', b'>'),
@@ -774,10 +863,16 @@ fn parse_include_target(text: &str) -> Option<String> {
         let _ = open;
         i += 1;
         let start = i;
-        while i < bytes.len() && bytes[i] != close && bytes[i] != b'\n' { i += 1; }
-        if i >= bytes.len() || bytes[i] != close { return None }
+        while i < bytes.len() && bytes[i] != close && bytes[i] != b'\n' {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != close {
+            return None;
+        }
         let target = &text[start..i];
-        if target.is_empty() { return None }
+        if target.is_empty() {
+            return None;
+        }
         return Some(target.to_string());
     }
     None
@@ -800,7 +895,9 @@ pub(super) fn resolve_header(dep: &ExternalDepRoot, header: &str) -> Option<Walk
     // Rare path — only hit when the demand loop tries a bare symbol name.
     let mut stack = vec![dep.root.clone()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let Ok(ft) = entry.file_type() else { continue };
             let path = entry.path();

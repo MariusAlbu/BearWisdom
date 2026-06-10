@@ -21,9 +21,14 @@ fn cov_component_class_symbol_from_filename() {
         "Counter.svelte",
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "Counter"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "Counter"),
         "Svelte component should produce Class(Counter); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -36,9 +41,14 @@ fn cov_pascal_case_element_produces_calls() {
     // "element" with PascalCase tag → Calls (ref_node_kinds: element)
     let r = extract::extract("<UserCard></UserCard>", "App.svelte");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
         "PascalCase element should produce Calls(UserCard); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -46,9 +56,14 @@ fn cov_pascal_case_element_produces_calls() {
 fn cov_self_closing_element_produces_calls() {
     let r = extract::extract("<Modal />", "Page.svelte");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Modal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Modal"),
         "self-closing PascalCase element should produce Calls(Modal); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -57,9 +72,14 @@ fn cov_kebab_element_produces_calls() {
     // Kebab-case custom element → normalised PascalCase Calls
     let r = extract::extract("<my-widget></my-widget>", "Page.svelte");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MyWidget"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "MyWidget"),
         "kebab element should produce Calls(MyWidget); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -75,9 +95,14 @@ fn cov_on_event_attribute_quoted_produces_calls() {
         "Button.svelte",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
         "on:click with quoted handler should produce Calls(handleClick); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,9 +114,14 @@ fn cov_on_event_attribute_curly_produces_calls() {
         "Button.svelte",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
         "on:click with curly handler should produce Calls(handleClick); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -103,9 +133,14 @@ fn cov_on_submit_event_produces_calls() {
         "Form.svelte",
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "onSubmit"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "onSubmit"),
         "on:submit directive should produce Calls(onSubmit); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -128,17 +163,24 @@ fn cov_on_submit_event_produces_calls() {
 #[test]
 fn cov_lowercase_html_tags_do_not_produce_calls() {
     // Native HTML tags must not produce Calls edges
-    let r = extract::extract(
-        "<div><p><span>text</span></p></div>",
-        "Layout.svelte",
-    );
-    let html_calls: Vec<_> = r.refs.iter()
+    let r = extract::extract("<div><p><span>text</span></p></div>", "Layout.svelte");
+    let html_calls: Vec<_> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
-        .filter(|rf| matches!(rf.target_name.as_str(), "div" | "Div" | "p" | "P" | "span" | "Span"))
+        .filter(|rf| {
+            matches!(
+                rf.target_name.as_str(),
+                "div" | "Div" | "p" | "P" | "span" | "Span"
+            )
+        })
         .collect();
     assert!(
         html_calls.is_empty(),
         "standard HTML tags must not produce Calls; got: {:?}",
-        html_calls.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        html_calls
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }

@@ -42,30 +42,33 @@ fn l2_normalize_produces_unit_vector() {
 fn l2_normalize_zero_vector_does_not_panic() {
     let mut v = vec![0.0f32; 768];
     l2_normalize(&mut v); // should not panic, just warns
-    // Vector stays zero or near-zero — just assert no panic occurred.
+                          // Vector stays zero or near-zero — just assert no panic occurred.
 }
 
 /// Full inference test — requires model files; skipped in CI.
 #[test]
 #[ignore]
 fn embed_query_returns_768_dim_unit_vector() {
-    let model_dir = std::env::var("ALPHAT_MODEL_DIR")
-        .expect("Set ALPHAT_MODEL_DIR to run this test");
+    let model_dir =
+        std::env::var("ALPHAT_MODEL_DIR").expect("Set ALPHAT_MODEL_DIR to run this test");
     let mut embedder = Embedder::new(PathBuf::from(model_dir));
     embedder.ensure_loaded().unwrap();
 
     let v = embedder.embed_query("fn main() {}").unwrap();
     assert_eq!(v.len(), 768);
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    assert!((norm - 1.0).abs() < 1e-5, "query vector should be unit length, norm={norm}");
+    assert!(
+        (norm - 1.0).abs() < 1e-5,
+        "query vector should be unit length, norm={norm}"
+    );
 }
 
 /// Batch embedding test — requires model files; skipped in CI.
 #[test]
 #[ignore]
 fn embed_documents_batch() {
-    let model_dir = std::env::var("ALPHAT_MODEL_DIR")
-        .expect("Set ALPHAT_MODEL_DIR to run this test");
+    let model_dir =
+        std::env::var("ALPHAT_MODEL_DIR").expect("Set ALPHAT_MODEL_DIR to run this test");
     let mut embedder = Embedder::new(PathBuf::from(model_dir));
     embedder.ensure_loaded().unwrap();
 
@@ -76,6 +79,9 @@ fn embed_documents_batch() {
     for v in &vecs {
         assert_eq!(v.len(), 768);
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-5, "doc vector should be unit length");
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "doc vector should be unit length"
+        );
     }
 }

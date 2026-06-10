@@ -93,7 +93,13 @@ fn walk_node(
                 name
             };
             let idx = symbols.len();
-            symbols.push(make_sym(name, SymbolKind::Function, Visibility::Public, node, parent_idx));
+            symbols.push(make_sym(
+                name,
+                SymbolKind::Function,
+                Visibility::Public,
+                node,
+                parent_idx,
+            ));
             walk_children(node, src, symbols, refs, Some(idx));
         }
         "class_definition" => {
@@ -107,7 +113,13 @@ fn walk_node(
                 name
             };
             let idx = symbols.len();
-            symbols.push(make_sym(name, SymbolKind::Class, Visibility::Public, node, parent_idx));
+            symbols.push(make_sym(
+                name,
+                SymbolKind::Class,
+                Visibility::Public,
+                node,
+                parent_idx,
+            ));
             walk_children(node, src, symbols, refs, Some(idx));
         }
         "methods" => {
@@ -126,7 +138,13 @@ fn walk_node(
                         name
                     };
                     let idx = symbols.len();
-                    symbols.push(make_sym(name, SymbolKind::Method, Visibility::Public, child, parent_idx));
+                    symbols.push(make_sym(
+                        name,
+                        SymbolKind::Method,
+                        Visibility::Public,
+                        child,
+                        parent_idx,
+                    ));
                     walk_children(child, src, symbols, refs, Some(idx));
                 } else {
                     walk_node(child, src, symbols, refs, parent_idx);
@@ -145,7 +163,13 @@ fn walk_node(
                     "identifier" => {
                         let name = text(lhs, src);
                         if !name.is_empty() && is_simple_ident(&name) {
-                            symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                            symbols.push(make_sym(
+                                name,
+                                SymbolKind::Variable,
+                                Visibility::Public,
+                                node,
+                                parent_idx,
+                            ));
                         }
                     }
                     "function_call" => {
@@ -153,7 +177,13 @@ fn walk_node(
                         if let Some(name_node) = lhs.child_by_field_name("name") {
                             let name = text(name_node, src);
                             if !name.is_empty() && is_simple_ident(&name) {
-                                symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                                symbols.push(make_sym(
+                                    name,
+                                    SymbolKind::Variable,
+                                    Visibility::Public,
+                                    node,
+                                    parent_idx,
+                                ));
                             }
                         }
                     }
@@ -165,7 +195,13 @@ fn walk_node(
                         if let Some(field_node) = lhs.child_by_field_name("field") {
                             let name = text(field_node, src);
                             if !name.is_empty() {
-                                symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                                symbols.push(make_sym(
+                                    name,
+                                    SymbolKind::Variable,
+                                    Visibility::Public,
+                                    node,
+                                    parent_idx,
+                                ));
                             }
                         }
                     }
@@ -176,7 +212,13 @@ fn walk_node(
                             if child.kind() == "identifier" {
                                 let name = text(child, src);
                                 if !name.is_empty() && is_simple_ident(&name) {
-                                    symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                                    symbols.push(make_sym(
+                                        name,
+                                        SymbolKind::Variable,
+                                        Visibility::Public,
+                                        node,
+                                        parent_idx,
+                                    ));
                                 }
                             }
                         }
@@ -185,7 +227,13 @@ fn walk_node(
                         // Fallback: emit a symbol using the whole LHS text if it looks like an ident
                         let name = text(lhs, src);
                         if !name.is_empty() && is_simple_ident(&name) {
-                            symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                            symbols.push(make_sym(
+                                name,
+                                SymbolKind::Variable,
+                                Visibility::Public,
+                                node,
+                                parent_idx,
+                            ));
                         }
                     }
                 }
@@ -222,18 +270,21 @@ fn walk_node(
                         // Cell-array indexing `obj.lu{mm}` parses identically to a
                         // method call, but the `{` follows the name node directly in
                         // the source bytes. Detect it via the byte after name's end.
-                        let is_cell_index = src
-                            .get(name_node.end_byte())
-                            .copied()
-                            == Some(b'{');
+                        let is_cell_index = src.get(name_node.end_byte()).copied() == Some(b'{');
                         if !method_text.is_empty() && !is_cell_index {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: method_text,
                                 kind: EdgeKind::Calls,
                                 line: node.start_position().row as u32,
                                 col: 0,
-                                module: if module_text.is_empty() { None } else { Some(module_text) },
+                                module: if module_text.is_empty() {
+                                    None
+                                } else {
+                                    Some(module_text)
+                                },
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
@@ -273,7 +324,9 @@ fn walk_node(
                         .map_or(false, |&b| b.is_ascii_alphabetic() || b == b'_');
 
                 if !target.is_empty() && !has_brace && !is_truncated {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -329,11 +382,11 @@ fn make_sym(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn text(node: Node, src: &[u8]) -> String {
@@ -342,7 +395,9 @@ fn text(node: Node, src: &[u8]) -> String {
 
 fn is_simple_ident(s: &str) -> bool {
     s.chars().all(|c| c.is_alphanumeric() || c == '_')
-        && s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_')
+        && s.chars()
+            .next()
+            .map_or(false, |c| c.is_alphabetic() || c == '_')
 }
 
 // =============================================================================

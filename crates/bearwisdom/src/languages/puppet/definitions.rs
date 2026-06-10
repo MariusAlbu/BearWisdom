@@ -37,7 +37,9 @@ pub(super) fn extract_class_definition(
 
     // Check for `inherits <parent>` — emit Inherits edge.
     if let Some(parent) = find_inherits_name(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: parent,
             kind: EdgeKind::Inherits,
@@ -46,9 +48,9 @@ pub(super) fn extract_class_definition(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Recurse into the class body.
@@ -62,7 +64,9 @@ fn find_class_name(node: &Node, src: &str) -> Option<String> {
     for child in node.children(&mut cursor) {
         match child.kind() {
             // Skip the `class` keyword token.
-            "class" => { saw_class_keyword = true; }
+            "class" => {
+                saw_class_keyword = true;
+            }
             "identifier" | "class_identifier" if saw_class_keyword => {
                 return Some(node_text(child, src));
             }
@@ -286,7 +290,12 @@ pub(super) fn extract_node_definition(
 fn find_node_name(node: &Node, src: &str) -> Option<String> {
     // node_definition: `node` keyword, then node_name (string/regex/default/identifier).
     if let Some(nn) = node.child_by_field_name("node_name") {
-        return Some(node_text(nn, src).trim_matches('"').trim_matches('\'').to_string());
+        return Some(
+            node_text(nn, src)
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string(),
+        );
     }
     // Fallback: first string or identifier after `node`.
     let mut cursor = node.walk();

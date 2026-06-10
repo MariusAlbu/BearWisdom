@@ -13,7 +13,10 @@ use std::collections::HashMap;
 fn parse_default_import_from_element_plus() {
     let src = "import ElementPlus from 'element-plus'";
     let map = _test_parse_imports(src);
-    assert_eq!(map.get("ElementPlus").map(String::as_str), Some("element-plus"));
+    assert_eq!(
+        map.get("ElementPlus").map(String::as_str),
+        Some("element-plus")
+    );
 }
 
 #[test]
@@ -27,7 +30,10 @@ fn parse_default_import_from_element_ui() {
 fn parse_named_import() {
     let src = "import { createVuestic } from 'vuestic-ui'";
     let map = _test_parse_imports(src);
-    assert_eq!(map.get("createVuestic").map(String::as_str), Some("vuestic-ui"));
+    assert_eq!(
+        map.get("createVuestic").map(String::as_str),
+        Some("vuestic-ui")
+    );
 }
 
 #[test]
@@ -43,7 +49,10 @@ fn parse_multiple_named_imports() {
 fn parse_aliased_import_uses_local_name() {
     let src = "import { Button as ElButton } from 'element-plus'";
     let map = _test_parse_imports(src);
-    assert_eq!(map.get("ElButton").map(String::as_str), Some("element-plus"));
+    assert_eq!(
+        map.get("ElButton").map(String::as_str),
+        Some("element-plus")
+    );
     assert!(map.get("Button").is_none());
 }
 
@@ -58,8 +67,14 @@ fn parse_double_quoted_import() {
 fn parse_default_and_named() {
     let src = "import ElementPlus, { ElLoading } from 'element-plus'";
     let map = _test_parse_imports(src);
-    assert_eq!(map.get("ElementPlus").map(String::as_str), Some("element-plus"));
-    assert_eq!(map.get("ElLoading").map(String::as_str), Some("element-plus"));
+    assert_eq!(
+        map.get("ElementPlus").map(String::as_str),
+        Some("element-plus")
+    );
+    assert_eq!(
+        map.get("ElLoading").map(String::as_str),
+        Some("element-plus")
+    );
 }
 
 #[test]
@@ -101,7 +116,10 @@ fn detect_vuestic_ui_use() {
     // The app.use arg extraction gets `createVuestic` which IS in the map.
     let imports = _test_parse_imports(src);
     // createVuestic IS in the import map from 'vuestic-ui'
-    assert_eq!(imports.get("createVuestic").map(String::as_str), Some("vuestic-ui"));
+    assert_eq!(
+        imports.get("createVuestic").map(String::as_str),
+        Some("vuestic-ui")
+    );
     // app.use(createVuestic(...)) — arg extraction gets `createVuestic` before `(`
     let uses = _test_detect_app_use(src, &imports);
     assert_eq!(uses.len(), 1);
@@ -114,7 +132,10 @@ fn ignore_router_and_store_use() {
     let src = "import router from './router'\napp.use(router)";
     let imports = _test_parse_imports(src);
     let uses = _test_detect_app_use(src, &imports);
-    assert!(uses.is_empty(), "router.use should not be detected as component library");
+    assert!(
+        uses.is_empty(),
+        "router.use should not be detected as component library"
+    );
 }
 
 #[test]
@@ -183,8 +204,14 @@ fn library_for_el_prefix_resolves_to_element_plus() {
             package: "element-plus".to_string(),
         },
     );
-    assert_eq!(library_for_name(&registry, "ElButton"), Some("element-plus"));
-    assert_eq!(library_for_name(&registry, "ElTableColumn"), Some("element-plus"));
+    assert_eq!(
+        library_for_name(&registry, "ElButton"),
+        Some("element-plus")
+    );
+    assert_eq!(
+        library_for_name(&registry, "ElTableColumn"),
+        Some("element-plus")
+    );
     assert_eq!(library_for_name(&registry, "ElInput"), Some("element-plus"));
 }
 
@@ -298,8 +325,14 @@ fn scan_registers_router_link_view_when_vue_router_in_deps() {
     .unwrap();
 
     let registry = scan_global_registrations(dir.path(), &[]);
-    assert_eq!(library_for_name(&registry, "RouterLink"), Some("vue-router"));
-    assert_eq!(library_for_name(&registry, "RouterView"), Some("vue-router"));
+    assert_eq!(
+        library_for_name(&registry, "RouterLink"),
+        Some("vue-router")
+    );
+    assert_eq!(
+        library_for_name(&registry, "RouterView"),
+        Some("vue-router")
+    );
 }
 
 #[test]
@@ -331,11 +364,11 @@ fn scan_picks_up_workspace_package_with_vue_router() {
     )
     .unwrap();
 
-    let registry = scan_global_registrations(
-        dir.path(),
-        &["apps/web/package.json".to_string()],
+    let registry = scan_global_registrations(dir.path(), &["apps/web/package.json".to_string()]);
+    assert_eq!(
+        library_for_name(&registry, "RouterLink"),
+        Some("vue-router")
     );
-    assert_eq!(library_for_name(&registry, "RouterLink"), Some("vue-router"));
 }
 
 // ---------------------------------------------------------------------------

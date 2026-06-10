@@ -13,9 +13,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn symbol_class_definition() {
     let r = extract("class Foo");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
         "expected Class Foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25,7 +30,10 @@ fn symbol_object_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Singleton"),
         "expected Singleton; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -33,9 +41,14 @@ fn symbol_object_definition() {
 fn symbol_trait_definition() {
     let r = extract("trait Drawable");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Drawable" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Drawable" && s.kind == SymbolKind::Interface),
         "expected Interface Drawable; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -46,7 +59,10 @@ fn symbol_enum_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Color"),
         "expected Color; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -55,9 +71,14 @@ fn symbol_full_enum_case() {
     // Scala 3 full enum case (with constructor)
     let r = extract("enum Planet:\n  case Earth(mass: Double, radius: Double)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Earth" || s.name == "Planet"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Earth" || s.name == "Planet"),
         "expected Earth or Planet; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -67,9 +88,14 @@ fn symbol_simple_enum_case() {
     let r = extract("enum Dir:\n  case North, South");
     // At minimum enum itself is extracted.
     assert!(
-        r.symbols.iter().any(|s| s.name == "Dir" || s.name == "North"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Dir" || s.name == "North"),
         "expected Dir or North; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -79,7 +105,10 @@ fn symbol_function_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "add"),
         "expected add; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -90,7 +119,10 @@ fn symbol_function_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "compare"),
         "expected compare; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -100,7 +132,10 @@ fn symbol_val_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "maxRetries"),
         "expected maxRetries; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -110,7 +145,10 @@ fn symbol_var_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "counter"),
         "expected counter; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -121,7 +159,10 @@ fn symbol_val_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "timeout"),
         "expected timeout; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -131,7 +172,10 @@ fn symbol_var_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "value"),
         "expected value; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -141,7 +185,10 @@ fn symbol_type_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Alias"),
         "expected Alias; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -151,7 +198,10 @@ fn symbol_given_definition() {
     assert!(
         r.symbols.iter().any(|s| s.name == "intOrd"),
         "expected intOrd; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -162,7 +212,10 @@ fn symbol_package_clause() {
     assert!(
         r.symbols.iter().any(|s| s.name == "MyService"),
         "expected MyService; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -183,9 +236,14 @@ fn symbol_package_object() {
 fn ref_call_expression() {
     let r = extract("object M {\n  def f() = println(\"hi\")\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "println" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "println" && rf.kind == EdgeKind::Calls),
         "expected Calls println; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -195,7 +253,10 @@ fn ref_instance_expression() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Dog"),
         "expected ref to Dog; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -205,7 +266,10 @@ fn ref_import_declaration() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -225,7 +289,10 @@ fn ref_type_identifier() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Animal"),
         "expected ref to Animal; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -234,9 +301,14 @@ fn ref_type_arguments() {
     // type_arguments in a type alias definition — emits TypeRef via push_type_definition.
     let r = extract("type MyList = List[Int]");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "List" || rf.target_name == "MyList"),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "List" || rf.target_name == "MyList"),
         "expected TypeRef from type alias; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -245,9 +317,14 @@ fn ref_type_annotation_in_val() {
     // type_identifier in val type annotation: `val x: String`
     let r = extract("val name: String = \"Alice\"");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to String in val annotation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -256,9 +333,14 @@ fn ref_type_annotation_in_var() {
     // type_identifier in var type annotation: `var count: Int`
     let r = extract("var counter: Int = 0");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Int" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Int" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to Int in var annotation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -267,9 +349,14 @@ fn ref_return_type_in_function() {
     // type_identifier in function return type: `def f(): String`
     let r = extract("def greet(): String = \"Hi\"");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to String in return type; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -278,9 +365,16 @@ fn ref_parameter_type_in_function() {
     // type_identifier in function parameter: `def f(name: String)`
     let r = extract("def greet(name: String): String = \"Hi \" + name");
     assert!(
-        r.refs.iter().filter(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef).count() >= 1,
+        r.refs
+            .iter()
+            .filter(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef)
+            .count()
+            >= 1,
         "expected TypeRef to String in parameter or return type; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -289,9 +383,14 @@ fn ref_generic_type_in_val() {
     // type_arguments in val annotation: `val items: List[User]`
     let r = extract("class User\nval items: List[User] = List()");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "User" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "User" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to User in List[User]; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -300,10 +399,17 @@ fn ref_nested_generic_types() {
     // nested type arguments: `val m: Map[String, List[Int]]`
     let r = extract("val m: Map[String, List[Int]] = Map()");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Map" && rf.kind == EdgeKind::TypeRef)
-            || r.refs.iter().any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Map" && rf.kind == EdgeKind::TypeRef)
+            || r.refs
+                .iter()
+                .any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to Map or List; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -313,7 +419,10 @@ fn ref_extends_clause() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Animal"),
         "expected ref to Animal; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -321,9 +430,14 @@ fn ref_extends_clause() {
 fn ref_infix_expression() {
     let r = extract("object M {\n  def f() = 1 to 10\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "to" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "to" && rf.kind == EdgeKind::Calls),
         "expected Calls to; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -338,7 +452,10 @@ fn symbol_val_in_function_block() {
     assert!(
         r.symbols.iter().any(|s| s.name == "inner"),
         "expected nested val 'inner'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -349,7 +466,10 @@ fn symbol_nested_def_in_function_block() {
     assert!(
         r.symbols.iter().any(|s| s.name == "helper"),
         "expected nested def 'helper'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -360,7 +480,10 @@ fn symbol_var_in_function_block() {
     assert!(
         r.symbols.iter().any(|s| s.name == "count"),
         "expected nested var 'count'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -371,7 +494,10 @@ fn symbol_val_in_val_block() {
     assert!(
         r.symbols.iter().any(|s| s.name == "inner"),
         "expected nested val 'inner' in val block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -380,9 +506,14 @@ fn ref_infix_in_function_block() {
     // infix_expression inside a function body block emits Calls.
     let r = extract("def f(xs: List[Int]): List[Int] = {\n  xs map (_ + 1)\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
         "expected Calls 'map'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -391,9 +522,14 @@ fn ref_extends_with_stable_type_identifier() {
     // extends with fully-qualified type: `class Foo extends foo.Bar`
     let r = extract("class Foo extends foo.Bar");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Bar" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Bar" && rf.kind == EdgeKind::Inherits),
         "expected Inherits 'Bar' from stable_type_identifier; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -401,14 +537,25 @@ fn ref_extends_with_stable_type_identifier() {
 fn ref_extends_multiple_with_clauses() {
     // `class Foo extends Bar with Baz with Qux`
     let r = extract("class Foo extends Bar with Baz with Qux");
-    let refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Inherits || rf.kind == EdgeKind::Implements).collect();
+    let refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Inherits || rf.kind == EdgeKind::Implements)
+        .collect();
     assert!(
         refs.iter().any(|rf| rf.target_name == "Bar"),
-        "expected Inherits 'Bar'; got {:?}", refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        "expected Inherits 'Bar'; got {:?}",
+        refs.iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        refs.iter().any(|rf| rf.target_name == "Baz" || refs.iter().any(|rf2| rf2.target_name == "Qux")),
-        "expected Implements mixins; got {:?}", refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        refs.iter()
+            .any(|rf| rf.target_name == "Baz" || refs.iter().any(|rf2| rf2.target_name == "Qux")),
+        "expected Implements mixins; got {:?}",
+        refs.iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -417,9 +564,14 @@ fn ref_given_definition_type_ref() {
     // given_definition emits TypeRef for its return type.
     let r = extract("given ord: Ordering[String] = Ordering.String");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Ordering" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Ordering" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef 'Ordering'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -434,7 +586,10 @@ fn symbol_object_definition_is_class_kind() {
     assert!(
         r.symbols.iter().any(|s| s.name == "AppConfig"),
         "expected AppConfig object symbol; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -443,9 +598,14 @@ fn symbol_case_class_definition() {
     // class_definition with `case` modifier → SymbolKind::Class.
     let r = extract("case class Point(x: Int, y: Int)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Class),
         "expected Class Point (case class); got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -456,7 +616,10 @@ fn symbol_case_class_constructor_params() {
     assert!(
         r.symbols.iter().any(|s| s.name == "id" || s.name == "name"),
         "expected Property symbols for case class params; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -480,9 +643,14 @@ fn ref_call_expression_dot_method() {
     // call_expression with field_expression — `obj.method(args)` → Calls to method.
     let r = extract("object M {\n  def f(xs: List[Int]): Int = xs.foldLeft(0)(_ + _)\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "foldLeft" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "foldLeft" && rf.kind == EdgeKind::Calls),
         "expected Calls foldLeft from field_expression; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -493,13 +661,20 @@ fn ref_trait_implements_other_trait() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Comparable"),
         "expected ref to Comparable from trait extends; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     // Traits use Implements for all parents per rules.
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Comparable" && (rf.kind == EdgeKind::Implements || rf.kind == EdgeKind::Inherits)),
+        r.refs.iter().any(|rf| rf.target_name == "Comparable"
+            && (rf.kind == EdgeKind::Implements || rf.kind == EdgeKind::Inherits)),
         "expected Implements or Inherits Comparable from trait; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -510,7 +685,10 @@ fn ref_object_extends_class() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Base"),
         "expected ref to Base from object extends; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -519,9 +697,14 @@ fn ref_ascription_expression_type_ref() {
     // ascription_expression: `expr: Type` → TypeRef to the ascription type.
     let r = extract("def f(x: Any): String = (x: String)");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from ascription; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -532,7 +715,10 @@ fn ref_case_class_pattern_in_match() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Circle"),
         "expected TypeRef Circle from case class pattern in match; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -543,7 +729,10 @@ fn ref_enum_definition_implements() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Comparable"),
         "expected ref to Comparable from enum extends; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -554,7 +743,10 @@ fn ref_class_parameter_type_ref() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Database"),
         "expected TypeRef Database from class_parameter; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -563,9 +755,14 @@ fn ref_type_definition_rhs_type_ref() {
     // type_definition: `type Alias = SomeType` → TypeRef to SomeType.
     let r = extract("type Handler = Request => Response");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Request" || rf.target_name == "Response"),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Request" || rf.target_name == "Response"),
         "expected TypeRef from type alias rhs; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -576,25 +773,42 @@ fn ref_generic_function_type_ref() {
     // extract the base function identifier, emitting a Calls edge to `identity`.
     let r = extract("object M {\n  def f() = identity[String](\"hello\")\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "identity" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "identity" && rf.kind == EdgeKind::Calls),
         "expected Calls edge to 'identity' from generic_function; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from generic_function type arg; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn symbol_package_object_has_member() {
     // package_object — must extract symbols defined inside it.
-    let r = extract("package object utils {\n  val pi: Double = 3.14\n  def square(x: Int): Int = x * x\n}");
+    let r = extract(
+        "package object utils {\n  val pi: Double = 3.14\n  def square(x: Int): Int = x * x\n}",
+    );
     assert!(
-        r.symbols.iter().any(|s| s.name == "pi" || s.name == "square"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "pi" || s.name == "square"),
         "expected members inside package object; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -614,22 +828,42 @@ fn debug_package_clause() {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
     parser.set_language(&lang).unwrap();
-    
+
     let src = "package foo.bar\n\nobject MyObj {}";
     let tree = parser.parse(src, None).unwrap();
-    
+
     fn dump(node: tree_sitter::Node, src: &[u8], depth: usize) {
         let text = if node.child_count() == 0 {
-            format!(" = {:?}", std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?"))
-        } else { String::new() };
-        eprintln!("{}{} ({},{}){}", "  ".repeat(depth), node.kind(), node.start_position().row, node.start_position().column, text);
+            format!(
+                " = {:?}",
+                std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?")
+            )
+        } else {
+            String::new()
+        };
+        eprintln!(
+            "{}{} ({},{}){}",
+            "  ".repeat(depth),
+            node.kind(),
+            node.start_position().row,
+            node.start_position().column,
+            text
+        );
         let mut c = node.walk();
-        for child in node.children(&mut c) { dump(child, src, depth + 1); }
+        for child in node.children(&mut c) {
+            dump(child, src, depth + 1);
+        }
     }
     dump(tree.root_node(), src.as_bytes(), 0);
-    
+
     let r = extract(src);
-    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    eprintln!(
+        "Symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -639,29 +873,48 @@ fn debug_enum_cases() {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
     parser.set_language(&lang).unwrap();
-    
+
     let src = "enum Planet:\n  case Earth(mass: Double, radius: Double)\n  case Mars(mass: Double, radius: Double)";
     let tree = parser.parse(src, None).unwrap();
-    
+
     fn dump(node: tree_sitter::Node, src: &[u8], depth: usize) {
         let text = if node.child_count() == 0 {
-            format!(" = {:?}", std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?"))
-        } else { String::new() };
+            format!(
+                " = {:?}",
+                std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?")
+            )
+        } else {
+            String::new()
+        };
         eprintln!("{}{}{}", "  ".repeat(depth), node.kind(), text);
         let mut c = node.walk();
-        for child in node.children(&mut c) { dump(child, src, depth + 1); }
+        for child in node.children(&mut c) {
+            dump(child, src, depth + 1);
+        }
     }
     dump(tree.root_node(), src.as_bytes(), 0);
-    
+
     let r = extract(src);
-    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    eprintln!(
+        "Symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
 #[ignore]
 fn debug_extends_generic() {
     let r = extract("class Foo extends Bar[Int] with Baz");
-    eprintln!("Refs: {:?}", r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+    eprintln!(
+        "Refs: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -691,10 +944,12 @@ fn debug_val_definition_miss_patterns() {
             None => continue,
         };
         let result = super::extract::extract(&src);
-        let sym_lines: std::collections::HashSet<u32> = result.symbols.iter().map(|s| s.start_line).collect();
+        let sym_lines: std::collections::HashSet<u32> =
+            result.symbols.iter().map(|s| s.start_line).collect();
 
         // Walk CST for val_definition nodes
-        let mut stack: Vec<(tree_sitter::Node, String)> = vec![(tree.root_node(), "root".to_string())];
+        let mut stack: Vec<(tree_sitter::Node, String)> =
+            vec![(tree.root_node(), "root".to_string())];
         let mut missing = Vec::new();
         while let Some((node, parent_kind)) = stack.pop() {
             if node.kind() == "val_definition" {
@@ -707,7 +962,9 @@ fn debug_val_definition_miss_patterns() {
             }
             let node_kind = node.kind().to_string();
             let mut cursor = node.walk();
-            for child in node.children(&mut cursor) { stack.push((child, node_kind.clone())); }
+            for child in node.children(&mut cursor) {
+                stack.push((child, node_kind.clone()));
+            }
         }
 
         if !missing.is_empty() {
@@ -726,10 +983,16 @@ fn debug_measure_scala_coverage() {
         "F:/Work/Projects/TestProjects/scala-lila",
         "F:/Work/Projects/TestProjects/scala-trading",
     ];
-    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = projects
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied();
     let project_path = match project_path {
         Some(p) => p,
-        None => { eprintln!("No Scala test project found"); return; }
+        None => {
+            eprintln!("No Scala test project found");
+            return;
+        }
     };
     eprintln!("Using project: {}", project_path);
     let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
@@ -737,19 +1000,43 @@ fn debug_measure_scala_coverage() {
         if cov.language == "scala" {
             eprintln!("=== Scala ===");
             eprintln!("  files: {}", cov.file_count);
-            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
-            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!(
+                "  sym: {:.1}% ({}/{})",
+                cov.symbol_coverage.percent,
+                cov.symbol_coverage.matched_nodes,
+                cov.symbol_coverage.expected_nodes
+            );
+            eprintln!(
+                "  ref: {:.1}% ({}/{})",
+                cov.ref_coverage.percent,
+                cov.ref_coverage.matched_nodes,
+                cov.ref_coverage.expected_nodes
+            );
             eprintln!("  --- symbol kinds (worst first) ---");
             let mut sym_kinds = cov.symbol_kinds.clone();
             sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in sym_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
             eprintln!("  --- ref kinds (worst first) ---");
             let mut ref_kinds = cov.ref_kinds.clone();
             ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in ref_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
         }
     }

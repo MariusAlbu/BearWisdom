@@ -12,8 +12,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::walk::{
-    extract_relative_reexports, is_test_or_story_file, resolve_relative_ts_path,
-    REEXPORT_MAX_DEPTH,
+    extract_relative_reexports, is_test_or_story_file, resolve_relative_ts_path, REEXPORT_MAX_DEPTH,
 };
 use super::{is_valid_npm_module_path, npm_package_name_from_spec};
 
@@ -33,9 +32,15 @@ pub(crate) fn collect_bare_reexports_recursive(entry: &Path) -> Vec<String> {
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut stack: Vec<(PathBuf, u32)> = vec![(entry.to_path_buf(), 0)];
     while let Some((file, depth)) = stack.pop() {
-        if !seen.insert(file.clone()) { continue }
-        if depth > REEXPORT_MAX_DEPTH { continue }
-        let Ok(src) = std::fs::read_to_string(&file) else { continue };
+        if !seen.insert(file.clone()) {
+            continue;
+        }
+        if depth > REEXPORT_MAX_DEPTH {
+            continue;
+        }
+        let Ok(src) = std::fs::read_to_string(&file) else {
+            continue;
+        };
         for spec in extract_bare_reexport_specifiers(&src) {
             out.insert(spec);
         }
@@ -57,15 +62,25 @@ pub(crate) fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in src.lines() {
         let t = line.trim();
-        if !(t.starts_with("export") || t.starts_with("import")) { continue }
+        if !(t.starts_with("export") || t.starts_with("import")) {
+            continue;
+        }
         let Some(ix) = t.find(" from ") else { continue };
         let rest = t[ix + 6..].trim_start();
-        let Some(quote) = rest.chars().next() else { continue };
-        if quote != '\'' && quote != '"' { continue }
+        let Some(quote) = rest.chars().next() else {
+            continue;
+        };
+        if quote != '\'' && quote != '"' {
+            continue;
+        }
         let inner = &rest[1..];
-        let Some(end) = inner.find(quote) else { continue };
+        let Some(end) = inner.find(quote) else {
+            continue;
+        };
         let spec = &inner[..end];
-        if spec.starts_with("./") || spec.starts_with("../") { continue }
+        if spec.starts_with("./") || spec.starts_with("../") {
+            continue;
+        }
         // Extract the package name: either `@scope/pkg` or `pkg` (first path segment).
         let pkg = if spec.starts_with('@') {
             spec.splitn(3, '/').take(2).collect::<Vec<_>>().join("/")
@@ -107,8 +122,12 @@ pub(crate) fn scan_ts_user_imports_recursive(
     out: &mut std::collections::HashSet<String>,
     depth: usize,
 ) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -116,10 +135,23 @@ pub(crate) fn scan_ts_user_imports_recursive(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    "node_modules" | "target" | "build" | "out" | "dist"
-                        | ".next" | ".nuxt" | ".astro" | ".svelte-kit"
-                        | ".vite" | ".turbo" | ".cache" | "coverage"
-                        | "__tests__" | "__mocks__" | "tests" | "test"
+                    "node_modules"
+                        | "target"
+                        | "build"
+                        | "out"
+                        | "dist"
+                        | ".next"
+                        | ".nuxt"
+                        | ".astro"
+                        | ".svelte-kit"
+                        | ".vite"
+                        | ".turbo"
+                        | ".cache"
+                        | "coverage"
+                        | "__tests__"
+                        | "__mocks__"
+                        | "tests"
+                        | "test"
                 ) || name.starts_with('.')
                 {
                     continue;
@@ -127,15 +159,25 @@ pub(crate) fn scan_ts_user_imports_recursive(
             }
             scan_ts_user_imports_recursive(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !is_user_source_file(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !is_user_source_file(name) {
+                continue;
+            }
             // Skip declaration files — they're toolchain-emitted and may
             // re-export packages the user doesn't actually consume.
-            if name.ends_with(".d.ts") { continue }
+            if name.ends_with(".d.ts") {
+                continue;
+            }
             // Skip per-file test/story names — same rationale as the dir
             // skip above.
-            if is_test_or_story_file(name) { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            if is_test_or_story_file(name) {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_user_imports_from_source(&content, out);
         }
     }
@@ -181,7 +223,9 @@ pub(crate) fn extract_user_imports_from_source(
 
     for line in content.lines() {
         let t = line.trim();
-        if t.starts_with("//") { continue }
+        if t.starts_with("//") {
+            continue;
+        }
         if t.starts_with("import ") || t.starts_with("export ") || t.starts_with("import\t") {
             if let Some(spec) = extract_quoted_after(t, " from ") {
                 push_user_import(spec, out);
@@ -193,11 +237,7 @@ pub(crate) fn extract_user_imports_from_source(
         // Sass built-in modules (`sass:*`) and relative paths are filtered
         // by `push_user_import` (starts with `.`) or the explicit sass: check.
         if t.starts_with("@use ") || t.starts_with("@import ") || t.starts_with("@forward ") {
-            let after_keyword = t
-                .splitn(2, ' ')
-                .nth(1)
-                .unwrap_or("")
-                .trim_start();
+            let after_keyword = t.splitn(2, ' ').nth(1).unwrap_or("").trim_start();
             if let Some(spec) = extract_first_quoted(after_keyword) {
                 if !spec.starts_with("sass:") {
                     push_user_import(spec, out);
@@ -229,7 +269,9 @@ pub(crate) fn extract_quoted_after<'a>(line: &'a str, marker: &str) -> Option<&'
 /// start of `s`. Returns None if `s` doesn't begin with a quote.
 pub(crate) fn extract_first_quoted(s: &str) -> Option<&str> {
     let quote = s.chars().next()?;
-    if quote != '\'' && quote != '"' { return None }
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
     let inner = &s[1..];
     let end = inner.find(quote)?;
     Some(&inner[..end])
@@ -256,12 +298,22 @@ pub(crate) fn push_call_imports(
 
 /// Normalize a raw specifier and insert the package portion if it's bare.
 pub(crate) fn push_user_import(spec: &str, out: &mut std::collections::HashSet<String>) {
-    if spec.is_empty() { return }
-    if spec.starts_with('.') || spec.starts_with('/') { return }
-    if spec.starts_with("node:") { return }
+    if spec.is_empty() {
+        return;
+    }
+    if spec.starts_with('.') || spec.starts_with('/') {
+        return;
+    }
+    if spec.starts_with("node:") {
+        return;
+    }
     // Windows drive letters (rare in source but possible in dynamic imports).
-    if spec.len() >= 2 && spec.as_bytes()[1] == b':' { return }
+    if spec.len() >= 2 && spec.as_bytes()[1] == b':' {
+        return;
+    }
     let pkg = npm_package_name_from_spec(spec);
-    if !is_valid_npm_module_path(pkg) { return }
+    if !is_valid_npm_module_path(pkg) {
+        return;
+    }
     out.insert(pkg.to_string());
 }

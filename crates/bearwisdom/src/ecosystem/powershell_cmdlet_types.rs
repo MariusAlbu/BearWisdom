@@ -28,9 +28,7 @@ pub fn cmdlet_return_type(cmdlet: &str) -> Option<&'static str> {
     // Case-insensitive match on the cmdlet name.
     match cmdlet.to_ascii_lowercase().as_str() {
         // Filesystem
-        "get-childitem" | "get-item" | "dir" | "ls" => {
-            Some("System.IO.FileSystemInfo")
-        }
+        "get-childitem" | "get-item" | "dir" | "ls" => Some("System.IO.FileSystemInfo"),
         "get-content" => Some("System.String"),
 
         // Processes
@@ -40,9 +38,7 @@ pub fn cmdlet_return_type(cmdlet: &str) -> Option<&'static str> {
         "get-service" => Some("System.ServiceProcess.ServiceController"),
 
         // WMI / CIM
-        "get-wmiobject" | "get-ciminstance" => {
-            Some("System.Management.ManagementObject")
-        }
+        "get-wmiobject" | "get-ciminstance" => Some("System.Management.ManagementObject"),
 
         // Date / time
         "get-date" => Some("System.DateTime"),

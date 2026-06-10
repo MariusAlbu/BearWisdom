@@ -9,14 +9,33 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 const PASCAL_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
-        &[SymbolKind::Function, SymbolKind::Method, SymbolKind::Constructor],
+        // Type-casts and record constructors are call-syntactic in Pascal:
+        // `TFoo(x)` binds to the type declaration, not a function.
+        &[
+            SymbolKind::Function,
+            SymbolKind::Method,
+            SymbolKind::Constructor,
+            SymbolKind::TypeAlias,
+            SymbolKind::Class,
+            SymbolKind::Struct,
+            SymbolKind::Enum,
+            SymbolKind::Interface,
+        ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class]),
     (
         EdgeKind::TypeRef,
-        &[SymbolKind::Class, SymbolKind::Struct, SymbolKind::Enum, SymbolKind::TypeAlias],
+        &[
+            SymbolKind::Class,
+            SymbolKind::Struct,
+            SymbolKind::Enum,
+            SymbolKind::TypeAlias,
+        ],
     ),
-    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Struct]),
+    (
+        EdgeKind::Instantiates,
+        &[SymbolKind::Class, SymbolKind::Struct],
+    ),
 ];
 
 const PASCAL_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -78,7 +97,8 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

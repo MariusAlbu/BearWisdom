@@ -42,11 +42,19 @@ pub(crate) fn parse_gql_operation(body: &str) -> Option<String> {
     // Skip optional whitespace, then take the operation name (word chars).
     let rest = rest.trim_start();
     // Operation name is optional in GraphQL but always present when named.
-    if rest.is_empty() || !rest.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') {
+    if rest.is_empty()
+        || !rest
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_alphabetic() || c == '_')
+    {
         // Anonymous operation — use the op kind as the name key.
         return Some(format!("{op}:__anon__"));
     }
-    let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
     Some(format!("{op}:{name}"))
 }
 
@@ -162,7 +170,7 @@ pub(crate) fn detect_chain_flow_emission(
                 name,
                 role: ChannelRole::Producer,
                 method: Some(method),
-            streaming: None,
+                streaming: None,
             });
         }
     }
@@ -185,21 +193,25 @@ pub(crate) fn detect_chain_flow_emission(
             name,
             role: ChannelRole::Producer,
             method: Some(HttpMethod::Any),
-        streaming: None,
+            streaming: None,
         });
     }
 
     // Electron ipcRenderer — bare identifier, no import lookup needed.
     if predicates::is_electron_ipc_renderer(root_name.as_str()) {
         if let Some(leaf) = chain_ref.segments.last() {
-            let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            let role = if leaf.name == "on" {
+                ChannelRole::Consumer
+            } else {
+                ChannelRole::Producer
+            };
             let name = first_arg_string(call_args);
             return Some(FlowEmission::NamedChannel {
                 kind: NamedChannelKind::IpcCall,
                 name,
                 role,
                 method: None,
-            streaming: None,
+                streaming: None,
             });
         }
     }
@@ -218,7 +230,7 @@ pub(crate) fn detect_chain_flow_emission(
                         name,
                         role: ChannelRole::Consumer,
                         method: None,
-                    streaming: None,
+                        streaming: None,
                     });
                 }
             }
@@ -229,13 +241,14 @@ pub(crate) fn detect_chain_flow_emission(
     // The call_args carry a TaggedTemplate when the tagged template extractor ran.
     if let Some(CallArg::TaggedTemplate { tag, body }) = call_args.first() {
         if matches!(tag.as_str(), "gql" | "graphql" | "gqlTag" | "GraphQL") {
-            let name = parse_gql_operation(body).unwrap_or_else(|| "graphql:__unknown__".to_string());
+            let name =
+                parse_gql_operation(body).unwrap_or_else(|| "graphql:__unknown__".to_string());
             return Some(FlowEmission::NamedChannel {
                 kind: NamedChannelKind::GraphQLOp,
                 name,
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             });
         }
     }
@@ -244,11 +257,9 @@ pub(crate) fn detect_chain_flow_emission(
     // When the chain root has no matching import (likely a long-lived
     // constructed instance such as a Prisma client or TypeORM repository),
     // fall through to the ORM-shape detector at the bottom.
-    let import_entry = file_ctx.imports.iter()
-        .find(|imp| {
-            imp.imported_name == *root_name
-                || imp.alias.as_deref() == Some(root_name.as_str())
-        });
+    let import_entry = file_ctx.imports.iter().find(|imp| {
+        imp.imported_name == *root_name || imp.alias.as_deref() == Some(root_name.as_str())
+    });
     let import_source = match import_entry.and_then(|imp| imp.module_path.as_deref()) {
         Some(src) => src,
         None => return detect_db_query_emission_with_imports(chain_ref, &file_ctx.imports),
@@ -273,20 +284,24 @@ pub(crate) fn detect_chain_flow_emission(
             name,
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
     if predicates::is_socketio_client_module(import_source) {
         if let Some(leaf) = chain_ref.segments.last() {
-            let role = if leaf.name == "on" { ChannelRole::Consumer } else { ChannelRole::Producer };
+            let role = if leaf.name == "on" {
+                ChannelRole::Consumer
+            } else {
+                ChannelRole::Producer
+            };
             let name = first_arg_string(call_args);
             return Some(FlowEmission::NamedChannel {
                 kind: NamedChannelKind::WebSocket,
                 name,
                 role,
                 method: None,
-            streaming: None,
+                streaming: None,
             });
         }
     }
@@ -298,7 +313,7 @@ pub(crate) fn detect_chain_flow_emission(
             name,
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -307,7 +322,10 @@ pub(crate) fn detect_chain_flow_emission(
         let table_name = first_arg_string(call_args);
         if !table_name.is_empty() {
             let direction = infer_migration_direction_from_chain(chain_ref);
-            return Some(FlowEmission::MigrationTarget { table_name, direction });
+            return Some(FlowEmission::MigrationTarget {
+                table_name,
+                direction,
+            });
         }
     }
 
@@ -324,7 +342,10 @@ pub(crate) fn detect_chain_flow_emission(
         let command_name = first_arg_string(call_args);
         if !command_name.is_empty() {
             let framework = infer_cli_framework(import_source);
-            return Some(FlowEmission::CliCommand { command_name, framework });
+            return Some(FlowEmission::CliCommand {
+                command_name,
+                framework,
+            });
         }
     }
 
@@ -370,19 +391,33 @@ fn is_migration_call_chain(chain: &crate::types::MemberChain, import_source: &st
             w[0].name == "schema"
                 && matches!(
                     w[1].name.to_ascii_lowercase().as_str(),
-                    "createtable" | "droptable" | "droptableifexists" | "renametable"
-                        | "altertable" | "hastable"
+                    "createtable"
+                        | "droptable"
+                        | "droptableifexists"
+                        | "renametable"
+                        | "altertable"
+                        | "hastable"
                 )
         });
     }
     // Sequelize queryInterface (first segment name)
-    let root = chain.segments.first().map(|s| s.name.as_str()).unwrap_or("");
+    let root = chain
+        .segments
+        .first()
+        .map(|s| s.name.as_str())
+        .unwrap_or("");
     if root == "queryInterface" || root == "queryRunner" {
         return chain.segments.last().map_or(false, |s| {
             matches!(
                 s.name.to_ascii_lowercase().as_str(),
-                "createtable" | "droptable" | "addcolumn" | "removecolumn"
-                    | "renametable" | "addindex" | "removeindex" | "createqueryinterface"
+                "createtable"
+                    | "droptable"
+                    | "addcolumn"
+                    | "removecolumn"
+                    | "renametable"
+                    | "addindex"
+                    | "removeindex"
+                    | "createqueryinterface"
             )
         });
     }
@@ -400,7 +435,10 @@ fn infer_migration_direction_from_chain(chain: &crate::types::MemberChain) -> Mi
 fn is_cron_schedule_call(chain: &crate::types::MemberChain, import_source: &str) -> bool {
     predicates::is_cron_module(import_source)
         && chain.segments.last().map_or(false, |s| {
-            matches!(s.name.to_ascii_lowercase().as_str(), "schedule" | "create" | "scheduleJob")
+            matches!(
+                s.name.to_ascii_lowercase().as_str(),
+                "schedule" | "create" | "scheduleJob"
+            )
         })
 }
 
@@ -461,15 +499,16 @@ pub(crate) fn detect_chain_route_consumer(
         name: normalized,
         role: ChannelRole::Consumer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
 fn file_imports_chain_router_framework(file_ctx: &FileContext) -> bool {
-    file_ctx
-        .imports
-        .iter()
-        .any(|imp| imp.module_path.as_deref().map_or(false, is_chain_router_module))
+    file_ctx.imports.iter().any(|imp| {
+        imp.module_path
+            .as_deref()
+            .map_or(false, is_chain_router_module)
+    })
 }
 
 fn is_chain_router_module(pkg: &str) -> bool {
@@ -545,13 +584,15 @@ pub(crate) fn detect_trpc_chain_emission(
         name: format!("/api/trpc/{}", procedure),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Any),
-    streaming: None,
+        streaming: None,
     })
 }
 
 fn file_imports_trpc(file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
-        let Some(m) = imp.module_path.as_deref() else { return false; };
+        let Some(m) = imp.module_path.as_deref() else {
+            return false;
+        };
         m.starts_with("@trpc/")
             || m == "@trpc/client"
             || m.ends_with("/trpc/client")
@@ -595,7 +636,11 @@ pub(crate) fn detect_member_access_config_emission(
         }
     }
     // `import.meta.env.<KEY>` — four segments, `import` keyword root.
-    if segs.len() == 4 && segs[0].name == "import" && segs[1].name == "meta" && segs[2].name == "env" {
+    if segs.len() == 4
+        && segs[0].name == "import"
+        && segs[1].name == "meta"
+        && segs[2].name == "env"
+    {
         let key = segs[3].name.clone();
         if !key.is_empty() {
             return Some(FlowEmission::ConfigLookup { key });
@@ -626,13 +671,14 @@ pub(crate) fn detect_member_access_feature_flag_emission(
     if flag.is_empty() {
         return None;
     }
-    Some(FlowEmission::FeatureFlag { flag_name: flag.to_string() })
+    Some(FlowEmission::FeatureFlag {
+        flag_name: flag.to_string(),
+    })
 }
 
 fn is_feature_flag_identifier(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    matches!(lower.as_str(), "featureflags" | "features" | "flags")
-        || lower.contains("featureflag")
+    matches!(lower.as_str(), "featureflags" | "features" | "flags") || lower.contains("featureflag")
 }
 
 /// Inspect a Calls chain like `config.get('PORT')` or
@@ -736,10 +782,11 @@ fn is_feature_flag_verb(name: &str) -> bool {
 }
 
 fn file_imports_feature_flag_library(file_ctx: &FileContext) -> bool {
-    file_ctx
-        .imports
-        .iter()
-        .any(|imp| imp.module_path.as_deref().map_or(false, is_feature_flag_library))
+    file_ctx.imports.iter().any(|imp| {
+        imp.module_path
+            .as_deref()
+            .map_or(false, is_feature_flag_library)
+    })
 }
 
 fn is_feature_flag_library(pkg: &str) -> bool {

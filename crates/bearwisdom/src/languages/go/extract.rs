@@ -72,7 +72,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols = Vec::new();
     let mut refs = Vec::new();
 
-    extract_from_node(root, source, &mut symbols, &mut refs, None, qualified_prefix);
+    extract_from_node(
+        root,
+        source,
+        &mut symbols,
+        &mut refs,
+        None,
+        qualified_prefix,
+    );
 
     // Second pass: scan the full CST for type_identifier and qualified_type nodes,
     // emitting TypeRef for each non-builtin type found anywhere in the file.
@@ -218,7 +225,9 @@ fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(&child, source);
                 if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -227,9 +236,9 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "qualified_type" if child.is_named() => {
@@ -237,7 +246,9 @@ fn scan_all_type_identifiers(
                 let text = helpers::node_text(&child, source);
                 let name = text.rsplit('.').next().unwrap_or(&text).to_string();
                 if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -246,9 +257,9 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // Don't recurse into qualified_type children — we already extracted the name.
                 continue;
@@ -262,4 +273,3 @@ fn scan_all_type_identifiers(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

@@ -67,7 +67,9 @@ fn emit_attribute(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = attribute_name(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -205,7 +207,9 @@ fn extract_binding_pattern_type(
                     } else {
                         Some(node_text(child, src))
                     } {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -292,7 +296,9 @@ fn extract_pattern_type_refs(
             for child in node.children(&mut cursor) {
                 if child.kind() == "user_type" {
                     if let Some(name) = name_from_user_type(&child, src) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -308,7 +314,9 @@ fn extract_pattern_type_refs(
                 } else if child.kind() == "simple_identifier" {
                     let name = node_text(child, src);
                     if !name.is_empty() && name != "is" {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -330,7 +338,9 @@ fn extract_pattern_type_refs(
                 let mut nc = rhs.walk();
                 for inner in rhs.children(&mut nc) {
                     if inner.kind() == "simple_identifier" {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: node_text(inner, src),
                             kind: EdgeKind::TypeRef,
@@ -389,7 +399,9 @@ pub(super) fn extract_extension_conformances(
                     for inner in constraint.children(&mut cc) {
                         if inner.kind() == "user_type" {
                             if let Some(name) = name_from_user_type(&inner, src) {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -444,4 +456,3 @@ mod tests {
         assert!(refs.contains(&"objc".to_string()), "refs: {refs:?}");
     }
 }
-

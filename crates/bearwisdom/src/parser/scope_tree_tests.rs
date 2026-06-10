@@ -2,9 +2,18 @@ use super::*;
 
 /// Minimal scope config for C#-style tests.
 const CSHARP_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "namespace_declaration", name_field: "name" },
-    ScopeKind { node_kind: "class_declaration",     name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",    name_field: "name" },
+    ScopeKind {
+        node_kind: "namespace_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
 ];
 
 fn parse_csharp(source: &str) -> tree_sitter::Tree {
@@ -21,9 +30,9 @@ fn build_scopes_for_namespace_class_method() {
     let scopes = build(tree.root_node(), source.as_bytes(), CSHARP_CONFIG);
 
     let names: Vec<&str> = scopes.iter().map(|s| s.name.as_str()).collect();
-    assert!(names.contains(&"Foo"),  "Missing Foo:  {names:?}");
-    assert!(names.contains(&"Bar"),  "Missing Bar:  {names:?}");
-    assert!(names.contains(&"Baz"),  "Missing Baz:  {names:?}");
+    assert!(names.contains(&"Foo"), "Missing Foo:  {names:?}");
+    assert!(names.contains(&"Bar"), "Missing Bar:  {names:?}");
+    assert!(names.contains(&"Baz"), "Missing Baz:  {names:?}");
 }
 
 #[test]
@@ -47,7 +56,11 @@ fn find_scope_at_returns_deepest_scope() {
     // `{` of C() body is what we're after — just pick end of the string.
     let inside_c_offset = source.find("void C").unwrap() + 5;
     let scope = find_scope_at(&scopes, inside_c_offset).unwrap();
-    assert_eq!(scope.name, "C", "Expected deepest scope 'C', got '{}'", scope.name);
+    assert_eq!(
+        scope.name, "C",
+        "Expected deepest scope 'C', got '{}'",
+        scope.name
+    );
 }
 
 #[test]

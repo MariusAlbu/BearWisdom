@@ -2,7 +2,7 @@ use bearwisdom::query::QueryOptions;
 use bearwisdom::IndexService;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
-use rmcp::{schemars, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -38,7 +38,9 @@ fn full_stats_json(stats: &bearwisdom::IndexStats) -> serde_json::Value {
 }
 
 /// Shape an IncrementalStats delta as the payload for `bw_reindex` responses.
-fn incremental_stats_json(inc: &bearwisdom::indexer::incremental::IncrementalStats) -> serde_json::Value {
+fn incremental_stats_json(
+    inc: &bearwisdom::indexer::incremental::IncrementalStats,
+) -> serde_json::Value {
     serde_json::json!({
         "files_added": inc.files_added,
         "files_modified": inc.files_modified,
@@ -435,11 +437,18 @@ impl BearWisdomServer {
             .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))?;
         let (mode, stats_json) = if force {
             let stats = bearwisdom::full_index(&mut db, project_root, None, None, Some(&ref_cache))
-                .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
+                .map_err(|e| {
+                    error_response("INTERNAL_ERROR", &format!("Full index failed: {e}"))
+                })?;
             ("full", full_stats_json(&stats))
         } else if bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit").is_some() {
-            let inc = bearwisdom::git_reindex(&mut db, project_root, Some(&ref_cache))
-                .map_err(|e| error_response("INTERNAL_ERROR", &format!("Git-incremental reindex failed: {e}")))?;
+            let inc =
+                bearwisdom::git_reindex(&mut db, project_root, Some(&ref_cache)).map_err(|e| {
+                    error_response(
+                        "INTERNAL_ERROR",
+                        &format!("Git-incremental reindex failed: {e}"),
+                    )
+                })?;
             ("git-incremental", incremental_stats_json(&inc))
         } else {
             let file_count: i64 = db
@@ -447,11 +456,19 @@ impl BearWisdomServer {
                 .unwrap_or(0);
             if file_count > 0 {
                 let inc = bearwisdom::incremental_index(&mut db, project_root, Some(&ref_cache))
-                    .map_err(|e| error_response("INTERNAL_ERROR", &format!("Hash-incremental reindex failed: {e}")))?;
+                    .map_err(|e| {
+                        error_response(
+                            "INTERNAL_ERROR",
+                            &format!("Hash-incremental reindex failed: {e}"),
+                        )
+                    })?;
                 ("hash-incremental", incremental_stats_json(&inc))
             } else {
-                let stats = bearwisdom::full_index(&mut db, project_root, None, None, Some(&ref_cache))
-                    .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
+                let stats =
+                    bearwisdom::full_index(&mut db, project_root, None, None, Some(&ref_cache))
+                        .map_err(|e| {
+                            error_response("INTERNAL_ERROR", &format!("Full index failed: {e}"))
+                        })?;
                 ("full", full_stats_json(&stats))
             }
         };
@@ -520,7 +537,12 @@ impl BearWisdomServer {
             Ok(d) => d,
             Err(e) => {
                 let msg = error_response("INTERNAL_ERROR", &format!("Pool error: {e}"));
-                self.audit_call(tool_name, &params_json, &msg, t0.elapsed().as_millis() as u64);
+                self.audit_call(
+                    tool_name,
+                    &params_json,
+                    &msg,
+                    t0.elapsed().as_millis() as u64,
+                );
                 return Err(msg);
             }
         };
@@ -528,8 +550,17 @@ impl BearWisdomServer {
         let inner = f(&db, service.project_root());
         let was_err = inner.is_err();
         let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
-        self.audit_call(tool_name, &params_json, &unified, t0.elapsed().as_millis() as u64);
-        if was_err { Err(unified) } else { Ok(unified) }
+        self.audit_call(
+            tool_name,
+            &params_json,
+            &unified,
+            t0.elapsed().as_millis() as u64,
+        );
+        if was_err {
+            Err(unified)
+        } else {
+            Ok(unified)
+        }
     }
 
     /// Shared dispatch helper for tools that do NOT need a db connection (e.g. bw_grep).
@@ -566,8 +597,17 @@ impl BearWisdomServer {
         let inner = f(service.project_root());
         let was_err = inner.is_err();
         let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
-        self.audit_call(tool_name, &params_json, &unified, t0.elapsed().as_millis() as u64);
-        if was_err { Err(unified) } else { Ok(unified) }
+        self.audit_call(
+            tool_name,
+            &params_json,
+            &unified,
+            t0.elapsed().as_millis() as u64,
+        );
+        if was_err {
+            Err(unified)
+        } else {
+            Ok(unified)
+        }
     }
 
     /// Inject an `#index` section after the compact format header so callers
@@ -679,7 +719,13 @@ impl BearWisdomServer {
             };
             bearwisdom::query::search::search_symbols(db, &params.query, limit, &opts)
                 .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::search(&r, limit)) } else { Self::to_json(&r) })
+                .and_then(|r| {
+                    if compact {
+                        Ok(crate::compact::search(&r, limit))
+                    } else {
+                        Self::to_json(&r)
+                    }
+                })
         })
     }
 
@@ -712,121 +758,175 @@ impl BearWisdomServer {
             let max_len = params.max_line_length.unwrap_or(120);
             bearwisdom::search::grep::truncate_matches(&mut results, max_len);
             let limit = options.max_results;
-            if compact { Ok(crate::compact::grep(&results, limit)) } else { Self::to_json(&results) }
+            if compact {
+                Ok(crate::compact::grep(&results, limit))
+            } else {
+                Self::to_json(&results)
+            }
         })
     }
 
     /// Get symbol details: location, edge counts, visibility. Returns slim output by default.
     /// Pass include_signature/include_doc/include_children: true for richer data.
     #[tool(name = "bw_symbol_info")]
-    fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> Result<String, String> {
+    fn symbol_info(
+        &self,
+        Parameters(params): Parameters<SymbolInfoParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_symbol_info", &params, params.project.as_deref(), |db, _| {
-            if params.name.is_empty() {
-                return Self::invalid_input("Symbol name cannot be empty");
-            }
-            let merge = !matches!(params.mode.as_deref(), Some("split"));
-            let opts = QueryOptions {
-                include_signature: params.include_signature.unwrap_or(false),
-                include_doc: params.include_doc.unwrap_or(false),
-                include_children: params.include_children.unwrap_or(false),
-                merge_implementations: merge,
-                ..QueryOptions::default()
-            };
-            if compact {
-                bearwisdom::query::symbol_info::symbol_info(db, &params.name, &opts)
-                    .map(|r| crate::compact::symbol_info(&r))
-                    .map_err(Self::query_err)
-            } else {
-                bearwisdom::query::symbol_info::symbol_info_json(db, &params.name, &opts)
-                    .map_err(Self::query_err)
-            }
-        })
+        self.run_tool(
+            "bw_symbol_info",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.name.is_empty() {
+                    return Self::invalid_input("Symbol name cannot be empty");
+                }
+                let merge = !matches!(params.mode.as_deref(), Some("split"));
+                let opts = QueryOptions {
+                    include_signature: params.include_signature.unwrap_or(false),
+                    include_doc: params.include_doc.unwrap_or(false),
+                    include_children: params.include_children.unwrap_or(false),
+                    merge_implementations: merge,
+                    ..QueryOptions::default()
+                };
+                if compact {
+                    bearwisdom::query::symbol_info::symbol_info(db, &params.name, &opts)
+                        .map(|r| crate::compact::symbol_info(&r))
+                        .map_err(Self::query_err)
+                } else {
+                    bearwisdom::query::symbol_info::symbol_info_json(db, &params.name, &opts)
+                        .map_err(Self::query_err)
+                }
+            },
+        )
     }
 
     /// Find all references to a symbol. Returns up to 50 results by default with file, line, edge kind.
     #[tool(name = "bw_find_references")]
-    fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> Result<String, String> {
+    fn find_references(
+        &self,
+        Parameters(params): Parameters<FindReferencesParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_find_references", &params, params.project.as_deref(), |db, _| {
-            if params.name.is_empty() {
-                return Self::invalid_input("Symbol name cannot be empty");
-            }
-            let limit = params.limit.unwrap_or(50);
-            if compact {
-                bearwisdom::query::references::find_references(db, &params.name, limit)
-                    .map(|r| crate::compact::references(&r, limit))
-                    .map_err(Self::query_err)
-            } else {
-                bearwisdom::query::references::find_references_json(db, &params.name, limit)
-                    .map_err(Self::query_err)
-            }
-        })
+        self.run_tool(
+            "bw_find_references",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.name.is_empty() {
+                    return Self::invalid_input("Symbol name cannot be empty");
+                }
+                let limit = params.limit.unwrap_or(50);
+                if compact {
+                    bearwisdom::query::references::find_references(db, &params.name, limit)
+                        .map(|r| crate::compact::references(&r, limit))
+                        .map_err(Self::query_err)
+                } else {
+                    bearwisdom::query::references::find_references_json(db, &params.name, limit)
+                        .map_err(Self::query_err)
+                }
+            },
+        )
     }
 
     /// Show call hierarchy: direction="callers" (alias "in") = who calls this;
     /// direction="callees" (alias "out") = what does this call. Up to 50 results by default.
     #[tool(name = "bw_call_hierarchy")]
-    fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> Result<String, String> {
+    fn call_hierarchy(
+        &self,
+        Parameters(params): Parameters<CallHierarchyParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_call_hierarchy", &params, params.project.as_deref(), |db, _| {
-            if params.name.is_empty() {
-                return Self::invalid_input("Symbol name cannot be empty");
-            }
-            let limit = params.limit.unwrap_or(50);
-            let query_result = match params.direction.as_deref() {
-                Some("out") | Some("callees") => {
-                    bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
+        self.run_tool(
+            "bw_call_hierarchy",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.name.is_empty() {
+                    return Self::invalid_input("Symbol name cannot be empty");
                 }
-                // Default and explicit "in" / "callers" → incoming calls.
-                _ => bearwisdom::query::call_hierarchy::incoming_calls(db, &params.name, limit),
-            };
-            query_result
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::call_hierarchy(&r, limit)) } else { Self::to_json(&r) })
-        })
-    }
-
-    /// List symbols in a file. Modes: "names" (minimal), "outline" (default), "full".
-    #[tool(name = "bw_file_symbols")]
-    fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> Result<String, String> {
-        let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_file_symbols", &params, params.project.as_deref(), |db, _| {
-            if params.file_path.is_empty() {
-                return Self::invalid_input("file_path is required");
-            }
-            let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(
-                params.mode.as_deref().unwrap_or("outline"),
-            );
-            bearwisdom::query::symbol_info::file_symbols(db, &params.file_path, mode)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::file_symbols(&r)) } else { Self::to_json(&r) })
-        })
-    }
-
-    /// Blast radius: what breaks if this symbol changes? Default depth 2.
-    #[tool(name = "bw_blast_radius")]
-    fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> Result<String, String> {
-        let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_blast_radius", &params, params.project.as_deref(), |db, _| {
-            if params.symbol.is_empty() {
-                return Self::invalid_input("Symbol name cannot be empty");
-            }
-            let depth = params.depth.unwrap_or(2).min(10).max(1);
-            let max = params.max_results.unwrap_or(500).min(5000);
-            bearwisdom::query::blast_radius::blast_radius(db, &params.symbol, depth, max)
-                .map_err(Self::query_err)
-                .and_then(|r| {
+                let limit = params.limit.unwrap_or(50);
+                let query_result = match params.direction.as_deref() {
+                    Some("out") | Some("callees") => {
+                        bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
+                    }
+                    // Default and explicit "in" / "callers" → incoming calls.
+                    _ => bearwisdom::query::call_hierarchy::incoming_calls(db, &params.name, limit),
+                };
+                query_result.map_err(Self::query_err).and_then(|r| {
                     if compact {
-                        match r {
-                            Some(br) => Ok(crate::compact::blast_radius(&br)),
-                            None => Ok(crate::compact::not_found()),
-                        }
+                        Ok(crate::compact::call_hierarchy(&r, limit))
                     } else {
                         Self::to_json(&r)
                     }
                 })
-        })
+            },
+        )
+    }
+
+    /// List symbols in a file. Modes: "names" (minimal), "outline" (default), "full".
+    #[tool(name = "bw_file_symbols")]
+    fn file_symbols(
+        &self,
+        Parameters(params): Parameters<FileSymbolsParams>,
+    ) -> Result<String, String> {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool(
+            "bw_file_symbols",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.file_path.is_empty() {
+                    return Self::invalid_input("file_path is required");
+                }
+                let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(
+                    params.mode.as_deref().unwrap_or("outline"),
+                );
+                bearwisdom::query::symbol_info::file_symbols(db, &params.file_path, mode)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::file_symbols(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
+    }
+
+    /// Blast radius: what breaks if this symbol changes? Default depth 2.
+    #[tool(name = "bw_blast_radius")]
+    fn blast_radius(
+        &self,
+        Parameters(params): Parameters<BlastRadiusParams>,
+    ) -> Result<String, String> {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool(
+            "bw_blast_radius",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.symbol.is_empty() {
+                    return Self::invalid_input("Symbol name cannot be empty");
+                }
+                let depth = params.depth.unwrap_or(2).min(10).max(1);
+                let max = params.max_results.unwrap_or(500).min(5000);
+                bearwisdom::query::blast_radius::blast_radius(db, &params.symbol, depth, max)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            match r {
+                                Some(br) => Ok(crate::compact::blast_radius(&br)),
+                                None => Ok(crate::compact::not_found()),
+                            }
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// High-level project summary: languages, file/symbol counts, top hotspots, entry points.
@@ -836,11 +936,22 @@ impl BearWisdomServer {
         Parameters(params): Parameters<ArchitectureParams>,
     ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_architecture_overview", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::query::architecture::get_overview(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::architecture(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_architecture_overview",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::query::architecture::get_overview(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::architecture(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// List detected packages with file/symbol/edge counts.
@@ -848,11 +959,22 @@ impl BearWisdomServer {
     #[tool(name = "bw_packages")]
     fn packages(&self, Parameters(params): Parameters<PackagesParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_packages", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::list_packages(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::packages(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_packages",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::list_packages(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::packages(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Reindex the project. Idempotent: runs git-aware incremental reindex on
@@ -865,59 +987,116 @@ impl BearWisdomServer {
         let inner = self.run_reindex(params.force.unwrap_or(false), params.project.as_deref());
         let was_err = inner.is_err();
         let unified = inner.unwrap_or_else(|e| e);
-        self.audit_call("bw_reindex", &params_json, &unified, t0.elapsed().as_millis() as u64);
-        if was_err { Err(unified) } else { Ok(unified) }
+        self.audit_call(
+            "bw_reindex",
+            &params_json,
+            &unified,
+            t0.elapsed().as_millis() as u64,
+        );
+        if was_err {
+            Err(unified)
+        } else {
+            Ok(unified)
+        }
     }
 
     /// Workspace overview: per-package breakdown + cross-package edge count + shared hotspots.
     /// Returns empty/zero fields for single-project repos — no error.
     #[tool(name = "bw_workspace_overview")]
-    fn workspace_overview(&self, Parameters(params): Parameters<WorkspaceOverviewParams>) -> Result<String, String> {
+    fn workspace_overview(
+        &self,
+        Parameters(params): Parameters<WorkspaceOverviewParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_workspace_overview", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::workspace_overview(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::workspace(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_workspace_overview",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::workspace_overview(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::workspace(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Workspace graph: one row per (source_pkg, target_pkg) with per-kind
     /// code/flow edge counts and a manifest-declared-dependency flag.
     /// Returns an empty array for single-project repos.
     #[tool(name = "bw_workspace_graph")]
-    fn workspace_graph(&self, Parameters(params): Parameters<WorkspaceGraphParams>) -> Result<String, String> {
+    fn workspace_graph(
+        &self,
+        Parameters(params): Parameters<WorkspaceGraphParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_workspace_graph", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::workspace_graph(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::workspace_graph(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_workspace_graph",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::workspace_graph(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::workspace_graph(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Get diagnostics: unresolved symbols + low-confidence edges. Pass
     /// `file_path` for a single-file report; omit it for a workspace-wide
     /// ranking that surfaces the files with the worst leakage.
     #[tool(name = "bw_diagnostics")]
-    fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> Result<String, String> {
+    fn diagnostics(
+        &self,
+        Parameters(params): Parameters<DiagnosticsParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_diagnostics", &params, params.project.as_deref(), |db, _| {
-            let threshold = params.confidence_threshold.unwrap_or(
-                bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
-            );
-            let file_path = params.file_path.as_deref().unwrap_or("").trim();
-            if file_path.is_empty() {
-                // Workspace mode.
-                let top_n = params.top_n.unwrap_or(20);
-                bearwisdom::workspace_diagnostics(db, top_n, threshold)
-                    .map_err(Self::query_err)
-                    .and_then(|r| if compact { Ok(crate::compact::workspace_diagnostics(&r)) } else { Self::to_json(&r) })
-            } else {
-                // Per-file mode (legacy behavior).
-                bearwisdom::query::diagnostics::get_diagnostics(db, file_path, threshold)
-                    .map_err(Self::query_err)
-                    .and_then(|r| if compact { Ok(crate::compact::diagnostics(&r)) } else { Self::to_json(&r) })
-            }
-        })
+        self.run_tool(
+            "bw_diagnostics",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                let threshold = params
+                    .confidence_threshold
+                    .unwrap_or(bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD);
+                let file_path = params.file_path.as_deref().unwrap_or("").trim();
+                if file_path.is_empty() {
+                    // Workspace mode.
+                    let top_n = params.top_n.unwrap_or(20);
+                    bearwisdom::workspace_diagnostics(db, top_n, threshold)
+                        .map_err(Self::query_err)
+                        .and_then(|r| {
+                            if compact {
+                                Ok(crate::compact::workspace_diagnostics(&r))
+                            } else {
+                                Self::to_json(&r)
+                            }
+                        })
+                } else {
+                    // Per-file mode (legacy behavior).
+                    bearwisdom::query::diagnostics::get_diagnostics(db, file_path, threshold)
+                        .map_err(Self::query_err)
+                        .and_then(|r| {
+                            if compact {
+                                Ok(crate::compact::diagnostics(&r))
+                            } else {
+                                Self::to_json(&r)
+                            }
+                        })
+                }
+            },
+        )
     }
 
     /// Find dead code candidates: symbols with zero incoming edges that are not entry points.
@@ -926,35 +1105,60 @@ impl BearWisdomServer {
     #[tool(name = "bw_dead_code")]
     fn dead_code(&self, Parameters(params): Parameters<DeadCodeParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_dead_code", &params, params.project.as_deref(), |db, _| {
-            let vis = match params.visibility.as_deref() {
-                Some("private") => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
-                Some("public") => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
-                _ => bearwisdom::query::dead_code::VisibilityFilter::All,
-            };
-            let options = bearwisdom::query::dead_code::DeadCodeOptions {
-                scope: params.scope.clone(),
-                visibility_filter: vis,
-                include_tests: params.include_tests.unwrap_or(false),
-                max_results: params.max_results.unwrap_or(100),
-                ..Default::default()
-            };
-            bearwisdom::query::dead_code::find_dead_code(db, &options)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::dead_code(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_dead_code",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                let vis = match params.visibility.as_deref() {
+                    Some("private") => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
+                    Some("public") => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
+                    _ => bearwisdom::query::dead_code::VisibilityFilter::All,
+                };
+                let options = bearwisdom::query::dead_code::DeadCodeOptions {
+                    scope: params.scope.clone(),
+                    visibility_filter: vis,
+                    include_tests: params.include_tests.unwrap_or(false),
+                    max_results: params.max_results.unwrap_or(100),
+                    ..Default::default()
+                };
+                bearwisdom::query::dead_code::find_dead_code(db, &options)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::dead_code(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// List all entry points in the project: main functions, route handlers, test functions,
     /// event handlers, DI-registered services, and framework lifecycle hooks.
     #[tool(name = "bw_entry_points")]
-    fn entry_points(&self, Parameters(params): Parameters<EntryPointsParams>) -> Result<String, String> {
+    fn entry_points(
+        &self,
+        Parameters(params): Parameters<EntryPointsParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_entry_points", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::query::dead_code::find_entry_points(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::entry_points(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_entry_points",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::query::dead_code::find_entry_points(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::entry_points(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Resolution-rate dashboard for the indexed project: headline rate,
@@ -964,13 +1168,27 @@ impl BearWisdomServer {
     /// baseline file required. Use this to find which extractor or
     /// resolver is leaking unresolved refs.
     #[tool(name = "bw_quality_check")]
-    fn quality_check(&self, Parameters(params): Parameters<QualityCheckParams>) -> Result<String, String> {
+    fn quality_check(
+        &self,
+        Parameters(params): Parameters<QualityCheckParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_quality_check", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::resolution_breakdown(db)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::quality_check(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_quality_check",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::resolution_breakdown(db)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::quality_check(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Run a tree-sitter AST query across project source files of a
@@ -979,44 +1197,75 @@ impl BearWisdomServer {
     /// patterns, function bodies matching a structural template, etc.
     /// Pattern syntax: tree-sitter S-expression queries with `@captures`.
     #[tool(name = "bw_pattern")]
-    fn pattern(&self, Parameters(params): Parameters<PatternSearchParams>) -> Result<String, String> {
+    fn pattern(
+        &self,
+        Parameters(params): Parameters<PatternSearchParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_pattern", &params, params.project.as_deref(), |db, project_root| {
-            if params.query.trim().is_empty() {
-                return Self::invalid_input("query is required");
-            }
-            if params.language.trim().is_empty() {
-                return Self::invalid_input("language is required");
-            }
-            let max = params.max_results.unwrap_or(50);
-            bearwisdom::pattern_search(db, project_root, &params.language, &params.query, max)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::pattern(&r, max as usize)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_pattern",
+            &params,
+            params.project.as_deref(),
+            |db, project_root| {
+                if params.query.trim().is_empty() {
+                    return Self::invalid_input("query is required");
+                }
+                if params.language.trim().is_empty() {
+                    return Self::invalid_input("language is required");
+                }
+                let max = params.max_results.unwrap_or(50);
+                bearwisdom::pattern_search(db, project_root, &params.language, &params.query, max)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::pattern(&r, max as usize))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
     }
 
     /// Auto-complete symbols at a cursor position. Returns scope-aware candidates ranked by distance and relevance.
     #[tool(name = "bw_complete")]
-    fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> Result<String, String> {
+    fn complete_at(
+        &self,
+        Parameters(params): Parameters<CompleteAtParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_complete", &params, params.project.as_deref(), |db, _| {
-            bearwisdom::query::completion::complete_at(
-                db,
-                &params.file_path,
-                params.line,
-                params.col,
-                &params.prefix,
-                params.include_signature.unwrap_or(false),
-            )
-            .map_err(Self::query_err)
-            .and_then(|r| if compact { Ok(crate::compact::completions(&r)) } else { Self::to_json(&r) })
-        })
+        self.run_tool(
+            "bw_complete",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                bearwisdom::query::completion::complete_at(
+                    db,
+                    &params.file_path,
+                    params.line,
+                    params.col,
+                    &params.prefix,
+                    params.include_signature.unwrap_or(false),
+                )
+                .map_err(Self::query_err)
+                .and_then(|r| {
+                    if compact {
+                        Ok(crate::compact::completions(&r))
+                    } else {
+                        Self::to_json(&r)
+                    }
+                })
+            },
+        )
     }
 
     /// Build smart context for a task: returns the most relevant symbols, files, and concepts
     /// to include in the LLM context window. Uses semantic search + graph expansion + scoring.
     #[tool(name = "bw_context")]
-    fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> Result<String, String> {
+    fn smart_context(
+        &self,
+        Parameters(params): Parameters<SmartContextParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_context", &params, params.project.as_deref(), |db, _| {
             if params.task.trim().is_empty() {
@@ -1026,36 +1275,50 @@ impl BearWisdomServer {
             let depth = params.depth.unwrap_or(2);
             bearwisdom::query::context::smart_context(db, &params.task, budget, depth)
                 .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::smart_context(&r)) } else { Self::to_json(&r) })
+                .and_then(|r| {
+                    if compact {
+                        Ok(crate::compact::smart_context(&r))
+                    } else {
+                        Self::to_json(&r)
+                    }
+                })
         })
     }
 
     /// Deep-dive a symbol in one call: info + callers + callees + blast radius.
     /// Use this instead of calling bw_symbol_info + bw_call_hierarchy + bw_blast_radius separately.
     #[tool(name = "bw_investigate")]
-    fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> Result<String, String> {
+    fn investigate(
+        &self,
+        Parameters(params): Parameters<InvestigateParams>,
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_investigate", &params, params.project.as_deref(), |db, _| {
-            if params.symbol.is_empty() {
-                return Self::invalid_input("Symbol name cannot be empty");
-            }
-            let opts = bearwisdom::query::investigate::InvestigateOptions {
-                caller_limit: params.caller_limit.unwrap_or(10),
-                callee_limit: params.callee_limit.unwrap_or(10),
-                blast_depth: params.blast_depth.unwrap_or(1),
-            };
-            bearwisdom::query::investigate::investigate(db, &params.symbol, &opts)
-                .map_err(Self::query_err)
-                .and_then(|r| {
-                    if compact {
-                        match r {
-                            Some(inv) => Ok(crate::compact::investigate(&inv)),
-                            None => Ok(crate::compact::not_found()),
+        self.run_tool(
+            "bw_investigate",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.symbol.is_empty() {
+                    return Self::invalid_input("Symbol name cannot be empty");
+                }
+                let opts = bearwisdom::query::investigate::InvestigateOptions {
+                    caller_limit: params.caller_limit.unwrap_or(10),
+                    callee_limit: params.callee_limit.unwrap_or(10),
+                    blast_depth: params.blast_depth.unwrap_or(1),
+                };
+                bearwisdom::query::investigate::investigate(db, &params.symbol, &opts)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            match r {
+                                Some(inv) => Ok(crate::compact::investigate(&inv)),
+                                None => Ok(crate::compact::not_found()),
+                            }
+                        } else {
+                            Self::to_json(&r)
                         }
-                    } else {
-                        Self::to_json(&r)
-                    }
-                })
-        })
+                    })
+            },
+        )
     }
 }

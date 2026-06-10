@@ -38,8 +38,7 @@ use rayon::prelude::*;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -55,9 +54,15 @@ pub struct GnatStdlibEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for GnatStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Every Ada project unconditionally needs `Ada.*` / `GNAT.*` /
@@ -94,8 +99,12 @@ impl Ecosystem for GnatStdlibEcosystem {
         out
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn is_workspace_global(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_gnat_stdlib_symbol_index(dep_roots)
@@ -132,7 +141,9 @@ impl Ecosystem for GnatStdlibEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for GnatStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_gnat_adainclude()
     }
@@ -153,7 +164,9 @@ impl ExternalSourceLocator for GnatStdlibEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<GnatStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(GnatStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(GnatStdlibEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -220,8 +233,12 @@ fn make_root(dir: PathBuf) -> ExternalDepRoot {
 fn probe_gnatls() -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     for program in ["gnatls", "gnatls.exe"] {
-        let Ok(out) = Command::new(program).arg("-v").output() else { continue };
-        if !out.status.success() { continue }
+        let Ok(out) = Command::new(program).arg("-v").output() else {
+            continue;
+        };
+        if !out.status.success() {
+            continue;
+        }
         let text = String::from_utf8_lossy(&out.stdout);
         let mut in_source = false;
         for raw in text.lines() {
@@ -233,14 +250,20 @@ fn probe_gnatls() -> Vec<PathBuf> {
             if line.starts_with("Object Search Path:") || line.starts_with("Project Search Path:") {
                 in_source = false;
             }
-            if !in_source { continue }
-            if line.is_empty() || line == "<Current_Directory>" { continue }
+            if !in_source {
+                continue;
+            }
+            if line.is_empty() || line == "<Current_Directory>" {
+                continue;
+            }
             let p = PathBuf::from(line);
             if p.is_dir() && p.file_name().and_then(|n| n.to_str()) == Some("adainclude") {
                 found.push(p);
             }
         }
-        if !found.is_empty() { break }
+        if !found.is_empty() {
+            break;
+        }
     }
     found
 }
@@ -267,14 +290,22 @@ fn probe_alire_toolchains() -> Vec<PathBuf> {
 
     let mut out = Vec::new();
     for base in &bases {
-        if !base.is_dir() { continue }
-        let Ok(entries) = std::fs::read_dir(base) else { continue };
+        if !base.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(base) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             // Alire crate-cache dirs look like `gnat_native_15.2.1_<hash>`
             // or `gnat_arm_elf_<ver>_<hash>`.
-            if !name.starts_with("gnat") || !path.is_dir() { continue }
+            if !name.starts_with("gnat") || !path.is_dir() {
+                continue;
+            }
             if let Some(adainclude) = find_adainclude_under(&path) {
                 out.push(adainclude);
             }
@@ -316,19 +347,30 @@ fn find_adainclude_under(dir: &Path) -> Option<PathBuf> {
 }
 
 fn walk_for_adainclude(dir: &Path, depth: u32) -> Option<PathBuf> {
-    if depth > 5 { return None }
-    if !dir.is_dir() { return None }
+    if depth > 5 {
+        return None;
+    }
+    if !dir.is_dir() {
+        return None;
+    }
     if dir.file_name().and_then(|n| n.to_str()) == Some("adainclude") {
         return Some(dir.to_path_buf());
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return None;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() { continue }
+        if !ft.is_dir() {
+            continue;
+        }
         let path = entry.path();
         // Cheap pruning: stay on lib/, gcc/, triplet/, version/, adainclude/.
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if matches!(name, "share" | "doc" | "info" | "man" | "include" | "bin" | "libexec") {
+            if matches!(
+                name,
+                "share" | "doc" | "info" | "man" | "include" | "bin" | "libexec"
+            ) {
                 continue;
             }
         }
@@ -387,16 +429,26 @@ fn walk_adainclude_inner<F>(dir: &Path, on_file: &mut F, depth: u32) -> bool
 where
     F: FnMut(&Path) -> bool,
 {
-    if depth >= MAX_WALK_DEPTH { return true }
-    let Ok(entries) = std::fs::read_dir(dir) else { return true };
+    if depth >= MAX_WALK_DEPTH {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return true;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
-            if !walk_adainclude_inner(&path, on_file, depth + 1) { return false }
+            if !walk_adainclude_inner(&path, on_file, depth + 1) {
+                return false;
+            }
         } else if ft.is_file() {
-            if path.extension().and_then(|e| e.to_str()) != Some("ads") { continue }
-            if !on_file(&path) { return false }
+            if path.extension().and_then(|e| e.to_str()) != Some("ads") {
+                continue;
+            }
+            if !on_file(&path) {
+                return false;
+            }
         }
     }
     true
@@ -406,9 +458,7 @@ where
 // Symbol index — scan each .ads for its `package <Name>` declaration
 // ---------------------------------------------------------------------------
 
-pub(crate) fn build_gnat_stdlib_symbol_index(
-    dep_roots: &[ExternalDepRoot],
-) -> SymbolLocationIndex {
+pub(crate) fn build_gnat_stdlib_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     // Collect every .ads file across the dep roots.
     let mut files: Vec<PathBuf> = Vec::new();
     for dep in dep_roots {
@@ -429,9 +479,7 @@ pub(crate) fn build_gnat_stdlib_symbol_index(
     // package decls are line-stable and always start with `package`.
     let pairs: Vec<(String, PathBuf)> = files
         .par_iter()
-        .filter_map(|path| {
-            scan_package_decl(path).map(|qname| (qname, path.clone()))
-        })
+        .filter_map(|path| scan_package_decl(path).map(|qname| (qname, path.clone())))
         .collect();
 
     let mut index = SymbolLocationIndex::new();
@@ -466,7 +514,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     for raw in content.lines() {
         let line = strip_ada_comment(raw).trim();
-        if line.is_empty() { continue }
+        if line.is_empty() {
+            continue;
+        }
         // Strip leading `private` / `generic` qualifiers.
         let mut tail = line;
         for prefix in ["private ", "generic "] {
@@ -485,7 +535,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
             .collect();
-        if qname.is_empty() { continue }
+        if qname.is_empty() {
+            continue;
+        }
         return Some(qname);
     }
     None

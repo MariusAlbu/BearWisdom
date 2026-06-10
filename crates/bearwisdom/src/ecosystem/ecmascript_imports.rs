@@ -87,7 +87,9 @@ pub fn push_import_refs(
     // for coverage. TS doesn't currently do this — flag-gated.
     if opts.emit_line_imports {
         if let Some(mod_path) = &module_path {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: mod_path.clone(),
                 kind: EdgeKind::Imports,
@@ -97,8 +99,8 @@ pub fn push_import_refs(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                            col: 0,
-});
+                col: 0,
+            });
         }
     }
 
@@ -120,7 +122,9 @@ pub fn push_import_refs(
     // JS-style side-effect fallback: `import './styles.css'`.
     if opts.emit_side_effect_fallback && refs.len() == initial_ref_count {
         if let Some(mod_path) = &module_path {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: mod_path.clone(),
                 kind: EdgeKind::Imports,
@@ -130,8 +134,8 @@ pub fn push_import_refs(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                            col: 0,
-});
+                col: 0,
+            });
         }
     }
 }
@@ -148,7 +152,9 @@ fn emit_clause_refs(
         match item.kind() {
             // `import Foo from 'pkg'` — default import.
             "identifier" => {
-                refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: true,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: text_of(item, src),
                     kind: EdgeKind::TypeRef,
@@ -174,7 +180,9 @@ fn emit_clause_refs(
                         .child_by_field_name("name")
                         .map(|n| text_of(n, src))
                         .unwrap_or_else(|| text_of(spec, src));
-                    refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: true,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: imported_name,
                         kind: EdgeKind::TypeRef,
@@ -193,7 +201,9 @@ fn emit_clause_refs(
                 let mut nc = item.walk();
                 for ns_child in item.children(&mut nc) {
                     if ns_child.kind() == "identifier" {
-                        refs.push(ExtractedRef { is_import_binding: true, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: true,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: text_of(ns_child, src),
                             kind: EdgeKind::TypeRef,
@@ -237,7 +247,9 @@ fn emit_require_clause_ref(
         }
     }
     if !local_name.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: local_name,
             kind: EdgeKind::Imports,
@@ -332,7 +344,9 @@ fn insert_clause_entries(
                         ImportEntry {
                             local_name: local,
                             module: module_path.to_string(),
-                            kind: ImportKind::Named { exported_name: exported },
+                            kind: ImportKind::Named {
+                                exported_name: exported,
+                            },
                         },
                     );
                 }
@@ -380,4 +394,3 @@ fn trimmed_string(node: Node, src: &[u8]) -> String {
         .trim_matches('\'')
         .to_string()
 }
-

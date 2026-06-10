@@ -106,7 +106,12 @@ fn main() {
         );
     }
 
-    write_dispatcher(&dispatcher_path, &all_langs, &filtered_builtins, &all_locals);
+    write_dispatcher(
+        &dispatcher_path,
+        &all_langs,
+        &filtered_builtins,
+        &all_locals,
+    );
 
     // Rerun only when build.rs itself changes. Grammar query files in the
     // cargo registry are stable per-version — they only change when crate
@@ -266,10 +271,7 @@ fn extract_builtins_from_scm(content: &str, names: &mut BTreeSet<String>) {
 }
 
 fn extract_match_predicates(content: &str, names: &mut BTreeSet<String>) {
-    let re = regex::Regex::new(
-        r#"#match\?\s+@\w+(?:\.\w+)?\s+"[^^]*\^?\(([^)]+)\)\$?""#,
-    )
-    .unwrap();
+    let re = regex::Regex::new(r#"#match\?\s+@\w+(?:\.\w+)?\s+"[^^]*\^?\(([^)]+)\)\$?""#).unwrap();
     for cap in re.captures_iter(content) {
         if let Some(alt) = cap.get(1) {
             for name in alt.as_str().split('|') {
@@ -293,10 +295,8 @@ fn extract_eq_predicates(content: &str, names: &mut BTreeSet<String>) {
 
 fn extract_keyword_strings(content: &str, names: &mut BTreeSet<String>) {
     // Inline: "word" @keyword
-    let re = regex::Regex::new(
-        r#""([a-zA-Z_][a-zA-Z0-9_!?]*(?:::)?[a-zA-Z0-9_!?]*)"\s+@keyword"#,
-    )
-    .unwrap();
+    let re = regex::Regex::new(r#""([a-zA-Z_][a-zA-Z0-9_!?]*(?:::)?[a-zA-Z0-9_!?]*)"\s+@keyword"#)
+        .unwrap();
     for cap in re.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());

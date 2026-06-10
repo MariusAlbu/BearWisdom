@@ -22,7 +22,9 @@ use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 pub struct PipRequirementsManifest;
 
 impl ManifestReader for PipRequirementsManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::PipRequirements }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::PipRequirements
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let mut data = ManifestData::default();
@@ -36,7 +38,11 @@ impl ManifestReader for PipRequirementsManifest {
                 }
             }
         }
-        if found_any { Some(data) } else { None }
+        if found_any {
+            Some(data)
+        } else {
+            None
+        }
     }
 
     fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
@@ -58,8 +64,12 @@ impl ManifestReader for PipRequirementsManifest {
             if let Ok(entries) = std::fs::read_dir(&req_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                    if !name.ends_with(".txt") { continue }
+                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+                    if !name.ends_with(".txt") {
+                        continue;
+                    }
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         let mut data = ManifestData::default();
                         for pkg in parse_requirements(&content) {
@@ -96,7 +106,9 @@ pub fn parse_requirements(content: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
         // Skip pip options that don't introduce a package: -r, -c, -e (without egg)
         if trimmed.starts_with("--") || trimmed.starts_with("-r ") || trimmed.starts_with("-c ") {
             continue;
@@ -105,21 +117,32 @@ pub fn parse_requirements(content: &str) -> Vec<String> {
         if trimmed.starts_with("-e ") {
             if let Some(idx) = trimmed.find("#egg=") {
                 let rest = &trimmed[idx + 5..];
-                let name = rest.split(|c: char| c == '&' || c.is_whitespace()).next().unwrap_or("");
-                if !name.is_empty() { out.push(normalise_pkg(name)) }
+                let name = rest
+                    .split(|c: char| c == '&' || c.is_whitespace())
+                    .next()
+                    .unwrap_or("");
+                if !name.is_empty() {
+                    out.push(normalise_pkg(name))
+                }
             }
             continue;
         }
         // Strip environment marker (`pkg ; python_version >= '3.7'`).
         let before_marker = trimmed.split(';').next().unwrap_or(trimmed).trim();
         // Strip extras bracket (`pkg[extra1,extra2]`).
-        let before_bracket = before_marker.split('[').next().unwrap_or(before_marker).trim();
+        let before_bracket = before_marker
+            .split('[')
+            .next()
+            .unwrap_or(before_marker)
+            .trim();
         // Strip version specifiers (`pkg>=1.2`, `pkg==1.0`, `pkg~=1`, `pkg<2`).
         let name_end = before_bracket
             .find(|c: char| matches!(c, '=' | '<' | '>' | '!' | '~' | ' '))
             .unwrap_or(before_bracket.len());
         let name = &before_bracket[..name_end];
-        if name.is_empty() { continue }
+        if name.is_empty() {
+            continue;
+        }
         out.push(normalise_pkg(name));
     }
     out

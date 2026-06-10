@@ -37,9 +37,13 @@ impl TestProject {
 
     /// C# project with models, an interface, a repository, and a service.
     pub fn csharp_service() -> Self {
-        let p = Self { dir: TempDir::new().unwrap() };
+        let p = Self {
+            dir: TempDir::new().unwrap(),
+        };
 
-        p.add_file("Models/Product.cs", r#"
+        p.add_file(
+            "Models/Product.cs",
+            r#"
 namespace MyApp.Models
 {
     public class Product
@@ -49,9 +53,12 @@ namespace MyApp.Models
         public decimal Price { get; set; }
     }
 }
-"#);
+"#,
+        );
 
-        p.add_file("Repositories/IProductRepository.cs", r#"
+        p.add_file(
+            "Repositories/IProductRepository.cs",
+            r#"
 using MyApp.Models;
 
 namespace MyApp.Repositories
@@ -61,9 +68,12 @@ namespace MyApp.Repositories
         Product GetById(int id);
     }
 }
-"#);
+"#,
+        );
 
-        p.add_file("Repositories/ProductRepository.cs", r#"
+        p.add_file(
+            "Repositories/ProductRepository.cs",
+            r#"
 using MyApp.Models;
 
 namespace MyApp.Repositories
@@ -76,9 +86,12 @@ namespace MyApp.Repositories
         }
     }
 }
-"#);
+"#,
+        );
 
-        p.add_file("Services/ProductService.cs", r#"
+        p.add_file(
+            "Services/ProductService.cs",
+            r#"
 using MyApp.Models;
 using MyApp.Repositories;
 
@@ -99,16 +112,21 @@ namespace MyApp.Services
         }
     }
 }
-"#);
+"#,
+        );
 
         p
     }
 
     /// Python project with inheritance and cross-module imports.
     pub fn python_app() -> Self {
-        let p = Self { dir: TempDir::new().unwrap() };
+        let p = Self {
+            dir: TempDir::new().unwrap(),
+        };
 
-        p.add_file("models.py", r#"
+        p.add_file(
+            "models.py",
+            r#"
 class Animal:
     def __init__(self, name: str):
         self.name = name
@@ -125,9 +143,12 @@ class Dog(Animal):
 class Cat(Animal):
     def speak(self) -> str:
         return f"{self.name} says Meow!"
-"#);
+"#,
+        );
 
-        p.add_file("service.py", r#"
+        p.add_file(
+            "service.py",
+            r#"
 from models import Animal, Dog, Cat
 
 
@@ -142,16 +163,21 @@ def list_animals():
         make_animal("dog", "Rex"),
         make_animal("cat", "Whiskers"),
     ]
-"#);
+"#,
+        );
 
         p
     }
 
     /// TypeScript project with interfaces, classes, and exports.
     pub fn typescript_app() -> Self {
-        let p = Self { dir: TempDir::new().unwrap() };
+        let p = Self {
+            dir: TempDir::new().unwrap(),
+        };
 
-        p.add_file("types.ts", r#"
+        p.add_file(
+            "types.ts",
+            r#"
 export interface User {
     id: number;
     name: string;
@@ -162,9 +188,12 @@ export interface CreateUserInput {
     name: string;
     email: string;
 }
-"#);
+"#,
+        );
 
-        p.add_file("user-service.ts", r#"
+        p.add_file(
+            "user-service.ts",
+            r#"
 import { User, CreateUserInput } from './types';
 
 export class UserService {
@@ -185,16 +214,21 @@ export class UserService {
         return [...this.users];
     }
 }
-"#);
+"#,
+        );
 
         p
     }
 
     /// Multi-language project combining C#, Python, and TypeScript.
     pub fn multi_lang() -> Self {
-        let p = Self { dir: TempDir::new().unwrap() };
+        let p = Self {
+            dir: TempDir::new().unwrap(),
+        };
 
-        p.add_file("backend/Program.cs", r#"
+        p.add_file(
+            "backend/Program.cs",
+            r#"
 namespace Backend
 {
     public class AppConfig
@@ -209,9 +243,12 @@ namespace Backend
         }
     }
 }
-"#);
+"#,
+        );
 
-        p.add_file("scripts/deploy.py", r#"
+        p.add_file(
+            "scripts/deploy.py",
+            r#"
 import os
 
 def deploy(environment: str):
@@ -219,9 +256,12 @@ def deploy(environment: str):
 
 def rollback(version: str):
     print(f"Rolling back to {version}")
-"#);
+"#,
+        );
 
-        p.add_file("frontend/app.ts", r#"
+        p.add_file(
+            "frontend/app.ts",
+            r#"
 export class App {
     private name: string;
 
@@ -233,7 +273,8 @@ export class App {
         console.log(`Starting ${this.name}`);
     }
 }
-"#);
+"#,
+        );
 
         p
     }
@@ -247,11 +288,15 @@ export class App {
     ///   - A repository_rule using `repository_ctx.execute` and `repository_ctx.os.name`.
     ///   - A BUILD file with native rules (`cc_library`, `genrule`).
     pub fn starlark_bazel_project() -> Self {
-        let p = Self { dir: TempDir::new().unwrap() };
+        let p = Self {
+            dir: TempDir::new().unwrap(),
+        };
 
         p.add_file("WORKSPACE", r#"workspace(name = "my_project")"#);
 
-        p.add_file("tools/my_rule.bzl", r#"
+        p.add_file(
+            "tools/my_rule.bzl",
+            r#"
 def _my_rule_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".out")
     ctx.actions.run_shell(
@@ -268,9 +313,12 @@ my_rule = rule(
         "src": attr.label(allow_single_file = True),
     },
 )
-"#);
+"#,
+        );
 
-        p.add_file("tools/my_rule_test.bzl", r#"
+        p.add_file(
+            "tools/my_rule_test.bzl",
+            r#"
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
 def _my_rule_test_impl(env):
@@ -287,9 +335,12 @@ def my_rule_test_suite(name):
         name = name + "_test",
         target_under_test = ":my_target",
     )
-"#);
+"#,
+        );
 
-        p.add_file("tools/fetch_tool.bzl", r#"
+        p.add_file(
+            "tools/fetch_tool.bzl",
+            r#"
 def _fetch_tool_impl(repository_ctx):
     result = repository_ctx.execute(["uname", "-s"])
     os_name = repository_ctx.os.name
@@ -305,9 +356,12 @@ fetch_tool = repository_rule(
         "url": attr.string(),
     },
 )
-"#);
+"#,
+        );
 
-        p.add_file("BUILD.bazel", r#"
+        p.add_file(
+            "BUILD.bazel",
+            r#"
 load("//tools:my_rule.bzl", "my_rule")
 
 cc_library(
@@ -327,11 +381,14 @@ my_rule(
     name = "my_target",
     srcs = [":mylib"],
 )
-"#);
+"#,
+        );
 
         // Round 3: exercises env.expect.that_collection, that_int, that_bool chains
         // so the chain walker can produce starlark_ctx_chain edges for the env API.
-        p.add_file("tools/analysistest_impl.bzl", r#"
+        p.add_file(
+            "tools/analysistest_impl.bzl",
+            r#"
 load("@bazel_skylib//lib:unittest.bzl", "analysistest")
 
 def _check_output_impl(ctx):
@@ -353,7 +410,8 @@ def check_output_test_suite(name):
         name = name + "_test",
         target_under_test = ":my_target",
     )
-"#);
+"#,
+        );
 
         p
     }

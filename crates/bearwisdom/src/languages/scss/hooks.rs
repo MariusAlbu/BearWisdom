@@ -42,8 +42,8 @@ impl LanguageEngineHooks for ScssHooks {
             }
         }
         for import in &file_ctx.imports {
-            let alias_matches = import.alias.as_deref() == Some(target.as_str())
-                || import.imported_name == *target;
+            let alias_matches =
+                import.alias.as_deref() == Some(target.as_str()) || import.imported_name == *target;
             if !alias_matches {
                 continue;
             }

@@ -16,12 +16,18 @@ use crate::types::{EdgeKind, SymbolKind};
 /// unit → Namespace symbol
 #[test]
 fn symbol_unit() {
-    let src = "unit MyUnit;\ninterface\nprocedure Foo;\nimplementation\nprocedure Foo; begin end;\nend.";
+    let src =
+        "unit MyUnit;\ninterface\nprocedure Foo;\nimplementation\nprocedure Foo; begin end;\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyUnit" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyUnit" && s.kind == SymbolKind::Namespace),
         "expected Namespace MyUnit; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -31,9 +37,14 @@ fn symbol_decl_proc() {
     let src = "unit U;\ninterface\nprocedure Foo;\nimplementation\nprocedure Foo; begin end;\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo" && s.kind == SymbolKind::Function),
         "expected Function Foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -45,7 +56,10 @@ fn symbol_def_proc() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Function),
         "expected Function from defProc; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -55,9 +69,14 @@ fn symbol_decl_class() {
     let src = "unit U;\ninterface\ntype\n  TAnimal = class\n    procedure Speak;\n  end;\nimplementation\nprocedure TAnimal.Speak; begin end;\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "TAnimal" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "TAnimal" && s.kind == SymbolKind::Class),
         "expected Class 'TAnimal' from declClass; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -67,9 +86,14 @@ fn symbol_decl_intf() {
     let src = "unit U;\ninterface\ntype\n  IRunnable = interface\n    procedure Run;\n  end;\nimplementation\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "IRunnable" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "IRunnable" && s.kind == SymbolKind::Interface),
         "expected Interface 'IRunnable' from declIntf; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -83,9 +107,14 @@ fn symbol_decl_section_record() {
     let src = "unit U;\ninterface\ntype\n  TPoint = record\n    X, Y: Integer;\n  end;\nimplementation\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Struct || s.kind == SymbolKind::Class),
         "expected Struct or Class from record type declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -97,7 +126,10 @@ fn symbol_decl_uses_present() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from declUses; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -108,12 +140,16 @@ fn symbol_decl_uses_present() {
 /// exprCall → Calls ref
 #[test]
 fn ref_expr_call() {
-    let src = "program Hello;\nprocedure Greet;\nbegin\n  WriteLn('Hello');\nend;\nbegin\n  Greet;\nend.";
+    let src =
+        "program Hello;\nprocedure Greet;\nbegin\n  WriteLn('Hello');\nend;\nbegin\n  Greet;\nend.";
     let r = extract(src);
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected Calls from exprCall; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -125,7 +161,10 @@ fn ref_decl_uses() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from declUses; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -155,7 +194,10 @@ fn ref_qualified_unit_call() {
     assert!(
         rf.is_some(),
         "expected Calls ref with target_name=\"FreeAndNil\"; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -173,7 +215,10 @@ fn ref_qualified_type_ref() {
     assert!(
         rf.is_some(),
         "expected Calls ref with target_name=\"TStringList\"; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         rf.unwrap().module.as_deref(),
@@ -192,9 +237,14 @@ fn symbol_program_emits_namespace() {
     let src = "program MyApp;\nbegin\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyApp" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyApp" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'MyApp' from program; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -204,9 +254,14 @@ fn symbol_library_emits_namespace() {
     let src = "library MyLib;\nexports Foo;\nbegin\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyLib" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyLib" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'MyLib' from library; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -223,9 +278,14 @@ fn symbol_decl_enum_emits_enum() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "TColor" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "TColor" && s.kind == SymbolKind::Enum),
         "expected Enum 'TColor'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -243,14 +303,24 @@ fn symbol_decl_var_emits_variables() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "GlobalCount" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "GlobalCount" && s.kind == SymbolKind::Variable),
         "expected Variable 'GlobalCount'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "GlobalName" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "GlobalName" && s.kind == SymbolKind::Variable),
         "expected Variable 'GlobalName'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -267,9 +337,14 @@ fn symbol_decl_const_emits_variable() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "MaxSize" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MaxSize" && s.kind == SymbolKind::Variable),
         "expected Variable 'MaxSize'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -293,9 +368,14 @@ fn symbol_decl_constructor_emits_function() {
     let r = extract(src);
     // Constructor is extracted as a Function (kConstructor in find_proc_name path).
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function || s.kind == SymbolKind::Constructor),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function || s.kind == SymbolKind::Constructor),
         "expected Function or Constructor from constructor declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -316,14 +396,24 @@ fn symbol_decl_field_emits_fields() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "FX" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "FX" && s.kind == SymbolKind::Field),
         "expected Field 'FX'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "FY" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "FY" && s.kind == SymbolKind::Field),
         "expected Field 'FY'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -345,9 +435,14 @@ fn symbol_decl_prop_emits_property() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "Value" && s.kind == SymbolKind::Property),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Value" && s.kind == SymbolKind::Property),
         "expected Property 'Value'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -379,7 +474,10 @@ fn ref_inherited_call_emits_calls() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected at least one Calls ref from constructor with inherited; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -399,14 +497,24 @@ fn ref_decl_class_inherits_emits_edge() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "TDog" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "TDog" && s.kind == SymbolKind::Class),
         "expected Class 'TDog'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "TAnimal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "TAnimal"),
         "expected Inherits ref to 'TAnimal'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -419,21 +527,32 @@ fn symbol_type_alias_pointer() {
     let src = "unit U;\ninterface\ntype\n  TGtkWidget = record end;\n  PGtkWidget = ^TGtkWidget;\nimplementation\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "PGtkWidget" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "PGtkWidget" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias 'PGtkWidget'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// `TFunc = function(x: Integer): Integer` → TypeAlias symbol.
 #[test]
 fn symbol_type_alias_function_signature() {
-    let src = "unit U;\ninterface\ntype\n  TIntFn = function(x: Integer): Integer;\nimplementation\nend.";
+    let src =
+        "unit U;\ninterface\ntype\n  TIntFn = function(x: Integer): Integer;\nimplementation\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "TIntFn" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "TIntFn" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias 'TIntFn'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 

@@ -43,7 +43,11 @@ fn function_inside_module_qualified_with_module_name() {
 #[test]
 fn type_inside_module_qualified_with_module_name() {
     let r = extract("module Foo\nlet x = 0\ntype Person = { Name: string }");
-    let p = r.symbols.iter().find(|s| s.name == "Person").expect("Person");
+    let p = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Person")
+        .expect("Person");
     assert_eq!(p.qualified_name, "Foo.Person");
 }
 
@@ -57,7 +61,10 @@ fn nested_module_qname_chain() {
         .unwrap_or_else(|| {
             panic!(
                 "expected `value` symbol; got {:?}",
-                r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>()
+                r.symbols
+                    .iter()
+                    .map(|s| (&s.name, s.kind, &s.qualified_name))
+                    .collect::<Vec<_>>()
             )
         });
     assert_eq!(v.qualified_name, "Outer.Inner.value");
@@ -66,7 +73,11 @@ fn nested_module_qname_chain() {
 #[test]
 fn record_field_qualified_with_record_qname() {
     let r = extract("module Foo\nlet x = 0\ntype Person = { Name: string }");
-    let f = r.symbols.iter().find(|s| s.name == "Name" && s.kind == SymbolKind::Field).expect("Name");
+    let f = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Name" && s.kind == SymbolKind::Field)
+        .expect("Name");
     assert_eq!(f.qualified_name, "Foo.Person.Name");
 }
 
@@ -102,9 +113,14 @@ fn symbol_function_or_value_defn_function() {
     // Two function bindings: grammar parses cleanly; both should extract.
     let r = extract("module MyModule\nlet foo x = x + 1\nlet bar y = y * 2");
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -115,9 +131,14 @@ fn symbol_function_or_value_defn_function() {
 fn symbol_function_or_value_defn_variable() {
     let r = extract("module MyModule\nlet answer = 42\nlet other = 0");
     assert!(
-        r.symbols.iter().any(|s| s.name == "answer" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "answer" && s.kind == SymbolKind::Variable),
         "expected Variable 'answer' from value binding; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -126,9 +147,14 @@ fn symbol_function_or_value_defn_variable() {
 fn symbol_type_definition_record() {
     let r = extract("module MyModule\nlet foo x = x + 1\ntype Person = { Name: string }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Person" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Person" && s.kind == SymbolKind::Struct),
         "expected Struct Person from record_type_defn; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -137,9 +163,14 @@ fn symbol_type_definition_record() {
 fn symbol_type_definition_union() {
     let r = extract("module MyModule\nlet foo x = x\ntype Shape =\n    | Circle of float\n    | Square of float");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Shape" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Shape" && s.kind == SymbolKind::Enum),
         "expected Enum Shape from union_type_defn; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -148,9 +179,14 @@ fn symbol_type_definition_union() {
 fn symbol_module_defn() {
     let r = extract("module MyModule\nlet foo x = x + 1\nlet bar y = y * 2");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyModule" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyModule" && s.kind == SymbolKind::Namespace),
         "expected Namespace MyModule; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -161,7 +197,10 @@ fn symbol_named_module() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
         "expected Namespace from named_module; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -183,7 +222,10 @@ fn symbol_import_decl() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from import_decl; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -198,9 +240,14 @@ fn symbol_import_decl() {
 fn ref_application_expression() {
     let r = extract("module M\nlet bar x = String.length x\nlet dummy y = y");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String.length" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String.length" && rf.kind == EdgeKind::Calls),
         "expected Calls String.length from application_expression; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -212,7 +259,10 @@ fn ref_dot_expression() {
     assert!(
         r.symbols.iter().any(|s| s.name == "foo"),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -221,9 +271,14 @@ fn ref_dot_expression() {
 fn ref_import_decl() {
     let r = extract("module M\nopen System.IO\nlet foo x = x");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "System.IO"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "System.IO"),
         "expected Imports System.IO; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -235,7 +290,8 @@ fn ref_import_decl() {
 /// Probe test: does the traversal gap actually affect extraction?
 #[test]
 fn symbol_type_definition_class_does_not_crash() {
-    let r = extract("module MyModule\nlet foo x = x + 1\ntype MyClass() =\n    member this.Value = 42");
+    let r =
+        extract("module MyModule\nlet foo x = x + 1\ntype MyClass() =\n    member this.Value = 42");
     let _ = r;
     // eprintln to see actual symbols — uncomment to debug:
     // eprintln!("symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
@@ -245,11 +301,17 @@ fn symbol_type_definition_class_does_not_crash() {
 /// Use the type as the FIRST declaration so it is not swallowed by a `let` continuation.
 #[test]
 fn symbol_type_definition_class_in_named_module() {
-    let r = extract("module MyModule\ntype MyClass() =\n    member this.Value = 42\nlet foo x = x + 1");
+    let r =
+        extract("module MyModule\ntype MyClass() =\n    member this.Value = 42\nlet foo x = x + 1");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyClass" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyClass" && s.kind == SymbolKind::Class),
         "expected Class 'MyClass' inside named_module; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -260,9 +322,14 @@ fn symbol_type_definition_interface() {
         "module MyModule\nlet foo x = x + 1\ntype IAnimal =\n    interface\n        abstract member Speak: unit -> string\n    end",
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "IAnimal" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "IAnimal" && s.kind == SymbolKind::Interface),
         "expected Interface 'IAnimal' from interface_type_defn; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -274,37 +341,61 @@ fn symbol_type_definition_interface() {
 fn symbol_type_definition_type_alias_emits_type_alias() {
     let r = extract("module MyModule\ntype Name = System.String\nlet foo x = x + 1");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Name" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias 'Name' from type_abbrev_defn; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `union_type_case` → SymbolKind::EnumMember
 #[test]
 fn symbol_union_type_case() {
-    let r = extract(
-        "module MyModule\nlet foo x = x\ntype Color =\n    | Red\n    | Green\n    | Blue",
-    );
+    let r =
+        extract("module MyModule\nlet foo x = x\ntype Color =\n    | Red\n    | Green\n    | Blue");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
         "expected Enum 'Color'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Red" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Red" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Red'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Green" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Green" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Green'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Blue" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Blue" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Blue'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -315,42 +406,70 @@ fn symbol_enum_type_case() {
         "module MyModule\nlet foo x = x\ntype Status =\n    | Active = 1\n    | Inactive = 0",
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
         "expected Enum 'Status'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Active" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Active" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Active'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Inactive" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Inactive" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember 'Inactive'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `record_field` → SymbolKind::Field
 #[test]
 fn symbol_record_field() {
-    let r = extract(
-        "module MyModule\nlet foo x = x\ntype Point = { X: float; Y: float }",
-    );
+    let r = extract("module MyModule\nlet foo x = x\ntype Point = { X: float; Y: float }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
         "expected Struct 'Point'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "X" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "X" && s.kind == SymbolKind::Field),
         "expected Field 'X'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "Y" && s.kind == SymbolKind::Field),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Y" && s.kind == SymbolKind::Field),
         "expected Field 'Y'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -359,22 +478,30 @@ fn symbol_record_field() {
 fn symbol_module_abbrev() {
     let r = extract("module MyModule\nmodule L = System.Collections.Generic.List\nlet foo x = x");
     assert!(
-        r.symbols.iter().any(|s| s.name == "L" && s.kind == SymbolKind::TypeAlias),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "L" && s.kind == SymbolKind::TypeAlias),
         "expected TypeAlias 'L' from module_abbrev; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 /// symbol_node_kind: `exception_definition` → SymbolKind::Struct
 #[test]
 fn symbol_exception_definition() {
-    let r = extract(
-        "module MyModule\nlet foo x = x\nexception MyError of string",
-    );
+    let r = extract("module MyModule\nlet foo x = x\nexception MyError of string");
     assert!(
-        r.symbols.iter().any(|s| s.name == "MyError" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "MyError" && s.kind == SymbolKind::Struct),
         "expected Struct 'MyError' from exception_definition; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -405,14 +532,24 @@ fn hash_r_directive_emits_imports_ref() {
     let src = "#r \"../../packages/Fornax.Core.dll\"\n#r \"Giraffe.dll\"\n\nopen Html\n\nlet x = 1";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Fornax.Core"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Fornax.Core"),
         "expected Imports Fornax.Core from #r directive; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
         "expected Imports Giraffe from #r directive; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -424,7 +561,9 @@ fn infer_external_namespace_from_hash_r_import() {
 
     // Simulate a ParsedFile that has a #r-derived Imports ref for Fornax.Core.
     // build_file_context converts this to a FileContext with one import entry.
-    let fornax_import = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let fornax_import = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "Fornax.Core".to_string(),
         kind: EdgeKind::Imports,
@@ -448,7 +587,9 @@ fn infer_external_namespace_from_hash_r_import() {
         file_namespace: None,
     };
 
-    let div_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let div_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "div".to_string(),
         kind: EdgeKind::Calls,
@@ -474,11 +615,11 @@ fn infer_external_namespace_from_hash_r_import() {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
+    };
     let ref_ctx = RefContext {
         extracted_ref: &div_ref,
         source_symbol: &dummy_symbol,
@@ -489,17 +630,24 @@ fn infer_external_namespace_from_hash_r_import() {
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+        let empty_lookup =
+            crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
         crate::languages::fsharp::hooks::FsharpHooks.classify_external(
-            &ref_ctx, &file_ctx, None, &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
         )
     };
     assert!(
         ns.is_some(),
         "expected Some namespace for 'div' with Fornax.Core import; got None"
     );
-    assert_eq!(ns.as_deref(), Some("Fornax"),
-        "expected 'Fornax' namespace; got {:?}", ns
+    assert_eq!(
+        ns.as_deref(),
+        Some("Fornax"),
+        "expected 'Fornax' namespace; got {:?}",
+        ns
     );
 }
 
@@ -511,14 +659,24 @@ fn hash_r_directive_stops_at_first_non_header_line() {
     let src = "#r \"Giraffe.dll\"\n\nlet x = 1\n#r \"Saturn.dll\"\n";
     let r = extract(src);
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Giraffe"),
         "expected Imports Giraffe; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Saturn"),
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "Saturn"),
         "Saturn #r after let binding must not be extracted; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -539,12 +697,18 @@ fn ref_interface_implementation() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Dog"),
         "expected symbol 'Dog'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements),
         "expected Implements ref from interface_implementation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -563,12 +727,19 @@ fn ref_class_inherits_decl() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Dog"),
         "expected symbol 'Dog'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
         "expected Inherits->Animal from class_inherits_decl; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
-

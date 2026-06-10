@@ -135,9 +135,7 @@ pub fn grep_search(
         .build(&effective_pattern)
         .with_context(|| format!("Invalid search pattern: {pattern}"))?;
 
-    let mut searcher = SearcherBuilder::new()
-        .line_number(true)
-        .build();
+    let mut searcher = SearcherBuilder::new().line_number(true).build();
 
     let mut results: Vec<GrepMatch> = Vec::new();
 
@@ -235,8 +233,7 @@ fn build_pattern(pattern: &str, options: &GrepOptions) -> String {
 fn escape_for_regex(s: &str) -> String {
     // Characters that have special meaning in a Rust/PCRE-compatible regex.
     const META: &[char] = &[
-        '\\', '.', '+', '*', '?', '(', ')', '|', '[', ']', '{', '}', '^', '$', '-', '#', '&',
-        '~',
+        '\\', '.', '+', '*', '?', '(', ')', '|', '[', ']', '{', '}', '^', '$', '-', '#', '&', '~',
     ];
     let mut out = String::with_capacity(s.len() + 8);
     for ch in s.chars() {
@@ -294,10 +291,7 @@ fn search_file(
 /// Return the (start, end) byte offsets of the first match in `haystack`.
 /// Returns (0, 0) if the matcher cannot locate a match (shouldn't happen
 /// since we're inside a matched line, but we handle it gracefully).
-fn find_match_offsets(
-    matcher: &grep_regex::RegexMatcher,
-    haystack: &[u8],
-) -> (u32, u32) {
+fn find_match_offsets(matcher: &grep_regex::RegexMatcher, haystack: &[u8]) -> (u32, u32) {
     match matcher.find(haystack) {
         Ok(Some(m)) => (m.start() as u32, m.end() as u32),
         // Ok(None): match was purely in the stripped newline bytes (rare).

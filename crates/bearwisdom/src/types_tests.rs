@@ -104,7 +104,11 @@ fn edge_kind_roundtrip() {
 
 #[test]
 fn edge_kind_display_matches_as_str() {
-    for kind in [EdgeKind::HttpCall, EdgeKind::LspResolved, EdgeKind::DbEntity] {
+    for kind in [
+        EdgeKind::HttpCall,
+        EdgeKind::LspResolved,
+        EdgeKind::DbEntity,
+    ] {
         assert_eq!(kind.to_string(), kind.as_str());
     }
 }

@@ -62,7 +62,11 @@ pub fn complete_at(
 
     // --- Step 1: Resolve file_id and containing scope ---
     let file_id: Option<i64> = conn
-        .query_row("SELECT id FROM files WHERE path = ?1 AND origin = 'internal'", [file_path], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM files WHERE path = ?1 AND origin = 'internal'",
+            [file_path],
+            |r| r.get(0),
+        )
         .optional()
         .context("completion: file lookup")?;
 
@@ -88,7 +92,11 @@ pub fn complete_at(
         .context("completion: scope lookup")?;
     let containing_scope: Option<String> = containing.as_ref().map(|(qn, _)| qn.clone());
 
-    let sig_col = if include_signature { "s.signature" } else { "NULL" };
+    let sig_col = if include_signature {
+        "s.signature"
+    } else {
+        "NULL"
+    };
 
     // --- Step 2: Collect candidates from three tiers ---
     let mut candidates: Vec<(CompletionItem, u32)> = Vec::new(); // (item, raw_score for dedup)
@@ -158,7 +166,10 @@ pub fn complete_at(
     // derived prefix, not one recovered by string-splitting the qualified_name.
     if let (Some(scope), Some(namespace)) = (
         containing_scope.as_ref(),
-        containing.as_ref().and_then(|(_, sp)| sp.as_deref()).filter(|s| !s.is_empty()),
+        containing
+            .as_ref()
+            .and_then(|(_, sp)| sp.as_deref())
+            .filter(|s| !s.is_empty()),
     ) {
         let like_pattern = format!("{namespace}.%");
         let sql = format!(
@@ -268,21 +279,27 @@ mod tests {
         ).unwrap();
 
         // Methods (scope_path = qualified_name of parent)
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'get_item', 'app.MyService.get_item', 'method', 5, 0, 'app.MyService')",
-            [file_id],
-        ).unwrap();
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
+                [file_id],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'get_all', 'app.MyService.get_all', 'method', 15, 0, 'app.MyService')",
-            [file_id],
-        ).unwrap();
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
+                [file_id],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'delete', 'app.MyService.delete', 'method', 25, 0, 'app.MyService')",
-            [file_id],
-        ).unwrap();
+                [file_id],
+            )
+            .unwrap();
 
         // Complete at line 10 (inside MyService), prefix "get"
         let results = complete_at(&db, "src/svc.rs", 10, 0, "get", false).unwrap();
@@ -305,16 +322,20 @@ mod tests {
              VALUES (?1, 'Outer', 'mod.Outer', 'class', 1, 0, 30, 'mod')",
             [fid],
         ).unwrap();
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'alpha', 'mod.Outer.alpha', 'method', 3, 0, 'mod.Outer')",
-            [fid],
-        ).unwrap();
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
+                [fid],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'beta', 'mod.Outer.beta', 'method', 10, 0, 'mod.Outer')",
-            [fid],
-        ).unwrap();
+                [fid],
+            )
+            .unwrap();
 
         let results = complete_at(&db, "src/a.rs", 5, 0, "", false).unwrap();
         assert!(results.len() >= 2);

@@ -78,28 +78,32 @@ pub fn get_diagnostics(
 
     // --- 1. Unresolved references ---
     {
-        let mut stmt = conn.prepare(
-            "SELECT ur.source_line, ur.target_name, ur.kind
+        let mut stmt = conn
+            .prepare(
+                "SELECT ur.source_line, ur.target_name, ur.kind
              FROM unresolved_refs ur
              JOIN symbols s ON s.id = ur.source_id
              JOIN files f ON f.id = s.file_id
              WHERE f.path = ?1
              ORDER BY ur.source_line",
-        ).context("diagnostics: prepare unresolved query")?;
+            )
+            .context("diagnostics: prepare unresolved query")?;
 
-        let rows = stmt.query_map([file_path], |row| {
-            let line: u32 = row.get::<_, Option<u32>>(0)?.unwrap_or(0);
-            let target_name: String = row.get(1)?;
-            let kind: String = row.get(2)?;
-            Ok(Diagnostic {
-                line,
-                kind: DiagnosticKind::UnresolvedSymbol,
-                message: format!("Unresolved {kind}: '{target_name}'"),
-                target_name: Some(target_name),
-                confidence: None,
-                edge_kind: None,
+        let rows = stmt
+            .query_map([file_path], |row| {
+                let line: u32 = row.get::<_, Option<u32>>(0)?.unwrap_or(0);
+                let target_name: String = row.get(1)?;
+                let kind: String = row.get(2)?;
+                Ok(Diagnostic {
+                    line,
+                    kind: DiagnosticKind::UnresolvedSymbol,
+                    message: format!("Unresolved {kind}: '{target_name}'"),
+                    target_name: Some(target_name),
+                    confidence: None,
+                    edge_kind: None,
+                })
             })
-        }).context("diagnostics: execute unresolved query")?;
+            .context("diagnostics: execute unresolved query")?;
 
         for row in rows {
             if let Ok(d) = row {
@@ -112,8 +116,9 @@ pub fn get_diagnostics(
 
     // --- 2. Low-confidence edges ---
     {
-        let mut stmt = conn.prepare(
-            "SELECT e.source_line, e.kind, e.confidence,
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.source_line, e.kind, e.confidence,
                     ts.name AS target_name, ts.qualified_name
              FROM edges e
              JOIN symbols ss ON ss.id = e.source_id
@@ -122,11 +127,11 @@ pub fn get_diagnostics(
              WHERE f.path = ?1
                AND e.confidence < ?2
              ORDER BY e.source_line",
-        ).context("diagnostics: prepare low-confidence query")?;
+            )
+            .context("diagnostics: prepare low-confidence query")?;
 
-        let rows = stmt.query_map(
-            rusqlite::params![file_path, confidence_threshold],
-            |row| {
+        let rows = stmt
+            .query_map(rusqlite::params![file_path, confidence_threshold], |row| {
                 let line: u32 = row.get::<_, Option<u32>>(0)?.unwrap_or(0);
                 let edge_kind: String = row.get(1)?;
                 let confidence: f64 = row.get(2)?;
@@ -143,8 +148,8 @@ pub fn get_diagnostics(
                     confidence: Some(confidence),
                     edge_kind: Some(edge_kind),
                 })
-            },
-        ).context("diagnostics: execute low-confidence query")?;
+            })
+            .context("diagnostics: execute low-confidence query")?;
 
         for row in rows {
             if let Ok(d) = row {
@@ -199,10 +204,7 @@ pub struct LowConfidenceReport {
 /// Return a roll-up of edges with `confidence < threshold`, grouped by
 /// `(strategy, kind)`. Edges from the `external` file origin are excluded
 /// so external-package noise doesn't dominate the view.
-pub fn low_confidence_edges(
-    db: &Database,
-    threshold: f64,
-) -> QueryResult<LowConfidenceReport> {
+pub fn low_confidence_edges(db: &Database, threshold: f64) -> QueryResult<LowConfidenceReport> {
     let _timer = db.timer("low_confidence_edges");
     let conn = db.conn();
 
@@ -417,18 +419,22 @@ mod tests {
         ).unwrap();
         let file_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'foo', 'mod::foo', 'function', 5, 0)",
-            [file_id],
-        ).unwrap();
+                [file_id],
+            )
+            .unwrap();
         let sym_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
+        db.conn()
+            .execute(
+                "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
              VALUES (?1, 'Bar', 'type_ref', 8)",
-            [sym_id],
-        ).unwrap();
+                [sym_id],
+            )
+            .unwrap();
 
         let result = get_diagnostics(&db, "src/a.rs", LOW_CONFIDENCE_THRESHOLD).unwrap();
         assert_eq!(result.unresolved_count, 1);
@@ -446,29 +452,38 @@ mod tests {
         ).unwrap();
         let file_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'caller', 'mod::caller', 'function', 1, 0)",
-            [file_id],
-        ).unwrap();
+                [file_id],
+            )
+            .unwrap();
         let src_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+        db.conn()
+            .execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'callee', 'mod::callee', 'function', 20, 0)",
-            [file_id],
-        ).unwrap();
+                [file_id],
+            )
+            .unwrap();
         let tgt_id = db.conn().last_insert_rowid();
 
-        db.conn().execute(
-            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
+        db.conn()
+            .execute(
+                "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
              VALUES (?1, ?2, 'calls', 5, 0.50)",
-            rusqlite::params![src_id, tgt_id],
-        ).unwrap();
+                rusqlite::params![src_id, tgt_id],
+            )
+            .unwrap();
 
         let result = get_diagnostics(&db, "src/a.rs", LOW_CONFIDENCE_THRESHOLD).unwrap();
         assert_eq!(result.low_confidence_count, 1);
-        assert_eq!(result.diagnostics[0].kind, DiagnosticKind::LowConfidenceEdge);
+        assert_eq!(
+            result.diagnostics[0].kind,
+            DiagnosticKind::LowConfidenceEdge
+        );
         assert_eq!(result.diagnostics[0].confidence, Some(0.50));
     }
 
@@ -520,7 +535,14 @@ mod tests {
         seed_edge(&db, file_id, "a1", "a2", 0.50, Some("heuristic_name_kind"));
         seed_edge(&db, file_id, "b1", "b2", 0.35, Some("heuristic_name_kind"));
         seed_edge(&db, file_id, "c1", "c2", 0.95, Some("ts_chain_resolution"));
-        seed_edge(&db, file_id, "d1", "d2", 1.00, Some("csharp_same_namespace"));
+        seed_edge(
+            &db,
+            file_id,
+            "d1",
+            "d2",
+            1.00,
+            Some("csharp_same_namespace"),
+        );
 
         let report = low_confidence_edges(&db, LOW_CONFIDENCE_THRESHOLD).unwrap();
         // 0.50, 0.35, 0.95 all < 0.80? No — 0.95 > 0.80, so only 0.50/0.35

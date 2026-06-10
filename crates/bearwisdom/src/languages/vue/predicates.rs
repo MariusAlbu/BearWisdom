@@ -10,4 +10,3 @@ use crate::types::EdgeKind;
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     crate::languages::typescript::predicates::kind_compatible(edge_kind, sym_kind)
 }
-

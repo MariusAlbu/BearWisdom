@@ -29,9 +29,16 @@ pub(super) fn extract_calls_from_body(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&callee, src));
                     let call_args = extract_swift_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
+                    crate::languages::emit_chain_type_ref(
+                        &chain,
+                        source_symbol_index,
+                        &callee,
+                        refs,
+                    );
                     if !target_name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name,
                             kind: EdgeKind::Calls,
@@ -113,13 +120,24 @@ pub(super) fn extract_calls_from_body(
 
             // `var x: MyType` or `let x: MyType` — type annotation inside body.
             "type_annotation" => {
-                if let Some(type_node) = child.child_by_field_name("type")
+                if let Some(type_node) = child
+                    .child_by_field_name("type")
                     .or_else(|| child.named_child(0))
                 {
                     if type_node.kind() == "protocol_composition_type" {
-                        extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                        extract_protocol_composition_refs(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     } else {
-                        extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                        extract_type_ref_from_swift_type(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -130,8 +148,13 @@ pub(super) fn extract_calls_from_body(
                 let mut ic = child.walk();
                 for inner in child.children(&mut ic) {
                     match inner.kind() {
-                        "user_type" | "type_identifier" | "simple_identifier" => {
-                            extract_type_ref_from_swift_type(&inner, src, source_symbol_index, refs);
+                        "user_type" | "type_identifier" => {
+                            extract_type_ref_from_swift_type(
+                                &inner,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
                         }
                         _ => {}
                     }
@@ -154,7 +177,9 @@ pub(super) fn extract_type_ref_from_swift_type(
 ) {
     let name = swift_type_name(node, src);
     if !name.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -193,7 +218,11 @@ fn extract_all_type_identifiers(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "type_identifier" | "simple_identifier" => {
+            // Only `type_identifier` is a type; `simple_identifier` is a value
+            // identifier (property, argument label, closure `$0`) and must not
+            // be emitted as a TypeRef. It falls to the recurse arm (a leaf, so
+            // a no-op) rather than polluting the type graph.
+            "type_identifier" => {
                 let name = node_text(child, src);
                 let line = child.start_position().row as u32;
                 // Filter language-primitive type names to keep refs honest.
@@ -207,7 +236,9 @@ fn extract_all_type_identifiers(
                             && r.kind == EdgeKind::TypeRef
                     });
                     if !already_emitted {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -217,8 +248,8 @@ fn extract_all_type_identifiers(
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -315,7 +346,9 @@ pub(super) fn extract_protocol_composition_refs(
     for child in node.children(&mut cursor) {
         let n = swift_type_name(&child, src);
         if !n.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: n,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -356,11 +389,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -373,11 +406,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -390,11 +423,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -415,11 +448,11 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                                 type_args: vec![],
                                 optional_chaining: false,
                                 byte_offset: 0,
-                                                            declared_type_id: None,
+                                declared_type_id: None,
                                 is_call: false,
                                 call_args: Vec::new(),
                                 type_arg_ids: Vec::new(),
-});
+                            });
                             return Some(());
                         }
                     }
@@ -453,7 +486,9 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
             break;
         }
     }
-    let Some(args) = args_node else { return Vec::new() };
+    let Some(args) = args_node else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     let mut ac = args.walk();
     for child in args.named_children(&mut ac) {

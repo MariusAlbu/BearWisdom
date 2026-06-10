@@ -18,9 +18,14 @@ fn symbol_subroutine() {
     let src = "module mymod\n  implicit none\ncontains\n  subroutine foo(x)\n    integer :: x\n  end subroutine\nend module";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
         "expected Function foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -30,9 +35,14 @@ fn symbol_function() {
     let src = "function square(x)\n  integer :: x, square\n  square = x * x\nend function";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "square" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "square" && s.kind == SymbolKind::Function),
         "expected Function square; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -42,9 +52,14 @@ fn symbol_module() {
     let src = "module mymod\n  implicit none\ncontains\n  subroutine foo(x)\n    integer :: x\n  end subroutine\nend module";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "mymod" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "mymod" && s.kind == SymbolKind::Namespace),
         "expected Namespace mymod; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -56,7 +71,10 @@ fn symbol_derived_type_definition() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Struct),
         "expected Struct from derived_type_definition; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -72,7 +90,10 @@ fn ref_use_statement() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports from use_statement; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -84,7 +105,10 @@ fn ref_subroutine_call() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected Calls from subroutine_call; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -120,7 +144,10 @@ fn ref_derived_type_member_call() {
     assert!(
         rf.is_some(),
         "expected Calls ref with target_name=\"compute\"; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module))
+            .collect::<Vec<_>>()
     );
     // With the local type map, `self` resolves to its declared type `MyType`.
     assert_eq!(
@@ -140,9 +167,14 @@ fn symbol_program_no_crash() {
     let src = "program hello\n  implicit none\n  write(*,*) 'hello'\nend program hello";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "hello" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "hello" && s.kind == SymbolKind::Function),
         "expected Function 'hello' from program node; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -156,11 +188,17 @@ fn ref_use_statement_with_only_clause() {
         "end subroutine\n",
     );
     let r = extract(src);
-    let imp = r.refs.iter().find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "iso_fortran_env");
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "iso_fortran_env");
     assert!(
         imp.is_some(),
         "expected Imports ref to 'iso_fortran_env' from USE...ONLY; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -177,9 +215,14 @@ fn symbol_submodule_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "mysubmod" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "mysubmod" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'mysubmod' from submodule node; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -195,19 +238,34 @@ fn symbol_module_variable_declaration_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "config" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "config" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'config'; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "max_iter" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "max_iter" && s.kind == SymbolKind::Variable),
         "expected Variable 'max_iter' from module-level declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "tolerance" && s.kind == SymbolKind::Variable),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "tolerance" && s.kind == SymbolKind::Variable),
         "expected Variable 'tolerance' from module-level declaration; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -221,11 +279,17 @@ fn ref_subroutine_call_target_name() {
         "end subroutine\n",
     );
     let r = extract(src);
-    let rf = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup_grid");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup_grid");
     assert!(
         rf.is_some(),
         "expected Calls ref with target_name='setup_grid'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -244,12 +308,21 @@ fn symbol_public_reexport_alias_synthetic() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "test_failed" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "test_failed" && s.kind == SymbolKind::Function),
         "expected synthetic Function 'test_failed' from public re-export of alias; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     // run_testsuite is not a rename alias — no spurious synthetic for it.
-    let run_count = r.symbols.iter().filter(|s| s.name == "run_testsuite").count();
+    let run_count = r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "run_testsuite")
+        .count();
     assert_eq!(
         run_count, 0,
         "expected no synthetic for non-alias public name 'run_testsuite'"
@@ -271,14 +344,24 @@ fn symbol_derived_type_with_extends() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "circle" && s.kind == SymbolKind::Struct),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "circle" && s.kind == SymbolKind::Struct),
         "expected Struct 'circle' from derived type with EXTENDS; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "shape" && rf.kind == EdgeKind::Inherits),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "shape" && rf.kind == EdgeKind::Inherits),
         "expected Inherits edge to 'shape' from EXTENDS(shape); got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -299,15 +382,25 @@ fn named_generic_interface_emits_function_symbol() {
     let src = "module mymod\n  implicit none\n  interface moment\n    module function moment_real(x) result(r)\n      real :: x, r\n    end function moment_real\n  end interface moment\nend module mymod\n";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "moment" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "moment" && s.kind == SymbolKind::Function),
         "expected Function `moment` from interface block; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     // The inner module function is still extracted via normal recursion.
     assert!(
-        r.symbols.iter().any(|s| s.name == "moment_real" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "moment_real" && s.kind == SymbolKind::Function),
         "inner type-specific procedure must also be present; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -321,12 +414,18 @@ fn anonymous_interface_does_not_emit_unnamed_symbol() {
     assert!(
         r.symbols.iter().any(|s| s.name == "ext_proc"),
         "inner prototype function must be extracted; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         !r.symbols.iter().any(|s| s.name.is_empty()),
         "no empty-name symbol may be emitted from anonymous interface; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -355,7 +454,9 @@ subroutine compute(n)
 end subroutine
 ";
     let r = extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -399,9 +500,14 @@ fn fypp_partial_parse_extracts_module_and_procedures() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "stdlib_math" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "stdlib_math" && s.kind == SymbolKind::Namespace),
         "expected Namespace 'stdlib_math' extracted despite fypp directives; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -442,17 +548,26 @@ fn fypp_leading_directives_before_module_still_emits_module_and_interface() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
         "module 'stdlib_optval' must be emitted despite leading fypp directives; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "optval" && s.kind == SymbolKind::Function),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "optval" && s.kind == SymbolKind::Function),
         "interface 'optval' must emit a Function symbol; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // .fypp recovery: string literals must never become Calls refs
@@ -470,17 +585,74 @@ fn fypp_leading_directives_before_module_still_emits_module_and_interface() {
 fn fypp_string_literal_never_becomes_call_ref() {
     let src = "subroutine foo()\n  call dgemv('TRANSPOSE', n, m, c, x, y)\nend subroutine";
     let r = extract(src);
-    let leaked: Vec<&str> = r.refs.iter()
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls)
         .map(|rf| rf.target_name.as_str())
         .filter(|n| n.starts_with('\'') || n.starts_with('"'))
         .collect();
-    assert!(leaked.is_empty(),
-        "string literals leaked as Calls refs: {:?}", leaked);
+    assert!(
+        leaked.is_empty(),
+        "string literals leaked as Calls refs: {:?}",
+        leaked
+    );
     // `dgemv` itself should still be captured.
-    assert!(r.refs.iter().any(|rf| rf.target_name == "dgemv" && rf.kind == EdgeKind::Calls),
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "dgemv" && rf.kind == EdgeKind::Calls),
         "expected Calls ref to dgemv; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn dummy_arg_array_index_does_not_emit_call_ref() {
+    let src = concat!(
+        "subroutine scale(mm, i)\n",
+        "  real :: x\n",
+        "  x = mm(i)\n",
+        "  call work(mm)\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    assert!(
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.eq_ignore_ascii_case("mm")),
+        "dummy arg array access leaked as Calls ref: {:?}",
+        r.refs
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.eq_ignore_ascii_case("work")),
+        "real subroutine call should still be emitted; refs: {:?}",
+        r.refs
+    );
+}
+
+#[test]
+fn associate_alias_index_does_not_emit_call_ref() {
+    let src = concat!(
+        "subroutine demo(arr, i)\n",
+        "  associate (view => arr)\n",
+        "    x = view(i)\n",
+        "  end associate\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    assert!(
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.eq_ignore_ascii_case("view")),
+        "associate alias access leaked as Calls ref: {:?}",
+        r.refs
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -503,16 +675,24 @@ fn ref_subroutine_call_derived_type_member() {
     );
     let r = extract(src);
     // Must emit target_name="get_keys", NOT "tbl%get_keys"
-    let bad: Vec<&str> = r.refs.iter()
+    let bad: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains('%'))
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(bad.is_empty(), "raw percent-refs leaked: {bad:?}");
-    let rf = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "get_keys");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "get_keys");
     assert!(
         rf.is_some(),
         "expected Calls ref target_name=\"get_keys\"; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -546,21 +726,36 @@ fn fypp_dollar_markers_filtered_from_symbols_and_refs() {
         "end module\n",
     );
     let r = extract(src);
-    let dollar_syms: Vec<&str> = r.symbols.iter()
+    let dollar_syms: Vec<&str> = r
+        .symbols
+        .iter()
         .filter(|s| s.name.contains('$'))
         .map(|s| s.name.as_str())
         .collect();
-    assert!(dollar_syms.is_empty(), "symbols with '$' leaked: {dollar_syms:?}");
-    let dollar_refs: Vec<&str> = r.refs.iter()
+    assert!(
+        dollar_syms.is_empty(),
+        "symbols with '$' leaked: {dollar_syms:?}"
+    );
+    let dollar_refs: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.target_name.contains('$'))
         .map(|rf| rf.target_name.as_str())
         .collect();
-    assert!(dollar_refs.is_empty(), "refs with '$' leaked: {dollar_refs:?}");
+    assert!(
+        dollar_refs.is_empty(),
+        "refs with '$' leaked: {dollar_refs:?}"
+    );
     // The real module symbol must still be emitted.
     assert!(
-        r.symbols.iter().any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "stdlib_optval" && s.kind == SymbolKind::Namespace),
         "module 'stdlib_optval' must still be emitted; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -599,18 +794,27 @@ fn derived_type_bound_procedure_emits_member_symbol() {
     let r = extract(src);
     // Qualified member symbols must appear
     assert!(
-        r.symbols.iter().any(|s| s.qualified_name == "installer_t.install_library"),
+        r.symbols
+            .iter()
+            .any(|s| s.qualified_name == "installer_t.install_library"),
         "expected member 'installer_t.install_library'; got {:?}",
-        r.symbols.iter().map(|s| (&s.qualified_name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.qualified_name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.qualified_name == "installer_t.install_executable"),
+        r.symbols
+            .iter()
+            .any(|s| s.qualified_name == "installer_t.install_executable"),
         "expected member 'installer_t.install_executable'"
     );
     // Aliased binding: `procedure :: new => installer_new` — the public name
     // is `new`, not `installer_new`.
     assert!(
-        r.symbols.iter().any(|s| s.qualified_name == "installer_t.new"),
+        r.symbols
+            .iter()
+            .any(|s| s.qualified_name == "installer_t.new"),
         "expected aliased member 'installer_t.new' from 'procedure :: new => installer_new'"
     );
 }
@@ -637,13 +841,17 @@ fn subroutine_local_type_map_replaces_var_with_type_in_module_field() {
     );
     let r = extract(src);
     // `install_library` call must carry module = "installer_t", not "installer"
-    let lib_ref = r.refs.iter().find(|rf|
-        rf.kind == EdgeKind::Calls && rf.target_name == "install_library"
-    );
+    let lib_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "install_library");
     assert!(
         lib_ref.is_some(),
         "expected Calls ref to 'install_library'; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         lib_ref.unwrap().module.as_deref(),

@@ -73,7 +73,9 @@ pub(super) fn extract_decorators(
                 let url_or_none = first_arg.as_deref();
                 let url_ok = url_or_none.map_or(name == "command", |u| u.starts_with('/'));
                 if url_ok {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name.clone(),
                         kind: EdgeKind::TypeRef,
@@ -94,8 +96,7 @@ pub(super) fn extract_decorators(
 fn is_http_verb_attr(name: &str) -> bool {
     matches!(
         name,
-        "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "route"
-            | "command"
+        "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "route" | "command"
     )
 }
 
@@ -159,7 +160,12 @@ fn extract_derive_trait_refs(
             let mut ac = child.walk();
             for ac_child in child.children(&mut ac) {
                 if ac_child.kind() == "token_tree" {
-                    extract_trait_names_from_token_tree(&ac_child, source, source_symbol_index, refs);
+                    extract_trait_names_from_token_tree(
+                        &ac_child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                    );
                     break;
                 }
             }
@@ -210,7 +216,9 @@ fn extract_trait_names_from_token_tree(
                     j += 2;
                 }
 
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: path,
                     kind: EdgeKind::TypeRef,
@@ -220,8 +228,8 @@ fn extract_trait_names_from_token_tree(
                     byte_offset: child.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
                 i = j;
                 continue;
             }
@@ -229,7 +237,9 @@ fn extract_trait_names_from_token_tree(
                 // Pre-coalesced by the grammar — emit verbatim.
                 let full_name = node_text(&child, source);
                 if !full_name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: full_name,
                         kind: EdgeKind::TypeRef,

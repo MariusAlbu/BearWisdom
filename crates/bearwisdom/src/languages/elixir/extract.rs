@@ -24,7 +24,6 @@
 //   binary_operator, atom, string, list, unary_operator (@)
 // =============================================================================
 
-
 use super::helpers::{
     attribute_name, call_identifier, call_qualified_name, directive_target, find_do_block_index,
     function_name_arity, is_private_def, module_name_from_call, node_text, qualify,
@@ -195,7 +194,9 @@ fn visit(
             let name = node_text(child, src);
             if !name.is_empty() {
                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: simple,
                     kind: EdgeKind::TypeRef,
@@ -204,9 +205,9 @@ fn visit(
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else {
             visit(child, src, symbols, refs, parent_index, qualified_prefix);
@@ -234,13 +235,39 @@ fn dispatch_call(
 
     match callee.as_str() {
         "defmodule" => extract_module(node, src, symbols, refs, parent_index, qualified_prefix),
-        "def" | "defp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
-        "defmacro" | "defmacrop" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, true),
+        "def" | "defp" => extract_function(
+            node,
+            src,
+            symbols,
+            refs,
+            parent_index,
+            qualified_prefix,
+            false,
+        ),
+        "defmacro" | "defmacrop" => extract_function(
+            node,
+            src,
+            symbols,
+            refs,
+            parent_index,
+            qualified_prefix,
+            true,
+        ),
         "defstruct" => extract_struct(node, src, symbols, parent_index, qualified_prefix),
         "defexception" => extract_exception(node, src, symbols, parent_index, qualified_prefix),
         "defprotocol" => extract_protocol(node, src, symbols, refs, parent_index, qualified_prefix),
-        "defimpl" => extract_implementation(node, src, symbols, refs, parent_index, qualified_prefix),
-        "defguard" | "defguardp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
+        "defimpl" => {
+            extract_implementation(node, src, symbols, refs, parent_index, qualified_prefix)
+        }
+        "defguard" | "defguardp" => extract_function(
+            node,
+            src,
+            symbols,
+            refs,
+            parent_index,
+            qualified_prefix,
+            false,
+        ),
         "alias" => extract_directive(node, src, symbols.len(), refs, "alias"),
         "import" => extract_directive(node, src, symbols.len(), refs, "import"),
         "use" => extract_directive(node, src, symbols.len(), refs, "use"),
@@ -254,9 +281,15 @@ fn dispatch_call(
             // tail-only `callee` from `call_identifier` would have lost
             // the prefix already.
             let qualified = call_qualified_name(node, src).unwrap_or_else(|| callee.clone());
-            let name = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
+            let name = qualified
+                .rsplit('.')
+                .next()
+                .unwrap_or(&qualified)
+                .to_string();
             let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: sym_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -265,9 +298,9 @@ fn dispatch_call(
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
             extract_dot_call_module_ref(node, src, sym_idx, refs);
 
@@ -316,12 +349,12 @@ fn extract_module(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -366,7 +399,11 @@ fn extract_function(
     symbols.push(ExtractedSymbol {
         name: func_name,
         qualified_name,
-        kind: if is_macro { SymbolKind::Function } else { SymbolKind::Method },
+        kind: if is_macro {
+            SymbolKind::Function
+        } else {
+            SymbolKind::Method
+        },
         visibility,
         start_line: node.start_position().row as u32,
         end_line: node.end_position().row as u32,
@@ -376,12 +413,12 @@ fn extract_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -425,12 +462,12 @@ fn extract_struct(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -472,12 +509,12 @@ fn extract_exception(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -510,12 +547,12 @@ fn extract_protocol(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -557,15 +594,17 @@ fn extract_implementation(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef to the protocol being implemented
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: idx,
         target_name: impl_name,
         kind: EdgeKind::TypeRef,
@@ -574,9 +613,9 @@ fn extract_implementation(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -620,12 +659,12 @@ fn dispatch_attribute(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             // For @type and @spec, extract module references (alias nodes) as TypeRef edges.
             if attr_name == "type" || attr_name == "spec" || attr_name == "callback" {
                 let ref_idx = parent_index.unwrap_or(sym_idx);
@@ -639,7 +678,9 @@ fn dispatch_attribute(
             if let Some(target_name) = target {
                 // Use the parent symbol index if available; otherwise use current symbol count.
                 let source_idx = parent_index.unwrap_or(symbols.len());
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name,
                     kind: EdgeKind::TypeRef,
@@ -648,9 +689,9 @@ fn dispatch_attribute(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 

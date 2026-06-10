@@ -56,7 +56,9 @@ pub struct SymbolLocationIndex {
 impl SymbolLocationIndex {
     /// Construct an empty index. Ecosystems that have not yet migrated to
     /// demand-driven parsing return this from the default trait impl.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Record that `symbol_name` exported by `module_path` is defined in
     /// `file`. First writer wins on the `(module, name)` axis. The
@@ -75,10 +77,7 @@ impl SymbolLocationIndex {
         self.entries
             .entry((module.clone(), name.clone()))
             .or_insert_with(|| file.clone());
-        self.by_name
-            .entry(name)
-            .or_default()
-            .push((module, file));
+        self.by_name.entry(name).or_default().push((module, file));
     }
 
     /// Return the file that defines `symbol_name` inside `module_path`,
@@ -101,11 +100,7 @@ impl SymbolLocationIndex {
     pub fn find_by_name(&self, symbol_name: &str) -> Vec<(&str, &Path)> {
         self.by_name
             .get(symbol_name)
-            .map(|v| {
-                v.iter()
-                    .map(|(m, p)| (m.as_str(), p.as_path()))
-                    .collect()
-            })
+            .map(|v| v.iter().map(|(m, p)| (m.as_str(), p.as_path())).collect())
             .unwrap_or_default()
     }
 
@@ -118,18 +113,19 @@ impl SymbolLocationIndex {
             self.entries
                 .entry((module.clone(), name.clone()))
                 .or_insert_with(|| file.clone());
-            self.by_name
-                .entry(name)
-                .or_default()
-                .push((module, file));
+            self.by_name.entry(name).or_default().push((module, file));
         }
     }
 
     /// Number of recorded (module, name) pairs — diagnostic only.
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
 
     /// Whether the index has no entries.
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,9 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol};
 use tree_sitter::Node;
 
-use super::extract::{extract_value_refs, first_child_of_kind, first_identifier_text, is_expr_node, node_text};
+use super::extract::{
+    extract_value_refs, first_child_of_kind, first_identifier_text, is_expr_node, node_text,
+};
 
 // ---------------------------------------------------------------------------
 // apply_expression  (function call / import)
@@ -19,7 +21,8 @@ pub(super) fn extract_apply(
     refs: &mut Vec<ExtractedRef>,
 ) {
     // apply_expression: function field + argument
-    let func_node = node.child_by_field_name("function")
+    let func_node = node
+        .child_by_field_name("function")
         .or_else(|| first_child_of_kind(&node, "variable_expression"))
         .or_else(|| {
             // First child that is an expression
@@ -51,11 +54,17 @@ pub(super) fn extract_apply(
             let fallback = func_node.map(|n| {
                 let t = node_text(n, src);
                 // Limit to 80 chars to avoid giant lambda bodies as ref targets
-                if t.len() > 80 { t[..80].to_string() } else { t }
+                if t.len() > 80 {
+                    t[..80].to_string()
+                } else {
+                    t
+                }
             });
             if let Some(target) = fallback {
                 if !target.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: target,
                         kind: EdgeKind::Calls,
@@ -64,9 +73,9 @@ pub(super) fn extract_apply(
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             return;
@@ -79,7 +88,9 @@ pub(super) fn extract_apply(
     if func_name == "import" {
         if let Some(arg) = apply_argument(&node) {
             if let Some(p) = extract_path_or_string(arg, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: p.clone(),
                     kind: EdgeKind::Imports,
@@ -88,9 +99,9 @@ pub(super) fn extract_apply(
                     module: Some(p),
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
         }
@@ -102,7 +113,9 @@ pub(super) fn extract_apply(
     if func_name == "callPackage" || func_name.ends_with(".callPackage") {
         if let Some(arg) = apply_argument(&node) {
             if let Some(p) = extract_path_or_string(arg, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: p.clone(),
                     kind: EdgeKind::Imports,
@@ -111,9 +124,9 @@ pub(super) fn extract_apply(
                     module: Some(p),
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
         }
@@ -121,7 +134,9 @@ pub(super) fn extract_apply(
     }
 
     // General function application — emit Calls edge.
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: func_name,
         kind: EdgeKind::Calls,
@@ -130,9 +145,9 @@ pub(super) fn extract_apply(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +237,9 @@ pub(super) fn extract_with(
 
     if let Some(env_node) = env {
         if let Some(name) = resolve_var_name(env_node, src) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: EdgeKind::Imports,
@@ -231,9 +248,9 @@ pub(super) fn extract_with(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -280,18 +297,21 @@ fn resolve_apply_func_name(node: Node, src: &str) -> Option<String> {
 
 pub(super) fn resolve_call_name(node: Node, src: &str) -> Option<String> {
     match node.kind() {
-        "variable_expression" => {
-            node.child_by_field_name("name")
-                .map(|n| node_text(n, src))
-                .or_else(|| first_identifier_text(&node, src))
-        }
+        "variable_expression" => node
+            .child_by_field_name("name")
+            .map(|n| node_text(n, src))
+            .or_else(|| first_identifier_text(&node, src)),
         "identifier" => Some(node_text(node, src)),
         "select_expression" => {
             // e.g., `lib.makeOverridable` or `pkgs.stdenv`
             // Build the full dotted path
             let mut parts = Vec::new();
             collect_select_path(node, src, &mut parts);
-            if parts.is_empty() { None } else { Some(parts.join(".")) }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("."))
+            }
         }
         _ => None,
     }
@@ -305,12 +325,9 @@ fn collect_select_path(node: Node, src: &str, parts: &mut Vec<String>) {
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "variable_expression" | "identifier" => {
-                        if let Some(n) = first_identifier_text(&child, src)
-                            .or_else(|| {
-                                child.child_by_field_name("name")
-                                    .map(|n| node_text(n, src))
-                            })
-                        {
+                        if let Some(n) = first_identifier_text(&child, src).or_else(|| {
+                            child.child_by_field_name("name").map(|n| node_text(n, src))
+                        }) {
                             parts.push(n);
                         }
                     }
@@ -336,11 +353,10 @@ fn collect_select_path(node: Node, src: &str, parts: &mut Vec<String>) {
 
 pub(super) fn resolve_var_name(node: Node, src: &str) -> Option<String> {
     match node.kind() {
-        "variable_expression" => {
-            node.child_by_field_name("name")
-                .map(|n| node_text(n, src))
-                .or_else(|| first_identifier_text(&node, src))
-        }
+        "variable_expression" => node
+            .child_by_field_name("name")
+            .map(|n| node_text(n, src))
+            .or_else(|| first_identifier_text(&node, src)),
         "identifier" => Some(node_text(node, src)),
         _ => first_identifier_text(&node, src),
     }
@@ -367,9 +383,7 @@ fn apply_argument<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
 
 fn extract_path_or_string(node: Node, src: &str) -> Option<String> {
     match node.kind() {
-        "path_expression" | "hpath_expression" | "spath_expression" => {
-            Some(node_text(node, src))
-        }
+        "path_expression" | "hpath_expression" | "spath_expression" => Some(node_text(node, src)),
         "string_expression" | "indented_string_expression" => {
             // Strip quotes
             let raw = node_text(node, src);

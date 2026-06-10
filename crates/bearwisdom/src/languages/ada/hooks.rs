@@ -38,7 +38,10 @@ pub(crate) fn detect_flow_inner(
     }
     let target = r.target_name.as_str();
     // GNATCOLL.SQL.Exec / AdaSQL Execute_Query.
-    if matches!(target, "Exec" | "Execute_Query" | "Execute" | "Query" | "Prepare") {
+    if matches!(
+        target,
+        "Exec" | "Execute_Query" | "Execute" | "Query" | "Prepare"
+    ) {
         let sql = r.call_args.iter().find_map(|a| match a {
             CallArg::StringLit(s) => Some(s.as_str()),
             _ => None,

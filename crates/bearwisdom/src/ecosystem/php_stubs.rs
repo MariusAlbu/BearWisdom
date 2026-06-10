@@ -13,9 +13,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -26,9 +24,15 @@ const LANGUAGES: &[&str] = &["php"];
 pub struct PhpStubsEcosystem;
 
 impl Ecosystem for PhpStubsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("php")
@@ -44,9 +48,13 @@ impl Ecosystem for PhpStubsEcosystem {
         out
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -57,7 +65,9 @@ impl Ecosystem for PhpStubsEcosystem {
 }
 
 impl ExternalSourceLocator for PhpStubsEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_php_stubs()
     }
@@ -86,32 +96,48 @@ fn discover_php_stubs() -> Vec<ExternalDepRoot> {
 fn probe_stubs_dir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_PHP_STUBS_DIR") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
         for sub in ["phpstorm-stubs", ".phpstorm-stubs", "dev/phpstorm-stubs"] {
             let p = PathBuf::from(&home).join(sub);
-            if p.is_dir() { return Some(p); }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 10 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "test" | ".git" | "meta" | "Examples") { continue }
-                if name.starts_with('.') { continue }
+                if matches!(name, "tests" | "test" | ".git" | "meta" | "Examples") {
+                    continue;
+                }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".php") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".php") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:php:{}", display),

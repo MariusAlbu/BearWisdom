@@ -24,7 +24,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility, FlowMeta};
+use crate::types::{ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility};
 
 /// True for file extensions this walker knows how to crack open.
 pub fn supports_extension(ext: &str) -> bool {
@@ -52,15 +52,25 @@ pub fn walk_jar(path: &Path) -> Vec<ParsedFile> {
             Ok(e) => e,
             Err(_) => continue,
         };
-        if entry.is_dir() { continue }
+        if entry.is_dir() {
+            continue;
+        }
         let name = entry.name().to_string();
-        if !name.ends_with(".class") { continue }
+        if !name.ends_with(".class") {
+            continue;
+        }
         // Skip nested `META-INF/versions/*` multi-release duplicates —
         // they'd produce duplicate symbol entries.
-        if name.starts_with("META-INF/versions/") { continue }
+        if name.starts_with("META-INF/versions/") {
+            continue;
+        }
         let mut bytes = Vec::with_capacity(entry.size() as usize);
-        if entry.read_to_end(&mut bytes).is_err() { continue }
-        let Some(parsed) = parse_class_file(&bytes) else { continue };
+        if entry.read_to_end(&mut bytes).is_err() {
+            continue;
+        }
+        let Some(parsed) = parse_class_file(&bytes) else {
+            continue;
+        };
         let virt_path = format!("ext:jar:{archive_str}!{name}");
         let pf = parsed_class_to_parsed_file(virt_path, parsed);
         out.push(pf);
@@ -73,19 +83,26 @@ pub fn walk_jar(path: &Path) -> Vec<ParsedFile> {
 }
 
 fn walk_aar_inner_jar(aar_path: &Path) -> Vec<ParsedFile> {
-    let Ok(file) = File::open(aar_path) else { return Vec::new() };
-    let Ok(mut archive) = zip::ZipArchive::new(file) else { return Vec::new() };
-    let Ok(mut entry) = archive.by_name("classes.jar") else { return Vec::new() };
+    let Ok(file) = File::open(aar_path) else {
+        return Vec::new();
+    };
+    let Ok(mut archive) = zip::ZipArchive::new(file) else {
+        return Vec::new();
+    };
+    let Ok(mut entry) = archive.by_name("classes.jar") else {
+        return Vec::new();
+    };
     let mut bytes = Vec::with_capacity(entry.size() as usize);
-    if entry.read_to_end(&mut bytes).is_err() { return Vec::new() }
+    if entry.read_to_end(&mut bytes).is_err() {
+        return Vec::new();
+    }
     drop(entry);
     drop(archive);
     // Materialise to a temp file so we can re-use walk_jar's path-based path.
-    let tmp = std::env::temp_dir().join(format!(
-        "bw_aar_inner_{}.jar",
-        std::process::id()
-    ));
-    if std::fs::write(&tmp, &bytes).is_err() { return Vec::new() }
+    let tmp = std::env::temp_dir().join(format!("bw_aar_inner_{}.jar", std::process::id()));
+    if std::fs::write(&tmp, &bytes).is_err() {
+        return Vec::new();
+    }
     let result = walk_jar(&tmp);
     let _ = std::fs::remove_file(&tmp);
     result
@@ -115,7 +132,9 @@ pub struct ClassMember {
 /// callers skip the entry rather than aborting the whole walk.
 pub fn parse_class_file(bytes: &[u8]) -> Option<ParsedClass> {
     let mut r = Reader::new(bytes);
-    if r.u4()? != 0xCAFEBABE { return None }
+    if r.u4()? != 0xCAFEBABE {
+        return None;
+    }
     let _minor = r.u2()?;
     let _major = r.u2()?;
     let pool = parse_constant_pool(&mut r)?;
@@ -129,10 +148,18 @@ pub fn parse_class_file(bytes: &[u8]) -> Option<ParsedClass> {
         pool.class_name(super_class_idx).map(|s| s.to_string())
     };
     let interfaces_count = r.u2()? as usize;
-    for _ in 0..interfaces_count { let _ = r.u2()?; }
+    for _ in 0..interfaces_count {
+        let _ = r.u2()?;
+    }
     let fields = parse_member_list(&mut r, &pool)?;
     let methods = parse_member_list(&mut r, &pool)?;
-    Some(ParsedClass { this_class, super_class, access_flags, fields, methods })
+    Some(ParsedClass {
+        this_class,
+        super_class,
+        access_flags,
+        fields,
+        methods,
+    })
 }
 
 fn parse_member_list(r: &mut Reader, pool: &ConstantPool) -> Option<Vec<ClassMember>> {
@@ -150,7 +177,11 @@ fn parse_member_list(r: &mut Reader, pool: &ConstantPool) -> Option<Vec<ClassMem
             let attr_len = r.u4()? as usize;
             r.skip(attr_len)?;
         }
-        out.push(ClassMember { access_flags, name, descriptor });
+        out.push(ClassMember {
+            access_flags,
+            name,
+            descriptor,
+        });
     }
     Some(out)
 }
@@ -246,10 +277,15 @@ fn decode_utf8(bytes: &[u8]) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(|s| s.to_string())
 }
 
-struct Reader<'a> { bytes: &'a [u8], pos: usize }
+struct Reader<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
 
 impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self { Self { bytes, pos: 0 } }
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
+    }
     fn u1(&mut self) -> Option<u8> {
         let b = *self.bytes.get(self.pos)?;
         self.pos += 1;
@@ -271,7 +307,9 @@ impl<'a> Reader<'a> {
         Some(b)
     }
     fn skip(&mut self, n: usize) -> Option<()> {
-        if self.pos + n > self.bytes.len() { return None }
+        if self.pos + n > self.bytes.len() {
+            return None;
+        }
         self.pos += n;
         Some(())
     }
@@ -308,7 +346,10 @@ fn parsed_class_to_parsed_file(virt_path: String, cls: ParsedClass) -> ParsedFil
         end_line: 0,
         start_col: 0,
         end_col: 0,
-        signature: cls.super_class.as_ref().map(|s| format!("extends {}", jvm_name_to_dot(s))),
+        signature: cls
+            .super_class
+            .as_ref()
+            .map(|s| format!("extends {}", jvm_name_to_dot(s))),
         doc_comment: None,
         scope_path: None,
         parent_index: None,
@@ -320,7 +361,9 @@ fn parsed_class_to_parsed_file(virt_path: String, cls: ParsedClass) -> ParsedFil
     });
     let parent_idx = 0usize;
     for field in &cls.fields {
-        if !is_externally_visible(field.access_flags) { continue }
+        if !is_externally_visible(field.access_flags) {
+            continue;
+        }
         symbols.push(ExtractedSymbol {
             name: field.name.clone(),
             qualified_name: format!("{class_qname}.{}", field.name),
@@ -342,8 +385,12 @@ fn parsed_class_to_parsed_file(virt_path: String, cls: ParsedClass) -> ParsedFil
         });
     }
     for method in &cls.methods {
-        if !is_externally_visible(method.access_flags) { continue }
-        if method.name == "<clinit>" { continue }
+        if !is_externally_visible(method.access_flags) {
+            continue;
+        }
+        if method.name == "<clinit>" {
+            continue;
+        }
         let kind = if method.name == "<init>" {
             SymbolKind::Constructor
         } else {
@@ -401,14 +448,21 @@ fn is_externally_visible(access: u16) -> bool {
 }
 
 fn visibility_for(access: u16) -> Visibility {
-    if access & ACC_PUBLIC != 0 { Visibility::Public }
-    else if access & ACC_PRIVATE != 0 { Visibility::Private }
-    else if access & ACC_PROTECTED != 0 { Visibility::Protected }
-    else { Visibility::Public }  // package-private treated as public for cross-jar refs
+    if access & ACC_PUBLIC != 0 {
+        Visibility::Public
+    } else if access & ACC_PRIVATE != 0 {
+        Visibility::Private
+    } else if access & ACC_PROTECTED != 0 {
+        Visibility::Protected
+    } else {
+        Visibility::Public
+    } // package-private treated as public for cross-jar refs
 }
 
 /// JVM internal class names use `/` separators; convert to `.`.
-fn jvm_name_to_dot(name: &str) -> String { name.replace('/', ".") }
+fn jvm_name_to_dot(name: &str) -> String {
+    name.replace('/', ".")
+}
 
 fn jvm_short_name(qname: &str) -> &str {
     qname.rsplit('.').next().unwrap_or(qname)

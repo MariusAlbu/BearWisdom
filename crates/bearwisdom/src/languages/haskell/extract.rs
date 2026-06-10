@@ -21,14 +21,14 @@
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{
-    ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol, ExtractionResult,
-    SymbolKind, Visibility,
+    ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol, ExtractionResult, SymbolKind,
+    Visibility,
 };
 use tree_sitter::{Node, Parser};
 
 use super::definitions::{
-    extract_data_constructors, extract_deriving, extract_foreign, extract_function,
-    extract_import, extract_instance, extract_named_symbol, extract_signature_symbols,
+    extract_data_constructors, extract_deriving, extract_foreign, extract_function, extract_import,
+    extract_instance, extract_named_symbol, extract_signature_symbols,
 };
 use super::expressions::{extract_apply, extract_infix};
 use super::servant::extract_servant_routes;
@@ -38,20 +38,29 @@ use super::servant::extract_servant_routes;
 // ---------------------------------------------------------------------------
 
 pub(crate) static HASKELL_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "function",  name_field: "name" },
-    ScopeKind { node_kind: "class",     name_field: "name" },
-    ScopeKind { node_kind: "data_type", name_field: "name" },
-    ScopeKind { node_kind: "newtype",   name_field: "name" },
+    ScopeKind {
+        node_kind: "function",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "class",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "data_type",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "newtype",
+        name_field: "name",
+    },
 ];
 
 // Haskell built-in type names — skip TypeRef for these.
 const BUILTIN_TYPES: &[&str] = &[
-    "Int", "Integer", "Float", "Double", "Bool", "Char", "String",
-    "IO", "Maybe", "Either", "List", "Ordering", "Word",
-    "Int8", "Int16", "Int32", "Int64",
-    "Word8", "Word16", "Word32", "Word64",
-    "Natural", "Rational", "Complex",
-    "()", "[]",
+    "Int", "Integer", "Float", "Double", "Bool", "Char", "String", "IO", "Maybe", "Either", "List",
+    "Ordering", "Word", "Int8", "Int16", "Int32", "Int64", "Word8", "Word16", "Word32", "Word64",
+    "Natural", "Rational", "Complex", "()", "[]",
 ];
 
 // ---------------------------------------------------------------------------
@@ -62,7 +71,9 @@ pub fn extract(source: &str) -> ExtractionResult {
     let lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
 
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("Failed to load Haskell grammar");
+    parser
+        .set_language(&lang)
+        .expect("Failed to load Haskell grammar");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -82,9 +93,24 @@ pub fn extract(source: &str) -> ExtractionResult {
     // Module header (optional)
     extract_module_header(root, src, &mut symbols);
 
-    visit(root, src, &scope_tree, &mut symbols, &mut refs, &mut routes, None, false);
+    visit(
+        root,
+        src,
+        &scope_tree,
+        &mut symbols,
+        &mut refs,
+        &mut routes,
+        None,
+        false,
+    );
 
-    ExtractionResult::with_connectors(symbols, refs, routes, Vec::<ExtractedDbSet>::new(), has_errors)
+    ExtractionResult::with_connectors(
+        symbols,
+        refs,
+        routes,
+        Vec::<ExtractedDbSet>::new(),
+        has_errors,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -141,43 +167,108 @@ fn visit(
                     SymbolKind::Function
                 };
                 let idx = extract_function(&child, src, scope_tree, symbols, kind, parent_index);
-                visit(child, src, scope_tree, symbols, refs, routes, idx.or(parent_index), inside_class_or_instance);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    inside_class_or_instance,
+                );
             }
             "data_type" | "data_family" => {
                 let idx = extract_named_symbol(
-                    &child, src, scope_tree, symbols, SymbolKind::Struct,
-                    "data", parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    SymbolKind::Struct,
+                    "data",
+                    parent_index,
                 );
                 // Extract deriving → Implements
                 extract_deriving(&child, src, idx, refs);
                 // Extract data_constructor children → EnumMember symbols
                 extract_data_constructors(&child, src, idx, symbols);
-                visit(child, src, scope_tree, symbols, refs, routes, idx.or(parent_index), false);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    false,
+                );
             }
             "newtype" => {
                 let idx = extract_named_symbol(
-                    &child, src, scope_tree, symbols, SymbolKind::Struct,
-                    "newtype", parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    SymbolKind::Struct,
+                    "newtype",
+                    parent_index,
                 );
                 extract_deriving(&child, src, idx, refs);
-                visit(child, src, scope_tree, symbols, refs, routes, idx.or(parent_index), false);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    false,
+                );
             }
             "class" => {
                 let idx = extract_named_symbol(
-                    &child, src, scope_tree, symbols, SymbolKind::Interface,
-                    "class", parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    SymbolKind::Interface,
+                    "class",
+                    parent_index,
                 );
                 // Recurse into class body — methods inside are Method kind
-                visit(child, src, scope_tree, symbols, refs, routes, idx.or(parent_index), true);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    true,
+                );
             }
             "instance" => {
                 let idx = extract_instance(&child, src, scope_tree, symbols, refs, parent_index);
-                visit(child, src, scope_tree, symbols, refs, routes, idx.or(parent_index), true);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    true,
+                );
             }
             "type_synomym" | "type_family" => {
                 let idx = extract_named_symbol(
-                    &child, src, scope_tree, symbols, SymbolKind::TypeAlias,
-                    "type", parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    SymbolKind::TypeAlias,
+                    "type",
+                    parent_index,
                 );
                 // Servant API type aliases: a chain of `:>` and `:<|>` operators
                 // declares HTTP routes. The right-hand side carries the full
@@ -193,11 +284,29 @@ fn visit(
             }
             "apply" => {
                 extract_apply(&child, src, symbols, refs, parent_index);
-                visit(child, src, scope_tree, symbols, refs, routes, parent_index, inside_class_or_instance);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    parent_index,
+                    inside_class_or_instance,
+                );
             }
             "infix" => {
                 extract_infix(&child, src, symbols, refs, parent_index);
-                visit(child, src, scope_tree, symbols, refs, routes, parent_index, inside_class_or_instance);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    parent_index,
+                    inside_class_or_instance,
+                );
             }
             "foreign_import" | "foreign_export" => {
                 extract_foreign(&child, src, scope_tree, symbols, parent_index);
@@ -216,10 +325,27 @@ fn visit(
                 } else {
                     SymbolKind::Function
                 };
-                extract_signature_symbols(&child, src, scope_tree, symbols, refs, kind, parent_index);
+                extract_signature_symbols(
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    kind,
+                    parent_index,
+                );
             }
             _ => {
-                visit(child, src, scope_tree, symbols, refs, routes, parent_index, inside_class_or_instance);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    parent_index,
+                    inside_class_or_instance,
+                );
             }
         }
     }
@@ -250,12 +376,12 @@ pub(super) fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 pub(super) fn node_text(node: Node, src: &[u8]) -> String {

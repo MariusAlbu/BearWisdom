@@ -19,12 +19,12 @@
 use super::extract;
 use super::hooks::RobotHooks;
 use super::profile::ROBOT_PROFILE;
-use crate::type_checker::core::DefaultResolver;
-use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
+use crate::type_checker::core::DefaultResolver;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -70,15 +70,17 @@ fn make_sym(name: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -92,7 +94,9 @@ fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
     }
 }
 fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -106,7 +110,9 @@ fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> Extrac
     }
 }
 fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -119,7 +125,12 @@ fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
         call_args: Vec::new(),
     }
 }
-fn make_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
+fn make_file(
+    path: &str,
+    language: &str,
+    symbols: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
         language: language.to_string(),
@@ -204,7 +215,7 @@ fn resolve_first_ref(
         extracted_ref: r,
         source_symbol: src_sym,
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
     resolve_via_profile(&file_ctx, &ref_ctx, &index)
 }
@@ -218,11 +229,16 @@ fn infer_ns_first_ref(file: &ParsedFile, all_files: &[&ParsedFile]) -> Option<St
         extracted_ref: r,
         source_symbol: src_sym,
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
     use crate::type_checker::profile::hooks::LanguageEngineHooks;
     let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
-    crate::languages::robot::hooks::RobotHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+    crate::languages::robot::hooks::RobotHooks.classify_external(
+        &ref_ctx,
+        &file_ctx,
+        None,
+        &empty_lookup,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -248,11 +264,14 @@ fn resolve_same_file_exact_name() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("should resolve");
     assert_eq!(res.strategy, "default_same_file");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "tests/login.robot", "Click Element")
+    );
 }
 
 #[test]
@@ -274,11 +293,14 @@ fn resolve_same_file_case_insensitive() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
     assert_eq!(res.strategy, "default_same_file");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "tests/login.robot", "Click Element")
+    );
 }
 
 #[test]
@@ -300,11 +322,14 @@ fn resolve_same_file_underscore_space_equivalence() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("underscore/space normalization should match");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/login.robot", "Click Element"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "tests/login.robot", "Click Element")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -342,13 +367,15 @@ fn library_import_keyword_not_resolved_to_project_symbol() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     // The qualified-library guard at step 1 fires (SeleniumLibrary is a library import)
     // and returns None without reaching the project-symbol lookup.
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index);
     let project_sym_id = sym_id(&id_map, "lib/keywords.robot", "Open Browser");
-    let resolves_to_project = res.as_ref().map_or(false, |r| r.target_symbol_id == project_sym_id);
+    let resolves_to_project = res
+        .as_ref()
+        .map_or(false, |r| r.target_symbol_id == project_sym_id);
     assert!(
         !resolves_to_project,
         "Open Browser must not resolve to the project-internal symbol; got: {res:?}"
@@ -417,11 +444,14 @@ fn resolve_resource_import_exact() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
     assert_eq!(res.strategy, "default_file_scoped_import");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "common.robot", "Setup Database")
+    );
 }
 
 #[test]
@@ -449,11 +479,14 @@ fn resolve_resource_import_normalized() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("normalized resource import resolution");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "common.robot", "Setup Database"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "common.robot", "Setup Database")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -479,11 +512,14 @@ fn resolve_variable_same_file() {
         extracted_ref: r,
         source_symbol: &file.symbols[1],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index).expect("variable resolution");
     assert_eq!(res.strategy, "default_same_file");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "tests/config.robot", "HOST")
+    );
 }
 
 #[test]
@@ -505,11 +541,14 @@ fn resolve_variable_case_insensitive() {
         extracted_ref: r,
         source_symbol: &file.symbols[1],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("case-insensitive variable resolution");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "tests/config.robot", "HOST"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "tests/config.robot", "HOST")
+    );
 }
 
 #[test]
@@ -537,12 +576,15 @@ fn resolve_variable_from_resource() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
         .expect("variable from resource resolution");
     assert_eq!(res.strategy, "default_file_scoped_import");
-    assert_eq!(res.target_symbol_id, sym_id(&id_map, "vars/common.robot", "DB_URL"));
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "vars/common.robot", "DB_URL")
+    );
 }
 
 #[test]
@@ -572,9 +614,16 @@ fn extractor_splits_qualified_keyword() {
     let src = "*** Settings ***\nLibrary    SeleniumLibrary\n*** Test Cases ***\nLogin\n    SeleniumLibrary.Click Element    id=btn\n";
     let result = extract::extract(src);
     let call = result.refs.iter().find(|r| r.kind == EdgeKind::Calls);
-    assert!(call.is_some(), "expected a Calls ref; got: {:?}", result.refs);
+    assert!(
+        call.is_some(),
+        "expected a Calls ref; got: {:?}",
+        result.refs
+    );
     let call = call.unwrap();
-    assert_eq!(call.target_name, "Click Element", "target should be keyword without library prefix");
+    assert_eq!(
+        call.target_name, "Click Element",
+        "target should be keyword without library prefix"
+    );
     assert_eq!(
         call.module.as_deref(),
         Some("SeleniumLibrary"),
@@ -607,7 +656,7 @@ fn qualified_library_keyword_not_resolved() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let res = resolve_via_profile(&file_ctx, &ref_ctx, &index);
     assert!(
@@ -635,12 +684,17 @@ fn qualified_library_keyword_external_namespace() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
-    file_package_id: None,
+        file_package_id: None,
     };
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
-        crate::languages::robot::hooks::RobotHooks.classify_external(&ref_ctx, &file_ctx, None, &empty_lookup)
+        crate::languages::robot::hooks::RobotHooks.classify_external(
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
+        )
     };
     assert_eq!(
         ns.as_deref(),
@@ -733,7 +787,9 @@ fn dynamic_keyword_resolves_to_owning_class() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
+    let file_ctx = RobotHooks
+        .build_file_context(&robot_file, Some(&ctx))
+        .unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -781,7 +837,9 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
+    let file_ctx = RobotHooks
+        .build_file_context(&robot_file, Some(&ctx))
+        .unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -834,7 +892,9 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
-    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
+    let file_ctx = RobotHooks
+        .build_file_context(&robot_file, Some(&ctx))
+        .unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,
@@ -884,7 +944,9 @@ fn dynamic_keyword_normalization_matches_call_site() {
         }],
     );
     let (index, _) = build_index(&[&robot_file, &py_file]);
-    let file_ctx = RobotHooks.build_file_context(&robot_file, Some(&ctx)).unwrap();
+    let file_ctx = RobotHooks
+        .build_file_context(&robot_file, Some(&ctx))
+        .unwrap();
     let r = &robot_file.refs[1];
     let ref_ctx = RefContext {
         extracted_ref: r,

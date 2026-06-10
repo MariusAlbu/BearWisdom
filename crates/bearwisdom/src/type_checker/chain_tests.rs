@@ -9,9 +9,7 @@
 // trip the fallback hops.
 // =============================================================================
 
-use super::{
-    identity_normalize, resolve_via_chain, ChainConfig, ChainExtensions, NamespaceLookup,
-};
+use super::{identity_normalize, resolve_via_chain, ChainConfig, ChainExtensions, NamespaceLookup};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
 };
@@ -110,18 +108,24 @@ impl FakeLookup {
         self
     }
     fn type_args(mut self, qname: &str, args: &[&str]) -> Self {
-        self.type_args_store
-            .push((qname.to_string(), args.iter().map(|s| s.to_string()).collect()));
+        self.type_args_store.push((
+            qname.to_string(),
+            args.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
     fn return_type_args(mut self, qname: &str, args: &[&str]) -> Self {
-        self.return_type_args_store
-            .push((qname.to_string(), args.iter().map(|s| s.to_string()).collect()));
+        self.return_type_args_store.push((
+            qname.to_string(),
+            args.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
     fn generic_params(mut self, qname: &str, params: &[&str]) -> Self {
-        self.generic_params_store
-            .push((qname.to_string(), params.iter().map(|s| s.to_string()).collect()));
+        self.generic_params_store.push((
+            qname.to_string(),
+            params.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
     /// Register a method symbol whose simple name `by_name` returns and whose
@@ -272,7 +276,9 @@ fn seg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
 
 fn ref_with_chain(segments: Vec<ChainSegment>, kind: EdgeKind) -> ExtractedRef {
     let leaf = segments.last().unwrap().name.clone();
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: leaf,
         kind,
@@ -393,9 +399,10 @@ fn run_res(
 fn ts_chain_construction_root() {
     // `new Builder().withName()` — Construction root adopts `Builder` as the
     // receiver, then `withName` resolves under it.
-    let lookup = FakeLookup::default()
-        .sym(1, "Builder", "class")
-        .sym(2, "Builder.withName", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "Builder", "class")
+            .sym(2, "Builder.withName", "method");
     let r = ref_with_chain(
         vec![
             seg("Builder", SegmentKind::Construction, true),
@@ -554,9 +561,10 @@ fn none_config_skips_construction_root() {
     // Same fixture as ts_chain_construction_root, but with NONE: the
     // Construction arm is gated off, so the root never resolves and the whole
     // chain misses.
-    let lookup = FakeLookup::default()
-        .sym(1, "Builder", "class")
-        .sym(2, "Builder.withName", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "Builder", "class")
+            .sym(2, "Builder.withName", "method");
     let r = ref_with_chain(
         vec![
             seg("Builder", SegmentKind::Construction, true),
@@ -618,14 +626,12 @@ fn none_config_skips_alias_expansion() {
 fn none_config_skips_extension_method() {
     // The extension-method fixture under ChainExtensions::NONE: the probe is
     // gated off, so `Truncate` never binds and the chain misses.
-    let lookup = FakeLookup::default()
-        .local("s", "string")
-        .ext_method(
-            7,
-            "App.StringExtensions.Truncate",
-            "method",
-            "public static string Truncate(this string value, int max)",
-        );
+    let lookup = FakeLookup::default().local("s", "string").ext_method(
+        7,
+        "App.StringExtensions.Truncate",
+        "method",
+        "public static string Truncate(this string value, int max)",
+    );
     let r = ref_with_chain(
         vec![
             seg("s", SegmentKind::Identifier, false),
@@ -758,9 +764,10 @@ fn java_chain_wildcard_namespace_final() {
     // the root resolves, but `staticMethod` is keyed only under the wildcard
     // namespace (`java.util.Foo.staticMethod`). The namespace-qualified final
     // hit resolves at RESOLVED_CONFIDENCE.
-    let lookup = FakeLookup::default()
-        .sym(1, "Foo", "class")
-        .sym(2, "java.util.Foo.staticMethod", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "Foo", "class")
+            .sym(2, "java.util.Foo.staticMethod", "method");
     let r = ref_with_chain(
         vec![
             seg("Foo", SegmentKind::Identifier, false),
@@ -840,9 +847,10 @@ fn resolution_confidence_is_binary_resolved_or_absent() {
     assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
 
     // Rung 4: namespace-qualified final segment under a wildcard import.
-    let lookup = FakeLookup::default()
-        .sym(1, "Foo", "class")
-        .sym(2, "java.util.Foo.staticMethod", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "Foo", "class")
+            .sym(2, "java.util.Foo.staticMethod", "method");
     let r = ref_with_chain(
         vec![
             seg("Foo", SegmentKind::Identifier, false),
@@ -851,8 +859,14 @@ fn resolution_confidence_is_binary_resolved_or_absent() {
         EdgeKind::Calls,
     );
     let fc_ns = file_ctx_with_imports(vec![wildcard_import("java.util")]);
-    let res = run_res(&java_config(), &r, &fc_ns, vec!["caller".to_string()], &lookup)
-        .expect("namespace-qualified final resolves");
+    let res = run_res(
+        &java_config(),
+        &r,
+        &fc_ns,
+        vec!["caller".to_string()],
+        &lookup,
+    )
+    .expect("namespace-qualified final resolves");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.confidence, RESOLVED_CONFIDENCE);
 
@@ -992,9 +1006,10 @@ fn java_chain_qualify_via_imports_gated_by_none() {
 fn python_chain_self_ref_root() {
     // `self.save()` inside `app.User` — SelfRef resolves the enclosing class
     // from the scope chain, then `save` resolves under it.
-    let lookup = FakeLookup::default()
-        .sym(1, "app.User", "class")
-        .sym(2, "app.User.save", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "app.User", "class")
+            .sym(2, "app.User.save", "method");
     let r = ref_with_chain(
         vec![
             seg("self", SegmentKind::SelfRef, false),
@@ -1003,8 +1018,14 @@ fn python_chain_self_ref_root() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&PYTHON_CHAIN_CONFIG, &r, &fc, vec!["app.User".to_string()], &lookup)
-        .expect("self.save() resolves via SelfRef enclosing class");
+    let res = run_res(
+        &PYTHON_CHAIN_CONFIG,
+        &r,
+        &fc,
+        vec!["app.User".to_string()],
+        &lookup,
+    )
+    .expect("self.save() resolves via SelfRef enclosing class");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.confidence, 1.0);
     assert_eq!(res.strategy, "python_chain_resolution");
@@ -1100,9 +1121,10 @@ fn python_chain_static_type_root() {
 fn ruby_chain_self_ref_root_namespace_enclosing() {
     // `self.process` inside an `Admin` module (indexed as `namespace`) — SelfRef
     // resolves the enclosing module, then `process` resolves under it.
-    let lookup = FakeLookup::default()
-        .sym(1, "Admin", "namespace")
-        .sym(2, "Admin.process", "method");
+    let lookup =
+        FakeLookup::default()
+            .sym(1, "Admin", "namespace")
+            .sym(2, "Admin.process", "method");
     let r = ref_with_chain(
         vec![
             seg("self", SegmentKind::SelfRef, false),
@@ -1111,8 +1133,14 @@ fn ruby_chain_self_ref_root_namespace_enclosing() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&RUBY_CHAIN_CONFIG, &r, &fc, vec!["Admin".to_string()], &lookup)
-        .expect("self.process resolves via SelfRef enclosing module");
+    let res = run_res(
+        &RUBY_CHAIN_CONFIG,
+        &r,
+        &fc,
+        vec!["Admin".to_string()],
+        &lookup,
+    )
+    .expect("self.process resolves via SelfRef enclosing module");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.strategy, "ruby_chain_resolution");
 }
@@ -1156,7 +1184,6 @@ fn ruby_chain_field_type_progression() {
     assert_eq!(run(&RUBY_CHAIN_CONFIG, &r, &fc, &lookup), Some(3));
 }
 
-
 // ---------------------------------------------------------------------------
 // C/C++ differential tests (QUAL-2b-c_lang).
 //
@@ -1182,8 +1209,14 @@ fn c_chain_local_type_member_access() {
         EdgeKind::Calls,
     );
     let fc = file_ctx_with_imports(vec![]);
-    let res = run_res(&C_LANG_CHAIN_CONFIG, &r, &fc, vec!["caller".to_string()], &lookup)
-        .expect("s.open() resolves");
+    let res = run_res(
+        &C_LANG_CHAIN_CONFIG,
+        &r,
+        &fc,
+        vec!["caller".to_string()],
+        &lookup,
+    )
+    .expect("s.open() resolves");
     assert_eq!(res.target_symbol_id, 2);
     assert_eq!(res.strategy, "c_chain_resolution");
 }

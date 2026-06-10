@@ -25,18 +25,17 @@ use crate::types::{
 };
 
 use super::super::{
-    file_belongs_to_npm_package, infer_type_from_chain, is_jvm_language,
-    npm_package_from_external_path,
-    is_plain_type_name, npm_package_from_specifier, parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature,
+    file_belongs_to_npm_package, infer_type_from_chain, is_jvm_language, is_plain_type_name,
+    npm_package_from_external_path, npm_package_from_specifier,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
     parse_type_head_and_args_bracket, resolve_type_name_in_scope,
 };
+use super::SymbolIndex;
 use super::{
     common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
     merge_where_bounds, parse_generic_param_clause,
 };
-use super::SymbolIndex;
 use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeInfo};
 
 impl SymbolIndex {
@@ -44,10 +43,7 @@ impl SymbolIndex {
     /// Creates a fresh workspace TypeArena. Use
     /// `build_with_context_and_arena` from the indexer entry point to
     /// share an arena with extractors and other passes.
-    pub fn build(
-        parsed: &[ParsedFile],
-        symbol_id_map: &HashMap<(String, String), i64>,
-    ) -> Self {
+    pub fn build(parsed: &[ParsedFile], symbol_id_map: &HashMap<(String, String), i64>) -> Self {
         Self::build_with_context(parsed, symbol_id_map, None)
     }
 
@@ -79,11 +75,9 @@ impl SymbolIndex {
     ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
-        let mut qname_duplicates: FxHashMap<String, Vec<SymbolInfo>> =
-            FxHashMap::default();
+        let mut qname_duplicates: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
-        let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> =
-            FxHashMap::default();
+        let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut types_by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_id: FxHashMap<i64, SymbolInfo> = FxHashMap::default();
         let mut containing_id: FxHashMap<i64, i64> = FxHashMap::default();
@@ -104,7 +98,10 @@ impl SymbolIndex {
                     name: sym.name.clone(),
                     qualified_name: sym.qualified_name.clone(),
                     kind: sym.kind.as_str().to_string(),
-                    visibility: sym.visibility.as_ref().map(|v| format!("{v:?}").to_lowercase()),
+                    visibility: sym
+                        .visibility
+                        .as_ref()
+                        .map(|v| format!("{v:?}").to_lowercase()),
                     file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
                     package_id: pf.package_id,
@@ -181,10 +178,7 @@ impl SymbolIndex {
                         .or_default()
                         .push(info.clone());
                 }
-                members_by_parent
-                    .entry(parent_key)
-                    .or_default()
-                    .push(info);
+                members_by_parent.entry(parent_key).or_default().push(info);
             }
         }
 
@@ -230,7 +224,9 @@ impl SymbolIndex {
                 let Some(candidates) = by_name.get(original.as_str()) else {
                     continue;
                 };
-                let Some(source) = candidates.first() else { continue };
+                let Some(source) = candidates.first() else {
+                    continue;
+                };
                 let synth = SymbolInfo {
                     id: source.id,
                     name: alias.clone(),
@@ -291,11 +287,19 @@ impl SymbolIndex {
                         // A JVM field has no TypeRef (externals emit no refs); its
                         // type lives in the raw bytecode descriptor signature
                         // (`Lcom/foo/Bar;`). Decode that when no TypeRef is present.
-                        let jvm_field_type = type_refs.first().is_none().then(|| {
-                            sym.signature.as_deref().filter(|_| is_jvm_language(&pf.language))
-                                .and_then(parse_return_type_from_jvm_descriptor)
-                        }).flatten();
-                        let Some(first) = type_refs.first().map(|s| s.to_string()).or(jvm_field_type) else {
+                        let jvm_field_type = type_refs
+                            .first()
+                            .is_none()
+                            .then(|| {
+                                sym.signature
+                                    .as_deref()
+                                    .filter(|_| is_jvm_language(&pf.language))
+                                    .and_then(parse_return_type_from_jvm_descriptor)
+                            })
+                            .flatten();
+                        let Some(first) =
+                            type_refs.first().map(|s| s.to_string()).or(jvm_field_type)
+                        else {
                             continue;
                         };
                         let resolved = resolve_type_name_in_scope(
@@ -361,8 +365,7 @@ impl SymbolIndex {
                         let Some(&first) = type_refs.first() else {
                             continue;
                         };
-                        field_type
-                            .insert(sym.qualified_name.clone(), first.to_string());
+                        field_type.insert(sym.qualified_name.clone(), first.to_string());
                         // Also index by simple name for cross-TU lookups where
                         // the typedef may be referenced without its full scope prefix.
                         if sym.name != sym.qualified_name {
@@ -383,43 +386,42 @@ impl SymbolIndex {
                     // For a non-generic return, or a signature form this parser
                     // doesn't read (leading `RetType name()`, Go's trailing
                     // form), the last TypeRef (then the signature) gives the head.
-                    SymbolKind::Method
-                    | SymbolKind::Function
-                    | SymbolKind::Constructor => {
+                    SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
                         let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
-                            parse_return_type_from_signature(s).or_else(|| {
-                                // Leading-form return (`RetType name(...)`,
-                                // Java/C#): the return type is the first depth-0
-                                // token (our signature builders omit modifiers).
-                                // Only reached when the colon/arrow parse failed,
-                                // so it never fires for params-first languages;
-                                // skipped for constructors (no return to read).
-                                if sym.kind == SymbolKind::Constructor {
-                                    None
-                                } else {
-                                    parse_return_type_positional(s)
-                                }
-                            })
-                            .or_else(|| {
-                                // Trailing-form return (`name(params) Ret`, Go):
-                                // the type after the last top-level `)`.
-                                if sym.kind != SymbolKind::Constructor && pf.language == "go" {
-                                    parse_return_type_trailing(s)
-                                } else {
-                                    None
-                                }
-                            })
-                            .or_else(|| {
-                                // JVM bytecode descriptor (`(params)Ret`, Maven /
-                                // `.class` metadata): decode the return element
-                                // type. Gated on the JVM language set so it never
-                                // perturbs the colon/arrow path.
-                                if is_jvm_language(&pf.language) {
-                                    parse_return_type_from_jvm_descriptor(s)
-                                } else {
-                                    None
-                                }
-                            })
+                            parse_return_type_from_signature(s)
+                                .or_else(|| {
+                                    // Leading-form return (`RetType name(...)`,
+                                    // Java/C#): the return type is the first depth-0
+                                    // token (our signature builders omit modifiers).
+                                    // Only reached when the colon/arrow parse failed,
+                                    // so it never fires for params-first languages;
+                                    // skipped for constructors (no return to read).
+                                    if sym.kind == SymbolKind::Constructor {
+                                        None
+                                    } else {
+                                        parse_return_type_positional(s)
+                                    }
+                                })
+                                .or_else(|| {
+                                    // Trailing-form return (`name(params) Ret`, Go):
+                                    // the type after the last top-level `)`.
+                                    if sym.kind != SymbolKind::Constructor && pf.language == "go" {
+                                        parse_return_type_trailing(s)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .or_else(|| {
+                                    // JVM bytecode descriptor (`(params)Ret`, Maven /
+                                    // `.class` metadata): decode the return element
+                                    // type. Gated on the JVM language set so it never
+                                    // perturbs the colon/arrow path.
+                                    if is_jvm_language(&pf.language) {
+                                        parse_return_type_from_jvm_descriptor(s)
+                                    } else {
+                                        None
+                                    }
+                                })
                         });
                         // A signature that parses to a generic application
                         // (`Repository<User>`) yields an unambiguous head + args.
@@ -468,8 +470,7 @@ impl SymbolIndex {
                             // return-first ref list ends on the last param). A
                             // structural or absent signature falls back to the
                             // last TypeRef, then the raw signature.
-                            let sig_plain =
-                                sig_rt.as_deref().filter(|rt| is_plain_type_name(rt));
+                            let sig_plain = sig_rt.as_deref().filter(|rt| is_plain_type_name(rt));
                             if let Some(rt) = sig_plain {
                                 let resolved = resolve_type_name_in_scope(
                                     rt,
@@ -557,8 +558,7 @@ impl SymbolIndex {
                                     generic_params.insert(sym.name.clone(), params.clone());
                                     generic_params.insert(sym.qualified_name.clone(), params);
                                     generic_param_bounds.insert(sym.name.clone(), bounds.clone());
-                                    generic_param_bounds
-                                        .insert(sym.qualified_name.clone(), bounds);
+                                    generic_param_bounds.insert(sym.qualified_name.clone(), bounds);
                                     break; // found params, don't try next bracket pair
                                 }
                             }
@@ -586,7 +586,10 @@ impl SymbolIndex {
             type_info.entry(name_or_qname).or_default().generic_params = params;
         }
         for (name_or_qname, bounds) in generic_param_bounds {
-            type_info.entry(name_or_qname).or_default().generic_param_bounds = bounds;
+            type_info
+                .entry(name_or_qname)
+                .or_default()
+                .generic_param_bounds = bounds;
         }
 
         // Variable type inference pass: for Variable symbols without an explicit
@@ -667,13 +670,15 @@ impl SymbolIndex {
                 };
                 if !matches!(
                     child_sym.kind,
-                    SymbolKind::Class | SymbolKind::Interface | SymbolKind::Trait | SymbolKind::Struct
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Trait
+                        | SymbolKind::Struct
                 ) {
                     continue;
                 }
                 let child_qname = &child_sym.qualified_name;
-                let Some(&child_id) =
-                    symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
+                let Some(&child_id) = symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
                 else {
                     continue;
                 };
@@ -685,20 +690,30 @@ impl SymbolIndex {
                 // type arguments so `extends Foo<Bar>` keys on the head `Foo`.
                 let parent_raw = r.target_name.trim_start_matches('\\');
                 let parent_simple = parse_type_head_and_args(parent_raw).0;
-                let candidates = by_name.get(parent_simple).map(|v| v.as_slice()).unwrap_or(&[]);
+                let candidates = by_name
+                    .get(parent_simple)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
                 if candidates.is_empty() {
                     continue;
                 }
                 // Pick the candidate whose namespace best matches the child's namespace.
                 // "Best" = longest common dotted prefix.
-                let child_ns = child_qname.rfind('.').map(|i| &child_qname[..i]).unwrap_or("");
+                let child_ns = child_qname
+                    .rfind('.')
+                    .map(|i| &child_qname[..i])
+                    .unwrap_or("");
                 let best = if candidates.len() == 1 {
                     &candidates[0]
                 } else {
                     candidates
                         .iter()
                         .max_by_key(|c| {
-                            let cns = c.qualified_name.rfind('.').map(|i| &c.qualified_name[..i]).unwrap_or("");
+                            let cns = c
+                                .qualified_name
+                                .rfind('.')
+                                .map(|i| &c.qualified_name[..i])
+                                .unwrap_or("");
                             common_prefix_len(child_ns, cns)
                         })
                         .unwrap_or(&candidates[0])
@@ -757,9 +772,7 @@ impl SymbolIndex {
                 };
                 alias_target_map.insert(sym.qualified_name.clone(), target.clone());
                 if sym.name != sym.qualified_name {
-                    alias_target_map
-                        .entry(sym.name.clone())
-                        .or_insert(target);
+                    alias_target_map.entry(sym.name.clone()).or_insert(target);
                 }
             }
         }
@@ -774,6 +787,17 @@ impl SymbolIndex {
         // module that merely imports it, violating scope-directed resolution.
         let mut reexport_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
         for pf in parsed {
+            let import_modules: Vec<String> = pf
+                .refs
+                .iter()
+                .filter(|r| r.kind == EdgeKind::Imports && !r.is_reexport)
+                .filter_map(|r| {
+                    r.module
+                        .clone()
+                        .or_else(|| (!r.target_name.is_empty()).then(|| r.target_name.clone()))
+                })
+                .filter(|m| !m.is_empty())
+                .collect();
             for r in &pf.refs {
                 if r.kind != EdgeKind::Imports || !r.is_reexport {
                     continue;
@@ -788,7 +812,22 @@ impl SymbolIndex {
                     .entry(pf.path.clone())
                     .or_default()
                     .push((r.target_name.clone(), mod_path.clone()));
+                if r.target_name == "*" {
+                    for import_module in &import_modules {
+                        if import_module == mod_path {
+                            continue;
+                        }
+                        reexport_map
+                            .entry(pf.path.clone())
+                            .or_default()
+                            .push((mod_path.clone(), import_module.clone()));
+                    }
+                }
             }
+        }
+        for entries in reexport_map.values_mut() {
+            entries.sort();
+            entries.dedup();
         }
 
         // Aggregate re-exports by the npm package they belong to. Only
@@ -890,27 +929,28 @@ impl SymbolIndex {
                 if module.is_empty() {
                     continue;
                 }
-                // Relative specifiers must be cached per-source because the
-                // resolution depends on the importing file's directory.
+                // Cache every resolved specifier per-source. Relative
+                // specifiers require this, and some ecosystems (Nim) also have
+                // bare specifiers whose nearest-file meaning depends on the
+                // importing directory. The global map remains a fallback for
+                // stable package-style imports.
                 let is_relative = module.starts_with('.');
+                let key = (pf.path.clone(), module.clone());
+                let resolved_for_source = if module_to_file_per_source.contains_key(&key) {
+                    None
+                } else {
+                    resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
+                };
+                if let Some(resolved) = resolved_for_source.as_ref() {
+                    module_to_file_per_source.insert(key, resolved.clone());
+                }
                 if is_relative {
-                    let key = (pf.path.clone(), module.clone());
-                    if module_to_file_per_source.contains_key(&key) {
-                        continue;
-                    }
-                    if let Some(resolved) =
-                        resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
-                    {
-                        module_to_file_per_source.insert(key, resolved);
-                    }
                     continue;
                 }
                 if module_to_file.contains_key(module.as_str()) {
                     continue;
                 }
-                if let Some(resolved) =
-                    resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
-                {
+                if let Some(resolved) = resolved_for_source {
                     module_to_file.insert(module.clone(), resolved);
                     continue;
                 }
@@ -942,7 +982,10 @@ impl SymbolIndex {
                 continue;
             }
             for sym in &pf.symbols {
-                if matches!(sym.kind, SymbolKind::Method | SymbolKind::Property | SymbolKind::Function) {
+                if matches!(
+                    sym.kind,
+                    SymbolKind::Method | SymbolKind::Property | SymbolKind::Function
+                ) {
                     ambient_global_method_names.insert(sym.name.clone());
                 }
             }
@@ -1239,7 +1282,12 @@ pub(super) fn _test_resolve_workspace_pkg_entry(
     workspace_pkg_paths: &HashMap<i64, String>,
     index: &crate::indexer::module_resolution::FilePathIndex,
 ) -> Option<String> {
-    resolve_workspace_pkg_entry(spec, workspace_pkg_by_declared_name, workspace_pkg_paths, index)
+    resolve_workspace_pkg_entry(
+        spec,
+        workspace_pkg_by_declared_name,
+        workspace_pkg_paths,
+        index,
+    )
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
+use super::extract as run_extract;
 use crate::languages::erlang::cowboy::extract_cowboy_triples_from_text;
 use crate::types::ExtractedRoute;
-use super::extract as run_extract;
 
 fn collect(text: &str) -> Vec<ExtractedRoute> {
     let mut routes = Vec::new();

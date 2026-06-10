@@ -23,6 +23,8 @@ struct Mock {
     module_files: FxHashMap<String, String>,
     /// file_path → symbols defined in that file
     in_file: FxHashMap<String, Vec<SymbolInfo>>,
+    /// symbol name → symbols with that name
+    by_name: FxHashMap<String, Vec<SymbolInfo>>,
 }
 
 impl Mock {
@@ -38,14 +40,21 @@ impl Mock {
         self
     }
     fn define(mut self, file: &str, sym: SymbolInfo) -> Self {
+        self.by_name
+            .entry(sym.name.clone())
+            .or_default()
+            .push(sym.clone());
         self.in_file.entry(file.to_string()).or_default().push(sym);
         self
     }
 }
 
 impl SymbolLookup for Mock {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+        self.by_name
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
@@ -63,7 +72,10 @@ impl SymbolLookup for Mock {
         false
     }
     fn in_file(&self, path: &str) -> &[SymbolInfo] {
-        self.in_file.get(path).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        self.in_file
+            .get(path)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
     }
     fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
         // Mirror the real index: resolve the spec to a file, else fall back to
@@ -184,6 +196,58 @@ fn two_hop_reexport_resolves() {
 }
 
 #[test]
+fn transitive_wildcard_reexport_resolves_indexed_external_source() {
+    // Nim shape from nimbus:
+    //   api.nim exports/imports common
+    //   common.nim exports results
+    //   vendor results.nim defines err
+    let lookup = Mock::default()
+        .reexport("api.nim", "*", "common")
+        .reexport("common.nim", "*", "results")
+        .module_file("common", "common.nim")
+        .module_file("results", "ext:submodule:vendor/nim-results/results.nim")
+        .define(
+            "ext:submodule:vendor/nim-results/results.nim",
+            sym(
+                12,
+                "err",
+                "function",
+                "ext:submodule:vendor/nim-results/results.nim",
+            ),
+        );
+
+    let res = follow_reexports("api.nim", "err", EdgeKind::Calls, accept, &lookup, 0)
+        .expect("transitive wildcard re-export resolves to indexed external source");
+    assert_eq!(res.target_symbol_id, 12);
+    assert_eq!(res.strategy, "reexport_star");
+}
+
+#[test]
+fn wildcard_reexport_uses_unique_matching_module_file_when_first_suffix_lacks_target() {
+    // Nim projects can index several files named results.nim. The module
+    // resolver may pick the first suffix hit, but the explicit re-export demand
+    // is for `results.err`; if exactly one matching results.nim provider defines
+    // err, the generic re-export walk should bind that provider.
+    let lookup = Mock::default()
+        .reexport("common.nim", "*", "results")
+        .module_file("results", "ext:nim:eth/eth/rlp/results.nim")
+        .define(
+            "ext:submodule:vendor/nim-results/results.nim",
+            sym(
+                12,
+                "err",
+                "function",
+                "ext:submodule:vendor/nim-results/results.nim",
+            ),
+        );
+
+    let res = follow_reexports("common.nim", "err", EdgeKind::Calls, accept, &lookup, 0)
+        .expect("unique matching results.nim provider should resolve err");
+    assert_eq!(res.target_symbol_id, 12);
+    assert_eq!(res.strategy, "reexport_star");
+}
+
+#[test]
 fn empty_reexport_map_does_not_resolve() {
     // The soundness invariant at the walker level: a module that does NOT
     // genuinely re-export the name (its private imports were filtered out of
@@ -201,10 +265,11 @@ fn empty_reexport_map_does_not_resolve() {
 }
 
 #[test]
-fn external_source_is_skipped() {
-    // foo re-exports Thing from a module that resolves to an external file.
-    // The per-file walk leaves cross-package / external re-exports to the
-    // externals stage and resolves nothing here.
+fn indexed_external_source_is_followed() {
+    // foo re-exports Thing from a module that resolves to an already-indexed
+    // external file. This is safe to follow because the edge came from an
+    // explicit re-export entry; unresolved bare packages still stay out of this
+    // walk.
     let lookup = Mock::default()
         .reexport("foo.rs", "Thing", "pkg")
         .module_file("pkg", "ext:node_modules/pkg/index.d.ts")
@@ -213,10 +278,10 @@ fn external_source_is_skipped() {
             sym(4, "Thing", "class", "ext:node_modules/pkg/index.d.ts"),
         );
 
-    assert!(
-        follow_reexports("foo.rs", "Thing", EdgeKind::TypeRef, accept, &lookup, 0).is_none(),
-        "external (ext:) re-export source must be skipped"
-    );
+    let res = follow_reexports("foo.rs", "Thing", EdgeKind::TypeRef, accept, &lookup, 0)
+        .expect("indexed external re-export source resolves");
+    assert_eq!(res.target_symbol_id, 4);
+    assert_eq!(res.strategy, "reexport_chain");
 }
 
 #[test]

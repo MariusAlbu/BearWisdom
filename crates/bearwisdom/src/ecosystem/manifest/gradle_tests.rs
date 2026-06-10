@@ -29,7 +29,10 @@ fn parse_gradle_direct_coords_extracts_full_gav() {
     "#;
     let coords = parse_gradle_direct_coords(content);
     assert_eq!(coords.len(), 3);
-    let assertj = coords.iter().find(|c| c.artifact_id == "assertj-core").unwrap();
+    let assertj = coords
+        .iter()
+        .find(|c| c.artifact_id == "assertj-core")
+        .unwrap();
     assert_eq!(assertj.group_id, "org.assertj");
     assert_eq!(assertj.version.as_deref(), Some("3.27.7"));
 }
@@ -55,7 +58,10 @@ kotlin-compiler = { module = "org.jetbrains.kotlin:kotlin-compiler", version.ref
 assertj-core = { module = "org.assertj:assertj-core", version = "3.27.7" }
 "#;
     let cat = parse_version_catalog(content);
-    let coord = cat.libraries.get("kotlin.compiler").expect("kotlin.compiler");
+    let coord = cat
+        .libraries
+        .get("kotlin.compiler")
+        .expect("kotlin.compiler");
     assert_eq!(coord.group_id, "org.jetbrains.kotlin");
     assert_eq!(coord.artifact_id, "kotlin-compiler");
     assert_eq!(coord.version.as_deref(), Some("2.3.20"));
@@ -142,7 +148,10 @@ kotlin = "2.3.20" # latest stable
 junit = { module = "junit:junit", version = "4.13.2" } # used by tests only
 "#;
     let cat = parse_version_catalog(content);
-    assert_eq!(cat.versions.get("kotlin").map(|s| s.as_str()), Some("2.3.20"));
+    assert_eq!(
+        cat.versions.get("kotlin").map(|s| s.as_str()),
+        Some("2.3.20")
+    );
     assert!(cat.libraries.contains_key("junit"));
 }
 

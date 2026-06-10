@@ -4,8 +4,9 @@ use super::*;
 fn expression_becomes_js_region() {
     let src = "<p>{{getUserName()}}</p>";
     let regions = detect_regions(src);
-    assert!(regions.iter().any(|r| r.language_id == "javascript"
-        && r.text.contains("getUserName")));
+    assert!(regions
+        .iter()
+        .any(|r| r.language_id == "javascript" && r.text.contains("getUserName")));
 }
 
 #[test]

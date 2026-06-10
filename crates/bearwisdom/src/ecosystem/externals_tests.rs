@@ -39,10 +39,7 @@ fn pick_newest_version_orders_milestones_lex() {
     // Same numeric prefix, qualifier comparison falls back to lex —
     // "M9" > "M43" lex-wise. Documenting the actual behavior so the
     // semver-snobs callers know to pin explicit versions for milestones.
-    assert_eq!(
-        pick_newest_version(&versions).as_deref(),
-        Some("1.0.0-M9")
-    );
+    assert_eq!(pick_newest_version(&versions).as_deref(), Some("1.0.0-M9"));
 }
 
 #[test]
@@ -61,7 +58,11 @@ fn make_gradle_cache_entry(
     version: &str,
     file_name: &str,
 ) -> std::path::PathBuf {
-    let dir = root.join(group).join(artifact).join(version).join("deadbeef");
+    let dir = root
+        .join(group)
+        .join(artifact)
+        .join(version)
+        .join("deadbeef");
     fs::create_dir_all(&dir).unwrap();
     let f = dir.join(file_name);
     fs::write(&f, b"").unwrap();
@@ -85,8 +86,8 @@ fn resolve_gradle_sources_jar_finds_jar_with_explicit_version() {
         artifact_id: "assertj-core".to_string(),
         version: Some("3.27.7".to_string()),
     };
-    let (resolved_version, jar) = resolve_gradle_sources_jar(cache, &coord)
-        .expect("sources jar lookup should succeed");
+    let (resolved_version, jar) =
+        resolve_gradle_sources_jar(cache, &coord).expect("sources jar lookup should succeed");
     assert_eq!(resolved_version, "3.27.7");
     assert_eq!(jar, expected);
 }
@@ -126,13 +127,7 @@ fn resolve_gradle_sources_jar_returns_none_when_only_binary_jar() {
     let cache = tmp.path();
     // Only the binary jar is present — common Gradle default; sources are
     // a separate dev-machine prereq we explicitly do NOT fall back from.
-    make_gradle_cache_entry(
-        cache,
-        "org.example",
-        "lib",
-        "1.0.0",
-        "lib-1.0.0.jar",
-    );
+    make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
 
     let coord = MavenCoord {
         group_id: "org.example".to_string(),
@@ -197,8 +192,7 @@ fn resolve_coursier_sources_jar_finds_central_layout() {
         artifact_id: "fs2-core_3".to_string(),
         version: Some("3.12.0".to_string()),
     };
-    let (version, jar) =
-        resolve_coursier_sources_jar(cache, &coord).expect("Coursier lookup");
+    let (version, jar) = resolve_coursier_sources_jar(cache, &coord).expect("Coursier lookup");
     assert_eq!(version, "3.12.0");
     assert_eq!(jar, expected);
 }
@@ -276,7 +270,10 @@ fn strip_scala_suffix_removes_version_suffixes() {
     assert_eq!(strip_scala_suffix("scalatest_2.13"), "scalatest");
     assert_eq!(strip_scala_suffix("cats-core_3"), "cats-core");
     assert_eq!(strip_scala_suffix("scalatest-core_2.12"), "scalatest-core");
-    assert_eq!(strip_scala_suffix("scalatest-compatible"), "scalatest-compatible");
+    assert_eq!(
+        strip_scala_suffix("scalatest-compatible"),
+        "scalatest-compatible"
+    );
     assert_eq!(strip_scala_suffix("akka-actor_2.13"), "akka-actor");
 }
 
@@ -319,14 +316,29 @@ fn resolve_coursier_submodule_jars_finds_split_modules() {
     let found_artifacts: Vec<&str> = subs.iter().map(|(a, _, _)| a.as_str()).collect();
 
     // Both sub-modules found; aggregator itself excluded.
-    assert!(found_artifacts.contains(&"scalatest-core_2.13"), "missing core");
-    assert!(found_artifacts.contains(&"scalatest-shouldmatchers_2.13"), "missing matchers");
-    assert!(!found_artifacts.contains(&"scalatest_2.13"), "aggregator must be excluded");
+    assert!(
+        found_artifacts.contains(&"scalatest-core_2.13"),
+        "missing core"
+    );
+    assert!(
+        found_artifacts.contains(&"scalatest-shouldmatchers_2.13"),
+        "missing matchers"
+    );
+    assert!(
+        !found_artifacts.contains(&"scalatest_2.13"),
+        "aggregator must be excluded"
+    );
 
     // Verify the jar paths are correct.
-    let core_found = subs.iter().find(|(a, _, _)| a == "scalatest-core_2.13").unwrap();
+    let core_found = subs
+        .iter()
+        .find(|(a, _, _)| a == "scalatest-core_2.13")
+        .unwrap();
     assert_eq!(core_found.2, core_jar);
-    let matchers_found = subs.iter().find(|(a, _, _)| a == "scalatest-shouldmatchers_2.13").unwrap();
+    let matchers_found = subs
+        .iter()
+        .find(|(a, _, _)| a == "scalatest-shouldmatchers_2.13")
+        .unwrap();
     assert_eq!(matchers_found.2, matchers_jar);
 }
 

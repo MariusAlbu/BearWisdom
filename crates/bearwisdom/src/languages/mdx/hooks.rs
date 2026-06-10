@@ -19,7 +19,10 @@ impl LanguageEngineHooks for MdxHooks {
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         crate::languages::typescript::hooks::infer_external_inner_with_lookup(
-            file_ctx, ref_ctx, project_ctx, lookup,
+            file_ctx,
+            ref_ctx,
+            project_ctx,
+            lookup,
         )
     }
 
@@ -28,11 +31,7 @@ impl LanguageEngineHooks for MdxHooks {
         file: &ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<FileContext> {
-        Some(
-            crate::languages::typescript::hooks::build_file_context_inner(
-                file, project_ctx,
-            ),
-        )
+        Some(crate::languages::typescript::hooks::build_file_context_inner(file, project_ctx))
     }
 }
 

@@ -6,8 +6,7 @@
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, ParsedFile, SegmentKind,
-    SymbolKind,
+    EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, ParsedFile, SegmentKind, SymbolKind,
 };
 use std::fmt;
 
@@ -106,10 +105,7 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
 /// Extends `validate` with TypeArena-dependent rules (TYPE-001/002/003) and
 /// rules that need to look up a Symbol's `return_type` TypeId against the
 /// arena.
-pub fn validate_with_arena(
-    file: &ParsedFile,
-    arena: &TypeArena,
-) -> Vec<ContractViolation> {
+pub fn validate_with_arena(file: &ParsedFile, arena: &TypeArena) -> Vec<ContractViolation> {
     let mut out = validate(file);
     for (idx, sym) in file.symbols.iter().enumerate() {
         check_sym_005_arena(file, idx, sym, arena, &mut out);
@@ -125,14 +121,20 @@ pub fn validate_with_arena(
 fn collect_type_ids(file: &ParsedFile) -> Vec<TypeId> {
     let mut out = Vec::new();
     for sym in &file.symbols {
-        if let Some(id) = sym.declared_type { out.push(id); }
-        if let Some(id) = sym.return_type { out.push(id); }
+        if let Some(id) = sym.declared_type {
+            out.push(id);
+        }
+        if let Some(id) = sym.return_type {
+            out.push(id);
+        }
         out.extend(sym.param_types.iter().copied());
     }
     for r in &file.refs {
         if let Some(chain) = r.chain.as_ref() {
             for seg in &chain.segments {
-                if let Some(id) = seg.declared_type_id { out.push(id); }
+                if let Some(id) = seg.declared_type_id {
+                    out.push(id);
+                }
                 out.extend(seg.type_arg_ids.iter().copied());
             }
         }
@@ -155,8 +157,7 @@ fn collect_type_ids(file: &ParsedFile) -> Vec<TypeId> {
 /// across the whole index run. Test helpers can pass a fresh per-file
 /// arena via the `validate_extraction` wrapper.
 pub fn populate_positions(file: &mut ParsedFile, arena: &TypeArena) {
-    let line_starts_owned: Option<Vec<u32>> =
-        file.content.as_deref().map(build_line_starts);
+    let line_starts_owned: Option<Vec<u32>> = file.content.as_deref().map(build_line_starts);
     let line_starts = line_starts_owned.as_deref();
 
     for sym in &mut file.symbols {
@@ -306,7 +307,9 @@ fn build_line_starts(content: &str) -> Vec<u32> {
 /// Returns the expected byte offset of (line, col) given the precomputed line
 /// starts. Clamps to file length on out-of-range positions.
 fn expected_byte(line_starts: &[u32], line: u32, col: u32) -> Option<u32> {
-    line_starts.get(line as usize).map(|&s| s.saturating_add(col))
+    line_starts
+        .get(line as usize)
+        .map(|&s| s.saturating_add(col))
 }
 
 /// Wrap an `ExtractionResult` as a `ParsedFile` for validation. Extractor
@@ -422,12 +425,18 @@ fn file_loc(file: &ParsedFile) -> ViolationLocation {
 /// Returns true for any character that any registered language uses as a
 /// qname separator.
 fn is_qname_separator_char(c: char) -> bool {
-    matches!(c, '.' | ':' | '/' | '\\' | '$' | '>' | '-' | '\'' | '|' | '#' | '@')
+    matches!(
+        c,
+        '.' | ':' | '/' | '\\' | '$' | '>' | '-' | '\'' | '|' | '#' | '@'
+    )
 }
 
 /// Whether `kind` is a callable kind that legitimately carries `call_args`.
 fn kind_allows_call_args(kind: EdgeKind) -> bool {
-    matches!(kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports)
+    matches!(
+        kind,
+        EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Imports
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -438,9 +447,7 @@ fn check_file_parallel_vecs(file: &ParsedFile, out: &mut Vec<ContractViolation>)
     let nsym = file.symbols.len();
     let nref = file.refs.len();
 
-    if !file.symbol_origin_languages.is_empty()
-        && file.symbol_origin_languages.len() != nsym
-    {
+    if !file.symbol_origin_languages.is_empty() && file.symbol_origin_languages.len() != nsym {
         out.push(ContractViolation {
             code: "FILE-001",
             message: format!(
@@ -520,9 +527,7 @@ fn check_flow_meta(file: &ParsedFile, out: &mut Vec<ContractViolation>) {
             });
         }
     }
-    if !file.flow.ref_byte_offsets.is_empty()
-        && file.flow.ref_byte_offsets.len() != nref
-    {
+    if !file.flow.ref_byte_offsets.is_empty() && file.flow.ref_byte_offsets.len() != nref {
         out.push(ContractViolation {
             code: "FILE-004",
             message: format!(
@@ -558,9 +563,7 @@ fn check_sym_001(
     if !qname.ends_with(name) {
         out.push(ContractViolation {
             code: "SYM-001",
-            message: format!(
-                "qualified_name '{qname}' does not end with name '{name}'",
-            ),
+            message: format!("qualified_name '{qname}' does not end with name '{name}'",),
             location: sym_loc(file, idx, sym),
         });
         return;
@@ -588,7 +591,9 @@ fn check_sym_002(
     out: &mut Vec<ContractViolation>,
 ) {
     let Some(pidx) = sym.parent_index else { return };
-    let Some(parent) = file.symbols.get(pidx) else { return };
+    let Some(parent) = file.symbols.get(pidx) else {
+        return;
+    };
     let expected = parent.qualified_name.as_str();
     match sym.scope_path.as_deref() {
         Some(scope) if scope == expected => {}
@@ -714,9 +719,7 @@ fn check_ref_003(
     if dotted {
         out.push(ContractViolation {
             code: "REF-003",
-            message: format!(
-                "Calls ref has dotted target_name '{tn}' but no MemberChain",
-            ),
+            message: format!("Calls ref has dotted target_name '{tn}' but no MemberChain",),
             location: ref_loc(file, idx, r),
         });
     }
@@ -729,8 +732,12 @@ fn check_ref_004(
     r: &ExtractedRef,
     out: &mut Vec<ContractViolation>,
 ) {
-    let Some(chain) = r.chain.as_ref() else { return };
-    let Some(last) = chain.segments.last() else { return };
+    let Some(chain) = r.chain.as_ref() else {
+        return;
+    };
+    let Some(last) = chain.segments.last() else {
+        return;
+    };
     if last.name != r.target_name {
         out.push(ContractViolation {
             code: "REF-004",
@@ -783,7 +790,8 @@ fn check_chain_001(
     if chain.segments.is_empty() {
         out.push(ContractViolation {
             code: "CHAIN-001",
-            message: "MemberChain has zero segments; chain must have at least one segment".to_string(),
+            message: "MemberChain has zero segments; chain must have at least one segment"
+                .to_string(),
             location: ref_loc(file, idx, r),
         });
     }
@@ -991,8 +999,12 @@ fn check_sym_006(
     if !is_callable_kind(sym.kind) {
         return;
     }
-    let Some(sig) = sym.signature.as_deref() else { return };
-    let Some(arity) = signature_arity(sig) else { return };
+    let Some(sig) = sym.signature.as_deref() else {
+        return;
+    };
+    let Some(arity) = signature_arity(sig) else {
+        return;
+    };
     if sym.param_types.is_empty() {
         // Not yet populated — expected during transition. Skip rather than
         // fire on every callable in the corpus.

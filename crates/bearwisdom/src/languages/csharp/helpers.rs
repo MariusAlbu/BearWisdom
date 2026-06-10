@@ -93,9 +93,15 @@ pub(super) fn build_method_signature(node: &Node, src: &[u8]) -> Option<String> 
     // Build directly into one buffer. The old path did
     // `format!(...).trim().to_string()` — two allocations per method.
     // On Smartstore's ~50k methods that's 100k redundant allocations.
-    let ret = node.child_by_field_name("returns").map(|t| node_text(t, src));
-    let type_params = node.child_by_field_name("type_parameters").map(|tp| node_text(tp, src));
-    let params = node.child_by_field_name("parameters").map(|p| node_text(p, src));
+    let ret = node
+        .child_by_field_name("returns")
+        .map(|t| node_text(t, src));
+    let type_params = node
+        .child_by_field_name("type_parameters")
+        .map(|tp| node_text(tp, src));
+    let params = node
+        .child_by_field_name("parameters")
+        .map(|p| node_text(p, src));
 
     let mut sig = String::with_capacity(128);
     if let Some(r) = ret.as_deref() {
@@ -128,7 +134,12 @@ pub(super) fn collect_type_param_constraints(node: &Node, src: &[u8]) -> String 
     for child in node.children(&mut cursor) {
         if child.kind() == "type_parameter_constraints_clause" {
             out.push(' ');
-            out.push_str(&node_text(child, src).split_whitespace().collect::<Vec<_>>().join(" "));
+            out.push_str(
+                &node_text(child, src)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
         }
     }
     out

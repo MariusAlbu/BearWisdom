@@ -12,17 +12,41 @@ fn kotlin_profile_identity() {
 #[test]
 fn kotlin_calls_accepts_function_method_constructor_property() {
     let t = KOTLIN_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Method));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Constructor));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Property));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Method
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Constructor
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Property
+    ));
 }
 
 #[test]
 fn kotlin_inherits_accepts_class_and_interface() {
     let t = KOTLIN_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Inherits, SymbolKind::Class));
-    assert!(KindCompatibility::check(t, EdgeKind::Inherits, SymbolKind::Interface));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Inherits,
+        SymbolKind::Class
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Inherits,
+        SymbolKind::Interface
+    ));
 }
 
 #[test]

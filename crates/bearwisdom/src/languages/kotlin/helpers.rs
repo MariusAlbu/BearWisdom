@@ -39,7 +39,10 @@ pub(super) fn classify_class(node: &Node, src: &[u8]) -> SymbolKind {
     // not emit a dedicated keyword child but the text starts with `interface`.
     let full_text = node_text(*node, src);
     let trimmed = full_text.trim_start();
-    if trimmed.starts_with("interface ") || trimmed.starts_with("interface\t") || trimmed == "interface{}" {
+    if trimmed.starts_with("interface ")
+        || trimmed.starts_with("interface\t")
+        || trimmed == "interface{}"
+    {
         return SymbolKind::Interface;
     }
     if trimmed.starts_with("enum") {
@@ -97,10 +100,18 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
             let text = node_text(child, src);
             // Check explicit modifiers in precedence order; specific keywords
             // beat the implicit-public default below.
-            if text.contains("private")   { return Some(Visibility::Private);   }
-            if text.contains("protected") { return Some(Visibility::Protected); }
-            if text.contains("internal")  { return Some(Visibility::Internal);  }
-            if text.contains("public")    { return Some(Visibility::Public);    }
+            if text.contains("private") {
+                return Some(Visibility::Private);
+            }
+            if text.contains("protected") {
+                return Some(Visibility::Protected);
+            }
+            if text.contains("internal") {
+                return Some(Visibility::Internal);
+            }
+            if text.contains("public") {
+                return Some(Visibility::Public);
+            }
             // A `modifiers` block exists but holds only non-visibility
             // tokens (`open`, `abstract`, `sealed`, `data`, …). Kotlin's
             // default visibility is `public`; falling through to `None`

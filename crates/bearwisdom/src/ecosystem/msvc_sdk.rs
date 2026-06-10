@@ -34,8 +34,8 @@ use std::sync::Arc;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    Platform, SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -46,9 +46,15 @@ const TAG: &str = "msvc-sdk";
 pub struct MsvcSdkEcosystem;
 
 impl Ecosystem for MsvcSdkEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        &["c", "cpp"]
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::All(&[
@@ -77,17 +83,20 @@ impl Ecosystem for MsvcSdkEcosystem {
         Vec::new()
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     // Windows SDK is workspace-level: the host's installed Windows SDK
     // serves every C/C++ translation unit in the build.
-    fn is_workspace_global(&self) -> bool { true }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::posix_headers::build_c_header_index(dep_roots)
     }
 
@@ -97,16 +106,22 @@ impl Ecosystem for MsvcSdkEcosystem {
         header: &str,
         _symbols: &[&str],
     ) -> Vec<WalkedFile> {
-        super::posix_headers::resolve_header(dep, header).into_iter().collect()
+        super::posix_headers::resolve_header(dep, header)
+            .into_iter()
+            .collect()
     }
 
     fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
-        super::posix_headers::resolve_header(dep, fqn).into_iter().collect()
+        super::posix_headers::resolve_header(dep, fqn)
+            .into_iter()
+            .collect()
     }
 }
 
 impl ExternalSourceLocator for MsvcSdkEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         let vcxprojs = find_vcxproj_files(project_root);
         let pinned_version = pinned_target_platform_version(&vcxprojs);
@@ -162,8 +177,12 @@ fn find_vcxproj_files(project_root: &Path) -> Vec<PathBuf> {
 }
 
 fn walk_vcxproj_rec(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth >= 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -171,10 +190,22 @@ fn walk_vcxproj_rec(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
             // Skip well-known build / dependency / VCS directories so the
             // walk stays cheap on large repos.
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name,
-                    ".git" | ".hg" | ".svn" | "node_modules" | "target" |
-                    "build" | "out" | "bin" | "obj" | "Debug" | "Release" |
-                    ".vs" | "packages" | "vendor"
+                if matches!(
+                    name,
+                    ".git"
+                        | ".hg"
+                        | ".svn"
+                        | "node_modules"
+                        | "target"
+                        | "build"
+                        | "out"
+                        | "bin"
+                        | "obj"
+                        | "Debug"
+                        | "Release"
+                        | ".vs"
+                        | "packages"
+                        | "vendor"
                 ) {
                     continue;
                 }
@@ -182,8 +213,12 @@ fn walk_vcxproj_rec(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
             walk_vcxproj_rec(&path, out, depth + 1);
             continue;
         }
-        if !ft.is_file() { continue }
-        if path.extension().and_then(|e| e.to_str())
+        if !ft.is_file() {
+            continue;
+        }
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("vcxproj"))
         {
             out.push(path);
@@ -197,7 +232,9 @@ fn walk_vcxproj_rec(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
 fn pinned_target_platform_version(vcxprojs: &[PathBuf]) -> Option<String> {
     let mut versions: Vec<String> = Vec::new();
     for path in vcxprojs {
-        let Ok(text) = std::fs::read_to_string(path) else { continue };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
         for line in text.lines() {
             let trim = line.trim();
             let open = "<WindowsTargetPlatformVersion>";
@@ -234,7 +271,9 @@ fn pinned_target_platform_version(vcxprojs: &[PathBuf]) -> Option<String> {
 /// versioned subdir exists under the SDK include root, that subdir is
 /// preferred over the newest-installed default.
 fn discover_msvc_include(pinned_version: Option<&str>) -> Vec<ExternalDepRoot> {
-    if !cfg!(target_os = "windows") { return Vec::new() }
+    if !cfg!(target_os = "windows") {
+        return Vec::new();
+    }
 
     if let Some(explicit) = std::env::var_os("BEARWISDOM_MSVC_INCLUDE") {
         let p = PathBuf::from(explicit);
@@ -277,7 +316,11 @@ fn discover_msvc_include(pinned_version: Option<&str>) -> Vec<ExternalDepRoot> {
                 .join("Windows Kits")
                 .join("10")
                 .join("Include");
-            if p.is_dir() { Some(p) } else { None }
+            if p.is_dir() {
+                Some(p)
+            } else {
+                None
+            }
         });
     if let Some(include_root) = wdk_include_root {
         if let Some(pinned) = pinned_version {
@@ -383,21 +426,36 @@ fn vswhere_vc_tools_include() -> Option<PathBuf> {
     let output = std::process::Command::new(&vswhere)
         .args([
             "-latest",
-            "-products", "*",
-            "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "-property", "installationPath",
-            "-format", "value",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+            "-format",
+            "value",
             "-utf8",
         ])
         .output()
         .ok()?;
-    if !output.status.success() { return None }
+    if !output.status.success() {
+        return None;
+    }
     let install_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if install_path.is_empty() { return None }
-    let msvc_dir = PathBuf::from(install_path).join("VC").join("Tools").join("MSVC");
+    if install_path.is_empty() {
+        return None;
+    }
+    let msvc_dir = PathBuf::from(install_path)
+        .join("VC")
+        .join("Tools")
+        .join("MSVC");
     let version_dir = newest_subdir(&msvc_dir)?;
     let include = version_dir.join("include");
-    if include.is_dir() { Some(include) } else { None }
+    if include.is_dir() {
+        Some(include)
+    } else {
+        None
+    }
 }
 
 /// vswhere is installed at `<ProgramFiles(x86)>\Microsoft Visual Studio\
@@ -410,18 +468,25 @@ fn locate_vswhere() -> Option<PathBuf> {
         // up to the installer directory.
         if let Some(parent) = PathBuf::from(env).parent().and_then(|p| p.parent()) {
             let candidate = parent.join("Installer").join("vswhere.exe");
-            if candidate.is_file() { return Some(candidate) }
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
     for base in [
         std::env::var_os("ProgramFiles(x86)"),
         std::env::var_os("ProgramFiles"),
-    ].into_iter().flatten() {
+    ]
+    .into_iter()
+    .flatten()
+    {
         let p = PathBuf::from(base)
             .join("Microsoft Visual Studio")
             .join("Installer")
             .join("vswhere.exe");
-        if p.is_file() { return Some(p) }
+        if p.is_file() {
+            return Some(p);
+        }
     }
     None
 }
@@ -441,9 +506,13 @@ fn discover_vc_tools_include_layout(bases: &[PathBuf]) -> Option<PathBuf> {
             editions.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
             for edition_dir in editions.into_iter().rev() {
                 let msvc_dir = edition_dir.join("VC").join("Tools").join("MSVC");
-                let Some(version_dir) = newest_subdir(&msvc_dir) else { continue };
+                let Some(version_dir) = newest_subdir(&msvc_dir) else {
+                    continue;
+                };
                 let include = version_dir.join("include");
-                if include.is_dir() { return Some(include); }
+                if include.is_dir() {
+                    return Some(include);
+                }
             }
         }
     }

@@ -31,7 +31,8 @@ impl ManifestReader for GradleManifest {
         }
         let mut data = ManifestData::default();
         for e in &entries {
-            data.dependencies.extend(e.data.dependencies.iter().cloned());
+            data.dependencies
+                .extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
     }
@@ -42,7 +43,9 @@ impl ManifestReader for GradleManifest {
 
         let mut out = Vec::new();
         for manifest_path in gradle_paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
 
             let mut data = ManifestData::default();
             for group_id in parse_gradle_dependencies(&content) {
@@ -123,11 +126,7 @@ pub fn collect_version_catalogs(project_root: &Path) -> Vec<(String, PathBuf)> {
     out
 }
 
-fn collect_version_catalogs_recursive(
-    dir: &Path,
-    out: &mut Vec<(String, PathBuf)>,
-    depth: usize,
-) {
+fn collect_version_catalogs_recursive(dir: &Path, out: &mut Vec<(String, PathBuf)>, depth: usize) {
     if depth > 3 {
         return;
     }
@@ -233,7 +232,9 @@ pub fn parse_gradle_direct_coords(content: &str) -> Vec<MavenCoord> {
             continue;
         }
 
-        let Some(rest) = strip_dependency_keyword(trimmed) else { continue };
+        let Some(rest) = strip_dependency_keyword(trimmed) else {
+            continue;
+        };
 
         let coord_str = if let Some(r) = rest.strip_prefix('\'') {
             r.split('\'').next().unwrap_or("").trim()
@@ -262,9 +263,7 @@ fn strip_dependency_keyword(line: &str) -> Option<&str> {
                 return Some(r);
             }
             // Bare-keyword form like `implementation 'foo'` — Groovy DSL.
-            if line.len() > kw.len()
-                && line.as_bytes()[kw.len()].is_ascii_whitespace()
-            {
+            if line.len() > kw.len() && line.as_bytes()[kw.len()].is_ascii_whitespace() {
                 return Some(r);
             }
         }
@@ -315,7 +314,9 @@ pub fn parse_gradle_coords(
         if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') {
             continue;
         }
-        let Some(rest) = strip_dependency_keyword(trimmed) else { continue };
+        let Some(rest) = strip_dependency_keyword(trimmed) else {
+            continue;
+        };
 
         // Catalog refs only appear as bare identifiers — skip if quote-prefixed
         // (already handled by parse_gradle_direct_coords).
@@ -452,7 +453,9 @@ fn parse_library_inline(body: &str, versions: &HashMap<String, String>) -> Optio
     let mut version: Option<String> = None;
 
     for field in split_table_fields(body) {
-        let Some((k, v)) = field.split_once('=') else { continue };
+        let Some((k, v)) = field.split_once('=') else {
+            continue;
+        };
         let k = k.trim();
         let v = v.trim();
         match k {
@@ -523,7 +526,9 @@ fn unquote(s: &str) -> Option<String> {
     if let Some(rest) = s.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
         Some(rest.to_string())
     } else {
-        s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')).map(|r| r.to_string())
+        s.strip_prefix('\'')
+            .and_then(|r| r.strip_suffix('\''))
+            .map(|r| r.to_string())
     }
 }
 

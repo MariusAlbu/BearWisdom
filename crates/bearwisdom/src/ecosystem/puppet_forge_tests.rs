@@ -48,8 +48,14 @@ mod "camptocamp/systemd"
 
 #[test]
 fn extract_quoted_string_handles_both_quote_styles() {
-    assert_eq!(_test_extract_quoted_string(r#""puppetlabs/stdlib""#), "puppetlabs/stdlib");
-    assert_eq!(_test_extract_quoted_string("'camptocamp/systemd'"), "camptocamp/systemd");
+    assert_eq!(
+        _test_extract_quoted_string(r#""puppetlabs/stdlib""#),
+        "puppetlabs/stdlib"
+    );
+    assert_eq!(
+        _test_extract_quoted_string("'camptocamp/systemd'"),
+        "camptocamp/systemd"
+    );
 }
 
 #[test]
@@ -107,9 +113,12 @@ fn manifest_reader_emits_bare_module_names() {
     std::fs::write(
         tmp.join("Puppetfile"),
         "mod 'camptocamp/systemd', '>= 1.0'\n",
-    ).unwrap();
+    )
+    .unwrap();
 
-    let data = PuppetMetadataManifest.read(&tmp).expect("manifest data present");
+    let data = PuppetMetadataManifest
+        .read(&tmp)
+        .expect("manifest data present");
     assert!(data.dependencies.contains("stdlib"));
     assert!(data.dependencies.contains("apache"));
     assert!(data.dependencies.contains("systemd"));

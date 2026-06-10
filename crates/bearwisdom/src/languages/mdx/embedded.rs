@@ -179,7 +179,10 @@ fn collect_imports_exports(
     let mut line_idx = 0usize;
     while line_idx < line_starts.len() {
         let ls = line_starts[line_idx];
-        let le = line_starts.get(line_idx + 1).copied().unwrap_or(bytes.len());
+        let le = line_starts
+            .get(line_idx + 1)
+            .copied()
+            .unwrap_or(bytes.len());
         if inside_any_range(ls, fence_ranges) {
             line_idx += 1;
             continue;
@@ -189,8 +192,7 @@ fn collect_imports_exports(
             // Find end of statement: consume balanced braces/parens to
             // handle multi-line imports, stop at a line that ends the
             // statement (semicolon at depth 0 or end of balanced body).
-            let (stmt_end_line, stmt_end_byte) =
-                find_statement_end(&line_starts, bytes, line_idx);
+            let (stmt_end_line, stmt_end_byte) = find_statement_end(&line_starts, bytes, line_idx);
             let stmt_text = std::str::from_utf8(&bytes[ls..stmt_end_byte])
                 .unwrap_or("")
                 .trim_end_matches('\r')
@@ -218,8 +220,7 @@ fn collect_imports_exports(
                     if !text.ends_with('\n') {
                         text.push('\n');
                     }
-                    current_line_in_output +=
-                        (stmt_text.matches('\n').count() as u32) + 1;
+                    current_line_in_output += (stmt_text.matches('\n').count() as u32) + 1;
                 }
             }
             line_idx = stmt_end_line + 1;
@@ -264,18 +265,17 @@ fn starts_with_word(line: &[u8], word: &[u8]) -> bool {
 /// line and byte position where the statement ends. Handles multi-line
 /// imports by tracking brace/paren balance and returning the line
 /// that closes the statement (semicolon or balanced brace).
-fn find_statement_end(
-    line_starts: &[usize],
-    bytes: &[u8],
-    start_line: usize,
-) -> (usize, usize) {
+fn find_statement_end(line_starts: &[usize], bytes: &[u8], start_line: usize) -> (usize, usize) {
     let mut depth: i32 = 0;
     let mut in_str: Option<u8> = None;
     let mut escape = false;
     let mut line_idx = start_line;
     while line_idx < line_starts.len() {
         let ls = line_starts[line_idx];
-        let le = line_starts.get(line_idx + 1).copied().unwrap_or(bytes.len());
+        let le = line_starts
+            .get(line_idx + 1)
+            .copied()
+            .unwrap_or(bytes.len());
         let mut i = ls;
         while i < le {
             let b = bytes[i];
@@ -317,16 +317,18 @@ mod tests {
     fn fence_dispatches_like_markdown() {
         let src = "# title\n\n```ts\nexport const x = 1;\n```\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.language_id == "typescript"
-            && r.origin == EmbeddedOrigin::MarkdownFence));
+        assert!(regions
+            .iter()
+            .any(|r| r.language_id == "typescript" && r.origin == EmbeddedOrigin::MarkdownFence));
     }
 
     #[test]
     fn yaml_frontmatter_detected() {
         let src = "---\ntitle: X\n---\n\n# Body\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.language_id == "yaml"
-            && r.origin == EmbeddedOrigin::MarkdownFrontmatter));
+        assert!(regions
+            .iter()
+            .any(|r| r.language_id == "yaml" && r.origin == EmbeddedOrigin::MarkdownFrontmatter));
     }
 
     #[test]
@@ -346,8 +348,9 @@ mod tests {
     fn export_becomes_script_block() {
         let src = "export const meta = { title: 'Hi' }\n\n# Body\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.origin == EmbeddedOrigin::ScriptBlock
-            && r.text.contains("export const meta")));
+        assert!(regions.iter().any(
+            |r| r.origin == EmbeddedOrigin::ScriptBlock && r.text.contains("export const meta")
+        ));
     }
 
     #[test]
@@ -402,8 +405,14 @@ mod tests {
     fn frontmatter_and_import_and_fence_coexist() {
         let src = "---\ntitle: X\n---\n\nimport A from './a'\n\n# Body\n\n```ts\nexport const y = 2;\n```\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.origin == EmbeddedOrigin::MarkdownFrontmatter));
-        assert!(regions.iter().any(|r| r.origin == EmbeddedOrigin::ScriptBlock));
-        assert!(regions.iter().any(|r| r.origin == EmbeddedOrigin::MarkdownFence));
+        assert!(regions
+            .iter()
+            .any(|r| r.origin == EmbeddedOrigin::MarkdownFrontmatter));
+        assert!(regions
+            .iter()
+            .any(|r| r.origin == EmbeddedOrigin::ScriptBlock));
+        assert!(regions
+            .iter()
+            .any(|r| r.origin == EmbeddedOrigin::MarkdownFence));
     }
 }

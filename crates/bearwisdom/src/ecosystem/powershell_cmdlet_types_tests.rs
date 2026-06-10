@@ -10,10 +10,7 @@ use super::{cmdlet_result_module_tag, cmdlet_return_type, is_known_cmdlet};
 
 #[test]
 fn test_get_date_maps_to_datetime() {
-    assert_eq!(
-        cmdlet_return_type("Get-Date"),
-        Some("System.DateTime"),
-    );
+    assert_eq!(cmdlet_return_type("Get-Date"), Some("System.DateTime"),);
 }
 
 #[test]
@@ -42,10 +39,7 @@ fn test_get_service_maps_to_servicecontroller() {
 
 #[test]
 fn test_get_content_maps_to_string() {
-    assert_eq!(
-        cmdlet_return_type("Get-Content"),
-        Some("System.String"),
-    );
+    assert_eq!(cmdlet_return_type("Get-Content"), Some("System.String"),);
 }
 
 #[test]
@@ -89,7 +83,10 @@ fn test_case_insensitive_lowercase() {
 
 #[test]
 fn test_case_insensitive_mixed() {
-    assert_eq!(cmdlet_return_type("Get-Process"), cmdlet_return_type("GET-PROCESS"));
+    assert_eq!(
+        cmdlet_return_type("Get-Process"),
+        cmdlet_return_type("GET-PROCESS")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +129,10 @@ fn test_module_tag_get_date() {
 
 #[test]
 fn test_module_tag_get_childitem() {
-    assert_eq!(cmdlet_result_module_tag("Get-ChildItem"), "__cmdlet_get_childitem");
+    assert_eq!(
+        cmdlet_result_module_tag("Get-ChildItem"),
+        "__cmdlet_get_childitem"
+    );
 }
 
 #[test]

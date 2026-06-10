@@ -29,7 +29,14 @@ pub(super) fn recurse_body(
         for child in type_node.children(&mut cursor) {
             match child.kind() {
                 "template_body" | "class_body" => {
-                    super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                    super::extract::extract_node(
+                        child,
+                        src,
+                        scope_tree,
+                        symbols,
+                        refs,
+                        parent_index,
+                    );
                 }
                 _ => {}
             }
@@ -66,18 +73,39 @@ pub(super) fn extract_enum_body(
                                 case_def.kind(),
                                 "full_enum_case" | "simple_enum_case" | "enum_case_definition"
                             ) {
-                                push_enum_member(&case_def, src, scope_tree, symbols, &enum_qname, parent_index);
+                                push_enum_member(
+                                    &case_def,
+                                    src,
+                                    scope_tree,
+                                    symbols,
+                                    &enum_qname,
+                                    parent_index,
+                                );
                             }
                         }
                     }
                     // Scala 3: `case North, South` — simple_enum_case
                     // Scala 3: `case Earth(mass: Double, radius: Double)` — full_enum_case
                     "simple_enum_case" | "full_enum_case" => {
-                        push_enum_member(&item, src, scope_tree, symbols, &enum_qname, parent_index);
+                        push_enum_member(
+                            &item,
+                            src,
+                            scope_tree,
+                            symbols,
+                            &enum_qname,
+                            parent_index,
+                        );
                     }
                     // Other items in enum body (defs, vals, etc.).
                     _ => {
-                        super::extract::extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                        super::extract::extract_node(
+                            item,
+                            src,
+                            scope_tree,
+                            symbols,
+                            refs,
+                            parent_index,
+                        );
                     }
                 }
             }
@@ -134,12 +162,12 @@ fn push_enum_member(
         doc_comment: None,
         scope_path: scope_tree::scope_path(scope),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -162,11 +190,11 @@ pub(super) fn push_type_def(
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
-        SymbolKind::Class     => "class",
+        SymbolKind::Class => "class",
         SymbolKind::Namespace => "object",
         SymbolKind::Interface => "trait",
-        SymbolKind::Enum      => "enum",
-        _                     => "class",
+        SymbolKind::Enum => "enum",
+        _ => "class",
     };
 
     let type_params = node
@@ -188,12 +216,12 @@ pub(super) fn push_type_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -211,7 +239,11 @@ pub(super) fn push_function_def(
     let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
-    let kind = if scope.is_some() { SymbolKind::Method } else { SymbolKind::Function };
+    let kind = if scope.is_some() {
+        SymbolKind::Method
+    } else {
+        SymbolKind::Function
+    };
 
     let params = node
         .child_by_field_name("parameters")
@@ -237,12 +269,12 @@ pub(super) fn push_function_def(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -288,8 +320,10 @@ pub(super) fn push_val_var(
                     }
                     "case_class_pattern" | "extraction_pattern" => {
                         // `val MyClass(x, y) = obj` — use the class name as representative.
-                        if let Some(fn_node) = child.child_by_field_name("type")
-                            .or_else(|| child.named_child(0)) {
+                        if let Some(fn_node) = child
+                            .child_by_field_name("type")
+                            .or_else(|| child.named_child(0))
+                        {
                             let n = node_text(fn_node, src);
                             if !n.is_empty() {
                                 return Some(n);
@@ -316,7 +350,11 @@ pub(super) fn push_val_var(
     let scope_path = scope_tree::scope_path(scope);
 
     let text = node_text(*node, src);
-    let kw = if text.trim_start().starts_with("val") { "val" } else { "var" };
+    let kw = if text.trim_start().starts_with("val") {
+        "val"
+    } else {
+        "var"
+    };
     let ty = node
         .child_by_field_name("type")
         .map(|t| format!(": {}", node_text(t, src)))
@@ -335,12 +373,12 @@ pub(super) fn push_val_var(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit a TypeAlias symbol for a Scala `type` definition.
@@ -379,18 +417,20 @@ pub(super) fn push_type_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef for the aliased type (field `type`).
     if let Some(type_node) = node.child_by_field_name("type") {
         let alias_name = type_name_from_node(&type_node, src);
         if !alias_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: alias_name,
                 kind: EdgeKind::TypeRef,
@@ -399,9 +439,9 @@ pub(super) fn push_type_definition(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -446,18 +486,20 @@ pub(super) fn push_given_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef for the given's return_type.
     if let Some(rt) = node.child_by_field_name("return_type") {
         let type_name = type_name_from_node(&rt, src);
         if !type_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -466,9 +508,9 @@ pub(super) fn push_given_definition(
                 module: None,
                 chain: None,
                 byte_offset: rt.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 
@@ -530,12 +572,12 @@ pub(super) fn push_extension_definition(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -566,7 +608,11 @@ pub(super) fn push_package_clause(
     }
     let full_name = name_text?;
     // Use the last component as the simple name, full as scope.
-    let name = full_name.rsplit('.').next().unwrap_or(&full_name).to_string();
+    let name = full_name
+        .rsplit('.')
+        .next()
+        .unwrap_or(&full_name)
+        .to_string();
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = if full_name.contains('.') {
@@ -596,12 +642,12 @@ pub(super) fn push_package_clause(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -627,7 +673,9 @@ pub(super) fn push_export(
             "stable_id" | "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -636,9 +684,9 @@ pub(super) fn push_export(
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             _ => {}
         }
@@ -665,7 +713,9 @@ pub(super) fn push_import(
             "stable_id" | "identifier" => {
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -674,9 +724,9 @@ pub(super) fn push_import(
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             _ => {}
         }
@@ -710,7 +760,9 @@ fn emit_import_expression(
                         } else {
                             format!("{base_path}.{name}")
                         };
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: current_symbol_count,
                             target_name: name,
                             kind: EdgeKind::Imports,
@@ -719,9 +771,9 @@ fn emit_import_expression(
                             module: Some(module),
                             chain: None,
                             byte_offset: sel.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 return;
@@ -732,7 +784,9 @@ fn emit_import_expression(
     // No selectors — emit for the stable_id itself.
     if let Some(full) = base {
         let target = full.rsplit('.').next().unwrap_or(&full).to_string();
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -741,9 +795,9 @@ fn emit_import_expression(
             module: Some(full),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -778,7 +832,9 @@ pub(super) fn extract_extends_with_node(
             } else {
                 EdgeKind::Implements
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: name,
                 kind: edge,
@@ -787,9 +843,9 @@ pub(super) fn extract_extends_with_node(
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -800,17 +856,29 @@ fn collect_type_names_from_node(node: &Node, src: &[u8]) -> Vec<String> {
     match node.kind() {
         "type_identifier" | "identifier" => {
             let n = type_name_from_node(node, src);
-            if n.is_empty() { vec![] } else { vec![n] }
+            if n.is_empty() {
+                vec![]
+            } else {
+                vec![n]
+            }
         }
         "stable_type_identifier" => {
             let full = super::helpers::node_text(*node, src);
             let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
-            if simple.is_empty() { vec![] } else { vec![simple] }
+            if simple.is_empty() {
+                vec![]
+            } else {
+                vec![simple]
+            }
         }
         "generic_type" => {
             // The base type (before type args).
             let n = type_name_from_node(node, src);
-            if n.is_empty() { vec![] } else { vec![n] }
+            if n.is_empty() {
+                vec![]
+            } else {
+                vec![n]
+            }
         }
         "compound_type" | "with_type" => {
             // compound_type may contain multiple types joined by `with`.
@@ -850,7 +918,9 @@ pub(super) fn extract_extends_with(
                         } else {
                             EdgeKind::Implements
                         };
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind,
@@ -859,9 +929,9 @@ pub(super) fn extract_extends_with(
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -871,7 +941,9 @@ pub(super) fn extract_extends_with(
                 for type_node in child.children(&mut wc) {
                     let names = collect_type_names_from_node(&type_node, src);
                     for name in names {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Implements,
@@ -880,9 +952,9 @@ pub(super) fn extract_extends_with(
                             module: None,
                             chain: None,
                             byte_offset: type_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }

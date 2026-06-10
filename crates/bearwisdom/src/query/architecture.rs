@@ -128,17 +128,25 @@ pub fn get_overview_with_limits(
     let conn = db.conn();
 
     // --- 1. Totals ---
-    let total_files: u32 =
-        conn.query_row("SELECT COUNT(*) FROM files WHERE origin = 'internal'", [], |r| r.get(0))
-            .context("Failed to count files")?;
+    let total_files: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .context("Failed to count files")?;
 
-    let total_symbols: u32 =
-        conn.query_row("SELECT COUNT(*) FROM symbols WHERE origin = 'internal'", [], |r| r.get(0))
-            .context("Failed to count symbols")?;
+    let total_symbols: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .context("Failed to count symbols")?;
 
-    let total_edges: u32 =
-        conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
-            .context("Failed to count edges")?;
+    let total_edges: u32 = conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .context("Failed to count edges")?;
 
     // --- 2. Language breakdown ---
     //
@@ -152,8 +160,9 @@ pub fn get_overview_with_limits(
     // content — e.g. a project with zero standalone `.cs` files but many
     // C# blocks in `.cshtml` views still surfaces `csharp` as a row.
     let languages = {
-        let mut stmt = conn.prepare(
-            "WITH file_counts AS (
+        let mut stmt = conn
+            .prepare(
+                "WITH file_counts AS (
                 SELECT language, COUNT(*) AS file_count
                 FROM files WHERE origin = 'internal'
                 GROUP BY language
@@ -177,15 +186,18 @@ pub fn get_overview_with_limits(
              LEFT JOIN file_counts fc ON fc.language = sc.language
              WHERE fc.language IS NULL
              ORDER BY file_count DESC, symbol_count DESC",
-        ).context("Failed to prepare language stats query")?;
+            )
+            .context("Failed to prepare language stats query")?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(LanguageStats {
-                language:     row.get(0)?,
-                file_count:   row.get(1)?,
-                symbol_count: row.get(2)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(LanguageStats {
+                    language: row.get(0)?,
+                    file_count: row.get(1)?,
+                    symbol_count: row.get(2)?,
+                })
             })
-        }).context("Failed to execute language stats query")?;
+            .context("Failed to execute language stats query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect language stats")?
@@ -193,8 +205,9 @@ pub fn get_overview_with_limits(
 
     // --- 3. Routes ---
     let routes = {
-        let mut stmt = conn.prepare(
-            "SELECT r.http_method,
+        let mut stmt = conn
+            .prepare(
+                "SELECT r.http_method,
                     r.route_template,
                     r.resolved_route,
                     f.path,
@@ -205,18 +218,21 @@ pub fn get_overview_with_limits(
              LEFT JOIN symbols s ON s.id = r.symbol_id
              WHERE f.origin = 'internal'
              ORDER BY r.http_method, r.route_template",
-        ).context("Failed to prepare routes query")?;
+            )
+            .context("Failed to prepare routes query")?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(RouteInfo {
-                http_method:    row.get(0)?,
-                route_template: row.get(1)?,
-                resolved_route: row.get(2)?,
-                file_path:      row.get(3)?,
-                line:           row.get(4)?,
-                handler:        row.get(5)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(RouteInfo {
+                    http_method: row.get(0)?,
+                    route_template: row.get(1)?,
+                    resolved_route: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                    handler: row.get(5)?,
+                })
             })
-        }).context("Failed to execute routes query")?;
+            .context("Failed to execute routes query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect routes")?
@@ -224,8 +240,9 @@ pub fn get_overview_with_limits(
 
     // --- 4. Hotspots (symbols with most incoming edges) ---
     let hotspots = {
-        let mut stmt = conn.prepare(
-            "SELECT s.name,
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.name,
                     s.qualified_name,
                     s.kind,
                     f.path,
@@ -237,17 +254,20 @@ pub fn get_overview_with_limits(
              GROUP BY s.id
              ORDER BY incoming_refs DESC
              LIMIT ?1",
-        ).context("Failed to prepare hotspots query")?;
+            )
+            .context("Failed to prepare hotspots query")?;
 
-        let rows = stmt.query_map([hotspot_limit as i64], |row| {
-            Ok(HotspotSymbol {
-                name:          row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind:          row.get(2)?,
-                file_path:     row.get(3)?,
-                incoming_refs: row.get(4)?,
+        let rows = stmt
+            .query_map([hotspot_limit as i64], |row| {
+                Ok(HotspotSymbol {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    incoming_refs: row.get(4)?,
+                })
             })
-        }).context("Failed to execute hotspots query")?;
+            .context("Failed to execute hotspots query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect hotspots")?
@@ -257,8 +277,9 @@ pub fn get_overview_with_limits(
     // We define "entry point" as a public symbol whose kind is class or function,
     // making them the likely API surface.
     let entry_points = {
-        let mut stmt = conn.prepare(
-            "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
              FROM symbols s
              JOIN files f ON f.id = s.file_id
              WHERE s.visibility = 'public'
@@ -266,17 +287,20 @@ pub fn get_overview_with_limits(
                AND s.origin = 'internal'
              ORDER BY f.path, s.line
              LIMIT ?1",
-        ).context("Failed to prepare entry points query")?;
+            )
+            .context("Failed to prepare entry points query")?;
 
-        let rows = stmt.query_map([entry_point_limit as i64], |row| {
-            Ok(SymbolSummary {
-                name:          row.get(0)?,
-                qualified_name: row.get(1)?,
-                kind:          row.get(2)?,
-                file_path:     row.get(3)?,
-                line:          row.get(4)?,
+        let rows = stmt
+            .query_map([entry_point_limit as i64], |row| {
+                Ok(SymbolSummary {
+                    name: row.get(0)?,
+                    qualified_name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_path: row.get(3)?,
+                    line: row.get(4)?,
+                })
             })
-        }).context("Failed to execute entry points query")?;
+            .context("Failed to execute entry points query")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect entry points")?

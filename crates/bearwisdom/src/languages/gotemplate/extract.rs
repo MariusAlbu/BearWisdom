@@ -10,28 +10,47 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let stem = file_stem(file_path);
     symbols.push(ExtractedSymbol {
-        name: stem.clone(), qualified_name: stem.clone(),
-        kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        name: stem.clone(),
+        qualified_name: stem.clone(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let bytes = source.as_bytes();
     let mut line: u32 = 0;
     let mut i = 0usize;
     while i < bytes.len() {
-        if bytes[i] == b'\n' { line += 1; i += 1; continue; }
+        if bytes[i] == b'\n' {
+            line += 1;
+            i += 1;
+            continue;
+        }
         if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'{' {
             let body_start = i + 2;
-            let Some(close) = find_double_close(bytes, body_start) else { i += 2; continue; };
+            let Some(close) = find_double_close(bytes, body_start) else {
+                i += 2;
+                continue;
+            };
             if let Some(body) = source.get(body_start..close) {
-                let t = body.trim().trim_start_matches('-').trim_end_matches('-').trim();
+                let t = body
+                    .trim()
+                    .trim_start_matches('-')
+                    .trim_end_matches('-')
+                    .trim();
                 // {{define "name"}}
                 if let Some(rest) = t.strip_prefix("define ") {
                     if let Some(name) = quoted(rest.trim()) {
@@ -40,32 +59,39 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             qualified_name: format!("{stem}.{name}"),
                             kind: SymbolKind::Field,
                             visibility: Some(Visibility::Public),
-                            start_line: line, end_line: line, start_col: 0, end_col: 0,
+                            start_line: line,
+                            end_line: line,
+                            start_col: 0,
+                            end_col: 0,
                             signature: Some(t.to_string()),
                             doc_comment: None,
                             scope_path: Some(stem.clone()),
                             parent_index: Some(host_index),
                             byte_offset: 0,
-                                                    declared_type: None,
+                            declared_type: None,
                             return_type: None,
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
-});
+                        });
                     }
                 } else if let Some(rest) = t.strip_prefix("template ") {
                     // {{template "name" .}}  →  Imports ref to the named template.
                     let tok = rest.trim().split_whitespace().next().unwrap_or("");
                     if let Some(name) = quoted(tok) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: name,
                             kind: EdgeKind::Imports,
-                            line, module: None, chain: None,
+                            line,
+                            module: None,
+                            chain: None,
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -74,7 +100,12 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         }
         i += 1;
     }
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+    ExtractionResult {
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
     }
@@ -82,15 +113,21 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 
 fn quoted(s: &str) -> Option<String> {
     let s = s.trim();
-    if s.len() >= 2 && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('`') && s.ends_with('`'))) {
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('`') && s.ends_with('`')))
+    {
         Some(s[1..s.len() - 1].to_string())
-    } else { None }
+    } else {
+        None
+    }
 }
 
 fn find_double_close(bytes: &[u8], from: usize) -> Option<usize> {
     let mut i = from;
     while i + 1 < bytes.len() {
-        if bytes[i] == b'}' && bytes[i + 1] == b'}' { return Some(i); }
+        if bytes[i] == b'}' && bytes[i + 1] == b'}' {
+            return Some(i);
+        }
         i += 1;
     }
     None
@@ -99,7 +136,11 @@ fn find_double_close(bytes: &[u8], from: usize) -> Option<usize> {
 fn file_stem(file_path: &str) -> String {
     let norm = file_path.replace('\\', "/");
     let name = norm.rsplit('/').next().unwrap_or(&norm);
-    std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
+    std::path::Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string()
 }
 
 #[cfg(test)]

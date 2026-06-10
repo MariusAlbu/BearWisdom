@@ -16,26 +16,48 @@ use crate::types::{
 pub struct JspPlugin;
 
 impl LanguagePlugin for JspPlugin {
-    fn id(&self) -> &str { "jsp" }
-    fn language_ids(&self) -> &[&str] { &["jsp"] }
-    fn extensions(&self) -> &[&str] { &[".jsp", ".jspx", ".tag"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "jsp"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["jsp"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".jsp", ".jspx", ".tag"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, source: &str, file_path: &str, _l: &str) -> ExtractionResult {
         let norm = file_path.replace('\\', "/");
         let name = norm.rsplit('/').next().unwrap_or(&norm);
-        let stem = std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
+        let stem = std::path::Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+            .to_string();
         let symbols = vec![ExtractedSymbol {
-            name: stem.clone(), qualified_name: stem,
-            kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-            signature: None, doc_comment: None, scope_path: None, parent_index: None,
+            name: stem.clone(),
+            qualified_name: stem,
+            kind: SymbolKind::Class,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-}];
+        }];
         let mut refs: Vec<ExtractedRef> = Vec::new();
         let line_starts: Vec<u32> = std::iter::once(0)
             .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
@@ -48,12 +70,20 @@ impl LanguagePlugin for JspPlugin {
                     let start = pos + 6;
                     if let Some(end) = rest[start..].find('"') {
                         let file = &rest[start..start + end];
-                        let target = std::path::Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        let target = std::path::Path::new(file)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(file)
+                            .to_string();
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: 0,
                             target_name: target,
                             kind: EdgeKind::Imports,
-                            line: line_no as u32, module: None, chain: None,
+                            line: line_no as u32,
+                            module: None,
+                            chain: None,
                             col: 0,
                             byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                             namespace_segments: Vec::new(),
@@ -63,7 +93,12 @@ impl LanguagePlugin for JspPlugin {
                 }
             }
         }
-        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+        ExtractionResult {
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -75,10 +110,16 @@ impl LanguagePlugin for JspPlugin {
         while i + 1 < bytes.len() {
             if bytes[i] == b'<' && bytes[i + 1] == b'%' {
                 let kind = bytes.get(i + 2).copied();
-                if kind == Some(b'@') || kind == Some(b'-') { i += 2; continue; }
+                if kind == Some(b'@') || kind == Some(b'-') {
+                    i += 2;
+                    continue;
+                }
                 let is_expr = kind == Some(b'=');
                 let body_start = if is_expr { i + 3 } else { i + 2 };
-                let Some(close) = find_close(bytes, body_start) else { i += 2; continue; };
+                let Some(close) = find_close(bytes, body_start) else {
+                    i += 2;
+                    continue;
+                };
                 if let Some(body) = source.get(body_start..close) {
                     let t = body.trim();
                     if !t.is_empty() {
@@ -90,20 +131,27 @@ impl LanguagePlugin for JspPlugin {
                             } else {
                                 format!("class __Jsp {{ void f() {{ {t} }} }}\n")
                             },
-                            line_offset: line, col_offset: col,
+                            line_offset: line,
+                            col_offset: col,
                             origin: EmbeddedOrigin::TemplateExpr,
-                            holes: Vec::new(), strip_scope_prefix: None,
+                            holes: Vec::new(),
+                            strip_scope_prefix: None,
                         });
                     }
                 }
-                i = close + 2; continue;
+                i = close + 2;
+                continue;
             }
             i += 1;
         }
         regions
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -114,13 +162,21 @@ impl LanguagePlugin for JspPlugin {
 fn find_close(bytes: &[u8], from: usize) -> Option<usize> {
     let mut i = from;
     while i + 1 < bytes.len() {
-        if bytes[i] == b'%' && bytes[i + 1] == b'>' { return Some(i); }
+        if bytes[i] == b'%' && bytes[i + 1] == b'>' {
+            return Some(i);
+        }
         i += 1;
     }
     None
 }
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {
-    let mut line: u32 = 0; let mut nl: usize = 0;
-    for (i, b) in bytes.iter().enumerate().take(pos) { if *b == b'\n' { line += 1; nl = i + 1; } }
+    let mut line: u32 = 0;
+    let mut nl: usize = 0;
+    for (i, b) in bytes.iter().enumerate().take(pos) {
+        if *b == b'\n' {
+            line += 1;
+            nl = i + 1;
+        }
+    }
     (line, (pos - nl) as u32)
 }

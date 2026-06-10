@@ -71,7 +71,11 @@ fn extract_match_arm_patterns(
                 }
             }
             // Direct `pattern` field access as fallback
-            _ if arm.child_by_field_name("pattern").map(|p| p.id() == child.id()).unwrap_or(false) => {
+            _ if arm
+                .child_by_field_name("pattern")
+                .map(|p| p.id() == child.id())
+                .unwrap_or(false) =>
+            {
                 extract_pattern(&child, source, source_symbol_index, symbols, refs);
             }
             _ => {}
@@ -216,7 +220,12 @@ pub(super) fn extract_trait_bounds(
             "type_identifier" | "identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() {
-                    refs.push(make_typeref(source_symbol_index, name, child.start_position().row as u32, child.start_byte() as u32));
+                    refs.push(make_typeref(
+                        source_symbol_index,
+                        name,
+                        child.start_position().row as u32,
+                        child.start_byte() as u32,
+                    ));
                 }
             }
             // A path like `serde::Serialize` or `std::marker::Send`
@@ -230,7 +239,12 @@ pub(super) fn extract_trait_bounds(
                         text.rsplit("::").next().unwrap_or(&text).to_string()
                     });
                 if !name.is_empty() {
-                    refs.push(make_typeref(source_symbol_index, name, child.start_position().row as u32, child.start_byte() as u32));
+                    refs.push(make_typeref(
+                        source_symbol_index,
+                        name,
+                        child.start_position().row as u32,
+                        child.start_byte() as u32,
+                    ));
                 }
             }
             // Generic like `Iterator<Item = T>` — extract the base name
@@ -238,7 +252,12 @@ pub(super) fn extract_trait_bounds(
                 if let Some(base) = child.child_by_field_name("type") {
                     let name = node_text(&base, source);
                     if !name.is_empty() {
-                        refs.push(make_typeref(source_symbol_index, name, child.start_position().row as u32, child.start_byte() as u32));
+                        refs.push(make_typeref(
+                            source_symbol_index,
+                            name,
+                            child.start_position().row as u32,
+                            child.start_byte() as u32,
+                        ));
                     }
                 }
             }
@@ -272,7 +291,12 @@ fn extract_pattern(
             // Skip `_` wildcard and lowercase bindings (those are variables, not types).
             // Enum variants in Rust are always PascalCase or SCREAMING_SNAKE_CASE.
             if is_type_name(&name) {
-                refs.push(make_typeref(source_symbol_index, name, node.start_position().row as u32, node.start_byte() as u32));
+                refs.push(make_typeref(
+                    source_symbol_index,
+                    name,
+                    node.start_position().row as u32,
+                    node.start_byte() as u32,
+                ));
             } else if name != "_" && !name.is_empty() {
                 symbols.push(make_variable(name, node, source_symbol_index));
             }
@@ -313,7 +337,11 @@ fn extract_pattern(
                             if fc_child.kind() == "identifier" {
                                 let name = node_text(&fc_child, source);
                                 if !name.is_empty() && name != ".." {
-                                    symbols.push(make_variable(name, &fc_child, source_symbol_index));
+                                    symbols.push(make_variable(
+                                        name,
+                                        &fc_child,
+                                        source_symbol_index,
+                                    ));
                                 }
                             }
                         }
@@ -409,8 +437,8 @@ fn extract_pattern(
         }
 
         // Literals and wildcards — nothing to emit
-        "_" | "integer_literal" | "float_literal" | "string_literal"
-        | "boolean_literal" | "char_literal" | "wildcard_pattern" => {}
+        "_" | "integer_literal" | "float_literal" | "string_literal" | "boolean_literal"
+        | "char_literal" | "wildcard_pattern" => {}
 
         // Recurse into everything else (e.g. `remaining_field_pattern`, `..`)
         other => {
@@ -430,11 +458,21 @@ fn extract_pattern(
 
 /// Heuristic: a name starting with uppercase is a type/variant name, not a binding.
 fn is_type_name(name: &str) -> bool {
-    name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+    name.chars()
+        .next()
+        .map(|c| c.is_uppercase())
+        .unwrap_or(false)
 }
 
-fn make_typeref(source_symbol_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+fn make_typeref(
+    source_symbol_index: usize,
+    name: String,
+    line: u32,
+    byte_offset: u32,
+) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: name,
         kind: EdgeKind::TypeRef,
@@ -455,7 +493,12 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32, byte_offset
 /// roots on the enclosing type and resolves the `Foo` member — `Self` never
 /// names a real module. Other `prefix::Leaf` paths (`std::io::Error => …`)
 /// keep the `module`/leaf split so the leaf reference isn't orphaned.
-fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32, byte_offset: u32) -> ExtractedRef {
+fn make_scoped_typeref(
+    source_symbol_index: usize,
+    full: String,
+    line: u32,
+    byte_offset: u32,
+) -> ExtractedRef {
     let (module, target) = match full.rsplit_once("::") {
         Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
             (Some(prefix.to_string()), leaf.to_string())
@@ -467,7 +510,9 @@ fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32, byte
     } else {
         None
     };
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -496,13 +541,12 @@ fn make_variable(name: String, node: &Node, parent_index: usize) -> ExtractedSym
         doc_comment: None,
         scope_path: None,
         parent_index: Some(parent_index),
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
+    }
 }
-}
-
 
 // ---------------------------------------------------------------------------
 // Trait supertrait bounds  →  Inherits edges
@@ -541,7 +585,9 @@ fn emit_inherits_from_trait_bounds(
             "type_identifier" | "identifier" => {
                 let name = node_text(&child, source);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -550,9 +596,9 @@ fn emit_inherits_from_trait_bounds(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "scoped_type_identifier" | "scoped_identifier" => {
@@ -564,7 +610,9 @@ fn emit_inherits_from_trait_bounds(
                         text.rsplit("::").next().unwrap_or(&text).to_string()
                     });
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::Inherits,
@@ -573,16 +621,18 @@ fn emit_inherits_from_trait_bounds(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "generic_type" => {
                 if let Some(base) = child.child_by_field_name("type") {
                     let name = node_text(&base, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Inherits,
@@ -591,9 +641,9 @@ fn emit_inherits_from_trait_bounds(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }

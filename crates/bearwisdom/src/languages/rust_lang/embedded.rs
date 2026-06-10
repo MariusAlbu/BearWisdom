@@ -30,10 +30,10 @@ use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 /// of these. The body of the enclosing token-tree becomes an `html` region
 /// with `EmbeddedOrigin::TemplateExpr`.
 const VIEW_MACRO_NAMES: &[&str] = &[
-    "view",   // leptos::view! { ... }
-    "html",   // yew::html! { ... }
-    "rsx",    // dioxus::rsx! { ... }
-    "rhtml",  // some crates
+    "view",  // leptos::view! { ... }
+    "html",  // yew::html! { ... }
+    "rsx",   // dioxus::rsx! { ... }
+    "rhtml", // some crates
 ];
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
@@ -158,11 +158,7 @@ fn detect_view_macro_regions(source: &str) -> Vec<EmbeddedRegion> {
     regions
 }
 
-fn walk_for_view_macros(
-    node: &tree_sitter::Node,
-    source: &str,
-    regions: &mut Vec<EmbeddedRegion>,
-) {
+fn walk_for_view_macros(node: &tree_sitter::Node, source: &str, regions: &mut Vec<EmbeddedRegion>) {
     if node.kind() == "macro_invocation" {
         if let Some(region) = try_extract_view_macro(node, source) {
             regions.push(region);
@@ -174,10 +170,7 @@ fn walk_for_view_macros(
     }
 }
 
-fn try_extract_view_macro(
-    node: &tree_sitter::Node,
-    source: &str,
-) -> Option<EmbeddedRegion> {
+fn try_extract_view_macro(node: &tree_sitter::Node, source: &str) -> Option<EmbeddedRegion> {
     let macro_node = node.child_by_field_name("macro")?;
     let macro_text = source.get(macro_node.start_byte()..macro_node.end_byte())?;
     // Final path segment — `leptos::view` → `view`.
@@ -311,7 +304,10 @@ pub fn f() {}
     fn leptos_view_macro_emits_html_region() {
         let src = "fn app() { view! { <Button on_click=handle>Click</Button> } }";
         let regions = detect_regions(src);
-        let view_region = regions.iter().find(|r| r.language_id == "html").expect("html region");
+        let view_region = regions
+            .iter()
+            .find(|r| r.language_id == "html")
+            .expect("html region");
         assert_eq!(view_region.origin, EmbeddedOrigin::TemplateExpr);
         assert!(view_region.text.contains("<Button"));
         assert!(view_region.text.contains("Click"));
@@ -321,7 +317,10 @@ pub fn f() {}
     fn yew_html_macro_emits_region() {
         let src = "fn view() { html! { <div class=\"foo\"><p>{name}</p></div> } }";
         let regions = detect_regions(src);
-        let r = regions.iter().find(|r| r.language_id == "html").expect("html region");
+        let r = regions
+            .iter()
+            .find(|r| r.language_id == "html")
+            .expect("html region");
         assert!(r.text.contains("<div"));
         assert!(r.text.contains("<p"));
     }
@@ -332,7 +331,10 @@ pub fn f() {}
         let regions = detect_regions(src);
         // rsx uses non-HTML syntax but we still emit a region — the HTML
         // sub-parser may find nothing, which is fine.
-        assert_eq!(regions.iter().filter(|r| r.language_id == "html").count(), 1);
+        assert_eq!(
+            regions.iter().filter(|r| r.language_id == "html").count(),
+            1
+        );
     }
 
     #[test]

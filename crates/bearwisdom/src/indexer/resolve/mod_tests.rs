@@ -75,7 +75,7 @@ fn named_channel_producer_consumer_same_name_pairs() {
                 name: "/api/users".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -86,7 +86,7 @@ fn named_channel_producer_consumer_same_name_pairs() {
                 name: "/api/users".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -112,7 +112,7 @@ fn named_channel_no_pair_when_both_same_role() {
                 name: "/api/data".to_string(),
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -123,7 +123,7 @@ fn named_channel_no_pair_when_both_same_role() {
                 name: "/api/data".to_string(),
                 role: ChannelRole::Producer, // both producers — no pair
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -153,7 +153,7 @@ fn named_channel_pairs_across_url_param_syntax() {
                 name: "/api/users/{}".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -164,7 +164,7 @@ fn named_channel_pairs_across_url_param_syntax() {
                 name: "/api/users/:id".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -188,7 +188,7 @@ fn named_channel_pairs_fastapi_brace_against_express_colon() {
                 name: "/items/{itemId}".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Put),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -199,7 +199,7 @@ fn named_channel_pairs_fastapi_brace_against_express_colon() {
                 name: "/items/:itemId".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Put),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -238,7 +238,7 @@ fn http_method_any_producer_pairs_with_concrete_consumer() {
                 name: "/api/items".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -262,7 +262,7 @@ fn http_method_mismatch_no_pair() {
                 name: "/api/items".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Post),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -273,7 +273,7 @@ fn http_method_mismatch_no_pair() {
                 name: "/api/items".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -515,12 +515,16 @@ fn single_ended_variants_write_without_target_file_id() {
         (
             "/src/app.ts".to_string(),
             2u32,
-            FlowEmission::ConfigLookup { key: "DATABASE_URL".to_string() },
+            FlowEmission::ConfigLookup {
+                key: "DATABASE_URL".to_string(),
+            },
         ),
         (
             "/src/app.ts".to_string(),
             3u32,
-            FlowEmission::FeatureFlag { flag_name: "new_dashboard".to_string() },
+            FlowEmission::FeatureFlag {
+                flag_name: "new_dashboard".to_string(),
+            },
         ),
         (
             "/src/app.ts".to_string(),
@@ -569,14 +573,14 @@ fn duplicate_emissions_produce_single_edge() {
         name: "/api/users".to_string(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Get),
-    streaming: None,
+        streaming: None,
     };
     let consumer = FlowEmission::NamedChannel {
         kind: NamedChannelKind::HttpCall,
         name: "/api/users".to_string(),
         role: ChannelRole::Consumer,
         method: Some(HttpMethod::Get),
-    streaming: None,
+        streaming: None,
     };
 
     let emissions = vec![
@@ -607,7 +611,7 @@ fn named_channel_empty_name_written_as_single_ended() {
             name: String::new(), // unknown URL — cannot pair
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         },
     )];
 
@@ -642,7 +646,7 @@ fn wildcard_consumer_pairs_with_concrete_producer() {
                 name: "email/send-welcome".to_string(),
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -653,14 +657,22 @@ fn wildcard_consumer_pairs_with_concrete_producer() {
                 name: "email/*".to_string(),
                 role: ChannelRole::Consumer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
 
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
-    assert_eq!(count_paired(&db), 1, "wildcard consumer should pair with concrete producer");
-    assert_eq!(count_single(&db), 0, "no single-ended rows when wildcard pairs");
+    assert_eq!(
+        count_paired(&db),
+        1,
+        "wildcard consumer should pair with concrete producer"
+    );
+    assert_eq!(
+        count_single(&db),
+        0,
+        "no single-ended rows when wildcard pairs"
+    );
 
     // The paired edge keeps the concrete url_pattern (more searchable than
     // the wildcard form); normalize prepends a leading `/`.
@@ -692,7 +704,7 @@ fn wildcard_consumer_pairs_with_multiple_concrete_producers() {
                 name: "email/send-welcome".to_string(),
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -703,7 +715,7 @@ fn wildcard_consumer_pairs_with_multiple_concrete_producers() {
                 name: "email/send-reset".to_string(),
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -714,13 +726,17 @@ fn wildcard_consumer_pairs_with_multiple_concrete_producers() {
                 name: "email/*".to_string(),
                 role: ChannelRole::Consumer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
 
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
-    assert_eq!(count_paired(&db), 2, "wildcard consumer pairs with each concrete producer");
+    assert_eq!(
+        count_paired(&db),
+        2,
+        "wildcard consumer pairs with each concrete producer"
+    );
     assert_eq!(count_single(&db), 0);
 }
 
@@ -740,7 +756,7 @@ fn wildcard_does_not_match_different_prefix() {
                 name: "payment/charge".to_string(),
                 role: ChannelRole::Producer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -751,14 +767,18 @@ fn wildcard_does_not_match_different_prefix() {
                 name: "email/*".to_string(),
                 role: ChannelRole::Consumer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
 
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
     assert_eq!(count_paired(&db), 0);
-    assert_eq!(count_single(&db), 2, "both fall through to single-ended rows");
+    assert_eq!(
+        count_single(&db),
+        2,
+        "both fall through to single-ended rows"
+    );
 }
 
 #[test]
@@ -777,7 +797,7 @@ fn wildcard_consumer_pairs_within_same_edge_type_only() {
                 name: "email/send".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Post),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -788,13 +808,17 @@ fn wildcard_consumer_pairs_within_same_edge_type_only() {
                 name: "email/*".to_string(),
                 role: ChannelRole::Consumer,
                 method: None,
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
 
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
-    assert_eq!(count_paired(&db), 0, "edge_type mismatch blocks wildcard pairing");
+    assert_eq!(
+        count_paired(&db),
+        0,
+        "edge_type mismatch blocks wildcard pairing"
+    );
     assert_eq!(count_single(&db), 2);
 }
 
@@ -846,14 +870,22 @@ fn fake_route(handler_idx: usize, method: &str, template: &str) -> crate::types:
 
 #[test]
 fn extracted_route_adapter_emits_consumer_with_method() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let symbols = vec![fake_symbol("getUser")];
     let routes = vec![fake_route(0, "GET", "/api/users/foo")];
     let emissions = super::extracted_routes_to_emissions(&routes, &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0].1 {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(*kind, NamedChannelKind::HttpCall);
             assert_eq!(*role, ChannelRole::Consumer);
             assert_eq!(name, "/api/users/foo");
@@ -917,7 +949,7 @@ fn segment_wildcard_consumer_pairs_with_concrete_producer() {
                 name: "/api/trpc/polls.list".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Any),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -928,13 +960,17 @@ fn segment_wildcard_consumer_pairs_with_concrete_producer() {
                 name: "/api/trpc/{}".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Any),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
 
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
-    assert_eq!(count_paired(&db), 1, "segment-wildcard Consumer pairs with concrete Producer");
+    assert_eq!(
+        count_paired(&db),
+        1,
+        "segment-wildcard Consumer pairs with concrete Producer"
+    );
     assert_eq!(count_single(&db), 0);
 }
 
@@ -953,7 +989,7 @@ fn segment_wildcard_pairs_multi_segment_paths() {
                 name: "/api/users/42/posts".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -964,7 +1000,7 @@ fn segment_wildcard_pairs_multi_segment_paths() {
                 name: "/api/users/{}/posts".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -990,7 +1026,7 @@ fn segment_wildcard_rejects_different_segment_count() {
                 name: "/api/users".to_string(),
                 role: ChannelRole::Producer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
         (
@@ -1001,7 +1037,7 @@ fn segment_wildcard_rejects_different_segment_count() {
                 name: "/api/users/{}".to_string(),
                 role: ChannelRole::Consumer,
                 method: Some(HttpMethod::Get),
-            streaming: None,
+                streaming: None,
             },
         ),
     ];
@@ -1038,18 +1074,23 @@ fn fake_symbol(name: &str) -> crate::types::ExtractedSymbol {
 
 #[test]
 fn test_nextjs_app_router_static_route_emits_per_verb_consumers() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let symbols = vec![fake_symbol("GET"), fake_symbol("POST")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "src/app/users/route.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("src/app/users/route.ts", &symbols);
     assert_eq!(emissions.len(), 2);
     let urls: Vec<(String, Option<HttpMethod>)> = emissions
         .iter()
         .map(|e| match e {
-            FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+            FlowEmission::NamedChannel {
+                kind,
+                role,
+                name,
+                method,
+                ..
+            } => {
                 assert_eq!(*kind, NamedChannelKind::HttpCall);
                 assert_eq!(*role, ChannelRole::Consumer);
                 (name.clone(), *method)
@@ -1066,10 +1107,7 @@ fn test_nextjs_app_router_dynamic_segment_rewritten() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let symbols = vec![fake_symbol("GET")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "src/app/users/[id]/route.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("src/app/users/[id]/route.ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/users/{}"),
@@ -1082,10 +1120,8 @@ fn test_nextjs_app_router_catch_all_segment_rewritten() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let symbols = vec![fake_symbol("GET")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "src/app/docs/[...slug]/route.ts",
-        &symbols,
-    );
+    let emissions =
+        super::nextjs_route_consumer_emissions("src/app/docs/[...slug]/route.ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/docs/{}"),
@@ -1098,10 +1134,8 @@ fn test_nextjs_app_router_optional_catch_all_segment_rewritten() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let symbols = vec![fake_symbol("GET")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "src/app/blog/[[...slug]]/route.ts",
-        &symbols,
-    );
+    let emissions =
+        super::nextjs_route_consumer_emissions("src/app/blog/[[...slug]]/route.ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/blog/{}"),
@@ -1115,10 +1149,8 @@ fn test_nextjs_app_router_route_groups_collapsed() {
 
     // `(marketing)` is a route group and contributes no URL segment.
     let symbols = vec![fake_symbol("GET")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "app/(marketing)/about/route.ts",
-        &symbols,
-    );
+    let emissions =
+        super::nextjs_route_consumer_emissions("app/(marketing)/about/route.ts", &symbols);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "//about"),
         _ => panic!("expected NamedChannel"),
@@ -1135,10 +1167,7 @@ fn test_nextjs_app_router_no_handlers_falls_back_to_any() {
     // single Any-method Consumer so the route still participates in
     // pairing.
     let symbols = vec![fake_symbol("helper"), fake_symbol("internalThing")];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "app/users/route.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("app/users/route.ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, method, .. } => {
@@ -1154,10 +1183,7 @@ fn test_nextjs_pages_router_static_emits_any_method_consumer() {
     use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     let symbols: Vec<crate::types::ExtractedSymbol> = vec![];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "pages/api/users.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("pages/api/users.ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, method, .. } => {
@@ -1173,10 +1199,7 @@ fn test_nextjs_pages_router_dynamic_segment_rewritten() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let symbols: Vec<crate::types::ExtractedSymbol> = vec![];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "pages/api/users/[id].ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("pages/api/users/[id].ts", &symbols);
     assert_eq!(emissions.len(), 1);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/api/users/{}"),
@@ -1189,10 +1212,7 @@ fn test_nextjs_pages_router_index_basename_collapsed() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let symbols: Vec<crate::types::ExtractedSymbol> = vec![];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "pages/api/users/index.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("pages/api/users/index.ts", &symbols);
     match &emissions[0] {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "/api/users"),
         _ => panic!("expected NamedChannel"),
@@ -1202,10 +1222,7 @@ fn test_nextjs_pages_router_index_basename_collapsed() {
 #[test]
 fn test_nextjs_pages_router_underscore_files_skipped() {
     let symbols: Vec<crate::types::ExtractedSymbol> = vec![];
-    let emissions = super::nextjs_route_consumer_emissions(
-        "pages/api/_middleware.ts",
-        &symbols,
-    );
+    let emissions = super::nextjs_route_consumer_emissions("pages/api/_middleware.ts", &symbols);
     assert!(emissions.is_empty());
 }
 
@@ -1228,7 +1245,9 @@ fn emission_for_unknown_file_is_silently_skipped() {
     let emissions = vec![(
         "/nonexistent/file.ts".to_string(),
         1u32,
-        FlowEmission::ConfigLookup { key: "KEY".to_string() },
+        FlowEmission::ConfigLookup {
+            key: "KEY".to_string(),
+        },
     )];
 
     let written = super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
@@ -1399,4 +1418,3 @@ fn none_streaming_pairs_with_unary_for_back_compat() {
     super::_test_flush_flow_emissions(db.conn(), &emissions).unwrap();
     assert_eq!(count_paired(&db), 1);
 }
-

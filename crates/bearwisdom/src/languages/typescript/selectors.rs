@@ -133,19 +133,27 @@ fn try_extract_custom_element_define(
     class_qnames: &std::collections::HashMap<String, String>,
     result: &mut Vec<(String, String)>,
 ) {
-    let Some(func) = call.child_by_field_name("function") else { return };
+    let Some(func) = call.child_by_field_name("function") else {
+        return;
+    };
     if func.kind() != "member_expression" {
         return;
     }
-    let Some(prop) = func.child_by_field_name("property") else { return };
+    let Some(prop) = func.child_by_field_name("property") else {
+        return;
+    };
     if super::helpers::node_text(prop, src) != "define" {
         return;
     }
-    let Some(object) = func.child_by_field_name("object") else { return };
+    let Some(object) = func.child_by_field_name("object") else {
+        return;
+    };
     if !member_object_is_custom_elements(&object, src) {
         return;
     }
-    let Some(args) = call.child_by_field_name("arguments") else { return };
+    let Some(args) = call.child_by_field_name("arguments") else {
+        return;
+    };
     let mut tag: Option<String> = None;
     let mut class_name: Option<String> = None;
     let mut cursor = args.walk();
@@ -247,27 +255,46 @@ fn try_extract_ng_declaration_field(
     class_qnames: &std::collections::HashMap<String, String>,
     result: &mut Vec<(String, String)>,
 ) {
-    let Some(name_node) = class_node.child_by_field_name("name") else { return };
+    let Some(name_node) = class_node.child_by_field_name("name") else {
+        return;
+    };
     let class_name = super::helpers::node_text(name_node, src);
-    let Some(qname) = class_qnames.get(&class_name) else { return };
+    let Some(qname) = class_qnames.get(&class_name) else {
+        return;
+    };
 
-    let Some(body) = class_node.child_by_field_name("body") else { return };
+    let Some(body) = class_node.child_by_field_name("body") else {
+        return;
+    };
     let mut cursor = body.walk();
     for member in body.children(&mut cursor) {
         // Both `public_field_definition` (concrete class) and
         // `property_signature` (declare class / interface) carry the
         // `static ɵdir: …` shape we're scanning for.
-        if !matches!(member.kind(), "public_field_definition" | "property_signature") {
+        if !matches!(
+            member.kind(),
+            "public_field_definition" | "property_signature"
+        ) {
             continue;
         }
-        let Some(type_anno) = field_type_annotation(&member) else { continue };
-        let Some(generic) = first_generic_type_in_anno(&type_anno) else { continue };
-        let Some(base_name) = generic_base_tail(&generic, src) else { continue };
+        let Some(type_anno) = field_type_annotation(&member) else {
+            continue;
+        };
+        let Some(generic) = first_generic_type_in_anno(&type_anno) else {
+            continue;
+        };
+        let Some(base_name) = generic_base_tail(&generic, src) else {
+            continue;
+        };
         if base_name != "ɵɵDirectiveDeclaration" && base_name != "ɵɵComponentDeclaration" {
             continue;
         }
-        let Some(type_args) = generic.child_by_field_name("type_arguments") else { continue };
-        let Some(selector_raw) = nth_type_arg_string(&type_args, 1, src) else { continue };
+        let Some(type_args) = generic.child_by_field_name("type_arguments") else {
+            continue;
+        };
+        let Some(selector_raw) = nth_type_arg_string(&type_args, 1, src) else {
+            continue;
+        };
         for sel in super::decorators::split_and_normalize_selectors(&selector_raw) {
             result.push((sel, qname.clone()));
         }
@@ -314,7 +341,9 @@ fn nth_type_arg_string(args: &tree_sitter::Node, n: usize, src: &[u8]) -> Option
     let mut cursor = args.walk();
     let mut idx = 0;
     for child in args.children(&mut cursor) {
-        if !child.is_named() { continue; }
+        if !child.is_named() {
+            continue;
+        }
         if idx == n {
             // `literal_type` wraps the string literal in declaration types.
             if child.kind() == "literal_type" {
@@ -346,16 +375,22 @@ fn try_extract_ng_declare_call(
     class_qnames: &std::collections::HashMap<String, String>,
     result: &mut Vec<(String, String)>,
 ) {
-    let Some(func) = call.child_by_field_name("function") else { return };
+    let Some(func) = call.child_by_field_name("function") else {
+        return;
+    };
     if func.kind() != "member_expression" {
         return;
     }
-    let Some(prop) = func.child_by_field_name("property") else { return };
+    let Some(prop) = func.child_by_field_name("property") else {
+        return;
+    };
     let prop_text = super::helpers::node_text(prop, src);
     if prop_text != "ɵɵngDeclareDirective" && prop_text != "ɵɵngDeclareComponent" {
         return;
     }
-    let Some(args) = call.child_by_field_name("arguments") else { return };
+    let Some(args) = call.child_by_field_name("arguments") else {
+        return;
+    };
     let mut cursor = args.walk();
     for arg in args.children(&mut cursor) {
         if arg.kind() != "object" {
@@ -365,10 +400,16 @@ fn try_extract_ng_declare_call(
         let mut type_name: Option<String> = None;
         let mut oc = arg.walk();
         for prop in arg.children(&mut oc) {
-            if prop.kind() != "pair" { continue; }
-            let Some(key) = prop.child_by_field_name("key") else { continue };
+            if prop.kind() != "pair" {
+                continue;
+            }
+            let Some(key) = prop.child_by_field_name("key") else {
+                continue;
+            };
             let key_text = super::helpers::node_text(key, src);
-            let Some(val) = prop.child_by_field_name("value") else { continue };
+            let Some(val) = prop.child_by_field_name("value") else {
+                continue;
+            };
             match key_text.as_str() {
                 "selector" => {
                     if let Some(raw) = unquote(&val, src) {
@@ -397,7 +438,9 @@ fn try_extract_ng_declare_call(
 
 fn unquote(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
     let raw = super::helpers::node_text(*node, src);
-    if raw.is_empty() { return None; }
+    if raw.is_empty() {
+        return None;
+    }
     let stripped = raw
         .trim_start_matches('`')
         .trim_end_matches('`')
@@ -406,6 +449,9 @@ fn unquote(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
         .trim_start_matches('\'')
         .trim_end_matches('\'')
         .to_string();
-    if stripped.is_empty() { None } else { Some(stripped) }
+    if stripped.is_empty() {
+        None
+    } else {
+        Some(stripped)
+    }
 }
-

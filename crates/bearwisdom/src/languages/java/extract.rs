@@ -23,8 +23,7 @@
 // 2. Second pass: walk the CST extracting symbols and references.
 // =============================================================================
 
-
-use super::{calls, symbols, helpers, decorators};
+use super::{calls, decorators, helpers, symbols};
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -35,13 +34,34 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static JAVA_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_declaration",             name_field: "name" },
-    ScopeKind { node_kind: "record_declaration",            name_field: "name" },
-    ScopeKind { node_kind: "interface_declaration",         name_field: "name" },
-    ScopeKind { node_kind: "enum_declaration",              name_field: "name" },
-    ScopeKind { node_kind: "annotation_type_declaration",   name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",            name_field: "name" },
-    ScopeKind { node_kind: "constructor_declaration",       name_field: "name" },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "record_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "interface_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "annotation_type_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "constructor_declaration",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -49,7 +69,6 @@ pub(crate) static JAVA_SCOPE_KINDS: &[ScopeKind] = &[
 // ---------------------------------------------------------------------------
 
 /// The complete result of extracting one Java file.
-
 
 /// Parse `source` and extract all symbols and references.
 pub fn extract(source: &str) -> ExtractionResult {
@@ -127,17 +146,27 @@ fn enrich_hierarchy_refs_from_imports(refs: &mut Vec<ExtractedRef>) {
         .filter(|r| r.kind == EdgeKind::Imports)
         .filter_map(|r| {
             let fqn = r.module.as_deref()?;
-            if r.target_name == "*" { return None; }
-            if fqn.is_empty() || fqn == r.target_name { return None; }
+            if r.target_name == "*" {
+                return None;
+            }
+            if fqn.is_empty() || fqn == r.target_name {
+                return None;
+            }
             Some((r.target_name.clone(), fqn.to_string()))
         })
         .collect();
 
-    if import_map.is_empty() { return; }
+    if import_map.is_empty() {
+        return;
+    }
 
     for r in refs.iter_mut() {
-        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) { continue; }
-        if r.module.is_some() { continue; }
+        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
+            continue;
+        }
+        if r.module.is_some() {
+            continue;
+        }
         if let Some(fqn) = import_map.get(&r.target_name) {
             r.module = Some(fqn.clone());
         }
@@ -195,7 +224,15 @@ pub(super) fn extract_node(
             }
 
             "class_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Class);
+                let idx = symbols::push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                    SymbolKind::Class,
+                );
                 symbols::extract_class_inheritance(&child, src, idx.unwrap_or(0), refs);
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
@@ -204,7 +241,15 @@ pub(super) fn extract_node(
             }
 
             "interface_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Interface);
+                let idx = symbols::push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                    SymbolKind::Interface,
+                );
                 symbols::extract_interface_inheritance(&child, src, idx.unwrap_or(0), refs);
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
@@ -213,7 +258,14 @@ pub(super) fn extract_node(
             }
 
             "enum_declaration" => {
-                let idx = symbols::push_enum_decl(&child, src, scope_tree, package, symbols, parent_index);
+                let idx = symbols::push_enum_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                );
                 symbols::extract_enum_implements(&child, src, idx.unwrap_or(0), refs);
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
@@ -224,7 +276,15 @@ pub(super) fn extract_node(
 
             "annotation_type_declaration" => {
                 // Treat annotation types as interfaces.
-                let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Interface);
+                let idx = symbols::push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                    SymbolKind::Interface,
+                );
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
@@ -233,19 +293,35 @@ pub(super) fn extract_node(
 
             // `String value() default "";` inside `@interface` bodies.
             "annotation_type_element_declaration" => {
-                symbols::push_annotation_element_decl(&child, src, scope_tree, package, symbols, parent_index);
+                symbols::push_annotation_element_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                );
             }
-
 
             // Java 16+ `record Foo(String name, int age) implements Bar { ... }`
             // Treated as Class — emit symbol + record components as Property symbols.
             "record_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Class);
+                let idx = symbols::push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                    SymbolKind::Class,
+                );
                 symbols::extract_class_inheritance(&child, src, idx.unwrap_or(0), refs);
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 // Record components (the constructor parameters).
                 if let Some(params) = child.child_by_field_name("parameters") {
-                    symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, idx);
+                    symbols::extract_java_typed_params_as_symbols(
+                        &params, src, scope_tree, symbols, refs, idx,
+                    );
                 }
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
@@ -253,50 +329,118 @@ pub(super) fn extract_node(
             }
 
             "method_declaration" => {
-                let idx = symbols::push_method_decl(&child, src, scope_tree, package, symbols, parent_index);
+                let idx = symbols::push_method_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this method.
                     if let Some(params) = child.child_by_field_name("parameters") {
-                        symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
+                        symbols::extract_java_typed_params_as_symbols(
+                            &params,
+                            src,
+                            scope_tree,
+                            symbols,
+                            refs,
+                            Some(sym_idx),
+                        );
                     }
                     if let Some(body) = child.child_by_field_name("body") {
                         // First, walk the method body to extract any nested classes (e.g., anonymous classes).
-                        extract_nested_classes_from_body(&body, src, scope_tree, package, symbols, refs, Some(sym_idx));
+                        extract_nested_classes_from_body(
+                            &body,
+                            src,
+                            scope_tree,
+                            package,
+                            symbols,
+                            refs,
+                            Some(sym_idx),
+                        );
                         // Then extract calls.
-                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
+                        calls::extract_calls_from_body_with_symbols(
+                            &body,
+                            src,
+                            sym_idx,
+                            refs,
+                            Some(symbols),
+                        );
                     }
                 }
             }
 
             "constructor_declaration" => {
-                let idx = symbols::push_constructor_decl(&child, src, scope_tree, package, symbols, parent_index);
+                let idx = symbols::push_constructor_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this constructor.
                     if let Some(params) = child.child_by_field_name("parameters") {
-                        symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
+                        symbols::extract_java_typed_params_as_symbols(
+                            &params,
+                            src,
+                            scope_tree,
+                            symbols,
+                            refs,
+                            Some(sym_idx),
+                        );
                     }
                     if let Some(body) = child.child_by_field_name("body") {
                         // First, walk the constructor body to extract any nested classes (e.g., anonymous classes).
-                        extract_nested_classes_from_body(&body, src, scope_tree, package, symbols, refs, Some(sym_idx));
+                        extract_nested_classes_from_body(
+                            &body,
+                            src,
+                            scope_tree,
+                            package,
+                            symbols,
+                            refs,
+                            Some(sym_idx),
+                        );
                         // Then extract calls.
-                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
+                        calls::extract_calls_from_body_with_symbols(
+                            &body,
+                            src,
+                            sym_idx,
+                            refs,
+                            Some(symbols),
+                        );
                     }
                 }
             }
 
             // Java 16+ compact constructor: `RecordName { ... }` inside record bodies.
             "compact_constructor_declaration" => {
-                let idx = symbols::push_compact_constructor_decl(&child, src, scope_tree, package, symbols, parent_index);
+                let idx = symbols::push_compact_constructor_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     decorators::extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
-                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
+                        calls::extract_calls_from_body_with_symbols(
+                            &body,
+                            src,
+                            sym_idx,
+                            refs,
+                            Some(symbols),
+                        );
                     }
                 }
             }
-
 
             "field_declaration" | "constant_declaration" => {
                 let field_start_idx = symbols.len();
@@ -353,7 +497,12 @@ pub(super) fn extract_node(
                                     parent_index,
                                 );
                             }
-                            calls::extract_calls_from_body(&init, src, parent_index.unwrap_or(0), refs);
+                            calls::extract_calls_from_body(
+                                &init,
+                                src,
+                                parent_index.unwrap_or(0),
+                                refs,
+                            );
                         }
                     }
                 }
@@ -399,7 +548,8 @@ fn extract_nested_classes_from_body(
             "object_creation_expression" => {
                 let mut oc = child.walk();
                 for oc_child in child.children(&mut oc) {
-                    if oc_child.kind() == "class_body" || oc_child.kind() == "anonymous_class_body" {
+                    if oc_child.kind() == "class_body" || oc_child.kind() == "anonymous_class_body"
+                    {
                         // Extract from the anonymous class body.
                         extract_node(
                             oc_child,
@@ -428,7 +578,15 @@ fn extract_nested_classes_from_body(
             }
             // Recursively walk any other nodes that may contain nested classes.
             _ => {
-                extract_nested_classes_from_body(&child, src, scope_tree, package, symbols, refs, parent_index);
+                extract_nested_classes_from_body(
+                    &child,
+                    src,
+                    scope_tree,
+                    package,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
             }
         }
     }
@@ -457,7 +615,9 @@ fn scan_all_type_identifiers(
         if child.kind() == "type_identifier" && child.is_named() {
             let name = helpers::node_text(child, src);
             if !name.is_empty() && !is_java_primitive_type(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -466,9 +626,9 @@ fn scan_all_type_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // Recurse into ALL children regardless.
@@ -479,4 +639,3 @@ fn scan_all_type_identifiers(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

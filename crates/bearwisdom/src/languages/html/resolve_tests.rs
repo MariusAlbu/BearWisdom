@@ -74,17 +74,39 @@ impl SymbolLookup for SelectorMapLookup {
         self.symbols.iter().find(|s| s.qualified_name == qname)
     }
 
-    fn members_of(&self, _p: &str) -> &[SymbolInfo] { &[] }
-    fn types_by_name(&self, _n: &str) -> &[SymbolInfo] { &[] }
-    fn in_namespace(&self, _n: &str) -> Vec<&SymbolInfo> { vec![] }
-    fn has_in_namespace(&self, _n: &str) -> bool { false }
-    fn in_file(&self, _f: &str) -> &[SymbolInfo] { &[] }
-    fn field_type_name(&self, _q: &str) -> Option<&str> { None }
-    fn return_type_name(&self, _q: &str) -> Option<&str> { None }
-    fn field_type_args(&self, _q: &str) -> Option<&[String]> { None }
-    fn generic_params(&self, _n: &str) -> Option<&[String]> { None }
-    fn reexports_from(&self, _f: &str) -> &[(String, String)] { &[] }
-    fn is_external_name(&self, _n: &str, _l: &str) -> bool { false }
+    fn members_of(&self, _p: &str) -> &[SymbolInfo] {
+        &[]
+    }
+    fn types_by_name(&self, _n: &str) -> &[SymbolInfo] {
+        &[]
+    }
+    fn in_namespace(&self, _n: &str) -> Vec<&SymbolInfo> {
+        vec![]
+    }
+    fn has_in_namespace(&self, _n: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _f: &str) -> &[SymbolInfo] {
+        &[]
+    }
+    fn field_type_name(&self, _q: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _q: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _q: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _n: &str) -> Option<&[String]> {
+        None
+    }
+    fn reexports_from(&self, _f: &str) -> &[(String, String)] {
+        &[]
+    }
+    fn is_external_name(&self, _n: &str, _l: &str) -> bool {
+        false
+    }
 
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.selectors.get(raw_selector).map(|s| s.as_str())
@@ -98,8 +120,14 @@ fn host_symbol() -> crate::types::ExtractedSymbol {
         qualified_name: "page".to_string(),
         kind: SymbolKind::Class,
         visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
         declared_type: None,
         return_type: None,
@@ -155,7 +183,10 @@ fn defined_custom_element_binds_to_class() {
     };
 
     let resolution = run_resolve(&file_ctx, &ref_ctx, &lookup);
-    assert!(resolution.is_some(), "defined custom element should resolve to its class");
+    assert!(
+        resolution.is_some(),
+        "defined custom element should resolve to its class"
+    );
     let res = resolution.unwrap();
     assert_eq!(res.target_symbol_id, 42);
     assert_eq!(res.strategy, "default_selector_map");
@@ -168,8 +199,7 @@ fn undefined_library_tag_does_not_coincidentally_bind() {
     // `customElements.define()`, so no selector is registered for it. Even with
     // an unrelated same-named `IonButton` symbol in the index, the tag must NOT
     // bind by name — the Invariant #2 guard the reverted by-name attempt failed.
-    let lookup = SelectorMapLookup::new()
-        .with_symbol(99, "IonButton", "app.IonButton");
+    let lookup = SelectorMapLookup::new().with_symbol(99, "IonButton", "app.IonButton");
 
     let host = host_symbol();
     let extracted = tag_ref("IonButton");

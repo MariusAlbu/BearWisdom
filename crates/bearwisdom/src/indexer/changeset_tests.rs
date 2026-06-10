@@ -155,7 +155,9 @@ fn working_tree_changes_are_detected_when_head_unchanged() {
         .map(|o| o.status.success())
         .unwrap_or(false);
     if !git_ok {
-        eprintln!("working_tree_changes_are_detected_when_head_unchanged: git not available, skipping");
+        eprintln!(
+            "working_tree_changes_are_detected_when_head_unchanged: git not available, skipping"
+        );
         return;
     }
 
@@ -205,8 +207,14 @@ fn working_tree_changes_are_detected_when_head_unchanged() {
         cs.modified.len(),
         1,
         "expected 1 modified file from working tree, got: added={:?} modified={:?} deleted={:?}",
-        cs.added.iter().map(|w| &w.relative_path).collect::<Vec<_>>(),
-        cs.modified.iter().map(|w| &w.relative_path).collect::<Vec<_>>(),
+        cs.added
+            .iter()
+            .map(|w| &w.relative_path)
+            .collect::<Vec<_>>(),
+        cs.modified
+            .iter()
+            .map(|w| &w.relative_path)
+            .collect::<Vec<_>>(),
         cs.deleted,
     );
     assert_eq!(cs.modified[0].relative_path, "lib.rs");
@@ -265,11 +273,7 @@ fn untracked_files_appear_as_added() {
 
     let cs = git_diff(&db, &tmp).expect("git_diff should succeed");
 
-    let added_paths: Vec<&str> = cs
-        .added
-        .iter()
-        .map(|w| w.relative_path.as_str())
-        .collect();
+    let added_paths: Vec<&str> = cs.added.iter().map(|w| w.relative_path.as_str()).collect();
     assert!(
         added_paths.contains(&"brand_new.rs"),
         "untracked source file missing from added; got {added_paths:?}"

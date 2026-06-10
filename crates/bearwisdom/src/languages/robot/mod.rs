@@ -4,13 +4,13 @@
 //! `grammar()` returns `None`; extraction uses a line-oriented parser that
 //! recognises Robot Framework's section-based structure.
 
-pub mod keywords;
-pub mod extract;
-pub mod library_map;
 pub mod dynamic_keywords;
+pub mod extract;
 pub(crate) mod hooks;
-pub(crate) mod profile;
+pub mod keywords;
+pub mod library_map;
 mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::ROBOT_HOOKS;
 pub use profile::ROBOT_PROFILE;
@@ -45,11 +45,17 @@ pub struct RobotProjectState {
 pub struct RobotPlugin;
 
 impl LanguagePlugin for RobotPlugin {
-    fn id(&self) -> &str { "robot" }
+    fn id(&self) -> &str {
+        "robot"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["robot"] }
+    fn language_ids(&self) -> &[&str] {
+        &["robot"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".robot", ".resource"] }
+    fn extensions(&self) -> &[&str] {
+        &[".robot", ".resource"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         None
@@ -72,10 +78,7 @@ impl LanguagePlugin for RobotPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "keyword_invocation",
-            "setting_statement",
-        ]
+        &["keyword_invocation", "setting_statement"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -88,14 +91,12 @@ impl LanguagePlugin for RobotPlugin {
         Some(&profile::ROBOT_PROFILE)
     }
 
-    
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ROBOT_HOOKS)
     }
-fn populate_project_state(
+    fn populate_project_state(
         &self,
         state: &mut PluginStateBag,
         parsed: &[ParsedFile],
@@ -103,18 +104,17 @@ fn populate_project_state(
         _project_ctx: &ProjectContext,
     ) {
         let lib_map = library_map::build_robot_library_map(parsed);
-        let mut library_paths: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
+        let mut library_paths: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for libs in lib_map.values() {
             for lib in libs {
                 library_paths.insert(lib.py_file_path.as_str());
             }
         }
         let library_paths_vec: Vec<&str> = library_paths.iter().copied().collect();
-        let dyn_kw_map = dynamic_keywords::build_robot_dynamic_keyword_map(
-            &library_paths_vec,
-            |path| std::fs::read_to_string(project_root.join(path)).ok(),
-        );
+        let dyn_kw_map =
+            dynamic_keywords::build_robot_dynamic_keyword_map(&library_paths_vec, |path| {
+                std::fs::read_to_string(project_root.join(path)).ok()
+            });
         state.set(RobotProjectState {
             library_map: lib_map,
             resource_basenames: library_map::build_robot_resource_basename_map(parsed),

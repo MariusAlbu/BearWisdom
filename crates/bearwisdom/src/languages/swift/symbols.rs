@@ -35,9 +35,15 @@ pub(super) fn recurse_into_body(
         let mut cursor = type_node.walk();
         for child in type_node.children(&mut cursor) {
             match child.kind() {
-                "class_body" | "struct_body" | "protocol_body" | "extension_body"
-                | "enum_body" => {
-                    super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                "class_body" | "struct_body" | "protocol_body" | "extension_body" | "enum_body" => {
+                    super::extract::extract_node(
+                        child,
+                        src,
+                        scope_tree,
+                        symbols,
+                        refs,
+                        parent_index,
+                    );
                 }
                 _ => {}
             }
@@ -69,15 +75,22 @@ pub(super) fn recurse_enum_body(
                 "enum_case_declaration" => {
                     let mut ic = item.walk();
                     for case_item in item.children(&mut ic) {
-                        if case_item.kind() == "enum_case_name"
-                            || case_item.kind() == "enum_entry"
+                        if case_item.kind() == "enum_case_name" || case_item.kind() == "enum_entry"
                         {
                             let name_node = case_item
                                 .child_by_field_name("name")
                                 .or_else(|| find_child_by_kind(&case_item, "simple_identifier"));
                             if let Some(nn) = name_node {
                                 let name = node_text(nn, src);
-                                push_enum_member(name, &enum_qname, &case_item, scope_tree, symbols, parent_index, src);
+                                push_enum_member(
+                                    name,
+                                    &enum_qname,
+                                    &case_item,
+                                    scope_tree,
+                                    symbols,
+                                    parent_index,
+                                    src,
+                                );
                             }
                         }
                     }
@@ -87,13 +100,24 @@ pub(super) fn recurse_enum_body(
                     for id_node in item.children(&mut ec) {
                         if id_node.kind() == "simple_identifier" {
                             let name = node_text(id_node, src);
-                            push_enum_member(name, &enum_qname, &id_node, scope_tree, symbols, parent_index, src);
+                            push_enum_member(
+                                name,
+                                &enum_qname,
+                                &id_node,
+                                scope_tree,
+                                symbols,
+                                parent_index,
+                                src,
+                            );
                         }
                     }
                 }
                 // Properties (computed or stored) inside enums — push directly.
-                "property_declaration" | "stored_property" | "variable_declaration"
-                | "willSet_didSet_block" | "computed_property" => {
+                "property_declaration"
+                | "stored_property"
+                | "variable_declaration"
+                | "willSet_didSet_block"
+                | "computed_property" => {
                     let pre_len = symbols.len();
                     push_property(&item, src, scope_tree, symbols, parent_index);
                     let sym_idx = if symbols.len() > pre_len {
@@ -105,7 +129,8 @@ pub(super) fn recurse_enum_body(
                         super::decorators::extract_decorators(&item, src, pre_len, refs);
                     }
                     super::calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
-                    let body = item.child_by_field_name("value")
+                    let body = item
+                        .child_by_field_name("value")
                         .or_else(|| find_child_by_kind(&item, "computed_property"))
                         .or_else(|| find_child_by_kind(&item, "code_block"));
                     if let Some(b) = body {
@@ -123,7 +148,8 @@ pub(super) fn recurse_enum_body(
                         super::decorators::extract_decorators(&item, src, sym_idx, refs);
                         super::extract::extract_function_type_refs(&item, src, sym_idx, refs);
                         push_parameters(&item, src, sym_idx, symbols, refs);
-                        let body = item.child_by_field_name("body")
+                        let body = item
+                            .child_by_field_name("body")
                             .or_else(|| find_child_by_kind(&item, "code_block"));
                         if let Some(b) = body {
                             super::calls::extract_calls_from_body(&b, src, sym_idx, refs);
@@ -133,7 +159,8 @@ pub(super) fn recurse_enum_body(
                 "initializer_declaration" | "init_declaration" => {
                     let idx = push_init(&item, src, scope_tree, symbols, parent_index);
                     if let Some(sym_idx) = idx {
-                        let body = item.child_by_field_name("body")
+                        let body = item
+                            .child_by_field_name("body")
                             .or_else(|| find_child_by_kind(&item, "code_block"))
                             .or_else(|| find_child_by_kind(&item, "function_body"));
                         if let Some(b) = body {
@@ -161,7 +188,14 @@ pub(super) fn recurse_enum_body(
                 _ => {
                     // For any other item, walk its children through extract_node so that
                     // nested declarations inside wrappers are still found.
-                    super::extract::extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                    super::extract::extract_node(
+                        item,
+                        src,
+                        scope_tree,
+                        symbols,
+                        refs,
+                        parent_index,
+                    );
                 }
             }
         }
@@ -188,11 +222,11 @@ pub(super) fn push_type_decl(
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
-        SymbolKind::Class     => "class",
-        SymbolKind::Struct    => "struct",
-        SymbolKind::Enum      => "enum",
+        SymbolKind::Class => "class",
+        SymbolKind::Struct => "struct",
+        SymbolKind::Enum => "enum",
         SymbolKind::Interface => "protocol",
-        _                     => "class",
+        _ => "class",
     };
 
     let idx = symbols.len();
@@ -209,12 +243,12 @@ pub(super) fn push_type_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -277,12 +311,12 @@ pub(super) fn push_extension(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -300,7 +334,11 @@ pub(super) fn push_function_decl(
     let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
-    let kind = if scope.is_some() { SymbolKind::Method } else { SymbolKind::Function };
+    let kind = if scope.is_some() {
+        SymbolKind::Method
+    } else {
+        SymbolKind::Function
+    };
 
     let params = node
         .child_by_field_name("params")
@@ -328,12 +366,12 @@ pub(super) fn push_function_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -482,12 +520,12 @@ pub(super) fn push_init(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -499,7 +537,10 @@ pub(super) fn push_deinit(
     parent_index: Option<usize>,
 ) {
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let class_name = scope.map(|s| s.name.as_str()).unwrap_or("deinit").to_string();
+    let class_name = scope
+        .map(|s| s.name.as_str())
+        .unwrap_or("deinit")
+        .to_string();
     let name = format!("~{class_name}");
     let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
@@ -517,12 +558,12 @@ pub(super) fn push_deinit(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 pub(super) fn push_property(
@@ -552,7 +593,7 @@ pub(super) fn push_property(
 
     let name = match name_opt {
         Some(n) => n,
-        None    => return,
+        None => return,
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
@@ -560,7 +601,11 @@ pub(super) fn push_property(
     let scope_path = scope_tree::scope_path(scope);
 
     let text = node_text(*node, src);
-    let kw = if text.trim_start().starts_with("let") { "let" } else { "var" };
+    let kw = if text.trim_start().starts_with("let") {
+        "let"
+    } else {
+        "var"
+    };
     let ty = node
         .child_by_field_name("type")
         .or_else(|| find_child_by_kind(node, "type_annotation"))
@@ -580,12 +625,12 @@ pub(super) fn push_property(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit a TypeAlias symbol for `typealias Name = Type`.
@@ -620,12 +665,12 @@ pub(super) fn push_typealias(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef for the aliased type — the type node appears after `=`.
     // Walk children: after `=` take the first named node that looks like a type.
@@ -699,12 +744,12 @@ pub(super) fn push_subscript(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -732,7 +777,9 @@ pub(super) fn push_import(
     }
     let full = parts.join(".");
     let target = parts.last().cloned().unwrap_or_else(|| full.clone());
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -770,7 +817,9 @@ pub(super) fn extract_type_inheritance(
                                     EdgeKind::Inherits
                                 };
                                 first = false;
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: name,
                                     kind,
@@ -796,7 +845,9 @@ pub(super) fn extract_type_inheritance(
                         EdgeKind::Inherits
                     };
                     first = false;
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind,
@@ -843,12 +894,12 @@ fn push_enum_member(
         doc_comment: None,
         scope_path: scope_tree::scope_path(scope),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit a TypeAlias symbol for `associatedtype Element` in a protocol.
@@ -894,12 +945,12 @@ pub(super) fn push_associatedtype(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Dispatch the `class_declaration` node to the correct handler.

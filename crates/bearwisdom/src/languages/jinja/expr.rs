@@ -140,7 +140,9 @@ pub fn scan_expression(
             continue;
         }
 
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: head.to_string(),
             kind: EdgeKind::TypeRef,
@@ -150,8 +152,8 @@ pub fn scan_expression(
             byte_offset,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                    col: 0,
-});
+            col: 0,
+        });
 
         prev_ident = Some(head);
         after_pipe = false;
@@ -267,14 +269,51 @@ fn trim_at_top_level_pipe(body: &str) -> &str {
 fn is_jinja_keyword(word: &str) -> bool {
     matches!(
         word,
-        "and" | "or" | "not" | "in" | "is" | "if" | "else" | "elif"
-            | "true" | "false" | "True" | "False" | "none" | "None"
-            | "for" | "endfor" | "block" | "endblock" | "extends"
-            | "include" | "import" | "from" | "as" | "with" | "without"
-            | "context" | "set" | "do" | "macro" | "endmacro" | "call"
-            | "endcall" | "filter" | "endfilter" | "raw" | "endraw"
-            | "trans" | "endtrans" | "pluralize" | "endpluralize"
-            | "autoescape" | "endautoescape" | "scoped" | "required"
-            | "recursive" | "loop"
+        "and"
+            | "or"
+            | "not"
+            | "in"
+            | "is"
+            | "if"
+            | "else"
+            | "elif"
+            | "true"
+            | "false"
+            | "True"
+            | "False"
+            | "none"
+            | "None"
+            | "for"
+            | "endfor"
+            | "block"
+            | "endblock"
+            | "extends"
+            | "include"
+            | "import"
+            | "from"
+            | "as"
+            | "with"
+            | "without"
+            | "context"
+            | "set"
+            | "do"
+            | "macro"
+            | "endmacro"
+            | "call"
+            | "endcall"
+            | "filter"
+            | "endfilter"
+            | "raw"
+            | "endraw"
+            | "trans"
+            | "endtrans"
+            | "pluralize"
+            | "endpluralize"
+            | "autoescape"
+            | "endautoescape"
+            | "scoped"
+            | "required"
+            | "recursive"
+            | "loop"
     )
 }

@@ -28,7 +28,10 @@ fn supports_jar_and_aar() {
 #[test]
 fn visibility_mapping() {
     assert!(matches!(visibility_for(ACC_PUBLIC), Visibility::Public));
-    assert!(matches!(visibility_for(ACC_PROTECTED), Visibility::Protected));
+    assert!(matches!(
+        visibility_for(ACC_PROTECTED),
+        Visibility::Protected
+    ));
     assert!(matches!(visibility_for(ACC_PRIVATE), Visibility::Private));
     assert!(matches!(visibility_for(0), Visibility::Public));
 }

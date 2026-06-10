@@ -33,20 +33,10 @@ pub(super) fn first_segment(path: &str) -> &str {
 }
 
 /// Always-external Java namespace roots (stdlib + test frameworks).
-const ALWAYS_EXTERNAL: &[&str] = &[
-    "java",
-    "javax",
-    "jakarta",
-    "org.junit",
-    "sun",
-    "com.sun",
-];
+const ALWAYS_EXTERNAL: &[&str] = &["java", "javax", "jakarta", "org.junit", "sun", "com.sun"];
 
 /// Check whether a Java namespace or import path is external.
-pub(super) fn is_external_java_namespace(
-    ns: &str,
-    project_ctx: Option<&ProjectContext>,
-) -> bool {
+pub(super) fn is_external_java_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
     // Always-external first.
     for prefix in ALWAYS_EXTERNAL {
         if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
@@ -93,7 +83,6 @@ pub(super) fn effective_target_is_external(
     }
     is_external_java_namespace(target, project_ctx)
 }
-
 
 /// Java primitive types and language-level keywords that the extractor
 /// emits as type_identifier nodes. Filtered at extract time to avoid

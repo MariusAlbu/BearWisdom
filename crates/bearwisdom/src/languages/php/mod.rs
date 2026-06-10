@@ -3,16 +3,16 @@
 mod calls;
 pub(crate) mod decorators;
 pub mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-pub mod extract;
 
-mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
 pub mod connectors;
+pub(crate) mod hooks;
+mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::PHP_HOOKS;
 pub use profile::PHP_PROFILE;
@@ -38,24 +38,32 @@ mod resolve_tests;
 mod predicates_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct PhpPlugin;
 
 impl LanguagePlugin for PhpPlugin {
-    fn id(&self) -> &str { "php" }
+    fn id(&self) -> &str {
+        "php"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["php"] }
+    fn language_ids(&self) -> &[&str] {
+        &["php"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".php"] }
+    fn extensions(&self) -> &[&str] {
+        &[".php"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_php::LANGUAGE_PHP.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::PHP_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::PHP_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -120,8 +128,7 @@ impl LanguagePlugin for PhpPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PHP_HOOKS)
     }
 

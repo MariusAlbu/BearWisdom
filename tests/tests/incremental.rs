@@ -17,7 +17,9 @@ fn incremental_detects_new_file() {
     let count_before = stats1.symbol_count;
 
     // Add a new file after the initial index.
-    project.add_file("Services/OrderService.cs", r#"
+    project.add_file(
+        "Services/OrderService.cs",
+        r#"
 namespace MyApp.Services
 {
     public class OrderService
@@ -25,7 +27,8 @@ namespace MyApp.Services
         public void PlaceOrder(int productId) { }
     }
 }
-"#);
+"#,
+    );
 
     let stats2 = incremental_index(&mut db, project.path(), None).unwrap();
 
@@ -49,20 +52,31 @@ fn incremental_detects_modified_file() {
     // Modify an existing file — add a new class.
     let path = project.path().join("models.py");
     let mut content = fs::read_to_string(&path).unwrap();
-    content.push_str(r#"
+    content.push_str(
+        r#"
 
 class Bird(Animal):
     def speak(self) -> str:
         return f"{self.name} says Tweet!"
-"#);
+"#,
+    );
     fs::write(&path, content).unwrap();
 
     let stats = incremental_index(&mut db, project.path(), None).unwrap();
     let _ = stats;
 
     // "Bird" should now be findable.
-    let results = bearwisdom::query::search::search_symbols(&db, "Bird", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
-    assert!(!results.is_empty(), "Bird class should be indexed after incremental update");
+    let results = bearwisdom::query::search::search_symbols(
+        &db,
+        "Bird",
+        10,
+        &bearwisdom::query::QueryOptions::full(),
+    )
+    .unwrap();
+    assert!(
+        !results.is_empty(),
+        "Bird class should be indexed after incremental update"
+    );
 }
 
 #[test]

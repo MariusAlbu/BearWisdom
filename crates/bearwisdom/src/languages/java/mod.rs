@@ -4,13 +4,13 @@ mod calls;
 pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
 mod lombok;
 mod symbols;
-pub mod extract;
 
 pub mod hooks;
 mod predicates;
@@ -43,24 +43,32 @@ mod predicates_tests;
 mod lombok_tests;
 
 use crate::languages::{LanguagePlugin, Synthesized};
-use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 
 pub struct JavaPlugin;
 
 impl LanguagePlugin for JavaPlugin {
-    fn id(&self) -> &str { "java" }
+    fn id(&self) -> &str {
+        "java"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["java"] }
+    fn language_ids(&self) -> &[&str] {
+        &["java"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".java"] }
+    fn extensions(&self) -> &[&str] {
+        &[".java"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_java::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::JAVA_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::JAVA_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -132,8 +140,7 @@ impl LanguagePlugin for JavaPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&JAVA_HOOKS)
     }
 

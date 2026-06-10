@@ -2,11 +2,10 @@
 // parser/extractors/ruby/mod.rs  —  Ruby symbol and reference extractor
 // =============================================================================
 
-
-use super::{symbols};
+use super::symbols;
 use super::symbols::{
-    extract_call_statement, extract_class, extract_method, extract_module,
-    extract_singleton_class, extract_singleton_method,
+    extract_call_statement, extract_class, extract_method, extract_module, extract_singleton_class,
+    extract_singleton_method,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -18,10 +17,22 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static RUBY_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class",            name_field: "name" },
-    ScopeKind { node_kind: "module",           name_field: "name" },
-    ScopeKind { node_kind: "method",           name_field: "name" },
-    ScopeKind { node_kind: "singleton_method", name_field: "name" },
+    ScopeKind {
+        node_kind: "class",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "module",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "singleton_method",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -111,14 +122,7 @@ pub(super) fn extract_from_node(
 
             // `class << self ... end` — singleton class / eigenclass.
             "singleton_class" => {
-                extract_singleton_class(
-                    &child,
-                    src,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                );
+                extract_singleton_class(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
 
             "call" => {
@@ -135,24 +139,14 @@ pub(super) fn extract_from_node(
                 // arguments (e.g. `foo(bar(baz()))`) at class/module body level
                 // are captured.  extract_call_statement only handles one level.
                 let sym_idx = parent_index.unwrap_or(0);
-                super::calls::extract_calls_from_body(
-                    &child,
-                    src,
-                    sym_idx,
-                    refs,
-                );
+                super::calls::extract_calls_from_body(&child, src, sym_idx, refs);
             }
 
             // `method_call` is an alternative grammar node for method calls (tree-sitter-ruby
             // may parse some calls as `method_call` instead of `call`). Extract calls from it.
             "method_call" => {
                 let sym_idx = parent_index.unwrap_or(0);
-                super::calls::extract_calls_from_body(
-                    &child,
-                    src,
-                    sym_idx,
-                    refs,
-                );
+                super::calls::extract_calls_from_body(&child, src, sym_idx, refs);
             }
 
             // `Foo::Bar` — scope resolution used as a type reference (e.g. in
@@ -161,7 +155,9 @@ pub(super) fn extract_from_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: type_name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -170,9 +166,9 @@ pub(super) fn extract_from_node(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -183,7 +179,9 @@ pub(super) fn extract_from_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: type_name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -192,9 +190,9 @@ pub(super) fn extract_from_node(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -203,21 +201,11 @@ pub(super) fn extract_from_node(
             // `call` in most contexts, but `command` nodes appear for no-paren
             // method calls that are not syntactically calls.
             "command" => {
-                super::calls::extract_calls_from_body(
-                    &child,
-                    src,
-                    parent_index.unwrap_or(0),
-                    refs,
-                );
+                super::calls::extract_calls_from_body(&child, src, parent_index.unwrap_or(0), refs);
             }
 
             "command_call" => {
-                super::calls::extract_calls_from_body(
-                    &child,
-                    src,
-                    parent_index.unwrap_or(0),
-                    refs,
-                );
+                super::calls::extract_calls_from_body(&child, src, parent_index.unwrap_or(0), refs);
             }
 
             "ERROR" | "MISSING" => {}
@@ -258,7 +246,9 @@ fn scan_all_constants(
             "constant" if child.is_named() => {
                 let name = super::helpers::node_text(&child, src);
                 if !name.is_empty() {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -267,9 +257,9 @@ fn scan_all_constants(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "scope_resolution" if child.is_named() => {
@@ -277,7 +267,9 @@ fn scan_all_constants(
                 let full = super::helpers::node_text(&child, src);
                 let name = full.rsplit("::").next().unwrap_or(&full).to_string();
                 if !name.is_empty() {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -286,9 +278,9 @@ fn scan_all_constants(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // Don't recurse into scope_resolution — we already extracted the name.
                 continue;
@@ -302,4 +294,3 @@ fn scan_all_constants(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

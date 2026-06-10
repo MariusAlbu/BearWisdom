@@ -170,11 +170,7 @@ fn normalise_doc_path_strips_absolute_prefix() {
 #[test]
 fn normalise_doc_path_strips_uri_and_scip_root() {
     let root = Path::new("/other/path");
-    let result = normalise_doc_path(
-        "file:///workspace/src/app.ts",
-        root,
-        "file:///workspace",
-    );
+    let result = normalise_doc_path("file:///workspace/src/app.ts", root, "file:///workspace");
     assert_eq!(result, "src/app.ts");
 }
 
@@ -308,7 +304,10 @@ fn upsert_scip_edge_upgrades_low_confidence() {
             |r| r.get(0),
         )
         .unwrap();
-    assert!((conf - 1.0).abs() < f64::EPSILON, "should be upgraded to 1.0");
+    assert!(
+        (conf - 1.0).abs() < f64::EPSILON,
+        "should be upgraded to 1.0"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -373,7 +372,10 @@ fn import_scip_is_idempotent() {
     assert_eq!(count, 1, "idempotent: still one edge after two imports");
 
     // Second run should create nothing and upgrade nothing (edge already at 1.0).
-    assert_eq!(stats2.edges_created, 0, "second run should create no new edges");
+    assert_eq!(
+        stats2.edges_created, 0,
+        "second run should create no new edges"
+    );
     // Any upgraded count from bulk_upgrade is fine to be 0 on the second run too.
     let _ = stats1; // used — suppress lint
 }
@@ -424,7 +426,10 @@ fn import_scip_upgrades_preexisting_low_confidence_edge() {
     let project_root = Path::new("/workspace");
     let stats = import_scip(&db, &scip_path, project_root).unwrap();
 
-    assert_eq!(stats.edges_upgraded, 1, "should upgrade the pre-existing edge");
+    assert_eq!(
+        stats.edges_upgraded, 1,
+        "should upgrade the pre-existing edge"
+    );
     assert_eq!(stats.edges_created, 0);
 
     let conf: f64 = db
@@ -501,7 +506,10 @@ fn import_scip_handles_relationship_edges() {
     let stats = import_scip(&db, &scip_path, Path::new("/workspace")).unwrap();
 
     assert_eq!(stats.documents_processed, 1);
-    assert_eq!(stats.edges_created, 1, "relationship edge should be created");
+    assert_eq!(
+        stats.edges_created, 1,
+        "relationship edge should be created"
+    );
 
     let kind: String = db
         .conn()

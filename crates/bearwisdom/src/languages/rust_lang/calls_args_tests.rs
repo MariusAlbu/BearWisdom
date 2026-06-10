@@ -23,7 +23,8 @@ fn caller(a: i32, b: i32) { f([a, b]); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array arg, got: {args:?}"
     );
 }
@@ -47,7 +48,8 @@ fn caller(a: Vec<i32>, i: usize) { f(a[i]); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for index arg, got: {args:?}"
     );
 }
@@ -59,7 +61,8 @@ fn caller(a: i32, b: i32) { f(a + b); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }
@@ -71,7 +74,8 @@ fn caller() { f("/api/users"); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\") preserved, got: {args:?}"
     );
 }

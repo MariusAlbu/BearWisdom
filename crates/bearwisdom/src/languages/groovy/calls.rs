@@ -6,9 +6,9 @@
 // subtrees collecting calls.
 // =============================================================================
 
-use crate::types::{CallArg, ChainSegment, ExtractedRef, MemberChain, SegmentKind};
-use super::predicates;
 use super::node_helpers::{named_field_text, node_text};
+use super::predicates;
+use crate::types::{CallArg, ChainSegment, ExtractedRef, MemberChain, SegmentKind};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -153,11 +153,11 @@ pub(super) fn build_receiver_chain(
         type_args: Vec::new(),
         optional_chaining: false,
         byte_offset: 0,
-            declared_type_id: None,
+        declared_type_id: None,
         is_call: false,
         call_args: Vec::new(),
         type_arg_ids: Vec::new(),
-});
+    });
 
     if segments.len() < 2 {
         return None;
@@ -198,11 +198,11 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         "this" => {
@@ -214,11 +214,11 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         "field_access" => {
@@ -238,11 +238,11 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         "method_invocation" => {
@@ -267,11 +267,11 @@ fn collect_receiver_segments(
                     type_args: Vec::new(),
                     optional_chaining: false,
                     byte_offset: 0,
-                                    declared_type_id: None,
+                    declared_type_id: None,
                     is_call: false,
                     call_args: Vec::new(),
                     type_arg_ids: Vec::new(),
-});
+                });
                 return Some(());
             }
             segments.push(ChainSegment {
@@ -282,11 +282,11 @@ fn collect_receiver_segments(
                 type_args: Vec::new(),
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         _ => {
@@ -326,7 +326,14 @@ fn collect_local_types(node: &Node, src: &str, map: &mut HashMap<String, String>
                         && !type_name.chars().next().map_or(false, |c| c.is_lowercase())
                     {
                         // Strip generic parameters: `List<File>` → `List`
-                        let base_type = type_name.split('<').next().unwrap_or(&type_name).trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.').to_string();
+                        let base_type = type_name
+                            .split('<')
+                            .next()
+                            .unwrap_or(&type_name)
+                            .trim_end_matches(|c: char| {
+                                !c.is_alphanumeric() && c != '_' && c != '.'
+                            })
+                            .to_string();
                         // Collect each declarator's variable name.
                         let mut dc = child.walk();
                         for decl in child.children(&mut dc) {
@@ -351,7 +358,14 @@ fn collect_local_types(node: &Node, src: &str, map: &mut HashMap<String, String>
                         && type_name != "def"
                         && !type_name.chars().next().map_or(false, |c| c.is_lowercase())
                     {
-                        let base_type = type_name.split('<').next().unwrap_or(&type_name).trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.').to_string();
+                        let base_type = type_name
+                            .split('<')
+                            .next()
+                            .unwrap_or(&type_name)
+                            .trim_end_matches(|c: char| {
+                                !c.is_alphanumeric() && c != '_' && c != '.'
+                            })
+                            .to_string();
                         if let Some(name_node) = child.child_by_field_name("name") {
                             let var_name = node_text(&name_node, src).to_string();
                             if !var_name.is_empty() {

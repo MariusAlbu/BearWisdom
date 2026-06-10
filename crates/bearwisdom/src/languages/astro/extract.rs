@@ -29,8 +29,7 @@ use tree_sitter::{Node, Parser};
 
 /// Built-in Astro/HTML tag names that should not be treated as component calls.
 const BUILTIN_TAGS: &[&str] = &[
-    "DOCTYPE", "CDATA",
-    // Astro built-ins
+    "DOCTYPE", "CDATA", // Astro built-ins
     "Fragment", "slot",
 ];
 
@@ -66,11 +65,11 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     let root = tree.root_node();
     visit_document(&root, source, &mut refs);
@@ -115,7 +114,9 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
     // PascalCase tags → component call
     if tag.chars().next().map_or(false, |c| c.is_uppercase()) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: tag,
             kind: EdgeKind::Calls,
@@ -132,7 +133,9 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
     // Kebab-case custom elements → PascalCase component call
     if tag.contains('-') {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: kebab_to_pascal(&tag),
             kind: EdgeKind::Calls,

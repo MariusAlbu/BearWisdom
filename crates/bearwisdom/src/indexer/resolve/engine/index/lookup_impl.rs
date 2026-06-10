@@ -10,8 +10,8 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{strip_generic_args, SymbolIndex};
 use super::LOCAL_TYPE_CACHE;
+use super::{strip_generic_args, SymbolIndex};
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
 
 impl SymbolLookup for SymbolIndex {
@@ -99,19 +99,18 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn in_module_from(&self, source_file: &str, spec: &str) -> &[SymbolInfo] {
-        // Per-source resolution wins for relative specifiers — `./utils`
-        // from one file is a different file than from another. Falls back
-        // to the global lookups (exact path / global module_to_file) when
-        // the per-source map has no entry for this (source, spec) pair.
-        if spec.starts_with('.') {
-            if let Some(resolved) = self
-                .module_to_file_per_source
-                .get(&(source_file.to_string(), spec.to_string()))
-            {
-                if let Some(syms) = self.by_file.get(resolved) {
-                    return syms.as_slice();
-                }
+        // Per-source resolution wins. Relative specifiers require this, and
+        // some ecosystems also have bare specifiers whose nearest-file meaning
+        // depends on the importing directory.
+        if let Some(resolved) = self
+            .module_to_file_per_source
+            .get(&(source_file.to_string(), spec.to_string()))
+        {
+            if let Some(syms) = self.by_file.get(resolved) {
+                return syms.as_slice();
             }
+        }
+        if spec.starts_with('.') {
             // Backward-compat: if the spec literally matches an indexed
             // file path (test fixtures often use the spec as the path),
             // surface it. Real-world relative specs like `./utils` won't
@@ -120,16 +119,12 @@ impl SymbolLookup for SymbolIndex {
         self.in_file(spec)
     }
 
-    fn resolve_module_from(
-        &self,
-        source_file: &str,
-        spec: &str,
-    ) -> Option<&str> {
-        if spec.starts_with('.') {
-            return self
-                .module_to_file_per_source
-                .get(&(source_file.to_string(), spec.to_string()))
-                .map(|s| s.as_str());
+    fn resolve_module_from(&self, source_file: &str, spec: &str) -> Option<&str> {
+        if let Some(resolved) = self
+            .module_to_file_per_source
+            .get(&(source_file.to_string(), spec.to_string()))
+        {
+            return Some(resolved.as_str());
         }
         self.module_to_file.get(spec).map(|s| s.as_str())
     }
@@ -260,7 +255,13 @@ impl SymbolLookup for SymbolIndex {
         chain_prefix: &str,
         module_path: &str,
     ) -> Option<i64> {
-        SymbolIndex::resolve_via_external_reexport(self, target_name, chain_prefix, module_path, &[])
+        SymbolIndex::resolve_via_external_reexport(
+            self,
+            target_name,
+            chain_prefix,
+            module_path,
+            &[],
+        )
     }
 
     fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
@@ -288,11 +289,7 @@ impl SymbolLookup for SymbolIndex {
         self.workspace_pkg_by_declared_name.contains_key(name)
     }
 
-    fn resolve_path_alias(
-        &self,
-        package_id: Option<i64>,
-        specifier: &str,
-    ) -> Option<String> {
+    fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
         let paths = package_id
             .and_then(|id| self.path_aliases_by_pkg.get(&id))
             .map(|v| v.as_slice())
@@ -354,7 +351,9 @@ impl SymbolLookup for SymbolIndex {
         let mut cur = self.containing_id.get(&start.id).copied();
         for _ in 0..256 {
             let Some(pid) = cur else { break };
-            let Some(info) = self.by_id.get(&pid) else { break };
+            let Some(info) = self.by_id.get(&pid) else {
+                break;
+            };
             if matches!(info.kind.as_str(), "namespace" | "module") {
                 return Some(info.qualified_name.as_str());
             }

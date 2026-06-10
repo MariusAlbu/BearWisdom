@@ -16,13 +16,15 @@ fn parses_vite_config_with_path_resolve() {
     "#;
     let aliases = parse_js_config_aliases(src);
     assert!(
-        aliases.iter().any(|(k, v)|
-            k == "next/" && v == "app/javascript/dashboard/components-next/"),
+        aliases
+            .iter()
+            .any(|(k, v)| k == "next/" && v == "app/javascript/dashboard/components-next/"),
         "expected next → app/javascript/dashboard/components-next, got {aliases:?}"
     );
     assert!(
-        aliases.iter().any(|(k, v)|
-            k == "dashboard/" && v == "app/javascript/dashboard/"),
+        aliases
+            .iter()
+            .any(|(k, v)| k == "dashboard/" && v == "app/javascript/dashboard/"),
         "expected dashboard alias, got {aliases:?}"
     );
 }
@@ -73,7 +75,9 @@ fn parses_webpack_nested_under_configure_webpack() {
         "nested @ alias must resolve: {aliases:?}"
     );
     assert!(
-        aliases.iter().any(|(k, v)| k == "@components/" && v == "src/components/"),
+        aliases
+            .iter()
+            .any(|(k, v)| k == "@components/" && v == "src/components/"),
         "nested @components alias: {aliases:?}"
     );
 }
@@ -121,7 +125,9 @@ fn parses_sveltekit_kit_alias() {
         "kit.alias `$lib` must map to src/lib: {aliases:?}"
     );
     assert!(
-        aliases.iter().any(|(k, v)| k == "$i18n/" && v == "../i18n/"),
+        aliases
+            .iter()
+            .any(|(k, v)| k == "$i18n/" && v == "../i18n/"),
         "kit.alias `$i18n` must map to ../i18n: {aliases:?}"
     );
 }
@@ -152,7 +158,9 @@ fn ignores_dynamic_values() {
         "interpolated template string must be dropped: {aliases:?}"
     );
     assert!(
-        aliases.iter().any(|(k, v)| k == "@static/" && v == "literal/"),
+        aliases
+            .iter()
+            .any(|(k, v)| k == "@static/" && v == "literal/"),
         "plain string alias must still pass through: {aliases:?}"
     );
 }
@@ -193,10 +201,27 @@ fn chatwoot_vite_config_real_shape() {
         });
     "#;
     let aliases = parse_js_config_aliases(src);
-    let find = |prefix: &str| aliases.iter().find(|(k, _)| k == prefix).map(|(_, v)| v.clone());
-    assert_eq!(find("next/"), Some("app/javascript/dashboard/components-next/".to_string()));
+    let find = |prefix: &str| {
+        aliases
+            .iter()
+            .find(|(k, _)| k == prefix)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(
+        find("next/"),
+        Some("app/javascript/dashboard/components-next/".to_string())
+    );
     assert_eq!(find("v3/"), Some("app/javascript/v3/".to_string()));
-    assert_eq!(find("dashboard/"), Some("app/javascript/dashboard/".to_string()));
-    assert_eq!(find("components/"), Some("app/javascript/dashboard/components/".to_string()));
-    assert_eq!(find("vue/"), Some("vue/dist/vue.esm-bundler.js/".to_string()));
+    assert_eq!(
+        find("dashboard/"),
+        Some("app/javascript/dashboard/".to_string())
+    );
+    assert_eq!(
+        find("components/"),
+        Some("app/javascript/dashboard/components/".to_string())
+    );
+    assert_eq!(
+        find("vue/"),
+        Some("vue/dist/vue.esm-bundler.js/".to_string())
+    );
 }

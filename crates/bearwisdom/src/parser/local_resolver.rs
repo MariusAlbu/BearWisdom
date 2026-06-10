@@ -158,8 +158,7 @@ impl LocalResolver {
 
         // Byte offsets of all definitions, so the "this reference IS a
         // definition" guard below is an O(1) set lookup.
-        let def_offsets: FxHashSet<usize> =
-            definitions.iter().map(|d| d.byte_offset).collect();
+        let def_offsets: FxHashSet<usize> = definitions.iter().map(|d| d.byte_offset).collect();
 
         // Resolve references: walk up the scope chain looking for a definition.
         let mut locally_resolved = FxHashSet::default();

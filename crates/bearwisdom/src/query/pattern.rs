@@ -90,9 +90,9 @@ pub fn pattern_search(
         .collect();
 
     let mut parser = Parser::new();
-    parser
-        .set_language(&grammar)
-        .map_err(|e| crate::query::error::QueryError::Internal(anyhow::anyhow!("set_language: {e}")))?;
+    parser.set_language(&grammar).map_err(|e| {
+        crate::query::error::QueryError::Internal(anyhow::anyhow!("set_language: {e}"))
+    })?;
 
     let mut out = Vec::new();
     let cap = max_results as usize;

@@ -108,10 +108,22 @@ fn parse_puppet_gem_emits_real_symbols() {
         .iter()
         .flat_map(|p| p.symbols.iter().map(|s| s.name.as_str()))
         .collect();
-    assert!(names.contains(&"file"), "missing 'file' resource type: {names:?}");
-    assert!(names.contains(&"service"), "missing 'service' resource type: {names:?}");
-    assert!(names.contains(&"assert_type"), "missing 'assert_type' function: {names:?}");
-    assert!(names.contains(&"fail"), "missing 'fail' function: {names:?}");
+    assert!(
+        names.contains(&"file"),
+        "missing 'file' resource type: {names:?}"
+    );
+    assert!(
+        names.contains(&"service"),
+        "missing 'service' resource type: {names:?}"
+    );
+    assert!(
+        names.contains(&"assert_type"),
+        "missing 'assert_type' function: {names:?}"
+    );
+    assert!(
+        names.contains(&"fail"),
+        "missing 'fail' function: {names:?}"
+    );
 
     // Confirm path prefix is stable across machines.
     for pf in &parsed {
@@ -143,7 +155,10 @@ fn parse_puppet_gem_filename_fallback_for_function_without_regex_match() {
         .iter()
         .flat_map(|p| p.symbols.iter().map(|s| s.name.as_str()))
         .collect();
-    assert!(names.contains(&"notice"), "filename fallback failed: {names:?}");
+    assert!(
+        names.contains(&"notice"),
+        "filename fallback failed: {names:?}"
+    );
 }
 
 #[test]

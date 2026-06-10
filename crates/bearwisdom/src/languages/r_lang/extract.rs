@@ -19,8 +19,8 @@
 //   Calls     — all other call nodes → function name
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 // Class-defining function names
@@ -41,14 +41,19 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     // tree-sitter R grammar parses as call expressions, but which we need to
     // treat as symbol *definitions* rather than call references. Short-circuit
     // to the dedicated NAMESPACE parser when the file path ends with NAMESPACE.
-    if file_path.ends_with("/NAMESPACE") || file_path.ends_with("\\NAMESPACE") || file_path == "NAMESPACE" {
+    if file_path.ends_with("/NAMESPACE")
+        || file_path.ends_with("\\NAMESPACE")
+        || file_path == "NAMESPACE"
+    {
         return parse_namespace_file(source, file_path);
     }
 
     let lang: tree_sitter::Language = tree_sitter_r::LANGUAGE.into();
 
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("Failed to load R grammar");
+    parser
+        .set_language(&lang)
+        .expect("Failed to load R grammar");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -104,7 +109,9 @@ fn parse_namespace_file(source: &str, _file_path: &str) -> ExtractionResult {
             let args = strip_trailing_paren(rest);
             emit_export_args(args, line_num, &mut symbols);
         } else if let Some(rest) = line.strip_prefix("exportPattern(") {
-            let pattern = strip_trailing_paren(rest).trim().trim_matches(|c| c == '"' || c == '\'');
+            let pattern = strip_trailing_paren(rest)
+                .trim()
+                .trim_matches(|c| c == '"' || c == '\'');
             if !pattern.is_empty() {
                 symbols.push(make_function_symbol(pattern, line_num));
             }
@@ -142,7 +149,8 @@ fn emit_export_args(args: &str, line_num: u32, symbols: &mut Vec<ExtractedSymbol
 /// Strip the trailing `)` from a NAMESPACE directive argument string.
 /// Handles both `func)` and `func` (already stripped).
 fn strip_trailing_paren(s: &str) -> &str {
-    s.trim_end_matches(')').trim_end_matches(|c: char| c == ',' || c == ' ')
+    s.trim_end_matches(')')
+        .trim_end_matches(|c: char| c == ',' || c == ' ')
 }
 
 /// Split a comma-separated argument list that may contain quoted strings.
@@ -171,11 +179,11 @@ fn make_function_symbol(name: &str, line: u32) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +241,11 @@ fn extract_binary_operator(
             return None;
         }
         // Truncate long expressions
-        let short = if expr_text.len() > 40 { expr_text[..40].to_string() } else { expr_text };
+        let short = if expr_text.len() > 40 {
+            expr_text[..40].to_string()
+        } else {
+            expr_text
+        };
         let idx = symbols.len();
         symbols.push(ExtractedSymbol {
             name: short.clone(),
@@ -248,12 +260,12 @@ fn extract_binary_operator(
             doc_comment: None,
             scope_path: None,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
         return Some(idx);
     }
 
@@ -281,12 +293,12 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
         "call" => {
@@ -310,12 +322,12 @@ fn extract_binary_operator(
                     doc_comment: None,
                     scope_path: None,
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
                 // For R6Class, emit Method symbols from public/private/active list args.
                 // Other class systems (setClass, setRefClass) use separate setMethod()
                 // calls, so only R6Class gets this treatment.
@@ -324,7 +336,9 @@ fn extract_binary_operator(
                 }
                 // Still emit the Call edge for the R6Class/setClass call itself
                 let source_idx = parent_index.unwrap_or(0);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: callee,
                     kind: EdgeKind::Calls,
@@ -355,12 +369,12 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
         _ => {
@@ -379,12 +393,12 @@ fn extract_binary_operator(
                 doc_comment: None,
                 scope_path: None,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             Some(idx)
         }
     }
@@ -431,7 +445,9 @@ fn extract_call(
                 // General case: emit dotted qname for cross-file member resolution.
                 format!("{lhs}.{rhs}")
             };
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: target,
                 kind: EdgeKind::Calls,
@@ -441,8 +457,8 @@ fn extract_call(
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                            col: 0,
-});
+                col: 0,
+            });
             return None;
         }
     }
@@ -454,7 +470,9 @@ fn extract_call(
 
     if IMPORT_FUNCS.contains(&callee.as_str()) {
         if let Some(pkg) = get_first_string_arg(node, src) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: pkg.clone(),
                 kind: EdgeKind::Imports,
@@ -462,10 +480,10 @@ fn extract_call(
                 module: Some(pkg),
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-    col: 0,
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+                col: 0,
+            });
         }
         return None;
     }
@@ -486,12 +504,12 @@ fn extract_call(
             doc_comment: None,
             scope_path: None,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
         return Some(idx);
     }
 
@@ -511,17 +529,19 @@ fn extract_call(
             doc_comment: None,
             scope_path: None,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
         return Some(idx);
     }
 
     // Generic call → Calls edge
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: callee,
         kind: EdgeKind::Calls,
@@ -529,10 +549,10 @@ fn extract_call(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-    col: 0,
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+        col: 0,
+    });
     None
 }
 
@@ -562,7 +582,8 @@ fn extract_r6_methods(
             continue;
         }
         // Named argument: `public = list(...)` / `private = list(...)` / `active = list(...)`
-        let arg_name = arg.child_by_field_name("name")
+        let arg_name = arg
+            .child_by_field_name("name")
             .map(|n| node_text(n, src))
             .unwrap_or_default();
         if !matches!(arg_name.as_str(), "public" | "private" | "active") {
@@ -589,7 +610,8 @@ fn extract_r6_methods(
             if list_entry.kind() != "argument" {
                 continue;
             }
-            let method_name = list_entry.child_by_field_name("name")
+            let method_name = list_entry
+                .child_by_field_name("name")
                 .map(|n| node_text(n, src))
                 .unwrap_or_default();
             if method_name.is_empty() {
@@ -619,11 +641,11 @@ fn extract_r6_methods(
                 scope_path: None,
                 parent_index: Some(class_idx),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -641,16 +663,20 @@ fn extract_namespace_operator(
 ) {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
     // lhs is the package name, rhs is the exported/internal function name.
-    let pkg = node.child_by_field_name("lhs")
+    let pkg = node
+        .child_by_field_name("lhs")
         .map(|n| node_text(n, src))
         .unwrap_or_default();
-    let func = node.child_by_field_name("rhs")
+    let func = node
+        .child_by_field_name("rhs")
         .map(|n| node_text(n, src))
         .unwrap_or_default();
     if pkg.is_empty() || func.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: func,
         kind: EdgeKind::Calls,
@@ -659,9 +685,9 @@ fn extract_namespace_operator(
         module: Some(pkg),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -689,14 +715,16 @@ fn get_lhs_rhs<'a>(node: &'a Node, src: &[u8], op: &str) -> Option<(String, Node
     match op {
         "->" | "->>" => {
             // right-assignment: value -> name
-            let rhs_name = node.child_by_field_name("rhs")
+            let rhs_name = node
+                .child_by_field_name("rhs")
                 .map(|n| node_text(n, src))
                 .unwrap_or_default();
             let lhs_node = node.child_by_field_name("lhs")?;
             Some((rhs_name, lhs_node))
         }
         _ => {
-            let lhs_name = node.child_by_field_name("lhs")
+            let lhs_name = node
+                .child_by_field_name("lhs")
                 .map(|n| node_text(n, src))
                 .unwrap_or_default();
             // Clean up identifiers (may have backtick quoting)
@@ -712,7 +740,6 @@ fn get_call_function_name(node: &Node, src: &[u8]) -> String {
         .map(|n| node_text(n, src))
         .unwrap_or_default()
 }
-
 
 fn get_first_string_arg(node: &Node, src: &[u8]) -> Option<String> {
     let args = node.child_by_field_name("arguments")?;

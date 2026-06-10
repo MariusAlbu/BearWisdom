@@ -155,10 +155,7 @@ pub struct SymbolInfo {
 /// still produce yield types as strings — they wrap their string output
 /// in this helper to populate `Resolution::resolved_yield_type` with a
 /// canonical TypeId until they're rewritten to produce TypeId directly.
-pub fn intern_yield_type(
-    qname: Option<String>,
-    lookup: &dyn SymbolLookup,
-) -> Option<TypeId> {
+pub fn intern_yield_type(qname: Option<String>, lookup: &dyn SymbolLookup) -> Option<TypeId> {
     let qname = qname?;
     let arena = lookup.type_arena()?;
     Some(arena.class(&qname))

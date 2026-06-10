@@ -25,7 +25,9 @@
 //   Inherits   — `class_inherits_decl` (`inherit BaseClass(args)`)
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 use super::applications::collect_applications;
@@ -33,7 +35,11 @@ use super::type_defs::extract_type_def;
 
 /// Build the qualified name for a child symbol by prefixing the parent's qname.
 /// Top-level symbols (no parent) use the bare name.
-pub(super) fn qualify_with_parent(name: &str, parent_index: Option<usize>, symbols: &[ExtractedSymbol]) -> String {
+pub(super) fn qualify_with_parent(
+    name: &str,
+    parent_index: Option<usize>,
+    symbols: &[ExtractedSymbol],
+) -> String {
     match parent_index.and_then(|i| symbols.get(i)) {
         Some(parent) => format!("{}.{}", parent.qualified_name, name),
         None => name.to_string(),
@@ -42,8 +48,13 @@ pub(super) fn qualify_with_parent(name: &str, parent_index: Option<usize>, symbo
 
 /// Build the scope_path string from the parent's qualified_name. None when the
 /// symbol is at file top level.
-pub(super) fn scope_path_from_parent(parent_index: Option<usize>, symbols: &[ExtractedSymbol]) -> Option<String> {
-    parent_index.and_then(|i| symbols.get(i)).map(|p| p.qualified_name.clone())
+pub(super) fn scope_path_from_parent(
+    parent_index: Option<usize>,
+    symbols: &[ExtractedSymbol],
+) -> Option<String> {
+    parent_index
+        .and_then(|i| symbols.get(i))
+        .map(|p| p.qualified_name.clone())
 }
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -143,7 +154,8 @@ fn extract_namespace(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = node.child_by_field_name("name")
+    let name = node
+        .child_by_field_name("name")
         .map(|n| node_text(&n, src).to_string())
         .unwrap_or_default();
 
@@ -172,12 +184,12 @@ fn extract_namespace(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     visit(*node, src, symbols, refs, Some(idx));
 }
@@ -201,7 +213,11 @@ fn extract_module_defn(
 
     // Check if the block is a pure long_identifier (module alias) or real body.
     let is_alias = is_module_alias(node, src);
-    let kind = if is_alias { SymbolKind::TypeAlias } else { SymbolKind::Namespace };
+    let kind = if is_alias {
+        SymbolKind::TypeAlias
+    } else {
+        SymbolKind::Namespace
+    };
     let line = node.start_position().row as u32;
     let qualified_name = qualify_with_parent(&name, parent_index, symbols);
     let scope_path = scope_path_from_parent(parent_index, symbols);
@@ -220,12 +236,12 @@ fn extract_module_defn(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if !is_alias {
         visit(*node, src, symbols, refs, Some(idx));
@@ -258,9 +274,11 @@ fn is_module_alias(node: &Node, src: &str) -> bool {
         }
         // Heuristic: if the block text contains no newlines and looks like a dotted path
         let block_text = node_text(&block, src);
-        if !block_text.contains('\n') && block_text.split('.').all(|seg| {
-            !seg.is_empty() && seg.chars().all(|c| c.is_alphanumeric() || c == '_')
-        }) {
+        if !block_text.contains('\n')
+            && block_text
+                .split('.')
+                .all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_alphanumeric() || c == '_'))
+        {
             return true;
         }
     }
@@ -284,7 +302,9 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
         let mut pos: u32 = 0;
         for b in src.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -331,7 +351,9 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
             continue;
         }
 
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: assembly.to_string(),
             kind: EdgeKind::Imports,
@@ -350,19 +372,16 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
 // open declaration → Imports
 // ---------------------------------------------------------------------------
 
-fn extract_open(
-    node: &Node,
-    src: &str,
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_open(node: &Node, src: &str, source_symbol_index: usize, refs: &mut Vec<ExtractedRef>) {
     // import_decl: `open LongIdentifier`
     let text = node_text(node, src);
     let module = text.trim_start_matches("open").trim().to_string();
     if module.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: module.clone(),
         kind: EdgeKind::Imports,
@@ -371,9 +390,9 @@ fn extract_open(
         module: Some(module),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +415,11 @@ fn extract_let(
 
     // Determine if it's a function (has parameters) by checking for parameter nodes
     let has_params = has_function_params(node, src);
-    let kind = if has_params { SymbolKind::Function } else { SymbolKind::Variable };
+    let kind = if has_params {
+        SymbolKind::Function
+    } else {
+        SymbolKind::Variable
+    };
     let line = node.start_position().row as u32;
     let qualified_name = qualify_with_parent(&name, parent_index, symbols);
     let scope_path = scope_path_from_parent(parent_index, symbols);
@@ -415,12 +438,12 @@ fn extract_let(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Collect calls in the body and recurse for nested let bindings
     collect_applications(node, src, idx, refs);
@@ -488,15 +511,19 @@ fn has_function_params(node: &Node, src: &str) -> bool {
         if child.kind() == "function_declaration_left" {
             // count identifier/pattern children beyond the first (name)
             let mut c2 = child.walk();
-            let count = child.children(&mut c2)
-                .filter(|n| n.kind() == "identifier" || n.kind() == "typed_pattern" || n.kind() == "argument_patterns")
+            let count = child
+                .children(&mut c2)
+                .filter(|n| {
+                    n.kind() == "identifier"
+                        || n.kind() == "typed_pattern"
+                        || n.kind() == "argument_patterns"
+                })
                 .count();
             return count > 1;
         }
     }
     false
 }
-
 
 // ---------------------------------------------------------------------------
 // module_abbrev, exception_definition, interface_implementation, class_inherits
@@ -512,7 +539,9 @@ fn extract_module_abbrev(
     // module_abbrev: `module <identifier> = <long_identifier_or_op>`
     // First identifier child is the alias name.
     let name = first_identifier_text(node, src);
-    if name.is_empty() { return; }
+    if name.is_empty() {
+        return;
+    }
     let qualified_name = qualify_with_parent(&name, parent_index, symbols);
     let scope_path = scope_path_from_parent(parent_index, symbols);
     symbols.push(ExtractedSymbol {
@@ -528,12 +557,12 @@ fn extract_module_abbrev(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// `exception MyError of string` → Struct symbol named `MyError`.
@@ -550,7 +579,9 @@ fn extract_exception_def(
         .map(|n| node_text(&n, src).to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| first_identifier_text(node, src));
-    if name.is_empty() { return; }
+    if name.is_empty() {
+        return;
+    }
     let qualified_name = qualify_with_parent(&name, parent_index, symbols);
     let scope_path = scope_path_from_parent(parent_index, symbols);
     symbols.push(ExtractedSymbol {
@@ -566,12 +597,12 @@ fn extract_exception_def(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// `interface IFoo with ...` → Implements edge targeting the interface name.
@@ -591,17 +622,25 @@ pub(super) fn extract_interface_implementation(
     for child in node.children(&mut cursor) {
         let t = node_text(&child, src);
         // Skip the `interface` keyword and empty nodes
-        if t == "interface" || t.is_empty() { continue; }
+        if t == "interface" || t.is_empty() {
+            continue;
+        }
         // The `with` keyword marks end of the type section
-        if t == "with" { break; }
+        if t == "with" {
+            break;
+        }
         // Skip other keyword tokens (unlikely but defensive)
-        if child.child_count() == 0 && is_keyword(t) { continue; }
+        if child.child_count() == 0 && is_keyword(t) {
+            continue;
+        }
         // This is the type node — extract the last identifier as the interface name.
         // For `simple_type → long_identifier → "System" "." "IDisposable"` we want "IDisposable".
         // For a bare `identifier` node we just use its text.
         let iface_name = last_identifier_text(child, src);
         if !iface_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: iface_name,
                 kind: EdgeKind::Implements,
@@ -610,9 +649,9 @@ pub(super) fn extract_interface_implementation(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         break;
     }
@@ -632,13 +671,19 @@ pub(super) fn extract_class_inherits(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let t = node_text(&child, src);
-        if t == "inherit" || t.is_empty() { continue; }
+        if t == "inherit" || t.is_empty() {
+            continue;
+        }
         // Skip pure keyword tokens
-        if child.child_count() == 0 && is_keyword(t) { continue; }
+        if child.child_count() == 0 && is_keyword(t) {
+            continue;
+        }
         // The type node — extract first identifier as base class name.
         let base_name = first_identifier_from_type(child, src);
         if !base_name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: source_idx,
                 target_name: base_name,
                 kind: EdgeKind::Inherits,
@@ -647,9 +692,9 @@ pub(super) fn extract_class_inherits(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             break;
         }
     }
@@ -687,12 +732,16 @@ fn last_identifier_text(node: Node, src: &str) -> String {
         match child.kind() {
             "identifier" => {
                 let t = node_text(&child, src).to_string();
-                if !t.is_empty() { last = t; }
+                if !t.is_empty() {
+                    last = t;
+                }
             }
             // Recurse one level into wrapper types (simple_type, long_identifier, etc.)
             k if !k.starts_with('"') => {
                 let inner = last_identifier_text(child, src);
-                if !inner.is_empty() { last = inner; }
+                if !inner.is_empty() {
+                    last = inner;
+                }
             }
             _ => {}
         }
@@ -701,7 +750,9 @@ fn last_identifier_text(node: Node, src: &str) -> String {
         // No identifier children — maybe the node IS an identifier
         if node.kind() == "identifier" {
             let t = node_text(&node, src).to_string();
-            if !t.is_empty() { return t; }
+            if !t.is_empty() {
+                return t;
+            }
         }
     }
     last
@@ -719,24 +770,71 @@ fn first_identifier_from_type(node: Node, src: &str) -> String {
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
             let t = node_text(&child, src).to_string();
-            if !t.is_empty() { return t; }
+            if !t.is_empty() {
+                return t;
+            }
         }
         let inner = first_identifier_from_type(child, src);
-        if !inner.is_empty() { return inner; }
+        if !inner.is_empty() {
+            return inner;
+        }
     }
     String::new()
 }
 
 pub(super) fn is_keyword(s: &str) -> bool {
-    matches!(s,
-        "let" | "in" | "if" | "then" | "else" | "match" | "with"
-        | "fun" | "function" | "type" | "and" | "or" | "not"
-        | "begin" | "end" | "do" | "done" | "for" | "while"
-        | "try" | "finally" | "raise" | "failwith" | "failwithf"
-        | "true" | "false" | "null" | "void" | "open" | "module"
-        | "namespace" | "of" | "rec" | "mutable" | "new" | "inherit"
-        | "override" | "abstract" | "static" | "member" | "val"
-        | "interface" | "class" | "struct" | "exception" | "yield"
-        | "return" | "async" | "seq" | "task" | "query"
+    matches!(
+        s,
+        "let"
+            | "in"
+            | "if"
+            | "then"
+            | "else"
+            | "match"
+            | "with"
+            | "fun"
+            | "function"
+            | "type"
+            | "and"
+            | "or"
+            | "not"
+            | "begin"
+            | "end"
+            | "do"
+            | "done"
+            | "for"
+            | "while"
+            | "try"
+            | "finally"
+            | "raise"
+            | "failwith"
+            | "failwithf"
+            | "true"
+            | "false"
+            | "null"
+            | "void"
+            | "open"
+            | "module"
+            | "namespace"
+            | "of"
+            | "rec"
+            | "mutable"
+            | "new"
+            | "inherit"
+            | "override"
+            | "abstract"
+            | "static"
+            | "member"
+            | "val"
+            | "interface"
+            | "class"
+            | "struct"
+            | "exception"
+            | "yield"
+            | "return"
+            | "async"
+            | "seq"
+            | "task"
+            | "query"
     )
 }

@@ -15,11 +15,11 @@
 //! - `type` section → scope; `TypeName = object/enum/concept/...` → Class/Struct/Enum/Interface/TypeAlias
 //! - `import`, `from ... import` → Imports edges
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 #[cfg(test)]
@@ -88,7 +88,9 @@ impl LanguagePlugin for NimPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -98,8 +100,7 @@ impl LanguagePlugin for NimPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::NIM_HOOKS)
     }
 }

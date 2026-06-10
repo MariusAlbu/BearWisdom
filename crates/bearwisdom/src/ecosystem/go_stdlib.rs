@@ -19,9 +19,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
@@ -32,9 +30,15 @@ const LANGUAGES: &[&str] = &["go"];
 pub struct GoStdlibEcosystem;
 
 impl Ecosystem for GoStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("go")
@@ -48,9 +52,13 @@ impl Ecosystem for GoStdlibEcosystem {
         walk_go_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -63,7 +71,9 @@ impl Ecosystem for GoStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for GoStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_go_stdlib_roots()
     }
@@ -96,22 +106,31 @@ fn discover_go_stdlib_roots() -> Vec<ExternalDepRoot> {
 fn goroot() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_GOROOT") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(env_goroot) = std::env::var_os("GOROOT") {
         let p = PathBuf::from(env_goroot);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
-    let output = Command::new("go")
-        .args(["env", "GOROOT"])
-        .output()
-        .ok()?;
-    if !output.status.success() { return None }
+    let output = Command::new("go").args(["env", "GOROOT"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let path = String::from_utf8(output.stdout).ok()?;
     let trimmed = path.trim();
-    if trimmed.is_empty() { return None }
+    if trimmed.is_empty() {
+        return None;
+    }
     let p = PathBuf::from(trimmed);
-    if p.is_dir() { Some(p) } else { None }
+    if p.is_dir() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 fn walk_go_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
@@ -120,15 +139,13 @@ fn walk_go_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir(
-    dir: &Path,
-    root: &Path,
-    dep: &ExternalDepRoot,
-    out: &mut Vec<WalkedFile>,
-    depth: u32,
-) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -136,15 +153,27 @@ fn walk_dir(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 // Skip the Go compiler and its internal tooling — millions of
                 // symbols that user code never imports.
-                if matches!(name, "cmd" | "testdata" | "internal" | "vendor") { continue }
-                if name.starts_with('.') || name.starts_with('_') { continue }
+                if matches!(name, "cmd" | "testdata" | "internal" | "vendor") {
+                    continue;
+                }
+                if name.starts_with('.') || name.starts_with('_') {
+                    continue;
+                }
             }
             walk_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".go") { continue }
-            if name.ends_with("_test.go") { continue }
-            if !super::go_platform::file_matches_host(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".go") {
+                continue;
+            }
+            if name.ends_with("_test.go") {
+                continue;
+            }
+            if !super::go_platform::file_matches_host(name) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -179,6 +208,9 @@ mod tests {
 
     #[test]
     fn legacy_locator_tag() {
-        assert_eq!(ExternalSourceLocator::ecosystem(&GoStdlibEcosystem), "go-stdlib");
+        assert_eq!(
+            ExternalSourceLocator::ecosystem(&GoStdlibEcosystem),
+            "go-stdlib"
+        );
     }
 }

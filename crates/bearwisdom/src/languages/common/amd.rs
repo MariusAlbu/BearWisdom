@@ -30,10 +30,7 @@ use crate::types::{EdgeKind, ExtractedRef, ExtractionResult};
 // import.
 // ---------------------------------------------------------------------------
 
-pub fn append_amd_define_imports(
-    source: &str,
-    result: &mut crate::types::ExtractionResult,
-) {
+pub fn append_amd_define_imports(source: &str, result: &mut crate::types::ExtractionResult) {
     let pairs = scan_amd_define_pairs(source);
     if pairs.is_empty() {
         return;
@@ -43,7 +40,9 @@ pub fn append_amd_define_imports(
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -53,7 +52,9 @@ pub fn append_amd_define_imports(
         if matches!(dep.as_str(), "require" | "exports" | "module") {
             continue;
         }
-        result.refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+        result.refs.push(crate::types::ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: param,
             kind: crate::types::EdgeKind::Imports,
@@ -63,8 +64,8 @@ pub fn append_amd_define_imports(
             byte_offset: line_starts.get(line as usize).copied().unwrap_or(0),
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                    col: 0,
-});
+            col: 0,
+        });
     }
 }
 
@@ -78,7 +79,9 @@ pub(crate) fn scan_amd_define_pairs(source: &str) -> Vec<(String, String, u32)> 
     let mut out = Vec::new();
     let mut i = 0usize;
     while i < bytes.len() {
-        let Some(rel) = source[i..].find("define(") else { break };
+        let Some(rel) = source[i..].find("define(") else {
+            break;
+        };
         let start = i + rel;
         // Identifier-boundary check.
         if start > 0 {
@@ -219,9 +222,7 @@ fn parse_callback_params(bytes: &[u8], pos: &mut usize) -> Option<Vec<String>> {
             j = skip_ws(bytes, j);
             // Optional named function: `function name(`.
             if j < bytes.len() && (bytes[j].is_ascii_alphabetic() || bytes[j] == b'_') {
-                while j < bytes.len()
-                    && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
-                {
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                     j += 1;
                 }
                 j = skip_ws(bytes, j);
@@ -256,7 +257,9 @@ fn read_paren_params(bytes: &[u8], open: usize) -> Option<Vec<String>> {
                 // identifier only.
                 let mut k = 0;
                 let bytes = t.as_bytes();
-                while k < bytes.len() && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_' || bytes[k] == b'$') {
+                while k < bytes.len()
+                    && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_' || bytes[k] == b'$')
+                {
                     k += 1;
                 }
                 String::from_utf8_lossy(&bytes[..k]).to_string()
@@ -293,4 +296,3 @@ fn line_at(bytes: &[u8], pos: usize) -> u32 {
     }
     line
 }
-

@@ -224,7 +224,6 @@ fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-
 /// Lightweight chain resolution for variable type inference during index building.
 /// Uses the already-built type_info map (not the full SymbolLookup trait).
 /// Given a type string that looks like a TypeScript tuple literal
@@ -336,7 +335,6 @@ pub(crate) fn resolve_type_name_in_scope(
     }
     raw.to_string()
 }
-
 
 /// Convenience wrapper: TS/.NET-shaped signature parsing. Kept for sites
 /// that don't have a language id handy.
@@ -684,11 +682,7 @@ pub(crate) fn parse_return_type_from_signature_for_lang(
             b'<' => depth_angle -= 1,
             b'>' => {
                 let is_arrow = i > 0 && matches!(bytes[i - 1], b'-' | b'=');
-                if is_arrow
-                    && depth_paren == 0
-                    && depth_angle == 0
-                    && depth_square == 0
-                {
+                if is_arrow && depth_paren == 0 && depth_angle == 0 && depth_square == 0 {
                     let mut after = sig[i + 1..].trim();
                     // Drop a Rust block / where-clause and a trailing Python `:`
                     // that follow the return type in the signature text.
@@ -817,7 +811,10 @@ pub(crate) fn parse_type_head_and_args_bracket(type_str: &str) -> (&str, Vec<&st
     if !tail[close_rel + 1..].trim().is_empty() {
         return (type_str.trim(), Vec::new());
     }
-    (type_str[..open].trim(), split_top_level_args(&tail[1..close_rel]))
+    (
+        type_str[..open].trim(),
+        split_top_level_args(&tail[1..close_rel]),
+    )
 }
 
 /// Split `Head<A, B>` / `Head[A, B]` into the head and its DIRECT top-level
@@ -870,7 +867,9 @@ fn push_arg_head<'a>(args: &mut Vec<&'a str>, seg: &'a str) {
 /// a signature-derived return type is authoritative for the head over a
 /// (possibly parameter) trailing TypeRef.
 pub(crate) fn is_plain_type_name(t: &str) -> bool {
-    !t.is_empty() && t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+    !t.is_empty()
+        && t.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
 }
 
 /// Extract a leading-form return type — `RetType name(params)` (Java, C#, and
@@ -951,15 +950,43 @@ fn is_c_aggregate_keyword(t: &str) -> bool {
 fn is_decl_keyword_or_modifier(t: &str) -> bool {
     matches!(
         t,
-        "func" | "fn" | "def" | "function" | "fun"
-            | "struct" | "enum" | "union"
-            | "public" | "private" | "protected" | "internal"
-            | "static" | "final" | "abstract" | "virtual" | "override"
-            | "sealed" | "async" | "extern" | "unsafe" | "partial"
-            | "readonly" | "const" | "new" | "synchronized" | "native"
-            | "transient" | "volatile" | "default" | "strictfp"
-            | "explicit" | "implicit" | "export" | "inline"
-            | "signed" | "unsigned"
+        "func"
+            | "fn"
+            | "def"
+            | "function"
+            | "fun"
+            | "struct"
+            | "enum"
+            | "union"
+            | "public"
+            | "private"
+            | "protected"
+            | "internal"
+            | "static"
+            | "final"
+            | "abstract"
+            | "virtual"
+            | "override"
+            | "sealed"
+            | "async"
+            | "extern"
+            | "unsafe"
+            | "partial"
+            | "readonly"
+            | "const"
+            | "new"
+            | "synchronized"
+            | "native"
+            | "transient"
+            | "volatile"
+            | "default"
+            | "strictfp"
+            | "explicit"
+            | "implicit"
+            | "export"
+            | "inline"
+            | "signed"
+            | "unsigned"
     )
 }
 
@@ -1322,12 +1349,16 @@ pub fn infer_external_from_chain(
                 // pre-indexed in types_by_name — avoids scanning the full
                 // by_name candidate pool (externals can collide by the tens of
                 // thousands on common names like "Context"/"Error"/"Request").
-                let has_type = lookup.types_by_name(name).iter().filter(|s| is_internal(s)).any(|s| {
-                    matches!(
-                        s.kind.as_str(),
-                        "class" | "struct" | "interface" | "enum" | "type_alias"
-                    )
-                });
+                let has_type = lookup
+                    .types_by_name(name)
+                    .iter()
+                    .filter(|s| is_internal(s))
+                    .any(|s| {
+                        matches!(
+                            s.kind.as_str(),
+                            "class" | "struct" | "interface" | "enum" | "type_alias"
+                        )
+                    });
                 if has_type {
                     return None;
                 }
@@ -1338,9 +1369,11 @@ pub fn infer_external_from_chain(
                 // under a namespace prefix. Fall through to by_name but gate
                 // behind the cheaper type check above so the fast path wins
                 // on hot type names.
-                let has_func = lookup.by_name(name).iter().filter(|s| is_internal(s)).any(|s| {
-                    matches!(s.kind.as_str(), "function" | "method")
-                });
+                let has_func = lookup
+                    .by_name(name)
+                    .iter()
+                    .filter(|s| is_internal(s))
+                    .any(|s| matches!(s.kind.as_str(), "function" | "method"));
                 if has_func {
                     return None;
                 }
@@ -1366,13 +1399,23 @@ pub fn infer_external_from_chain(
             .by_qualified_name(&base_type)
             .filter(|s| is_internal(s))
             .is_some()
-            || lookup.types_by_name(&base_type).iter().filter(|s| is_internal(s)).any(|s| {
-                matches!(
-                    s.kind.as_str(),
-                    "class" | "struct" | "interface" | "enum" | "type_alias"
-                        | "trait" | "module" | "namespace"
-                )
-            });
+            || lookup
+                .types_by_name(&base_type)
+                .iter()
+                .filter(|s| is_internal(s))
+                .any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "class"
+                            | "struct"
+                            | "interface"
+                            | "enum"
+                            | "type_alias"
+                            | "trait"
+                            | "module"
+                            | "namespace"
+                    )
+                });
 
         if !type_in_index {
             return Some(current_type);

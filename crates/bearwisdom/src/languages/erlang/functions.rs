@@ -7,9 +7,7 @@
 // `external_fun`, and `record_expr` nodes.
 // =============================================================================
 
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 use super::extract::node_text;
@@ -40,7 +38,11 @@ pub(super) fn extract_function(
         name: name_arity.clone(),
         qualified_name: name_arity.clone(),
         kind: SymbolKind::Function,
-        visibility: Some(if is_exported { Visibility::Public } else { Visibility::Private }),
+        visibility: Some(if is_exported {
+            Visibility::Public
+        } else {
+            Visibility::Private
+        }),
         start_line: line,
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
@@ -50,11 +52,11 @@ pub(super) fn extract_function(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Extract calls inside function body
     collect_calls(node, src, idx, refs);
@@ -89,12 +91,18 @@ fn get_function_arity(node: &Node, _src: &str) -> u32 {
                 // args typically wraps in parentheses; count non-punctuation children
                 let non_punct = {
                     let mut c = args.walk();
-                    args.children(&mut c).filter(|n| {
-                        let k = n.kind();
-                        k != "(" && k != ")" && k != ","
-                    }).count()
+                    args.children(&mut c)
+                        .filter(|n| {
+                            let k = n.kind();
+                            k != "(" && k != ")" && k != ","
+                        })
+                        .count()
                 };
-                return if non_punct == 0 && count == 2 { 0 } else { non_punct as u32 };
+                return if non_punct == 0 && count == 2 {
+                    0
+                } else {
+                    non_punct as u32
+                };
             }
             return 0;
         }
@@ -110,8 +118,16 @@ fn get_function_arity(node: &Node, _src: &str) -> u32 {
 /// `-doc "..."`, `-moduledoc "..."`, etc. (OTP 27+) get parsed such that the
 /// atom `doc` / `moduledoc` can appear as a call target.  Skip them.
 const ATTR_CALL_SKIP: &[&str] = &[
-    "doc", "moduledoc", "feature", "deprecated", "dialyzer",
-    "nifs", "on_load", "compile", "vsn", "author",
+    "doc",
+    "moduledoc",
+    "feature",
+    "deprecated",
+    "dialyzer",
+    "nifs",
+    "on_load",
+    "compile",
+    "vsn",
+    "author",
 ];
 
 /// Count the number of arguments in an `expr_args` node.
@@ -123,10 +139,7 @@ const ATTR_CALL_SKIP: &[&str] = &[
 /// named children — each one is exactly one argument.
 fn count_expr_args(expr_args: &Node) -> u32 {
     let mut c = expr_args.walk();
-    expr_args
-        .children(&mut c)
-        .filter(|n| n.is_named())
-        .count() as u32
+    expr_args.children(&mut c).filter(|n| n.is_named()).count() as u32
 }
 
 /// Extract the integer text from an `arity` node.
@@ -142,7 +155,12 @@ pub(super) fn arity_value<'a>(arity_node: &Node, src: &'a str) -> &'a str {
     }
 }
 
-pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
+pub(super) fn collect_calls(
+    node: &Node,
+    src: &str,
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -167,10 +185,13 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             // Module:function call.
                             if let Some(fun_node) = expr.child_by_field_name("fun") {
                                 let fun_name = node_text(&fun_node, src).to_string();
-                                let module = expr.child_by_field_name("module")
+                                let module = expr
+                                    .child_by_field_name("module")
                                     .map(|n| node_text(&n, src).to_string());
                                 if !fun_name.is_empty() {
-                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index: source_idx,
                                         target_name: format!("{}/{}", fun_name, arg_count),
                                         kind: EdgeKind::Calls,
@@ -208,7 +229,9 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                     // `doc/0` is still recognised as the `doc` directive.
                     let bare = target.split('/').next().unwrap_or(&target);
                     if !ATTR_CALL_SKIP.contains(&bare) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -239,7 +262,9 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         } else {
                             format!("{}/{}", name, arity)
                         };
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -249,8 +274,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -272,7 +297,9 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         } else {
                             format!("{}/{}", fun_name, arity)
                         };
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -282,8 +309,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -298,7 +325,9 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                         node_text(&name_node, src).to_string()
                     };
                     if !record_name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: record_name,
                             kind: EdgeKind::Instantiates,
@@ -308,8 +337,8 @@ pub(super) fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mu
                             byte_offset: child.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
                 collect_calls(&child, src, source_idx, refs);

@@ -16,26 +16,48 @@ use crate::types::{
 pub struct VelocityPlugin;
 
 impl LanguagePlugin for VelocityPlugin {
-    fn id(&self) -> &str { "velocity" }
-    fn language_ids(&self) -> &[&str] { &["velocity"] }
-    fn extensions(&self) -> &[&str] { &[".vm", ".vtl"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "velocity"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["velocity"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".vm", ".vtl"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, source: &str, file_path: &str, _l: &str) -> ExtractionResult {
         let norm = file_path.replace('\\', "/");
         let name = norm.rsplit('/').next().unwrap_or(&norm);
-        let stem = std::path::Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
+        let stem = std::path::Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+            .to_string();
         let mut symbols = vec![ExtractedSymbol {
-            name: stem.clone(), qualified_name: stem.clone(),
-            kind: SymbolKind::Class, visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-            signature: None, doc_comment: None, scope_path: None, parent_index: None,
+            name: stem.clone(),
+            qualified_name: stem.clone(),
+            kind: SymbolKind::Class,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-}];
+        }];
         let mut refs: Vec<ExtractedRef> = Vec::new();
         let line_starts: Vec<u32> = std::iter::once(0)
             .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
@@ -43,22 +65,30 @@ impl LanguagePlugin for VelocityPlugin {
         for (line_no, line) in source.lines().enumerate() {
             let t = line.trim_start();
             if let Some(rest) = t.strip_prefix("#macro(") {
-                let name: String = rest.chars().take_while(|c| *c != ' ' && *c != ',' && *c != ')').collect();
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| *c != ' ' && *c != ',' && *c != ')')
+                    .collect();
                 if !name.is_empty() {
                     symbols.push(ExtractedSymbol {
                         name: name.clone(),
                         qualified_name: format!("{stem}.{name}"),
-                        kind: SymbolKind::Field, visibility: Some(Visibility::Public),
-                        start_line: line_no as u32, end_line: line_no as u32,
-                        start_col: 0, end_col: 0,
-                        signature: Some(t.into()), doc_comment: None,
-                        scope_path: Some(stem.clone()), parent_index: Some(0),
+                        kind: SymbolKind::Field,
+                        visibility: Some(Visibility::Public),
+                        start_line: line_no as u32,
+                        end_line: line_no as u32,
+                        start_col: 0,
+                        end_col: 0,
+                        signature: Some(t.into()),
+                        doc_comment: None,
+                        scope_path: Some(stem.clone()),
+                        parent_index: Some(0),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
             for kw in &["#parse(", "#include("] {
@@ -66,11 +96,20 @@ impl LanguagePlugin for VelocityPlugin {
                     if let Some(s) = rest.strip_prefix('"') {
                         if let Some(e) = s.find('"') {
                             let file = &s[..e];
-                            let target = std::path::Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or(file).to_string();
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
-                                source_symbol_index: 0, target_name: target,
+                            let target = std::path::Path::new(file)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(file)
+                                .to_string();
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
+                                source_symbol_index: 0,
+                                target_name: target,
                                 kind: EdgeKind::Imports,
-                                line: line_no as u32, module: None, chain: None,
+                                line: line_no as u32,
+                                module: None,
+                                chain: None,
                                 col: 0,
                                 byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
                                 namespace_segments: Vec::new(),
@@ -81,7 +120,12 @@ impl LanguagePlugin for VelocityPlugin {
                 }
             }
         }
-        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+        ExtractionResult {
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
         }
@@ -94,10 +138,17 @@ impl LanguagePlugin for VelocityPlugin {
             // ${var} — simplest interpolation.
             if bytes[i] == b'$' && bytes[i + 1] == b'{' {
                 let start = i + 2;
-                let mut d = 1; let mut j = start;
+                let mut d = 1;
+                let mut j = start;
                 while j < bytes.len() && d > 0 {
-                    match bytes[j] { b'{' => d += 1, b'}' => d -= 1, _ => {} }
-                    if d == 0 { break; }
+                    match bytes[j] {
+                        b'{' => d += 1,
+                        b'}' => d -= 1,
+                        _ => {}
+                    }
+                    if d == 0 {
+                        break;
+                    }
                     j += 1;
                 }
                 if j < bytes.len() && d == 0 {
@@ -108,21 +159,28 @@ impl LanguagePlugin for VelocityPlugin {
                             regions.push(EmbeddedRegion {
                                 language_id: "java".into(),
                                 text: format!("class __Vm {{ Object f() {{ return ({t}); }} }}\n"),
-                                line_offset: line, col_offset: col,
+                                line_offset: line,
+                                col_offset: col,
                                 origin: EmbeddedOrigin::TemplateExpr,
-                                holes: Vec::new(), strip_scope_prefix: None,
+                                holes: Vec::new(),
+                                strip_scope_prefix: None,
                             });
                         }
                     }
-                    i = j + 1; continue;
+                    i = j + 1;
+                    continue;
                 }
             }
             i += 1;
         }
         regions
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -131,7 +189,13 @@ impl LanguagePlugin for VelocityPlugin {
 }
 
 fn lc(bytes: &[u8], pos: usize) -> (u32, u32) {
-    let mut line: u32 = 0; let mut nl: usize = 0;
-    for (i, b) in bytes.iter().enumerate().take(pos) { if *b == b'\n' { line += 1; nl = i + 1; } }
+    let mut line: u32 = 0;
+    let mut nl: usize = 0;
+    for (i, b) in bytes.iter().enumerate().take(pos) {
+        if *b == b'\n' {
+            line += 1;
+            nl = i + 1;
+        }
+    }
     (line, (pos - nl) as u32)
 }

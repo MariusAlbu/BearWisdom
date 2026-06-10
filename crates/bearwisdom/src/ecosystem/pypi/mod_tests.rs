@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::*;
 use super::symbol_index::scan_python_header;
+use super::*;
 
 #[test]
 fn ecosystem_identity() {
@@ -19,16 +19,31 @@ fn legacy_locator_tag_is_python() {
 #[test]
 fn python_name_normalization_strips_extras_and_versions() {
     assert_eq!(normalize_python_dep_name("fastapi"), "fastapi");
-    assert_eq!(normalize_python_dep_name("fastapi[standard]<1.0.0,>=0.114.2"), "fastapi");
-    assert_eq!(normalize_python_dep_name("pydantic-settings>=2.2.1"), "pydantic_settings");
+    assert_eq!(
+        normalize_python_dep_name("fastapi[standard]<1.0.0,>=0.114.2"),
+        "fastapi"
+    );
+    assert_eq!(
+        normalize_python_dep_name("pydantic-settings>=2.2.1"),
+        "pydantic_settings"
+    );
     assert_eq!(normalize_python_dep_name("SQLAlchemy>=2.0"), "sqlalchemy");
-    assert_eq!(normalize_python_dep_name("psycopg[binary]<4.0.0,>=3.1.13"), "psycopg");
+    assert_eq!(
+        normalize_python_dep_name("psycopg[binary]<4.0.0,>=3.1.13"),
+        "psycopg"
+    );
 }
 
 #[test]
 fn python_name_normalization_handles_environment_markers() {
-    assert_eq!(normalize_python_dep_name("urllib3<2;python_version<'3.10'"), "urllib3");
-    assert_eq!(normalize_python_dep_name("some-pkg @ git+https://github.com/x/y"), "some_pkg");
+    assert_eq!(
+        normalize_python_dep_name("urllib3<2;python_version<'3.10'"),
+        "urllib3"
+    );
+    assert_eq!(
+        normalize_python_dep_name("some-pkg @ git+https://github.com/x/y"),
+        "some_pkg"
+    );
 }
 
 #[test]
@@ -111,7 +126,8 @@ fn scan_captures_async_function() {
 
 #[test]
 fn scan_captures_decorated_class_and_function() {
-    let src = "@dataclass\nclass User:\n    pass\n\n@app.get('/foo')\nasync def handler():\n    pass\n";
+    let src =
+        "@dataclass\nclass User:\n    pass\n\n@app.get('/foo')\nasync def handler():\n    pass\n";
     let names = scan_python_header(src);
     assert!(names.contains(&"User".to_string()), "{names:?}");
     assert!(names.contains(&"handler".to_string()), "{names:?}");
@@ -141,10 +157,19 @@ def outer_fn():
     let names = scan_python_header(src);
     assert!(names.contains(&"Outer".to_string()));
     assert!(names.contains(&"outer_fn".to_string()));
-    assert!(!names.contains(&"hidden_method".to_string()), "leaked: {names:?}");
+    assert!(
+        !names.contains(&"hidden_method".to_string()),
+        "leaked: {names:?}"
+    );
     assert!(!names.contains(&"INNER".to_string()), "leaked: {names:?}");
-    assert!(!names.contains(&"hidden_inner".to_string()), "leaked: {names:?}");
-    assert!(!names.contains(&"HIDDEN_LOCAL".to_string()), "leaked: {names:?}");
+    assert!(
+        !names.contains(&"hidden_inner".to_string()),
+        "leaked: {names:?}"
+    );
+    assert!(
+        !names.contains(&"HIDDEN_LOCAL".to_string()),
+        "leaked: {names:?}"
+    );
 }
 
 #[test]

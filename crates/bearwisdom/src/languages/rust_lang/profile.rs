@@ -140,7 +140,10 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // on a `C` receiver. The peel reads the inner from the already-indexed
     // `field_type["C.Target"]` binding, gated on a real `C → Deref` supertype
     // edge so a bare name match never fires it.
-    deref_wrapper: Some(DerefWrapper { trait_name: "Deref", target_assoc: "Target" }),
+    deref_wrapper: Some(DerefWrapper {
+        trait_name: "Deref",
+        target_assoc: "Target",
+    }),
     iterator_method: Some("next"),
     primitive_mapping: RUST_PRIMITIVES,
     kind_compatible_table: RUST_KIND_TABLE,
@@ -177,7 +180,8 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

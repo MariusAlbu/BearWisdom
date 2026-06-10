@@ -1,9 +1,9 @@
-    use super::*;
-    use crate::types::{EdgeKind, SymbolKind, Visibility};
+use super::*;
+use crate::types::{EdgeKind, SymbolKind, Visibility};
 
-    #[test]
-    fn extracts_class_and_method() {
-        let source = r#"
+#[test]
+fn extracts_class_and_method() {
+    let source = r#"
 class Animal
   def initialize(name)
     @name = name
@@ -14,127 +14,168 @@ class Animal
   end
 end
 "#;
-        let r = extract::extract(source);
-        assert!(!r.has_errors);
-        let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal class");
-        assert_eq!(cls.kind, SymbolKind::Class);
+    let r = extract::extract(source);
+    assert!(!r.has_errors);
+    let cls = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Animal")
+        .expect("Animal class");
+    assert_eq!(cls.kind, SymbolKind::Class);
 
-        let init = r.symbols.iter().find(|s| s.name == "initialize").expect("initialize");
-        assert_eq!(init.kind, SymbolKind::Constructor);
-        assert_eq!(init.qualified_name, "Animal::initialize");
+    let init = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "initialize")
+        .expect("initialize");
+    assert_eq!(init.kind, SymbolKind::Constructor);
+    assert_eq!(init.qualified_name, "Animal::initialize");
 
-        let speak = r.symbols.iter().find(|s| s.name == "speak").expect("speak");
-        assert_eq!(speak.kind, SymbolKind::Method);
-    }
+    let speak = r.symbols.iter().find(|s| s.name == "speak").expect("speak");
+    assert_eq!(speak.kind, SymbolKind::Method);
+}
 
-    #[test]
-    fn extracts_module() {
-        let source = "module Greetable\n  def greet\n    puts 'hi'\n  end\nend\n";
-        let r = extract::extract(source);
-        let m = r.symbols.iter().find(|s| s.name == "Greetable").expect("Greetable");
-        assert_eq!(m.kind, SymbolKind::Interface);
-    }
+#[test]
+fn extracts_module() {
+    let source = "module Greetable\n  def greet\n    puts 'hi'\n  end\nend\n";
+    let r = extract::extract(source);
+    let m = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Greetable")
+        .expect("Greetable");
+    assert_eq!(m.kind, SymbolKind::Interface);
+}
 
-    #[test]
-    fn require_produces_import_ref() {
-        let source = "require 'net/http'\n";
-        let r = extract::extract(source);
-        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
-        assert_eq!(imp.target_name, "http");
-        assert_eq!(imp.module.as_deref(), Some("net/http"));
-    }
+#[test]
+fn require_produces_import_ref() {
+    let source = "require 'net/http'\n";
+    let r = extract::extract(source);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "http");
+    assert_eq!(imp.module.as_deref(), Some("net/http"));
+}
 
-    #[test]
-    fn require_relative_produces_import_ref() {
-        let source = "require_relative '../models/user'\n";
-        let r = extract::extract(source);
-        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
-        assert_eq!(imp.target_name, "user");
-        assert_eq!(imp.module.as_deref(), Some("../models/user"));
-    }
+#[test]
+fn require_relative_produces_import_ref() {
+    let source = "require_relative '../models/user'\n";
+    let r = extract::extract(source);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "user");
+    assert_eq!(imp.module.as_deref(), Some("../models/user"));
+}
 
-    #[test]
-    fn require_relative_bare_name_gets_dot_prefix() {
-        let source = "require_relative 'helper'\n";
-        let r = extract::extract(source);
-        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
-        assert_eq!(imp.target_name, "helper");
-        assert_eq!(imp.module.as_deref(), Some("./helper"));
-    }
+#[test]
+fn require_relative_bare_name_gets_dot_prefix() {
+    let source = "require_relative 'helper'\n";
+    let r = extract::extract(source);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "helper");
+    assert_eq!(imp.module.as_deref(), Some("./helper"));
+}
 
-    #[test]
-    fn inheritance_produces_inherits_edge() {
-        let source = "class Dog < Animal\nend\n";
-        let r = extract::extract(source);
-        let inh = r.refs.iter().find(|r| r.kind == EdgeKind::Inherits).expect("inherits ref");
-        assert_eq!(inh.target_name, "Animal");
-    }
+#[test]
+fn inheritance_produces_inherits_edge() {
+    let source = "class Dog < Animal\nend\n";
+    let r = extract::extract(source);
+    let inh = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Inherits)
+        .expect("inherits ref");
+    assert_eq!(inh.target_name, "Animal");
+}
 
-    #[test]
-    fn attr_accessor_produces_property_symbols() {
-        let source = r#"
+#[test]
+fn attr_accessor_produces_property_symbols() {
+    let source = r#"
 class Person
   attr_accessor :name, :age
 end
 "#;
-        let r = extract::extract(source);
-        let props: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Property).collect();
-        let names: Vec<&str> = props.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"name"), "name missing: {names:?}");
-        assert!(names.contains(&"age"), "age missing: {names:?}");
-    }
+    let r = extract::extract(source);
+    let props: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Property)
+        .collect();
+    let names: Vec<&str> = props.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"name"), "name missing: {names:?}");
+    assert!(names.contains(&"age"), "age missing: {names:?}");
+}
 
-    #[test]
-    fn underscore_method_is_private() {
-        let source = "def _helper\nend\n";
-        let r = extract::extract(source);
-        let sym = r.symbols.iter().find(|s| s.name == "_helper").expect("_helper");
-        assert_eq!(sym.visibility, Some(Visibility::Private));
-    }
+#[test]
+fn underscore_method_is_private() {
+    let source = "def _helper\nend\n";
+    let r = extract::extract(source);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "_helper")
+        .expect("_helper");
+    assert_eq!(sym.visibility, Some(Visibility::Private));
+}
 
-    #[test]
-    fn class_new_produces_instantiates_edge() {
-        let source = r#"
+#[test]
+fn class_new_produces_instantiates_edge() {
+    let source = r#"
 class Foo
   def build
     Bar.new
   end
 end
 "#;
-        let r = extract::extract(source);
-        let inst = r.refs.iter().find(|r| r.kind == EdgeKind::Instantiates);
-        assert!(inst.is_some(), "Expected Instantiates edge for Bar.new");
-        assert_eq!(inst.unwrap().target_name, "Bar");
-    }
+    let r = extract::extract(source);
+    let inst = r.refs.iter().find(|r| r.kind == EdgeKind::Instantiates);
+    assert!(inst.is_some(), "Expected Instantiates edge for Bar.new");
+    assert_eq!(inst.unwrap().target_name, "Bar");
+}
 
-    #[test]
-    fn handles_parse_errors_gracefully() {
-        let source = "class Broken\ndef bad(\nend\n{{{";
-        let result = std::panic::catch_unwind(|| extract::extract(source));
-        assert!(result.is_ok(), "extractor panicked on malformed input");
-    }
+#[test]
+fn handles_parse_errors_gracefully() {
+    let source = "class Broken\ndef bad(\nend\n{{{";
+    let result = std::panic::catch_unwind(|| extract::extract(source));
+    assert!(result.is_ok(), "extractor panicked on malformed input");
+}
 
-    #[test]
-    fn calls_inside_brace_block_are_extracted() {
-        let source = r#"
+#[test]
+fn calls_inside_brace_block_are_extracted() {
+    let source = r#"
 class Order
   def process
     items.each { |item| item.save }
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r.refs.iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"each"),  "Missing 'each': {calls:?}");
-        assert!(calls.contains(&"save"),  "Missing 'save' (inside block): {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"each"), "Missing 'each': {calls:?}");
+    assert!(
+        calls.contains(&"save"),
+        "Missing 'save' (inside block): {calls:?}"
+    );
+}
 
-    #[test]
-    fn calls_inside_do_block_are_extracted() {
-        let source = r#"
+#[test]
+fn calls_inside_do_block_are_extracted() {
+    let source = r#"
 class Repo
   def run
     items.map do |item|
@@ -143,73 +184,98 @@ class Repo
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r.refs.iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"map"),     "Missing 'map': {calls:?}");
-        assert!(calls.contains(&"process"), "Missing 'process' (inside do block): {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"map"), "Missing 'map': {calls:?}");
+    assert!(
+        calls.contains(&"process"),
+        "Missing 'process' (inside do block): {calls:?}"
+    );
+}
 
-    #[test]
-    fn block_parameters_emitted_as_parameter_symbols() {
-        let source = r#"
+#[test]
+fn block_parameters_emitted_as_parameter_symbols() {
+    let source = r#"
 class Svc
   def run
     items.each { |item| item.name }
   end
 end
 "#;
-        let r = extract::extract(source);
-        let params: Vec<&str> = r.symbols.iter()
-            .filter(|s| s.kind == SymbolKind::Parameter)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(params.contains(&"item"), "Missing block param 'item': {params:?}");
-    }
+    let r = extract::extract(source);
+    let params: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Parameter)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        params.contains(&"item"),
+        "Missing block param 'item': {params:?}"
+    );
+}
 
-    #[test]
-    fn method_keyword_params_emitted_as_parameters() {
-        let source = r#"
+#[test]
+fn method_keyword_params_emitted_as_parameters() {
+    let source = r#"
 class UserService
   def create(name:, email: nil, &block)
     User.new
   end
 end
 "#;
-        let r = extract::extract(source);
-        let params: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Parameter)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(params.contains(&"name"),  "Missing keyword param 'name': {params:?}");
-        assert!(params.contains(&"email"), "Missing optional param 'email': {params:?}");
-        assert!(params.contains(&"block"), "Missing block param 'block': {params:?}");
-    }
+    let r = extract::extract(source);
+    let params: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Parameter)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        params.contains(&"name"),
+        "Missing keyword param 'name': {params:?}"
+    );
+    assert!(
+        params.contains(&"email"),
+        "Missing optional param 'email': {params:?}"
+    );
+    assert!(
+        params.contains(&"block"),
+        "Missing block param 'block': {params:?}"
+    );
+}
 
-    #[test]
-    fn method_splat_params_emitted_as_parameters() {
-        let source = r#"
+#[test]
+fn method_splat_params_emitted_as_parameters() {
+    let source = r#"
 def log(*args, **opts)
 end
 "#;
-        let r = extract::extract(source);
-        let params: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Parameter)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(params.contains(&"args"), "Missing splat param 'args': {params:?}");
-        assert!(params.contains(&"opts"), "Missing hash splat 'opts': {params:?}");
-    }
+    let r = extract::extract(source);
+    let params: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Parameter)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        params.contains(&"args"),
+        "Missing splat param 'args': {params:?}"
+    );
+    assert!(
+        params.contains(&"opts"),
+        "Missing hash splat 'opts': {params:?}"
+    );
+}
 
-    #[test]
-    fn rescue_exception_type_emits_typeref() {
-        let source = r#"
+#[test]
+fn rescue_exception_type_emits_typeref() {
+    let source = r#"
 class Repo
   def find(id)
     User.find(id)
@@ -220,75 +286,80 @@ class Repo
   end
 end
 "#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs
             .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            typerefs.iter().any(|n| n.contains("RecordNotFound") || n.contains("ActiveRecord")),
-            "Expected TypeRef for ActiveRecord::RecordNotFound: {typerefs:?}"
-        );
-        assert!(
-            typerefs.contains(&"StandardError"),
-            "Expected TypeRef for StandardError: {typerefs:?}"
-        );
-    }
+            .any(|n| n.contains("RecordNotFound") || n.contains("ActiveRecord")),
+        "Expected TypeRef for ActiveRecord::RecordNotFound: {typerefs:?}"
+    );
+    assert!(
+        typerefs.contains(&"StandardError"),
+        "Expected TypeRef for StandardError: {typerefs:?}"
+    );
+}
 
-    #[test]
-    fn rescue_variable_emitted_as_parameter_symbol() {
-        let source = r#"
+#[test]
+fn rescue_variable_emitted_as_parameter_symbol() {
+    let source = r#"
 def run
   do_work
 rescue => e
   log(e)
 end
 "#;
-        let r = extract::extract(source);
-        let params: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Parameter)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(params.contains(&"e"), "Expected rescue variable 'e': {params:?}");
-    }
+    let r = extract::extract(source);
+    let params: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Parameter)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        params.contains(&"e"),
+        "Expected rescue variable 'e': {params:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // String interpolation
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// String interpolation
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn string_interpolation_calls_extracted() {
-        let source = r#"
+#[test]
+fn string_interpolation_calls_extracted() {
+    let source = r#"
 class Greeter
   def greet(user)
     "Hello #{user.get_name()}"
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            calls.contains(&"get_name"),
-            "expected get_name() from string interpolation, got: {calls:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"get_name"),
+        "expected get_name() from string interpolation, got: {calls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Case / when
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Case / when
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn case_when_body_calls_extracted() {
-        let source = r#"
+#[test]
+fn case_when_body_calls_extracted() {
+    let source = r#"
 class Handler
   def handle(command)
     case command
@@ -302,25 +373,34 @@ class Handler
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"create_record"), "expected create_record: {calls:?}");
-        assert!(calls.contains(&"delete_record"), "expected delete_record: {calls:?}");
-        assert!(calls.contains(&"log_unknown"), "expected log_unknown: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"create_record"),
+        "expected create_record: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"delete_record"),
+        "expected delete_record: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"log_unknown"),
+        "expected log_unknown: {calls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Begin / ensure
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Begin / ensure
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn begin_block_calls_extracted() {
-        let source = r#"
+#[test]
+fn begin_block_calls_extracted() {
+    let source = r#"
 def run
   begin
     do_work()
@@ -331,106 +411,134 @@ def run
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"do_work"), "expected do_work from begin: {calls:?}");
-        assert!(calls.contains(&"cleanup"), "expected cleanup from ensure: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"do_work"),
+        "expected do_work from begin: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"cleanup"),
+        "expected cleanup from ensure: {calls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Hash / array expressions with calls
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Hash / array expressions with calls
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn hash_value_calls_extracted() {
-        let source = r#"
+#[test]
+fn hash_value_calls_extracted() {
+    let source = r#"
 def build_options
   { name: compute_name(), count: fetch_count() }
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"compute_name"), "expected compute_name: {calls:?}");
-        assert!(calls.contains(&"fetch_count"), "expected fetch_count: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"compute_name"),
+        "expected compute_name: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"fetch_count"),
+        "expected fetch_count: {calls:?}"
+    );
+}
 
-    #[test]
-    fn array_element_calls_extracted() {
-        let source = r#"
+#[test]
+fn array_element_calls_extracted() {
+    let source = r#"
 def build_list
   [fetch_first(), fetch_second()]
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"fetch_first"), "expected fetch_first: {calls:?}");
-        assert!(calls.contains(&"fetch_second"), "expected fetch_second: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"fetch_first"),
+        "expected fetch_first: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"fetch_second"),
+        "expected fetch_second: {calls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Singleton method (def self.foo)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Singleton method (def self.foo)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn singleton_method_emitted_as_method() {
-        let source = r#"
+#[test]
+fn singleton_method_emitted_as_method() {
+    let source = r#"
 class Repo
   def self.find(id)
     where(id: id).first
   end
 end
 "#;
-        let r = extract::extract(source);
-        let m = r.symbols.iter().find(|s| s.name == "find").expect("find method");
-        assert_eq!(m.kind, SymbolKind::Method);
-    }
+    let r = extract::extract(source);
+    let m = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "find")
+        .expect("find method");
+    assert_eq!(m.kind, SymbolKind::Method);
+}
 
-    // -----------------------------------------------------------------------
-    // Multiple exception types in rescue
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Multiple exception types in rescue
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn rescue_multiple_exceptions_emits_all_typerefs() {
-        let source = r#"
+#[test]
+fn rescue_multiple_exceptions_emits_all_typerefs() {
+    let source = r#"
 def run
   do_work
 rescue ArgumentError, TypeError => e
   handle(e)
 end
 "#;
-        let r = extract::extract(source);
-        let typerefs: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(typerefs.contains(&"ArgumentError"), "expected ArgumentError TypeRef: {typerefs:?}");
-        assert!(typerefs.contains(&"TypeError"), "expected TypeError TypeRef: {typerefs:?}");
-    }
+    let r = extract::extract(source);
+    let typerefs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        typerefs.contains(&"ArgumentError"),
+        "expected ArgumentError TypeRef: {typerefs:?}"
+    );
+    assert!(
+        typerefs.contains(&"TypeError"),
+        "expected TypeError TypeRef: {typerefs:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Singleton class (class << self)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Singleton class (class << self)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn singleton_class_methods_are_extracted() {
-        let source = r#"
+#[test]
+fn singleton_class_methods_are_extracted() {
+    let source = r#"
 class Repo
   class << self
     def find(id)
@@ -443,145 +551,151 @@ class Repo
   end
 end
 "#;
-        let r = extract::extract(source);
-        let method_names: Vec<&str> = r
-            .symbols
-            .iter()
-            .filter(|s| s.kind == SymbolKind::Method || s.kind == SymbolKind::Function)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(
-            method_names.contains(&"find"),
-            "expected 'find' from singleton class body: {method_names:?}"
-        );
-        assert!(
-            method_names.contains(&"all"),
-            "expected 'all' from singleton class body: {method_names:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let method_names: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Method || s.kind == SymbolKind::Function)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        method_names.contains(&"find"),
+        "expected 'find' from singleton class body: {method_names:?}"
+    );
+    assert!(
+        method_names.contains(&"all"),
+        "expected 'all' from singleton class body: {method_names:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Command call (method call without parens)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Command call (method call without parens)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn command_call_emits_calls_edge() {
-        let source = r#"
+#[test]
+fn command_call_emits_calls_edge() {
+    let source = r#"
 class Greeter
   def greet(user)
     puts "Hello #{user.name}"
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"puts"), "expected 'puts' Calls edge: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"puts"),
+        "expected 'puts' Calls edge: {calls:?}"
+    );
+}
 
-    #[test]
-    fn command_call_with_receiver_emits_calls_edge() {
-        let source = r#"
+#[test]
+fn command_call_with_receiver_emits_calls_edge() {
+    let source = r#"
 class Logger
   def log(msg)
     Rails.logger.info msg
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(calls.contains(&"info"), "expected 'info' Calls edge: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"info"),
+        "expected 'info' Calls edge: {calls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Module-level include / extend / prepend — Implements edges
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Module-level include / extend / prepend — Implements edges
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn include_at_class_level_emits_implements_edge() {
-        let source = r#"
+#[test]
+fn include_at_class_level_emits_implements_edge() {
+    let source = r#"
 class User
   include Validatable
 end
 "#;
-        let r = extract::extract(source);
-        let impls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Implements)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            impls.contains(&"Validatable"),
-            "expected Implements edge for include, got: {impls:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Implements)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"Validatable"),
+        "expected Implements edge for include, got: {impls:?}"
+    );
+}
 
-    #[test]
-    fn extend_at_class_level_emits_implements_edge() {
-        let source = r#"
+#[test]
+fn extend_at_class_level_emits_implements_edge() {
+    let source = r#"
 class Config
   extend ClassMethods
 end
 "#;
-        let r = extract::extract(source);
-        let impls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Implements)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            impls.contains(&"ClassMethods"),
-            "expected Implements edge for extend, got: {impls:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Implements)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"ClassMethods"),
+        "expected Implements edge for extend, got: {impls:?}"
+    );
+}
 
-    #[test]
-    fn prepend_at_class_level_emits_implements_edge() {
-        let source = r#"
+#[test]
+fn prepend_at_class_level_emits_implements_edge() {
+    let source = r#"
 class Logger
   prepend Traceable
 end
 "#;
-        let r = extract::extract(source);
-        let impls: Vec<&str> = r
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Implements)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        assert!(
-            impls.contains(&"Traceable"),
-            "expected Implements edge for prepend, got: {impls:?}"
-        );
-    }
+    let r = extract::extract(source);
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Implements)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"Traceable"),
+        "expected Implements edge for prepend, got: {impls:?}"
+    );
+}
 
-    // -----------------------------------------------------------------------
-    // Module-level bare calls (command nodes)
-    // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Module-level bare calls (command nodes)
+// -----------------------------------------------------------------------
 
-    #[test]
-    fn module_level_bare_call_emits_calls_edge() {
-        let source = "configure_app\n";
-        let r = extract::extract(source);
-        // bare identifier at module level may be a call — just verify no panic
-        // and that the result is well-formed.
-        let _ = r.refs;
-    }
+#[test]
+fn module_level_bare_call_emits_calls_edge() {
+    let source = "configure_app\n";
+    let r = extract::extract(source);
+    // bare identifier at module level may be a call — just verify no panic
+    // and that the result is well-formed.
+    let _ = r.refs;
+}
 
-    #[test]
-    fn deeply_nested_blocks_with_multiple_levels() {
-        let source = r#"
+#[test]
+fn deeply_nested_blocks_with_multiple_levels() {
+    let source = r#"
 class Processor
   def process
     [1, 2, 3].each do |item|
@@ -592,13 +706,21 @@ class Processor
   end
 end
 "#;
-        let r = extract::extract(source);
-        let calls: Vec<&str> = r.refs.iter()
-            .filter(|r| r.kind == EdgeKind::Calls)
-            .map(|r| r.target_name.as_str())
-            .collect();
-        // Verify all three levels of calls are captured
-        assert!(calls.contains(&"each"), "expected 'each', got: {calls:?}");
-        assert!(calls.contains(&"transform"), "expected 'transform', got: {calls:?}");
-        assert!(calls.contains(&"save"), "expected 'save' inside nested block, got: {calls:?}");
-    }
+    let r = extract::extract(source);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    // Verify all three levels of calls are captured
+    assert!(calls.contains(&"each"), "expected 'each', got: {calls:?}");
+    assert!(
+        calls.contains(&"transform"),
+        "expected 'transform', got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"save"),
+        "expected 'save' inside nested block, got: {calls:?}"
+    );
+}

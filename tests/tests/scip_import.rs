@@ -174,8 +174,7 @@ fn test_scip_import_creates_edges() {
         svc_line
     };
 
-    let scip_svc_sym =
-        format!("scip-dotnet nuget MyApp 1.0 MyApp.Services/ProductService#.");
+    let scip_svc_sym = format!("scip-dotnet nuget MyApp 1.0 MyApp.Services/ProductService#.");
     let scip_repo_sym =
         format!("scip-dotnet nuget MyApp 1.0 MyApp.Repositories/IProductRepository#.");
 
@@ -419,7 +418,11 @@ fn test_scip_import_idempotent() {
     let svc_end = symbol_end_line(&db, "ProductService");
     let repo_line = symbol_line(&db, "IProductRepository");
     let repo_end = symbol_end_line(&db, "IProductRepository");
-    let ref_line = if svc_end > svc_line + 1 { svc_line + 1 } else { svc_line };
+    let ref_line = if svc_end > svc_line + 1 {
+        svc_line + 1
+    } else {
+        svc_line
+    };
 
     let scip_svc_sym = "scip-dotnet nuget MyApp 1.0 MyApp.Services/ProductService#.".to_string();
     let scip_repo_sym =
@@ -557,7 +560,10 @@ fn test_scip_import_unmatched_file_path() {
     let (_tmp, scip_path) = write_scip_index(&index);
     let stats = import_scip(&db, &scip_path, project.path()).unwrap();
 
-    assert_eq!(stats.documents_processed, 0, "unmatched file should be skipped");
+    assert_eq!(
+        stats.documents_processed, 0,
+        "unmatched file should be skipped"
+    );
     assert_eq!(stats.edges_created, 0);
     assert_eq!(
         edge_count(&db),

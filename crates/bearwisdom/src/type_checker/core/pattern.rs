@@ -160,7 +160,14 @@ fn lookup_member_type(
     symbol_types: &SymbolTypeMap,
     profile: &LanguageProfile,
 ) -> Option<TypeId> {
-    let sym = members.lookup(value_ty, prop, EdgeKind::TypeRef, supertypes, arena, profile)?;
+    let sym = members.lookup(
+        value_ty,
+        prop,
+        EdgeKind::TypeRef,
+        supertypes,
+        arena,
+        profile,
+    )?;
     let view = SymbolView::new(&sym, symbol_types);
     view.declared_type().or(view.return_type())
 }

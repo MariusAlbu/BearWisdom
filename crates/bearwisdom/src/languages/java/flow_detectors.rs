@@ -43,7 +43,7 @@ pub(crate) fn detect_java_quartz_emission(
         name: "java.quartz".to_string(),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -75,7 +75,7 @@ pub(crate) fn detect_java_jms_kafka_emission(
             name: topic.unwrap_or_else(|| "java.kafka".to_string()),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     // JMS — `producer.send(message)`.
@@ -85,7 +85,7 @@ pub(crate) fn detect_java_jms_kafka_emission(
             name: "java.jms".to_string(),
             role: ChannelRole::Producer,
             method: None,
-        streaming: None,
+            streaming: None,
         });
     }
     None
@@ -143,10 +143,14 @@ pub(crate) fn detect_java_message_mapping_emission(
     let dest = module.unwrap_or("");
     Some(FlowEmission::NamedChannel {
         kind: NamedChannelKind::WebSocket,
-        name: if dest.is_empty() { "java.ws".to_string() } else { dest.to_string() },
+        name: if dest.is_empty() {
+            "java.ws".to_string()
+        } else {
+            dest.to_string()
+        },
         role: ChannelRole::Consumer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -170,11 +174,7 @@ pub(crate) fn detect_java_redis_template_emission(
         return None;
     }
     // Look for `opsForValue` (or `opsForHash` / `opsForSet`) in the chain.
-    if !chain
-        .segments
-        .iter()
-        .any(|s| s.name.starts_with("opsFor"))
-    {
+    if !chain.segments.iter().any(|s| s.name.starts_with("opsFor")) {
         return None;
     }
     let key = call_args.iter().find_map(|a| match a {
@@ -197,7 +197,10 @@ pub(crate) fn detect_java_mailer_emission(
     let root = segs[0].name.as_str();
     let leaf = segs.last()?.name.as_str();
     // JavaMailSender.send / mailSender.send.
-    if !matches!(root, "mailSender" | "javaMailSender" | "emailService" | "mailService") {
+    if !matches!(
+        root,
+        "mailSender" | "javaMailSender" | "emailService" | "mailService"
+    ) {
         return None;
     }
     if !matches!(leaf, "send" | "sendAsync") {
@@ -208,7 +211,7 @@ pub(crate) fn detect_java_mailer_emission(
         name: format!("java.{}", root),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -257,7 +260,7 @@ pub(crate) fn detect_java_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url),
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -278,7 +281,7 @@ pub(crate) fn detect_java_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url),
             role: ChannelRole::Producer,
             method: Some(method),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -294,7 +297,7 @@ pub(crate) fn detect_java_http_chain_emission(
             name: crate::connectors::url_pattern::normalize(&url),
             role: ChannelRole::Producer,
             method: Some(HttpMethod::Any),
-        streaming: None,
+            streaming: None,
         });
     }
 
@@ -398,7 +401,9 @@ fn is_entity_manager_root(name: &str) -> bool {
 }
 
 fn is_pascal_case_first_java(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 // ---------------------------------------------------------------------------
@@ -478,8 +483,8 @@ pub(crate) fn detect_java_jdbc_template_emission(
         return None;
     }
     let leaf_op = match leaf {
-        "query" | "queryForObject" | "queryForList" | "queryForMap"
-        | "queryForRowSet" | "queryForStream" => DbQueryOp::Select,
+        "query" | "queryForObject" | "queryForList" | "queryForMap" | "queryForRowSet"
+        | "queryForStream" => DbQueryOp::Select,
         "update" | "batchUpdate" => DbQueryOp::Update,
         "execute" => DbQueryOp::Other,
         _ => return None,
@@ -583,7 +588,7 @@ pub(crate) fn detect_retrofit_attribute_emission(
         name,
         role: ChannelRole::Producer,
         method: Some(method),
-    streaming: None,
+        streaming: None,
     })
 }
 
@@ -630,4 +635,3 @@ pub(crate) fn detect_java_grpc_stub_emission(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

@@ -98,8 +98,14 @@ fn detect_dockerfile() {
 fn detect_new_languages() {
     // PowerShell
     assert_eq!(detect_language(Path::new("script.ps1")), Some("powershell"));
-    assert_eq!(detect_language(Path::new("module.psm1")), Some("powershell"));
-    assert_eq!(detect_language(Path::new("manifest.psd1")), Some("powershell"));
+    assert_eq!(
+        detect_language(Path::new("module.psm1")),
+        Some("powershell")
+    );
+    assert_eq!(
+        detect_language(Path::new("manifest.psd1")),
+        Some("powershell")
+    );
     // Groovy
     assert_eq!(detect_language(Path::new("build.gradle")), Some("groovy"));
     assert_eq!(detect_language(Path::new("Foo.groovy")), Some("groovy"));
@@ -133,7 +139,10 @@ fn detect_new_languages() {
     // Protocol Buffers
     assert_eq!(detect_language(Path::new("service.proto")), Some("proto"));
     // GraphQL
-    assert_eq!(detect_language(Path::new("schema.graphql")), Some("graphql"));
+    assert_eq!(
+        detect_language(Path::new("schema.graphql")),
+        Some("graphql")
+    );
     assert_eq!(detect_language(Path::new("query.gql")), Some("graphql"));
     // Prisma
     assert_eq!(detect_language(Path::new("schema.prisma")), Some("prisma"));
@@ -291,7 +300,10 @@ fn walk_respects_gitignore() {
 
     let files = walk(dir.path()).unwrap();
     let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
-    assert!(paths.iter().any(|p| p.ends_with("Main.cs")), "Main.cs missing: {paths:?}");
+    assert!(
+        paths.iter().any(|p| p.ends_with("Main.cs")),
+        "Main.cs missing: {paths:?}"
+    );
     assert!(
         !paths.iter().any(|p| p.contains("Auto.cs")),
         "Auto.cs should be gitignored: {paths:?}"

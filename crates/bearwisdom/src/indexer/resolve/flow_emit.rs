@@ -253,8 +253,8 @@ impl DbQueryOp {
             | "where" | "fetch" | "query" | "read" | "load" | "exists" => DbQueryOp::Select,
             "create" | "insert" | "insertinto" | "insertmany" | "add" | "save" | "new"
             | "build" | "insertorignore" => DbQueryOp::Insert,
-            "update" | "updateall" | "updatewhere" | "set" | "patch" | "modify"
-            | "updateone" | "updatemany" => DbQueryOp::Update,
+            "update" | "updateall" | "updatewhere" | "set" | "patch" | "modify" | "updateone"
+            | "updatemany" => DbQueryOp::Update,
             "delete" | "deleteall" | "deletewhere" | "remove" | "removeall" | "destroy"
             | "destroyall" | "deleteone" | "deletemany" | "drop" => DbQueryOp::Delete,
             "upsert" | "createorupdate" | "insertorignoreall" | "saveorupdate" => DbQueryOp::Upsert,
@@ -383,14 +383,10 @@ pub enum FlowEmission {
     },
 
     /// Environment variable / config key read.
-    ConfigLookup {
-        key: String,
-    },
+    ConfigLookup { key: String },
 
     /// Feature flag evaluation.
-    FeatureFlag {
-        flag_name: String,
-    },
+    FeatureFlag { flag_name: String },
 
     /// Authorization requirement attached to a route handler or class.
     /// Single-ended (records the guard requirement at the handler site).
@@ -406,9 +402,7 @@ pub enum FlowEmission {
     },
 
     /// Scheduled job registration. Single-ended marker.
-    ScheduledJob {
-        schedule: String,
-    },
+    ScheduledJob { schedule: String },
 }
 
 impl FlowEmission {
@@ -439,9 +433,11 @@ impl FlowEmission {
     /// The `http_method` string, if applicable.
     pub fn http_method_str(&self) -> Option<&str> {
         match self {
-            FlowEmission::NamedChannel { kind: NamedChannelKind::HttpCall, method, .. } => {
-                method.map(|m| m.as_str())
-            }
+            FlowEmission::NamedChannel {
+                kind: NamedChannelKind::HttpCall,
+                method,
+                ..
+            } => method.map(|m| m.as_str()),
             _ => None,
         }
     }
@@ -464,7 +460,10 @@ impl FlowEmission {
     pub fn url_pattern(&self) -> Option<&str> {
         match self {
             FlowEmission::NamedChannel { name, .. } if !name.is_empty() => Some(name.as_str()),
-            FlowEmission::DbEntity { table_name_hint: Some(t), .. } => Some(t.as_str()),
+            FlowEmission::DbEntity {
+                table_name_hint: Some(t),
+                ..
+            } => Some(t.as_str()),
             FlowEmission::DbEntity { base_name_hint, .. } => Some(base_name_hint.as_str()),
             FlowEmission::DbQuery { entity_name, .. } => Some(entity_name.as_str()),
             FlowEmission::MigrationTarget { table_name, .. } => Some(table_name.as_str()),
@@ -484,11 +483,11 @@ impl FlowEmission {
         matches!(
             self,
             FlowEmission::DiBinding { .. }
-            | FlowEmission::ConfigLookup { .. }
-            | FlowEmission::FeatureFlag { .. }
-            | FlowEmission::AuthGuard { .. }
-            | FlowEmission::CliCommand { .. }
-            | FlowEmission::ScheduledJob { .. }
+                | FlowEmission::ConfigLookup { .. }
+                | FlowEmission::FeatureFlag { .. }
+                | FlowEmission::AuthGuard { .. }
+                | FlowEmission::CliCommand { .. }
+                | FlowEmission::ScheduledJob { .. }
         )
     }
 

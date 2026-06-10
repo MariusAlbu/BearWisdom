@@ -58,13 +58,11 @@ fn companion_file_for_imports_delegates_to_paired_ts() {
     use crate::languages::LanguagePlugin;
     let p = AngularPlugin;
     assert_eq!(
-        p.companion_file_for_imports("src/app/foo.component.html").as_deref(),
+        p.companion_file_for_imports("src/app/foo.component.html")
+            .as_deref(),
         Some("src/app/foo.component.ts")
     );
-    assert_eq!(
-        p.companion_file_for_imports("src/app/unrelated.html"),
-        None
-    );
+    assert_eq!(p.companion_file_for_imports("src/app/unrelated.html"), None);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,17 +90,18 @@ impl SelectorMapLookup {
 
     fn with_symbol(mut self, id: i64, name: &str, qname: &str) -> Self {
         use std::sync::Arc;
-        self.symbols.push(crate::indexer::resolve::engine::SymbolInfo {
-            id,
-            name: name.to_string(),
-            qualified_name: qname.to_string(),
-            kind: "class".to_string(),
-            visibility: Some("public".to_string()),
-            file_path: Arc::from("src/app/user-card.component.ts"),
-            scope_path: None,
-            package_id: None,
-            signature: None,
-        });
+        self.symbols
+            .push(crate::indexer::resolve::engine::SymbolInfo {
+                id,
+                name: name.to_string(),
+                qualified_name: qname.to_string(),
+                kind: "class".to_string(),
+                visibility: Some("public".to_string()),
+                file_path: Arc::from("src/app/user-card.component.ts"),
+                scope_path: None,
+                package_id: None,
+                signature: None,
+            });
         self
     }
 }
@@ -113,21 +112,46 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
         &self.symbols
     }
 
-    fn by_qualified_name(&self, qname: &str) -> Option<&crate::indexer::resolve::engine::SymbolInfo> {
+    fn by_qualified_name(
+        &self,
+        qname: &str,
+    ) -> Option<&crate::indexer::resolve::engine::SymbolInfo> {
         self.symbols.iter().find(|s| s.qualified_name == qname)
     }
 
-    fn members_of(&self, _p: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] { &[] }
-    fn types_by_name(&self, _n: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] { &[] }
-    fn in_namespace(&self, _n: &str) -> Vec<&crate::indexer::resolve::engine::SymbolInfo> { vec![] }
-    fn has_in_namespace(&self, _n: &str) -> bool { false }
-    fn in_file(&self, _f: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] { &[] }
-    fn field_type_name(&self, _q: &str) -> Option<&str> { None }
-    fn return_type_name(&self, _q: &str) -> Option<&str> { None }
-    fn field_type_args(&self, _q: &str) -> Option<&[String]> { None }
-    fn generic_params(&self, _n: &str) -> Option<&[String]> { None }
-    fn reexports_from(&self, _f: &str) -> &[(String, String)] { &[] }
-    fn is_external_name(&self, _n: &str, _l: &str) -> bool { false }
+    fn members_of(&self, _p: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
+        &[]
+    }
+    fn types_by_name(&self, _n: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
+        &[]
+    }
+    fn in_namespace(&self, _n: &str) -> Vec<&crate::indexer::resolve::engine::SymbolInfo> {
+        vec![]
+    }
+    fn has_in_namespace(&self, _n: &str) -> bool {
+        false
+    }
+    fn in_file(&self, _f: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
+        &[]
+    }
+    fn field_type_name(&self, _q: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _q: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _q: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _n: &str) -> Option<&[String]> {
+        None
+    }
+    fn reexports_from(&self, _f: &str) -> &[(String, String)] {
+        &[]
+    }
+    fn is_external_name(&self, _n: &str, _l: &str) -> bool {
+        false
+    }
 
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.selectors.get(raw_selector).map(|s| s.as_str())
@@ -141,23 +165,35 @@ fn selector_map_hit_resolves_to_class() {
 
     let lookup = SelectorMapLookup::new()
         .with_selector("app-user-card", "src/app/user-card.UserCardComponent")
-        .with_symbol(42, "UserCardComponent", "src/app/user-card.UserCardComponent");
+        .with_symbol(
+            42,
+            "UserCardComponent",
+            "src/app/user-card.UserCardComponent",
+        );
 
     let host_sym = ExtractedSymbol {
         name: "parent".to_string(),
         qualified_name: "parent".to_string(),
         kind: SymbolKind::Class,
         visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
+    };
 
-    let extracted = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let extracted = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,
@@ -207,16 +243,24 @@ fn selector_map_miss_falls_through() {
         qualified_name: "parent".to_string(),
         kind: SymbolKind::Class,
         visibility: Some(Visibility::Public),
-        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
-        signature: None, doc_comment: None, scope_path: None, parent_index: None,
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-};
+    };
 
-    let extracted = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let extracted = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "AppUserCard".to_string(),
         kind: EdgeKind::Calls,

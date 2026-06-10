@@ -40,7 +40,9 @@ fn return_ref_for(source: &str, qn: &str) -> Option<String> {
 #[test]
 fn plain_class_yields_nothing() {
     assert!(
-        _test_synthesize("class User(val name: String, val age: Int)").symbols.is_empty(),
+        _test_synthesize("class User(val name: String, val age: Int)")
+            .symbols
+            .is_empty(),
         "a plain (non-data) class must not trigger synthesis"
     );
 }
@@ -49,7 +51,9 @@ fn plain_class_yields_nothing() {
 fn plain_class_with_data_in_name_yields_nothing() {
     // `database` contains "data" as a substring — must not match.
     assert!(
-        _test_synthesize("class database(val host: String)").symbols.is_empty(),
+        _test_synthesize("class database(val host: String)")
+            .symbols
+            .is_empty(),
         "a class whose name contains 'data' as a substring must not trigger synthesis"
     );
 }
@@ -73,14 +77,20 @@ fn annotated_data_class_is_synthesized() {
 #[test]
 fn copy_synthesized_for_data_class() {
     let q = qnames("data class User(val name: String, val age: Int)");
-    assert!(q.contains(&"User.copy".to_string()), "copy() must be synthesized; got {q:?}");
+    assert!(
+        q.contains(&"User.copy".to_string()),
+        "copy() must be synthesized; got {q:?}"
+    );
 }
 
 #[test]
 fn copy_return_type_ref_points_to_class_qname() {
     // The return-type ref makes `u.copy()` type to User so `.name` chains through.
     assert_eq!(
-        return_ref_for("data class User(val name: String, val age: Int)", "User.copy"),
+        return_ref_for(
+            "data class User(val name: String, val age: Int)",
+            "User.copy"
+        ),
         Some("User".to_string()),
         "copy() must carry a return-type ref to the class qname"
     );
@@ -103,9 +113,18 @@ fn copy_return_type_ref_carries_package_qname() {
 #[test]
 fn component_methods_synthesized_in_order() {
     let q = qnames("data class User(val name: String, val age: Int)");
-    assert!(q.contains(&"User.component1".to_string()), "component1 missing; got {q:?}");
-    assert!(q.contains(&"User.component2".to_string()), "component2 missing; got {q:?}");
-    assert!(!q.contains(&"User.component3".to_string()), "unexpected component3; got {q:?}");
+    assert!(
+        q.contains(&"User.component1".to_string()),
+        "component1 missing; got {q:?}"
+    );
+    assert!(
+        q.contains(&"User.component2".to_string()),
+        "component2 missing; got {q:?}"
+    );
+    assert!(
+        !q.contains(&"User.component3".to_string()),
+        "unexpected component3; got {q:?}"
+    );
 }
 
 #[test]
@@ -113,7 +132,10 @@ fn component1_return_ref_is_string_type() {
     // `val name: String` → component1() returns String. String is a stdlib
     // scalar so no return-type ref is emitted (nothing to chain into).
     assert_eq!(
-        return_ref_for("data class User(val name: String, val age: Int)", "User.component1"),
+        return_ref_for(
+            "data class User(val name: String, val age: Int)",
+            "User.component1"
+        ),
         None,
         "component1 on a String property must emit no return-type ref"
     );
@@ -137,8 +159,14 @@ fn prefix_named_property_resolves_its_own_type() {
     // would match `myname:` first and mistype component2. The column-anchored
     // scan must read each property's own declared type.
     let src = "data class Foo(val myname: Account, val name: User)";
-    assert_eq!(return_ref_for(src, "Foo.component1"), Some("Account".to_string()));
-    assert_eq!(return_ref_for(src, "Foo.component2"), Some("User".to_string()));
+    assert_eq!(
+        return_ref_for(src, "Foo.component1"),
+        Some("Account".to_string())
+    );
+    assert_eq!(
+        return_ref_for(src, "Foo.component2"),
+        Some("User".to_string())
+    );
 }
 
 #[test]
@@ -159,9 +187,18 @@ fn plain_param_without_val_var_not_a_component() {
 #[test]
 fn structural_methods_synthesized() {
     let q = qnames("data class User(val name: String)");
-    assert!(q.contains(&"User.equals".to_string()), "equals missing; got {q:?}");
-    assert!(q.contains(&"User.hashCode".to_string()), "hashCode missing; got {q:?}");
-    assert!(q.contains(&"User.toString".to_string()), "toString missing; got {q:?}");
+    assert!(
+        q.contains(&"User.equals".to_string()),
+        "equals missing; got {q:?}"
+    );
+    assert!(
+        q.contains(&"User.hashCode".to_string()),
+        "hashCode missing; got {q:?}"
+    );
+    assert!(
+        q.contains(&"User.toString".to_string()),
+        "toString missing; got {q:?}"
+    );
 }
 
 #[test]
@@ -183,7 +220,11 @@ fn hand_written_copy_not_duplicated() {
     let src = "data class User(val name: String) {\n    fun copy(name: String = this.name): User = User(name)\n}";
     let q = qnames(src);
     let copies: Vec<_> = q.iter().filter(|n| n.ends_with(".copy")).collect();
-    assert_eq!(copies.len(), 0, "hand-written copy must not be duplicated; got {q:?}");
+    assert_eq!(
+        copies.len(),
+        0,
+        "hand-written copy must not be duplicated; got {q:?}"
+    );
 }
 
 #[test]
@@ -191,7 +232,11 @@ fn hand_written_component1_not_duplicated() {
     let src = "data class User(val name: String) {\n    fun component1(): String = name\n}";
     let q = qnames(src);
     let comps: Vec<_> = q.iter().filter(|n| n.ends_with(".component1")).collect();
-    assert_eq!(comps.len(), 0, "hand-written component1 must not be duplicated; got {q:?}");
+    assert_eq!(
+        comps.len(),
+        0,
+        "hand-written component1 must not be duplicated; got {q:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +274,10 @@ fn copy_return_ref_enables_chain_resolution() {
     let synth = _test_synthesize(source);
 
     // copy() must exist with a return-type ref pointing at "User".
-    let copy_idx = synth.symbols.iter().position(|s| s.name == "copy")
+    let copy_idx = synth
+        .symbols
+        .iter()
+        .position(|s| s.name == "copy")
         .expect("copy() must be synthesized");
     let copy_ref = synth
         .refs
@@ -274,7 +322,10 @@ fn copy_return_ref_enables_chain_resolution() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/User.kt".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/User.kt".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);

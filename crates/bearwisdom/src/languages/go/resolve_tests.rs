@@ -37,15 +37,17 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -55,8 +57,8 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 
 fn make_import_ref(
@@ -65,7 +67,9 @@ fn make_import_ref(
     full_path: &str,
     line: u32,
 ) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: last_segment.to_string(),
         kind: EdgeKind::Imports,
@@ -75,8 +79,8 @@ fn make_import_ref(
         byte_offset: 1,
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
@@ -140,9 +144,15 @@ require (
         Some("github.com/mattermost/mattermost-server".to_string())
     );
     assert_eq!(data.require_paths.len(), 3);
-    assert!(data.require_paths.contains(&"github.com/gin-gonic/gin".to_string()));
-    assert!(data.require_paths.contains(&"golang.org/x/crypto".to_string()));
-    assert!(data.require_paths.contains(&"github.com/stretchr/testify".to_string()));
+    assert!(data
+        .require_paths
+        .contains(&"github.com/gin-gonic/gin".to_string()));
+    assert!(data
+        .require_paths
+        .contains(&"golang.org/x/crypto".to_string()));
+    assert!(data
+        .require_paths
+        .contains(&"github.com/stretchr/testify".to_string()));
 }
 
 #[test]
@@ -203,16 +213,31 @@ fn test_is_external_go_import_with_module_path() {
     ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     // Internal: exact match
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"code.gitea.io/gitea"));
+    assert!(!super::hooks::is_manifest_go_external(
+        &ctx,
+        "code.gitea.io/gitea"
+    ));
     // Internal: sub-package
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"code.gitea.io/gitea/modules/log"));
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"code.gitea.io/gitea/services/auth"));
+    assert!(!super::hooks::is_manifest_go_external(
+        &ctx,
+        "code.gitea.io/gitea/modules/log"
+    ));
+    assert!(!super::hooks::is_manifest_go_external(
+        &ctx,
+        "code.gitea.io/gitea/services/auth"
+    ));
     // External: different host
-    assert!(super::hooks::is_manifest_go_external(&ctx,"github.com/gin-gonic/gin"));
-    assert!(super::hooks::is_manifest_go_external(&ctx,"golang.org/x/crypto"));
+    assert!(super::hooks::is_manifest_go_external(
+        &ctx,
+        "github.com/gin-gonic/gin"
+    ));
+    assert!(super::hooks::is_manifest_go_external(
+        &ctx,
+        "golang.org/x/crypto"
+    ));
     // External: standard library is internal by our heuristic but shouldn't matter —
     // stdlib won't be in the index anyway
-    assert!(super::hooks::is_manifest_go_external(&ctx,"fmt")); // no dot → external per module-path logic
+    assert!(super::hooks::is_manifest_go_external(&ctx, "fmt")); // no dot → external per module-path logic
 }
 
 #[test]
@@ -220,12 +245,21 @@ fn test_is_external_go_import_no_module_path_fallback() {
     let ctx = ProjectContext::default(); // no go_module_path
 
     // Heuristic: dot in first segment → external
-    assert!(super::hooks::is_manifest_go_external(&ctx,"github.com/gin-gonic/gin"));
-    assert!(super::hooks::is_manifest_go_external(&ctx,"golang.org/x/net"));
+    assert!(super::hooks::is_manifest_go_external(
+        &ctx,
+        "github.com/gin-gonic/gin"
+    ));
+    assert!(super::hooks::is_manifest_go_external(
+        &ctx,
+        "golang.org/x/net"
+    ));
     // Standard library: no dot → not external
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"fmt"));
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"net/http"));
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"encoding/json"));
+    assert!(!super::hooks::is_manifest_go_external(&ctx, "fmt"));
+    assert!(!super::hooks::is_manifest_go_external(&ctx, "net/http"));
+    assert!(!super::hooks::is_manifest_go_external(
+        &ctx,
+        "encoding/json"
+    ));
 }
 
 #[test]
@@ -237,9 +271,15 @@ fn test_is_external_go_import_prefix_boundary() {
     ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     // "github.com/myorg/myrepox" must NOT be treated as internal
-    assert!(super::hooks::is_manifest_go_external(&ctx,"github.com/myorg/myrepox"));
+    assert!(super::hooks::is_manifest_go_external(
+        &ctx,
+        "github.com/myorg/myrepox"
+    ));
     // Sub-packages are internal
-    assert!(!super::hooks::is_manifest_go_external(&ctx,"github.com/myorg/myrepo/pkg/api"));
+    assert!(!super::hooks::is_manifest_go_external(
+        &ctx,
+        "github.com/myorg/myrepo/pkg/api"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -298,11 +338,22 @@ fn test_build_file_context_imports() {
 
     assert_eq!(ctx.imports.len(), 2);
 
-    let gin_import = ctx.imports.iter().find(|i| i.imported_name == "gin").unwrap();
-    assert_eq!(gin_import.module_path.as_deref(), Some("github.com/gin-gonic/gin"));
+    let gin_import = ctx
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "gin")
+        .unwrap();
+    assert_eq!(
+        gin_import.module_path.as_deref(),
+        Some("github.com/gin-gonic/gin")
+    );
     assert!(!gin_import.is_wildcard);
 
-    let fmt_import = ctx.imports.iter().find(|i| i.imported_name == "fmt").unwrap();
+    let fmt_import = ctx
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "fmt")
+        .unwrap();
     assert_eq!(fmt_import.module_path.as_deref(), Some("fmt"));
 }
 
@@ -320,7 +371,9 @@ fn test_build_file_context_alias_import() {
         )],
         vec![],
     );
-    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    file.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "mygin".to_string(),
         kind: EdgeKind::Imports,
@@ -329,9 +382,9 @@ fn test_build_file_context_alias_import() {
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let ctx = build_file_context_inner(&file, None);
 
@@ -357,7 +410,9 @@ fn test_build_file_context_blank_import_skipped() {
         vec![],
     );
     // Blank import: side effects only
-    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    file.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "_".to_string(),
         kind: EdgeKind::Imports,
@@ -366,9 +421,9 @@ fn test_build_file_context_blank_import_skipped() {
         module: Some("database/sql/driver".to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let ctx = build_file_context_inner(&file, None);
     assert!(ctx.imports.is_empty());
@@ -406,17 +461,23 @@ fn test_infer_external_namespace_exported_symbol() {
         extracted_ref: &file.refs[1], // NewLogger call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::go::hooks::GoHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
-    assert!(ns.is_some(), "Exported symbol with external import should be inferred");
+    assert!(
+        ns.is_some(),
+        "Exported symbol with external import should be inferred"
+    );
     assert_eq!(ns.unwrap(), "go.uber.org/zap");
 }
 
@@ -449,14 +510,17 @@ fn test_infer_external_namespace_unexported_returns_none() {
         extracted_ref: &file.refs[1], // unexportedHelper call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::go::hooks::GoHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(
@@ -496,14 +560,17 @@ fn test_infer_external_namespace_internal_import_not_returned() {
         extracted_ref: &file.refs[1], // NewLogger call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::go::hooks::GoHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(
@@ -531,14 +598,17 @@ fn test_infer_no_imports_returns_none() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::go::hooks::GoHooks.classify_external(
-            &ref_ctx, &file_ctx, None, &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
         )
     };
     assert!(ns.is_none(), "No imports → no external namespace inference");
@@ -569,14 +639,17 @@ fn test_infer_external_namespace_import_ref_skipped() {
         extracted_ref: &file.refs[0], // the import ref itself
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::go::hooks::GoHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     // Import refs to external packages should be classified as external.
@@ -612,24 +685,32 @@ fn make_chain(segments: &[&str]) -> MemberChain {
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
 
 #[test]
 fn test_go_http_get_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
     use super::hooks::detect_go_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let chain = make_chain(&["http", "Get"]);
     let call_args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_go_http_chain_emission(&chain, &call_args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users");
@@ -641,8 +722,8 @@ fn test_go_http_get_emits_producer() {
 
 #[test]
 fn test_go_http_new_request_uses_method_arg() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_go_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     let chain = make_chain(&["http", "NewRequest"]);
     let call_args = vec![
@@ -661,8 +742,8 @@ fn test_go_http_new_request_uses_method_arg() {
 
 #[test]
 fn test_go_resty_client_chain_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_go_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     let chain = make_chain(&["client", "R", "Get"]);
     let call_args = vec![CallArg::StringLit("/api/x".to_string())];
@@ -686,15 +767,18 @@ fn test_go_http_no_emit_when_url_is_not_literal() {
 
 #[test]
 fn test_go_db_query_parses_sql_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_go_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["db", "Query"]);
-    let call_args = vec![
-        CallArg::StringLit("SELECT * FROM users WHERE id = $1".to_string()),
-    ];
+    let call_args = vec![CallArg::StringLit(
+        "SELECT * FROM users WHERE id = $1".to_string(),
+    )];
     match detect_go_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "go.users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -704,15 +788,18 @@ fn test_go_db_query_parses_sql_select() {
 
 #[test]
 fn test_go_db_exec_parses_sql_update() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_go_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["db", "Exec"]);
-    let call_args = vec![
-        CallArg::StringLit("UPDATE accounts SET balance = $1 WHERE id = $2".to_string()),
-    ];
+    let call_args = vec![CallArg::StringLit(
+        "UPDATE accounts SET balance = $1 WHERE id = $2".to_string(),
+    )];
     match detect_go_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "go.accounts");
             assert_eq!(operation, DbQueryOp::Update);
         }
@@ -722,13 +809,16 @@ fn test_go_db_exec_parses_sql_update() {
 
 #[test]
 fn test_go_gorm_first_emits_dbquery_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_go_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["db", "First"]);
     let call_args = vec![CallArg::Ident("User".to_string())];
     match detect_go_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "go.User");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -738,13 +828,16 @@ fn test_go_gorm_first_emits_dbquery_select() {
 
 #[test]
 fn test_go_gorm_create_emits_insert() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_go_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["db", "Create"]);
     let call_args = vec![CallArg::Ident("Poll".to_string())];
     match detect_go_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "go.Poll");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -763,8 +856,8 @@ fn test_go_db_no_emit_for_unknown_leaf() {
 
 #[test]
 fn test_go_grpc_three_segment_chain_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_grpc_chain_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
     let file_ctx = FileContext {
         file_path: "client.go".to_string(),
@@ -779,7 +872,9 @@ fn test_go_grpc_three_segment_chain_emits_producer() {
     };
     let chain = make_chain(&["client", "UserService", "GetUser"]);
     match detect_go_grpc_chain_emission(&chain, &file_ctx).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert_eq!(kind, NamedChannelKind::RpcCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "user/getuser");
@@ -790,8 +885,8 @@ fn test_go_grpc_three_segment_chain_emits_producer() {
 
 #[test]
 fn test_go_grpc_two_segment_client_chain_emits_producer() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_go_grpc_chain_emission;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let file_ctx = FileContext {
         file_path: "client.go".to_string(),
@@ -836,11 +931,13 @@ fn test_go_grpc_no_emit_without_proto_import() {
 
 #[test]
 fn test_go_smtp_send_mail_emits_mailer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_mailer_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["smtp", "SendMail"]);
     match detect_go_mailer_emission(&chain, &[]).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert_eq!(kind, NamedChannelKind::Mailer);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "go.smtp");
@@ -851,8 +948,8 @@ fn test_go_smtp_send_mail_emits_mailer() {
 
 #[test]
 fn test_go_gomail_dial_and_send_emits_mailer() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_mailer_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&["d", "DialAndSend"]);
     match detect_go_mailer_emission(&chain, &[]).unwrap() {
         FlowEmission::NamedChannel { kind, name, .. } => {
@@ -865,8 +962,8 @@ fn test_go_gomail_dial_and_send_emits_mailer() {
 
 #[test]
 fn test_go_asynq_enqueue_emits_bgjob() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_bgjob_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&["client", "Enqueue"]);
     match detect_go_bgjob_emission(&chain).unwrap() {
         FlowEmission::NamedChannel { kind, name, .. } => {
@@ -879,8 +976,8 @@ fn test_go_asynq_enqueue_emits_bgjob() {
 
 #[test]
 fn test_go_kafka_send_message_emits_mq() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_mq_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&["producer", "SendMessage"]);
     match detect_go_mq_emission(&chain, &[]).unwrap() {
         FlowEmission::NamedChannel { kind, name, .. } => {
@@ -893,8 +990,8 @@ fn test_go_kafka_send_message_emits_mq() {
 
 #[test]
 fn test_go_nats_publish_captures_subject() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_mq_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     let chain = make_chain(&["nc", "Publish"]);
     let args = vec![
         CallArg::StringLit("orders.created".to_string()),
@@ -911,8 +1008,8 @@ fn test_go_nats_publish_captures_subject() {
 
 #[test]
 fn test_go_redis_get_emits_config_lookup() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_go_redis_config_lookup;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
     let chain = make_chain(&["rdb", "Get"]);
     let args = vec![
         CallArg::Ident("ctx".to_string()),
@@ -926,15 +1023,17 @@ fn test_go_redis_get_emits_config_lookup() {
 
 #[test]
 fn test_go_uds_listen_emits_ipc_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_uds_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["net", "Listen"]);
     let args = vec![
         CallArg::StringLit("unix".to_string()),
         CallArg::StringLit("/tmp/app.sock".to_string()),
     ];
     match detect_go_uds_emission(&chain, &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert_eq!(kind, NamedChannelKind::IpcCall);
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/tmp/app.sock");
@@ -945,8 +1044,8 @@ fn test_go_uds_listen_emits_ipc_consumer() {
 
 #[test]
 fn test_go_uds_dial_emits_ipc_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
     use super::hooks::detect_go_uds_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission};
     let chain = make_chain(&["net", "Dial"]);
     let args = vec![
         CallArg::StringLit("unix".to_string()),
@@ -971,11 +1070,13 @@ fn test_go_uds_rejects_tcp_network() {
 
 #[test]
 fn test_go_gorilla_upgrader_emits_ws_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_go_gorilla_ws_consumer;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let chain = make_chain(&["upgrader", "Upgrade"]);
     match detect_go_gorilla_ws_consumer(&chain).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "go.gorilla.ws");
@@ -986,8 +1087,8 @@ fn test_go_gorilla_upgrader_emits_ws_consumer() {
 
 #[test]
 fn test_go_nhooyr_accept_emits_ws_consumer() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_go_gorilla_ws_consumer;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
     let chain = make_chain(&["websocket", "Accept"]);
     match detect_go_gorilla_ws_consumer(&chain).unwrap() {
         FlowEmission::NamedChannel { name, .. } => assert_eq!(name, "go.nhooyr.ws"),

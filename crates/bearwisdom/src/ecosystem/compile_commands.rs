@@ -39,8 +39,7 @@ use tracing::debug;
 
 use super::posix_headers::{build_c_header_index, make_root as make_posix_root, resolve_header};
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -51,9 +50,15 @@ const TAG: &str = "compile-commands";
 pub struct CompileCommandsEcosystem;
 
 impl Ecosystem for CompileCommandsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        &["c", "cpp"]
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
@@ -70,19 +75,22 @@ impl Ecosystem for CompileCommandsEcosystem {
         Vec::new()
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     // compile_commands.json describes the entire workspace's build.
     // Workspace-global semantics: discovered from the workspace root, not
     // per-package; activated workspace-wide regardless of which package's
     // language-presence is being narrowed.
-    fn is_workspace_global(&self) -> bool { true }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_c_header_index(dep_roots)
     }
 
@@ -101,7 +109,9 @@ impl Ecosystem for CompileCommandsEcosystem {
 }
 
 impl ExternalSourceLocator for CompileCommandsEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_from_compile_commands(project_root)
     }
@@ -127,7 +137,9 @@ impl ExternalSourceLocator for CompileCommandsEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<CompileCommandsEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(CompileCommandsEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(CompileCommandsEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +176,10 @@ fn discover_from_compile_commands(project_root: &Path) -> Vec<ExternalDepRoot> {
     let cc_path = match locate_compile_commands(project_root) {
         Some(p) => p,
         None => {
-            debug!("compile-commands: no compile_commands.json under {:?}", project_root);
+            debug!(
+                "compile-commands: no compile_commands.json under {:?}",
+                project_root
+            );
             return Vec::new();
         }
     };
@@ -204,7 +219,10 @@ fn discover_from_compile_commands(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
 
     if paths.is_empty() {
-        debug!("compile-commands: parsed {} entries but no -I/-isystem args found", entries.len());
+        debug!(
+            "compile-commands: parsed {} entries but no -I/-isystem args found",
+            entries.len()
+        );
         return Vec::new();
     }
 
@@ -212,15 +230,21 @@ fn discover_from_compile_commands(project_root: &Path) -> Vec<ExternalDepRoot> {
     let mut canonical_seen: HashSet<PathBuf> = HashSet::new();
     let mut roots = Vec::new();
     for p in paths {
-        if !p.is_dir() { continue }
+        if !p.is_dir() {
+            continue;
+        }
         let canonical = p.canonicalize().unwrap_or_else(|_| p.clone());
-        if !canonical_seen.insert(canonical) { continue }
+        if !canonical_seen.insert(canonical) {
+            continue;
+        }
         roots.push(make_posix_root(&p, TAG));
     }
 
     debug!(
         "compile-commands: {} unique include roots from {} entries in {:?}",
-        roots.len(), entries.len(), cc_path
+        roots.len(),
+        entries.len(),
+        cc_path
     );
     roots
 }
@@ -249,11 +273,15 @@ pub fn tu_file_set(project_root: &Path) -> Option<HashSet<PathBuf>> {
     let cc_path = locate_compile_commands(project_root)?;
     let raw = std::fs::read_to_string(&cc_path).ok()?;
     let entries: Vec<Entry> = serde_json::from_str(&raw).ok()?;
-    if entries.is_empty() { return None }
+    if entries.is_empty() {
+        return None;
+    }
     let cc_dir = cc_path.parent().unwrap_or(Path::new(".")).to_path_buf();
     let mut tus: HashSet<PathBuf> = HashSet::with_capacity(entries.len());
     for entry in entries {
-        if entry.file.is_empty() { continue }
+        if entry.file.is_empty() {
+            continue;
+        }
         let dir = if entry.directory.is_empty() {
             cc_dir.clone()
         } else {
@@ -267,32 +295,47 @@ pub fn tu_file_set(project_root: &Path) -> Option<HashSet<PathBuf>> {
         let canonical = abs.canonicalize().unwrap_or(abs);
         tus.insert(canonical);
     }
-    if tus.is_empty() { None } else { Some(tus) }
+    if tus.is_empty() {
+        None
+    } else {
+        Some(tus)
+    }
 }
 
 /// Find compile_commands.json under the project root. Returns the first
 /// hit from a list of conventional locations.
 fn locate_compile_commands(project_root: &Path) -> Option<PathBuf> {
     let direct = project_root.join("compile_commands.json");
-    if direct.is_file() { return Some(direct) }
+    if direct.is_file() {
+        return Some(direct);
+    }
 
     let build = project_root.join("build").join("compile_commands.json");
-    if build.is_file() { return Some(build) }
+    if build.is_file() {
+        return Some(build);
+    }
 
     // build-Debug, build-Release, build-RelWithDebInfo, etc. — walk the
     // project root once and pick the first match.
-    let Ok(entries) = std::fs::read_dir(project_root) else { return None };
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return None;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() { continue }
+        if !ft.is_dir() {
+            continue;
+        }
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         if name_str.starts_with("build-")
             || name_str.starts_with("cmake-build-")
-            || name_str == "out"  // VS Code CMake Tools default
+            || name_str == "out"
+        // VS Code CMake Tools default
         {
             let candidate = entry.path().join("compile_commands.json");
-            if candidate.is_file() { return Some(candidate) }
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
     None
@@ -314,9 +357,11 @@ fn extract_include_paths(argv: &[String], dir: &Path, out: &mut HashSet<PathBuf>
         if arg == "-isystem" {
             if i + 1 < argv.len() {
                 push_path(&argv[i + 1], dir, out);
-                i += 2; continue;
+                i += 2;
+                continue;
             }
-            i += 1; continue;
+            i += 1;
+            continue;
         }
 
         // -external:I<path> / -external:I <path> — MSVC `cl.exe` system-
@@ -327,38 +372,47 @@ fn extract_include_paths(argv: &[String], dir: &Path, out: &mut HashSet<PathBuf>
         if let Some(rest) = arg.strip_prefix("-external:I") {
             if !rest.is_empty() {
                 push_path(rest, dir, out);
-                i += 1; continue;
+                i += 1;
+                continue;
             }
             if i + 1 < argv.len() {
                 push_path(&argv[i + 1], dir, out);
-                i += 2; continue;
+                i += 2;
+                continue;
             }
-            i += 1; continue;
+            i += 1;
+            continue;
         }
         // /external:I<path> — slash-prefixed MSVC variant.
         if let Some(rest) = arg.strip_prefix("/external:I") {
             if !rest.is_empty() {
                 push_path(rest, dir, out);
-                i += 1; continue;
+                i += 1;
+                continue;
             }
             if i + 1 < argv.len() {
                 push_path(&argv[i + 1], dir, out);
-                i += 2; continue;
+                i += 2;
+                continue;
             }
-            i += 1; continue;
+            i += 1;
+            continue;
         }
 
         // -I<path> (combined) or -I <path> (separated).
         if let Some(rest) = arg.strip_prefix("-I") {
             if !rest.is_empty() {
                 push_path(rest, dir, out);
-                i += 1; continue;
+                i += 1;
+                continue;
             }
             if i + 1 < argv.len() {
                 push_path(&argv[i + 1], dir, out);
-                i += 2; continue;
+                i += 2;
+                continue;
             }
-            i += 1; continue;
+            i += 1;
+            continue;
         }
 
         // /I<path> — MSVC slash form.
@@ -373,7 +427,11 @@ fn extract_include_paths(argv: &[String], dir: &Path, out: &mut HashSet<PathBuf>
 
 fn push_path(raw: &str, base: &Path, out: &mut HashSet<PathBuf>) {
     let p = Path::new(raw);
-    let resolved = if p.is_absolute() { p.to_path_buf() } else { base.join(p) };
+    let resolved = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        base.join(p)
+    };
     out.insert(resolved);
 }
 
@@ -416,8 +474,12 @@ fn tokenize_command(cmd: &str) -> Vec<String> {
                     _ => current.push('\\'),
                 }
             }
-            '\'' if !in_double => { in_single = !in_single; }
-            '"' if !in_single => { in_double = !in_double; }
+            '\'' if !in_double => {
+                in_single = !in_single;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+            }
             c if c.is_whitespace() && !in_single && !in_double => {
                 if !current.is_empty() {
                     out.push(std::mem::take(&mut current));
@@ -426,7 +488,9 @@ fn tokenize_command(cmd: &str) -> Vec<String> {
             c => current.push(c),
         }
     }
-    if !current.is_empty() { out.push(current); }
+    if !current.is_empty() {
+        out.push(current);
+    }
     out
 }
 

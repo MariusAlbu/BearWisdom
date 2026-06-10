@@ -19,9 +19,7 @@ pub(crate) use super::flow_detectors::{
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -73,7 +71,9 @@ pub(crate) fn detect_flow_inner(
     if r.kind != EdgeKind::Calls {
         return Vec::new();
     }
-    let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
     if let Some(emission) = detect_go_http_chain_emission(chain, &r.call_args) {
         return vec![emission];
     }
@@ -117,8 +117,12 @@ pub(crate) fn detect_flow_inner_with_lookup(
     // followed by `client.GetUser(...)`. The variable's recorded type
     // comes from the Go extractor's TypeRef on the Variable symbol.
     let r = &ref_ctx.extracted_ref;
-    let Some(chain) = r.chain.as_ref() else { return Vec::new() };
-    let Some(root_seg) = chain.segments.first() else { return Vec::new() };
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
+    let Some(root_seg) = chain.segments.first() else {
+        return Vec::new();
+    };
     if !matches!(root_seg.kind, crate::types::SegmentKind::Identifier) {
         return Vec::new();
     }
@@ -133,23 +137,23 @@ pub(crate) fn detect_flow_inner_with_lookup(
     if !type_name.ends_with("Client") {
         return Vec::new();
     }
-    let mut new_segments = vec![
-        crate::types::ChainSegment {
-            name: type_name,
-            node_kind: "rewritten_var".to_string(),
-            kind: crate::types::SegmentKind::Identifier,
-            declared_type: None,
-            type_args: vec![],
-            optional_chaining: false,
-            byte_offset: 0,
-            declared_type_id: None,
-            is_call: false,
-            call_args: Vec::new(),
-            type_arg_ids: Vec::new(),
-        },
-    ];
+    let mut new_segments = vec![crate::types::ChainSegment {
+        name: type_name,
+        node_kind: "rewritten_var".to_string(),
+        kind: crate::types::SegmentKind::Identifier,
+        declared_type: None,
+        type_args: vec![],
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call: false,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    }];
     new_segments.extend(chain.segments.iter().skip(1).cloned());
-    let rewritten = crate::types::MemberChain { segments: new_segments };
+    let rewritten = crate::types::MemberChain {
+        segments: new_segments,
+    };
     if let Some(em) = detect_go_grpc_chain_emission(&rewritten, file_ctx) {
         return vec![em];
     }

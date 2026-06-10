@@ -53,9 +53,15 @@ const PROTOC_OUTPUT_DIRS: &[&str] = &[
 pub struct ProtocGeneratedEcosystem;
 
 impl Ecosystem for ProtocGeneratedEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::ManifestFieldContains {
@@ -75,7 +81,9 @@ impl Ecosystem for ProtocGeneratedEcosystem {
 }
 
 impl ExternalSourceLocator for ProtocGeneratedEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_protoc_output_dirs(project_root)
     }
@@ -124,14 +132,21 @@ fn discover_protoc_output_dirs(project_root: &Path) -> Vec<ExternalDepRoot> {
 }
 
 fn collect_proto_dirs(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth > 6 { return }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     let mut found_proto = false;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(name, "node_modules" | ".git" | "target" | "build" | ".bearwisdom") {
+            if matches!(
+                name,
+                "node_modules" | ".git" | "target" | "build" | ".bearwisdom"
+            ) {
                 continue;
             }
             collect_proto_dirs(&path, out, depth + 1);
@@ -151,17 +166,25 @@ fn walk_generated_tree(dir: &Path) -> Vec<WalkedFile> {
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth > 8 { return }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    if depth > 8 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') { continue }
+            if name.starts_with('.') {
+                continue;
+            }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             let lang = if name.ends_with(".rs") {
                 "rust"
             } else if name.ends_with(".go") {

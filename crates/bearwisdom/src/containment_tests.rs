@@ -39,10 +39,22 @@ fn esym(
 fn normalize_corrects_dropped_package_param() {
     let mut symbols = vec![
         esym("App", "app.App", SymbolKind::Class, None, None), // 0
-        esym("run", "app.App.run", SymbolKind::Method, Some("app.App"), Some(0)), // 1
+        esym(
+            "run",
+            "app.App.run",
+            SymbolKind::Method,
+            Some("app.App"),
+            Some(0),
+        ), // 1
         // Param stored qname dropped the package: inner `App.run` is a suffix of
         // the parent's `app.App.run`.
-        esym("repo", "App.run.repo", SymbolKind::Parameter, Some("App.run"), Some(1)), // 2
+        esym(
+            "repo",
+            "App.run.repo",
+            SymbolKind::Parameter,
+            Some("App.run"),
+            Some(1),
+        ), // 2
     ];
 
     normalize_qnames_from_parents(&mut symbols);
@@ -63,7 +75,13 @@ fn normalize_corrects_dropped_scope_variable() {
         // Local dropped the `pkg` head: inner `run` is a suffix of `pkg.run`.
         esym("tmp", "run.tmp", SymbolKind::Variable, Some("run"), Some(0)), // 1
         // Already fully qualified — untouched.
-        esym("out", "pkg.run.out", SymbolKind::Variable, Some("pkg.run"), Some(0)), // 2
+        esym(
+            "out",
+            "pkg.run.out",
+            SymbolKind::Variable,
+            Some("pkg.run"),
+            Some(0),
+        ), // 2
     ];
 
     normalize_qnames_from_parents(&mut symbols);
@@ -81,7 +99,13 @@ fn normalize_corrects_dropped_scope_variable() {
 fn normalize_leaves_bare_name_leaf_untouched() {
     let mut symbols = vec![
         esym("builder", "builder", SymbolKind::Function, None, None), // 0
-        esym("PATH", "PATH", SymbolKind::Variable, Some("builder"), Some(0)), // 1
+        esym(
+            "PATH",
+            "PATH",
+            SymbolKind::Variable,
+            Some("builder"),
+            Some(0),
+        ), // 1
     ];
 
     normalize_qnames_from_parents(&mut symbols);
@@ -99,7 +123,13 @@ fn normalize_leaves_non_leaf_kinds_untouched() {
         // Method, field, property each with a dropped-prefix qname — all left as-is.
         esym("run", "App.run", SymbolKind::Method, Some("App"), Some(0)), // 1
         esym("_ctx", "App._ctx", SymbolKind::Field, Some("App"), Some(0)), // 2
-        esym("Items", "App.Items", SymbolKind::Property, Some("App"), Some(0)), // 3
+        esym(
+            "Items",
+            "App.Items",
+            SymbolKind::Property,
+            Some("App"),
+            Some(0),
+        ), // 3
     ];
     let before: Vec<String> = symbols.iter().map(|s| s.qualified_name.clone()).collect();
 
@@ -116,8 +146,20 @@ fn normalize_leaves_non_leaf_kinds_untouched() {
 fn normalize_leaves_selector_qnames_untouched() {
     let mut symbols = vec![
         esym(".todo-item", ".todo-item", SymbolKind::Variable, None, None), // 0
-        esym("&:hover", "&:hover", SymbolKind::Variable, Some(".todo-item"), Some(0)), // 1
-        esym("&::after", "&::after", SymbolKind::Variable, Some(".todo-item"), Some(0)), // 2
+        esym(
+            "&:hover",
+            "&:hover",
+            SymbolKind::Variable,
+            Some(".todo-item"),
+            Some(0),
+        ), // 1
+        esym(
+            "&::after",
+            "&::after",
+            SymbolKind::Variable,
+            Some(".todo-item"),
+            Some(0),
+        ), // 2
     ];
     let before: Vec<String> = symbols.iter().map(|s| s.qualified_name.clone()).collect();
 
@@ -133,7 +175,13 @@ fn normalize_leaves_selector_qnames_untouched() {
 fn normalize_leaves_consistent_param_untouched() {
     let mut symbols = vec![
         esym("run", "app.App.run", SymbolKind::Method, None, None), // 0
-        esym("repo", "app.App.run.repo", SymbolKind::Parameter, Some("app.App.run"), Some(0)), // 1
+        esym(
+            "repo",
+            "app.App.run.repo",
+            SymbolKind::Parameter,
+            Some("app.App.run"),
+            Some(0),
+        ), // 1
     ];
 
     normalize_qnames_from_parents(&mut symbols);
@@ -150,7 +198,13 @@ fn normalize_rebuilds_with_inferred_colon_separator() {
         esym("m", "crate::foo::Bar::m", SymbolKind::Method, None, None), // 0
         // Param dropped the `crate::foo` head: inner `Bar::m` is a `::`-suffix of
         // the parent qname.
-        esym("x", "Bar::m::x", SymbolKind::Parameter, Some("Bar::m"), Some(0)), // 1
+        esym(
+            "x",
+            "Bar::m::x",
+            SymbolKind::Parameter,
+            Some("Bar::m"),
+            Some(0),
+        ), // 1
     ];
 
     normalize_qnames_from_parents(&mut symbols);

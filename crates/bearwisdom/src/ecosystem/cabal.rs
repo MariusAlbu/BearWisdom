@@ -31,10 +31,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "haskell";
 pub struct CabalEcosystem;
 
 impl Ecosystem for CabalEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("cabal.project", "haskell")]
@@ -64,18 +72,17 @@ impl Ecosystem for CabalEcosystem {
         walk_haskell_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn resolve_import(
-        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
-    ) -> Vec<WalkedFile> { walk_haskell_narrowed(dep) }
-    fn resolve_symbol(
-        &self, dep: &ExternalDepRoot, _f: &str,
-    ) -> Vec<WalkedFile> { walk_haskell_narrowed(dep) }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn resolve_import(&self, dep: &ExternalDepRoot, _p: &str, _s: &[&str]) -> Vec<WalkedFile> {
+        walk_haskell_narrowed(dep)
+    }
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _f: &str) -> Vec<WalkedFile> {
+        walk_haskell_narrowed(dep)
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_haskell_symbol_index(dep_roots)
     }
 
@@ -86,21 +93,22 @@ impl Ecosystem for CabalEcosystem {
     /// those refs against the symbol index (now keyed by Haskell module name
     /// as well as package name) and pulls the transitive definitions — giving
     /// bare names like `it` and `describe` a path to their defining file.
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<crate::walker::WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
         dep_roots
             .iter()
             .flat_map(|dep| walk_haskell_narrowed(dep))
             .collect()
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for CabalEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_haskell_externals(project_root)
     }
@@ -137,7 +145,9 @@ impl crate::ecosystem::manifest::ManifestReader for CabalManifest {
         discover_cabal_build_depends_recursive(project_root, &mut deps, 0);
         deps.sort();
         deps.dedup();
-        if deps.is_empty() { return None }
+        if deps.is_empty() {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps.into_iter().collect();
         Some(data)
@@ -159,7 +169,9 @@ pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     discover_cabal_build_depends_recursive(project_root, &mut declared, 0);
     declared.sort();
     declared.dedup();
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     let user_imports: Vec<String> = collect_haskell_user_imports(project_root)
         .into_iter()
@@ -196,8 +208,10 @@ pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     // artifacts with no `.hs` source, making the store root useless for
     // indexing.
     let cabal_get_roots = find_haskell_cabal_get_deps(&implicit, &user_imports);
-    let cabal_get_names: std::collections::HashSet<String> =
-        cabal_get_roots.iter().map(|r| r.module_path.clone()).collect();
+    let cabal_get_names: std::collections::HashSet<String> = cabal_get_roots
+        .iter()
+        .map(|r| r.module_path.clone())
+        .collect();
 
     let store_roots = find_haskell_cabal_deps(&implicit, &user_imports);
     // Merge: cabal-get wins on name collision; store fills the rest.
@@ -222,14 +236,22 @@ pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 /// declares a `name:` field. Parsing the files (rather than the filename
 /// `<pkg>-<version>-<hash>.conf`) is robust to dashes in package names.
 fn discover_ghc_registered_packages() -> Vec<String> {
-    let Some(libdir) = ghc_libdir() else { return Vec::new() };
+    let Some(libdir) = ghc_libdir() else {
+        return Vec::new();
+    };
     let conf_d = libdir.join("package.conf.d");
-    let Ok(entries) = std::fs::read_dir(&conf_d) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&conf_d) else {
+        return Vec::new();
+    };
     let mut names = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|x| x.to_str()) != Some("conf") { continue }
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        if path.extension().and_then(|x| x.to_str()) != Some("conf") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         for line in content.lines() {
             let trimmed = line.trim_start();
             // Cabal-style `.conf` files start with `name: <pkg>` (lowercase
@@ -252,23 +274,37 @@ fn discover_ghc_registered_packages() -> Vec<String> {
 fn ghc_libdir() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_GHC_LIBDIR") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     use std::process::Command;
     let probe = |program: &str| -> Option<PathBuf> {
         let out = Command::new(program).arg("--print-libdir").output().ok()?;
-        if !out.status.success() { return None; }
+        if !out.status.success() {
+            return None;
+        }
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if s.is_empty() { return None; }
+        if s.is_empty() {
+            return None;
+        }
         let p = PathBuf::from(s);
-        if p.is_dir() { Some(p) } else { None }
+        if p.is_dir() {
+            Some(p)
+        } else {
+            None
+        }
     };
-    if let Some(p) = probe("ghc") { return Some(p); }
+    if let Some(p) = probe("ghc") {
+        return Some(p);
+    }
     // GHC's Windows shim is `.bat`; std::process::Command doesn't apply
     // PATHEXT so try the explicit name.
     #[cfg(windows)]
     {
-        if let Some(p) = probe("ghc.bat") { return Some(p); }
+        if let Some(p) = probe("ghc.bat") {
+            return Some(p);
+        }
     }
     None
 }
@@ -277,13 +313,11 @@ fn ghc_libdir() -> Option<PathBuf> {
 /// levels below `dir`, accumulating every `build-depends` entry into `out`.
 /// Prunes build output (`dist`, `dist-newstyle`, `.stack-work`), VCS dirs,
 /// and any directory whose name starts with `.`.
-fn discover_cabal_build_depends_recursive(
-    dir: &Path,
-    out: &mut Vec<String>,
-    depth: usize,
-) {
+fn discover_cabal_build_depends_recursive(dir: &Path, out: &mut Vec<String>, depth: usize) {
     const MAX_CABAL_DEPTH: usize = 4;
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<PathBuf> = Vec::new();
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
@@ -298,8 +332,7 @@ fn discover_cabal_build_depends_recursive(
             }
         } else if ft.is_dir() && depth < MAX_CABAL_DEPTH {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "dist" | "dist-newstyle" | ".stack-work")
-                    || name.starts_with('.')
+                if matches!(name, "dist" | "dist-newstyle" | ".stack-work") || name.starts_with('.')
                 {
                     continue;
                 }
@@ -313,12 +346,18 @@ fn discover_cabal_build_depends_recursive(
 }
 
 pub fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return Vec::new();
+    };
     let cabal_file = entries
         .flatten()
         .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("cabal"));
-    let Some(cabal_entry) = cabal_file else { return Vec::new() };
-    let Ok(content) = std::fs::read_to_string(cabal_entry.path()) else { return Vec::new() };
+    let Some(cabal_entry) = cabal_file else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(cabal_entry.path()) else {
+        return Vec::new();
+    };
 
     let mut deps = Vec::new();
     let mut in_build_depends = false;
@@ -327,7 +366,9 @@ pub fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
         if trimmed.to_lowercase().starts_with("build-depends:") {
             in_build_depends = true;
             let rest = trimmed["build-depends:".len()..].trim();
-            if !rest.is_empty() { deps.extend(parse_cabal_dep_list(rest)) }
+            if !rest.is_empty() {
+                deps.extend(parse_cabal_dep_list(rest))
+            }
             continue;
         }
         if in_build_depends {
@@ -346,7 +387,13 @@ pub fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
 fn parse_cabal_dep_list(s: &str) -> Vec<String> {
     s.split(',')
         .map(|chunk| {
-            chunk.trim().split_whitespace().next().unwrap_or("").trim().to_string()
+            chunk
+                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
         })
         .filter(|name| !name.is_empty() && name != "base")
         .collect()
@@ -358,15 +405,25 @@ fn find_haskell_stack_deps(
     user_imports: &[String],
 ) -> Vec<ExternalDepRoot> {
     let install = stack_work.join("install");
-    if !install.is_dir() { return Vec::new() }
+    if !install.is_dir() {
+        return Vec::new();
+    }
     let mut roots = Vec::new();
-    let Ok(platforms) = std::fs::read_dir(&install) else { return Vec::new() };
+    let Ok(platforms) = std::fs::read_dir(&install) else {
+        return Vec::new();
+    };
     for platform in platforms.flatten() {
-        let Ok(hashes) = std::fs::read_dir(platform.path()) else { continue };
+        let Ok(hashes) = std::fs::read_dir(platform.path()) else {
+            continue;
+        };
         for hash in hashes.flatten() {
             let lib = hash.path().join("lib");
-            if !lib.is_dir() { continue }
-            let Ok(ghc_vers) = std::fs::read_dir(&lib) else { continue };
+            if !lib.is_dir() {
+                continue;
+            }
+            let Ok(ghc_vers) = std::fs::read_dir(&lib) else {
+                continue;
+            };
             for ghc_ver in ghc_vers.flatten() {
                 find_haskell_pkgs_in_dir(&ghc_ver.path(), declared, user_imports, &mut roots);
             }
@@ -375,15 +432,17 @@ fn find_haskell_stack_deps(
     roots
 }
 
-fn find_haskell_cabal_deps(
-    declared: &[String],
-    user_imports: &[String],
-) -> Vec<ExternalDepRoot> {
+fn find_haskell_cabal_deps(declared: &[String], user_imports: &[String]) -> Vec<ExternalDepRoot> {
     let mut candidates = Vec::new();
     let mut stores: Vec<PathBuf> = Vec::new();
     if let Some(home) = dirs::home_dir() {
         stores.push(home.join(".cabal").join("store"));
-        stores.push(home.join(".local").join("state").join("cabal").join("store"));
+        stores.push(
+            home.join(".local")
+                .join("state")
+                .join("cabal")
+                .join("store"),
+        );
     }
     // Cabal 3.x on Windows defaults to %LOCALAPPDATA%\cabal\store.
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
@@ -396,7 +455,9 @@ fn find_haskell_cabal_deps(
         if store.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&store) {
                 for e in entries.flatten() {
-                    if e.path().is_dir() { candidates.push(e.path()) }
+                    if e.path().is_dir() {
+                        candidates.push(e.path())
+                    }
                 }
             }
         }
@@ -434,7 +495,9 @@ fn find_haskell_cabal_get_deps(
 
     let mut roots = Vec::new();
     for get_dir in get_dirs {
-        if !get_dir.is_dir() { continue }
+        if !get_dir.is_dir() {
+            continue;
+        }
         let direct = find_haskell_cabal_get_deps_in_dir(&get_dir, declared, user_imports);
 
         // One-level transitive expansion: read each found package's own .cabal
@@ -462,7 +525,8 @@ fn find_haskell_cabal_get_deps(
         transitive_names.sort();
         transitive_names.dedup();
 
-        let transitive = find_haskell_cabal_get_deps_in_dir(&get_dir, &transitive_names, user_imports);
+        let transitive =
+            find_haskell_cabal_get_deps_in_dir(&get_dir, &transitive_names, user_imports);
 
         roots.extend(direct);
         roots.extend(transitive);
@@ -474,11 +538,15 @@ fn find_haskell_cabal_get_deps(
 /// Returns package names (no version constraints). Used for one-level
 /// transitive dependency discovery within `cabal-get/`.
 fn cabal_file_deps_in_dir(pkg_dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(pkg_dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(pkg_dir) else {
+        return Vec::new();
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|x| x.to_str()) == Some("cabal") {
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             return parse_dep_names_from_cabal_content(&content);
         }
     }
@@ -493,7 +561,9 @@ fn parse_dep_names_from_cabal_content(content: &str) -> Vec<String> {
         if trimmed.to_lowercase().starts_with("build-depends:") {
             in_build_depends = true;
             let rest = trimmed["build-depends:".len()..].trim();
-            if !rest.is_empty() { deps.extend(parse_cabal_dep_list(rest)) }
+            if !rest.is_empty() {
+                deps.extend(parse_cabal_dep_list(rest))
+            }
             continue;
         }
         if in_build_depends {
@@ -517,10 +587,14 @@ pub(crate) fn find_haskell_cabal_get_deps_in_dir(
     user_imports: &[String],
 ) -> Vec<ExternalDepRoot> {
     let mut roots = Vec::new();
-    let Ok(entries) = std::fs::read_dir(get_dir) else { return roots };
+    let Ok(entries) = std::fs::read_dir(get_dir) else {
+        return roots;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue }
+        if !path.is_dir() {
+            continue;
+        }
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         for dep in declared {
@@ -530,7 +604,10 @@ pub(crate) fn find_haskell_cabal_get_deps_in_dir(
                 // The character after `<pkg>-` must be a digit (version number).
                 // Without this check `wai-extra-3.x` would match `wai` because
                 // `"wai-"` is a prefix of `"wai-extra-3.x"`.
-                let version_start = remainder.chars().next().map_or(false, |c| c.is_ascii_digit());
+                let version_start = remainder
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_ascii_digit());
                 if !version_start {
                     continue;
                 }
@@ -560,7 +637,9 @@ fn find_haskell_pkgs_in_dir(
     user_imports: &[String],
     roots: &mut Vec<ExternalDepRoot>,
 ) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
@@ -570,7 +649,11 @@ fn find_haskell_pkgs_in_dir(
                 let remainder = &name_str[prefix.len()..];
                 // Require a digit-start remainder to prevent `wai` matching
                 // `wai-extra-3.x` or `wai-cors-0.x`.
-                if !remainder.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                if !remainder
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_ascii_digit())
+                {
                     continue;
                 }
                 let version = remainder.to_string();
@@ -597,26 +680,37 @@ fn collect_haskell_user_imports(project_root: &Path) -> std::collections::HashSe
     out
 }
 
-fn scan_haskell_imports(
-    dir: &Path,
-    out: &mut std::collections::HashSet<String>,
-    depth: usize,
-) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn scan_haskell_imports(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, ".git" | ".stack-work" | "dist-newstyle" | "test" | "tests" | "bench")
-                    || name.starts_with('.') { continue }
+                if matches!(
+                    name,
+                    ".git" | ".stack-work" | "dist-newstyle" | "test" | "tests" | "bench"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_haskell_imports(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !(name.ends_with(".hs") || name.ends_with(".lhs")) { continue }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !(name.ends_with(".hs") || name.ends_with(".lhs")) {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             extract_haskell_imports(&content, out);
         }
     }
@@ -625,22 +719,34 @@ fn scan_haskell_imports(
 fn extract_haskell_imports(content: &str, out: &mut std::collections::HashSet<String>) {
     for raw in content.lines() {
         let line = raw.trim();
-        let Some(rest) = line.strip_prefix("import ") else { continue };
+        let Some(rest) = line.strip_prefix("import ") else {
+            continue;
+        };
         let rest = rest.trim_start_matches("qualified ").trim();
         let head = rest
             .split(|c: char| c == ' ' || c == '\t' || c == '(' || c == ';')
             .next()
             .unwrap_or("")
             .trim();
-        if head.is_empty() { continue }
-        if !head.chars().next().map_or(false, |c| c.is_ascii_uppercase()) { continue }
+        if head.is_empty() {
+            continue;
+        }
+        if !head
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_uppercase())
+        {
+            continue;
+        }
         out.insert(head.to_string());
     }
 }
 
 fn haskell_module_to_path_tail(module: &str) -> Option<String> {
     let cleaned = module.trim();
-    if cleaned.is_empty() { return None }
+    if cleaned.is_empty() {
+        return None;
+    }
     Some(format!("{}.hs", cleaned.replace('.', "/")))
 }
 
@@ -658,9 +764,8 @@ const GHC_BOOT_PACKAGES: &[&str] = &["ghc-internal", "ghc-prim", "ghc-bignum", "
 /// small, where the narrowed tail-match misses re-exported symbols. See
 /// `walk_haskell_narrowed` for why a full walk is correct here.
 fn is_cabal_get_root(root: &Path) -> bool {
-    root.ancestors().any(|p| {
-        p.file_name().and_then(|n| n.to_str()) == Some("cabal-get")
-    })
+    root.ancestors()
+        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("cabal-get"))
 }
 
 fn walk_haskell_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
@@ -679,19 +784,25 @@ fn walk_haskell_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     if is_cabal_get_root(&dep.root) {
         return walk_haskell_root(dep);
     }
-    if dep.requested_imports.is_empty() { return walk_haskell_root(dep); }
+    if dep.requested_imports.is_empty() {
+        return walk_haskell_root(dep);
+    }
     let tails: std::collections::HashSet<String> = dep
         .requested_imports
         .iter()
         .filter_map(|m| haskell_module_to_path_tail(m))
         .collect();
-    if tails.is_empty() { return walk_haskell_root(dep); }
+    if tails.is_empty() {
+        return walk_haskell_root(dep);
+    }
 
     let mut out = Vec::new();
     walk_haskell_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
     // If narrowing found nothing — likely a package where module names
     // don't correspond directly to file paths — fall back to full walk.
-    if out.is_empty() { return walk_haskell_root(dep); }
+    if out.is_empty() {
+        return walk_haskell_root(dep);
+    }
     out
 }
 
@@ -703,8 +814,12 @@ fn walk_haskell_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
     let mut any_match = false;
@@ -714,20 +829,31 @@ fn walk_haskell_narrowed_dir(
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "bench" | "dist-newstyle" | ".stack-work")
-                    || name.starts_with('.') { continue }
+                if matches!(
+                    name,
+                    "test" | "tests" | "bench" | "dist-newstyle" | ".stack-work"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".hs") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".hs") {
+                continue;
+            }
             // External library sources may legitimately be named `Spec.hs` or
             // `Test.hs` — do not filter them here.
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
-            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            if tails.iter().any(|t| rel_sub.ends_with(t)) {
+                any_match = true;
+            }
             dir_files.push((path, rel_sub));
         }
     }
@@ -756,22 +882,42 @@ fn walk_haskell_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+fn walk_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "test" | "tests" | "bench" | "dist-newstyle" | ".stack-work")
-                    || name.starts_with('.')
-                { continue }
+                if matches!(
+                    name,
+                    "test" | "tests" | "bench" | "dist-newstyle" | ".stack-work"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".hs") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".hs") {
+                continue;
+            }
             // Do not filter `Spec.hs` or `Test.hs` here — external library
             // sources legitimately use those names (e.g. `hspec-core`'s
             // `Test/Hspec/Core/Spec.hs` defines `it` and `describe`). The
@@ -823,7 +969,14 @@ fn build_haskell_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIn
             };
             scan_haskell_header(&src)
                 .into_iter()
-                .map(|name| (pkg.clone(), haskell_mod.clone(), name, wf.absolute_path.clone()))
+                .map(|name| {
+                    (
+                        pkg.clone(),
+                        haskell_mod.clone(),
+                        name,
+                        wf.absolute_path.clone(),
+                    )
+                })
                 .collect()
         })
         .collect();
@@ -976,10 +1129,20 @@ fn collect_haskell_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<Strin
             }
         }
         // Containers: recurse to reach declarations and field definitions.
-        "data_constructors" | "data_constructor" | "gadt_constructors" | "gadt_constructor"
-        | "record" | "fields" | "field" | "prefix"
-        | "class_declarations" | "instance_declarations"
-        | "declarations" | "where" | "haskell" | "module" => {
+        "data_constructors"
+        | "data_constructor"
+        | "gadt_constructors"
+        | "gadt_constructor"
+        | "record"
+        | "fields"
+        | "field"
+        | "prefix"
+        | "class_declarations"
+        | "instance_declarations"
+        | "declarations"
+        | "where"
+        | "haskell"
+        | "module" => {
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
                 collect_haskell_top_level_name(&inner, bytes, out);

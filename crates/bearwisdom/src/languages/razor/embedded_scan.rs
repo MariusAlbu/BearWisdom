@@ -6,12 +6,16 @@
 use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 
 pub(super) fn has_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start >= bytes.len() { return false; }
+    if start >= bytes.len() {
+        return false;
+    }
     bytes[start..].starts_with(needle)
 }
 
 pub(super) fn find_subseq(bytes: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || start > bytes.len() { return None; }
+    if needle.is_empty() || start > bytes.len() {
+        return None;
+    }
     let end = bytes.len().saturating_sub(needle.len()) + 1;
     (start..end).find(|&i| bytes[i..].starts_with(needle))
 }
@@ -28,7 +32,9 @@ pub(super) fn skip_ascii_ws(bytes: &[u8], mut i: usize) -> usize {
 /// of `\n` itself, not the byte after it.
 pub(super) fn find_line_end(bytes: &[u8], start: usize) -> usize {
     let mut i = start;
-    while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
     i
 }
 
@@ -37,13 +43,18 @@ pub(super) fn find_line_end(bytes: &[u8], start: usize) -> usize {
 /// single-line / block comments. Returns `(inner_text, body_start_byte,
 /// past_closing_brace_byte)`.
 pub(super) fn match_brace_block(bytes: &[u8], open_pos: usize) -> Option<(&str, usize, usize)> {
-    if bytes.get(open_pos) != Some(&b'{') { return None; }
+    if bytes.get(open_pos) != Some(&b'{') {
+        return None;
+    }
     let body_start = open_pos + 1;
     let mut depth: i32 = 1;
     let mut i = body_start;
     while i < bytes.len() {
         match bytes[i] {
-            b'{' => { depth += 1; i += 1; }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
             b'}' => {
                 depth -= 1;
                 if depth == 0 {
@@ -53,10 +64,18 @@ pub(super) fn match_brace_block(bytes: &[u8], open_pos: usize) -> Option<(&str, 
                 }
                 i += 1;
             }
-            b'"' => { i = skip_csharp_string(bytes, i); }
-            b'\'' => { i = skip_char_literal(bytes, i); }
-            b'/' if bytes.get(i + 1) == Some(&b'/') => { i = skip_line_comment(bytes, i); }
-            b'/' if bytes.get(i + 1) == Some(&b'*') => { i = skip_block_comment(bytes, i); }
+            b'"' => {
+                i = skip_csharp_string(bytes, i);
+            }
+            b'\'' => {
+                i = skip_char_literal(bytes, i);
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                i = skip_line_comment(bytes, i);
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i = skip_block_comment(bytes, i);
+            }
             _ => i += 1,
         }
     }
@@ -64,13 +83,18 @@ pub(super) fn match_brace_block(bytes: &[u8], open_pos: usize) -> Option<(&str, 
 }
 
 pub(super) fn match_paren_block(bytes: &[u8], open_pos: usize) -> Option<(&str, usize, usize)> {
-    if bytes.get(open_pos) != Some(&b'(') { return None; }
+    if bytes.get(open_pos) != Some(&b'(') {
+        return None;
+    }
     let body_start = open_pos + 1;
     let mut depth: i32 = 1;
     let mut i = body_start;
     while i < bytes.len() {
         match bytes[i] {
-            b'(' => { depth += 1; i += 1; }
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
             b')' => {
                 depth -= 1;
                 if depth == 0 {
@@ -80,10 +104,18 @@ pub(super) fn match_paren_block(bytes: &[u8], open_pos: usize) -> Option<(&str, 
                 }
                 i += 1;
             }
-            b'"' => { i = skip_csharp_string(bytes, i); }
-            b'\'' => { i = skip_char_literal(bytes, i); }
-            b'/' if bytes.get(i + 1) == Some(&b'/') => { i = skip_line_comment(bytes, i); }
-            b'/' if bytes.get(i + 1) == Some(&b'*') => { i = skip_block_comment(bytes, i); }
+            b'"' => {
+                i = skip_csharp_string(bytes, i);
+            }
+            b'\'' => {
+                i = skip_char_literal(bytes, i);
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                i = skip_line_comment(bytes, i);
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i = skip_block_comment(bytes, i);
+            }
             _ => i += 1,
         }
     }
@@ -116,7 +148,9 @@ fn skip_char_literal(bytes: &[u8], pos: usize) -> usize {
 
 fn skip_line_comment(bytes: &[u8], pos: usize) -> usize {
     let mut i = pos + 2;
-    while i < bytes.len() && bytes[i] != b'\n' { i += 1; }
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
     i
 }
 
@@ -138,9 +172,13 @@ pub(super) fn match_script_block(
     bytes: &[u8],
     tag_start: usize,
 ) -> Option<(usize, usize, usize, &'static str)> {
-    if !case_insensitive_prefix(bytes, tag_start, b"<script") { return None; }
+    if !case_insensitive_prefix(bytes, tag_start, b"<script") {
+        return None;
+    }
     let tag_end = find_byte(bytes, tag_start, b'>')?;
-    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') { return None; }
+    if bytes.get(tag_end.saturating_sub(1)) == Some(&b'/') {
+        return None;
+    }
     let attr_bytes = &bytes[tag_start..tag_end];
     let language = script_language_from_attrs(attr_bytes);
     let body_start = tag_end + 1;
@@ -170,7 +208,9 @@ fn find_byte(bytes: &[u8], start: usize, needle: u8) -> Option<usize> {
 }
 
 fn case_insensitive_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
-    if start + needle.len() > bytes.len() { return false; }
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
     bytes[start..start + needle.len()]
         .iter()
         .zip(needle.iter())
@@ -201,7 +241,9 @@ pub(super) fn make_csharp_region(
     content: &str,
     origin: EmbeddedOrigin,
 ) -> Option<EmbeddedRegion> {
-    if content.is_empty() { return None; }
+    if content.is_empty() {
+        return None;
+    }
     let (line, _col) = line_col_at(source.as_bytes(), byte_start);
     let wrapped = format!("class __RazorBody {{\n{content}\n}}");
     Some(EmbeddedRegion {
@@ -222,7 +264,9 @@ pub(super) fn make_region(
     language_id: &'static str,
     origin: EmbeddedOrigin,
 ) -> Option<EmbeddedRegion> {
-    if content.is_empty() { return None; }
+    if content.is_empty() {
+        return None;
+    }
     let (line, col) = line_col_at(source.as_bytes(), byte_start);
     Some(EmbeddedRegion {
         language_id: language_id.to_string(),

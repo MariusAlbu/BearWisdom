@@ -32,11 +32,15 @@ pub(crate) fn parse_dotnet_externals_with_source(
 ) -> (Vec<crate::types::ParsedFile>, Vec<crate::types::ParsedFile>) {
     let mut project_files: Vec<PathBuf> = Vec::new();
     collect_dotnet_project_files(project_root, &mut project_files, 0);
-    if project_files.is_empty() { return (Vec::new(), Vec::new()) }
+    if project_files.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
 
     let mut coords: Vec<NuGetCoord> = Vec::new();
     for p in &project_files {
-        let Ok(content) = std::fs::read_to_string(p) else { continue };
+        let Ok(content) = std::fs::read_to_string(p) else {
+            continue;
+        };
         coords.extend(parse_package_references_full(&content));
     }
 
@@ -46,7 +50,9 @@ pub(crate) fn parse_dotnet_externals_with_source(
         }
     }
 
-    if coords.is_empty() { return (Vec::new(), Vec::new()) }
+    if coords.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
 
     let Some(nuget_root) = nuget_packages_root() else {
         debug!("No NuGet packages cache; skipping .NET externals");
@@ -76,34 +82,49 @@ pub(crate) fn parse_dotnet_externals_with_source(
         .map(|coord| {
             let pkg_dir = nuget_root.join(coord.name.to_lowercase());
             if !pkg_dir.is_dir() {
-                return CoordResult { dll: None, srcs: Vec::new() };
+                return CoordResult {
+                    dll: None,
+                    srcs: Vec::new(),
+                };
             }
 
             let version = if let Some(v) = &coord.version {
                 let concrete = pkg_dir.join(v);
-                if concrete.is_dir() { v.clone() }
-                else {
+                if concrete.is_dir() {
+                    v.clone()
+                } else {
                     match largest_version_subdir(&pkg_dir) {
                         Some(v) => v,
-                        None => return CoordResult { dll: None, srcs: Vec::new() },
+                        None => {
+                            return CoordResult {
+                                dll: None,
+                                srcs: Vec::new(),
+                            }
+                        }
                     }
                 }
             } else {
                 match largest_version_subdir(&pkg_dir) {
                     Some(v) => v,
-                    None => return CoordResult { dll: None, srcs: Vec::new() },
+                    None => {
+                        return CoordResult {
+                            dll: None,
+                            srcs: Vec::new(),
+                        }
+                    }
                 }
             };
             let version_dir = pkg_dir.join(&version);
 
-            let dll = find_dll_in_version_dir(&version_dir, &coord.name)
-                .and_then(|dll_path| match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
+            let dll = find_dll_in_version_dir(&version_dir, &coord.name).and_then(|dll_path| {
+                match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
                     Ok(pf) => Some((dll_path, pf)),
                     Err(e) => {
                         debug!("Failed .NET metadata read {}: {e}", dll_path.display());
                         None
                     }
-                });
+                }
+            });
 
             let mut srcs = Vec::new();
             for src_path in discover_nuget_source_files(&version_dir) {
@@ -123,11 +144,17 @@ pub(crate) fn parse_dotnet_externals_with_source(
     let mut seen_src: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for res in per_coord {
         if let Some((path, pf)) = res.dll {
-            if seen_dll.insert(path) { dll_out.push(pf); }
+            if seen_dll.insert(path) {
+                dll_out.push(pf);
+            }
         }
         for (path, pf) in res.srcs {
             if seen_src.insert(path) {
-                debug!("NuGet source: {} symbols from {}", pf.symbols.len(), pf.path);
+                debug!(
+                    "NuGet source: {} symbols from {}",
+                    pf.symbols.len(),
+                    pf.path
+                );
                 src_out.push(pf);
             }
         }
@@ -136,7 +163,9 @@ pub(crate) fn parse_dotnet_externals_with_source(
     if !src_out.is_empty() {
         debug!(
             "NuGet hybrid: {} DLL + {} source-file entries for {}",
-            dll_out.len(), src_out.len(), project_root.display()
+            dll_out.len(),
+            src_out.len(),
+            project_root.display()
         );
     }
 
@@ -146,38 +175,64 @@ pub(crate) fn parse_dotnet_externals_with_source(
 fn collect_transitive_coords_from_deps_json(proj_dir: &Path) -> Vec<NuGetCoord> {
     let mut deps_json_files: Vec<PathBuf> = Vec::new();
     collect_deps_json(&proj_dir.join("bin"), &mut deps_json_files, 0);
-    if deps_json_files.is_empty() { return Vec::new() }
+    if deps_json_files.is_empty() {
+        return Vec::new();
+    }
 
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for path in deps_json_files.iter().take(16) {
-        let Ok(content) = std::fs::read_to_string(path) else { continue };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else { continue };
-        let Some(libs) = json.get("libraries").and_then(|v| v.as_object()) else { continue };
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        let Some(libs) = json.get("libraries").and_then(|v| v.as_object()) else {
+            continue;
+        };
         for (key, value) in libs {
             let ty = value.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if ty != "package" { continue }
-            let Some((name, version)) = key.rsplit_once('/') else { continue };
-            if !seen.insert(key.clone()) { continue }
-            out.push(NuGetCoord { name: name.to_string(), version: Some(version.to_string()) });
+            if ty != "package" {
+                continue;
+            }
+            let Some((name, version)) = key.rsplit_once('/') else {
+                continue;
+            };
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            out.push(NuGetCoord {
+                name: name.to_string(),
+                version: Some(version.to_string()),
+            });
         }
     }
     out
 }
 
 fn collect_deps_json(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 5 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 5 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if let Ok(ft) = entry.file_type() {
             if ft.is_dir() {
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if matches!(name, "obj" | "runtimes" | "ref") { continue }
+                    if matches!(name, "obj" | "runtimes" | "ref") {
+                        continue;
+                    }
                 }
                 collect_deps_json(&path, out, depth + 1);
             } else if ft.is_file()
-                && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".deps.json"))
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".deps.json"))
             {
                 out.push(path);
             }
@@ -197,21 +252,31 @@ fn dominant_dotnet_language(project_files: &[PathBuf]) -> &'static str {
             _ => {}
         }
     }
-    if cs >= fs && cs >= vb { "csharp" }
-    else if fs >= vb { "fsharp" }
-    else { "vbnet" }
+    if cs >= fs && cs >= vb {
+        "csharp"
+    } else if fs >= vb {
+        "fsharp"
+    } else {
+        "vbnet"
+    }
 }
 
 pub fn nuget_packages_root() -> Option<PathBuf> {
     for key in ["BEARWISDOM_NUGET_PACKAGES", "NUGET_PACKAGES"] {
         if let Some(raw) = std::env::var_os(key) {
             let p = PathBuf::from(raw);
-            if p.is_dir() { return Some(p) }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     let candidate = PathBuf::from(home).join(".nuget").join("packages");
-    if candidate.is_dir() { Some(candidate) } else { None }
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 /// Locate the `.dll` matching `pkg_name` inside an already-resolved
@@ -219,13 +284,25 @@ pub fn nuget_packages_root() -> Option<PathBuf> {
 /// source-only packages that ship no `lib/` directory.
 fn find_dll_in_version_dir(version_dir: &Path, pkg_name: &str) -> Option<PathBuf> {
     let lib_dir = version_dir.join("lib");
-    if !lib_dir.is_dir() { return None }
+    if !lib_dir.is_dir() {
+        return None;
+    }
 
-    let preferred_tfms = ["net9.0", "net8.0", "net7.0", "net6.0", "netstandard2.1", "netstandard2.0"];
+    let preferred_tfms = [
+        "net9.0",
+        "net8.0",
+        "net7.0",
+        "net6.0",
+        "netstandard2.1",
+        "netstandard2.0",
+    ];
     let mut chosen_tfm: Option<PathBuf> = None;
     for tfm in preferred_tfms {
         let candidate = lib_dir.join(tfm);
-        if candidate.is_dir() { chosen_tfm = Some(candidate); break }
+        if candidate.is_dir() {
+            chosen_tfm = Some(candidate);
+            break;
+        }
     }
     let tfm_dir = chosen_tfm.or_else(|| largest_subdir(&lib_dir))?;
 
@@ -233,7 +310,9 @@ fn find_dll_in_version_dir(version_dir: &Path, pkg_name: &str) -> Option<PathBuf
     let target_lower = pkg_name.to_lowercase() + ".dll";
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_lowercase();
-        if name == target_lower { return Some(entry.path()) }
+        if name == target_lower {
+            return Some(entry.path());
+        }
     }
     None
 }
@@ -243,7 +322,11 @@ fn largest_version_subdir(dir: &Path) -> Option<String> {
     let mut versions: Vec<String> = entries
         .flatten()
         .filter_map(|e| {
-            if e.file_type().ok()?.is_dir() { e.file_name().into_string().ok() } else { None }
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().into_string().ok()
+            } else {
+                None
+            }
         })
         .collect();
     versions.sort();
@@ -255,7 +338,11 @@ pub(crate) fn largest_subdir(dir: &Path) -> Option<PathBuf> {
     let mut subs: Vec<PathBuf> = entries
         .flatten()
         .filter_map(|e| {
-            if e.file_type().ok()?.is_dir() { Some(e.path()) } else { None }
+            if e.file_type().ok()?.is_dir() {
+                Some(e.path())
+            } else {
+                None
+            }
         })
         .collect();
     subs.sort();
@@ -305,8 +392,7 @@ fn parse_dotnet_dll(
     config.lenient = true;
     let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone())
         .map_err(|e| e.to_string())?;
-    let assembly = CilObject::from_view_with_validation(view, config)
-        .map_err(|e| e.to_string())?;
+    let assembly = CilObject::from_view_with_validation(view, config).map_err(|e| e.to_string())?;
     let assembly_name = assembly
         .assembly()
         .map(|a| a.name.clone())
@@ -317,11 +403,19 @@ fn parse_dotnet_dll(
     for type_def in assembly.types().all_types().iter() {
         let name = type_def.name.clone();
         let namespace = type_def.namespace.clone();
-        if name.starts_with('<') || name == "<Module>" { continue }
+        if name.starts_with('<') || name == "<Module>" {
+            continue;
+        }
         let visibility_mask = type_def.flags & 0x07;
-        if visibility_mask != 1 && visibility_mask != 2 { continue }
+        if visibility_mask != 1 && visibility_mask != 2 {
+            continue;
+        }
         let is_interface = type_def.flags & 0x20 != 0;
-        let kind = if is_interface { SymbolKind::Interface } else { SymbolKind::Class };
+        let kind = if is_interface {
+            SymbolKind::Interface
+        } else {
+            SymbolKind::Class
+        };
 
         let display_name = strip_backtick_arity(&name);
         let qualified_name = if namespace.is_empty() {
@@ -342,7 +436,10 @@ fn parse_dotnet_dll(
             qualified_name: qualified_name.clone(),
             kind,
             visibility: Some(crate::types::Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
             signature: Some(format!(
                 "{} {}{}",
                 if is_interface { "interface" } else { "class" },
@@ -350,19 +447,29 @@ fn parse_dotnet_dll(
                 type_gp_suffix
             )),
             doc_comment: None,
-            scope_path: if namespace.is_empty() { None } else { Some(namespace.clone()) },
+            scope_path: if namespace.is_empty() {
+                None
+            } else {
+                Some(namespace.clone())
+            },
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
 
         for (_, method_ref) in type_def.methods.iter() {
-            let Some(method) = method_ref.upgrade() else { continue };
-            if method.name.starts_with('<') || method.name.starts_with('.') { continue }
-            if method.flags_access != MethodAccessFlags::PUBLIC { continue }
+            let Some(method) = method_ref.upgrade() else {
+                continue;
+            };
+            if method.name.starts_with('<') || method.name.starts_with('.') {
+                continue;
+            }
+            if method.flags_access != MethodAccessFlags::PUBLIC {
+                continue;
+            }
 
             let method_name = method.name.clone();
             let method_qname = format!("{qualified_name}.{method_name}");
@@ -383,21 +490,28 @@ fn parse_dotnet_dll(
                 qualified_name: method_qname,
                 kind: SymbolKind::Method,
                 visibility: Some(crate::types::Visibility::Public),
-                start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
                 signature: Some(signature),
                 doc_comment: None,
                 scope_path: Some(qualified_name.clone()),
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 
-    debug!("Parsed {} .NET symbols from {}", symbols.len(), dll_path.display());
+    debug!(
+        "Parsed {} .NET symbols from {}",
+        symbols.len(),
+        dll_path.display()
+    );
 
     let metadata = std::fs::metadata(dll_path).map_err(|e| e.to_string())?;
     let size = metadata.len();
@@ -435,11 +549,18 @@ fn parse_dotnet_dll(
 }
 
 pub(crate) fn strip_backtick_arity(name: &str) -> &str {
-    match name.find('`') { Some(idx) => &name[..idx], None => name }
+    match name.find('`') {
+        Some(idx) => &name[..idx],
+        None => name,
+    }
 }
 
 pub(crate) fn format_generic_suffix(names: &[String]) -> String {
-    if names.is_empty() { String::new() } else { format!("<{}>", names.join(", ")) }
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", names.join(", "))
+    }
 }
 
 fn format_method_signature(
@@ -452,22 +573,23 @@ fn format_method_signature(
     let gp_suffix = format_generic_suffix(method_generic_names);
     let mut params_str = String::from("(");
     for (i, p) in sig.params.iter().enumerate() {
-        if i > 0 { params_str.push_str(", "); }
+        if i > 0 {
+            params_str.push_str(", ");
+        }
         let rendered = format!("{}", p);
-        let substituted = substitute_generic_placeholders(&rendered, type_generic_names, method_generic_names);
+        let substituted =
+            substitute_generic_placeholders(&rendered, type_generic_names, method_generic_names);
         params_str.push_str(&resolve_signature_tokens(&substituted, assembly));
     }
     params_str.push(')');
     let return_rendered = format!("{}", sig.return_type);
-    let return_substituted = substitute_generic_placeholders(&return_rendered, type_generic_names, method_generic_names);
+    let return_substituted =
+        substitute_generic_placeholders(&return_rendered, type_generic_names, method_generic_names);
     let return_str = resolve_signature_tokens(&return_substituted, assembly);
     format!("{method_name}{gp_suffix}{params_str}: {return_str}")
 }
 
-fn resolve_signature_tokens(
-    rendered: &str,
-    assembly: &dotscope::prelude::CilObject,
-) -> String {
+fn resolve_signature_tokens(rendered: &str, assembly: &dotscope::prelude::CilObject) -> String {
     use dotscope::metadata::token::Token;
     let type_registry = assembly.types();
     let imports = assembly.imports().cil();
@@ -494,11 +616,19 @@ fn resolve_signature_tokens(
                     let resolved: Option<String> = match table_byte {
                         0x02 => type_registry.get(&token).map(|ty| {
                             let name = strip_backtick_arity(&ty.name).to_string();
-                            if ty.namespace.is_empty() { name } else { format!("{}.{}", ty.namespace, name) }
+                            if ty.namespace.is_empty() {
+                                name
+                            } else {
+                                format!("{}.{}", ty.namespace, name)
+                            }
                         }),
                         0x01 => imports.get(token).map(|imp| {
                             let name = strip_backtick_arity(&imp.name).to_string();
-                            if imp.namespace.is_empty() { name } else { format!("{}.{}", imp.namespace, name) }
+                            if imp.namespace.is_empty() {
+                                name
+                            } else {
+                                format!("{}.{}", imp.namespace, name)
+                            }
                         }),
                         _ => None,
                     };
@@ -529,7 +659,9 @@ pub(crate) fn substitute_generic_placeholders(
             let is_method = i + 1 < bytes.len() && bytes[i + 1] == b'!';
             let num_start = if is_method { i + 2 } else { i + 1 };
             let mut num_end = num_start;
-            while num_end < bytes.len() && bytes[num_end].is_ascii_digit() { num_end += 1 }
+            while num_end < bytes.len() && bytes[num_end].is_ascii_digit() {
+                num_end += 1
+            }
             if num_end > num_start {
                 let idx: usize = rendered[num_start..num_end].parse().unwrap_or(usize::MAX);
                 let target = if is_method { method_gen } else { type_gen };
@@ -547,8 +679,12 @@ pub(crate) fn substitute_generic_placeholders(
 }
 
 fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 10 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if let Ok(ft) = entry.file_type() {
@@ -556,14 +692,25 @@ fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if matches!(
                         name,
-                        "bin" | "obj" | "node_modules" | ".git" | "target"
-                            | "packages" | ".vs" | "TestResults" | "artifacts"
-                    ) { continue }
+                        "bin"
+                            | "obj"
+                            | "node_modules"
+                            | ".git"
+                            | "target"
+                            | "packages"
+                            | ".vs"
+                            | "TestResults"
+                            | "artifacts"
+                    ) {
+                        continue;
+                    }
                 }
                 collect_dotnet_project_files(&path, out, depth + 1);
             } else if ft.is_file() {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if matches!(ext, "csproj" | "fsproj" | "vbproj") { out.push(path) }
+                    if matches!(ext, "csproj" | "fsproj" | "vbproj") {
+                        out.push(path)
+                    }
                 }
             }
         }

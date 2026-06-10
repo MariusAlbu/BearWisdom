@@ -217,7 +217,13 @@ fn walk_node(
                         .map(|n| text(n, src))
                         .unwrap_or_default();
                     if !inner_name.is_empty() {
-                        idx = Some(push_sym(node, inner_name, SymbolKind::Namespace, symbols, parent_idx));
+                        idx = Some(push_sym(
+                            node,
+                            inner_name,
+                            SymbolKind::Namespace,
+                            symbols,
+                            parent_idx,
+                        ));
                     }
                     inner_decl = Some(child);
                     break;
@@ -311,8 +317,11 @@ fn walk_node(
                     }
                 } else if matches!(
                     kind,
-                    "subtype_indication" | "subtype_mark" | "component_definition"
-                    | "access_definition" | "access_to_object_definition"
+                    "subtype_indication"
+                        | "subtype_mark"
+                        | "component_definition"
+                        | "access_definition"
+                        | "access_to_object_definition"
                 ) {
                     type_name = extract_first_type_name(child, src);
                 }
@@ -373,8 +382,11 @@ fn walk_node(
                     }
                 } else if matches!(
                     kind,
-                    "subtype_indication" | "subtype_mark" | "component_definition"
-                    | "access_definition" | "access_to_object_definition"
+                    "subtype_indication"
+                        | "subtype_mark"
+                        | "component_definition"
+                        | "access_definition"
+                        | "access_to_object_definition"
                 ) {
                     // Recurse one level to find the named type inside composite
                     // type marks (subtype_indication, access_definition, etc.).
@@ -433,8 +445,10 @@ fn walk_node(
                     }
                 } else if matches!(
                     kind,
-                    "subtype_indication" | "subtype_mark"
-                    | "access_definition" | "access_to_object_definition"
+                    "subtype_indication"
+                        | "subtype_mark"
+                        | "access_definition"
+                        | "access_to_object_definition"
                 ) {
                     type_name = extract_first_type_name(child, src);
                 }
@@ -470,8 +484,14 @@ fn walk_node(
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "package" => { is_package = true; break; }
-                    "procedure" | "function" => { is_package = false; break; }
+                    "package" => {
+                        is_package = true;
+                        break;
+                    }
+                    "procedure" | "function" => {
+                        is_package = false;
+                        break;
+                    }
                     _ => {}
                 }
             }
@@ -493,7 +513,11 @@ fn walk_node(
             });
 
             if let Some(name) = local_name.filter(|n| !n.is_empty()) {
-                let kind = if is_package { SymbolKind::Namespace } else { SymbolKind::Function };
+                let kind = if is_package {
+                    SymbolKind::Namespace
+                } else {
+                    SymbolKind::Function
+                };
                 let idx = push_sym(node, name, kind, symbols, parent_idx);
                 if let (Some(sym), Some(g)) = (symbols.get_mut(idx), generic_name) {
                     if !g.is_empty() {
@@ -566,7 +590,9 @@ fn walk_node(
             }
             if let (Some(alias), Some(target)) = (alias_name, target_module) {
                 if !alias.is_empty() && !target.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: alias.clone(),
                         kind: EdgeKind::Imports,
@@ -582,7 +608,8 @@ fn walk_node(
                     // under its parent so cross-file `members_of(parent)`
                     // sees it. The resolver looks at `signature` to chain
                     // alias.<x> → target.<x>.
-                    let alias_idx = push_sym(node, alias, SymbolKind::Namespace, symbols, parent_idx);
+                    let alias_idx =
+                        push_sym(node, alias, SymbolKind::Namespace, symbols, parent_idx);
                     if let Some(sym) = symbols.get_mut(alias_idx) {
                         sym.signature = Some(format!("renames {target}"));
                     }
@@ -603,7 +630,9 @@ fn walk_node(
                     "identifier" => {
                         let name = text(child, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -612,16 +641,18 @@ fn walk_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "selected_component" => {
                         // Use the full text (e.g. "Ada.Text_IO") as module name
                         let name = text(child, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::Imports,
@@ -630,9 +661,9 @@ fn walk_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -652,7 +683,9 @@ fn walk_node(
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let name = call_target_text(name_node, src);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -685,9 +718,7 @@ fn extract_subprogram(
     for child in node.children(&mut cursor) {
         let name = match child.kind() {
             "function_specification" | "procedure_specification" => {
-                child
-                    .child_by_field_name("name")
-                    .map(|n| text(n, src))
+                child.child_by_field_name("name").map(|n| text(n, src))
             }
             _ => None,
         };
@@ -748,7 +779,9 @@ fn extract_type_decl(
         }
     }
 
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     let idx = push_sym(node, name, kind, symbols, parent_idx);
     Some(idx)
 }
@@ -826,11 +859,11 @@ fn push_sym(
         scope_path,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     idx
 }
 
@@ -859,9 +892,7 @@ fn call_target_text(node: Node, src: &[u8]) -> String {
     let raw = node.utf8_text(src).unwrap_or("").trim().to_string();
     // Collapse runs of whitespace characters (space, tab, newline, CR) to
     // nothing — the dot already serves as the separator.
-    raw.chars()
-        .filter(|c| !c.is_whitespace())
-        .collect()
+    raw.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// True if the token is one of Ada's parameter / object mode markers,

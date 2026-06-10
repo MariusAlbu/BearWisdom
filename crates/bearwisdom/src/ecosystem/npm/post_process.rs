@@ -4,9 +4,9 @@
 
 use crate::ecosystem::externals::ts_package_from_virtual_path;
 
-use super::{normalize_virtual_rel, LEGACY_ECOSYSTEM_TAG};
 use super::symbol_index::NPM_GLOBALS_MODULE;
 use super::ts_scan::scan_declare_global_blocks;
+use super::{normalize_virtual_rel, LEGACY_ECOSYSTEM_TAG};
 
 // ---------------------------------------------------------------------------
 // Post-process: prefix declaration-file symbols with their package name
@@ -35,8 +35,11 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
     }
     let existing: std::collections::HashSet<String> =
         pf.symbols.iter().map(|s| s.name.clone()).collect();
-    let existing_qnames: std::collections::HashSet<String> =
-        pf.symbols.iter().map(|s| s.qualified_name.clone()).collect();
+    let existing_qnames: std::collections::HashSet<String> = pf
+        .symbols
+        .iter()
+        .map(|s| s.qualified_name.clone())
+        .collect();
     for name in globals {
         // Dotted names (`Express.Multer.File`) are namespace paths whose
         // inner symbols the TS extractor already lifts as proper
@@ -69,11 +72,11 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
         // Shadow entry under the synthetic globals namespace so the
         // resolver's bare-name fallback (`ts_npm_globals` strategy in
@@ -100,11 +103,11 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -140,7 +143,9 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
 }
 
 pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
-    if package.is_empty() { return }
+    if package.is_empty() {
+        return;
+    }
     let prefix = format!("{package}.");
     let globals_prefix = format!("{NPM_GLOBALS_MODULE}.");
     for sym in &mut pf.symbols {
@@ -161,4 +166,3 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
         };
     }
 }
-

@@ -44,11 +44,21 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct JinjaPlugin;
 
 impl LanguagePlugin for JinjaPlugin {
-    fn id(&self) -> &str { "jinja" }
-    fn language_ids(&self) -> &[&str] { &["jinja", "jinja2", "j2"] }
-    fn extensions(&self) -> &[&str] { &[".jinja", ".jinja2", ".j2"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "jinja"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["jinja", "jinja2", "j2"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".jinja", ".jinja2", ".j2"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, s: &str, p: &str, _l: &str) -> ExtractionResult {
         extract::extract(s, p)
     }
@@ -56,8 +66,12 @@ impl LanguagePlugin for JinjaPlugin {
         // No JS routing — see module docs for rationale.
         Vec::new()
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -66,8 +80,7 @@ impl LanguagePlugin for JinjaPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::JINJA_HOOKS)
     }
 }

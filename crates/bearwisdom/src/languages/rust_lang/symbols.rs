@@ -3,7 +3,8 @@
 // =============================================================================
 
 use super::helpers::{
-    detect_visibility, extract_doc_comment, extract_signature, node_text, qualify, scope_from_prefix,
+    detect_visibility, extract_doc_comment, extract_signature, node_text, qualify,
+    scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
@@ -40,12 +41,12 @@ pub(super) fn extract_function(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 /// Same as `extract_function` but always emits `Method` kind (used inside impl blocks).
@@ -81,12 +82,12 @@ pub(super) fn extract_method_from_fn(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_struct(
@@ -119,12 +120,12 @@ pub(super) fn extract_struct(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_enum(
@@ -153,12 +154,12 @@ pub(super) fn extract_enum(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 /// Extract `enum_variant` children from an enum body into the symbol list.
@@ -204,12 +205,12 @@ pub(super) fn extract_enum_variants(
                     doc_comment: extract_doc_comment(&child, source),
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
 
                 // Extract attributes on the enum variant (e.g. #[default], #[serde(rename="...")]).
                 super::decorators::extract_decorators(&child, source, sym_idx, refs);
@@ -279,12 +280,12 @@ pub(super) fn extract_trait(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_type_alias(
@@ -313,12 +314,12 @@ pub(super) fn extract_type_alias(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_const(
@@ -352,12 +353,12 @@ pub(super) fn extract_const(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_static(
@@ -391,12 +392,12 @@ pub(super) fn extract_static(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 /// `macro_rules! foo { ... }` — emit a Function symbol for the macro name.
@@ -434,12 +435,12 @@ pub(super) fn extract_macro_rules(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 pub(super) fn extract_mod(
@@ -468,12 +469,12 @@ pub(super) fn extract_mod(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-})
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -545,11 +546,11 @@ pub(super) fn extract_struct_fields(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(struct_sym_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
 
         // Emit TypeRef for non-primitive field types.
         if let Some(type_node) = child.child_by_field_name("type") {
@@ -619,16 +620,28 @@ pub(super) fn extract_callable_fn_params(
     fn_qname: &str,
     symbols: &mut Vec<ExtractedSymbol>,
 ) {
-    let Some(params) = fn_node.child_by_field_name("parameters") else { return };
+    let Some(params) = fn_node.child_by_field_name("parameters") else {
+        return;
+    };
     let mut cursor = params.walk();
     for child in params.children(&mut cursor) {
-        if child.kind() != "parameter" { continue }
-        let Some(pat) = child.child_by_field_name("pattern") else { continue };
-        let Some(type_node) = child.child_by_field_name("type") else { continue };
+        if child.kind() != "parameter" {
+            continue;
+        }
+        let Some(pat) = child.child_by_field_name("pattern") else {
+            continue;
+        };
+        let Some(type_node) = child.child_by_field_name("type") else {
+            continue;
+        };
         let type_text = node_text(&type_node, source);
-        if !is_callable_rust_type(&type_text) { continue }
+        if !is_callable_rust_type(&type_text) {
+            continue;
+        }
         let name = node_text(&pat, source);
-        if name.is_empty() { continue }
+        if name.is_empty() {
+            continue;
+        }
         let qualified_name = if fn_qname.is_empty() {
             name.clone()
         } else {
@@ -648,11 +661,11 @@ pub(super) fn extract_callable_fn_params(
             scope_path: None,
             parent_index: Some(fn_sym_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -719,7 +732,12 @@ pub(super) fn extract_type_refs_from_type_node(
         "type_identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && !is_rust_primitive(&name) && !is_generic_param_noise(&name) {
-                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32, node.start_byte() as u32));
+                refs.push(make_type_ref(
+                    sym_index,
+                    name,
+                    node.start_position().row as u32,
+                    node.start_byte() as u32,
+                ));
             }
         }
 
@@ -742,7 +760,9 @@ pub(super) fn extract_type_refs_from_type_node(
                     .map(|(prefix, _)| prefix.to_string())
                     .filter(|p| !p.is_empty());
                 let line = node.start_position().row as u32;
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_index,
                     target_name: leaf,
                     kind: EdgeKind::TypeRef,
@@ -752,8 +772,8 @@ pub(super) fn extract_type_refs_from_type_node(
                     byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
 
@@ -781,7 +801,10 @@ pub(super) fn extract_type_refs_from_type_node(
             // `&T`, `&mut T`, `*const T` — recurse into the inner type.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.is_named() && child.kind() != "mutable_specifier" && child.kind() != "lifetime" {
+                if child.is_named()
+                    && child.kind() != "mutable_specifier"
+                    && child.kind() != "lifetime"
+                {
                     extract_type_refs_from_type_node(&child, source, sym_index, refs);
                 }
             }
@@ -803,7 +826,12 @@ pub(super) fn extract_type_refs_from_type_node(
             // consumed, THEN also emit TypeRefs for the inner trait name(s).
             let trait_name = super::calls::rust_type_node_name(node, source);
             if !trait_name.is_empty() && !is_rust_primitive(&trait_name) {
-                refs.push(make_type_ref(sym_index, trait_name, node.start_position().row as u32, node.start_byte() as u32));
+                refs.push(make_type_ref(
+                    sym_index,
+                    trait_name,
+                    node.start_position().row as u32,
+                    node.start_byte() as u32,
+                ));
             }
             // Also recurse so that individual type_identifier nodes inside are covered.
             let mut cursor = node.walk();
@@ -852,7 +880,9 @@ pub(super) fn extract_type_refs_from_type_node(
 }
 
 fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: sym_index,
         target_name: name,
         kind: EdgeKind::TypeRef,
@@ -955,11 +985,11 @@ pub(super) fn extract_trait_associated_types(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index: Some(trait_sym_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         // Emit TypeRef for bounds if present.
         if let Some(bounds) = child.child_by_field_name("bounds") {
             super::patterns::extract_trait_bounds(&bounds, source, sym_idx, refs);

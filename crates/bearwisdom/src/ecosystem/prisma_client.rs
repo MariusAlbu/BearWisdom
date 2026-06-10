@@ -33,9 +33,15 @@ const LANGUAGES: &[&str] = &["typescript", "javascript"];
 pub struct PrismaClientEcosystem;
 
 impl Ecosystem for PrismaClientEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Project has a `schema.prisma`. Activation rule: file pattern in
@@ -59,7 +65,9 @@ impl Ecosystem for PrismaClientEcosystem {
 }
 
 impl ExternalSourceLocator for PrismaClientEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_prisma_client_dirs(project_root)
@@ -81,9 +89,13 @@ fn discover_prisma_client_dirs(project_root: &Path) -> Vec<ExternalDepRoot> {
     collect_schema_files(project_root, &mut schemas, 0);
     for schema in &schemas {
         for out_dir in client_output_dirs(schema, project_root) {
-            if !out_dir.is_dir() { continue }
+            if !out_dir.is_dir() {
+                continue;
+            }
             // Avoid duplicates (multiple schemas often emit to the same dir).
-            if roots.iter().any(|r: &ExternalDepRoot| r.root == out_dir) { continue }
+            if roots.iter().any(|r: &ExternalDepRoot| r.root == out_dir) {
+                continue;
+            }
             roots.push(ExternalDepRoot {
                 module_path: "@prisma/client".to_string(),
                 version: String::new(),
@@ -98,13 +110,20 @@ fn discover_prisma_client_dirs(project_root: &Path) -> Vec<ExternalDepRoot> {
 }
 
 fn collect_schema_files(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth > 6 { return }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(name, "node_modules" | ".git" | "target" | "build" | "dist" | ".bearwisdom") {
+            if matches!(
+                name,
+                "node_modules" | ".git" | "target" | "build" | "dist" | ".bearwisdom"
+            ) {
                 continue;
             }
             collect_schema_files(&path, out, depth + 1);
@@ -131,7 +150,12 @@ fn client_output_dirs(schema: &Path, project_root: &Path) -> Vec<PathBuf> {
         }
     }
     // Default location — `@prisma/client` package re-exports from here.
-    out.push(project_root.join("node_modules").join(".prisma").join("client"));
+    out.push(
+        project_root
+            .join("node_modules")
+            .join(".prisma")
+            .join("client"),
+    );
     out
 }
 
@@ -147,8 +171,7 @@ fn parse_generator_outputs(content: &str) -> Vec<String> {
         if !in_generator {
             if trimmed.starts_with("generator ") && trimmed.contains('{') {
                 in_generator = true;
-                depth = trimmed.matches('{').count() as i32
-                    - trimmed.matches('}').count() as i32;
+                depth = trimmed.matches('{').count() as i32 - trimmed.matches('}').count() as i32;
             }
             continue;
         }
@@ -178,17 +201,25 @@ fn walk_ts_tree(dir: &Path) -> Vec<WalkedFile> {
 }
 
 fn walk_dir_ts(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth > 6 { return }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') || name == "node_modules" { continue }
+            if name.starts_with('.') || name == "node_modules" {
+                continue;
+            }
             walk_dir_ts(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             let lang = if name.ends_with(".d.ts") || name.ends_with(".ts") {
                 "typescript"
             } else if name.ends_with(".js") {

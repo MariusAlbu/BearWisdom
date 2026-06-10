@@ -45,8 +45,7 @@ pub(crate) fn log_language_breakdown(parsed: &[ParsedFile]) {
         // extractor language when Some). `symbol_origin_languages` is either
         // empty (all host) or the same length as symbols.
         if pf.symbol_origin_languages.is_empty() {
-            *host_symbols.entry(pf.language.clone()).or_insert(0) +=
-                pf.symbols.len() as u32;
+            *host_symbols.entry(pf.language.clone()).or_insert(0) += pf.symbols.len() as u32;
         } else {
             for origin in &pf.symbol_origin_languages {
                 match origin {
@@ -126,7 +125,9 @@ pub(crate) fn collect_package_dep_rows(
     let mut rows = Vec::new();
     for (&pkg_id, manifests) in &ctx.by_package {
         for (&kind, data) in manifests {
-            let Some(ecosystem) = manifest_kind_to_ecosystem(kind) else { continue };
+            let Some(ecosystem) = manifest_kind_to_ecosystem(kind) else {
+                continue;
+            };
             for dep in &data.dependencies {
                 rows.push((pkg_id, ecosystem, dep.clone(), None, "runtime"));
             }
@@ -200,7 +201,9 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                                     continue;
                                 }
                                 let sub_name = entry.file_name().to_string_lossy().into_owned();
-                                if sub_name.starts_with('.') { continue; }
+                                if sub_name.starts_with('.') {
+                                    continue;
+                                }
                                 let full_rel = format!("{}/{}", base, sub_name);
                                 let abs = project_root.join(&full_rel);
                                 let (declared_name, is_publishable) =
@@ -219,9 +222,10 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                     }
                 } else {
                     let abs = project_root.join(rel_path);
-                    if !abs.is_dir() { continue; }
-                    let (declared_name, is_publishable) =
-                        read_package_manifest(&abs, kind_hint);
+                    if !abs.is_dir() {
+                        continue;
+                    }
+                    let (declared_name, is_publishable) = read_package_manifest(&abs, kind_hint);
                     ws_packages.push(PackageInfo {
                         id: None,
                         name: dir_name(rel_path),
@@ -237,7 +241,9 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
 
         for pkg in ws_packages {
             let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
-            if seen.insert(key) { packages.push(pkg); }
+            if seen.insert(key) {
+                packages.push(pkg);
+            }
         }
 
         if !packages.is_empty() {
@@ -265,13 +271,16 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
     let in_workspace = workspace_kind.is_some();
     for pkg in scan_all_manifests(project_root) {
         let is_root_manifest = pkg.path.is_empty() || pkg.path == ".";
-        if in_workspace && is_root_manifest
+        if in_workspace
+            && is_root_manifest
             && !workspace_root_has_own_deps(project_root, pkg.kind.as_deref())
         {
             continue;
         }
         let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
-        if seen.insert(key) { packages.push(pkg); }
+        if seen.insert(key) {
+            packages.push(pkg);
+        }
     }
 
     if !packages.is_empty() {
@@ -302,7 +311,14 @@ pub(crate) fn scan_all_manifests(project_root: &Path) -> Vec<PackageInfo> {
     let registry = crate::ecosystem::default_registry();
     let scan_config = ScanConfig::from_registry(registry);
     let mut out = Vec::new();
-    walk_for_manifests(project_root, project_root, 0, MAX_DEPTH, &scan_config, &mut out);
+    walk_for_manifests(
+        project_root,
+        project_root,
+        0,
+        MAX_DEPTH,
+        &scan_config,
+        &mut out,
+    );
     out
 }
 
@@ -330,13 +346,21 @@ impl ScanConfig {
         let mut extensions: Vec<(&'static str, &'static str)> = Vec::new();
         let mut pruned: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
         // Universal prune set — VCS metadata is owned by no ecosystem.
-        for vcs in &[".git", ".hg", ".svn"] { pruned.insert(*vcs); }
+        for vcs in &[".git", ".hg", ".svn"] {
+            pruned.insert(*vcs);
+        }
         for eco in reg.all() {
             files.extend(eco.workspace_package_files().iter().copied());
             extensions.extend(eco.workspace_package_extensions().iter().copied());
-            for d in eco.pruned_dir_names() { pruned.insert(*d); }
+            for d in eco.pruned_dir_names() {
+                pruned.insert(*d);
+            }
         }
-        Self { files, extensions, pruned }
+        Self {
+            files,
+            extensions,
+            pruned,
+        }
     }
 }
 
@@ -351,12 +375,18 @@ fn walk_for_manifests(
     cfg: &ScanConfig,
     out: &mut Vec<PackageInfo>,
 ) {
-    if depth > max_depth { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > max_depth {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut subdirs: Vec<std::path::PathBuf> = Vec::new();
     let mut filenames: Vec<String> = Vec::new();
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let raw_name = entry.file_name();
         let name = raw_name.to_string_lossy().into_owned();
         if file_type.is_dir() {
@@ -365,8 +395,12 @@ fn walk_for_manifests(
             // common cases without enumeration; ecosystems still list
             // their non-dotted caches (`node_modules`, `target`, `vendor`,
             // ...) explicitly.
-            if name.starts_with('.') && name != "." && name != ".." { continue; }
-            if cfg.pruned.contains(name.as_str()) { continue; }
+            if name.starts_with('.') && name != "." && name != ".." {
+                continue;
+            }
+            if cfg.pruned.contains(name.as_str()) {
+                continue;
+            }
             subdirs.push(entry.path());
         } else if file_type.is_file() {
             filenames.push(name);
@@ -414,11 +448,7 @@ fn register_manifest(
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "root".to_string())
     } else {
-        rel_dir
-            .rsplit('/')
-            .next()
-            .unwrap_or(&rel_dir)
-            .to_string()
+        rel_dir.rsplit('/').next().unwrap_or(&rel_dir).to_string()
     };
     let manifest_rel = if rel_dir.is_empty() {
         manifest_filename.to_string()
@@ -440,17 +470,35 @@ fn register_manifest(
 /// Scan common workspace directory patterns (packages/, apps/, libs/, crates/, etc.)
 /// for sub-packages containing manifest files.
 fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo> {
-    let workspace_dirs = ["packages", "apps", "libs", "crates", "modules",
-                          "services", "plugins", "integrations", "examples", "src"];
+    let workspace_dirs = [
+        "packages",
+        "apps",
+        "libs",
+        "crates",
+        "modules",
+        "services",
+        "plugins",
+        "integrations",
+        "examples",
+        "src",
+    ];
     let manifest_names: &[&str] = &[
-        "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
-        "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pyproject.toml",
+        "pubspec.yaml",
+        "mix.exs",
+        "Package.swift",
+        "composer.json",
     ];
     let mut packages = Vec::new();
 
     for ws_dir in &workspace_dirs {
         let base = project_root.join(ws_dir);
-        if !base.is_dir() { continue; }
+        if !base.is_dir() {
+            continue;
+        }
         if let Ok(entries) = std::fs::read_dir(&base) {
             for entry in entries.flatten() {
                 if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
@@ -466,7 +514,11 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                 for mf in manifest_names {
                     if sub.join(mf).exists() {
                         let rel = format!("{}/{}", ws_dir, sub_name);
-                        let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
+                        let kind = if kind_hint != "unknown" {
+                            kind_hint
+                        } else {
+                            manifest_to_kind(mf)
+                        };
                         let (declared_name, is_publishable) = read_package_manifest(&sub, kind);
                         packages.push(PackageInfo {
                             id: None,
@@ -486,9 +538,7 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
                     if let Some(csproj) = find_csproj(&sub) {
                         let rel = format!("{}/{}", ws_dir, sub_name);
                         // For .NET, the declared name is the .csproj stem.
-                        let declared_name = csproj
-                            .strip_suffix(".csproj")
-                            .map(|s| s.to_string());
+                        let declared_name = csproj.strip_suffix(".csproj").map(|s| s.to_string());
                         packages.push(PackageInfo {
                             id: None,
                             name: sub_name.clone(),
@@ -521,7 +571,11 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<PackageInfo>
             let sub = entry.path();
             for mf in manifest_names {
                 if sub.join(mf).exists() {
-                    let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
+                    let kind = if kind_hint != "unknown" {
+                        kind_hint
+                    } else {
+                        manifest_to_kind(mf)
+                    };
                     let (declared_name, is_publishable) = read_package_manifest(&sub, kind);
                     // Avoid duplicates from workspace_dirs scan.
                     if !packages.iter().any(|p| p.path == dir_name_str) {
@@ -615,10 +669,7 @@ fn read_npm_manifest(dir: &Path) -> (Option<String>, bool) {
     // `"private": true` is the canonical npm signal for "do not publish
     // to a registry." Workspace-internal helper packages set this to
     // keep `npm publish` from accidentally pushing them.
-    let is_publishable = !v
-        .get("private")
-        .and_then(|p| p.as_bool())
-        .unwrap_or(false);
+    let is_publishable = !v.get("private").and_then(|p| p.as_bool()).unwrap_or(false);
     (name, is_publishable)
 }
 
@@ -694,7 +745,12 @@ fn read_python_manifest(dir: &Path) -> (Option<String>, bool) {
                     .lines()
                     .find(|l| l.trim_start().starts_with("name"))
                     .and_then(|l| {
-                        let val = l.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
+                        let val = l
+                            .split('=')
+                            .nth(1)?
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'');
                         (!val.is_empty()).then(|| val.to_string())
                     });
             }
@@ -737,7 +793,9 @@ fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
 }
 
 fn dir_name(rel_path: &str) -> String {
-    rel_path.rsplit('/').next()
+    rel_path
+        .rsplit('/')
+        .next()
         .or_else(|| rel_path.rsplit('\\').next())
         .unwrap_or(rel_path)
         .to_string()
@@ -765,7 +823,11 @@ fn find_manifest_path_abs(abs_dir: &Path, kind: &str) -> Option<String> {
 fn find_csproj(dir: &Path) -> Option<String> {
     std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
         let name = e.file_name().to_string_lossy().into_owned();
-        if name.ends_with(".csproj") { Some(name) } else { None }
+        if name.ends_with(".csproj") {
+            Some(name)
+        } else {
+            None
+        }
     })
 }
 
@@ -791,21 +853,24 @@ fn manifest_to_kind(filename: &str) -> &str {
 ///
 /// `pairs` is `(package_relative_path, dockerfile_relative_path)` as returned
 /// by `crate::languages::dockerfile::connectors::detect_dockerfiles`.
-pub(crate) fn mark_service_packages(
-    conn: &rusqlite::Connection,
-    pairs: &[(String, String)],
-) {
+pub(crate) fn mark_service_packages(conn: &rusqlite::Connection, pairs: &[(String, String)]) {
     for (pkg_path, dockerfile_path) in pairs {
         match conn.execute(
             "UPDATE packages SET is_service = 1 WHERE path = ?1",
             rusqlite::params![pkg_path],
         ) {
             Ok(n) if n > 0 => {
-                debug!("Marked package '{}' as service ({})", pkg_path, dockerfile_path);
+                debug!(
+                    "Marked package '{}' as service ({})",
+                    pkg_path, dockerfile_path
+                );
             }
             Ok(_) => {
                 // Package path not found — may have been cleaned up; not an error.
-                debug!("No package row for path '{}' — skipping is_service mark", pkg_path);
+                debug!(
+                    "No package row for path '{}' — skipping is_service mark",
+                    pkg_path
+                );
             }
             Err(e) => {
                 warn!("Failed to mark package '{}' as service: {e}", pkg_path);

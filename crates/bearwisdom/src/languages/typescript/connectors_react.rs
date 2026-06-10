@@ -47,7 +47,9 @@ pub(super) fn react_find_zustand_stores(
         .context("Failed to prepare TS files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query TS files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect TS file rows")?;
@@ -80,10 +82,10 @@ pub(super) fn react_find_story_mappings(
     conn: &rusqlite::Connection,
     project_root: &std::path::Path,
 ) -> anyhow::Result<Vec<StoryMapping>> {
-    let re_default_export = regex::Regex::new(r"component\s*:\s*(\w+)")
-        .expect("default export regex is valid");
-    let re_meta_type = regex::Regex::new(r"Meta\s*<\s*(?:typeof\s+)?(\w+)\s*>")
-        .expect("meta type regex is valid");
+    let re_default_export =
+        regex::Regex::new(r"component\s*:\s*(\w+)").expect("default export regex is valid");
+    let re_meta_type =
+        regex::Regex::new(r"Meta\s*<\s*(?:typeof\s+)?(\w+)\s*>").expect("meta type regex is valid");
 
     let mut stmt = conn
         .prepare(
@@ -94,7 +96,9 @@ pub(super) fn react_find_story_mappings(
         .context("Failed to prepare story files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query story files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect story file rows")?;
@@ -110,7 +114,8 @@ pub(super) fn react_find_story_mappings(
             }
         };
 
-        let component_name = react_extract_component_name(&source, &re_default_export, &re_meta_type);
+        let component_name =
+            react_extract_component_name(&source, &re_default_export, &re_meta_type);
         let component_name = match component_name {
             Some(n) => n,
             None => {
@@ -179,7 +184,10 @@ pub(super) fn react_create_concepts(
                 debug!(store = %store.name, "Zustand store symbol not found in index — concept member not added");
             }
         }
-        tracing::info!(stores = stores.len(), "React patterns: zustand-stores concept updated");
+        tracing::info!(
+            stores = stores.len(),
+            "React patterns: zustand-stores concept updated"
+        );
     }
 
     if !stories.is_empty() {
@@ -189,37 +197,53 @@ pub(super) fn react_create_concepts(
                 let mut stmt = conn
                     .prepare("SELECT id FROM symbols WHERE file_id = ?1")
                     .context("Failed to prepare story symbol query")?;
-                let rows: rusqlite::Result<Vec<i64>> =
-                    stmt.query_map([story.story_file_id], |r| r.get(0))?.collect();
+                let rows: rusqlite::Result<Vec<i64>> = stmt
+                    .query_map([story.story_file_id], |r| r.get(0))?
+                    .collect();
                 rows.context("Failed to collect story symbol ids")?
             };
             for sym_id in symbol_ids {
                 react_add_concept_member(conn, concept_id, sym_id)?;
             }
         }
-        tracing::info!(stories = stories.len(), "React patterns: storybook-stories concept updated");
+        tracing::info!(
+            stories = stories.len(),
+            "React patterns: storybook-stories concept updated"
+        );
     }
 
     Ok(())
 }
 
-fn react_upsert_concept(conn: &rusqlite::Connection, name: &str, description: &str) -> anyhow::Result<i64> {
+fn react_upsert_concept(
+    conn: &rusqlite::Connection,
+    name: &str,
+    description: &str,
+) -> anyhow::Result<i64> {
     conn.execute(
         "INSERT OR IGNORE INTO concepts (name, description) VALUES (?1, ?2)",
         rusqlite::params![name, description],
-    ).context("Failed to upsert concept")?;
+    )
+    .context("Failed to upsert concept")?;
     let id: i64 = conn
-        .query_row("SELECT id FROM concepts WHERE name = ?1", [name], |r| r.get(0))
+        .query_row("SELECT id FROM concepts WHERE name = ?1", [name], |r| {
+            r.get(0)
+        })
         .context("Failed to fetch concept id")?;
     Ok(id)
 }
 
-fn react_add_concept_member(conn: &rusqlite::Connection, concept_id: i64, symbol_id: i64) -> anyhow::Result<()> {
+fn react_add_concept_member(
+    conn: &rusqlite::Connection,
+    concept_id: i64,
+    symbol_id: i64,
+) -> anyhow::Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO concept_members (concept_id, symbol_id, auto_assigned)
          VALUES (?1, ?2, 1)",
         rusqlite::params![concept_id, symbol_id],
-    ).context("Failed to insert concept member")?;
+    )
+    .context("Failed to insert concept member")?;
     Ok(())
 }
 
@@ -230,8 +254,7 @@ mod tests {
 
     #[test]
     fn store_regex_matches_export_const() {
-        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]")
-            .unwrap();
+        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]").unwrap();
         let line = "export const useEditorStore = create<EditorState>((set) => ({";
         assert!(re.is_match(line));
         let cap = re.captures(line).unwrap();
@@ -240,8 +263,7 @@ mod tests {
 
     #[test]
     fn store_regex_matches_const_without_export() {
-        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]")
-            .unwrap();
+        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]").unwrap();
         let line = "const useAuthStore = create(initializer)";
         let cap = re.captures(line).unwrap();
         assert_eq!(&cap[1], "useAuthStore");
@@ -249,8 +271,7 @@ mod tests {
 
     #[test]
     fn store_regex_does_not_match_non_use_prefix() {
-        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]")
-            .unwrap();
+        let re = regex::Regex::new(r"(?:export\s+)?const\s+(use\w+)\s*=\s*create\s*[<(]").unwrap();
         assert!(!re.is_match("const myState = create<State>()"));
     }
 
@@ -290,20 +311,30 @@ mod tests {
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES ('src/stores/editorStore.ts', 'h1', 'typescript', 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         let file_id: i64 = conn.last_insert_rowid();
 
         conn.execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'useEditorStore', 'useEditorStore', 'variable', 3, 0)",
             [file_id],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let stores = vec![ZustandStore { file_id, name: "useEditorStore".to_string(), line: 3 }];
+        let stores = vec![ZustandStore {
+            file_id,
+            name: "useEditorStore".to_string(),
+            line: 3,
+        }];
         react_create_concepts(conn, &stores, &[]).unwrap();
 
         let concept_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM concepts WHERE name = 'zustand-stores'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM concepts WHERE name = 'zustand-stores'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(concept_count, 1);
     }
@@ -317,16 +348,22 @@ mod tests {
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES ('src/stores/editorStore.ts', 'h1', 'typescript', 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         let file_id: i64 = conn.last_insert_rowid();
 
         conn.execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'useEditorStore', 'useEditorStore', 'variable', 3, 0)",
             [file_id],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let stores = vec![ZustandStore { file_id, name: "useEditorStore".to_string(), line: 3 }];
+        let stores = vec![ZustandStore {
+            file_id,
+            name: "useEditorStore".to_string(),
+            line: 3,
+        }];
         react_create_concepts(conn, &stores, &[]).unwrap();
         react_create_concepts(conn, &stores, &[]).unwrap();
 
@@ -340,7 +377,8 @@ mod tests {
     fn empty_inputs_produce_no_concepts() {
         let db = Database::open_in_memory().unwrap();
         react_create_concepts(db.conn(), &[], &[]).unwrap();
-        let count: i64 = db.conn()
+        let count: i64 = db
+            .conn()
             .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);

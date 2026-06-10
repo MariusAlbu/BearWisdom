@@ -9,8 +9,8 @@
 //!   * `script.` / `style.` indented blocks → JS / CSS regions
 //!   * `mixin name(args)`  → Field symbol
 
-pub mod extract;
 pub mod embedded;
+pub mod extract;
 pub(crate) mod hooks;
 pub(crate) mod profile;
 
@@ -28,19 +28,33 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct PugPlugin;
 
 impl LanguagePlugin for PugPlugin {
-    fn id(&self) -> &str { "pug" }
-    fn language_ids(&self) -> &[&str] { &["pug", "jade"] }
-    fn extensions(&self) -> &[&str] { &[".pug", ".jade"] }
-    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn id(&self) -> &str {
+        "pug"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["pug", "jade"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[".pug", ".jade"]
+    }
+    fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
     fn extract(&self, s: &str, p: &str, _l: &str) -> ExtractionResult {
         extract::extract(s, p)
     }
     fn embedded_regions(&self, s: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
         embedded::detect_regions(s)
     }
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -49,8 +63,7 @@ impl LanguagePlugin for PugPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PUG_HOOKS)
     }
 }

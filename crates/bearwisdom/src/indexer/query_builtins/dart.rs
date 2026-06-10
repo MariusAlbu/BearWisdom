@@ -83,7 +83,8 @@ pub const BUILTINS: &[&str] = &[
     "yield",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; locals.scm - Dart scope and variable resolution queries\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; locals.scm - Dart scope and variable resolution queries\n\
 \n\
 ; ============================================================================\n\
 ; Scopes\n\
@@ -179,4 +180,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; locals.scm - Dart scope and variabl
 \n\
 (identifier) @local.reference\n\
 (type_identifier) @local.reference\n\
-");
+",
+);

@@ -14,7 +14,9 @@ use crate::query::QueryResult;
 use anyhow::Context;
 use std::collections::HashMap;
 
-use super::hierarchy::{Breadcrumb, HierarchyEdge, HierarchyNode, HierarchyResult, workspace_breadcrumb};
+use super::hierarchy::{
+    workspace_breadcrumb, Breadcrumb, HierarchyEdge, HierarchyNode, HierarchyResult,
+};
 
 // ---------------------------------------------------------------------------
 // Level: services
@@ -51,18 +53,28 @@ pub(super) fn services_level(db: &Database, cap: usize) -> QueryResult<Hierarchy
          LIMIT {cap}"
     );
 
-    let mut stmt = conn.prepare(&sql).context("Failed to prepare services node query")?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .context("Failed to prepare services node query")?;
 
     let rows = stmt
         .query_map([], |row| {
-            let pkg_id: i64       = row.get(0)?;
-            let name: String      = row.get(1)?;
-            let path: String      = row.get(2)?;
+            let pkg_id: i64 = row.get(0)?;
+            let name: String = row.get(1)?;
+            let path: String = row.get(2)?;
             let kind: Option<String> = row.get(3)?;
-            let is_service: i64   = row.get(4)?;
-            let file_count: u32   = row.get::<_, u32>(5).unwrap_or(0);
+            let is_service: i64 = row.get(4)?;
+            let file_count: u32 = row.get::<_, u32>(5).unwrap_or(0);
             let symbol_count: u32 = row.get::<_, u32>(6).unwrap_or(0);
-            Ok((pkg_id, name, path, kind, is_service, file_count, symbol_count))
+            Ok((
+                pkg_id,
+                name,
+                path,
+                kind,
+                is_service,
+                file_count,
+                symbol_count,
+            ))
         })
         .context("Failed to execute services node query")?;
 
@@ -230,13 +242,15 @@ pub(super) fn directories_level(db: &Database, cap: usize) -> QueryResult<Hierar
          WHERE f.origin = 'internal'"
     ).context("Failed to prepare directory scan")?;
 
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, u32>(1).unwrap_or(0),
-            r.get::<_, String>(2)?,
-        ))
-    }).context("Failed to execute directory scan")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, u32>(1).unwrap_or(0),
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .context("Failed to execute directory scan")?;
 
     // Accumulate per-directory stats.
     let mut dirs: HashMap<String, (u32, u32, HashMap<String, u32>)> = HashMap::new(); // dir → (file_count, symbol_count, {lang → count})
@@ -245,7 +259,9 @@ pub(super) fn directories_level(db: &Database, cap: usize) -> QueryResult<Hierar
         let (path, sym_count, lang) = row.context("Failed to read file row")?;
         // Extract top-level directory (e.g., "server" from "server/src/main.ts").
         // Files at root go into a "(root)" bucket.
-        let dir = path.split('/').next()
+        let dir = path
+            .split('/')
+            .next()
             .filter(|seg| path.contains('/'))
             .unwrap_or("(root)")
             .to_string();
@@ -266,7 +282,11 @@ pub(super) fn directories_level(db: &Database, cap: usize) -> QueryResult<Hierar
 
     let mut nodes = Vec::new();
     for (dir, file_count, symbol_count, langs) in &dir_list {
-        let primary_lang = langs.iter().max_by_key(|(_, c)| *c).map(|(l, _)| l.as_str()).unwrap_or("unknown");
+        let primary_lang = langs
+            .iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(l, _)| l.as_str())
+            .unwrap_or("unknown");
         let metadata = serde_json::json!({ "language": primary_lang }).to_string();
         nodes.push(HierarchyNode {
             id: format!("dir:{dir}"),
@@ -281,35 +301,48 @@ pub(super) fn directories_level(db: &Database, cap: usize) -> QueryResult<Hierar
     }
 
     // Cross-directory edges (aggregate symbol edges by directory).
-    let dir_set: std::collections::HashSet<&str> = dir_list.iter().map(|(d, _, _, _)| d.as_str()).collect();
+    let dir_set: std::collections::HashSet<&str> =
+        dir_list.iter().map(|(d, _, _, _)| d.as_str()).collect();
     let mut edge_map: HashMap<(String, String), u32> = HashMap::new();
 
-    let mut edge_stmt = conn.prepare(
-        "SELECT f1.path, f2.path
+    let mut edge_stmt = conn
+        .prepare(
+            "SELECT f1.path, f2.path
          FROM edges e
          JOIN symbols s1 ON e.source_id = s1.id
          JOIN files f1 ON s1.file_id = f1.id
          JOIN symbols s2 ON e.target_id = s2.id
-         JOIN files f2 ON s2.file_id = f2.id"
-    ).context("Failed to prepare directory edge query")?;
+         JOIN files f2 ON s2.file_id = f2.id",
+        )
+        .context("Failed to prepare directory edge query")?;
 
-    let edge_rows = edge_stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    }).context("Failed to execute directory edge query")?;
+    let edge_rows = edge_stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .context("Failed to execute directory edge query")?;
 
     for row in edge_rows {
         let (src_path, tgt_path) = row.context("Failed to read edge row")?;
-        let src_dir = src_path.split('/').next()
+        let src_dir = src_path
+            .split('/')
+            .next()
             .filter(|_| src_path.contains('/'))
             .unwrap_or("(root)");
-        let tgt_dir = tgt_path.split('/').next()
+        let tgt_dir = tgt_path
+            .split('/')
+            .next()
             .filter(|_| tgt_path.contains('/'))
             .unwrap_or("(root)");
 
-        if src_dir == tgt_dir { continue; }
-        if !dir_set.contains(src_dir) || !dir_set.contains(tgt_dir) { continue; }
+        if src_dir == tgt_dir {
+            continue;
+        }
+        if !dir_set.contains(src_dir) || !dir_set.contains(tgt_dir) {
+            continue;
+        }
 
-        *edge_map.entry((src_dir.to_string(), tgt_dir.to_string())).or_insert(0) += 1;
+        *edge_map
+            .entry((src_dir.to_string(), tgt_dir.to_string()))
+            .or_insert(0) += 1;
     }
 
     let edges: Vec<HierarchyEdge> = edge_map
@@ -354,16 +387,18 @@ pub(super) fn packages_level(db: &Database, cap: usize) -> QueryResult<Hierarchy
          LIMIT {cap}"
     );
 
-    let mut stmt = conn.prepare(&sql).context("Failed to prepare packages node query")?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .context("Failed to prepare packages node query")?;
 
     let rows = stmt
         .query_map([], |row| {
-            let name: String         = row.get(1)?;
-            let path: String         = row.get(2)?;
+            let name: String = row.get(1)?;
+            let path: String = row.get(2)?;
             let kind: Option<String> = row.get(3)?;
-            let is_service: i64      = row.get(4)?;
-            let file_count: u32      = row.get::<_, u32>(5).unwrap_or(0);
-            let symbol_count: u32    = row.get::<_, u32>(6).unwrap_or(0);
+            let is_service: i64 = row.get(4)?;
+            let file_count: u32 = row.get::<_, u32>(5).unwrap_or(0);
+            let symbol_count: u32 = row.get::<_, u32>(6).unwrap_or(0);
             Ok((name, path, kind, is_service, file_count, symbol_count))
         })
         .context("Failed to execute packages node query")?;
@@ -452,4 +487,3 @@ pub(super) fn packages_level(db: &Database, cap: usize) -> QueryResult<Hierarchy
         breadcrumbs: workspace_breadcrumb("packages"),
     })
 }
-

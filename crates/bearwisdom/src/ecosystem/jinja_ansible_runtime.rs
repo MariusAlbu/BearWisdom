@@ -46,9 +46,15 @@ const LANGUAGES: &[&str] = &["jinja", "yaml"];
 pub struct JinjaAnsibleRuntimeEcosystem;
 
 impl Ecosystem for JinjaAnsibleRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Two activation paths matching this ecosystem's two consumers:
@@ -87,11 +93,15 @@ impl Ecosystem for JinjaAnsibleRuntimeEcosystem {
         pypi::walk_python_external_root(dep)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for JinjaAnsibleRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_runtime_roots(project_root)

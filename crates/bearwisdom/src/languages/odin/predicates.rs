@@ -18,4 +18,3 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         _ => true,
     }
 }
-

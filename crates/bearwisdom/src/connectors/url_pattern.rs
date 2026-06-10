@@ -204,10 +204,9 @@ pub fn entity_names_match(query_name: &str, entity_key: &str) -> bool {
 /// present.
 fn strip_lang_prefix(s: &str) -> &str {
     const PREFIXES: &[&str] = &[
-        "py.", "rs.", "cs.", "java.", "kt.", "go.", "php.", "rb.", "ex.",
-        "scala.", "swift.", "fs.", "dart.", "clj.", "hs.", "ml.", "groovy.",
-        "pl.", "gleam.", "nim.", "lua.", "c.", "pas.", "ada.", "cobol.",
-        "matlab.", "r.", "erl.", "ts.", "js.",
+        "py.", "rs.", "cs.", "java.", "kt.", "go.", "php.", "rb.", "ex.", "scala.", "swift.",
+        "fs.", "dart.", "clj.", "hs.", "ml.", "groovy.", "pl.", "gleam.", "nim.", "lua.", "c.",
+        "pas.", "ada.", "cobol.", "matlab.", "r.", "erl.", "ts.", "js.",
     ];
     for p in PREFIXES {
         if let Some(rest) = s.strip_prefix(p) {

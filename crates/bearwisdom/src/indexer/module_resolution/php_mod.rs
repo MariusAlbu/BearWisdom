@@ -111,7 +111,11 @@ mod tests {
     fn fully_qualified_with_leading_backslash() {
         let files = &["src/Models/User.php"];
         assert_eq!(
-            resolve("\\App\\Models\\User", "src/Controllers/UserController.php", files),
+            resolve(
+                "\\App\\Models\\User",
+                "src/Controllers/UserController.php",
+                files
+            ),
             Some("src/Models/User.php".into())
         );
     }

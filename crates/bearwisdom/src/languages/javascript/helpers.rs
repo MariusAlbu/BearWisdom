@@ -32,9 +32,7 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
     // we'd tag every ES-module export `visibility = NULL` and the
     // dead-code `exported_api` entry-point contributor would miss it.
     if let Some(parent) = node.parent() {
-        if parent.kind() == "export_statement"
-            || parent.kind() == "export_default_declaration"
-        {
+        if parent.kind() == "export_statement" || parent.kind() == "export_default_declaration" {
             return Some(Visibility::Public);
         }
         // `export const x = () => {}` lowers two layers deep

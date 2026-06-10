@@ -2,14 +2,14 @@
 
 mod calls;
 pub(crate) mod decorators;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-pub mod extract;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::DART_HOOKS;
@@ -28,24 +28,32 @@ mod coverage_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::ExtractionResult;
 
 pub struct DartPlugin;
 
 impl LanguagePlugin for DartPlugin {
-    fn id(&self) -> &str { "dart" }
+    fn id(&self) -> &str {
+        "dart"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["dart"] }
+    fn language_ids(&self) -> &[&str] {
+        &["dart"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".dart"] }
+    fn extensions(&self) -> &[&str] {
+        &[".dart"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_dart::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -93,8 +101,7 @@ impl LanguagePlugin for DartPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::DART_HOOKS)
     }
 
@@ -106,5 +113,4 @@ impl LanguagePlugin for DartPlugin {
     // is redundant with the routes-table → FlowEmission bridge in
     // `indexer/resolve/mod.rs::append_db_route_consumer_emissions`.
     // Start points still flow through `extract_connection_points`.
-
 }

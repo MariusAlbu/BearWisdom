@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::jar_walker;
-use crate::ecosystem::maven::{ID as MAVEN_ID};
+use crate::ecosystem::maven::ID as MAVEN_ID;
 use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
@@ -44,9 +44,15 @@ const MAX_JARS_PER_PROJECT: usize = 300;
 pub struct MavenClassesEcosystem;
 
 impl Ecosystem for MavenClassesEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::TransitiveOn(MAVEN_ID)
@@ -63,7 +69,9 @@ impl Ecosystem for MavenClassesEcosystem {
 }
 
 impl ExternalSourceLocator for MavenClassesEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         Vec::new()
     }
@@ -73,16 +81,26 @@ impl ExternalSourceLocator for MavenClassesEcosystem {
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
         let jars = discover_jars(project_root);
-        if jars.is_empty() { return None }
+        if jars.is_empty() {
+            return None;
+        }
         let mut out: Vec<ParsedFile> = Vec::new();
         for (i, jar) in jars.into_iter().enumerate() {
-            if i >= MAX_JARS_PER_PROJECT { break }
+            if i >= MAX_JARS_PER_PROJECT {
+                break;
+            }
             if let Ok(meta) = fs::metadata(&jar) {
-                if meta.len() > MAX_JAR_BYTES { continue }
+                if meta.len() > MAX_JAR_BYTES {
+                    continue;
+                }
             }
             out.extend(jar_walker::walk_jar(&jar));
         }
-        if out.is_empty() { None } else { Some(out) }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 }
 
@@ -102,27 +120,52 @@ fn discover_jars(project_root: &Path) -> Vec<PathBuf> {
     // Standard cache locations.
     if let Some(home) = dirs_home() {
         let m2 = home.join(".m2").join("repository");
-        if m2.is_dir() { collect_jars(&m2, &mut jars, 0); }
-        let gradle = home.join(".gradle").join("caches").join("modules-2").join("files-2.1");
-        if gradle.is_dir() { collect_jars(&gradle, &mut jars, 0); }
-        let coursier = home.join("AppData").join("Local").join("Coursier").join("cache").join("v1");
-        if coursier.is_dir() { collect_jars(&coursier, &mut jars, 0); }
+        if m2.is_dir() {
+            collect_jars(&m2, &mut jars, 0);
+        }
+        let gradle = home
+            .join(".gradle")
+            .join("caches")
+            .join("modules-2")
+            .join("files-2.1");
+        if gradle.is_dir() {
+            collect_jars(&gradle, &mut jars, 0);
+        }
+        let coursier = home
+            .join("AppData")
+            .join("Local")
+            .join("Coursier")
+            .join("cache")
+            .join("v1");
+        if coursier.is_dir() {
+            collect_jars(&coursier, &mut jars, 0);
+        }
     }
     jars
 }
 
 fn collect_jars(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth > 10 || out.len() > MAX_JARS_PER_PROJECT { return }
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    if depth > 10 || out.len() > MAX_JARS_PER_PROJECT {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        if out.len() > MAX_JARS_PER_PROJECT { return }
+        if out.len() > MAX_JARS_PER_PROJECT {
+            return;
+        }
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             collect_jars(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".jar") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".jar") {
+                continue;
+            }
             if name.ends_with("-sources.jar")
                 || name.ends_with("-javadoc.jar")
                 || name.ends_with("-tests.jar")
@@ -137,11 +180,15 @@ fn collect_jars(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
 fn dirs_home() -> Option<PathBuf> {
     if let Some(home) = std::env::var_os("USERPROFILE") {
         let p = PathBuf::from(home);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(home) = std::env::var_os("HOME") {
         let p = PathBuf::from(home);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     None
 }

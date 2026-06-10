@@ -17,7 +17,6 @@ use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
 
-
 // ===========================================================================
 // SpringRouteConnector
 // ===========================================================================
@@ -77,10 +76,7 @@ pub struct SpringService {
 }
 
 /// Find Spring route annotations in all indexed Java files.
-pub fn find_spring_routes(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<Vec<SpringRoute>> {
+pub fn find_spring_routes(conn: &Connection, project_root: &Path) -> Result<Vec<SpringRoute>> {
     let re_method_mapping = build_method_mapping_regex();
     let re_request_mapping = build_request_mapping_regex();
     let re_method_name = build_method_name_regex();
@@ -90,7 +86,9 @@ pub fn find_spring_routes(
         .context("Failed to prepare Java files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Java files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Java file rows")?;
@@ -124,10 +122,7 @@ pub fn find_spring_routes(
 }
 
 /// Find Spring stereotype annotations in all indexed Java files.
-pub fn find_spring_services(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<Vec<SpringService>> {
+pub fn find_spring_services(conn: &Connection, project_root: &Path) -> Result<Vec<SpringService>> {
     let re_stereotype = build_stereotype_regex();
     let re_class = build_class_decl_regex();
 
@@ -136,7 +131,9 @@ pub fn find_spring_services(
         .context("Failed to prepare Java files query")?;
 
     let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .context("Failed to query Java files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect Java file rows")?;
@@ -186,10 +183,8 @@ pub fn register_spring_patterns(
 /// Matches @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping.
 /// Captures: (1) method verb, (2) path string.
 fn build_method_mapping_regex() -> Regex {
-    Regex::new(
-        r#"@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#,
-    )
-    .expect("method mapping regex is valid")
+    Regex::new(r#"@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']"#)
+        .expect("method mapping regex is valid")
 }
 
 /// Matches @RequestMapping with an optional method= argument.
@@ -431,16 +426,31 @@ fn write_routes(conn: &Connection, routes: &[SpringRoute]) -> Result<()> {
         }
     }
 
-    info!(count = routes.len(), "Spring routes written to routes table");
+    info!(
+        count = routes.len(),
+        "Spring routes written to routes table"
+    );
     Ok(())
 }
 
 fn create_stereotype_concepts(conn: &Connection, services: &[SpringService]) -> Result<()> {
     let groups = [
-        ("controller", "spring-controllers", "Spring @Controller / @RestController classes"),
+        (
+            "controller",
+            "spring-controllers",
+            "Spring @Controller / @RestController classes",
+        ),
         ("service", "spring-services", "Spring @Service classes"),
-        ("repository", "spring-repositories", "Spring @Repository classes"),
-        ("component", "spring-components", "Spring @Component classes"),
+        (
+            "repository",
+            "spring-repositories",
+            "Spring @Repository classes",
+        ),
+        (
+            "component",
+            "spring-components",
+            "Spring @Component classes",
+        ),
     ];
 
     for (stereotype, concept_name, description) in groups {
@@ -750,11 +760,9 @@ public class OrderController {
 
         let (method, template): (String, String) = db
             .conn()
-            .query_row(
-                "SELECT http_method, route_template FROM routes",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .query_row("SELECT http_method, route_template FROM routes", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!(method, "GET");
         assert_eq!(template, "/api/catalog/items");
@@ -845,7 +853,10 @@ public class OrderController {
         let concept_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(concept_count, 2, "Should have spring-controllers and spring-services");
+        assert_eq!(
+            concept_count, 2,
+            "Should have spring-controllers and spring-services"
+        );
     }
 
     #[test]
@@ -853,5 +864,4 @@ public class OrderController {
         let db = Database::open_in_memory().unwrap();
         register_spring_patterns(db.conn(), &[], &[]).unwrap();
     }
-
 }

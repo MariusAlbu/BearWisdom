@@ -15,7 +15,11 @@ fn seed_flow(db: &Database) {
     .unwrap();
 
     let ts_id: i64 = conn
-        .query_row("SELECT id FROM files WHERE path = 'src/api/client.ts'", [], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM files WHERE path = 'src/api/client.ts'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     let cs_id: i64 = conn
         .query_row(

@@ -17,18 +17,14 @@ pub fn extract_typescript_graphql(
 ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
 
-    let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
-        .expect("gql type block regex");
-    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:")
-        .expect("gql field regex");
-    let re_resolver_key = Regex::new(
-        r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#,
-    )
-    .expect("ts graphql resolver key regex");
-    let re_typegraphql_op = Regex::new(
-        r#"@(?:Query|Mutation|Subscription)\s*\(\s*\([^)]*\)\s*=>\s*\w+\s*\)"#,
-    )
-    .expect("ts type-graphql op regex");
+    let re_type_block =
+        Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("gql type block regex");
+    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("gql field regex");
+    let re_resolver_key = Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
+        .expect("ts graphql resolver key regex");
+    let re_typegraphql_op =
+        Regex::new(r#"@(?:Query|Mutation|Subscription)\s*\(\s*\([^)]*\)\s*=>\s*\w+\s*\)"#)
+            .expect("ts type-graphql op regex");
 
     // Fast filter: no GraphQL markers → no points.
     if !re_type_block.is_match(source)
@@ -56,7 +52,9 @@ pub fn extract_typescript_graphql(
                 match ch {
                     '{' => brace_depth += 1,
                     '}' => {
-                        if brace_depth > 0 { brace_depth -= 1; }
+                        if brace_depth > 0 {
+                            brace_depth -= 1;
+                        }
                     }
                     _ => {}
                 }

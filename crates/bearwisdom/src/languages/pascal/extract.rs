@@ -24,8 +24,8 @@
 // Pascal uses '.' as namespace separator in unit names.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 use super::decls::{
@@ -62,9 +62,12 @@ pub fn extract(source: &str) -> ExtractionResult {
     //   3. Blank line between `end;` and `);` in variant-record case arms —
     //      prevents tree-sitter from closing the anonymous nested record boundary.
     let normalised;
-    let src = if source.contains("{$ifdef") || source.contains("{$if ")
-        || source.contains("{$IF") || source.contains("bitpacked")
-        || source.contains("end;") || source.contains('<')
+    let src = if source.contains("{$ifdef")
+        || source.contains("{$if ")
+        || source.contains("{$IF")
+        || source.contains("bitpacked")
+        || source.contains("end;")
+        || source.contains('<')
     {
         normalised = normalise_source(source);
         normalised.as_str()
@@ -161,9 +164,9 @@ pub(super) fn dispatch(
             // skip the spurious constant symbol.  Otherwise extract normally.
             let mut cursor = node.walk();
             let children: Vec<Node> = node.children(&mut cursor).collect();
-            let embedded_type = children.windows(2).find(|w| {
-                w[0].kind() == "type" && w[1].kind() == "defaultValue"
-            });
+            let embedded_type = children
+                .windows(2)
+                .find(|w| w[0].kind() == "type" && w[1].kind() == "defaultValue");
             if let Some(w) = embedded_type {
                 let type_node = w[0];
                 let dv_node = w[1];
@@ -234,9 +237,6 @@ pub(super) fn dispatch(
     }
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -292,9 +292,9 @@ pub(super) fn dispatch_type_body(
 
     let mut saw_type_keyword = false;
     let mut pending_proc_kw = false; // set after kProcedure/kFunction/etc.
-    // Tracks whether the previous two tokens were `identifier kEq`, indicating
-    // the start of a `TypeName = class/record` declaration embedded in the body
-    // ERROR node by tree-sitter's error recovery.
+                                     // Tracks whether the previous two tokens were `identifier kEq`, indicating
+                                     // the start of a `TypeName = class/record` declaration embedded in the body
+                                     // ERROR node by tree-sitter's error recovery.
     let mut pending_name_for_type: Option<Node> = None; // the identifier before kEq
 
     for (ci, child) in children.iter().enumerate() {
@@ -308,9 +308,9 @@ pub(super) fn dispatch_type_body(
             // Emit it as a Class/Interface/Struct and recurse for the rest.
             "kClass" | "kInterface" | "kRecord" if pending_name_for_type.is_some() => {
                 let sym_kind = match child.kind() {
-                    "kClass"     => SymbolKind::Class,
+                    "kClass" => SymbolKind::Class,
                     "kInterface" => SymbolKind::Interface,
-                    _            => SymbolKind::Struct,
+                    _ => SymbolKind::Struct,
                 };
                 if let Some(name_node) = pending_name_for_type.take() {
                     let name = node_text(name_node, src);
@@ -377,8 +377,8 @@ pub(super) fn dispatch_type_body(
             // ERROR nodes inside a type body may contain embedded type
             // declarations (e.g. class-of metaclass bodies that fold in the
             // following type declaration via error recovery).
-            "declProc" | "defProc" | "declSection" | "declVars" | "declConsts"
-            | "declUses" | "exprCall" | "typeref" | "ERROR" => {
+            "declProc" | "defProc" | "declSection" | "declVars" | "declConsts" | "declUses"
+            | "exprCall" | "typeref" | "ERROR" => {
                 pending_proc_kw = false;
                 pending_name_for_type = None;
                 dispatch(*child, src, symbols, refs, parent_index);
@@ -437,8 +437,14 @@ pub(super) fn type_keyword_of_node(node: Node, _src: &str) -> Option<SymbolKind>
             "kClass" => {
                 // `class function`/`class procedure`/`class constructor`/`class destructor`
                 // is a method modifier, not a type body opener.
-                let next_is_method = iter.peek()
-                    .map(|n| matches!(n.kind(), "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"))
+                let next_is_method = iter
+                    .peek()
+                    .map(|n| {
+                        matches!(
+                            n.kind(),
+                            "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"
+                        )
+                    })
                     .unwrap_or(false);
                 if next_is_method {
                     return None;
@@ -467,15 +473,15 @@ pub(super) fn infer_type_kind_from_default_value(node: Node, src: &str) -> Optio
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "kClass"     => return Some(SymbolKind::Class),
+            "kClass" => return Some(SymbolKind::Class),
             "kInterface" => return Some(SymbolKind::Interface),
-            "kRecord"    => return Some(SymbolKind::Struct),
+            "kRecord" => return Some(SymbolKind::Struct),
             "identifier" => {
                 let text = node_text(child, src).to_ascii_lowercase();
                 match text.as_str() {
                     "class" | "object" => return Some(SymbolKind::Class),
-                    "interface"        => return Some(SymbolKind::Interface),
-                    "record"           => return Some(SymbolKind::Struct),
+                    "interface" => return Some(SymbolKind::Interface),
+                    "record" => return Some(SymbolKind::Struct),
                     _ => {}
                 }
             }
@@ -512,11 +518,7 @@ pub(super) fn has_keyword_child(node: Node, kind: &str) -> bool {
 
 pub(super) fn first_line_of(node: Node, src: &str) -> String {
     let text = node_text(node, src);
-    text.lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string()
+    text.lines().next().unwrap_or("").trim().to_string()
 }
 
 pub(super) fn make_symbol(
@@ -540,12 +542,12 @@ pub(super) fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 pub(super) fn node_text(node: Node, src: &str) -> String {

@@ -71,7 +71,9 @@ pub(super) fn scan_elixir_header(source: &str) -> Vec<String> {
 }
 
 fn walk_elixir_body(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) {
-    if depth > 6 { return }
+    if depth > 6 {
+        return;
+    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         // Elixir's grammar represents every form as a `call` node whose first
@@ -87,9 +89,19 @@ fn walk_elixir_body(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32
                 if let Ok(head_text) = head.utf8_text(bytes) {
                     let is_decl = matches!(
                         head_text,
-                        "defmodule" | "def" | "defp" | "defmacro" | "defmacrop"
-                            | "defstruct" | "defprotocol" | "defimpl" | "defguard"
-                            | "defguardp" | "defdelegate" | "defexception" | "defcallback"
+                        "defmodule"
+                            | "def"
+                            | "defp"
+                            | "defmacro"
+                            | "defmacrop"
+                            | "defstruct"
+                            | "defprotocol"
+                            | "defimpl"
+                            | "defguard"
+                            | "defguardp"
+                            | "defdelegate"
+                            | "defexception"
+                            | "defcallback"
                     );
                     if is_decl {
                         if let Some(args) = children.iter().find(|n| n.kind() == "arguments") {
@@ -190,7 +202,10 @@ pub(super) fn scan_erlang_header(source: &str) -> Vec<String> {
                 let mut seen_first_atom = false;
                 for inner in child.children(&mut ic) {
                     if inner.kind() == "atom" {
-                        if !seen_first_atom { seen_first_atom = true; continue }
+                        if !seen_first_atom {
+                            seen_first_atom = true;
+                            continue;
+                        }
                         if let Ok(t) = inner.utf8_text(bytes) {
                             out.push(t.to_string());
                         }
@@ -221,8 +236,7 @@ pub(super) fn scan_gleam_header(source: &str) -> Vec<String> {
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         match child.kind() {
-            "function" | "constant" | "type_definition" | "external_function"
-            | "external_type" => {
+            "function" | "constant" | "type_definition" | "external_function" | "external_type" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
                     if let Ok(t) = name_node.utf8_text(bytes) {
                         out.push(t.to_string());

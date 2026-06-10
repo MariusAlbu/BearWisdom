@@ -16,9 +16,8 @@ pub fn extract_vue_graphql_points(source: &str) -> Vec<(u32, FlowEmission)> {
     let re_type_block =
         Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("vue gql type block regex");
     let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("vue gql field regex");
-    let re_resolver_key =
-        Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
-            .expect("vue graphql resolver key regex");
+    let re_resolver_key = Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
+        .expect("vue graphql resolver key regex");
 
     if !re_type_block.is_match(source) && !source.contains("gql`") {
         return Vec::new();
@@ -42,7 +41,9 @@ pub fn extract_vue_graphql_points(source: &str) -> Vec<(u32, FlowEmission)> {
                 match ch {
                     '{' => brace_depth += 1,
                     '}' => {
-                        if brace_depth > 0 { brace_depth -= 1; }
+                        if brace_depth > 0 {
+                            brace_depth -= 1;
+                        }
                     }
                     _ => {}
                 }

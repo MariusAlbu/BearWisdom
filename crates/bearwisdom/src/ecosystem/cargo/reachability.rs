@@ -22,17 +22,23 @@ pub(super) fn resolve_crate_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     // Without this branch, ~6-10% of cargo deps in a typical workspace
     // walk to zero files (every C-with-Rust-bindings crate, every crate
     // that carves up its workspace into custom directories).
-    let entry = lib_entry_from_manifest(&dep.root)
-        .or_else(|| {
-            let src = dep.root.join("src");
-            let lib = src.join("lib.rs");
-            if lib.is_file() { Some(lib) }
-            else {
-                let main = src.join("main.rs");
-                if main.is_file() { Some(main) } else { None }
+    let entry = lib_entry_from_manifest(&dep.root).or_else(|| {
+        let src = dep.root.join("src");
+        let lib = src.join("lib.rs");
+        if lib.is_file() {
+            Some(lib)
+        } else {
+            let main = src.join("main.rs");
+            if main.is_file() {
+                Some(main)
+            } else {
+                None
             }
-        });
-    let Some(entry) = entry else { return Vec::new() };
+        }
+    });
+    let Some(entry) = entry else {
+        return Vec::new();
+    };
     if !entry.is_file() {
         return Vec::new();
     }
@@ -55,23 +61,34 @@ pub(super) fn lib_entry_from_manifest(crate_root: &Path) -> Option<PathBuf> {
     let mut in_lib = false;
     for raw in content.lines() {
         let line = raw.trim();
-        if line.starts_with('#') { continue }
+        if line.starts_with('#') {
+            continue;
+        }
         if line.starts_with('[') && line.ends_with(']') {
             // Match `[lib]` exactly — not `[lib.something]` and not
             // `[[bin]]`. Anything else exits the [lib] table.
             in_lib = line == "[lib]";
             continue;
         }
-        if !in_lib { continue }
-        let Some(stripped) = line.strip_prefix("path") else { continue };
+        if !in_lib {
+            continue;
+        }
+        let Some(stripped) = line.strip_prefix("path") else {
+            continue;
+        };
         let stripped = stripped.trim_start();
-        let Some(rest) = stripped.strip_prefix('=') else { continue };
+        let Some(rest) = stripped.strip_prefix('=') else {
+            continue;
+        };
         let val = rest.trim();
         // Strip surrounding quotes.
         let Some(val) = val
-            .strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
             .or_else(|| val.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
-        else { continue };
+        else {
+            continue;
+        };
         let abs = crate_root.join(val);
         if abs.is_file() {
             return Some(abs);
@@ -88,8 +105,12 @@ fn expand_rust_mods_into(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: u32,
 ) {
-    if !seen.insert(file.to_path_buf()) { return }
-    if !file.is_file() { return }
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    if !file.is_file() {
+        return;
+    }
 
     let rel_sub = match file.strip_prefix(crate_root) {
         Ok(p) => p.to_string_lossy().replace('\\', "/"),
@@ -105,11 +126,17 @@ fn expand_rust_mods_into(
         language: "rust",
     });
 
-    if depth >= RS_MOD_MAX_DEPTH { return }
+    if depth >= RS_MOD_MAX_DEPTH {
+        return;
+    }
 
-    let Ok(src) = std::fs::read_to_string(file) else { return };
+    let Ok(src) = std::fs::read_to_string(file) else {
+        return;
+    };
     for child in extract_rust_mod_decls(&src) {
-        let Some(next) = resolve_rust_mod_path(file, &child) else { continue };
+        let Some(next) = resolve_rust_mod_path(file, &child) else {
+            continue;
+        };
         expand_rust_mods_into(dep, crate_root, &next, out, seen, depth + 1);
     }
 }
@@ -127,7 +154,9 @@ pub(super) fn extract_rust_mod_decls(src: &str) -> Vec<String> {
             None => line,
         };
         let line = line.trim();
-        if !line.ends_with(';') { continue }
+        if !line.ends_with(';') {
+            continue;
+        }
 
         let mut rest = line;
         if let Some(r) = rest.strip_prefix("pub") {
@@ -139,13 +168,21 @@ pub(super) fn extract_rust_mod_decls(src: &str) -> Vec<String> {
             }
         }
 
-        let Some(r) = rest.strip_prefix("mod") else { continue };
+        let Some(r) = rest.strip_prefix("mod") else {
+            continue;
+        };
         // Ensure the next char is whitespace — avoid matching `model;` etc.
         let after = r;
-        if !after.starts_with(|c: char| c.is_whitespace()) { continue }
+        if !after.starts_with(|c: char| c.is_whitespace()) {
+            continue;
+        }
         let ident = after.trim_start().trim_end_matches(';').trim();
-        if ident.is_empty() { continue }
-        if !ident.chars().all(|c| c.is_alphanumeric() || c == '_') { continue }
+        if ident.is_empty() {
+            continue;
+        }
+        if !ident.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            continue;
+        }
         out.push(ident.to_string());
     }
     out
@@ -164,8 +201,12 @@ pub(super) fn resolve_rust_mod_path(from_file: &Path, child: &str) -> Option<Pat
     };
 
     let as_file = mod_dir.join(format!("{child}.rs"));
-    if as_file.is_file() { return Some(as_file) }
+    if as_file.is_file() {
+        return Some(as_file);
+    }
     let as_mod = mod_dir.join(child).join("mod.rs");
-    if as_mod.is_file() { return Some(as_mod) }
+    if as_mod.is_file() {
+        return Some(as_mod);
+    }
     None
 }

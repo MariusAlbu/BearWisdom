@@ -27,7 +27,9 @@ pub struct AuditCallsQuery {
     offset: i64,
 }
 
-fn default_audit_limit() -> i64 { 100 }
+fn default_audit_limit() -> i64 {
+    100
+}
 
 pub async fn get_audit_sessions(
     State(state): State<AppState>,
@@ -49,12 +51,10 @@ pub async fn get_audit_calls(
 ) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     match state.pool.get_db(&root) {
-        Ok(db) => {
-            match db.list_audit_calls(&params.session_id, params.limit, params.offset) {
-                Ok(calls) => ok_json(calls).into_response(),
-                Err(e) => err_json(e).into_response(),
-            }
-        }
+        Ok(db) => match db.list_audit_calls(&params.session_id, params.limit, params.offset) {
+            Ok(calls) => ok_json(calls).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
         Err(e) => err_json(e).into_response(),
     }
 }
@@ -79,9 +79,7 @@ pub async fn get_audit_stream(
     State(state): State<AppState>,
     Query(params): Query<PathParam>,
 ) -> axum::response::sse::Sse<
-    impl futures::stream::Stream<
-        Item = Result<axum::response::sse::Event, std::convert::Infallible>,
-    >,
+    impl futures::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
 > {
     use axum::response::sse::{Event, KeepAlive};
 

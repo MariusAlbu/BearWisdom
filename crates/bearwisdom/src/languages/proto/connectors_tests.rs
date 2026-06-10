@@ -27,7 +27,12 @@ service BillingService {
     assert_eq!(name_of(&points[2].1), "BillingService.Charge");
     for (_, e) in &points {
         match e {
-            FlowEmission::NamedChannel { kind, role, streaming, .. } => {
+            FlowEmission::NamedChannel {
+                kind,
+                role,
+                streaming,
+                ..
+            } => {
                 assert_eq!(*kind, NamedChannelKind::RpcCall);
                 assert_eq!(*role, ChannelRole::Consumer);
                 assert!(streaming.is_none(), "unary expected, got {streaming:?}");

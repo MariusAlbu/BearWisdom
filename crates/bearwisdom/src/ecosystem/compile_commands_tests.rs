@@ -13,10 +13,26 @@ fn fixture_project_with_cc_json() -> TempDir {
     fs::create_dir_all(root.join("Qt/include/QtCore")).unwrap();
     fs::create_dir_all(root.join("boost/include/boost")).unwrap();
     fs::create_dir_all(root.join("internal_sdk/include")).unwrap();
-    fs::write(root.join("Qt/include/QtCore/QObject"), "#include \"qobject.h\"\n").unwrap();
-    fs::write(root.join("Qt/include/QtCore/qobject.h"), "class QObject {};\n").unwrap();
-    fs::write(root.join("boost/include/boost/version.hpp"), "#define BOOST_VERSION 108300\n").unwrap();
-    fs::write(root.join("internal_sdk/include/megacorp.h"), "void mc_init(void);\n").unwrap();
+    fs::write(
+        root.join("Qt/include/QtCore/QObject"),
+        "#include \"qobject.h\"\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("Qt/include/QtCore/qobject.h"),
+        "class QObject {};\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("boost/include/boost/version.hpp"),
+        "#define BOOST_VERSION 108300\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("internal_sdk/include/megacorp.h"),
+        "void mc_init(void);\n",
+    )
+    .unwrap();
     tmp
 }
 
@@ -41,12 +57,15 @@ fn tu_file_set_collects_canonical_tu_paths() {
         root_s = root.to_string_lossy().replace('\\', "/")
     );
     write_cc_json(root, &body);
-    let tus = tu_file_set(root).expect("tu_file_set should return Some when compile_commands.json has entries");
+    let tus = tu_file_set(root)
+        .expect("tu_file_set should return Some when compile_commands.json has entries");
     let canon = |p: &std::path::Path| p.canonicalize().unwrap();
     assert!(tus.contains(&canon(&src_dir.join("a.cpp"))));
     assert!(tus.contains(&canon(&src_dir.join("b.cpp"))));
-    assert!(!tus.contains(&canon(&src_dir.join("c.cpp"))),
-        "c.cpp is on disk but absent from compile_commands.json — must NOT be in TU set");
+    assert!(
+        !tus.contains(&canon(&src_dir.join("c.cpp"))),
+        "c.cpp is on disk but absent from compile_commands.json — must NOT be in TU set"
+    );
 }
 
 #[test]
@@ -64,8 +83,10 @@ fn tu_file_set_returns_none_when_entries_have_no_file_field() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     write_cc_json(root, r#"[{"directory": ".", "command": "cc -c x.c"}]"#);
-    assert!(tu_file_set(root).is_none(),
-        "no `file` fields means no TU set — caller treats as no-op");
+    assert!(
+        tu_file_set(root).is_none(),
+        "no `file` fields means no TU set — caller treats as no-op"
+    );
 }
 
 #[test]
@@ -89,7 +110,10 @@ fn extracts_minus_i_from_command_string() {
     let tmp = fixture_project_with_cc_json();
     let root = tmp.path();
     let qt_include = root.join("Qt/include").to_string_lossy().replace('\\', "/");
-    let boost_include = root.join("boost/include").to_string_lossy().replace('\\', "/");
+    let boost_include = root
+        .join("boost/include")
+        .to_string_lossy()
+        .replace('\\', "/");
     let body = format!(
         r#"[
 {{
@@ -107,19 +131,44 @@ fn extracts_minus_i_from_command_string() {
     let roots = discover_from_compile_commands(root);
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
-    let boost_canon = root.join("boost/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
-    assert!(root_paths.iter().any(|p| p == &qt_canon), "qt include missing; got {root_paths:?}");
-    assert!(root_paths.iter().any(|p| p == &boost_canon), "boost include missing; got {root_paths:?}");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let boost_canon = root
+        .join("boost/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "qt include missing; got {root_paths:?}"
+    );
+    assert!(
+        root_paths.iter().any(|p| p == &boost_canon),
+        "boost include missing; got {root_paths:?}"
+    );
 }
 
 #[test]
 fn extracts_minus_i_from_arguments_array() {
     let tmp = fixture_project_with_cc_json();
     let root = tmp.path();
-    let internal = root.join("internal_sdk/include").to_string_lossy().replace('\\', "/");
+    let internal = root
+        .join("internal_sdk/include")
+        .to_string_lossy()
+        .replace('\\', "/");
     let body = format!(
         r#"[
 {{
@@ -134,14 +183,36 @@ fn extracts_minus_i_from_arguments_array() {
     write_cc_json(root, &body);
 
     let roots = discover_from_compile_commands(root);
-    let internal_canon = root.join("internal_sdk/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let internal_canon = root
+        .join("internal_sdk/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
-    assert!(root_paths.iter().any(|p| p == &internal_canon), "internal sdk -I missing");
-    assert!(root_paths.iter().any(|p| p == &qt_canon), "qt -isystem missing");
+    assert!(
+        root_paths.iter().any(|p| p == &internal_canon),
+        "internal sdk -I missing"
+    );
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "qt -isystem missing"
+    );
 }
 
 #[test]
@@ -160,7 +231,11 @@ fn deduplicates_includes_seen_in_multiple_entries() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    assert_eq!(roots.len(), 1, "duplicate -I entries must dedupe; got {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "duplicate -I entries must dedupe; got {roots:?}"
+    );
 }
 
 #[test]
@@ -176,7 +251,10 @@ fn skips_nonexistent_paths() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    assert!(roots.is_empty(), "non-existent paths must be filtered; got {roots:?}");
+    assert!(
+        roots.is_empty(),
+        "non-existent paths must be filtered; got {roots:?}"
+    );
 }
 
 #[test]
@@ -191,10 +269,21 @@ fn relative_include_paths_resolve_against_directory() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
     assert!(
         root_paths.iter().any(|p| p == &qt_canon),
@@ -218,7 +307,11 @@ fn locates_compile_commands_in_build_subdir() {
     );
     fs::write(root.join("build/compile_commands.json"), body).unwrap();
     let roots = discover_from_compile_commands(root);
-    assert_eq!(roots.len(), 1, "build/ subdir must be probed; got {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "build/ subdir must be probed; got {roots:?}"
+    );
 }
 
 #[test]
@@ -237,7 +330,11 @@ fn locates_compile_commands_in_cmake_build_subdir() {
     );
     fs::write(root.join("cmake-build-debug/compile_commands.json"), body).unwrap();
     let roots = discover_from_compile_commands(root);
-    assert_eq!(roots.len(), 1, "cmake-build-* subdir must be probed; got {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "cmake-build-* subdir must be probed; got {roots:?}"
+    );
 }
 
 #[test]
@@ -252,7 +349,10 @@ fn malformed_json_returns_empty_without_panic() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("compile_commands.json"), "not valid { json").unwrap();
     let roots = discover_from_compile_commands(tmp.path());
-    assert!(roots.is_empty(), "malformed JSON must not panic; got {roots:?}");
+    assert!(
+        roots.is_empty(),
+        "malformed JSON must not panic; got {roots:?}"
+    );
 }
 
 #[test]
@@ -299,10 +399,7 @@ fn precedence_qt_walker_suppressed_when_compile_commands_present() {
         manifests: &manifests,
         active_ecosystems: &active,
     };
-    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(
-        &QtRuntimeEcosystem,
-        &ctx,
-    );
+    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(&QtRuntimeEcosystem, &ctx);
     std::env::remove_var("BEARWISDOM_QT_DIR");
     assert!(
         roots.is_empty(),
@@ -330,10 +427,7 @@ fn precedence_qt_walker_active_without_compile_commands() {
         manifests: &manifests,
         active_ecosystems: &active,
     };
-    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(
-        &QtRuntimeEcosystem,
-        &ctx,
-    );
+    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(&QtRuntimeEcosystem, &ctx);
     std::env::remove_var("BEARWISDOM_QT_DIR");
     assert!(
         !roots.is_empty(),
@@ -346,7 +440,8 @@ fn tokenize_command_handles_quoted_paths() {
     // A path with a space in it, double-quoted.
     let argv = tokenize_command(r#"g++ "-IC:/Program Files/Some SDK/include" -c main.cpp"#);
     assert!(
-        argv.iter().any(|a| a == "-IC:/Program Files/Some SDK/include"),
+        argv.iter()
+            .any(|a| a == "-IC:/Program Files/Some SDK/include"),
         "quoted -I path must come through intact; got {argv:?}"
     );
 }
@@ -368,9 +463,7 @@ fn tokenize_command_preserves_unquoted_windows_backslashes() {
 fn tokenize_command_preserves_quoted_windows_backslashes() {
     // Inside double quotes, `\` is only an escape for `\"` and `\\`. Backslash
     // before any other character is a literal — Windows paths survive.
-    let argv = tokenize_command(
-        "cl.exe \"-IC:\\Program Files\\Qt\\include\" -c main.cpp",
-    );
+    let argv = tokenize_command("cl.exe \"-IC:\\Program Files\\Qt\\include\" -c main.cpp");
     assert!(
         argv.iter().any(|a| a == "-IC:\\Program Files\\Qt\\include"),
         "quoted Windows path must survive tokenization; got {argv:?}"
@@ -410,7 +503,8 @@ fn tokenize_command_handles_backslash_quote_outside_double_quotes() {
     // The define itself comes through as one token with literal embedded
     // quotes, exactly as cl.exe would receive it.
     assert!(
-        argv.iter().any(|a| a == "-DQT_TESTCASE_BUILDDIR=\"F:/path\""),
+        argv.iter()
+            .any(|a| a == "-DQT_TESTCASE_BUILDDIR=\"F:/path\""),
         "define with backslash-escaped quotes should land as one token \
          with literal embedded quotes; got {argv:?}"
     );
@@ -425,7 +519,10 @@ fn extracts_external_i_combined_form() {
     let tmp = fixture_project_with_cc_json();
     let root = tmp.path();
     let qt = root.join("Qt/include").to_string_lossy().replace('\\', "/");
-    let vcpkg = root.join("boost/include").to_string_lossy().replace('\\', "/");
+    let vcpkg = root
+        .join("boost/include")
+        .to_string_lossy()
+        .replace('\\', "/");
     let body = format!(
         r#"[
 {{ "directory": "{0}", "file": "a.cpp", "command": "cl.exe -external:I{1} -external:I{2} -c a.cpp" }}
@@ -436,16 +533,36 @@ fn extracts_external_i_combined_form() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
-    let vcpkg_canon = root.join("boost/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let vcpkg_canon = root
+        .join("boost/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
-    assert!(root_paths.iter().any(|p| p == &qt_canon),
-        "qt -external:I missing; got {root_paths:?}");
-    assert!(root_paths.iter().any(|p| p == &vcpkg_canon),
-        "vcpkg -external:I missing; got {root_paths:?}");
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "qt -external:I missing; got {root_paths:?}"
+    );
+    assert!(
+        root_paths.iter().any(|p| p == &vcpkg_canon),
+        "vcpkg -external:I missing; got {root_paths:?}"
+    );
 }
 
 #[test]
@@ -462,13 +579,26 @@ fn extracts_external_i_separated_form() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
-    assert!(root_paths.iter().any(|p| p == &qt_canon),
-        "qt -external:I (separated) missing; got {root_paths:?}");
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "qt -external:I (separated) missing; got {root_paths:?}"
+    );
 }
 
 #[test]
@@ -485,13 +615,26 @@ fn extracts_external_i_slash_form() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    let qt_canon = root.join("Qt/include").canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let qt_canon = root
+        .join("Qt/include")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
     let root_paths: Vec<String> = roots
         .iter()
-        .map(|r| r.root.canonicalize().unwrap().to_string_lossy().replace('\\', "/"))
+        .map(|r| {
+            r.root
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
         .collect();
-    assert!(root_paths.iter().any(|p| p == &qt_canon),
-        "qt /external:I missing; got {root_paths:?}");
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "qt /external:I missing; got {root_paths:?}"
+    );
 }
 
 #[test]
@@ -515,7 +658,11 @@ fn external_warning_flags_are_not_consumed_as_paths() {
     let roots = discover_from_compile_commands(root);
     // Only qt/include should resolve. The W0 / templates- args refer to
     // paths "0" and "-" which don't exist on disk.
-    assert_eq!(roots.len(), 1, "non-include -external: flags must not produce roots; got {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "non-include -external: flags must not produce roots; got {roots:?}"
+    );
 }
 
 #[test]
@@ -547,18 +694,26 @@ fn extracts_paths_from_realistic_msbuild_command_string() {
     );
     write_cc_json(root, &body);
     let roots = discover_from_compile_commands(root);
-    let canon = |p: &std::path::Path| p.canonicalize().unwrap().to_string_lossy().replace('\\', "/");
+    let canon = |p: &std::path::Path| {
+        p.canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
     let qt_canon = canon(&root.join("Qt/include"));
     let qt_core_canon = canon(&root.join("Qt/include/QtCore"));
     let internal_canon = canon(&root.join("internal_sdk/include"));
-    let root_paths: Vec<String> = roots
-        .iter()
-        .map(|r| canon(&r.root))
-        .collect();
-    assert!(root_paths.iter().any(|p| p == &qt_canon),
-        "Qt root from -external:I missing; got {root_paths:?}");
-    assert!(root_paths.iter().any(|p| p == &qt_core_canon),
-        "Qt/include/QtCore root from -external:I missing; got {root_paths:?}");
-    assert!(root_paths.iter().any(|p| p == &internal_canon),
-        "Project -I root missing; got {root_paths:?}");
+    let root_paths: Vec<String> = roots.iter().map(|r| canon(&r.root)).collect();
+    assert!(
+        root_paths.iter().any(|p| p == &qt_canon),
+        "Qt root from -external:I missing; got {root_paths:?}"
+    );
+    assert!(
+        root_paths.iter().any(|p| p == &qt_core_canon),
+        "Qt/include/QtCore root from -external:I missing; got {root_paths:?}"
+    );
+    assert!(
+        root_paths.iter().any(|p| p == &internal_canon),
+        "Project -I root missing; got {root_paths:?}"
+    );
 }

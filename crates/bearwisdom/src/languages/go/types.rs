@@ -88,9 +88,7 @@ fn extract_type_alias_decl(
     }
 
     let type_node = node.child_by_field_name("type");
-    let type_text = type_node
-        .map(|n| node_text(&n, source))
-        .unwrap_or_default();
+    let type_text = type_node.map(|n| node_text(&n, source)).unwrap_or_default();
 
     let qualified_name = qualify(&name, qualified_prefix);
     let visibility = go_visibility(&name);
@@ -115,12 +113,12 @@ fn extract_type_alias_decl(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(rhs) = type_node {
         emit_alias_head_ref(&rhs, source, idx, refs);
@@ -167,7 +165,9 @@ fn emit_alias_head_ref(
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: head,
         kind: EdgeKind::TypeRef,
@@ -218,10 +218,12 @@ fn extract_type_spec(
     // For generic types like `type Result[T any] struct { ... }`, tree-sitter-go
     // emits a `type_parameter_list` or `type_parameter_declaration` node BEFORE
     // the actual type body.  Skip over those so we find the struct_type / interface_type.
-    let type_node = match named_children
-        .into_iter()
-        .find(|n| !matches!(n.kind(), "type_parameter_list" | "type_parameter_declaration" | "type_constraints"))
-    {
+    let type_node = match named_children.into_iter().find(|n| {
+        !matches!(
+            n.kind(),
+            "type_parameter_list" | "type_parameter_declaration" | "type_constraints"
+        )
+    }) {
         Some(n) => n,
         None => return,
     };
@@ -248,12 +250,12 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
             extract_struct_fields(&type_node, source, symbols, refs, Some(idx), &struct_prefix);
         }
 
@@ -274,13 +276,20 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
-            extract_interface_methods_with_refs(&type_node, source, symbols, refs, Some(idx), &iface_prefix);
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
+            extract_interface_methods_with_refs(
+                &type_node,
+                source,
+                symbols,
+                refs,
+                Some(idx),
+                &iface_prefix,
+            );
         }
 
         _ => {
@@ -307,12 +316,12 @@ fn extract_type_spec(
                 doc_comment,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -359,14 +368,7 @@ fn extract_field_declaration_list(
     let mut cursor = list_node.walk();
     for child in list_node.children(&mut cursor) {
         if child.kind() == "field_declaration" {
-            extract_field_declaration(
-                &child,
-                source,
-                symbols,
-                refs,
-                parent_index,
-                struct_prefix,
-            );
+            extract_field_declaration(&child, source, symbols, refs, parent_index, struct_prefix);
         }
     }
 }
@@ -451,7 +453,9 @@ fn extract_field_declaration(
     if let Some(et) = embedded_type {
         if !et.is_empty() {
             // Emit Inherits edge from the struct (parent_index) to the embedded type.
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
                 target_name: et.clone(),
                 kind: EdgeKind::Inherits,
@@ -460,9 +464,9 @@ fn extract_field_declaration(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             // Also emit a Field symbol (the embedded type acts as an accessible field).
             symbols.push(ExtractedSymbol {
                 name: et.clone(),
@@ -477,12 +481,12 @@ fn extract_field_declaration(
                 doc_comment: None,
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     } else {
         // Named fields.
@@ -516,12 +520,12 @@ fn extract_field_declaration(
                 doc_comment: tag_doc.clone(),
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -550,7 +554,9 @@ fn emit_type_refs_from_subtree(
         "type_identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() && !is_go_builtin_type(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -559,9 +565,9 @@ fn emit_type_refs_from_subtree(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 
@@ -584,7 +590,9 @@ fn emit_type_refs_from_subtree(
                 .map(|n| node_text(&n, source))
                 .unwrap_or_default();
             if !name.is_empty() && !is_go_builtin_type(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -593,9 +601,9 @@ fn emit_type_refs_from_subtree(
                     module: pkg,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 
@@ -695,12 +703,12 @@ fn extract_interface_methods(
             doc_comment: None,
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
     }
 }
 
@@ -746,12 +754,12 @@ fn extract_interface_methods_with_refs(
             doc_comment: None,
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Emit TypeRef edges for parameter and return types of this method_elem.
         super::calls::extract_fn_signature_type_refs(&child, source, sym_idx, refs);

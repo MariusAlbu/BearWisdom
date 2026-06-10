@@ -29,7 +29,19 @@ fn bicep_profile_strips_sys_az_namespace_aliases() {
 fn bicep_kind_table_gates_calls_to_callables() {
     // The kind table replaces PERMISSIVE — Calls accepts callables, not types.
     let table = BICEP_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Function));
-    assert!(KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Method));
-    assert!(!KindCompatibility::check(table, EdgeKind::Calls, SymbolKind::Class));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Method
+    ));
+    assert!(!KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Class
+    ));
 }

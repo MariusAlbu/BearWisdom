@@ -7,9 +7,7 @@
 // Plus the helpers each emitter uses (export collection, fa list walker).
 // =============================================================================
 
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 use super::extract::{extract_attr_value, extract_attr_value_str, node_text};
@@ -80,11 +78,11 @@ pub(super) fn extract_module(node: &Node, src: &str, symbols: &mut Vec<Extracted
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -112,11 +110,11 @@ pub(super) fn extract_record(node: &Node, src: &str, symbols: &mut Vec<Extracted
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +137,9 @@ pub(super) fn extract_behaviour(
     if behaviour.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: behaviour.clone(),
         kind: EdgeKind::Implements,
@@ -148,9 +148,9 @@ pub(super) fn extract_behaviour(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +195,9 @@ pub(super) fn extract_import_attr(
             continue;
         }
         let target = format!("{}/{}", fun_name, arity_str);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -205,15 +207,17 @@ pub(super) fn extract_import_attr(
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                    col: 0,
-});
+            col: 0,
+        });
         emitted = true;
     }
 
     // When the `funs` list is empty or not structured (parse error), fall back
     // to a single module-level import so the resolver can still wildcard-match.
     if !emitted {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: module_name.clone(),
             kind: EdgeKind::Imports,
@@ -223,8 +227,8 @@ pub(super) fn extract_import_attr(
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args: Vec::new(),
-                    col: 0,
-});
+            col: 0,
+        });
     }
 }
 
@@ -241,15 +245,23 @@ pub(super) fn extract_include(
     let text = node_text(node, src);
     // -include("file.hrl"). or -include_lib("app/include/file.hrl").
     let file = if let Some(rest) = text.strip_prefix("-include_lib(") {
-        rest.trim_end_matches(").").trim().trim_matches('"').to_string()
+        rest.trim_end_matches(").")
+            .trim()
+            .trim_matches('"')
+            .to_string()
     } else if let Some(rest) = text.strip_prefix("-include(") {
-        rest.trim_end_matches(").").trim().trim_matches('"').to_string()
+        rest.trim_end_matches(").")
+            .trim()
+            .trim_matches('"')
+            .to_string()
     } else {
         return;
     };
 
     if !file.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: file.clone(),
             kind: EdgeKind::Imports,
@@ -258,9 +270,9 @@ pub(super) fn extract_include(
             module: Some(file),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -280,7 +292,11 @@ pub(super) fn extract_type_alias(node: &Node, src: &str, symbols: &mut Vec<Extra
             return;
         }
         let line = node.start_position().row as u32;
-        let prefix = if node.kind() == "opaque" { "-opaque" } else { "-type" };
+        let prefix = if node.kind() == "opaque" {
+            "-opaque"
+        } else {
+            "-type"
+        };
         symbols.push(ExtractedSymbol {
             name: name.clone(),
             qualified_name: name.clone(),
@@ -295,11 +311,11 @@ pub(super) fn extract_type_alias(node: &Node, src: &str, symbols: &mut Vec<Extra
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -329,11 +345,11 @@ pub(super) fn extract_callback(node: &Node, src: &str, symbols: &mut Vec<Extract
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -353,10 +369,29 @@ pub(super) fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<Extrac
         };
         // Skip known directives; only emit Variable for genuine custom attributes.
         const SKIP: &[&str] = &[
-            "module", "export", "export_type", "import", "behaviour", "behavior",
-            "record", "type", "opaque", "spec", "callback", "define",
-            "include", "include_lib", "compile", "file", "on_load",
-            "doc", "moduledoc", "deprecated", "feature", "vsn", "author",
+            "module",
+            "export",
+            "export_type",
+            "import",
+            "behaviour",
+            "behavior",
+            "record",
+            "type",
+            "opaque",
+            "spec",
+            "callback",
+            "define",
+            "include",
+            "include_lib",
+            "compile",
+            "file",
+            "on_load",
+            "doc",
+            "moduledoc",
+            "deprecated",
+            "feature",
+            "vsn",
+            "author",
         ];
         if name.is_empty() || SKIP.contains(&name.as_str()) {
             return;
@@ -376,10 +411,10 @@ pub(super) fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<Extrac
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }

@@ -15,7 +15,7 @@ pub mod registry;
 pub use hooks::{DispatchContext, LanguageEngineHooks, NoOpHooks, RefContext};
 pub use language_profile::{
     ArgKey, BucketContainer, ClassBuilderSpec, ClassNameSource, ConstructorPattern,
-    DecoratorSyntax, DispatchAxis, KindCompatibility, KindTable, LanguageProfile,
-    MemberShape, MethodBucket, SupertypeDiscovery, DEFAULT_PROFILE, PERMISSIVE_KIND_TABLE,
+    DecoratorSyntax, DispatchAxis, KindCompatibility, KindTable, LanguageProfile, MemberShape,
+    MethodBucket, SupertypeDiscovery, DEFAULT_PROFILE, PERMISSIVE_KIND_TABLE,
 };
 pub use registry::ProfileRegistry;

@@ -160,12 +160,16 @@ fn external_python_package_is_indexed_and_resolved() {
 
     // --- User queries skip externals ---
     let search_hits =
-        bearwisdom::query::search::search_symbols(&db, "Engine", 10, &Default::default())
-            .unwrap();
+        bearwisdom::query::search::search_symbols(&db, "Engine", 10, &Default::default()).unwrap();
     assert!(
-        search_hits.iter().all(|s| !s.qualified_name.contains("fakelib")),
+        search_hits
+            .iter()
+            .all(|s| !s.qualified_name.contains("fakelib")),
         "search_symbols leaked an external symbol: {:?}",
-        search_hits.iter().map(|s| &s.qualified_name).collect::<Vec<_>>()
+        search_hits
+            .iter()
+            .map(|s| &s.qualified_name)
+            .collect::<Vec<_>>()
     );
 
     // --- Tier 1 resolver closes the loop: internal→external edges exist ---

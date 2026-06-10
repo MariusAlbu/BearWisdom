@@ -54,43 +54,58 @@ async fn main() {
     };
 
     let api_router = Router::new()
-        .route("/index",          axum::routing::post(api::post_index))
-        .route("/status",         axum::routing::get(api::get_status))
-        .route("/architecture",   axum::routing::get(api::get_architecture))
-        .route("/dead-code",      axum::routing::get(api::get_dead_code))
-        .route("/entry-points",   axum::routing::get(api::get_entry_points))
-        .route("/search-symbols", axum::routing::get(api::get_search_symbols))
-        .route("/fuzzy-files",    axum::routing::get(api::get_fuzzy_files))
-        .route("/fuzzy-symbols",  axum::routing::get(api::get_fuzzy_symbols))
-        .route("/grep",           axum::routing::get(api::get_grep))
-        .route("/search-content", axum::routing::get(api::get_search_content))
-        .route("/hybrid",         axum::routing::get(api::get_hybrid))
-        .route("/graph",          axum::routing::get(api::get_graph))
-        .route("/concepts",       axum::routing::get(api::get_concepts))
-        .route("/concept-members",axum::routing::get(api::get_concept_members))
-        .route("/symbol-info",    axum::routing::get(api::get_symbol_info))
-        .route("/definition",     axum::routing::get(api::get_definition))
-        .route("/references",     axum::routing::get(api::get_references))
-        .route("/calls-in",       axum::routing::get(api::get_calls_in))
-        .route("/calls-out",      axum::routing::get(api::get_calls_out))
-        .route("/blast-radius",   axum::routing::get(api::get_blast_radius))
-        .route("/file-symbols",   axum::routing::get(api::get_file_symbols))
-        .route("/file-content",   axum::routing::get(api::get_file_content))
-        .route("/browse",         axum::routing::get(api::get_browse))
-        .route("/embed",          axum::routing::post(api::post_embed))
-        .route("/embed-status",   axum::routing::get(api::get_embed_status))
-        .route("/flow-edges",     axum::routing::get(api::get_flow_edges))
-        .route("/trace-flow",     axum::routing::get(api::get_trace_flow))
-        .route("/full-trace",              axum::routing::get(api::get_full_trace))
-        .route("/audit/sessions",          axum::routing::get(api::get_audit_sessions))
-        .route("/audit/calls",             axum::routing::get(api::get_audit_calls))
-        .route("/audit/stats",             axum::routing::get(api::get_audit_stats))
-        .route("/audit/stream",            axum::routing::get(api::get_audit_stream))
-        .route("/audit/sessions/{id}",      axum::routing::delete(api::delete_audit_session))
-        .route("/hierarchy",               axum::routing::get(api::get_hierarchy))
-        .route("/packages",                axum::routing::get(api::get_packages))
-        .route("/workspace",               axum::routing::get(api::get_workspace))
-        .route("/dependencies",            axum::routing::get(api::get_dependencies))
+        .route("/index", axum::routing::post(api::post_index))
+        .route("/status", axum::routing::get(api::get_status))
+        .route("/architecture", axum::routing::get(api::get_architecture))
+        .route("/dead-code", axum::routing::get(api::get_dead_code))
+        .route("/entry-points", axum::routing::get(api::get_entry_points))
+        .route(
+            "/search-symbols",
+            axum::routing::get(api::get_search_symbols),
+        )
+        .route("/fuzzy-files", axum::routing::get(api::get_fuzzy_files))
+        .route("/fuzzy-symbols", axum::routing::get(api::get_fuzzy_symbols))
+        .route("/grep", axum::routing::get(api::get_grep))
+        .route(
+            "/search-content",
+            axum::routing::get(api::get_search_content),
+        )
+        .route("/hybrid", axum::routing::get(api::get_hybrid))
+        .route("/graph", axum::routing::get(api::get_graph))
+        .route("/concepts", axum::routing::get(api::get_concepts))
+        .route(
+            "/concept-members",
+            axum::routing::get(api::get_concept_members),
+        )
+        .route("/symbol-info", axum::routing::get(api::get_symbol_info))
+        .route("/definition", axum::routing::get(api::get_definition))
+        .route("/references", axum::routing::get(api::get_references))
+        .route("/calls-in", axum::routing::get(api::get_calls_in))
+        .route("/calls-out", axum::routing::get(api::get_calls_out))
+        .route("/blast-radius", axum::routing::get(api::get_blast_radius))
+        .route("/file-symbols", axum::routing::get(api::get_file_symbols))
+        .route("/file-content", axum::routing::get(api::get_file_content))
+        .route("/browse", axum::routing::get(api::get_browse))
+        .route("/embed", axum::routing::post(api::post_embed))
+        .route("/embed-status", axum::routing::get(api::get_embed_status))
+        .route("/flow-edges", axum::routing::get(api::get_flow_edges))
+        .route("/trace-flow", axum::routing::get(api::get_trace_flow))
+        .route("/full-trace", axum::routing::get(api::get_full_trace))
+        .route(
+            "/audit/sessions",
+            axum::routing::get(api::get_audit_sessions),
+        )
+        .route("/audit/calls", axum::routing::get(api::get_audit_calls))
+        .route("/audit/stats", axum::routing::get(api::get_audit_stats))
+        .route("/audit/stream", axum::routing::get(api::get_audit_stream))
+        .route(
+            "/audit/sessions/{id}",
+            axum::routing::delete(api::delete_audit_session),
+        )
+        .route("/hierarchy", axum::routing::get(api::get_hierarchy))
+        .route("/packages", axum::routing::get(api::get_packages))
+        .route("/workspace", axum::routing::get(api::get_workspace))
+        .route("/dependencies", axum::routing::get(api::get_dependencies))
         .with_state(state);
 
     let mut app = Router::new()

@@ -97,7 +97,10 @@ fn parse_servant_alternative(alt: &str, handler_symbol_index: usize) -> Option<E
 
 fn servant_verb_prefix(seg: &str) -> Option<&'static str> {
     // Match the leading identifier, treating non-letter chars as boundaries.
-    let head: String = seg.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+    let head: String = seg
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
     match head.as_str() {
         "Get" => Some("GET"),
         "Post" => Some("POST"),

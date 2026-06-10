@@ -53,10 +53,18 @@ pub struct GnatProjectEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for GnatProjectEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
         &[(".gpr", "ada")]
@@ -83,8 +91,12 @@ impl Ecosystem for GnatProjectEcosystem {
         walk_gpr_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_gnat_project_symbol_index(dep_roots)
@@ -96,7 +108,9 @@ impl Ecosystem for GnatProjectEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for GnatProjectEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_gnat_project_externals(project_root)
     }
@@ -108,7 +122,9 @@ impl ExternalSourceLocator for GnatProjectEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<GnatProjectEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(GnatProjectEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(GnatProjectEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +137,9 @@ pub fn discover_gnat_project_externals(project_root: &Path) -> Vec<ExternalDepRo
     // OUTSIDE project_root become external dep roots.
     let mut gpr_files: Vec<PathBuf> = Vec::new();
     collect_gpr_files(project_root, &mut gpr_files, 0);
-    if gpr_files.is_empty() { return Vec::new() }
+    if gpr_files.is_empty() {
+        return Vec::new();
+    }
 
     let mut external_dirs: HashSet<PathBuf> = HashSet::new();
 
@@ -185,15 +203,21 @@ pub fn discover_gnat_project_externals(project_root: &Path) -> Vec<ExternalDepRo
 }
 
 fn collect_gpr_files(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | ".git" | "node_modules" | "target")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | ".git" | "node_modules" | "target"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
@@ -208,7 +232,8 @@ fn collect_gpr_files(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
 }
 
 fn is_inside(candidate: &Path, root: &Path) -> bool {
-    let candidate_canon = std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
+    let candidate_canon =
+        std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
     let root_canon = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     candidate_canon.starts_with(&root_canon)
 }
@@ -238,7 +263,9 @@ fn resolve_with_path(gpr_path: &Path, with_path: &str) -> Option<PathBuf> {
 /// Resolve a Source_Dirs entry to an absolute directory.
 fn resolve_source_dir(gpr_dir: &Path, src: &str) -> Option<PathBuf> {
     let trimmed = src.trim_end_matches("/**").trim_end_matches('/');
-    if trimmed.is_empty() { return None }
+    if trimmed.is_empty() {
+        return None;
+    }
     let resolved = gpr_dir.join(trimmed);
     if resolved.is_dir() {
         Some(resolved)
@@ -355,12 +382,17 @@ fn parse_source_dirs(stmt: &str, variables: &HashMap<String, String>) -> Option<
     let needle = "for source_dirs use";
     let idx = lower.find(needle)?;
     let after = stmt[idx + needle.len()..].trim();
-    let body = after.strip_prefix('(').and_then(|s| s.rsplit_once(')')).map(|(b, _)| b)?;
+    let body = after
+        .strip_prefix('(')
+        .and_then(|s| s.rsplit_once(')'))
+        .map(|(b, _)| b)?;
 
     let mut out = Vec::new();
     for raw_entry in split_top_level(body, ',') {
         let entry = raw_entry.trim();
-        if entry.is_empty() { continue }
+        if entry.is_empty() {
+            continue;
+        }
         if let Some(s) = evaluate_string_expr(entry, variables) {
             out.push(s);
         }
@@ -382,8 +414,16 @@ fn split_top_level(input: &str, delim: char) -> Vec<String> {
         }
         if !in_str {
             match c {
-                '(' => { depth_paren += 1; buf.push(c); continue; }
-                ')' => { depth_paren -= 1; buf.push(c); continue; }
+                '(' => {
+                    depth_paren += 1;
+                    buf.push(c);
+                    continue;
+                }
+                ')' => {
+                    depth_paren -= 1;
+                    buf.push(c);
+                    continue;
+                }
                 _ => {}
             }
             if c == delim && depth_paren == 0 {
@@ -406,7 +446,9 @@ fn evaluate_string_expr(expr: &str, variables: &HashMap<String, String>) -> Opti
     let mut out = String::new();
     for piece in expr.split('&') {
         let piece = piece.trim();
-        if piece.is_empty() { return None }
+        if piece.is_empty() {
+            return None;
+        }
         if let Some(unq) = piece.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
             out.push_str(unq);
             continue;
@@ -442,23 +484,33 @@ fn walk_dir_bounded(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | "tests" | "test" | "examples" | ".git")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | "tests" | "test" | "examples" | ".git"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
             }
             walk_dir_bounded(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else { continue };
-            if ext != "ads" && ext != "adb" { continue }
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if ext != "ads" && ext != "adb" {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -498,15 +550,21 @@ pub(crate) fn build_gnat_project_symbol_index(
 }
 
 fn collect_ads_files(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "obj" | "lib" | "alire" | "tests" | "test" | "examples" | ".git")
-                    || name.starts_with('.')
+                if matches!(
+                    name,
+                    "obj" | "lib" | "alire" | "tests" | "test" | "examples" | ".git"
+                ) || name.starts_with('.')
                 {
                     continue;
                 }
@@ -524,7 +582,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     for raw in content.lines() {
         let line = strip_ada_comment(raw).trim();
-        if line.is_empty() { continue }
+        if line.is_empty() {
+            continue;
+        }
         let mut tail = line;
         for prefix in ["private ", "generic "] {
             if let Some(rest) = tail.strip_prefix(prefix) {
@@ -542,7 +602,9 @@ fn scan_package_decl(path: &Path) -> Option<String> {
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '_')
             .collect();
-        if qname.is_empty() { continue }
+        if qname.is_empty() {
+            continue;
+        }
         return Some(qname);
     }
     None

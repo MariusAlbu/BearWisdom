@@ -9,8 +9,8 @@ use tree_sitter::Node;
 
 use super::extract::{
     extract_all_selector_names, extract_selector_base_name, find_child_of_kind,
-    find_include_target, find_selector_target, find_string_value, find_use_alias,
-    make_sym, node_text, path_to_target, SCSS_CSS_FN_HINT,
+    find_include_target, find_selector_target, find_string_value, find_use_alias, make_sym,
+    node_text, path_to_target, SCSS_CSS_FN_HINT,
 };
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,9 @@ fn handle_include(
     // and classify the call as external.
     let target = find_include_target(node, src);
     if !target.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Calls,
@@ -185,12 +187,7 @@ fn handle_include(
 // @extend .selector / %placeholder  =>  Inherits ref
 // ---------------------------------------------------------------------------
 
-fn handle_extend(
-    node: &Node,
-    src: &str,
-    refs: &mut Vec<ExtractedRef>,
-    source_symbol_index: usize,
-) {
+fn handle_extend(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>, source_symbol_index: usize) {
     let target = find_selector_target(node, src);
     if target.is_empty() {
         return;
@@ -200,7 +197,9 @@ fn handle_extend(
     if target.contains("#{") {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Inherits,
@@ -228,7 +227,9 @@ fn handle_import(
     let module = find_string_value(node, src);
     if !module.is_empty() {
         let target = path_to_target(&module);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -258,7 +259,9 @@ fn handle_forward(
     let module = find_string_value(node, src);
     if !module.is_empty() {
         let target = path_to_target(&module);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -303,7 +306,9 @@ fn handle_use(
         } else {
             path_to_target(&module)
         };
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: target,
             kind: EdgeKind::Imports,
@@ -472,11 +477,16 @@ fn handle_call_expr(
     // The function_name child is a leaf with the function identifier text.
     let func_name = find_child_of_kind(node, "function_name")
         .map(|n| node_text(n, src))
-        .or_else(|| node.child(0).map(|n| {
-            let t = node_text(n, src);
-            // Extract identifier from interpolation or other non-leaf
-            t.trim_matches('#').trim_matches('{').trim_matches('}').to_string()
-        }))
+        .or_else(|| {
+            node.child(0).map(|n| {
+                let t = node_text(n, src);
+                // Extract identifier from interpolation or other non-leaf
+                t.trim_matches('#')
+                    .trim_matches('{')
+                    .trim_matches('}')
+                    .to_string()
+            })
+        })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "<call>".to_string());
 
@@ -502,7 +512,9 @@ fn handle_call_expr(
     // built-ins (which misses every new CSS Level 5+ addition) or
     // treat all unresolved calls as external, which hides genuinely
     // broken `@include` references.
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Calls,

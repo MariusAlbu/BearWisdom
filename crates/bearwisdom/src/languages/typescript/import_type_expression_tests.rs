@@ -20,7 +20,10 @@ fn single_quoted_module_with_simple_type() {
 #[test]
 fn double_quoted_module_with_simple_type() {
     let r = parse_import_type_expression("import(\"typescript\").Diagnostic");
-    assert_eq!(r, Some(("typescript".to_string(), "Diagnostic".to_string())));
+    assert_eq!(
+        r,
+        Some(("typescript".to_string(), "Diagnostic".to_string()))
+    );
 }
 
 #[test]

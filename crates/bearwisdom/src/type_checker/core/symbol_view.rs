@@ -34,7 +34,9 @@ impl<'a> SymbolView<'a> {
     /// exists for this symbol id (no type info, or not yet hydrated);
     /// `Some(&[])` when a record exists but declares zero parameters.
     pub fn param_types(&self) -> Option<&'a [TypeId]> {
-        self.types.get(self.info.id).map(|d| d.param_types.as_slice())
+        self.types
+            .get(self.info.id)
+            .map(|d| d.param_types.as_slice())
     }
 
     /// Return type. `None` when no record exists OR the record carries no

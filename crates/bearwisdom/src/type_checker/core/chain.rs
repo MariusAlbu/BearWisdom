@@ -33,12 +33,11 @@
 use super::types::{GenericParamId, Type, TypeArena, TypeId};
 use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
-use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
-use rustc_hash::{FxHashMap, FxHashSet};
 use crate::type_checker::core::dispatch::{
-    arg_assignable_candidates, index_into, project_container_slot, resolve_arg_types, select_method,
-    DispatchQuery,
+    arg_assignable_candidates, index_into, project_container_slot, resolve_arg_types,
+    select_method, DispatchQuery,
 };
+use crate::type_checker::core::generics::{substitute, unify_into, GenericEnv};
 use crate::type_checker::core::members::{ArgTypes, MembersIndex};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
@@ -47,6 +46,7 @@ use crate::type_checker::profile::language_profile::{
     ChainQualification, DispatchAxis, LanguageProfile,
 };
 use crate::types::{CallArg, ChainSegment, EdgeKind, MemberChain, SegmentKind};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Engine-side resolution result for a chain. Distinct from the legacy
 /// `Resolution` (which still carries `Option<String>` for the yield); the
@@ -163,9 +163,9 @@ impl RootResolver for DefaultRootResolver {
                     .or(if single_ambiguous { None } else { single_match })
                     .map(|qname| arena.class(qname))
             }
-            SegmentKind::TypeAccess
-            | SegmentKind::NamespaceAccess
-            | SegmentKind::Construction => Some(arena.class(&seg.name)),
+            SegmentKind::TypeAccess | SegmentKind::NamespaceAccess | SegmentKind::Construction => {
+                Some(arena.class(&seg.name))
+            }
             SegmentKind::Identifier => {
                 // 1. Local-variable inferred type wins over global symbols
                 //    of the same name. `local_type_union` consults the
@@ -182,8 +182,7 @@ impl RootResolver for DefaultRootResolver {
                     return Some(match branches.as_slice() {
                         [one] => arena.class(one),
                         many => {
-                            let ids: Vec<TypeId> =
-                                many.iter().map(|n| arena.class(n)).collect();
+                            let ids: Vec<TypeId> = many.iter().map(|n| arena.class(n)).collect();
                             arena.intern(Type::Union(ids))
                         }
                     });
@@ -342,10 +341,7 @@ impl RootResolver for ProfileRootResolver {
     ) -> Option<TypeId> {
         use crate::type_checker::profile::language_profile::SelfReceiverDiscovery;
         match (seg.kind, self.discovery) {
-            (
-                SegmentKind::SelfRef,
-                SelfReceiverDiscovery::CanonicalMembers { seed, siblings },
-            ) => {
+            (SegmentKind::SelfRef, SelfReceiverDiscovery::CanonicalMembers { seed, siblings }) => {
                 // Honour an explicit enclosing scope first.
                 if let Some(scope) = ref_ctx.source_symbol.scope_path.as_ref() {
                     if !scope.is_empty() {
@@ -554,38 +550,37 @@ impl<'a> ChainWalker<'a> {
             // Non-receiver dispatch axes (multi-arg / return-type) route through
             // the dispatch front door; the receiver axis stays on the direct
             // member lookup so the common path is unchanged.
-            let resolved = if is_call_seg
-                && !matches!(self.profile.dispatch_axis, DispatchAxis::Receiver)
-            {
-                let query = DispatchQuery {
-                    method_name: &seg.name,
-                    receiver: current_ty,
-                    arg_types: &arg_type_ids,
-                    expected_return: None,
-                    kind_filter,
+            let resolved =
+                if is_call_seg && !matches!(self.profile.dispatch_axis, DispatchAxis::Receiver) {
+                    let query = DispatchQuery {
+                        method_name: &seg.name,
+                        receiver: current_ty,
+                        arg_types: &arg_type_ids,
+                        expected_return: None,
+                        kind_filter,
+                    };
+                    select_method(
+                        &query,
+                        self.members,
+                        self.supertypes,
+                        self.symbol_types,
+                        self.arena,
+                        self.profile,
+                        self.lookup,
+                    )
+                    .map(|m| (m, current_ty, Vec::new()))
+                } else {
+                    self.members.lookup_with_binding(
+                        current_ty,
+                        &seg.name,
+                        kind_filter,
+                        self.supertypes,
+                        self.arena,
+                        self.profile,
+                        arg_count,
+                        arg_types,
+                    )
                 };
-                select_method(
-                    &query,
-                    self.members,
-                    self.supertypes,
-                    self.symbol_types,
-                    self.arena,
-                    self.profile,
-                    self.lookup,
-                )
-                .map(|m| (m, current_ty, Vec::new()))
-            } else {
-                self.members.lookup_with_binding(
-                    current_ty,
-                    &seg.name,
-                    kind_filter,
-                    self.supertypes,
-                    self.arena,
-                    self.profile,
-                    arg_count,
-                    arg_types,
-                )
-            };
 
             let member = match resolved {
                 Some((m, owner, owner_args)) => {
@@ -622,7 +617,8 @@ impl<'a> ChainWalker<'a> {
             // canonicalizes the return to — so the binding and the rebound
             // return agree on the `GenericParamId`.
             if !seg.type_args.is_empty() {
-                if let Some(param_tys) = self.lookup.generic_param_type_ids(&member.qualified_name) {
+                if let Some(param_tys) = self.lookup.generic_param_type_ids(&member.qualified_name)
+                {
                     let params: Vec<GenericParamId> = param_tys
                         .iter()
                         .filter_map(|&id| match self.arena.get(id) {
@@ -675,13 +671,10 @@ impl<'a> ChainWalker<'a> {
             // fires only on mid-chain calls; `unify_into` binds only unbound
             // slots, leaving a receiver-pinned param authoritative. Turbofish
             // (G1) takes precedence when present.
-            if seg.is_call && !is_call_seg && seg.type_args.is_empty() && !seg.call_args.is_empty() {
-                let seg_arg_ids = resolve_arg_types(
-                    &seg.call_args,
-                    self.arena,
-                    self.lookup,
-                    self.profile,
-                );
+            if seg.is_call && !is_call_seg && seg.type_args.is_empty() && !seg.call_args.is_empty()
+            {
+                let seg_arg_ids =
+                    resolve_arg_types(&seg.call_args, self.arena, self.lookup, self.profile);
                 self.bind_call_arg_generics(
                     &member.qualified_name,
                     member.id,
@@ -698,11 +691,7 @@ impl<'a> ChainWalker<'a> {
             // per-file forward cache the next chain ref (the lambda body's
             // `x.foo`) reads through its root resolver.
             if is_call_seg {
-                self.seed_lambda_params(
-                    &member,
-                    &ref_ctx.extracted_ref.call_args,
-                    &env,
-                );
+                self.seed_lambda_params(&member, &ref_ctx.extracted_ref.call_args, &env);
             }
 
             match self.yield_type_of(&member, seg, &env, current_ty) {
@@ -719,7 +708,9 @@ impl<'a> ChainWalker<'a> {
                     // adapter boundary; forward-flow inference must not
                     // propagate the receiver type as if it were the
                     // member's return type.
-                    current_ty = self.arena.intern(crate::type_checker::core::types::Type::Unknown);
+                    current_ty = self
+                        .arena
+                        .intern(crate::type_checker::core::types::Type::Unknown);
                 }
                 None => {
                     // Mid-chain member resolved but its yield type is unknown,
@@ -768,9 +759,7 @@ impl<'a> ChainWalker<'a> {
         let view = SymbolView::new(sym, self.symbol_types);
         let data_raw = match sym.kind.as_str() {
             "method" | "function" | "constructor" => view.return_type(),
-            "field" | "property" | "variable" | "parameter" | "enum_member" => {
-                view.declared_type()
-            }
+            "field" | "property" | "variable" | "parameter" | "enum_member" => view.declared_type(),
             "class" | "struct" | "interface" | "trait" | "enum" | "type_alias"
                 if seg.kind == SegmentKind::Construction =>
             {
@@ -820,10 +809,7 @@ impl<'a> ChainWalker<'a> {
         // not a real TS pattern.
         let raw_trim = raw_str.trim();
         let is_this_return = raw_trim == "this"
-            && matches!(
-                sym.kind.as_str(),
-                "method" | "function" | "constructor"
-            );
+            && matches!(sym.kind.as_str(), "method" | "function" | "constructor");
         if is_this_return {
             return Some(current_ty);
         }
@@ -837,9 +823,14 @@ impl<'a> ChainWalker<'a> {
         // `field_type["C.Assoc"]`). A hit yields Concrete; a miss falls through to
         // the raw-intern path below, so the step only ever widens.
         if self.profile.associated_type_projection {
-            if let Some(projected) =
-                self.project_associated_type(cleaned, current_ty, env, &sym.qualified_name, seg, &sym.kind)
-            {
+            if let Some(projected) = self.project_associated_type(
+                cleaned,
+                current_ty,
+                env,
+                &sym.qualified_name,
+                seg,
+                &sym.kind,
+            ) {
                 return Some(projected);
             }
         }
@@ -898,11 +889,7 @@ impl<'a> ChainWalker<'a> {
     /// whose qname keys the outer assoc. Each recursion strips one trailing
     /// `::Assoc` and requires a real binding, so it is bounded by the `::` depth
     /// and declines (no coincidental bind) the moment any hop has no binding.
-    fn project_associated_type_to_id(
-        &self,
-        cleaned: &str,
-        current_ty: TypeId,
-    ) -> Option<TypeId> {
+    fn project_associated_type_to_id(&self, cleaned: &str, current_ty: TypeId) -> Option<TypeId> {
         let split = cleaned.rfind("::")?;
         let head = cleaned[..split].trim();
         let assoc = cleaned[split + 2..].trim();
@@ -947,10 +934,7 @@ impl<'a> ChainWalker<'a> {
         if self.profile.self_keywords.contains(&head) {
             return self.class_qname(current_ty);
         }
-        if let Some(inner) = head
-            .strip_prefix('<')
-            .and_then(|h| h.strip_suffix('>'))
-        {
+        if let Some(inner) = head.strip_prefix('<').and_then(|h| h.strip_suffix('>')) {
             // `<C as Trait>` — the concrete type is the text before ` as `; a
             // bare `<C>` (no trait) keeps the whole inner. The trait is
             // disambiguating context only; the binding is keyed on C.
@@ -978,9 +962,7 @@ impl<'a> ChainWalker<'a> {
     /// function value. A method/function member's resolved type is already its
     /// return type, so it is never peeled here.
     fn unwrap_if_called(&self, ty: TypeId, seg: &ChainSegment, sym_kind: &str) -> TypeId {
-        if seg.is_call
-            && matches!(sym_kind, "field" | "property" | "variable" | "parameter")
-        {
+        if seg.is_call && matches!(sym_kind, "field" | "property" | "variable" | "parameter") {
             if let Type::Function { return_, .. } = self.arena.get(ty) {
                 return return_;
             }
@@ -1016,11 +998,12 @@ impl<'a> ChainWalker<'a> {
             },
             _ => return,
         };
-        self.lookup.record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
-            current_type,
-            target_name: target_name.to_string(),
-            module: None,
-        });
+        self.lookup
+            .record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
+                current_type,
+                target_name: target_name.to_string(),
+                module: None,
+            });
     }
 
     /// Bare qname of a receiver type. `Class(q)` yields `q`; `Apply { base }`
@@ -1186,9 +1169,10 @@ impl<'a> ChainWalker<'a> {
         };
         let base_ty = self.arena.class(&q);
         match apply_args {
-            Some(args) if !args.is_empty() => {
-                self.arena.intern(Type::Apply { base: base_ty, args })
-            }
+            Some(args) if !args.is_empty() => self.arena.intern(Type::Apply {
+                base: base_ty,
+                args,
+            }),
             _ => base_ty,
         }
     }
@@ -1197,8 +1181,7 @@ impl<'a> ChainWalker<'a> {
     /// guard for `qualify_current_ty` so it never promotes to a qname nothing
     /// keys under.
     fn keys_a_type_or_member(&self, qname: &str) -> bool {
-        self.lookup.by_qualified_name(qname).is_some()
-            || !self.lookup.members_of(qname).is_empty()
+        self.lookup.by_qualified_name(qname).is_some() || !self.lookup.members_of(qname).is_empty()
     }
 
     fn qualified_member_lookup(
@@ -1233,8 +1216,7 @@ impl<'a> ChainWalker<'a> {
             {
                 continue;
             }
-            let ext_candidate =
-                format!("{}.{seg_name}", candidate_type.qualified_name);
+            let ext_candidate = format!("{}.{seg_name}", candidate_type.qualified_name);
             if let Some(hit) = self.lookup.by_qualified_name(&ext_candidate) {
                 return Some(hit.clone());
             }
@@ -1449,7 +1431,11 @@ impl<'a> ChainWalker<'a> {
             // branches whose discriminant is NOT the literal. One survivor
             // narrows to it; several keep a sub-container (same kind as the
             // original); excluding none or all leaves the receiver unchanged.
-            let kept: Vec<TypeId> = branches.iter().copied().filter(|&b| !matches_literal(b)).collect();
+            let kept: Vec<TypeId> = branches
+                .iter()
+                .copied()
+                .filter(|&b| !matches_literal(b))
+                .collect();
             match kept.len() {
                 1 => kept[0],
                 n if n == 0 || n == branches.len() => ty,
@@ -1463,7 +1449,10 @@ impl<'a> ChainWalker<'a> {
                 }
             }
         } else {
-            branches.into_iter().find(|&b| matches_literal(b)).unwrap_or(ty)
+            branches
+                .into_iter()
+                .find(|&b| matches_literal(b))
+                .unwrap_or(ty)
         }
     }
 
@@ -1585,12 +1574,7 @@ impl<'a> ChainWalker<'a> {
     /// untyped array) is skipped, so an unbindable receiver is a silent no-op
     /// rather than seeding a junk type. Empty param names (destructuring slots)
     /// are skipped.
-    fn seed_lambda_params(
-        &self,
-        member: &SymbolInfo,
-        call_args: &[CallArg],
-        env: &GenericEnv,
-    ) {
+    fn seed_lambda_params(&self, member: &SymbolInfo, call_args: &[CallArg], env: &GenericEnv) {
         let has_lambda = call_args
             .iter()
             .any(|a| matches!(a, CallArg::Lambda { .. }));
@@ -1614,7 +1598,10 @@ impl<'a> ChainWalker<'a> {
                 self.arena.rebind_class_params(pty, &name_to_id)
             };
             let resolved = substitute(rebound, env, self.arena);
-            let Type::Function { params: fn_params, .. } = self.arena.get(resolved) else {
+            let Type::Function {
+                params: fn_params, ..
+            } = self.arena.get(resolved)
+            else {
                 continue;
             };
             for (k, name) in params.iter().enumerate() {
@@ -1644,11 +1631,7 @@ impl<'a> ChainWalker<'a> {
     /// arguments, has no inferable return, or the bound result is still a bare
     /// generic. It reports only a strict gain over that fallback, never a
     /// regression (the fallback already records the unbound parameter today).
-    pub fn infer_bare_call_yield(
-        &self,
-        sym: &SymbolInfo,
-        call_args: &[CallArg],
-    ) -> Option<TypeId> {
+    pub fn infer_bare_call_yield(&self, sym: &SymbolInfo, call_args: &[CallArg]) -> Option<TypeId> {
         if call_args.is_empty()
             || !matches!(sym.kind.as_str(), "method" | "function" | "constructor")
         {
@@ -1672,8 +1655,7 @@ impl<'a> ChainWalker<'a> {
             })?;
         let raw = self.arena.rebind_class_params(raw, &name_to_id);
 
-        let arg_type_ids =
-            resolve_arg_types(call_args, self.arena, self.lookup, self.profile);
+        let arg_type_ids = resolve_arg_types(call_args, self.arena, self.lookup, self.profile);
         let mut env = GenericEnv::new();
         self.bind_call_arg_generics(&sym.qualified_name, sym.id, &arg_type_ids, &mut env);
 

@@ -7,7 +7,12 @@ pub static DOCKERFILE: LanguageDescriptor = LanguageDescriptor {
     filenames: &["Dockerfile", "Containerfile"],
     aliases: &["docker"],
     exclude_dirs: &[],
-    entry_point_files: &["Dockerfile", "docker-compose.yml", "docker-compose.yaml", ".dockerignore"],
+    entry_point_files: &[
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        ".dockerignore",
+    ],
     sdk: Some(SdkDescriptor {
         name: "Docker",
         version_command: "docker",

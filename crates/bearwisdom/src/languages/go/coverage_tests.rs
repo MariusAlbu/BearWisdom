@@ -76,7 +76,11 @@ fn coverage_type_alias_emits_type_alias_symbol() {
     // May be type_alias or type_spec depending on grammar version.
     // Either way the symbol should be emitted.
     let sym = r.symbols.iter().find(|s| s.name == "MyStr");
-    assert!(sym.is_some(), "expected TypeAlias symbol 'MyStr'; got: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>());
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias symbol 'MyStr'; got: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -108,9 +112,22 @@ fn coverage_var_spec_emits_variable_symbol() {
 fn coverage_field_declaration_emits_field_symbol() {
     let src = "package main\ntype User struct { Name string\nAge int }";
     let r = extract::extract(src);
-    let name_field = r.symbols.iter().find(|s| s.name == "Name" && s.kind == SymbolKind::Field);
-    assert!(name_field.is_some(), "expected Field symbol 'Name'; symbols: {:?}", r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>());
-    let age_field = r.symbols.iter().find(|s| s.name == "Age" && s.kind == SymbolKind::Field);
+    let name_field = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Name" && s.kind == SymbolKind::Field);
+    assert!(
+        name_field.is_some(),
+        "expected Field symbol 'Name'; symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
+    );
+    let age_field = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Age" && s.kind == SymbolKind::Field);
     assert!(age_field.is_some(), "expected Field symbol 'Age'");
 }
 
@@ -121,7 +138,11 @@ fn coverage_field_declaration_named_type_emits_type_ref() {
     // A struct field with a user-defined type should emit a TypeRef.
     let src = "package main\ntype Order struct { Customer User }";
     let r = extract::extract(src);
-    let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|r| r.target_name == "User"),
         "expected TypeRef to User from struct field; refs: {:?}",
@@ -135,8 +156,18 @@ fn coverage_field_declaration_named_type_emits_type_ref() {
 fn coverage_method_elem_in_interface_emits_method_symbol() {
     let src = "package main\ntype Repo interface { Find(id int) User }";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "Find" && s.kind == SymbolKind::Method);
-    assert!(sym.is_some(), "expected Method symbol 'Find'; symbols: {:?}", r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>());
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Find" && s.kind == SymbolKind::Method);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol 'Find'; symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 // ---- package_clause --------------------------------------------------------
@@ -163,7 +194,10 @@ fn coverage_package_clause_emits_namespace_symbol() {
     assert!(
         ns.is_some(),
         "expected Namespace symbol 'mypkg' from package_clause; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
     // Must be on the same line as the package_clause node (line 0).
     assert_eq!(ns.unwrap().start_line, 0);
@@ -179,7 +213,11 @@ fn coverage_package_clause_emits_namespace_symbol() {
 fn coverage_call_expression_emits_calls_edge() {
     let src = "package main\nfunc f() { fmt.Println() }";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.iter().any(|r| r.target_name == "Println"),
         "expected Calls edge to Println; calls: {:?}",
@@ -193,7 +231,11 @@ fn coverage_call_expression_emits_calls_edge() {
 fn coverage_import_spec_emits_imports_edge() {
     let src = "package main\nimport \"fmt\"";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert!(
         imports.iter().any(|r| r.target_name == "fmt"),
         "expected Imports edge to fmt; refs: {:?}",
@@ -207,7 +249,11 @@ fn coverage_import_spec_emits_imports_edge() {
 fn coverage_composite_literal_emits_instantiates_edge() {
     let src = "package main\nfunc f() { u := User{Name: \"x\"}\n_ = u }";
     let r = extract::extract(src);
-    let inst: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Instantiates).collect();
+    let inst: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Instantiates)
+        .collect();
     assert!(
         inst.iter().any(|r| r.target_name == "User"),
         "expected Instantiates edge to User; refs: {:?}",
@@ -220,7 +266,11 @@ fn coverage_composite_literal_qualified_type() {
     // `pkg.Type{...}` — qualified_type as the literal type.
     let src = "package main\nfunc f() { r := http.Request{Method: \"GET\"}\n_ = r }";
     let r = extract::extract(src);
-    let inst: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Instantiates).collect();
+    let inst: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Instantiates)
+        .collect();
     assert!(
         inst.iter().any(|r| r.target_name == "Request"),
         "expected Instantiates edge to Request from pkg.Type literal; refs: {:?}",
@@ -234,7 +284,11 @@ fn coverage_composite_literal_qualified_type() {
 fn coverage_type_conversion_expression_emits_type_ref() {
     let src = "package main\nfunc f(b Buffer) MyString { return MyString(b) }";
     let r = extract::extract(src);
-    let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|r| r.target_name == "MyString"),
         "expected TypeRef to MyString from type conversion; refs: {:?}",
@@ -248,7 +302,11 @@ fn coverage_type_conversion_expression_emits_type_ref() {
 fn coverage_type_assertion_expression_emits_type_ref() {
     let src = "package main\nfunc f(x interface{}) {\n    if a, ok := x.(*Admin); ok { _ = a } }";
     let r = extract::extract(src);
-    let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|r| r.target_name == "Admin"),
         "expected TypeRef to Admin from type assertion; refs: {:?}",
@@ -263,7 +321,11 @@ fn coverage_selector_expression_emits_calls_edge_with_chain() {
     // `repo.FindOne()` — selector_expression as the function of a call_expression.
     let src = "package main\nfunc f(repo Repo) {\n    user := repo.FindOne(1)\n    _ = user\n}";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.iter().any(|r| r.target_name == "FindOne"),
         "expected Calls edge to FindOne from selector_expression; calls: {:?}",
@@ -284,7 +346,11 @@ fn coverage_qualified_type_in_composite_literal_emits_instantiates() {
     // `http.Request{...}` uses a qualified_type node.
     let src = "package main\nfunc f() { req := http.Request{Method: \"GET\"}\n_ = req }";
     let r = extract::extract(src);
-    let inst: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Instantiates).collect();
+    let inst: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Instantiates)
+        .collect();
     assert!(
         inst.iter().any(|r| r.target_name == "Request"),
         "expected Instantiates from qualified_type literal; refs: {:?}",
@@ -300,7 +366,11 @@ fn coverage_type_identifier_in_struct_field_emits_type_ref() {
     // The extractor should emit a TypeRef for the type.
     let src = "package main\ntype Order struct { Manager Employee }";
     let r = extract::extract(src);
-    let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|r| r.target_name == "Employee"),
         "expected TypeRef to Employee from struct field type_identifier; refs: {:?}",
@@ -328,15 +398,41 @@ fn coverage_type_identifier_in_function_param_emits_type_ref() {
 // ---- selector_expression (standalone, not in call) -------------------------
 
 #[test]
-fn coverage_selector_expression_standalone_emits_calls_edge() {
-    // `pkg.Var` used as a value expression (not called) should emit a Calls edge.
+fn coverage_selector_expression_standalone_emits_reads_edge() {
+    // `pkg.Var` used as a value expression (not called) is a read, not a call.
     let src = "package main\nfunc f() { _ = http.StatusOK }";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let reads: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Reads)
+        .collect();
     assert!(
-        calls.iter().any(|r| r.target_name == "StatusOK"),
-        "expected Calls edge to StatusOK from standalone selector_expression; calls: {:?}",
-        calls.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+        reads.iter().any(|r| r.target_name == "StatusOK"),
+        "expected Reads edge to StatusOK from standalone selector_expression; reads: {:?}",
+        reads.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Calls && r.target_name == "StatusOK"),
+        "standalone selector_expression must not emit a Calls edge"
+    );
+}
+
+#[test]
+fn coverage_composite_literal_key_does_not_emit_calls_edge() {
+    let src = r#"package main
+type User struct { Name string }
+func f() { _ = User{Name: "Ada"} }
+"#;
+    let r = extract::extract(src);
+    assert!(
+        !r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Calls && r.target_name == "Name"),
+        "composite literal key must not emit a Calls edge; refs: {:?}",
+        r.refs
     );
 }
 
@@ -385,11 +481,17 @@ fn coverage_var_decl_in_function_body_emits_variable_symbol() {
     // `var x int` inside a function body should emit a Variable symbol.
     let src = "package main\nfunc f() { var count int\n_ = count }";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "count" && s.kind == SymbolKind::Variable);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "count" && s.kind == SymbolKind::Variable);
     assert!(
         sym.is_some(),
         "expected Variable symbol 'count' from var_declaration in body; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -419,11 +521,17 @@ fn coverage_field_declaration_qualified_embedded_type_emits_field() {
     // `sync.Mutex` as an embedded field — should emit a Field symbol and Inherits edge.
     let src = "package main\ntype Server struct { sync.Mutex\nName string }";
     let r = extract::extract(src);
-    let field = r.symbols.iter().find(|s| s.name == "Mutex" && s.kind == SymbolKind::Field);
+    let field = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Mutex" && s.kind == SymbolKind::Field);
     assert!(
         field.is_some(),
         "expected Field symbol 'Mutex' from qualified embedded type; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -518,17 +626,29 @@ fn coverage_type_declaration_in_function_body_emits_struct_and_fields() {
     // a Struct symbol and a Field symbol for X.
     let src = "package main\nfunc f() {\n\ttype inner struct { X int }\n\t_ = inner{}\n}";
     let r = extract::extract(src);
-    let struct_sym = r.symbols.iter().find(|s| s.name == "inner" && s.kind == SymbolKind::Struct);
+    let struct_sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "inner" && s.kind == SymbolKind::Struct);
     assert!(
         struct_sym.is_some(),
         "expected Struct symbol 'inner' from type_declaration in function body; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
-    let field_sym = r.symbols.iter().find(|s| s.name == "X" && s.kind == SymbolKind::Field);
+    let field_sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "X" && s.kind == SymbolKind::Field);
     assert!(
         field_sym.is_some(),
         "expected Field symbol 'X' from type_declaration in function body; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -562,7 +682,11 @@ fn coverage_field_declaration_embedded_bare_type_emits_inherits_edge() {
     // type_identifier should emit an Inherits edge from Child to Base.
     let src = "package main\ntype Child struct { Base }";
     let r = extract::extract(src);
-    let inherits: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Inherits).collect();
+    let inherits: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Inherits)
+        .collect();
     assert!(
         inherits.iter().any(|r| r.target_name == "Base"),
         "expected Inherits edge to Base from embedded field; refs: {:?}",
@@ -578,7 +702,11 @@ fn coverage_field_declaration_embedded_pointer_emits_inherits_edge() {
     // an Inherits edge (pointer is stripped to get the base type name).
     let src = "package main\ntype Wrapper struct { *Base }";
     let r = extract::extract(src);
-    let inherits: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Inherits).collect();
+    let inherits: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Inherits)
+        .collect();
     assert!(
         inherits.iter().any(|r| r.target_name == "Base"),
         "expected Inherits edge to Base from *Base embedded field; refs: {:?}",
@@ -594,7 +722,11 @@ fn coverage_go_statement_extracts_calls_from_goroutine() {
     // a Calls edge just like a regular function call.
     let src = "package main\nfunc f() { go launch() }";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.iter().any(|r| r.target_name == "launch"),
         "expected Calls edge to launch from go_statement; calls: {:?}",
@@ -610,7 +742,11 @@ fn coverage_defer_statement_extracts_calls_from_defer() {
     // emit a Calls edge.
     let src = "package main\nfunc f() { defer cleanup() }";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.iter().any(|r| r.target_name == "cleanup"),
         "expected Calls edge to cleanup from defer_statement; calls: {:?}",
@@ -626,7 +762,11 @@ fn coverage_import_spec_with_alias_emits_imports_edge() {
     // an Imports edge with target_name "fmt".
     let src = "package main\nimport f \"fmt\"";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert!(
         imports.iter().any(|r| r.target_name == "fmt"),
         "expected Imports edge to fmt from aliased import_spec; refs: {:?}",
@@ -642,7 +782,11 @@ fn coverage_import_spec_blank_import_emits_imports_edge() {
     // emit an Imports edge so the dependency is tracked.
     let src = "package main\nimport _ \"database/sql\"";
     let r = extract::extract(src);
-    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
     assert!(
         imports.iter().any(|r| r.target_name == "sql"),
         "expected Imports edge to sql from blank import_spec; refs: {:?}",
@@ -658,11 +802,17 @@ fn coverage_method_declaration_pointer_receiver_emits_method_symbol() {
     // be associated with the base type "Server" in qualified_name.
     let src = "package main\ntype Server struct{}\nfunc (s *Server) Start() {}";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "Start" && s.kind == SymbolKind::Method);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Start" && s.kind == SymbolKind::Method);
     assert!(
         sym.is_some(),
         "expected Method symbol 'Start'; symbols: {:?}",
-        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         sym.unwrap().qualified_name,
@@ -679,7 +829,11 @@ fn coverage_func_literal_body_extracts_calls() {
     // must be captured.
     let src = "package main\nfunc f() { fn := func() { inner() }\nfn() }";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.iter().any(|r| r.target_name == "inner"),
         "expected Calls edge to inner from func_literal body; calls: {:?}",
@@ -701,7 +855,16 @@ fn coverage_const_spec_iota_emits_variable_symbols() {
         .filter(|s| s.kind == SymbolKind::Variable)
         .map(|s| s.name.as_str())
         .collect();
-    assert!(names.contains(&"A"), "missing Variable 'A' from iota block; symbols: {names:?}");
-    assert!(names.contains(&"B"), "missing Variable 'B' from iota block; symbols: {names:?}");
-    assert!(names.contains(&"C"), "missing Variable 'C' from iota block; symbols: {names:?}");
+    assert!(
+        names.contains(&"A"),
+        "missing Variable 'A' from iota block; symbols: {names:?}"
+    );
+    assert!(
+        names.contains(&"B"),
+        "missing Variable 'B' from iota block; symbols: {names:?}"
+    );
+    assert!(
+        names.contains(&"C"),
+        "missing Variable 'C' from iota block; symbols: {names:?}"
+    );
 }

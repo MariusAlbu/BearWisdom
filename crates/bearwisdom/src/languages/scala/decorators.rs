@@ -58,7 +58,9 @@ fn emit_annotation(
 ) {
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -67,9 +69,9 @@ fn emit_annotation(
             module: first_arg,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -130,7 +132,8 @@ fn extract_first_string_arg(annotation_node: &Node, src: &[u8]) -> Option<String
     let args = annotation_node.child_by_field_name("arguments")?;
     let mut cursor = args.walk();
     for child in args.children(&mut cursor) {
-        if child.kind() == "string" || child.kind() == "string_literal"
+        if child.kind() == "string"
+            || child.kind() == "string_literal"
             || child.kind() == "interpolated_string"
         {
             return strip_string(node_text(child, src));
@@ -141,7 +144,11 @@ fn extract_first_string_arg(annotation_node: &Node, src: &[u8]) -> Option<String
 
 fn strip_string(raw: String) -> Option<String> {
     let s = raw.trim_matches('"').trim_matches('\'').to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +216,9 @@ fn extract_pattern_refs(
             // type field → type_identifier | stable_type_identifier
             if let Some(type_node) = node.child_by_field_name("type") {
                 if let Some(name) = extract_type_name(&type_node, src) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -218,9 +227,9 @@ fn extract_pattern_refs(
                         module: None,
                         chain: None,
                         byte_offset: type_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -231,7 +240,9 @@ fn extract_pattern_refs(
                 match child.kind() {
                     "type_identifier" | "stable_type_identifier" | "generic_type" => {
                         if let Some(name) = extract_type_name(&child, src) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -240,9 +251,9 @@ fn extract_pattern_refs(
                                 module: None,
                                 chain: None,
                                 byte_offset: child.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -358,14 +369,18 @@ fn push_class_param(
         end_col: node.end_position().column as u32,
         signature: Some(format!("val {name}{ty}")),
         doc_comment: None,
-        scope_path: if parent_qname.is_empty() { None } else { Some(parent_qname.to_string()) },
+        scope_path: if parent_qname.is_empty() {
+            None
+        } else {
+            Some(parent_qname.to_string())
+        },
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -453,14 +468,20 @@ object M {
         let src = "case class User(name: String, email: String)";
         let r = extract(src);
         assert!(
-            r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Property),
+            r.symbols
+                .iter()
+                .any(|s| s.name == "name" && s.kind == SymbolKind::Property),
             "param 'name' not extracted; symbols: {:?}",
-            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+            r.symbols
+                .iter()
+                .map(|s| (&s.name, s.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            r.symbols.iter().any(|s| s.name == "email" && s.kind == SymbolKind::Property),
+            r.symbols
+                .iter()
+                .any(|s| s.name == "email" && s.kind == SymbolKind::Property),
             "param 'email' not extracted"
         );
     }
 }
-

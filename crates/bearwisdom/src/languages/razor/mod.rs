@@ -40,11 +40,17 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 pub struct RazorPlugin;
 
 impl LanguagePlugin for RazorPlugin {
-    fn id(&self) -> &str { "razor" }
+    fn id(&self) -> &str {
+        "razor"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["razor"] }
+    fn language_ids(&self) -> &[&str] {
+        &["razor"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".cshtml", ".razor"] }
+    fn extensions(&self) -> &[&str] {
+        &[".cshtml", ".razor"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         // No native Razor grammar. The host file is never parsed by a
@@ -52,7 +58,9 @@ impl LanguagePlugin for RazorPlugin {
         None
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
@@ -67,9 +75,13 @@ impl LanguagePlugin for RazorPlugin {
         embedded::detect_regions(source)
     }
 
-    fn symbol_node_kinds(&self) -> &[&str] { &[] }
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[]
+    }
 
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[]
+    }
 
     fn profile(
         &self,

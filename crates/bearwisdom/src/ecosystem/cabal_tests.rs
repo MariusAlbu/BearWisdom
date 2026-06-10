@@ -1,7 +1,7 @@
 use super::{
-    CabalEcosystem, CabalManifest, Ecosystem, EcosystemKind, ExternalSourceLocator,
-    GHC_BOOT_PACKAGES, find_haskell_cabal_get_deps_in_dir,
-    parse_cabal_build_depends, path_to_haskell_module, shared_locator,
+    find_haskell_cabal_get_deps_in_dir, parse_cabal_build_depends, path_to_haskell_module,
+    shared_locator, CabalEcosystem, CabalManifest, Ecosystem, EcosystemKind, ExternalSourceLocator,
+    GHC_BOOT_PACKAGES,
 };
 use crate::ecosystem::manifest::ManifestReader;
 use std::sync::Arc;
@@ -24,7 +24,9 @@ fn haskell_parses_cabal_build_depends() {
     let tmp = std::env::temp_dir().join("bw-test-cabal-deps");
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
-    std::fs::write(tmp.join("test.cabal"), r#"
+    std::fs::write(
+        tmp.join("test.cabal"),
+        r#"
 cabal-version: 2.0
 name: test
 version: 1.0
@@ -33,7 +35,9 @@ library
     aeson >= 2.0,
     text,
     bytestring
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     let deps = parse_cabal_build_depends(&tmp);
     assert_eq!(deps, vec!["aeson", "bytestring", "text"]);
     let _ = std::fs::remove_dir_all(&tmp);
@@ -58,8 +62,14 @@ fn haskell_extracts_imports_with_qualified() {
 
 #[test]
 fn haskell_module_path_conversion() {
-    assert_eq!(super::haskell_module_to_path_tail("Data.List"), Some("Data/List.hs".to_string()));
-    assert_eq!(super::haskell_module_to_path_tail("Control.Monad.State"), Some("Control/Monad/State.hs".to_string()));
+    assert_eq!(
+        super::haskell_module_to_path_tail("Data.List"),
+        Some("Data/List.hs".to_string())
+    );
+    assert_eq!(
+        super::haskell_module_to_path_tail("Control.Monad.State"),
+        Some("Control/Monad/State.hs".to_string())
+    );
 }
 
 #[test]
@@ -153,12 +163,23 @@ fn cabal_get_does_not_match_package_name_prefix() {
     std::fs::create_dir_all(&wai_pkg).unwrap();
     std::fs::create_dir_all(&wai_extra_pkg).unwrap();
     std::fs::write(wai_pkg.join("Wai.hs"), "module Network.Wai where\n").unwrap();
-    std::fs::write(wai_extra_pkg.join("Test.hs"), "module Network.Wai.Test where\n").unwrap();
+    std::fs::write(
+        wai_extra_pkg.join("Test.hs"),
+        "module Network.Wai.Test where\n",
+    )
+    .unwrap();
     let declared = vec!["wai".to_string()];
     let roots = find_haskell_cabal_get_deps_in_dir(&tmp, &declared, &[]);
-    assert_eq!(roots.len(), 1, "exactly one root expected (wai, not wai-extra); got: {roots:?}");
+    assert_eq!(
+        roots.len(),
+        1,
+        "exactly one root expected (wai, not wai-extra); got: {roots:?}"
+    );
     assert_eq!(roots[0].module_path, "wai");
-    assert_eq!(roots[0].root, wai_pkg, "root should be wai-3.2.1, not wai-extra-3.1.18");
+    assert_eq!(
+        roots[0].root, wai_pkg,
+        "root should be wai-3.2.1, not wai-extra-3.1.18"
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -191,10 +212,22 @@ data SResponse = SResponse
     }
 "#;
     let names = super::scan_haskell_header(src);
-    assert!(names.iter().any(|n| n == "SResponse"), "expected SResponse type; got: {names:?}");
-    assert!(names.iter().any(|n| n == "simpleStatus"), "expected simpleStatus field; got: {names:?}");
-    assert!(names.iter().any(|n| n == "simpleHeaders"), "expected simpleHeaders field; got: {names:?}");
-    assert!(names.iter().any(|n| n == "simpleBody"), "expected simpleBody field; got: {names:?}");
+    assert!(
+        names.iter().any(|n| n == "SResponse"),
+        "expected SResponse type; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "simpleStatus"),
+        "expected simpleStatus field; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "simpleHeaders"),
+        "expected simpleHeaders field; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "simpleBody"),
+        "expected simpleBody field; got: {names:?}"
+    );
 }
 
 #[test]
@@ -209,24 +242,38 @@ fn manifest_reader_finds_cabal_files_in_subdirs() {
     let pkg_b = tmp.join("subdir").join("package-b");
     std::fs::create_dir_all(&pkg_a).unwrap();
     std::fs::create_dir_all(&pkg_b).unwrap();
-    std::fs::write(pkg_a.join("a.cabal"), r#"
+    std::fs::write(
+        pkg_a.join("a.cabal"),
+        r#"
 name: package-a
 build-depends:
     aeson,
     text
-"#).unwrap();
-    std::fs::write(pkg_b.join("b.cabal"), r#"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        pkg_b.join("b.cabal"),
+        r#"
 name: package-b
 build-depends:
     bytestring,
     aeson
-"#).unwrap();
-    let data = CabalManifest.read(&tmp).expect("manifest should be detected");
+"#,
+    )
+    .unwrap();
+    let data = CabalManifest
+        .read(&tmp)
+        .expect("manifest should be detected");
     let mut deps: Vec<&String> = data.dependencies.iter().collect();
     deps.sort();
     assert_eq!(
         deps,
-        vec![&"aeson".to_string(), &"bytestring".to_string(), &"text".to_string()],
+        vec![
+            &"aeson".to_string(),
+            &"bytestring".to_string(),
+            &"text".to_string()
+        ],
         "expected unioned, deduped deps from nested .cabal files"
     );
     let _ = std::fs::remove_dir_all(&tmp);
@@ -243,7 +290,10 @@ fn cabal_get_root_detected_anywhere_in_path() {
     let win = PathBuf::from("C:/Users/x/AppData/Local/cabal/cabal-get/yesod-1.6.2.1");
     assert!(super::is_cabal_get_root(&win));
     let store = PathBuf::from("/home/u/.cabal/store/ghc-9.12/persistent-2.18.1.0-abc");
-    assert!(!super::is_cabal_get_root(&store), "cabal store is NOT cabal-get");
+    assert!(
+        !super::is_cabal_get_root(&store),
+        "cabal store is NOT cabal-get"
+    );
     let arbitrary = PathBuf::from("/tmp/some/path");
     assert!(!super::is_cabal_get_root(&arbitrary));
 }
@@ -257,7 +307,10 @@ fn manifest_reader_returns_none_for_pruned_dirs() {
     std::fs::create_dir_all(&pruned).unwrap();
     std::fs::write(pruned.join("ignored.cabal"), "build-depends: ignored\n").unwrap();
     let result = CabalManifest.read(&tmp);
-    assert!(result.is_none(), "build artifacts must not produce manifest data");
+    assert!(
+        result.is_none(),
+        "build artifacts must not produce manifest data"
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -273,8 +326,20 @@ data Tag str
     deriving (Show, Eq)
 "#;
     let names = super::scan_haskell_header(src);
-    assert!(names.iter().any(|n| n == "Tag"), "expected Tag type; got: {names:?}");
-    assert!(names.iter().any(|n| n == "TagOpen"), "expected TagOpen constructor; got: {names:?}");
-    assert!(names.iter().any(|n| n == "TagClose"), "expected TagClose constructor; got: {names:?}");
-    assert!(names.iter().any(|n| n == "TagText"), "expected TagText constructor; got: {names:?}");
+    assert!(
+        names.iter().any(|n| n == "Tag"),
+        "expected Tag type; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "TagOpen"),
+        "expected TagOpen constructor; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "TagClose"),
+        "expected TagClose constructor; got: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "TagText"),
+        "expected TagText constructor; got: {names:?}"
+    );
 }

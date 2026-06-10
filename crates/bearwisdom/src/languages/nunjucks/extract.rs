@@ -24,11 +24,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let bytes = source.as_bytes();
@@ -47,7 +47,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                 continue;
             };
             if let Some(body) = source.get(body_start..close) {
-                let trimmed = body.trim().trim_start_matches('-').trim_end_matches('-').trim();
+                let trimmed = body
+                    .trim()
+                    .trim_start_matches('-')
+                    .trim_end_matches('-')
+                    .trim();
                 if let Some(rest) = trimmed.strip_prefix("block ") {
                     let name = rest.split_whitespace().next().unwrap_or("").to_string();
                     if !name.is_empty() {
@@ -65,15 +69,17 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             scope_path: Some(file_name.clone()),
                             parent_index: Some(host_index),
                             byte_offset: 0,
-                                                    declared_type: None,
+                            declared_type: None,
                             return_type: None,
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
-});
+                        });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("extends ") {
                     if let Some(name) = strip_quotes(rest.trim()) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,
@@ -83,12 +89,14 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("include ") {
                     if let Some(name) = strip_quotes(rest.trim()) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,
@@ -98,13 +106,15 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("import ") {
                     let tok = rest.split_whitespace().next().unwrap_or("");
                     if let Some(name) = strip_quotes(tok.trim()) {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: strip_extension(&name),
                             kind: EdgeKind::Imports,
@@ -114,8 +124,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -149,7 +159,8 @@ fn find_percent_close(bytes: &[u8], from: usize) -> Option<usize> {
 
 fn strip_quotes(s: &str) -> Option<String> {
     let s = s.trim();
-    if s.len() >= 2 && (s.starts_with('"') && s.ends_with('"') || s.starts_with('\'') && s.ends_with('\''))
+    if s.len() >= 2
+        && (s.starts_with('"') && s.ends_with('"') || s.starts_with('\'') && s.ends_with('\''))
     {
         Some(s[1..s.len() - 1].to_string())
     } else {

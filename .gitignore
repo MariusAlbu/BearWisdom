@@ -29,3 +29,4 @@ CLAUDE.md
 !crates/**/CLAUDE.md
 .r-lib-cache/
 .tmp/*
+_catalogue/*

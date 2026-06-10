@@ -13,9 +13,14 @@ use crate::types::{EdgeKind, ExtractionResult, SymbolKind};
 fn symbol_class_declaration() {
     let r = extract("class Foo {}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
         "expected Class Foo; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -25,7 +30,10 @@ fn symbol_object_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Singleton"),
         "expected Singleton; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -35,7 +43,10 @@ fn symbol_companion_object() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Companion"),
         "expected Companion; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -45,7 +56,10 @@ fn symbol_function_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "greet"),
         "expected greet; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -55,7 +69,10 @@ fn symbol_secondary_constructor() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
         "expected Constructor; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -64,9 +81,14 @@ fn symbol_primary_constructor() {
     // Primary constructor params promoted with val become Property symbols.
     let r = extract("class Point(val x: Int, val y: Int)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Property),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "x" && s.kind == SymbolKind::Property),
         "expected property x; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -76,7 +98,10 @@ fn symbol_property_declaration() {
     assert!(
         r.symbols.iter().any(|s| s.name == "timeout"),
         "expected timeout; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -105,7 +130,10 @@ fn symbol_type_alias() {
     assert!(
         r.symbols.iter().any(|s| s.name == "StringList"),
         "expected StringList; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -119,16 +147,21 @@ fn alias_idx(r: &ExtractionResult, name: &str) -> usize {
     r.symbols
         .iter()
         .position(|s| s.name == name && s.kind == SymbolKind::TypeAlias)
-        .unwrap_or_else(|| panic!("expected TypeAlias {name}; got {:?}",
-            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()))
+        .unwrap_or_else(|| {
+            panic!(
+                "expected TypeAlias {name}; got {:?}",
+                r.symbols
+                    .iter()
+                    .map(|s| (&s.name, s.kind))
+                    .collect::<Vec<_>>()
+            )
+        })
 }
 
 fn has_alias_type_ref(r: &ExtractionResult, alias: &str, target: &str) -> bool {
     let idx = alias_idx(r, alias);
     r.refs.iter().any(|rf| {
-        rf.kind == EdgeKind::TypeRef
-            && rf.source_symbol_index == idx
-            && rf.target_name == target
+        rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == idx && rf.target_name == target
     })
 }
 
@@ -165,9 +198,9 @@ fn type_alias_emits_target_type_ref_function() {
     let r = extract("typealias Handler = (Int) -> String");
     let idx = alias_idx(&r, "Handler");
     assert!(
-        r.refs.iter().any(|rf| {
-            rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == idx
-        }),
+        r.refs
+            .iter()
+            .any(|rf| { rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == idx }),
         "expected a TypeRef from the Handler alias symbol; got {:?}",
         r.refs
             .iter()
@@ -181,9 +214,14 @@ fn type_alias_emits_target_type_ref_function() {
 fn symbol_enum_entry() {
     let r = extract("enum class Color {\n    RED, GREEN, BLUE\n}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "RED" || s.name == "Color"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "RED" || s.name == "Color"),
         "expected enum entries or Color; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -194,7 +232,10 @@ fn symbol_class_parameter() {
     assert!(
         r.symbols.iter().any(|s| s.name == "Greeter"),
         "expected Greeter; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -206,9 +247,14 @@ fn symbol_class_parameter() {
 fn ref_call_expression() {
     let r = extract("fun bar() {}\nfun foo() { bar() }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
         "expected Calls bar; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -219,7 +265,10 @@ fn ref_constructor_invocation() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Dog"),
         "expected ref to Dog; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -229,7 +278,10 @@ fn ref_import_header() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -239,7 +291,10 @@ fn ref_delegation_specifier() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Runnable"),
         "expected TypeRef/Inherits to Runnable; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -248,9 +303,14 @@ fn ref_user_type() {
     // Type annotation on a property emits TypeRef via primary constructor params.
     let r = extract("class Holder(val item: String)");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -259,9 +319,14 @@ fn ref_nullable_type() {
     let r = extract("class Box(val value: String?)");
     // nullable_type wraps user_type — TypeRef should still be emitted.
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String for nullable; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -280,9 +345,14 @@ fn ref_type_arguments() {
 fn ref_as_expression() {
     let r = extract("fun cast(x: Any): String { return x as String }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from as; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -290,9 +360,14 @@ fn ref_as_expression() {
 fn ref_check_expression() {
     let r = extract("fun check(x: Any) { if (x is String) {} }");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from is; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -300,9 +375,14 @@ fn ref_check_expression() {
 fn ref_annotation() {
     let r = extract("@Suppress(\"UNCHECKED_CAST\")\nfun foo() {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Suppress" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Suppress" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef Suppress; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -313,7 +393,10 @@ fn ref_navigation_expression() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
         "expected Calls ref from navigation_expression; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -322,9 +405,14 @@ fn ref_user_type_in_property_body() {
     // user_type inside property initializer should emit TypeRef.
     let r = extract("class C {\n    val items: List<String> = listOf()\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef List from property declaration; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -335,7 +423,10 @@ fn ref_primary_constructor_emits_symbol() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
         "expected Constructor symbol from primary_constructor; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -344,9 +435,14 @@ fn ref_enum_entry_produces_member() {
     // enum_entry should produce EnumMember symbols.
     let r = extract("enum class Status { ACTIVE, INACTIVE }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "ACTIVE" || s.name == "INACTIVE"),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "ACTIVE" || s.name == "INACTIVE"),
         "expected EnumMember from enum_entry; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -357,12 +453,18 @@ fn ref_generic_type_arguments() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "List"),
         "expected TypeRef to List; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "String"),
         "expected TypeRef to String inside List<...>; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -370,7 +472,11 @@ fn ref_generic_type_arguments() {
 fn ref_nested_generic_types() {
     // Nested generics: Map<String, List<Int>>
     let r = extract("class C {\n    val data: Map<String, List<Int>> = mapOf()\n}");
-    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|rf| rf.target_name == "Map"),
         "expected TypeRef to Map"
@@ -393,11 +499,18 @@ fn ref_nested_generic_types() {
 fn ref_callable_type_annotations() {
     // Function types: (String, Int) -> Boolean
     let r = extract("class C {\n    val fn: (String, Int) -> Boolean = { _, _ -> true }\n}");
-    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|rf| rf.target_name == "String"),
         "expected TypeRef to String in function type; got {:?}",
-        type_refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        type_refs
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
     assert!(
         type_refs.iter().any(|rf| rf.target_name == "Int"),
@@ -414,9 +527,14 @@ fn ref_annotation_on_class() {
     // @Service annotation should emit TypeRef
     let r = extract("@Service\nclass MyService {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Service" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "Service" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef to Service annotation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -424,7 +542,11 @@ fn ref_annotation_on_class() {
 fn ref_annotation_on_property() {
     // @Inject annotation on property should emit TypeRef
     let r = extract("class C {\n    @Inject\n    lateinit var service: Service\n}");
-    let service_refs: Vec<_> = r.refs.iter().filter(|rf| rf.target_name == "Service").collect();
+    let service_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.target_name == "Service")
+        .collect();
     assert!(
         service_refs.len() >= 1,
         "expected at least one TypeRef to Service (annotation and property type); got {:?}",
@@ -436,7 +558,11 @@ fn ref_annotation_on_property() {
 fn ref_multiple_annotations() {
     // Multiple annotations should each emit TypeRef
     let r = extract("@Service\n@Component\nclass MyService {}");
-    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|rf| rf.target_name == "Service"),
         "expected TypeRef to Service"
@@ -452,9 +578,14 @@ fn ref_annotation_on_companion_object() {
     // @JvmStatic annotation on companion object should emit TypeRef
     let r = extract("class C {\n    @JvmField\n    companion object {}\n}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "JvmField" && rf.kind == EdgeKind::TypeRef),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "JvmField" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef JvmField on companion_object; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -465,7 +596,10 @@ fn symbol_property_in_function_body() {
     assert!(
         r.symbols.iter().any(|s| s.name == "timeout"),
         "expected Property timeout from local val; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -480,9 +614,14 @@ fn symbol_property_in_function_body() {
 fn symbol_interface_declaration_kind() {
     let r = extract("interface Runnable {}");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Runnable" && s.kind == SymbolKind::Interface),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Runnable" && s.kind == SymbolKind::Interface),
         "expected Interface Runnable; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -491,14 +630,24 @@ fn symbol_enum_entry_kind() {
     // enum_entry should produce EnumMember symbols (not just any symbol).
     let r = extract("enum class Status { ACTIVE, INACTIVE }");
     assert!(
-        r.symbols.iter().any(|s| s.name == "ACTIVE" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "ACTIVE" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember ACTIVE; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.name == "INACTIVE" && s.kind == SymbolKind::EnumMember),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "INACTIVE" && s.kind == SymbolKind::EnumMember),
         "expected EnumMember INACTIVE; got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -507,9 +656,14 @@ fn symbol_data_class() {
     // data class should produce a Class symbol (data modifier doesn't change the kind).
     let r = extract("data class User(val name: String, val age: Int)");
     assert!(
-        r.symbols.iter().any(|s| s.name == "User" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "User" && s.kind == SymbolKind::Class),
         "expected Class symbol User (data class); got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -518,9 +672,14 @@ fn symbol_sealed_class() {
     // sealed class should produce a Class symbol.
     let r = extract("sealed class Result");
     assert!(
-        r.symbols.iter().any(|s| s.name == "Result" && s.kind == SymbolKind::Class),
+        r.symbols
+            .iter()
+            .any(|s| s.name == "Result" && s.kind == SymbolKind::Class),
         "expected Class symbol Result (sealed class); got {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -532,11 +691,18 @@ fn symbol_sealed_class() {
 fn ref_extension_function_receiver_type() {
     // Extension function should emit a TypeRef to the receiver type.
     let r = extract("fun String.shout(): String = this.uppercase()");
-    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .collect();
     assert!(
         type_refs.iter().any(|rf| rf.target_name == "String"),
         "expected TypeRef to String (extension receiver type); got {:?}",
-        type_refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        type_refs
+            .iter()
+            .map(|rf| &rf.target_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -598,11 +764,16 @@ fn plain_function_signature_has_no_this_receiver() {
 #[test]
 fn ref_explicit_delegation() {
     // `class C(val r: Repo) : Service by r` — explicit_delegation emits Implements edge.
-    let r = extract("interface Service {}\nclass Impl : Service {}\nclass C(val impl: Impl) : Service by impl");
+    let r = extract(
+        "interface Service {}\nclass Impl : Service {}\nclass C(val impl: Impl) : Service by impl",
+    );
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "Service"),
         "expected ref to Service from explicit_delegation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -613,7 +784,10 @@ fn ref_wildcard_import() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from wildcard import; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -624,7 +798,10 @@ fn ref_import_alias() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "expected Imports ref from aliased import; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -635,7 +812,10 @@ fn ref_object_declaration_inherits() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "BaseConfig"),
         "expected ref to BaseConfig from object_declaration delegation; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -644,8 +824,13 @@ fn ref_suspend_function_call() {
     // Calls inside a suspend function body should be emitted.
     let r = extract("suspend fun fetch(): String = doFetch()");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "doFetch" && rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "doFetch" && rf.kind == EdgeKind::Calls),
         "expected Calls doFetch from suspend function; got {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }

@@ -33,28 +33,26 @@ pub mod symbol_index;
 
 pub use symbol_index::SymbolLocationIndex;
 
-pub mod android_sdk;
-pub mod jinja_ansible_runtime;
-pub mod bicep_runtime;
-pub mod prolog_runtime;
-pub mod hexo_runtime;
-pub mod nuxt_runtime;
-pub mod cargo_build_scripts;
 pub mod alire;
-pub mod cabal;
+pub mod android_sdk;
 pub mod bazel_central_registry;
-pub mod sdl_synthetics;
+pub mod bicep_runtime;
+pub mod cabal;
 pub mod cargo;
+pub mod cargo_build_scripts;
 pub mod clojure_core;
+pub mod compile_commands;
 pub mod composer;
 pub mod cpan;
 pub mod cpython_stdlib;
 pub mod cran;
 pub mod dart_sdk;
 pub mod dotnet_stdlib;
+pub mod ecmascript_imports;
 pub mod elixir_stdlib;
 pub mod erlang_otp;
 pub mod flutter_sdk;
+pub mod freepascal_runtime;
 pub mod gleam_stdlib;
 pub mod gnat_project;
 pub mod gnat_stdlib;
@@ -64,75 +62,71 @@ pub mod go_stdlib;
 pub mod godot_api;
 pub mod groovy_stdlib;
 pub mod hex;
+pub mod hexo_runtime;
+pub mod jar_walker;
 pub mod jdk_src;
-pub mod freepascal_runtime;
+pub mod jinja_ansible_runtime;
 pub mod kotlin_stdlib;
 pub mod luarocks;
 pub mod matlab_runtime;
 pub mod maven;
+pub mod maven_classes;
+pub mod msvc_sdk;
 pub mod nimble;
 pub mod npm;
-pub mod nvim_runtime;
 pub mod nuget;
+pub mod nuxt_runtime;
+pub mod nvim_runtime;
 pub mod opam;
+pub mod openapi_generated;
 pub mod perl_stdlib;
 pub mod php_stubs;
-pub mod compile_commands;
-pub mod ecmascript_imports;
-pub mod msvc_sdk;
-pub mod jar_walker;
-pub mod maven_classes;
-pub mod openapi_generated;
 pub mod posix_headers;
-pub mod prisma_client;
-pub mod protoc_generated;
-pub mod qt_runtime;
 pub mod powershell_cmdlet_types;
 pub mod powershell_stdlib;
+pub mod prisma_client;
+pub mod prolog_runtime;
+pub mod protoc_generated;
 pub mod psgallery;
 pub mod pub_pkg;
 pub mod puppet_forge;
 pub mod puppet_stdlib;
 pub mod pypi;
+pub mod qt_runtime;
 pub mod r_stdlib;
 pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
 pub mod scala_stdlib;
+pub mod sdl_synthetics;
 pub mod spm;
 pub mod swift_foundation;
 pub mod swift_pm_dsl;
 pub mod tf_registry;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
+pub mod vendored_submodules;
 pub mod zig_pkg;
 pub mod zig_std;
+pub use alire::AlireEcosystem;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
-pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bicep_runtime::BicepRuntimeEcosystem;
-pub use prolog_runtime::PrologRuntimeEcosystem;
-pub use hexo_runtime::HexoRuntimeEcosystem;
-pub use nuxt_runtime::NuxtRuntimeEcosystem;
-pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
-pub use sdl_synthetics::SdlSyntheticsEcosystem;
-pub use alire::AlireEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
+pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
+pub use compile_commands::CompileCommandsEcosystem;
 pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
 pub use cpython_stdlib::CpythonStdlibEcosystem;
-pub use maven_classes::MavenClassesEcosystem;
-pub use openapi_generated::OpenApiGeneratedEcosystem;
-pub use prisma_client::PrismaClientEcosystem;
-pub use protoc_generated::ProtocGeneratedEcosystem;
 pub use cran::CranEcosystem;
 pub use dart_sdk::DartSdkEcosystem;
 pub use dotnet_stdlib::DotnetStdlibEcosystem;
 pub use elixir_stdlib::ElixirStdlibEcosystem;
 pub use erlang_otp::ErlangOtpEcosystem;
 pub use flutter_sdk::FlutterSdkEcosystem;
+pub use freepascal_runtime::FreePascalRuntimeEcosystem;
 pub use gleam_stdlib::GleamStdlibEcosystem;
 pub use gnat_project::GnatProjectEcosystem;
 pub use gnat_stdlib::GnatStdlibEcosystem;
@@ -141,34 +135,41 @@ pub use go_stdlib::GoStdlibEcosystem;
 pub use godot_api::GodotApiEcosystem;
 pub use groovy_stdlib::GroovyStdlibEcosystem;
 pub use hex::HexEcosystem;
+pub use hexo_runtime::HexoRuntimeEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
-pub use freepascal_runtime::FreePascalRuntimeEcosystem;
+pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
 pub use maven::MavenEcosystem;
+pub use maven_classes::MavenClassesEcosystem;
+pub use msvc_sdk::MsvcSdkEcosystem;
 pub use nimble::NimbleEcosystem;
 pub use npm::NpmEcosystem;
-pub use nvim_runtime::NvimRuntimeEcosystem;
 pub use nuget::NugetEcosystem;
+pub use nuxt_runtime::NuxtRuntimeEcosystem;
+pub use nvim_runtime::NvimRuntimeEcosystem;
 pub use opam::OpamEcosystem;
+pub use openapi_generated::OpenApiGeneratedEcosystem;
 pub use perl_stdlib::PerlStdlibEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
-pub use compile_commands::CompileCommandsEcosystem;
-pub use msvc_sdk::MsvcSdkEcosystem;
 pub use posix_headers::{PosixHeadersEcosystem, VcpkgHeadersEcosystem};
-pub use qt_runtime::QtRuntimeEcosystem;
 pub use powershell_stdlib::PowerShellStdlibEcosystem;
+pub use prisma_client::PrismaClientEcosystem;
+pub use prolog_runtime::PrologRuntimeEcosystem;
+pub use protoc_generated::ProtocGeneratedEcosystem;
 pub use psgallery::PsGalleryEcosystem;
 pub use pub_pkg::PubEcosystem;
 pub use puppet_forge::PuppetForgeEcosystem;
 pub use puppet_stdlib::PuppetStdlibEcosystem;
 pub use pypi::PypiEcosystem;
+pub use qt_runtime::QtRuntimeEcosystem;
 pub use r_stdlib::RStdlibEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
 pub use scala_stdlib::ScalaStdlibEcosystem;
+pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use spm::SpmEcosystem;
 pub use swift_foundation::SwiftFoundationEcosystem;
 pub use swift_pm_dsl::SwiftPmDslEcosystem;
@@ -192,8 +193,12 @@ pub use zig_std::ZigStdEcosystem;
 pub struct EcosystemId(pub &'static str);
 
 impl EcosystemId {
-    pub const fn new(s: &'static str) -> Self { Self(s) }
-    pub fn as_str(&self) -> &'static str { self.0 }
+    pub const fn new(s: &'static str) -> Self {
+        Self(s)
+    }
+    pub fn as_str(&self) -> &'static str {
+        self.0
+    }
 }
 
 impl std::fmt::Display for EcosystemId {
@@ -355,7 +360,9 @@ pub trait Ecosystem: Send + Sync {
 
     /// Manifest formats this ecosystem recognizes. Stdlib ecosystems
     /// typically return an empty slice (activation is probe-based).
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { &[] }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        &[]
+    }
 
     /// `(filename, kind_label)` pairs declaring exact workspace-package
     /// markers for this ecosystem. The detector registers one `PackageInfo`
@@ -381,7 +388,9 @@ pub trait Ecosystem: Send + Sync {
     /// Default: empty. Stdlib ecosystems and probe-based ones (which find
     /// roots via SDK discovery, not user-authored manifests) leave this
     /// at the default.
-    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] { &[] }
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
 
     /// `(extension, kind_label)` pairs (extensions include the leading dot)
     /// that mark workspace packages when matched against any file in a
@@ -391,7 +400,9 @@ pub trait Ecosystem: Send + Sync {
     /// each matched file as a distinct workspace package.
     ///
     /// Default: empty. Most ecosystems use exact filenames instead.
-    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] { &[] }
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
 
     /// Directory basenames this ecosystem creates that should be pruned
     /// from recursive package scans — dependency caches and build outputs,
@@ -410,7 +421,9 @@ pub trait Ecosystem: Send + Sync {
     /// ecosystem's purview.
     ///
     /// Default: empty.
-    fn pruned_dir_names(&self) -> &'static [&'static str] { &[] }
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &[]
+    }
 
     /// When is this ecosystem active for a given project?
     fn activation(&self) -> EcosystemActivation;
@@ -441,7 +454,9 @@ pub trait Ecosystem: Send + Sync {
     /// `walk_root` as before. When true, the indexer calls the
     /// reachability methods and skips the eager walk. Set to true after
     /// overriding `resolve_import` with a real implementation.
-    fn supports_reachability(&self) -> bool { false }
+    fn supports_reachability(&self) -> bool {
+        false
+    }
 
     /// Reachability entry point: resolve a specific import statement.
     ///
@@ -475,11 +490,7 @@ pub trait Ecosystem: Send + Sync {
     /// Default delegates to `walk_root` so legacy eager behavior survives
     /// during the staged rollout. Reachability-capable ecosystems override
     /// to return just the file defining `fqn`.
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
         let _ = fqn;
         self.walk_root(dep)
     }
@@ -502,10 +513,7 @@ pub trait Ecosystem: Send + Sync {
     /// has not migrated to demand-driven parsing yet; keep using the eager
     /// `walk_root` / `resolve_import` path." Ecosystems override once their
     /// scanner is wired.
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         let _ = dep_roots;
         SymbolLocationIndex::new()
     }
@@ -518,7 +526,9 @@ pub trait Ecosystem: Send + Sync {
     /// An ecosystem must implement `build_symbol_index` before flipping
     /// this on — returning empty from the index while skipping the eager
     /// walk would leave the ecosystem's deps entirely unindexed.
-    fn uses_demand_driven_parse(&self) -> bool { false }
+    fn uses_demand_driven_parse(&self) -> bool {
+        false
+    }
 
     /// Files to eagerly pull before Stage 2's demand loop starts, even
     /// for demand-driven ecosystems. Lets ecosystems whose "entry point"
@@ -531,10 +541,7 @@ pub trait Ecosystem: Send + Sync {
     /// is large enough that even entry files are wasteful until demand
     /// names them (Go modules, where the "entry" is an entire flat
     /// directory of .go files).
-    fn demand_pre_pull(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> Vec<crate::walker::WalkedFile> {
+    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
         let _ = dep_roots;
         Vec::new()
     }
@@ -565,7 +572,9 @@ pub trait Ecosystem: Send + Sync {
     /// stay narrow because per-package activation is genuinely correct
     /// for them (a frontend package's npm deps shouldn't activate for an
     /// unrelated backend package in the same monorepo).
-    fn is_workspace_global(&self) -> bool { false }
+    fn is_workspace_global(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -582,7 +591,9 @@ pub struct EcosystemRegistry {
 }
 
 impl EcosystemRegistry {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn register(&mut self, eco: Arc<dyn Ecosystem>) {
         self.ecosystems.push(eco);
@@ -592,7 +603,9 @@ impl EcosystemRegistry {
         self.ecosystems.iter().find(|e| e.id() == id)
     }
 
-    pub fn all(&self) -> &[Arc<dyn Ecosystem>] { &self.ecosystems }
+    pub fn all(&self) -> &[Arc<dyn Ecosystem>] {
+        &self.ecosystems
+    }
 
     /// Every registered ecosystem that declares `lang` in its `languages()`
     /// list. Used at resolve time to filter which ecosystems a given ref
@@ -823,9 +836,8 @@ mod tests {
             .map(|e| e.id().as_str())
             .collect();
         for expected in [
-            "maven", "npm", "hex", "cargo", "pypi", "go-mod", "spm", "nuget",
-            "pub", "rubygems", "cran", "composer", "cabal", "nimble", "cpan",
-            "opam", "luarocks", "zig-pkg",
+            "maven", "npm", "hex", "cargo", "pypi", "go-mod", "spm", "nuget", "pub", "rubygems",
+            "cran", "composer", "cabal", "nimble", "cpan", "opam", "luarocks", "zig-pkg",
         ] {
             assert!(
                 ids.contains(&expected),
@@ -838,10 +850,18 @@ mod tests {
     fn registry_lookup_by_id_and_language() {
         struct DummyEcosystem;
         impl Ecosystem for DummyEcosystem {
-            fn id(&self) -> EcosystemId { EcosystemId::new("dummy") }
-            fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-            fn languages(&self) -> &'static [&'static str] { &["fake-lang"] }
-            fn activation(&self) -> EcosystemActivation { EcosystemActivation::Never }
+            fn id(&self) -> EcosystemId {
+                EcosystemId::new("dummy")
+            }
+            fn kind(&self) -> EcosystemKind {
+                EcosystemKind::Package
+            }
+            fn languages(&self) -> &'static [&'static str] {
+                &["fake-lang"]
+            }
+            fn activation(&self) -> EcosystemActivation {
+                EcosystemActivation::Never
+            }
             fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
                 Vec::new()
             }

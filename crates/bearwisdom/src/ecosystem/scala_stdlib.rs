@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, maven_local_repo, ExternalDepRoot,
     ExternalSourceLocator,
@@ -28,9 +26,15 @@ const LANGUAGES: &[&str] = &["scala"];
 pub struct ScalaStdlibEcosystem;
 
 impl Ecosystem for ScalaStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("scala")
     }
@@ -41,9 +45,13 @@ impl Ecosystem for ScalaStdlibEcosystem {
         super::maven::walk_generic_jvm_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -54,32 +62,50 @@ impl Ecosystem for ScalaStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for ScalaStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> { discover() }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover()
+    }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         super::maven::walk_generic_jvm_root(dep)
     }
 }
 
 fn discover() -> Vec<ExternalDepRoot> {
-    let Some(repo) = maven_local_repo() else { return Vec::new() };
+    let Some(repo) = maven_local_repo() else {
+        return Vec::new();
+    };
     // Scala 2.x: org/scala-lang/scala-library/X.Y.Z/scala-library-X.Y.Z-sources.jar
     // Scala 3.x: org/scala-lang/scala3-library_3/X.Y.Z/scala3-library_3-X.Y.Z-sources.jar
     let candidates = [
         ("org/scala-lang", "scala-library"),
         ("org/scala-lang", "scala3-library_3"),
     ];
-    let cache_base = repo.parent().unwrap_or(&repo).join("bearwisdom-scala-stdlib-cache");
+    let cache_base = repo
+        .parent()
+        .unwrap_or(&repo)
+        .join("bearwisdom-scala-stdlib-cache");
     let _ = std::fs::create_dir_all(&cache_base);
     let mut out = Vec::new();
     for (group, artifact) in candidates {
         let mut group_path = repo.clone();
-        for seg in group.split('/') { group_path.push(seg); }
+        for seg in group.split('/') {
+            group_path.push(seg);
+        }
         group_path.push(artifact);
-        if !group_path.is_dir() { continue }
-        let Ok(versions) = std::fs::read_dir(&group_path) else { continue };
+        if !group_path.is_dir() {
+            continue;
+        }
+        let Ok(versions) = std::fs::read_dir(&group_path) else {
+            continue;
+        };
         let mut vs: Vec<PathBuf> = versions
-            .flatten().filter(|e| e.path().is_dir()).map(|e| e.path()).collect();
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.path())
+            .collect();
         // Semver-aware sort: 2.13.17 > 2.13.8 > 2.13.10 (lex would invert).
         // Skip versions whose dir lacks a -sources.jar — `cabal build`
         // sometimes downloads the .pom only.
@@ -91,11 +117,17 @@ fn discover() -> Vec<ExternalDepRoot> {
         // Walk versions newest→oldest, stop at the first that has a sources jar.
         let mut placed = false;
         for ver_dir in vs.into_iter().rev() {
-            let Ok(files) = std::fs::read_dir(&ver_dir) else { continue };
+            let Ok(files) = std::fs::read_dir(&ver_dir) else {
+                continue;
+            };
             for f in files.flatten() {
                 let p = f.path();
-                let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
-                if !name.ends_with("-sources.jar") { continue }
+                let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if !name.ends_with("-sources.jar") {
+                    continue;
+                }
                 let cache_dir = cache_base.join(name.trim_end_matches(".jar"));
                 if !cache_dir.exists() || is_cache_stale(&p, &cache_dir) {
                     if let Err(e) = extract_java_sources_jar(&p, &cache_dir) {
@@ -105,7 +137,11 @@ fn discover() -> Vec<ExternalDepRoot> {
                 }
                 out.push(ExternalDepRoot {
                     module_path: format!("{group}:{artifact}"),
-                    version: ver_dir.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+                    version: ver_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string(),
                     root: cache_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
@@ -114,7 +150,9 @@ fn discover() -> Vec<ExternalDepRoot> {
                 placed = true;
                 break;
             }
-            if placed { break; }
+            if placed {
+                break;
+            }
         }
     }
     out
@@ -122,10 +160,12 @@ fn discover() -> Vec<ExternalDepRoot> {
 
 fn semver_compare(a: &str, b: &str) -> std::cmp::Ordering {
     let parts = |s: &str| -> Vec<u32> {
-        s.split('.').filter_map(|seg| {
-            let digits: String = seg.chars().take_while(|c| c.is_ascii_digit()).collect();
-            digits.parse::<u32>().ok()
-        }).collect()
+        s.split('.')
+            .filter_map(|seg| {
+                let digits: String = seg.chars().take_while(|c| c.is_ascii_digit()).collect();
+                digits.parse::<u32>().ok()
+            })
+            .collect()
     };
     parts(a).cmp(&parts(b)).then_with(|| a.cmp(b))
 }
@@ -133,5 +173,7 @@ fn semver_compare(a: &str, b: &str) -> std::cmp::Ordering {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<ScalaStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(ScalaStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(ScalaStdlibEcosystem))
+        .clone()
 }

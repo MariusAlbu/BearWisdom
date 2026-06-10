@@ -69,9 +69,18 @@ fn parse_tf_manifest(path: &Path) -> std::io::Result<crate::ecosystem::manifest:
 }
 
 const MANIFESTS: &[ManifestSpec] = &[
-    ManifestSpec { glob: "**/versions.tf",       parse: parse_tf_manifest },
-    ManifestSpec { glob: "**/main.tf",            parse: parse_tf_manifest },
-    ManifestSpec { glob: "**/terraform.tfvars",   parse: parse_tf_manifest },
+    ManifestSpec {
+        glob: "**/versions.tf",
+        parse: parse_tf_manifest,
+    },
+    ManifestSpec {
+        glob: "**/main.tf",
+        parse: parse_tf_manifest,
+    },
+    ManifestSpec {
+        glob: "**/terraform.tfvars",
+        parse: parse_tf_manifest,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -81,10 +90,18 @@ const MANIFESTS: &[ManifestSpec] = &[
 pub struct TfRegistryEcosystem;
 
 impl Ecosystem for TfRegistryEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // ManifestMatch on `ManifestKind::Terraform` — fires whenever the
@@ -111,7 +128,9 @@ impl Ecosystem for TfRegistryEcosystem {
         }
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_tf_symbol_index(dep_roots)
@@ -119,7 +138,9 @@ impl Ecosystem for TfRegistryEcosystem {
 }
 
 impl ExternalSourceLocator for TfRegistryEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         locate_tf_roots(project_root)
@@ -139,7 +160,9 @@ impl ExternalSourceLocator for TfRegistryEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<TfRegistryEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(TfRegistryEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(TfRegistryEcosystem))
+        .clone()
 }
 
 // =============================================================================
@@ -205,14 +228,22 @@ fn parse_modules_json(path: &Path) -> Option<Vec<ExternalDepRoot>> {
     for m in modules {
         let key = m.get("Key")?.as_str()?;
         // Skip the implicit root module entry (empty key or key == "")
-        if key.is_empty() { continue; }
+        if key.is_empty() {
+            continue;
+        }
         let dir = m.get("Dir")?.as_str()?;
         let source = m.get("Source").and_then(|v| v.as_str()).unwrap_or(key);
-        let version = m.get("Version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let version = m
+            .get("Version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         // Dir is relative to the project root.
         let abs_dir = project_root.join(dir);
-        if !abs_dir.is_dir() { continue; }
+        if !abs_dir.is_dir() {
+            continue;
+        }
 
         out.push(ExternalDepRoot {
             module_path: source.to_string(),
@@ -249,8 +280,12 @@ fn walk_tf_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth > 6 { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(ft) = entry.file_type() else { continue };
@@ -264,8 +299,12 @@ fn walk_tf_dir(
             }
             walk_tf_dir(&path, root, dep, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".tf") { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".tf") {
+                continue;
+            }
             let rel = match path.strip_prefix(root) {
                 Ok(r) => r.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -290,9 +329,13 @@ fn walk_tf_dir(
 fn build_tf_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut index = SymbolLocationIndex::new();
     for dep in dep_roots {
-        if dep.module_path == "tf-providers-bundled" { continue; }
+        if dep.module_path == "tf-providers-bundled" {
+            continue;
+        }
         for wf in walk_tf_module_dir(dep) {
-            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else { continue };
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                continue;
+            };
             for sym_name in scan_tf_top_level_resources(&src) {
                 index.insert(dep.module_path.clone(), sym_name, wf.absolute_path.clone());
             }
@@ -345,7 +388,9 @@ fn parse_two_labels(s: &str) -> Option<(&str, &str)> {
     let mut inner = rest.trim().splitn(3, '"');
     let _ = inner.next()?; // whitespace between labels
     let second = inner.next()?.trim();
-    if first.is_empty() || second.is_empty() { return None; }
+    if first.is_empty() || second.is_empty() {
+        return None;
+    }
     Some((first, second))
 }
 
@@ -353,7 +398,9 @@ fn parse_one_label(s: &str) -> Option<&str> {
     let mut parts = s.trim().splitn(3, '"');
     let _ = parts.next()?;
     let name = parts.next()?.trim();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     Some(name)
 }
 
@@ -375,11 +422,16 @@ pub(crate) fn extract_required_providers(content: &str) -> Vec<String> {
             depth = 1;
             continue;
         }
-        if !in_req_providers { continue; }
+        if !in_req_providers {
+            continue;
+        }
 
         for ch in trimmed.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' { depth -= 1; }
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+            }
         }
         if depth <= 0 {
             in_req_providers = false;
@@ -407,11 +459,16 @@ pub(crate) fn extract_module_sources(content: &str) -> Vec<String> {
             depth = 1;
             continue;
         }
-        if !in_module { continue; }
+        if !in_module {
+            continue;
+        }
 
         for ch in trimmed.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' { depth -= 1; }
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+            }
         }
         if depth <= 0 {
             in_module = false;
@@ -433,7 +490,9 @@ fn extract_source_value(line: &str) -> Option<&str> {
     let after_source = line.strip_prefix("source")?.trim_start();
     let after_eq = after_source.strip_prefix('=')?.trim_start();
     let inner = after_eq.strip_prefix('"')?.split('"').next()?;
-    if inner.is_empty() { return None; }
+    if inner.is_empty() {
+        return None;
+    }
     Some(inner)
 }
 
@@ -467,43 +526,148 @@ struct ProviderResource {
 /// A schema-driven extension point is left as a TODO comment above.
 const BUNDLED_RESOURCES: &[ProviderResource] = &[
     // ---- AWS (hashicorp/aws) ----
-    ProviderResource { provider: "aws", resource: "aws_vpc" },
-    ProviderResource { provider: "aws", resource: "aws_subnet" },
-    ProviderResource { provider: "aws", resource: "aws_internet_gateway" },
-    ProviderResource { provider: "aws", resource: "aws_route_table" },
-    ProviderResource { provider: "aws", resource: "aws_route_table_association" },
-    ProviderResource { provider: "aws", resource: "aws_security_group" },
-    ProviderResource { provider: "aws", resource: "aws_instance" },
-    ProviderResource { provider: "aws", resource: "aws_s3_bucket" },
-    ProviderResource { provider: "aws", resource: "aws_s3_bucket_policy" },
-    ProviderResource { provider: "aws", resource: "aws_iam_role" },
-    ProviderResource { provider: "aws", resource: "aws_iam_policy" },
-    ProviderResource { provider: "aws", resource: "aws_iam_role_policy_attachment" },
-    ProviderResource { provider: "aws", resource: "aws_lambda_function" },
-    ProviderResource { provider: "aws", resource: "aws_cloudwatch_log_group" },
-    ProviderResource { provider: "aws", resource: "aws_db_instance" },
-    ProviderResource { provider: "aws", resource: "aws_eks_cluster" },
-    ProviderResource { provider: "aws", resource: "aws_eks_node_group" },
-    ProviderResource { provider: "aws", resource: "aws_vpc_ipv4_cidr_block_association" },
-    ProviderResource { provider: "aws", resource: "aws_nat_gateway" },
-    ProviderResource { provider: "aws", resource: "aws_eip" },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_vpc",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_subnet",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_internet_gateway",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_route_table",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_route_table_association",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_security_group",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_instance",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_s3_bucket",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_s3_bucket_policy",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_iam_role",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_iam_policy",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_iam_role_policy_attachment",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_lambda_function",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_cloudwatch_log_group",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_db_instance",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_eks_cluster",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_eks_node_group",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_vpc_ipv4_cidr_block_association",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_nat_gateway",
+    },
+    ProviderResource {
+        provider: "aws",
+        resource: "aws_eip",
+    },
     // ---- Google Cloud (hashicorp/google) ----
-    ProviderResource { provider: "google", resource: "google_compute_instance" },
-    ProviderResource { provider: "google", resource: "google_compute_network" },
-    ProviderResource { provider: "google", resource: "google_compute_subnetwork" },
-    ProviderResource { provider: "google", resource: "google_storage_bucket" },
-    ProviderResource { provider: "google", resource: "google_container_cluster" },
-    ProviderResource { provider: "google", resource: "google_container_node_pool" },
-    ProviderResource { provider: "google", resource: "google_project_iam_member" },
-    ProviderResource { provider: "google", resource: "google_sql_database_instance" },
+    ProviderResource {
+        provider: "google",
+        resource: "google_compute_instance",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_compute_network",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_compute_subnetwork",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_storage_bucket",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_container_cluster",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_container_node_pool",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_project_iam_member",
+    },
+    ProviderResource {
+        provider: "google",
+        resource: "google_sql_database_instance",
+    },
     // ---- Azure (hashicorp/azurerm) ----
-    ProviderResource { provider: "azurerm", resource: "azurerm_resource_group" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_virtual_network" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_subnet" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_network_security_group" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_linux_virtual_machine" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_storage_account" },
-    ProviderResource { provider: "azurerm", resource: "azurerm_kubernetes_cluster" },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_resource_group",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_virtual_network",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_subnet",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_network_security_group",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_linux_virtual_machine",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_storage_account",
+    },
+    ProviderResource {
+        provider: "azurerm",
+        resource: "azurerm_kubernetes_cluster",
+    },
 ];
 
 fn synthesize_bundled_providers() -> Vec<ParsedFile> {
@@ -536,11 +700,11 @@ fn synthesize_bundled_providers() -> Vec<ParsedFile> {
                 scope_path: Some(provider.to_string()),
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
 
         out.push(build_parsed_file(virtual_path, symbols));
@@ -605,7 +769,9 @@ impl crate::ecosystem::manifest::ManifestReader for TerraformManifest {
     fn read(&self, project_root: &Path) -> Option<crate::ecosystem::manifest::ManifestData> {
         let mut deps: std::collections::HashSet<String> = std::collections::HashSet::new();
         let saw_tf = collect_tf_declarations(project_root, &mut deps, 0);
-        if !saw_tf { return None }
+        if !saw_tf {
+            return None;
+        }
         let mut data = crate::ecosystem::manifest::ManifestData::default();
         data.dependencies = deps;
         Some(data)
@@ -621,8 +787,12 @@ fn collect_tf_declarations(
     out: &mut std::collections::HashSet<String>,
     depth: u32,
 ) -> bool {
-    if depth > 6 { return false }
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    if depth > 6 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     let mut saw_tf = false;
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
@@ -639,12 +809,22 @@ fn collect_tf_declarations(
                 saw_tf = true;
             }
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".tf") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".tf") {
+                continue;
+            }
             saw_tf = true;
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
-            for p in extract_required_providers(&content) { out.insert(p); }
-            for m in extract_module_sources(&content) { out.insert(m); }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            for p in extract_required_providers(&content) {
+                out.insert(p);
+            }
+            for m in extract_module_sources(&content) {
+                out.insert(m);
+            }
         }
     }
     saw_tf

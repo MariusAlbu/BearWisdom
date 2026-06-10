@@ -17,9 +17,14 @@ use crate::types::{EdgeKind, SymbolKind};
 fn coverage_class_declaration() {
     let r = extract::extract("class Foo {}", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "Foo"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "Foo"),
         "class_declaration should produce Class symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -27,9 +32,14 @@ fn coverage_class_declaration() {
 fn coverage_abstract_class_declaration() {
     let r = extract::extract("abstract class Shape {}", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "Shape"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "Shape"),
         "abstract_class_declaration should produce Class symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -37,9 +47,14 @@ fn coverage_abstract_class_declaration() {
 fn coverage_interface_declaration() {
     let r = extract::extract("interface IRepo {}", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Interface && s.name == "IRepo"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Interface && s.name == "IRepo"),
         "interface_declaration should produce Interface symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -47,9 +62,14 @@ fn coverage_interface_declaration() {
 fn coverage_function_declaration() {
     let r = extract::extract("function doWork(): void {}", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "doWork"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "doWork"),
         "function_declaration should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -57,9 +77,14 @@ fn coverage_function_declaration() {
 fn coverage_generator_function_declaration() {
     let r = extract::extract("function* gen(): Generator<number> { yield 1; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "gen"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "gen"),
         "generator_function_declaration should produce Function symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -67,9 +92,14 @@ fn coverage_generator_function_declaration() {
 fn coverage_method_definition() {
     let r = extract::extract("class Svc { handle(): void {} }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "handle"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "handle"),
         "method_definition should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -77,9 +107,14 @@ fn coverage_method_definition() {
 fn coverage_abstract_method_signature() {
     let r = extract::extract("abstract class Base { abstract run(): void; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "run"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "run"),
         "abstract_method_signature should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -87,9 +122,14 @@ fn coverage_abstract_method_signature() {
 fn coverage_method_signature() {
     let r = extract::extract("interface IRepo { findOne(id: number): User; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "findOne"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "findOne"),
         "method_signature should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -97,9 +137,14 @@ fn coverage_method_signature() {
 fn coverage_public_field_definition() {
     let r = extract::extract("class Svc { public name: string = ''; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "name"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "name"),
         "public_field_definition should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -107,9 +152,14 @@ fn coverage_public_field_definition() {
 fn coverage_property_signature() {
     let r = extract::extract("interface Config { timeout: number; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "timeout"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "timeout"),
         "property_signature should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -118,10 +168,21 @@ fn discriminant_literal_field_stored_as_declared_type() {
     // A string-literal type on a property is stored as the field's signature
     // (the discriminant value, with quotes), feeding union branch selection;
     // a nominal type keeps signature None (the TypeRef path).
-    let r = extract::extract(r#"interface Circle { kind: "circle"; radius: number; }"#, false);
-    let kind = r.symbols.iter().find(|s| s.name == "kind").expect("kind property");
+    let r = extract::extract(
+        r#"interface Circle { kind: "circle"; radius: number; }"#,
+        false,
+    );
+    let kind = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "kind")
+        .expect("kind property");
     assert_eq!(kind.signature.as_deref(), Some("\"circle\""));
-    let radius = r.symbols.iter().find(|s| s.name == "radius").expect("radius property");
+    let radius = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "radius")
+        .expect("radius property");
     assert_eq!(radius.signature, None);
 }
 
@@ -130,9 +191,14 @@ fn coverage_field_definition() {
     // Private field (no accessibility modifier) — standard field_definition.
     let r = extract::extract("class Svc { count = 0; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "count"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "count"),
         "field_definition should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -140,9 +206,14 @@ fn coverage_field_definition() {
 fn coverage_type_alias_declaration() {
     let r = extract::extract("type UserId = string;", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::TypeAlias && s.name == "UserId"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::TypeAlias && s.name == "UserId"),
         "type_alias_declaration should produce TypeAlias symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -150,9 +221,14 @@ fn coverage_type_alias_declaration() {
 fn coverage_enum_declaration() {
     let r = extract::extract("enum Status { Active, Inactive }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Status"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Enum && s.name == "Status"),
         "enum_declaration should produce Enum symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -161,9 +237,14 @@ fn coverage_enum_body() {
     // enum_body is the container of enum members; members should appear as EnumMember symbols.
     let r = extract::extract("enum Direction { Up, Down, Left, Right }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::EnumMember && s.name == "Up"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::EnumMember && s.name == "Up"),
         "enum_body should produce EnumMember symbols; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -171,9 +252,14 @@ fn coverage_enum_body() {
 fn coverage_lexical_declaration() {
     let r = extract::extract("const apiUrl: string = 'http://example.com';", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "apiUrl"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "apiUrl"),
         "lexical_declaration should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -182,9 +268,14 @@ fn coverage_variable_declaration() {
     // `var` produces variable_declaration (not lexical_declaration).
     let r = extract::extract("var legacyVar = 42;", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "legacyVar"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "legacyVar"),
         "variable_declaration should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -192,9 +283,14 @@ fn coverage_variable_declaration() {
 fn coverage_internal_module() {
     let r = extract::extract("namespace MyNS { export const x = 1; }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Module && s.name == "MyNS"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Module && s.name == "MyNS"),
         "internal_module should produce Module symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -203,12 +299,14 @@ fn coverage_construct_signature() {
     // Interface with a construct signature: `new(name: string): Product`
     let r = extract::extract("interface Factory { new(name: string): Product; }", false);
     assert!(
+        r.symbols.iter().any(|s| (s.kind == SymbolKind::Constructor
+            || s.kind == SymbolKind::Method)
+            && s.name == "new"),
+        "construct_signature should produce Constructor or Method symbol named 'new'; got: {:?}",
         r.symbols
             .iter()
-            .any(|s| (s.kind == SymbolKind::Constructor || s.kind == SymbolKind::Method)
-                && s.name == "new"),
-        "construct_signature should produce Constructor or Method symbol named 'new'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -221,7 +319,10 @@ fn coverage_call_signature() {
             .iter()
             .any(|s| s.kind == SymbolKind::Method && s.name == "call"),
         "call_signature should produce Method symbol named 'call'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -233,7 +334,10 @@ fn coverage_index_signature() {
             .iter()
             .any(|s| s.kind == SymbolKind::Property && s.name.contains("key")),
         "index_signature should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -249,7 +353,10 @@ fn coverage_call_expression() {
             .iter()
             .any(|r| r.kind == EdgeKind::Calls && r.target_name == "fetchData"),
         "call_expression should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -261,7 +368,10 @@ fn coverage_new_expression() {
             .iter()
             .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "EventEmitter"),
         "new_expression should produce Instantiates ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -273,7 +383,10 @@ fn coverage_import_statement() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserService"),
         "import_statement should produce TypeRef ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -286,7 +399,10 @@ fn coverage_jsx_self_closing_element() {
             .iter()
             .any(|r| r.kind == EdgeKind::Calls && r.target_name == "Button"),
         "jsx_self_closing_element should produce Calls ref for PascalCase components; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -298,7 +414,10 @@ fn coverage_jsx_opening_element() {
             .iter()
             .any(|r| r.kind == EdgeKind::Calls && r.target_name == "Modal"),
         "jsx_opening_element should produce Calls ref for PascalCase components; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -496,7 +615,9 @@ const { variant = 'default', size = 'sm' } = Astro.props;
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
-    for literal in &["default", "success", "warning", "danger", "outline", "sm", "md"] {
+    for literal in &[
+        "default", "success", "warning", "danger", "outline", "sm", "md",
+    ] {
         assert!(
             !type_refs.contains(literal),
             "string-literal `'{literal}'` must not emit a TypeRef; type_refs: {type_refs:?}"
@@ -522,10 +643,15 @@ fn coverage_arrow_function_const_provider_emits_chain() {
         .refs
         .iter()
         .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
-        .unwrap_or_else(|| panic!(
-            "arrow-const Provider ref must be emitted; refs: {:?}",
-            r.refs.iter().map(|r| (r.kind, r.target_name.clone())).collect::<Vec<_>>()
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "arrow-const Provider ref must be emitted; refs: {:?}",
+                r.refs
+                    .iter()
+                    .map(|r| (r.kind, r.target_name.clone()))
+                    .collect::<Vec<_>>()
+            )
+        });
     let chain = provider_ref.chain.as_ref().expect("chain must be set");
     assert_eq!(chain.segments[0].name, "PollContext");
     assert_eq!(chain.segments[1].name, "Provider");
@@ -563,15 +689,20 @@ fn coverage_jsx_context_provider_emits_chain() {
         "function Wrap() { return <PollContext.Provider value={1}>x</PollContext.Provider>; }",
         true,
     );
-    let provider_ref = r
-        .refs
-        .iter()
-        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
-        .unwrap_or_else(|| panic!(
+    let provider_ref =
+        r.refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+            .unwrap_or_else(|| {
+                panic!(
             "expected Calls ref with target_name=Provider for Context.Provider JSX; got: {:?}",
             r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
-        ));
-    let chain = provider_ref.chain.as_ref().expect("Provider ref must carry a chain");
+        )
+            });
+    let chain = provider_ref
+        .chain
+        .as_ref()
+        .expect("Provider ref must carry a chain");
     let seg_names: Vec<&str> = chain.segments.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(
         seg_names,
@@ -588,7 +719,10 @@ fn coverage_extends_clause() {
             .iter()
             .any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Animal"),
         "extends_clause should produce Inherits ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -602,7 +736,10 @@ fn coverage_extends_generic_clause() {
             .iter()
             .any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Repository<User>"),
         "generic extends should carry type args; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -614,7 +751,10 @@ fn coverage_implements_clause() {
             .iter()
             .any(|r| r.kind == EdgeKind::Implements && r.target_name == "IRepository"),
         "implements_clause should produce Implements ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -628,7 +768,10 @@ fn coverage_type_annotation() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserService"),
         "type_annotation should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -642,7 +785,10 @@ fn coverage_type_identifier() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "TargetType"),
         "type_identifier should produce TypeRef (via type alias value); got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -654,7 +800,10 @@ fn coverage_as_expression() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Admin"),
         "as_expression should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -666,7 +815,10 @@ fn coverage_satisfies_expression() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AppConfig"),
         "satisfies_expression should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -681,7 +833,10 @@ fn coverage_binary_expression_instanceof() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "binary_expression instanceof should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -693,7 +848,10 @@ fn coverage_tagged_template_expression() {
             .iter()
             .any(|r| r.kind == EdgeKind::Calls && r.target_name == "sql"),
         "tagged_template_expression should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -704,14 +862,16 @@ fn coverage_tagged_template_expression() {
 #[test]
 fn coverage_lexical_declaration_inside_function_body() {
     // `const` inside a function body should produce a Variable symbol.
-    let r = extract::extract(
-        "function run() { const db: Database = connect(); }",
-        false,
-    );
+    let r = extract::extract("function run() { const db: Database = connect(); }", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "db"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "db"),
         "lexical_declaration inside function body should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -723,9 +883,14 @@ fn coverage_lexical_declaration_inside_if_block() {
         false,
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
         "lexical_declaration inside if block should produce Variable symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -741,7 +906,10 @@ fn coverage_call_expression_in_arrow_function_argument() {
             .iter()
             .any(|r| r.kind == EdgeKind::Calls && r.target_name == "processItem"),
         "call_expression inside arrow function argument should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -749,44 +917,48 @@ fn coverage_call_expression_in_arrow_function_argument() {
 fn coverage_type_identifier_in_nested_context() {
     // type_identifier in a complex type expression that may not go through a
     // dedicated type_annotation handler should still produce a TypeRef.
-    let r = extract::extract(
-        "const x: Array<UserProfile> = [];",
-        false,
-    );
+    let r = extract::extract("const x: Array<UserProfile> = [];", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserProfile"),
         "type_identifier in generic type argument should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_property_signature_in_type_alias_object_type() {
     // property_signature inside a type alias object literal should produce a Property symbol.
-    let r = extract::extract(
-        "type Config = { host: string; port: number; };",
-        false,
-    );
+    let r = extract::extract("type Config = { host: string; port: number; };", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "host"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "host"),
         "property_signature in type alias object_type should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_method_signature_in_type_alias_object_type() {
     // method_signature inside a type alias object literal should produce a Method symbol.
-    let r = extract::extract(
-        "type Service = { find(id: number): User; };",
-        false,
-    );
+    let r = extract::extract("type Service = { find(id: number): User; };", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "find"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "find"),
         "method_signature in type alias object_type should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -802,39 +974,42 @@ fn coverage_as_expression_deeply_nested() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "as_expression deeply nested should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_binary_expression_instanceof_at_module_scope() {
     // instanceof at module scope (not inside a function) should produce TypeRef.
-    let r = extract::extract(
-        "const isAdmin = user instanceof AdminUser;",
-        false,
-    );
+    let r = extract::extract("const isAdmin = user instanceof AdminUser;", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "instanceof at module scope should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_type_annotation_in_arrow_function_param() {
     // Type annotation on an arrow function parameter should produce TypeRef.
-    let r = extract::extract(
-        "const handler = (req: Request) => req.body;",
-        false,
-    );
+    let r = extract::extract("const handler = (req: Request) => req.body;", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Request"),
         "type_annotation in arrow function param should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -850,38 +1025,44 @@ fn coverage_satisfies_expression_generic_type() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserEntry"),
         "satisfies_expression with generic type arg should produce TypeRef for type arg; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_satisfies_expression_union_type() {
     // satisfies with a union type should extract all arms.
-    let r = extract::extract(
-        "const val = data satisfies AdminUser | GuestUser;",
-        false,
-    );
+    let r = extract::extract("const val = data satisfies AdminUser | GuestUser;", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "satisfies_expression with union type should produce TypeRef for first arm; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "GuestUser"),
         "satisfies_expression with union type should produce TypeRef for second arm; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_enum_body_removed_from_symbol_node_kinds() {
     // enum_body is a container, not a symbol. Verify it is NOT in symbol_node_kinds.
-    use crate::languages::LanguagePlugin;
     use super::TypeScriptPlugin;
+    use crate::languages::LanguagePlugin;
     let plugin = TypeScriptPlugin;
     assert!(
         !plugin.symbol_node_kinds().contains(&"enum_body"),
@@ -893,8 +1074,8 @@ fn coverage_enum_body_removed_from_symbol_node_kinds() {
 fn coverage_binary_expression_removed_from_ref_node_kinds() {
     // binary_expression is too broad (mostly arithmetic). instanceof is handled inline.
     // Verify binary_expression is NOT in ref_node_kinds.
-    use crate::languages::LanguagePlugin;
     use super::TypeScriptPlugin;
+    use crate::languages::LanguagePlugin;
     let plugin = TypeScriptPlugin;
     assert!(
         !plugin.ref_node_kinds().contains(&"binary_expression"),
@@ -915,7 +1096,10 @@ fn coverage_instanceof_still_works_after_binary_expression_removal() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "ServiceError"),
         "instanceof should still produce TypeRef via inline extract_node handling; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -942,7 +1126,11 @@ fn anonymous_object_union_emits_synthetic_branches() {
         .expect("Shape alias target");
     match target {
         AliasTarget::Intersection(branches) => {
-            assert_eq!(branches.len(), 2, "two synthetic branches; got {branches:?}");
+            assert_eq!(
+                branches.len(),
+                2,
+                "two synthetic branches; got {branches:?}"
+            );
             assert!(
                 branches.iter().all(|b| b.starts_with("Shape\u{1}")),
                 "branch qnames carry the synthetic sentinel; got {branches:?}"
@@ -951,9 +1139,17 @@ fn anonymous_object_union_emits_synthetic_branches() {
         other => panic!("expected Intersection of synthetic branches, got {other:?}"),
     }
     // Branch members are parented under a synthetic branch, not the alias.
-    let radius = r.symbols.iter().find(|s| s.name == "radius").expect("radius");
+    let radius = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "radius")
+        .expect("radius");
     assert!(
-        radius.scope_path.as_deref().unwrap_or("").starts_with("Shape\u{1}"),
+        radius
+            .scope_path
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("Shape\u{1}"),
         "radius parented under a synthetic branch; got {:?}",
         radius.scope_path
     );
@@ -971,33 +1167,42 @@ fn anonymous_object_union_emits_synthetic_branches() {
 #[test]
 fn coverage_property_signature_in_union_type_alias() {
     // property_signature inside a union member of a type alias should produce symbols.
-    let r = extract::extract(
-        "type T = { host: string } | { port: number };",
-        false,
-    );
+    let r = extract::extract("type T = { host: string } | { port: number };", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "host"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "host"),
         "property_signature in union object_type should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "port"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "port"),
         "property_signature in second union object_type should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_property_signature_in_intersection_type_alias() {
     // property_signature inside an intersection member of a type alias should produce symbols.
-    let r = extract::extract(
-        "type T = BaseType & { extra: string };",
-        false,
-    );
+    let r = extract::extract("type T = BaseType & { extra: string };", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "extra"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name == "extra"),
         "property_signature in intersection object_type should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1009,19 +1214,21 @@ fn coverage_method_signature_in_union_type_alias() {
         false,
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "find"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "find"),
         "method_signature in union object_type should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_call_signature_in_type_alias() {
     // call_signature inside a type alias object_type should produce a Method symbol.
-    let r = extract::extract(
-        "type Callable = { (x: number): string; };",
-        false,
-    );
+    let r = extract::extract("type Callable = { (x: number): string; };", false);
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "call"),
         "call_signature in type alias object_type should produce Method symbol named 'call'; got: {:?}",
@@ -1032,14 +1239,16 @@ fn coverage_call_signature_in_type_alias() {
 #[test]
 fn coverage_index_signature_in_type_alias() {
     // index_signature inside a type alias object_type should produce a Property symbol.
-    let r = extract::extract(
-        "type Lookup = { [key: string]: User };",
-        false,
-    );
+    let r = extract::extract("type Lookup = { [key: string]: User };", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name.contains("key")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Property && s.name.contains("key")),
         "index_signature in type alias object_type should produce Property symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1060,39 +1269,42 @@ fn coverage_type_annotation_in_ternary_arrow_param() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Request"),
         "type_annotation in ternary arrow param should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_as_expression_in_ternary() {
     // as_expression inside a ternary should produce TypeRef.
-    let r = extract::extract(
-        "const x = flag ? (val as AdminUser) : null;",
-        false,
-    );
+    let r = extract::extract("const x = flag ? (val as AdminUser) : null;", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "as_expression in ternary should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_as_expression_in_array_literal() {
     // as_expression inside an array literal.
-    let r = extract::extract(
-        "const items = [x as Widget, y as Widget];",
-        false,
-    );
+    let r = extract::extract("const items = [x as Widget, y as Widget];", false);
     assert!(
         r.refs
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Widget"),
         "as_expression in array literal should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1108,7 +1320,10 @@ fn coverage_satisfies_expression_at_module_scope() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AppConfig"),
         "satisfies_expression at module scope should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1124,7 +1339,10 @@ fn coverage_satisfies_expression_in_function_body() {
             .iter()
             .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "ServiceConfig"),
         "satisfies_expression in function body should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1132,38 +1350,91 @@ fn coverage_satisfies_expression_in_function_body() {
 #[ignore]
 fn debug_inline_object_type_in_function_param() {
     let r = extract::extract("function foo(opts: { x: number; y: string }) {}", false);
-    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    eprintln!(
+        "Symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
     // Should have `x` and `y` as Property symbols
-    assert!(r.symbols.iter().any(|s| s.name == "x"), "expected x; got {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    assert!(
+        r.symbols.iter().any(|s| s.name == "x"),
+        "expected x; got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
 #[ignore]
 fn debug_inline_object_type_in_var_annotation() {
-    let r = extract::extract("const config: { host: string; port: number } = {} as any;", false);
-    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
-    assert!(r.symbols.iter().any(|s| s.name == "host"), "expected host; got {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    let r = extract::extract(
+        "const config: { host: string; port: number } = {} as any;",
+        false,
+    );
+    eprintln!(
+        "Symbols: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "host"),
+        "expected host; got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
 #[ignore]
 fn debug_inline_object_type_in_return_type() {
-    let r = extract::extract("function bar(): { id: number } { return { id: 1 }; }", false);
-    eprintln!("Symbols return type: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    let r = extract::extract(
+        "function bar(): { id: number } { return { id: 1 }; }",
+        false,
+    );
+    eprintln!(
+        "Symbols return type: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
 #[ignore]
 fn debug_inline_object_type_in_method_param() {
-    let r = extract::extract("interface IRepo { find(opts: { id: number }): User; }", false);
-    eprintln!("Symbols method sig: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    let r = extract::extract(
+        "interface IRepo { find(opts: { id: number }): User; }",
+        false,
+    );
+    eprintln!(
+        "Symbols method sig: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
 #[ignore]
 fn debug_inline_object_type_in_method_def() {
     let r = extract::extract("class Svc { handle(opts: { x: number }): void {} }", false);
-    eprintln!("Symbols method def: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    eprintln!(
+        "Symbols method def: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,14 +1529,24 @@ fn coverage_multiline_method_signature_in_interface() {
         false,
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "createEvent"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "createEvent"),
         "multiline method_signature should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "getCredentialId"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Method && s.name == "getCredentialId"),
         "optional method_signature should produce Method symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1309,13 +1590,13 @@ fn debug_real_file_method_sigs() {
         }
     };
     let r = extract::extract(&src, false);
-    
+
     // Count method_signature CST nodes
     let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&language).unwrap();
     let tree = parser.parse(&src, None).unwrap();
-    
+
     let mut method_sig_lines: Vec<u32> = Vec::new();
     {
         let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
@@ -1329,21 +1610,40 @@ fn debug_real_file_method_sigs() {
             }
         }
     }
-    
-    let method_sym_lines: Vec<u32> = r.symbols.iter()
+
+    let method_sym_lines: Vec<u32> = r
+        .symbols
+        .iter()
         .filter(|s| s.kind == SymbolKind::Method)
         .map(|s| s.start_line)
         .collect();
-    
-    eprintln!("CST method_signature lines: {:?}", &method_sig_lines[..method_sig_lines.len().min(20)]);
-    eprintln!("Extracted Method sym lines: {:?}", &method_sym_lines[..method_sym_lines.len().min(20)]);
-    eprintln!("CST total: {}, Extracted: {}", method_sig_lines.len(), method_sym_lines.len());
-    
+
+    eprintln!(
+        "CST method_signature lines: {:?}",
+        &method_sig_lines[..method_sig_lines.len().min(20)]
+    );
+    eprintln!(
+        "Extracted Method sym lines: {:?}",
+        &method_sym_lines[..method_sym_lines.len().min(20)]
+    );
+    eprintln!(
+        "CST total: {}, Extracted: {}",
+        method_sig_lines.len(),
+        method_sym_lines.len()
+    );
+
     // Find missing lines
     let extracted_set: std::collections::HashSet<u32> = method_sym_lines.iter().copied().collect();
-    let missing: Vec<u32> = method_sig_lines.iter().filter(|l| !extracted_set.contains(l)).copied().collect();
-    eprintln!("Missing method_signature lines: {:?}", &missing[..missing.len().min(20)]);
-    
+    let missing: Vec<u32> = method_sig_lines
+        .iter()
+        .filter(|l| !extracted_set.contains(l))
+        .copied()
+        .collect();
+    eprintln!(
+        "Missing method_signature lines: {:?}",
+        &missing[..missing.len().min(20)]
+    );
+
     // Show what's at those lines
     let lines: Vec<&str> = src.lines().collect();
     for &l in missing.iter().take(10) {
@@ -1357,10 +1657,10 @@ fn debug_real_file_method_sigs() {
 #[ignore]
 fn debug_scan_project_method_sigs() {
     use std::collections::HashSet;
-    
+
     let project_root = "F:/Work/Projects/TestProjects/react-calcom";
     let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    
+
     let mut total_cst = 0u64;
     let mut total_extracted = 0u64;
     let mut missing_examples: Vec<(String, u32, String)> = Vec::new();
@@ -1368,25 +1668,33 @@ fn debug_scan_project_method_sigs() {
     let walk_result = crate::walker::walk(std::path::Path::new(project_root));
     let files: Vec<crate::walker::WalkedFile> = match walk_result {
         Ok(f) => f,
-        Err(e) => { eprintln!("Walk error: {}", e); return; }
+        Err(e) => {
+            eprintln!("Walk error: {}", e);
+            return;
+        }
     };
 
-    let ts_files: Vec<_> = files.iter().filter(|f| f.language == "typescript").collect();
+    let ts_files: Vec<_> = files
+        .iter()
+        .filter(|f| f.language == "typescript")
+        .collect();
     eprintln!("TypeScript files: {}", ts_files.len());
-    
+
     for walked in ts_files.iter().take(200) {
         let src = match std::fs::read_to_string(&walked.absolute_path) {
             Ok(s) => s,
             Err(_) => continue,
         };
-        
+
         let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(&language).is_err() { continue; }
+        if parser.set_language(&language).is_err() {
+            continue;
+        }
         let tree = match parser.parse(&src, None) {
             Some(t) => t,
             None => continue,
         };
-        
+
         let mut cst_lines: Vec<u32> = Vec::new();
         // Stack-based traversal to count method_signature nodes.
         let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
@@ -1399,17 +1707,21 @@ fn debug_scan_project_method_sigs() {
                 stack.push(child);
             }
         }
-        
-        if cst_lines.is_empty() { continue; }
-        
+
+        if cst_lines.is_empty() {
+            continue;
+        }
+
         let r = super::extract::extract(&src, walked.relative_path.ends_with(".tsx"));
-        let extracted_set: HashSet<u32> = r.symbols.iter()
+        let extracted_set: HashSet<u32> = r
+            .symbols
+            .iter()
             .filter(|s| s.kind == crate::types::SymbolKind::Method)
             .map(|s| s.start_line)
             .collect();
-        
+
         total_cst += cst_lines.len() as u64;
-        
+
         let file_lines: Vec<&str> = src.lines().collect();
         for &l in &cst_lines {
             if extracted_set.contains(&l) {
@@ -1424,7 +1736,7 @@ fn debug_scan_project_method_sigs() {
             }
         }
     }
-    
+
     eprintln!("Total CST method_signature: {}", total_cst);
     eprintln!("Total extracted: {}", total_extracted);
     eprintln!("Missing examples:");
@@ -1447,7 +1759,7 @@ type Props = {
   onHover(e: MouseEvent): void;
 };
 "#,
-        true,  // TSX grammar
+        true, // TSX grammar
     );
     eprintln!("TSX symbols:");
     for s in &r.symbols {
@@ -1460,30 +1772,38 @@ type Props = {
 fn debug_find_files_with_missing_method_sigs() {
     let project_root = "F:/Work/Projects/TestProjects/react-calcom";
     let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    
+
     let walk_result = crate::walker::walk(std::path::Path::new(project_root));
     let files: Vec<crate::walker::WalkedFile> = match walk_result {
         Ok(f) => f,
-        Err(e) => { eprintln!("Walk error: {}", e); return; }
+        Err(e) => {
+            eprintln!("Walk error: {}", e);
+            return;
+        }
     };
-    let ts_files: Vec<_> = files.iter().filter(|f| f.language == "typescript").collect();
+    let ts_files: Vec<_> = files
+        .iter()
+        .filter(|f| f.language == "typescript")
+        .collect();
     eprintln!("Total TS files: {}", ts_files.len());
-    
+
     let mut problem_files: Vec<(String, usize, usize)> = Vec::new(); // (path, cst, extracted)
-    
+
     for walked in &ts_files {
         let src = match std::fs::read_to_string(&walked.absolute_path) {
             Ok(s) => s,
             Err(_) => continue,
         };
-        
+
         let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(&language).is_err() { continue; }
+        if parser.set_language(&language).is_err() {
+            continue;
+        }
         let tree = match parser.parse(&src, None) {
             Some(t) => t,
             None => continue,
         };
-        
+
         // Count method_signature nodes using stack
         let mut cst_lines: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
         let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
@@ -1496,22 +1816,26 @@ fn debug_find_files_with_missing_method_sigs() {
                 stack.push(child);
             }
         }
-        
-        if cst_lines.is_empty() { continue; }
-        
+
+        if cst_lines.is_empty() {
+            continue;
+        }
+
         let is_tsx = walked.relative_path.ends_with(".tsx");
         let r = super::extract::extract(&src, is_tsx);
-        let extracted_lines: std::collections::BTreeSet<u32> = r.symbols.iter()
+        let extracted_lines: std::collections::BTreeSet<u32> = r
+            .symbols
+            .iter()
             .filter(|s| s.kind == crate::types::SymbolKind::Method)
             .map(|s| s.start_line)
             .collect();
-        
+
         let missing_count = cst_lines.difference(&extracted_lines).count();
         if missing_count > 0 {
             problem_files.push((walked.relative_path.clone(), cst_lines.len(), missing_count));
         }
     }
-    
+
     problem_files.sort_by_key(|f| std::cmp::Reverse(f.2));
     eprintln!("Files with missing method_signatures (top 20):");
     for (path, total, missing) in problem_files.iter().take(20) {
@@ -1525,14 +1849,17 @@ fn debug_tsx_file_method_sigs() {
     let path = "F:/Work/Projects/TestProjects/react-calcom/apps/web/modules/auth/login-view.tsx";
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Cannot read: {}", e); return; }
+        Err(e) => {
+            eprintln!("Cannot read: {}", e);
+            return;
+        }
     };
-    
+
     let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TSX.into();
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&language).unwrap();
     let tree = parser.parse(&src, None).unwrap();
-    
+
     let lines: Vec<&str> = src.lines().collect();
     let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
     let mut method_sig_nodes: Vec<(u32, String)> = Vec::new();
@@ -1551,14 +1878,18 @@ fn debug_tsx_file_method_sigs() {
             stack.push(child);
         }
     }
-    
+
     eprintln!("method_signature nodes in login-view.tsx:");
     for (line, text) in &method_sig_nodes[..method_sig_nodes.len().min(20)] {
         eprintln!("  line {}: {:?}", line, text);
     }
-    
+
     let r = super::extract::extract(&src, true); // TSX
-    let method_syms: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Method).collect();
+    let method_syms: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Method)
+        .collect();
     eprintln!("Extracted Method symbols: {}", method_syms.len());
     for s in &method_syms {
         eprintln!("  {:?} line={}", s.name, s.start_line);
@@ -1572,15 +1903,18 @@ fn debug_ts_grammar_on_tsx_file() {
     let path = "F:/Work/Projects/TestProjects/react-calcom/apps/web/modules/auth/login-view.tsx";
     let src = match std::fs::read_to_string(path) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Cannot read: {}", e); return; }
+        Err(e) => {
+            eprintln!("Cannot read: {}", e);
+            return;
+        }
     };
-    
+
     // Use TYPESCRIPT grammar (as coverage check does)
     let language_ts: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
     let mut parser_ts = tree_sitter::Parser::new();
     parser_ts.set_language(&language_ts).unwrap();
     let tree_ts = parser_ts.parse(&src, None).unwrap();
-    
+
     let lines: Vec<&str> = src.lines().collect();
     let mut ts_method_sigs: Vec<(u32, String)> = Vec::new();
     let mut stack: Vec<tree_sitter::Node> = vec![tree_ts.root_node()];
@@ -1599,18 +1933,21 @@ fn debug_ts_grammar_on_tsx_file() {
             stack.push(child);
         }
     }
-    
-    eprintln!("TYPESCRIPT grammar method_signature count: {}", ts_method_sigs.len());
+
+    eprintln!(
+        "TYPESCRIPT grammar method_signature count: {}",
+        ts_method_sigs.len()
+    );
     for (line, text) in ts_method_sigs.iter().take(10) {
         eprintln!("  line {}: {:?}", line, text);
     }
-    
+
     // Use TSX grammar (as extractor does for .tsx files)
     let language_tsx: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TSX.into();
     let mut parser_tsx = tree_sitter::Parser::new();
     parser_tsx.set_language(&language_tsx).unwrap();
     let tree_tsx = parser_tsx.parse(&src, None).unwrap();
-    
+
     let mut tsx_method_sigs: Vec<(u32, String)> = Vec::new();
     let mut stack2: Vec<tree_sitter::Node> = vec![tree_tsx.root_node()];
     while let Some(node) = stack2.pop() {
@@ -1628,8 +1965,11 @@ fn debug_ts_grammar_on_tsx_file() {
             stack2.push(child);
         }
     }
-    
-    eprintln!("TSX grammar method_signature count: {}", tsx_method_sigs.len());
+
+    eprintln!(
+        "TSX grammar method_signature count: {}",
+        tsx_method_sigs.len()
+    );
     for (line, text) in tsx_method_sigs.iter().take(10) {
         eprintln!("  line {}: {:?}", line, text);
     }
@@ -1648,19 +1988,43 @@ fn debug_measure_coverage_calcom() {
         if cov.language == "typescript" {
             eprintln!("=== TypeScript ===");
             eprintln!("  files: {}", cov.file_count);
-            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
-            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!(
+                "  sym: {:.1}% ({}/{})",
+                cov.symbol_coverage.percent,
+                cov.symbol_coverage.matched_nodes,
+                cov.symbol_coverage.expected_nodes
+            );
+            eprintln!(
+                "  ref: {:.1}% ({}/{})",
+                cov.ref_coverage.percent,
+                cov.ref_coverage.matched_nodes,
+                cov.ref_coverage.expected_nodes
+            );
             eprintln!("  --- symbol kinds ---");
             let mut sym_kinds = cov.symbol_kinds.clone();
             sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in sym_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
             eprintln!("  --- ref kinds ---");
             let mut ref_kinds = cov.ref_kinds.clone();
             ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
             for k in ref_kinds.iter().take(10) {
-                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+                eprintln!(
+                    "    {}: {:.1}% ({}/{}) miss={}",
+                    k.kind,
+                    k.percent,
+                    k.matched,
+                    k.occurrences,
+                    k.occurrences - k.matched
+                );
             }
         }
     }
@@ -1675,7 +2039,10 @@ fn coverage_function_expression_symbol() {
     // `const f = function() {}` -- function_expression initializer.
     // push_variable_decl promotes to Function kind when the initializer is a
     // function_expression or arrow_function.
-    let r = extract::extract("const format = function(x: string): string { return x; };", false);
+    let r = extract::extract(
+        "const format = function(x: string): string { return x; };",
+        false,
+    );
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "format"),
         "function_expression in variable_declarator should produce a Function symbol named 'format'; got: {:?}",
@@ -1698,11 +2065,19 @@ fn coverage_arrow_function_symbol() {
 #[test]
 fn coverage_constructor_symbol() {
     // method_definition named "constructor" should produce Constructor kind.
-    let r = extract::extract("class Service { constructor(private db: Database) {} }", false);
+    let r = extract::extract(
+        "class Service { constructor(private db: Database) {} }",
+        false,
+    );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor && s.name == "constructor"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Constructor && s.name == "constructor"),
         "method_definition named 'constructor' should produce Constructor symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1715,10 +2090,15 @@ fn coverage_getter_signature() {
     // yields Method kind (the field lookup path uses SymbolKind::Method as fallback).
     let r = extract::extract("interface IStore { get size(): number; }", false);
     assert!(
-        r.symbols.iter().any(|s| (s.kind == SymbolKind::Property || s.kind == SymbolKind::Method)
-            && s.name == "size"),
+        r.symbols.iter().any(
+            |s| (s.kind == SymbolKind::Property || s.kind == SymbolKind::Method)
+                && s.name == "size"
+        ),
         "getter_signature should produce Property or Method symbol named 'size'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1728,10 +2108,15 @@ fn coverage_setter_signature() {
     // Same as getter_signature: the extractor yields Method kind via push_ts_field.
     let r = extract::extract("interface IStore { set value(v: string); }", false);
     assert!(
-        r.symbols.iter().any(|s| (s.kind == SymbolKind::Property || s.kind == SymbolKind::Method)
-            && s.name == "value"),
+        r.symbols.iter().any(
+            |s| (s.kind == SymbolKind::Property || s.kind == SymbolKind::Method)
+                && s.name == "value"
+        ),
         "setter_signature should produce Property or Method symbol named 'value'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1743,9 +2128,14 @@ fn coverage_ambient_declaration() {
     // has no body and is not yet handled as a standalone symbol.)
     let r = extract::extract("declare class Serializer {}", false);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class && s.name == "Serializer"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Class && s.name == "Serializer"),
         "ambient_declaration wrapping class_declaration should produce Class symbol; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1754,11 +2144,19 @@ fn coverage_function_signature() {
     // `function name(params): ReturnType;` -- ambient / overload function signature.
     // function_signature has no body but is otherwise structurally identical to
     // function_declaration; the dedicated arm in extract_node handles it via push_function.
-    let r = extract::extract("function parse(input: string): AST;\nfunction parse(input: Buffer): AST;", false);
+    let r = extract::extract(
+        "function parse(input: string): AST;\nfunction parse(input: Buffer): AST;",
+        false,
+    );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "parse"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name == "parse"),
         "function_signature should produce at least one Function symbol named 'parse'; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1767,10 +2165,14 @@ fn coverage_import_default() {
     // `import React from 'react'` — default (identifier) import → TypeRef with module.
     let r = extract::extract(r#"import React from 'react';"#, false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "React"
+        r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef
+            && r.target_name == "React"
             && r.module.as_deref() == Some("react")),
         "default import should produce TypeRef with module='react'; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name, &r.module))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1793,10 +2195,14 @@ fn coverage_export_reexport_with_source() {
     // `export { Foo } from './foo'` — named re-export should emit an Imports ref with module.
     let r = extract::extract(r#"export { UserService } from './user';"#, false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::Imports && r.target_name == "UserService"
+        r.refs.iter().any(|r| r.kind == EdgeKind::Imports
+            && r.target_name == "UserService"
             && r.module.as_deref() == Some("./user")),
         "re-export with source should produce Imports ref with module='./user'; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name, &r.module))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1805,9 +2211,14 @@ fn coverage_type_assertion() {
     // `<AdminUser>user` — old-style angle-bracket type assertion → TypeRef for the cast type.
     let r = extract::extract("const admin = <AdminUser>user;", false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
         "type_assertion (<Type>expr) should produce TypeRef; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1817,9 +2228,14 @@ fn coverage_interface_extends_type_clause() {
     // inheritance. extract_heritage now handles it and emits an Inherits edge.
     let r = extract::extract("interface Serializable extends Printable {}", false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Printable"),
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Printable"),
         "interface extends_type_clause should produce Inherits ref for 'Printable'; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1829,9 +2245,14 @@ fn coverage_method_call_member_expression() {
     // Calls ref target_name should contain the method name "warn".
     let r = extract::extract("function run() { logger.warn('oops'); }", false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::Calls && r.target_name.contains("warn")),
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Calls && r.target_name.contains("warn")),
         "method call on member_expression should produce Calls ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1855,9 +2276,14 @@ fn coverage_require_call_dynamic() {
     // TS extractor handles require via annotate_call_modules + Calls arm.
     let r = extract::extract(r#"const logger = require('winston');"#, false);
     assert!(
-        r.refs.iter().any(|r| r.kind == EdgeKind::Calls || r.kind == EdgeKind::Imports),
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Calls || r.kind == EdgeKind::Imports),
         "require() call should produce at least one Calls or Imports ref; got: {:?}",
-        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|r| (r.kind, &r.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1898,7 +2324,10 @@ declare namespace dayjs {
     assert!(
         !year_overloads.is_empty(),
         "Dayjs.year overloads missing; symbols: {:?}",
-        r.symbols.iter().map(|s| &s.qualified_name).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| &s.qualified_name)
+            .collect::<Vec<_>>()
     );
 
     // Return-type TypeRef: clone(): Dayjs must produce TypeRef target_name=Dayjs.

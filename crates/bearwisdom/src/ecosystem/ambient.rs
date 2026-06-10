@@ -35,32 +35,77 @@ impl AmbientPathMarker {
 /// against a candidate file path to decide whether its symbols are ambient.
 pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     // Build-tool auto-import declarations (nuxt prepare, unplugin-*).
-    AmbientPathMarker { contains: "/.nuxt/", ends_with: "imports.d.ts" },
-    AmbientPathMarker { contains: "/.nuxt/", ends_with: "components.d.ts" },
-    AmbientPathMarker { contains: "/.svelte-kit/", ends_with: "ambient.d.ts" },
-    AmbientPathMarker { contains: "/.next/", ends_with: "next-env.d.ts" },
+    AmbientPathMarker {
+        contains: "/.nuxt/",
+        ends_with: "imports.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "/.nuxt/",
+        ends_with: "components.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "/.svelte-kit/",
+        ends_with: "ambient.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "/.next/",
+        ends_with: "next-env.d.ts",
+    },
     // No-leading-slash forms for project-root-relative DB paths.
-    AmbientPathMarker { contains: "", ends_with: ".nuxt/imports.d.ts" },
-    AmbientPathMarker { contains: "", ends_with: ".nuxt/components.d.ts" },
-    AmbientPathMarker { contains: "", ends_with: ".svelte-kit/ambient.d.ts" },
-    AmbientPathMarker { contains: "", ends_with: ".next/next-env.d.ts" },
+    AmbientPathMarker {
+        contains: "",
+        ends_with: ".nuxt/imports.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "",
+        ends_with: ".nuxt/components.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "",
+        ends_with: ".svelte-kit/ambient.d.ts",
+    },
+    AmbientPathMarker {
+        contains: "",
+        ends_with: ".next/next-env.d.ts",
+    },
     // Vue 3 runtime declarations whose exports the SFC compiler injects.
-    AmbientPathMarker { contains: "node_modules/vue/dist/", ends_with: ".d.ts" },
-    AmbientPathMarker { contains: "node_modules/@vue/runtime-core/dist/", ends_with: ".d.ts" },
-    AmbientPathMarker { contains: "node_modules/@vue/runtime-dom/dist/", ends_with: ".d.ts" },
-    AmbientPathMarker { contains: "node_modules/@vue/reactivity/dist/", ends_with: ".d.ts" },
+    AmbientPathMarker {
+        contains: "node_modules/vue/dist/",
+        ends_with: ".d.ts",
+    },
+    AmbientPathMarker {
+        contains: "node_modules/@vue/runtime-core/dist/",
+        ends_with: ".d.ts",
+    },
+    AmbientPathMarker {
+        contains: "node_modules/@vue/runtime-dom/dist/",
+        ends_with: ".d.ts",
+    },
+    AmbientPathMarker {
+        contains: "node_modules/@vue/reactivity/dist/",
+        ends_with: ".d.ts",
+    },
     // Bicep runtime grammar symbols (built-in functions, decorators, the
     // `sys`/`az` namespace markers) the language compiler treats as ambient.
-    AmbientPathMarker { contains: "ext:bicep-runtime:", ends_with: ".bicep" },
+    AmbientPathMarker {
+        contains: "ext:bicep-runtime:",
+        ends_with: ".bicep",
+    },
     // Bazel built-in rules and the `ctx` / `env` API namespaces, available in
     // BUILD/.bzl files without an explicit `load()`.
-    AmbientPathMarker { contains: "ext:bazel-builtins:", ends_with: ".bzl" },
+    AmbientPathMarker {
+        contains: "ext:bazel-builtins:",
+        ends_with: ".bzl",
+    },
     // Rust prelude: every module gets `std::prelude::v1` (`Vec`, `Box`, `Some`,
     // `Result`, `Default`, `From`, …) without a `use`. The stdlib walker keys
     // these under the sysroot source tree `…/rustlib/src/rust/library/<crate>/…`.
     // Scoped to that subtree so cargo-registry crates (also `ext:rust:`, but
     // under `/registry/src/`) stay non-ambient — they need an explicit `use`.
-    AmbientPathMarker { contains: "/rustlib/src/rust/library/", ends_with: ".rs" },
+    AmbientPathMarker {
+        contains: "/rustlib/src/rust/library/",
+        ends_with: ".rs",
+    },
     // Dart implicit import: every library gets `dart:core` (`String`, `List`,
     // `Map`, `Exception`, `ArgumentError`, …) without an `import`. The dart-sdk
     // and Flutter's bundled sky_engine ship it under `…/lib/core/`. Scoped to
@@ -68,14 +113,23 @@ pub const FRAMEWORK_AMBIENT_MARKERS: &[AmbientPathMarker] = &[
     // `dart:collection`, under `…/lib/async|collection/`) stay non-ambient —
     // they require an explicit import. dart:core types are stored with a bare
     // qualified name, so the path is the only namespace signal.
-    AmbientPathMarker { contains: "/dart-sdk/lib/core/", ends_with: ".dart" },
-    AmbientPathMarker { contains: "/sky_engine/lib/core/", ends_with: ".dart" },
+    AmbientPathMarker {
+        contains: "/dart-sdk/lib/core/",
+        ends_with: ".dart",
+    },
+    AmbientPathMarker {
+        contains: "/sky_engine/lib/core/",
+        ends_with: ".dart",
+    },
     // Haskell Prelude: every module implicitly imports `Prelude` (`Just`,
     // `maybe`, `mapM`, `fromMaybe`, `fmap`, …) without an `import`. GHC ships
     // these under the `ghc-internal` package's `GHC/Internal/` source tree.
     // Prelude symbols are stored with a bare qualified name; the path scopes the
     // bind to GHC's base and keeps same-named third-party symbols out.
-    AmbientPathMarker { contains: "/ghc/internal/", ends_with: ".hs" },
+    AmbientPathMarker {
+        contains: "/ghc/internal/",
+        ends_with: ".hs",
+    },
 ];
 
 /// True when `normalized_lower_path` (pre-lowercased, `/`-normalised) matches

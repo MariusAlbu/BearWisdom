@@ -32,8 +32,14 @@ fn newest_sdk_version_ignores_unversioned_siblings() {
 #[test]
 fn header_index_registers_relative_path() {
     let tmp = TempDir::new().unwrap();
-    write(&tmp.path().join("stdio.h"), "int printf(const char*, ...);\n");
-    write(&tmp.path().join("string.h"), "char* strcpy(char*, const char*);\n");
+    write(
+        &tmp.path().join("stdio.h"),
+        "int printf(const char*, ...);\n",
+    );
+    write(
+        &tmp.path().join("string.h"),
+        "char* strcpy(char*, const char*);\n",
+    );
     let dep = make_root(tmp.path(), "test");
     let idx = build_c_header_index(&[dep]);
     assert!(!idx.is_empty());
@@ -52,14 +58,21 @@ fn header_index_registers_only_relative_path_from_root() {
     // not via basename fallback, but via the matching root.
     let tmp = TempDir::new().unwrap();
     let version_root = tmp.path();
-    write(&version_root.join("winrt/Windows.Foundation.h"), "/* header */\n");
+    write(
+        &version_root.join("winrt/Windows.Foundation.h"),
+        "/* header */\n",
+    );
     let winrt_root = make_root(&version_root.join("winrt"), "test");
     let version_dep = make_root(version_root, "test");
     let idx = build_c_header_index(&[winrt_root, version_dep]);
     // Reached via the winrt/ root (relative = `Windows.Foundation.h`).
-    assert!(idx.locate("Windows.Foundation.h", "Windows.Foundation.h").is_some());
+    assert!(idx
+        .locate("Windows.Foundation.h", "Windows.Foundation.h")
+        .is_some());
     // Reached via the version root (relative = `winrt/Windows.Foundation.h`).
-    assert!(idx.locate("winrt/Windows.Foundation.h", "winrt/Windows.Foundation.h").is_some());
+    assert!(idx
+        .locate("winrt/Windows.Foundation.h", "winrt/Windows.Foundation.h")
+        .is_some());
 }
 
 #[test]
@@ -67,9 +80,18 @@ fn vcpkg_discovers_triplet_include_dirs() {
     // Lay out a fake vcpkg root with two triplets; only one with include/.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    write(&root.join("installed/x64-windows/include/openssl/bio.h"), "/* fake */\n");
-    write(&root.join("installed/x64-linux/include/zlib.h"), "/* fake */\n");
-    write(&root.join("installed/x86-windows/no-include-here.txt"), "ignored\n");
+    write(
+        &root.join("installed/x64-windows/include/openssl/bio.h"),
+        "/* fake */\n",
+    );
+    write(
+        &root.join("installed/x64-linux/include/zlib.h"),
+        "/* fake */\n",
+    );
+    write(
+        &root.join("installed/x86-windows/no-include-here.txt"),
+        "ignored\n",
+    );
 
     std::env::set_var("VCPKG_ROOT", root);
     let dep_roots = discover_vcpkg_include();
@@ -82,11 +104,15 @@ fn vcpkg_discovers_triplet_include_dirs() {
         .map(|r| r.root.to_string_lossy().replace('\\', "/"))
         .collect();
     assert!(
-        triplet_dirs.iter().any(|p| p.ends_with("x64-windows/include")),
+        triplet_dirs
+            .iter()
+            .any(|p| p.ends_with("x64-windows/include")),
         "x64-windows/include not discovered; got {triplet_dirs:?}"
     );
     assert!(
-        triplet_dirs.iter().any(|p| p.ends_with("x64-linux/include")),
+        triplet_dirs
+            .iter()
+            .any(|p| p.ends_with("x64-linux/include")),
         "x64-linux/include not discovered; got {triplet_dirs:?}"
     );
     assert!(
@@ -104,7 +130,10 @@ fn windows_header_index_registers_lowercase_shadow_key() {
     // lowercase shadow key. Without it, demand-driven walking misses
     // these headers entirely.
     let tmp = TempDir::new().unwrap();
-    write(&tmp.path().join("WinSock2.h"), "/* mixed-case sdk header */\n");
+    write(
+        &tmp.path().join("WinSock2.h"),
+        "/* mixed-case sdk header */\n",
+    );
     let dep = make_root(tmp.path(), "test");
     let idx = build_c_header_index(&[dep]);
     // Original case still resolves.
@@ -241,7 +270,7 @@ fn parse_include_target_accepts_hash_space_include() {
 fn parse_include_target_rejects_non_include_first_token() {
     assert!(_test_parse_include_target("class QObject { };\n").is_none());
     assert!(_test_parse_include_target("This is a license file.\n").is_none());
-    assert!(_test_parse_include_target("CC=cc\nall: foo\n").is_none());  // Makefile
+    assert!(_test_parse_include_target("CC=cc\nall: foo\n").is_none()); // Makefile
     assert!(_test_parse_include_target("#define FOO 1\n").is_none());
     assert!(_test_parse_include_target("#pragma once\n").is_none());
 }
@@ -268,7 +297,9 @@ fn header_index_registers_extensionless_wrapper_files() {
     // file. The wrapper key MUST point at the real `.h`, not the
     // extensionless wrapper — the demand seed's `make_walked_file` does
     // language detection by extension and would silently drop the wrapper.
-    let hit = idx.locate("Forward", "Forward").expect("wrapper must register");
+    let hit = idx
+        .locate("Forward", "Forward")
+        .expect("wrapper must register");
     assert!(
         hit.to_string_lossy().ends_with("forward.h"),
         "wrapper key must point at the resolved real header, not the wrapper itself; got {hit:?}"
@@ -293,14 +324,18 @@ fn header_index_registers_qt_style_module_wrapper() {
 
     // `#include <QObject>` (no module prefix) — the inner root makes this
     // resolve via the bare-basename wrapper key, pointing at qobject.h.
-    let qobject_hit = idx.locate("QObject", "QObject").expect("QObject must resolve");
+    let qobject_hit = idx
+        .locate("QObject", "QObject")
+        .expect("QObject must resolve");
     assert!(
         qobject_hit.to_string_lossy().ends_with("qobject.h"),
         "bare `#include <QObject>` must resolve to qobject.h (not the wrapper); got {qobject_hit:?}"
     );
     // `#include <QtCore/QObject>` — outer root, relative path key. Also
     // points at the resolved real header.
-    let module_hit = idx.locate("QtCore/QObject", "QtCore/QObject").expect("module-qualified must resolve");
+    let module_hit = idx
+        .locate("QtCore/QObject", "QtCore/QObject")
+        .expect("module-qualified must resolve");
     assert!(
         module_hit.to_string_lossy().ends_with("qobject.h"),
         "module-qualified `<QtCore/QObject>` must point at qobject.h; got {module_hit:?}"
@@ -315,14 +350,19 @@ fn header_index_skips_extensionless_non_wrapper_files() {
     // must NOT be registered as headers.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    write(&root.join("LICENSE"), "MIT License\n\nPermission is hereby granted...\n");
+    write(
+        &root.join("LICENSE"),
+        "MIT License\n\nPermission is hereby granted...\n",
+    );
     write(&root.join("COPYING"), "GNU GPL v2\n");
     write(&root.join("Makefile"), "CC=cc\nall: foo\n\nfoo: foo.c\n");
     write(&root.join("README"), "This is the project readme.\n");
     let dep = make_root(root, "test");
     let idx = build_c_header_index(&[dep]);
-    assert!(idx.locate("LICENSE", "LICENSE").is_none(),
-        "LICENSE must not be registered as a header");
+    assert!(
+        idx.locate("LICENSE", "LICENSE").is_none(),
+        "LICENSE must not be registered as a header"
+    );
     assert!(idx.locate("COPYING", "COPYING").is_none());
     assert!(idx.locate("Makefile", "Makefile").is_none());
     assert!(idx.locate("README", "README").is_none());
@@ -343,8 +383,10 @@ fn header_index_skips_oversized_extensionless_files() {
     write(&root.join("BigForward"), &body);
     let dep = make_root(root, "test");
     let idx = build_c_header_index(&[dep]);
-    assert!(idx.locate("BigForward", "BigForward").is_none(),
-        "files larger than 1KB must not be detected as wrappers");
+    assert!(
+        idx.locate("BigForward", "BigForward").is_none(),
+        "files larger than 1KB must not be detected as wrappers"
+    );
 }
 
 #[test]
@@ -356,7 +398,8 @@ fn header_index_accepts_cpp_stdlib_extensionless_headers() {
     // headers.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    let mut big_body = String::from("namespace std { template<class T> class vector { /* ... */ }; }\n");
+    let mut big_body =
+        String::from("namespace std { template<class T> class vector { /* ... */ }; }\n");
     while big_body.len() < 2048 {
         big_body.push_str("// keep growing past the wrapper size cap\n");
     }

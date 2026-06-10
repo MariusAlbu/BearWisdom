@@ -55,9 +55,7 @@ pub(crate) fn detect_lua_resty_http(
     }
     let url = call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }
@@ -77,10 +75,7 @@ pub(crate) fn detect_lua_db_emission(
     target: &str,
 ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    if !module.contains("pgmoon")
-        && !module.contains("luasql")
-        && !module.contains("resty.mysql")
-    {
+    if !module.contains("pgmoon") && !module.contains("luasql") && !module.contains("resty.mysql") {
         return None;
     }
     let op = match target {

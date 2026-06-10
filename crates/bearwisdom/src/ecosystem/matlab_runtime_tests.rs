@@ -21,7 +21,10 @@ fn make_install_fixture() -> TempDir {
     write_file(&root.join("toolbox/stats/pdist2.m"), "% Stats Toolbox");
     write_file(&root.join("toolbox/stats/normcdf.m"), "% Stats Toolbox");
     write_file(&root.join("toolbox/nnet/deep/dlarray.m"), "% Deep Learning");
-    write_file(&root.join("toolbox/matlab/uitools/uibutton.m"), "% App Designer");
+    write_file(
+        &root.join("toolbox/matlab/uitools/uibutton.m"),
+        "% App Designer",
+    );
     // Should be skipped:
     write_file(&root.join("toolbox/matlab/tests/test_zeros.m"), "% test");
     write_file(&root.join("toolbox/stats/private/helper.m"), "% private");
@@ -127,8 +130,12 @@ fn release_dir_recognizer_accepts_canonical_layouts() {
     use std::path::PathBuf;
     assert!(looks_like_matlab_release_dir(&PathBuf::from("/x/R2024a")));
     assert!(looks_like_matlab_release_dir(&PathBuf::from("/x/R2023b")));
-    assert!(looks_like_matlab_release_dir(&PathBuf::from("/x/MATLAB_R2024a.app")));
-    assert!(!looks_like_matlab_release_dir(&PathBuf::from("/x/something")));
+    assert!(looks_like_matlab_release_dir(&PathBuf::from(
+        "/x/MATLAB_R2024a.app"
+    )));
+    assert!(!looks_like_matlab_release_dir(&PathBuf::from(
+        "/x/something"
+    )));
 }
 
 #[test]

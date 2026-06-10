@@ -32,8 +32,12 @@ fn scan_hex_imports_recursive(
     out: &mut std::collections::HashSet<String>,
     depth: usize,
 ) {
-    if depth > 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -41,15 +45,32 @@ fn scan_hex_imports_recursive(
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    ".git" | "deps" | "_build" | "node_modules" | "build"
-                        | "priv" | "ebin" | "cover" | "doc" | "docs"
-                        | "assets" | "tmp" | "target"
-                ) || name.starts_with('.') { continue }
+                    ".git"
+                        | "deps"
+                        | "_build"
+                        | "node_modules"
+                        | "build"
+                        | "priv"
+                        | "ebin"
+                        | "cover"
+                        | "doc"
+                        | "docs"
+                        | "assets"
+                        | "tmp"
+                        | "target"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
             }
             scan_hex_imports_recursive(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             if name.ends_with(".ex") || name.ends_with(".exs") {
                 extract_elixir_module_refs(&content, out);
             } else if name.ends_with(".erl") || name.ends_with(".hrl") {
@@ -64,7 +85,10 @@ fn scan_hex_imports_recursive(
 /// Capture `alias Foo.Bar` / `alias Foo.{Bar, Baz}` / `import Foo` / `use Foo` /
 /// `Foo.Bar.fun()` / `%Foo.Bar{}`. Stored as Elixir module names (dotted) — the
 /// narrowing pass converts each to a `lib/foo/bar.ex` tail.
-pub(super) fn extract_elixir_module_refs(content: &str, out: &mut std::collections::HashSet<String>) {
+pub(super) fn extract_elixir_module_refs(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
     for raw in content.lines() {
         let line = raw.trim();
         // `alias Foo.{Bar, Baz}`
@@ -97,11 +121,15 @@ fn collect_elixir_dotted_or_braced(rest: &str, out: &mut std::collections::HashS
     if let Some(brace_open) = rest.find('{') {
         if let Some(brace_close) = rest.find('}') {
             let prefix = rest[..brace_open].trim_end_matches('.').trim();
-            if prefix.is_empty() { return }
+            if prefix.is_empty() {
+                return;
+            }
             let inner = &rest[brace_open + 1..brace_close];
             for sel in inner.split(',') {
                 let sel = sel.trim();
-                if sel.is_empty() { continue }
+                if sel.is_empty() {
+                    continue;
+                }
                 out.insert(format!("{prefix}.{sel}"));
             }
             return;
@@ -113,7 +141,12 @@ fn collect_elixir_dotted_or_braced(rest: &str, out: &mut std::collections::HashS
         .next()
         .unwrap_or("")
         .trim_end_matches(',');
-    if !head.is_empty() && head.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+    if !head.is_empty()
+        && head
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_uppercase())
+    {
         out.insert(head.to_string());
     }
 }
@@ -132,8 +165,7 @@ fn scan_elixir_module_tokens(line: &str, out: &mut std::collections::HashSet<Str
             let tok = &line[start..i];
             if tok.contains('.')
                 && tok.split('.').all(|seg| {
-                    !seg.is_empty()
-                        && seg.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+                    !seg.is_empty() && seg.chars().next().map_or(false, |c| c.is_ascii_uppercase())
                 })
             {
                 out.insert(tok.to_string());
@@ -146,13 +178,18 @@ fn scan_elixir_module_tokens(line: &str, out: &mut std::collections::HashSet<Str
 
 /// Erlang module references appear as `foo:bar(...)` calls and
 /// `-include("foo.hrl").` directives. Stored as bare module/header names.
-pub(super) fn extract_erlang_module_refs(content: &str, out: &mut std::collections::HashSet<String>) {
+pub(super) fn extract_erlang_module_refs(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
     for raw in content.lines() {
         let line = raw.trim();
         if let Some(rest) = line.strip_prefix("-include(\"") {
             if let Some(end) = rest.find('"') {
                 let header = &rest[..end];
-                if !header.is_empty() { out.insert(header.to_string()); }
+                if !header.is_empty() {
+                    out.insert(header.to_string());
+                }
             }
             continue;
         }
@@ -175,9 +212,7 @@ pub(super) fn extract_erlang_module_refs(content: &str, out: &mut std::collectio
             let b = bytes[i];
             if b.is_ascii_lowercase() {
                 let start = i;
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-                {
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                     i += 1;
                 }
                 if i < bytes.len() && bytes[i] == b':' {
@@ -194,16 +229,20 @@ pub(super) fn extract_erlang_module_refs(content: &str, out: &mut std::collectio
 }
 
 /// Gleam imports: `import foo/bar` → store as `foo/bar` (path-shaped).
-pub(super) fn extract_gleam_module_refs(content: &str, out: &mut std::collections::HashSet<String>) {
+pub(super) fn extract_gleam_module_refs(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
     for raw in content.lines() {
         let line = raw.trim();
-        let Some(rest) = line.strip_prefix("import ") else { continue };
-        let head = rest
-            .split_whitespace()
-            .next()
-            .unwrap_or("");
+        let Some(rest) = line.strip_prefix("import ") else {
+            continue;
+        };
+        let head = rest.split_whitespace().next().unwrap_or("");
         let head = head.split('.').next().unwrap_or("");
-        if head.is_empty() { continue }
+        if head.is_empty() {
+            continue;
+        }
         out.insert(format!("gleam:{head}"));
     }
 }
@@ -211,9 +250,7 @@ pub(super) fn extract_gleam_module_refs(content: &str, out: &mut std::collection
 /// Build the set of file path tails the narrow walk should match. We expand
 /// each requested ref into language-specific candidate tails so a single
 /// walked file can satisfy multiple convention checks.
-pub(super) fn requested_to_path_suffixes(
-    refs: &[String],
-) -> std::collections::HashSet<String> {
+pub(super) fn requested_to_path_suffixes(refs: &[String]) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     for r in refs {
         // Gleam-tagged refs: `gleam:foo/bar` → `foo/bar.gleam`
@@ -247,7 +284,9 @@ fn elixir_to_snake(seg: &str) -> String {
     let mut out = String::with_capacity(seg.len() + 4);
     for (i, ch) in seg.char_indices() {
         if ch.is_ascii_uppercase() {
-            if i > 0 { out.push('_') }
+            if i > 0 {
+                out.push('_')
+            }
             out.extend(ch.to_lowercase());
         } else {
             out.push(ch);
@@ -288,30 +327,55 @@ fn walk_narrowed_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut dir_files: Vec<(PathBuf, String, &'static str, &'static str)> = Vec::new();
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut any_match = false;
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    "test" | "tests" | "priv" | "bin" | "config"
-                        | "doc" | "docs" | "assets" | "examples" | "_build"
-                        | "cover" | "ebin" | "deps" | "target"
+                    "test"
+                        | "tests"
+                        | "priv"
+                        | "bin"
+                        | "config"
+                        | "doc"
+                        | "docs"
+                        | "assets"
+                        | "examples"
+                        | "_build"
+                        | "cover"
+                        | "ebin"
+                        | "deps"
+                        | "target"
                 ) || name.starts_with('.')
-                { continue }
+                {
+                    continue;
+                }
             }
             subdirs.push(path);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            let Some((language, virtual_tag)) = detect_hex_language(name) else { continue };
-            if name.ends_with("_SUITE.erl") || name.ends_with("_tests.erl") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some((language, virtual_tag)) = detect_hex_language(name) else {
+                continue;
+            };
+            if name.ends_with("_SUITE.erl") || name.ends_with("_tests.erl") {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

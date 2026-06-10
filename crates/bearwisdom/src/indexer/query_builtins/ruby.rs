@@ -34,7 +34,8 @@ pub const BUILTINS: &[&str] = &[
     "yield",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("((method) @local.scope\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "((method) @local.scope\n\
  (#set! local.scope-inherits false))\n\
 \n\
 [\n\
@@ -61,4 +62,5 @@ pub const LOCALS_SCM: Option<&str> = Some("((method) @local.scope\n\
 (left_assignment_list (identifier) @local.definition)\n\
 (rest_assignment (identifier) @local.definition)\n\
 (destructured_left_assignment (identifier) @local.definition)\n\
-");
+",
+);

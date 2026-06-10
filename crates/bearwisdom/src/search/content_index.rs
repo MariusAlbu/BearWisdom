@@ -66,10 +66,7 @@ pub fn batch_index_content(conn: &Connection, files: &[(i64, &str, &str)]) -> Re
 
     for &(file_id, path, content) in files {
         // Delete before insert — idempotent for re-indexing.
-        if let Err(e) = conn.execute(
-            "DELETE FROM fts_content WHERE rowid = ?1",
-            [file_id],
-        ) {
+        if let Err(e) = conn.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]) {
             warn!(file_id, path, "FTS delete failed: {e}");
             continue;
         }
@@ -115,11 +112,8 @@ pub fn index_one_file_in_tx(
 
 /// Remove a single file from the trigram content index.
 pub fn remove_file_content(conn: &Connection, file_id: i64) -> Result<()> {
-    conn.execute(
-        "DELETE FROM fts_content WHERE rowid = ?1",
-        [file_id],
-    )
-    .with_context(|| format!("Failed to delete FTS content for file_id={file_id}"))?;
+    conn.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id])
+        .with_context(|| format!("Failed to delete FTS content for file_id={file_id}"))?;
     Ok(())
 }
 
@@ -135,7 +129,9 @@ pub fn rebuild_content_index(conn: &Connection, project_root: &Path) -> Result<u
             .prepare("SELECT id, path FROM files WHERE origin = 'internal'")
             .context("Failed to prepare files query for rebuild")?;
         let iter = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
             .context("Failed to query files for rebuild")?;
         iter.filter_map(|r| match r {
             Ok(row) => Some(row),

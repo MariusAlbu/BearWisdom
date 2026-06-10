@@ -258,8 +258,9 @@ result = compute(3)
 """
 "#;
         let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.language_id == "python"
-            && r.text.contains("result = compute(3)")));
+        assert!(regions
+            .iter()
+            .any(|r| r.language_id == "python" && r.text.contains("result = compute(3)")));
     }
 
     #[test]
@@ -288,7 +289,10 @@ result = compute(3)
     fn triple_quoted_sql_emits_string_dsl_region() {
         let src = "query = \"\"\"\nSELECT id, name FROM users WHERE active = 1\n\"\"\"\n";
         let regions = detect_regions(src);
-        let sql = regions.iter().find(|r| r.language_id == "sql").expect("sql region");
+        let sql = regions
+            .iter()
+            .find(|r| r.language_id == "sql")
+            .expect("sql region");
         assert_eq!(sql.origin, EmbeddedOrigin::StringDsl);
     }
 }

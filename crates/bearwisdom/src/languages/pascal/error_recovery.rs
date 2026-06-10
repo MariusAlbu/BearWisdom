@@ -32,12 +32,16 @@ pub(super) fn try_extract_root_type_decls(
     // Only engage if at least one root child looks like a name-error (ERROR
     // starting with identifier + kEq) so we don't accidentally eat valid code.
     let has_name_err = root_children.iter().any(|c| {
-        if c.kind() != "ERROR" { return false; }
+        if c.kind() != "ERROR" {
+            return false;
+        }
         let mut cc = c.walk();
         let ch: Vec<Node> = c.children(&mut cc).collect();
         ch.len() >= 2 && ch[0].kind() == "identifier" && ch[1].kind() == "kEq"
     });
-    if !has_name_err { return false; }
+    if !has_name_err {
+        return false;
+    }
 
     recover_type_decls_from_siblings(root_children, src, symbols, refs, None) > 0
 }
@@ -122,19 +126,32 @@ pub(super) fn recover_type_decls_from_siblings(
                 if !name.is_empty() {
                     let sig = first_line_of($anchor, src);
                     let idx = symbols.len();
-                    symbols.push(make_symbol(name.clone(), name, kd, &$anchor, Some(sig), parent_index));
+                    symbols.push(make_symbol(
+                        name.clone(),
+                        name,
+                        kd,
+                        &$anchor,
+                        Some(sig),
+                        parent_index,
+                    ));
                     count += 1;
                     let drained: Vec<Node> = body_children.drain(..).collect();
                     // First pass: dispatch any nodes that are class/record/interface bodies.
                     // Second pass: run recover_type_decls_from_siblings on the collected body
                     // to pick up further type declarations embedded in the body (e.g. a class
                     // declaration whose name is a typeref followed by a defaultValue node).
-                    let has_embedded = drained.iter().any(|n| {
-                        n.kind() == "typeref" || n.kind() == "identifier"
-                    });
+                    let has_embedded = drained
+                        .iter()
+                        .any(|n| n.kind() == "typeref" || n.kind() == "identifier");
                     if has_embedded {
                         // Try sibling-scan first so nested type declarations are picked up.
-                        let extra = recover_type_decls_from_siblings(&drained, src, symbols, refs, Some(idx));
+                        let extra = recover_type_decls_from_siblings(
+                            &drained,
+                            src,
+                            symbols,
+                            refs,
+                            Some(idx),
+                        );
                         if extra == 0 {
                             // No nested declarations found; dispatch bodies individually.
                             for bc in &drained {
@@ -173,9 +190,9 @@ pub(super) fn recover_type_decls_from_siblings(
             let kind_opt = if si_outer + 1 < siblings.len() {
                 let after_eq = siblings[si_outer + 1];
                 match after_eq.kind() {
-                    "kClass"     => Some(SymbolKind::Class),
+                    "kClass" => Some(SymbolKind::Class),
                     "kInterface" => Some(SymbolKind::Interface),
-                    "kRecord"    => Some(SymbolKind::Struct),
+                    "kRecord" => Some(SymbolKind::Struct),
                     "defaultValue" => infer_type_kind_from_default_value(after_eq, src),
                     _ => None,
                 }
@@ -197,7 +214,8 @@ pub(super) fn recover_type_decls_from_siblings(
 
         // Top-level `typeref` + `defaultValue` pattern: the type name was parsed as a
         // typeref node in the sibling list itself (not embedded inside another node).
-        if sibling.kind() == "typeref" && si_outer < siblings.len()
+        if sibling.kind() == "typeref"
+            && si_outer < siblings.len()
             && siblings[si_outer].kind() == "defaultValue"
         {
             if let Some(sym_kind) = infer_type_kind_from_default_value(siblings[si_outer], src) {
@@ -239,17 +257,14 @@ pub(super) fn recover_type_decls_from_siblings(
                 if eb_ch.len() >= 3 {
                     let name_ident = eb_ch.iter().find(|n| n.kind() == "identifier").copied();
                     let has_eq = eb_ch.iter().any(|n| {
-                        n.kind() == "kEq"
-                            || (n.kind() == "operator" && node_text(*n, src) == "=")
+                        n.kind() == "kEq" || (n.kind() == "operator" && node_text(*n, src) == "=")
                     });
-                    let kind_opt = eb_ch.iter().find_map(|n| {
-                        match n.kind() {
-                            "kClass"     => Some(SymbolKind::Class),
-                            "kInterface" => Some(SymbolKind::Interface),
-                            "kRecord"    => Some(SymbolKind::Struct),
-                            "exprCall" | "ERROR" => infer_type_kind_from_default_value(*n, src),
-                            _ => None,
-                        }
+                    let kind_opt = eb_ch.iter().find_map(|n| match n.kind() {
+                        "kClass" => Some(SymbolKind::Class),
+                        "kInterface" => Some(SymbolKind::Interface),
+                        "kRecord" => Some(SymbolKind::Struct),
+                        "exprCall" | "ERROR" => infer_type_kind_from_default_value(*n, src),
+                        _ => None,
                     });
                     if has_eq {
                         if let (Some(sym_kind), Some(name_node)) = (kind_opt, name_ident) {
@@ -307,7 +322,9 @@ pub(super) fn recover_type_decls_from_siblings(
                             let next = sib_children[si + 1];
                             // Look for `defaultValue` sibling that represents `= class(...)`.
                             if next.kind() == "defaultValue" {
-                                if let Some(sym_kind) = infer_type_kind_from_default_value(next, src) {
+                                if let Some(sym_kind) =
+                                    infer_type_kind_from_default_value(next, src)
+                                {
                                     emit_pending!(*sibling);
                                     pending_name = Some(name_node);
                                     pending_kind = Some(sym_kind);
@@ -342,15 +359,18 @@ pub(super) fn recover_type_decls_from_siblings(
                             // Grab the last identifier child of the ERROR as the type name.
                             let mut ec = sc_node.walk();
                             let err_ch: Vec<Node> = sc_node.children(&mut ec).collect();
-                            let last_ident = err_ch.iter().rev()
-                                .find(|n| n.kind() == "identifier");
+                            let last_ident = err_ch.iter().rev().find(|n| n.kind() == "identifier");
                             if let Some(name_node) = last_ident {
                                 emit_pending!(*sibling);
                                 pending_name = Some(*name_node);
                                 pending_kind = Some(sym_kind);
                                 // Skip past the ERROR and the type keyword/defaultValue;
                                 // subsequent children are the body of this new type.
-                                let skip = if next.kind() == "defaultValue" { si + 2 } else { si + 2 };
+                                let skip = if next.kind() == "defaultValue" {
+                                    si + 2
+                                } else {
+                                    si + 2
+                                };
                                 for later in sib_children.iter().skip(skip) {
                                     body_children.push(*later);
                                 }
@@ -364,15 +384,23 @@ pub(super) fn recover_type_decls_from_siblings(
                     // we've reached a type body that belongs to a pending declaration and
                     // no further embedded names follow (they'd have been handled above).
                     if matches!(sc_node.kind(), "kClass" | "kInterface" | "kRecord") {
-                        let next_is_method_kw = sib_children.get(si + 1)
-                            .map(|n| matches!(n.kind(), "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"))
+                        let next_is_method_kw = sib_children
+                            .get(si + 1)
+                            .map(|n| {
+                                matches!(
+                                    n.kind(),
+                                    "kFunction" | "kProcedure" | "kConstructor" | "kDestructor"
+                                )
+                            })
                             .unwrap_or(false);
                         if !next_is_method_kw {
                             break;
                         }
                     }
                 }
-                if found_embedded { continue; }
+                if found_embedded {
+                    continue;
+                }
             }
 
             // No pending name, or not a type-body node → dispatch generically.
@@ -408,7 +436,9 @@ pub(super) fn recover_type_decls_from_siblings(
                     // If followed by a `defaultValue` node (alternative error-recovery form),
                     // check if it represents `= class(...)`.
                     if j + 1 < err_children.len() && err_children[j + 1].kind() == "defaultValue" {
-                        if let Some(sym_kind) = infer_type_kind_from_default_value(err_children[j + 1], src) {
+                        if let Some(sym_kind) =
+                            infer_type_kind_from_default_value(err_children[j + 1], src)
+                        {
                             emit_pending!(*sibling);
                             pending_name = Some(tok);
                             pending_kind = Some(sym_kind);
@@ -470,7 +500,11 @@ pub(super) fn recover_type_decls_from_siblings(
     }
 
     // Flush any remaining pending declaration.
-    let anchor_dummy = if let Some(last) = siblings.last() { *last } else { return count; };
+    let anchor_dummy = if let Some(last) = siblings.last() {
+        *last
+    } else {
+        return count;
+    };
     emit_pending!(anchor_dummy);
 
     count

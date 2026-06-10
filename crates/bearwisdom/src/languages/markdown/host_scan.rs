@@ -6,9 +6,7 @@
 
 use super::fenced;
 use super::info_string;
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 /// Result of a shared host scan. `host_index` is the index of the
 /// file-level host symbol in `symbols` — callers that layer extra refs
@@ -39,11 +37,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index: usize = 0;
 
     let bytes = source.as_bytes();
@@ -71,11 +69,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
                 scope_path: Some(file_name.clone()),
                 parent_index: Some(host_index),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
         collect_link_refs(line, line_no, ls as u32, host_index, &mut refs);
         line_no += 1;
@@ -91,8 +89,7 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
             kind: SymbolKind::Class,
             visibility: Some(Visibility::Public),
             start_line: fence.body_line_offset,
-            end_line: fence.body_line_offset
-                + fence.body.matches('\n').count() as u32,
+            end_line: fence.body_line_offset + fence.body.matches('\n').count() as u32,
             start_col: 0,
             end_col: 0,
             signature: Some(fence.info.clone()),
@@ -100,11 +97,11 @@ pub fn scan(source: &str, file_path: &str) -> HostScan {
             scope_path: Some(file_name.clone()),
             parent_index: Some(host_index),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 
     HostScan {
@@ -175,11 +172,11 @@ fn collect_link_refs(
                             let target: String = chars[close + 2..paren_close].iter().collect();
                             if let Some(normalized) = normalize_link_target(&target) {
                                 // Byte offset of the `[` within the full source.
-                                let col_bytes: u32 = chars[..i]
-                                    .iter()
-                                    .map(|c| c.len_utf8() as u32)
-                                    .sum();
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                let col_bytes: u32 =
+                                    chars[..i].iter().map(|c| c.len_utf8() as u32).sum();
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: host_index,
                                     target_name: normalized,
                                     kind: EdgeKind::Imports,
@@ -281,20 +278,11 @@ fn normalize_link_target(target: &str) -> Option<String> {
     // (`../` prefix, which is almost always a real file ref), treat it
     // as a site URL and skip. Parent-relative forms like `../CHANGELOG`
     // stay: they reliably target repo files.
-    if path.extension().is_none()
-        && !target.starts_with("../")
-        && !target.starts_with("..\\")
-    {
+    if path.extension().is_none() && !target.starts_with("../") && !target.starts_with("..\\") {
         return None;
     }
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(t);
-    let parent = path
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(t);
+    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("");
     let normalized = if parent.is_empty() {
         stem.to_string()
     } else {
@@ -306,12 +294,40 @@ fn normalize_link_target(target: &str) -> Option<String> {
 fn is_non_indexable_asset(ext: &str) -> bool {
     matches!(
         ext,
-        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "ico" | "bmp" | "tiff" | "tif"
-        | "pdf" | "mp4" | "webm" | "mov" | "avi" | "mkv"
-        | "mp3" | "wav" | "ogg" | "flac"
-        | "zip" | "tar" | "gz" | "7z" | "rar"
-        | "exe" | "dll" | "so" | "dylib"
-        | "woff" | "woff2" | "ttf" | "otf" | "eot"
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "svg"
+            | "webp"
+            | "ico"
+            | "bmp"
+            | "tiff"
+            | "tif"
+            | "pdf"
+            | "mp4"
+            | "webm"
+            | "mov"
+            | "avi"
+            | "mkv"
+            | "mp3"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "zip"
+            | "tar"
+            | "gz"
+            | "7z"
+            | "rar"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "woff"
+            | "woff2"
+            | "ttf"
+            | "otf"
+            | "eot"
     )
 }
 
@@ -324,4 +340,3 @@ pub(crate) fn file_stem(file_path: &str) -> String {
         .unwrap_or(name);
     stem.to_string()
 }
-

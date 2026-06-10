@@ -15,9 +15,11 @@ use crate::types::{ExtractedSymbol, SymbolKind};
 /// lists. Restricting to lines that end in `;` filters most false hits.
 /// Anything tree-sitter parsed correctly will already have a symbol with
 /// the same name, so the dedup check makes us a no-op there.
-pub(super) fn salvage_missed_function_pointer_decls(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
-    let mut existing: HashSet<String> =
-        symbols.iter().map(|s| s.name.clone()).collect();
+pub(super) fn salvage_missed_function_pointer_decls(
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut existing: HashSet<String> = symbols.iter().map(|s| s.name.clone()).collect();
 
     for (line_idx, line) in source.lines().enumerate() {
         let trimmed = line.trim_end();
@@ -26,7 +28,9 @@ pub(super) fn salvage_missed_function_pointer_decls(source: &str, symbols: &mut 
             continue;
         }
         // Look for the `(*NAME)(` shape.
-        let Some(name) = scan_funptr_decl_name(trimmed) else { continue };
+        let Some(name) = scan_funptr_decl_name(trimmed) else {
+            continue;
+        };
         if existing.contains(name) {
             continue;
         }
@@ -45,11 +49,11 @@ pub(super) fn salvage_missed_function_pointer_decls(source: &str, symbols: &mut 
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         existing.insert(name.to_string());
     }
 }
@@ -65,14 +69,21 @@ fn scan_funptr_decl_name(line: &str) -> Option<&str> {
             continue;
         }
         let mut j = i + 1;
-        while j < bytes.len() && bytes[j].is_ascii_whitespace() { j += 1; }
-        if j >= bytes.len() || bytes[j] != b'*' { i += 1; continue; }
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'*' {
+            i += 1;
+            continue;
+        }
         j += 1;
-        while j < bytes.len() && bytes[j].is_ascii_whitespace() { j += 1; }
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
         let name_start = j;
-        while j < bytes.len()
-            && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
-        { j += 1; }
+        while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+            j += 1;
+        }
         let name_end = j;
         if name_end == name_start {
             i += 1;
@@ -84,11 +95,21 @@ fn scan_funptr_decl_name(line: &str) -> Option<&str> {
             i += 1;
             continue;
         }
-        while j < bytes.len() && bytes[j].is_ascii_whitespace() { j += 1; }
-        if j >= bytes.len() || bytes[j] != b')' { i += 1; continue; }
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b')' {
+            i += 1;
+            continue;
+        }
         j += 1;
-        while j < bytes.len() && bytes[j].is_ascii_whitespace() { j += 1; }
-        if j >= bytes.len() || bytes[j] != b'(' { i += 1; continue; }
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'(' {
+            i += 1;
+            continue;
+        }
         return Some(&line[name_start..name_end]);
     }
     None

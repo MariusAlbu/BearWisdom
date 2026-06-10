@@ -28,7 +28,10 @@ pub async fn post_index(
     }
 }
 
-fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Result<serde_json::Value> {
+fn index_project(
+    root: &Path,
+    pool_state: &crate::db::PoolState,
+) -> anyhow::Result<serde_json::Value> {
     let db_path = resolve_db_path(root)?;
     let already_existed = db_exists(root);
 
@@ -99,7 +102,10 @@ pub async fn get_status(
     }
 }
 
-fn status_counts(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Result<serde_json::Value> {
+fn status_counts(
+    root: &Path,
+    pool_state: &crate::db::PoolState,
+) -> anyhow::Result<serde_json::Value> {
     let db = pool_state.get_db(root)?;
     let s = bearwisdom::query::stats::index_stats(&db)?;
     Ok(json!({
@@ -309,10 +315,16 @@ pub async fn get_trace_flow(
         Ok(db) => {
             let result = match params.direction.as_str() {
                 "backward" => bearwisdom::search::flow::trace_flow_reverse(
-                    &db, &params.file, params.line, params.depth,
+                    &db,
+                    &params.file,
+                    params.line,
+                    params.depth,
                 ),
                 "both" => bearwisdom::search::flow::trace_flow_bidirectional(
-                    &db, &params.file, params.line, params.depth,
+                    &db,
+                    &params.file,
+                    params.line,
+                    params.depth,
                 )
                 .map(|b| {
                     let mut steps = b.forward;
@@ -320,7 +332,10 @@ pub async fn get_trace_flow(
                     steps
                 }),
                 _ => bearwisdom::search::flow::trace_flow(
-                    &db, &params.file, params.line, params.depth,
+                    &db,
+                    &params.file,
+                    params.line,
+                    params.depth,
                 ),
             };
             match result {
@@ -346,7 +361,9 @@ pub struct FullTraceQuery {
     max_traces: usize,
 }
 
-fn default_max_traces() -> usize { 15 }
+fn default_max_traces() -> usize {
+    15
+}
 
 pub async fn get_full_trace(
     State(state): State<AppState>,
@@ -356,8 +373,14 @@ pub async fn get_full_trace(
     match state.pool.get_db(&root) {
         Ok(db) => {
             let result = match params.symbol.as_deref() {
-                Some(sym) => bearwisdom::query::full_trace::trace_from_symbol(&db, sym, params.depth),
-                None => bearwisdom::query::full_trace::trace_from_entry_points(&db, params.depth, params.max_traces),
+                Some(sym) => {
+                    bearwisdom::query::full_trace::trace_from_symbol(&db, sym, params.depth)
+                }
+                None => bearwisdom::query::full_trace::trace_from_entry_points(
+                    &db,
+                    params.depth,
+                    params.max_traces,
+                ),
             };
             match result {
                 Ok(r) => ok_json(r).into_response(),
@@ -367,7 +390,6 @@ pub async fn get_full_trace(
         Err(e) => err_json(e).into_response(),
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // GET /api/hierarchy
@@ -386,7 +408,9 @@ pub struct HierarchyQuery {
     max_nodes: usize,
 }
 
-fn default_level_packages() -> String { "packages".to_string() }
+fn default_level_packages() -> String {
+    "packages".to_string()
+}
 
 pub async fn get_hierarchy(
     State(state): State<AppState>,

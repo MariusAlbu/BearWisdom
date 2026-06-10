@@ -51,12 +51,12 @@ pub(in super::super) fn push_indexer_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // TypeRef for return type and parameter types.
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -122,12 +122,12 @@ pub(in super::super) fn push_operator_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // TypeRef for return type and parameters.
     if let Some(type_node) = node.child_by_field_name("type") {
@@ -189,12 +189,12 @@ pub(in super::super) fn push_conversion_operator_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(type_node) = node.child_by_field_name("type") {
         extract_type_refs_from_type_node(type_node, src, idx, refs);
@@ -239,12 +239,12 @@ pub(in super::super) fn push_destructor_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -290,12 +290,12 @@ pub(in super::super) fn push_local_function_decl(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -341,12 +341,12 @@ pub(in super::super) fn push_event_decl(
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(type_node) = node.child_by_field_name("type") {
         extract_type_refs_from_type_node(type_node, src, idx, refs);
@@ -379,7 +379,9 @@ pub(in super::super) fn push_using_directive(
                 match child.kind() {
                     "identifier" | "qualified_name" => {
                         let full = node_text(child, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: current_symbol_count,
                             target_name: full.clone(),
                             kind: EdgeKind::Imports,
@@ -388,9 +390,9 @@ pub(in super::super) fn push_using_directive(
                             module: Some(full),
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         return;
                     }
                     ";" => return,
@@ -408,7 +410,9 @@ pub(in super::super) fn push_using_directive(
         match child.kind() {
             "identifier" => {
                 let name = node_text(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: name.clone(),
                     kind: EdgeKind::Imports,
@@ -417,14 +421,16 @@ pub(in super::super) fn push_using_directive(
                     module: Some(name),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
             "qualified_name" => {
                 let full = node_text(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: full.clone(),
                     kind: EdgeKind::Imports,
@@ -433,9 +439,9 @@ pub(in super::super) fn push_using_directive(
                     module: Some(full),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 return;
             }
             _ => {}

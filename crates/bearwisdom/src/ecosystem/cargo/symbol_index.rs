@@ -129,9 +129,9 @@ fn collect_rust_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
         "impl_item" => {
             // `impl Foo { fn bar() {} }` — surface the receiver name plus each
             // associated item so methods are locatable as `Foo::bar`.
-            let recv = node.child_by_field_name("type").and_then(|t| {
-                rust_type_identifier(&t, bytes)
-            });
+            let recv = node
+                .child_by_field_name("type")
+                .and_then(|t| rust_type_identifier(&t, bytes));
             if let Some(body) = node.child_by_field_name("body") {
                 let mut cursor = body.walk();
                 for inner in body.children(&mut cursor) {

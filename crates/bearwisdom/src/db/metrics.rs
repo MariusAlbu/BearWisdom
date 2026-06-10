@@ -53,7 +53,8 @@ impl QueryMetrics {
     /// Record a query execution with the given label and duration.
     pub fn record(&self, label: &'static str, duration_us: u64) {
         self.total_count.fetch_add(1, Ordering::Relaxed);
-        self.total_duration_us.fetch_add(duration_us, Ordering::Relaxed);
+        self.total_duration_us
+            .fetch_add(duration_us, Ordering::Relaxed);
 
         if let Ok(mut map) = self.per_label.lock() {
             let entry = map.entry(label).or_insert(LabelStats {

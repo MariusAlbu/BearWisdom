@@ -75,7 +75,9 @@ pub(super) fn build_method_signature(node: &Node, src: &[u8]) -> Option<String> 
         .child_by_field_name("parameters")
         .map(|p| format_params(p, src))
         .unwrap_or_default();
-    let sig = format!("{ret} {type_params}{name}{params}").trim().to_string();
+    let sig = format!("{ret} {type_params}{name}{params}")
+        .trim()
+        .to_string();
     Some(sig)
 }
 
@@ -250,11 +252,26 @@ pub(super) fn java_type_node_simple_name(node: Node, src: &[u8]) -> String {
 pub(super) fn is_java_primitive(name: &str) -> bool {
     matches!(
         name,
-        "boolean" | "byte" | "char" | "double" | "float"
-            | "int" | "long" | "short" | "void"
-            | "String" | "Integer" | "Long" | "Double" | "Float"
-            | "Boolean" | "Byte" | "Character" | "Short"
-            | "Object" | "Number"
+        "boolean"
+            | "byte"
+            | "char"
+            | "double"
+            | "float"
+            | "int"
+            | "long"
+            | "short"
+            | "void"
+            | "String"
+            | "Integer"
+            | "Long"
+            | "Double"
+            | "Float"
+            | "Boolean"
+            | "Byte"
+            | "Character"
+            | "Short"
+            | "Object"
+            | "Number"
     )
 }
 

@@ -20,7 +20,10 @@ fn chain_qualification_is_package_short_name() {
 #[test]
 fn structural_discovery_is_set() {
     // Go's defining characteristic.
-    assert_eq!(GO_PROFILE.supertype_discovery, SupertypeDiscovery::Structural);
+    assert_eq!(
+        GO_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Structural
+    );
     assert_eq!(GO_PROFILE.dispatch_axis, DispatchAxis::Receiver);
     assert!(GO_PROFILE.has_generics);
 }
@@ -45,6 +48,9 @@ fn primitives_include_go_builtins() {
         .map(|(n, _)| *n)
         .collect();
     for canonical in ["string", "int", "int64", "bool", "float64", "byte", "rune"] {
-        assert!(names.contains(&canonical), "missing Go primitive: {canonical}");
+        assert!(
+            names.contains(&canonical),
+            "missing Go primitive: {canonical}"
+        );
     }
 }

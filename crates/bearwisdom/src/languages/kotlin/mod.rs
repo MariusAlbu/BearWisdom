@@ -1,17 +1,17 @@
 //! kotlin language plugin.
 
 mod calls;
+mod data_class;
 pub(crate) mod decorators;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-pub mod extract;
-mod data_class;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::KOTLIN_HOOKS;
@@ -37,24 +37,32 @@ use crate::ecosystem::manifest::gradle::discover_gradle_catalog_names;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
 use crate::languages::{LanguagePlugin, Synthesized};
-use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult, ParsedFile};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult, ParsedFile};
 
 pub struct KotlinPlugin;
 
 impl LanguagePlugin for KotlinPlugin {
-    fn id(&self) -> &str { "kotlin" }
+    fn id(&self) -> &str {
+        "kotlin"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["kotlin"] }
+    fn language_ids(&self) -> &[&str] {
+        &["kotlin"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".kt", ".kts"] }
+    fn extensions(&self) -> &[&str] {
+        &[".kt", ".kts"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_kotlin_ng::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::KOTLIN_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::KOTLIN_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -122,14 +130,12 @@ impl LanguagePlugin for KotlinPlugin {
         Some(&profile::KOTLIN_PROFILE)
     }
 
-    
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::KOTLIN_HOOKS)
     }
-fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::KOTLIN_FLOW_CONFIG)
     }
 
@@ -143,4 +149,3 @@ fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         state.set(discover_gradle_catalog_names(project_root));
     }
 }
-

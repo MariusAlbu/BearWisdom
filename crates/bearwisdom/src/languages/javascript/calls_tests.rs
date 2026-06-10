@@ -40,8 +40,9 @@ function caller() { arr.forEach(function (item) { use(item); }); }
 "#;
     let args = call_args_for(src, "forEach");
     assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params == &vec!["item".to_string()])),
+        args.iter().any(
+            |a| matches!(a, CallArg::Lambda { params } if params == &vec!["item".to_string()])
+        ),
         "expected CallArg::Lambda {{ params: [\"item\"] }}, got: {args:?}"
     );
 }
@@ -71,7 +72,8 @@ function caller() { fetch("/api/users"); }
 "#;
     let args = call_args_for(src, "fetch");
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\"), got: {args:?}"
     );
 }

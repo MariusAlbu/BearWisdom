@@ -30,8 +30,7 @@ use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibili
 
 /// Prisma built-in scalar types. TypeRef edges are NOT emitted for these.
 const SCALARS: &[&str] = &[
-    "String", "Int", "Float", "Boolean", "DateTime",
-    "Bytes", "Json", "BigInt", "Decimal",
+    "String", "Int", "Float", "Boolean", "DateTime", "Bytes", "Json", "BigInt", "Decimal",
 ];
 
 pub fn extract(source: &str) -> crate::types::ExtractionResult {
@@ -83,11 +82,11 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // Consume the block body
             i += 1;
@@ -101,7 +100,10 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     break;
                 }
 
-                if body_line.is_empty() || body_line.starts_with("//") || body_line.starts_with("///") {
+                if body_line.is_empty()
+                    || body_line.starts_with("//")
+                    || body_line.starts_with("///")
+                {
                     i += 1;
                     continue;
                 }
@@ -140,15 +142,22 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: Some(parent_index),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 } else {
                     // Model/view/type field: `fieldName FieldType[?][] [@attributes]`
                     let line_byte_start = line_starts.get(i).copied().unwrap_or(0);
-                    extract_field(body_line, i as u32, line_byte_start, parent_index, &mut symbols, &mut refs);
+                    extract_field(
+                        body_line,
+                        i as u32,
+                        line_byte_start,
+                        parent_index,
+                        &mut symbols,
+                        &mut refs,
+                    );
                 }
 
                 i += 1;
@@ -214,16 +223,21 @@ fn extract_field(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Emit TypeRef for non-scalar types
-    if !SCALARS.contains(&base_type) && !base_type.is_empty() && base_type.chars().next().map_or(false, |c| c.is_uppercase()) {
+    if !SCALARS.contains(&base_type)
+        && !base_type.is_empty()
+        && base_type.chars().next().map_or(false, |c| c.is_uppercase())
+    {
         let _ = is_optional;
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: field_index,
             target_name: base_type.to_string(),
             kind: EdgeKind::TypeRef,
@@ -276,9 +290,7 @@ fn parse_block_header(line: &str) -> Option<(&str, String)> {
     }
     // Must be one of the known Prisma top-level keywords
     match keyword {
-        "model" | "view" | "enum" | "type" | "datasource" | "generator" => {
-            Some((keyword, name))
-        }
+        "model" | "view" | "enum" | "type" | "datasource" | "generator" => Some((keyword, name)),
         _ => None,
     }
 }

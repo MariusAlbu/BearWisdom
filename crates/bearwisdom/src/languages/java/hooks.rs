@@ -15,19 +15,16 @@
 // =============================================================================
 
 pub(crate) use super::flow_detectors::{
-    detect_java_db_query_emission, detect_java_grpc_stub_emission,
-    detect_java_http_chain_emission, detect_java_jdbc_template_emission,
-    detect_java_jms_kafka_emission, detect_java_mailer_emission,
-    detect_java_message_mapping_emission, detect_java_quartz_emission,
+    detect_java_db_query_emission, detect_java_grpc_stub_emission, detect_java_http_chain_emission,
+    detect_java_jdbc_template_emission, detect_java_jms_kafka_emission,
+    detect_java_mailer_emission, detect_java_message_mapping_emission, detect_java_quartz_emission,
     detect_java_redis_template_emission, detect_jpa_query_annotation_emission,
     detect_retrofit_attribute_emission, detect_spring_stereotype_emission,
 };
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -110,22 +107,19 @@ pub(crate) fn detect_flow_inner(
     let r = &ref_ctx.extracted_ref;
 
     if r.kind == EdgeKind::TypeRef {
-        if let Some(emission) = detect_jpa_query_annotation_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_jpa_query_annotation_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
-        if let Some(emission) = detect_retrofit_attribute_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_retrofit_attribute_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
-        if let Some(emission) = detect_java_message_mapping_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_java_message_mapping_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
         if let Some(emission) = detect_spring_stereotype_emission(r.target_name.as_str()) {
@@ -137,7 +131,9 @@ pub(crate) fn detect_flow_inner(
     if r.kind != EdgeKind::Calls {
         return Vec::new();
     }
-    let Some(chain) = r.chain.as_ref() else { return Vec::new(); };
+    let Some(chain) = r.chain.as_ref() else {
+        return Vec::new();
+    };
     if let Some(emission) = detect_java_http_chain_emission(chain, &r.call_args) {
         return vec![emission];
     }

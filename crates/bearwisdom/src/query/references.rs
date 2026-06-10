@@ -20,7 +20,11 @@ use anyhow::Context;
 /// (returns references to all overloads / same-named symbols).
 ///
 /// `limit`: maximum number of results (0 = unlimited).
-pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryResult<Vec<ReferenceResult>> {
+pub fn find_references(
+    db: &Database,
+    target_name: &str,
+    limit: usize,
+) -> QueryResult<Vec<ReferenceResult>> {
     let _timer = db.timer("find_references");
 
     // Check cache first.
@@ -38,18 +42,20 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
     let target_ids: Vec<i64> = {
         if target_name.contains('.') {
             // Qualified name — exact match.
-            let mut stmt = conn.prepare(
-                "SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'"
-            ).context("Failed to prepare qualified target lookup")?;
-            let rows = stmt.query_map([target_name], |r| r.get(0))
+            let mut stmt = conn
+                .prepare("SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'")
+                .context("Failed to prepare qualified target lookup")?;
+            let rows = stmt
+                .query_map([target_name], |r| r.get(0))
                 .context("Failed to query qualified target")?;
             rows.filter_map(|r| r.ok()).collect()
         } else {
             // Simple name — all symbols with that name.
-            let mut stmt = conn.prepare(
-                "SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'"
-            ).context("Failed to prepare simple target lookup")?;
-            let rows = stmt.query_map([target_name], |r| r.get(0))
+            let mut stmt = conn
+                .prepare("SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'")
+                .context("Failed to prepare simple target lookup")?;
+            let rows = stmt
+                .query_map([target_name], |r| r.get(0))
                 .context("Failed to query simple target")?;
             rows.filter_map(|r| r.ok()).collect()
         }
@@ -78,7 +84,9 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
          ORDER BY f.path, e.source_line"
     );
 
-    let mut stmt = conn.prepare(&sql).context("Failed to prepare references query")?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .context("Failed to prepare references query")?;
     let rows = stmt
         .query_map(rusqlite::params_from_iter(target_ids.iter()), |row| {
             Ok(ReferenceResult {
@@ -97,10 +105,7 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
     }
 
     // Sort by file path then line for stable output.
-    results.sort_by(|a, b| {
-        a.file_path.cmp(&b.file_path)
-            .then(a.line.cmp(&b.line))
-    });
+    results.sort_by(|a, b| a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line)));
 
     if limit > 0 && results.len() > limit {
         results.truncate(limit);

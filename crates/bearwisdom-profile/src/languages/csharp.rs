@@ -55,7 +55,13 @@ pub static CSHARP: LanguageDescriptor = LanguageDescriptor {
     // in non-.NET projects (e.g., Svelte, Astro). Modern .NET uses ~/.nuget/packages
     // (global cache) rather than a project-local packages/ folder.
     exclude_dirs: &["bin", "obj", "publish", "artifacts", ".vs", "TestResults"],
-    entry_point_files: &["*.sln", "*.csproj", "global.json", "NuGet.Config", "Directory.Build.props"],
+    entry_point_files: &[
+        "*.sln",
+        "*.csproj",
+        "global.json",
+        "NuGet.Config",
+        "Directory.Build.props",
+    ],
     sdk: Some(SdkDescriptor {
         name: ".NET SDK",
         version_command: "dotnet",

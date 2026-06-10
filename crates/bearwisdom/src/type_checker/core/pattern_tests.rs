@@ -119,10 +119,7 @@ fn object_destructure_unknown_prop_falls_back_to_unknown_typeid() {
     let supertypes = SupertypeGraph::new();
     let symbol_types = SymbolTypeMap::new();
 
-    let pattern = Pattern::Object(vec![(
-        "missing".into(),
-        Pattern::Identifier("m".into()),
-    )]);
+    let pattern = Pattern::Object(vec![("missing".into(), Pattern::Identifier("m".into()))]);
     let out = bind(
         &pattern,
         user,
@@ -171,10 +168,7 @@ fn array_destructure_peels_iterator_when_profile_allows() {
     );
     assert_eq!(
         out,
-        vec![
-            ("head".to_string(), user),
-            ("second".to_string(), user),
-        ]
+        vec![("head".to_string(), user), ("second".to_string(), user),]
     );
 }
 
@@ -246,10 +240,7 @@ fn nested_object_in_array_destructures_correctly() {
     };
 
     let pattern = Pattern::Array(vec![
-        Pattern::Object(vec![(
-            "name".into(),
-            Pattern::Identifier("n".into()),
-        )]),
+        Pattern::Object(vec![("name".into(), Pattern::Identifier("n".into()))]),
         Pattern::Rest("rest".into()),
     ]);
     let out = bind(

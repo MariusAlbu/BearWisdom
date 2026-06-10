@@ -15,14 +15,18 @@
 //   Calls     — `binary_expression` containing |> pipelines
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
     let lang: tree_sitter::Language = tree_sitter_gleam::LANGUAGE.into();
 
     let mut parser = Parser::new();
-    parser.set_language(&lang).expect("Failed to load Gleam grammar");
+    parser
+        .set_language(&lang)
+        .expect("Failed to load Gleam grammar");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -106,7 +110,11 @@ fn extract_function(
     }
 
     // Visibility: look for a `public` or `visibility` field, or check for "pub" token
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
@@ -122,12 +130,12 @@ fn extract_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -142,7 +150,11 @@ fn extract_external_function(
     if name.is_empty() {
         return None;
     }
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -157,12 +169,12 @@ fn extract_external_function(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -177,7 +189,11 @@ fn extract_type_def(
     if name.is_empty() {
         return None;
     }
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -192,12 +208,12 @@ fn extract_type_def(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -212,7 +228,11 @@ fn extract_type_alias(
     if name.is_empty() {
         return None;
     }
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -227,12 +247,12 @@ fn extract_type_alias(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -245,14 +265,19 @@ fn extract_data_constructors(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    let vis = if node_has_pub(type_node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(type_node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let mut outer_cursor = type_node.walk();
     for child in type_node.children(&mut outer_cursor) {
         if child.kind() == "data_constructors" {
             let mut inner_cursor = child.walk();
             for ctor in child.children(&mut inner_cursor) {
                 if ctor.kind() == "data_constructor" {
-                    let name = ctor.child_by_field_name("name")
+                    let name = ctor
+                        .child_by_field_name("name")
                         .map(|n| node_text(n, src))
                         .unwrap_or_default();
                     if name.is_empty() {
@@ -271,12 +296,12 @@ fn extract_data_constructors(
                         doc_comment: None,
                         scope_path: None,
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
                 }
             }
         }
@@ -294,7 +319,11 @@ fn extract_external_type(
     if name.is_empty() {
         return None;
     }
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -309,12 +338,12 @@ fn extract_external_type(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -334,7 +363,10 @@ fn get_type_name(node: &Node, src: &[u8]) -> Option<String> {
             // type_name contains type_identifier or remote_type_identifier
             let mut tcursor = child.walk();
             for tc in child.children(&mut tcursor) {
-                if tc.kind() == "type_identifier" || tc.kind() == "remote_type_identifier" || tc.kind() == "identifier" {
+                if tc.kind() == "type_identifier"
+                    || tc.kind() == "remote_type_identifier"
+                    || tc.kind() == "identifier"
+                {
                     let t = node_text(tc, src);
                     if !t.is_empty() {
                         return Some(t);
@@ -369,7 +401,11 @@ fn extract_constant(
     if name.is_empty() {
         return None;
     }
-    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let vis = if node_has_pub(node) {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -384,12 +420,12 @@ fn extract_constant(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
     Some(idx)
 }
 
@@ -430,7 +466,9 @@ fn extract_import(
         .unwrap_or(&module_text)
         .to_string();
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -439,9 +477,9 @@ fn extract_import(
         module: Some(module_text),
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +532,9 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: name,
         kind: EdgeKind::Calls,
@@ -503,9 +543,9 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
@@ -513,9 +553,9 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
     let children: Vec<Node> = node.children(&mut cursor).collect();
 
     // Check if operator is |>
-    let is_pipe = children.iter().any(|c| {
-        !c.is_named() && node_text(*c, src) == "|>"
-    });
+    let is_pipe = children
+        .iter()
+        .any(|c| !c.is_named() && node_text(*c, src) == "|>");
 
     if is_pipe {
         // RHS is the function being piped into
@@ -534,15 +574,16 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             None
         }) {
             let name = match rhs.kind() {
-                "function_call" => {
-                    rhs.child_by_field_name("function")
-                        .map(|n| resolve_call_name(n, src))
-                        .unwrap_or_default()
-                }
+                "function_call" => rhs
+                    .child_by_field_name("function")
+                    .map(|n| resolve_call_name(n, src))
+                    .unwrap_or_default(),
                 _ => resolve_call_name(rhs, src),
             };
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -551,9 +592,9 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         return;
@@ -561,13 +602,16 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
 
     // Non-pipe binary_expression: emit the operator as a ref so coverage is satisfied.
     // Find the operator token (anonymous middle child).
-    let op_text = children.iter()
+    let op_text = children
+        .iter()
         .find(|c| !c.is_named())
         .map(|c| node_text(*c, src))
         .unwrap_or_default();
 
     if !op_text.is_empty() {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: source_idx,
             target_name: op_text,
             kind: EdgeKind::Calls,
@@ -576,9 +620,9 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -613,7 +657,10 @@ fn node_has_pub(node: &Node) -> bool {
     // Functions/constants use it as a child; type_definition/type_alias also use it.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "visibility_modifier" || child.kind() == "pub" || child.kind() == "public" {
+        if child.kind() == "visibility_modifier"
+            || child.kind() == "pub"
+            || child.kind() == "public"
+        {
             return true;
         }
     }

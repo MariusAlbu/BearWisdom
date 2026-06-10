@@ -205,18 +205,19 @@ impl SymbolTypeMap {
                 // override the default for symbols where "callable yields
                 // self" isn't the right answer (e.g. a future Python
                 // metaclass profile that wants the metaclass instance).
-                let (return_type, is_self_yield) = match (extractor_return, is_type_defining(sym.kind)) {
-                    (Some(ty), defining) => {
-                        // Honour extractor's choice. If it happens to match
-                        // arena.class(qname), it's still a self-yield —
-                        // mark accordingly so the reverse index works.
-                        let self_yield = defining
-                            && arena.class_lookup(&sym.qualified_name) == Some(ty);
-                        (Some(ty), self_yield)
-                    }
-                    (None, true) => (Some(arena.class(&sym.qualified_name)), true),
-                    (None, false) => (None, false),
-                };
+                let (return_type, is_self_yield) =
+                    match (extractor_return, is_type_defining(sym.kind)) {
+                        (Some(ty), defining) => {
+                            // Honour extractor's choice. If it happens to match
+                            // arena.class(qname), it's still a self-yield —
+                            // mark accordingly so the reverse index works.
+                            let self_yield =
+                                defining && arena.class_lookup(&sym.qualified_name) == Some(ty);
+                            (Some(ty), self_yield)
+                        }
+                        (None, true) => (Some(arena.class(&sym.qualified_name)), true),
+                        (None, false) => (None, false),
+                    };
 
                 let data = SymbolTypeData {
                     declared_type: extractor_declared,

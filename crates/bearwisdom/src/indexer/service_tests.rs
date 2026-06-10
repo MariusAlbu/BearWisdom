@@ -52,7 +52,10 @@ fn reindex_now_full_then_incremental() {
 
     // First pass: empty DB → Full.
     let first = service.reindex_now().expect("first reindex");
-    assert!(matches!(first, ReindexStats::Full(_)), "expected Full, got {first:?}");
+    assert!(
+        matches!(first, ReindexStats::Full(_)),
+        "expected Full, got {first:?}"
+    );
     if let ReindexStats::Full(stats) = first {
         assert!(stats.file_count > 0, "no files indexed");
     }
@@ -145,13 +148,15 @@ fn try_spawn_sweep_respects_throttle_and_in_flight_flag() {
 
     // Immediate follow-up: the in-flight flag is set OR the throttle is
     // honoured. Either way, no second thread should be spawned.
-    assert!(!svc.try_spawn_sweep(60_000),
-        "second sweep within throttle must be a no-op");
+    assert!(
+        !svc.try_spawn_sweep(60_000),
+        "second sweep within throttle must be a no-op"
+    );
 
     // Wait for the spawned thread to release the in-flight flag.
     for _ in 0..50 {
-        if svc
-            .try_spawn_sweep(0) // bypass throttle but keep in-flight check
+        if svc.try_spawn_sweep(0)
+        // bypass throttle but keep in-flight check
         {
             // Successfully launched again — that means the previous one
             // completed and released the gate. Done.
@@ -175,29 +180,32 @@ fn registered_source_extensions_covers_full_plugin_set() {
 
     // Original allowlist members must still be present.
     for old in &[
-        "rs", "ts", "tsx", "js", "py", "go", "java", "cs", "rb", "php",
-        "kt", "swift", "scala", "dart", "ex", "exs", "c", "h", "cpp",
-        "html", "css", "scss", "json", "yaml", "toml", "md", "lua", "hs",
+        "rs", "ts", "tsx", "js", "py", "go", "java", "cs", "rb", "php", "kt", "swift", "scala",
+        "dart", "ex", "exs", "c", "h", "cpp", "html", "css", "scss", "json", "yaml", "toml", "md",
+        "lua", "hs",
     ] {
         assert!(exts.contains(*old), "missing legacy ext .{old}");
     }
 
     // Languages that were dark-zone before this change.
     for newly_covered in &[
-        "clj", "cljs", "cljc",   // Clojure
-        "f90", "f95", "fypp",    // Fortran
-        "adb", "ads",            // Ada
-        "robot", "resource",     // Robot
-        "vue",                   // Vue
-        "svelte",                // Svelte
-        "ml", "mli",             // OCaml
-        "fs", "fsx",             // F#
-        "bas", "cls", "frm",     // VBA module / class / form
-        "pug", "ejs",            // template engines
-        "heex", "eex", "leex",   // Phoenix templates
+        "clj", "cljs", "cljc", // Clojure
+        "f90", "f95", "fypp", // Fortran
+        "adb", "ads", // Ada
+        "robot", "resource", // Robot
+        "vue",      // Vue
+        "svelte",   // Svelte
+        "ml", "mli", // OCaml
+        "fs", "fsx", // F#
+        "bas", "cls", "frm", // VBA module / class / form
+        "pug", "ejs", // template engines
+        "heex", "eex", "leex", // Phoenix templates
     ] {
-        assert!(exts.contains(*newly_covered),
+        assert!(
+            exts.contains(*newly_covered),
             "extension .{newly_covered} not in allowlist (registry didn't surface it?); \
-             got {} entries", exts.len());
+             got {} entries",
+            exts.len()
+        );
     }
 }

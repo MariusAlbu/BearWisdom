@@ -1,12 +1,14 @@
 // indexer/manifest/clojure.rs — project.clj / deps.edn reader
 
-use std::path::Path;
 use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
+use std::path::Path;
 
 pub struct ClojureManifest;
 
 impl ManifestReader for ClojureManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::Clojure }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::Clojure
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let mut data = ManifestData::default();
@@ -32,7 +34,11 @@ impl ManifestReader for ClojureManifest {
             }
         }
 
-        if found { Some(data) } else { None }
+        if found {
+            Some(data)
+        } else {
+            None
+        }
     }
 
     /// Monorepo-aware walk: discovers sub-project `project.clj` / `deps.edn`
@@ -113,7 +119,9 @@ fn collect_clojure_manifests(
         return;
     }
 
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -146,9 +154,13 @@ fn collect_clojure_manifests(
 /// Format: `:dependencies [[ring/ring-core "1.15.3"] [org.clojure/data.json "2.4.0"]]`
 pub fn parse_project_clj_deps(content: &str) -> Vec<String> {
     let mut deps = Vec::new();
-    let Some(start) = content.find(":dependencies") else { return deps; };
+    let Some(start) = content.find(":dependencies") else {
+        return deps;
+    };
     let rest = &content[start..];
-    let Some(bracket) = rest.find('[') else { return deps; };
+    let Some(bracket) = rest.find('[') else {
+        return deps;
+    };
     let rest = &rest[bracket + 1..];
 
     // Find matching close bracket, tracking depth
@@ -159,7 +171,10 @@ pub fn parse_project_clj_deps(content: &str) -> Vec<String> {
             '[' => depth += 1,
             ']' => {
                 depth -= 1;
-                if depth == 0 { end = i; break; }
+                if depth == 0 {
+                    end = i;
+                    break;
+                }
             }
             _ => {}
         }
@@ -173,7 +188,9 @@ pub fn parse_project_clj_deps(content: &str) -> Vec<String> {
         match ch {
             '[' => {
                 inner_depth += 1;
-                if inner_depth == 1 { dep_start = i + 1; }
+                if inner_depth == 1 {
+                    dep_start = i + 1;
+                }
             }
             ']' => {
                 if inner_depth == 1 {
@@ -195,10 +212,14 @@ pub fn parse_project_clj_deps(content: &str) -> Vec<String> {
 /// Format: `:deps {org.clojure/data.json {:mvn/version "2.4.0"} ...}`
 pub fn parse_deps_edn_deps(content: &str) -> Vec<String> {
     let mut deps = Vec::new();
-    let Some(start) = content.find(":deps") else { return deps; };
+    let Some(start) = content.find(":deps") else {
+        return deps;
+    };
     let rest = &content[start + ":deps".len()..];
     let rest = rest.trim();
-    if !rest.starts_with('{') { return deps; }
+    if !rest.starts_with('{') {
+        return deps;
+    }
     let rest = &rest[1..];
 
     let mut depth = 1u32;
@@ -208,7 +229,10 @@ pub fn parse_deps_edn_deps(content: &str) -> Vec<String> {
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
-                if depth == 0 { end = i; break; }
+                if depth == 0 {
+                    end = i;
+                    break;
+                }
             }
             _ => {}
         }
@@ -253,7 +277,14 @@ mod tests {
                  [ring/ring-devel "1.15.3"]
                  [ring/ring-jetty-adapter "1.15.3"]])"#;
         let deps = parse_project_clj_deps(content);
-        assert_eq!(deps, vec!["ring/ring-core", "ring/ring-devel", "ring/ring-jetty-adapter"]);
+        assert_eq!(
+            deps,
+            vec![
+                "ring/ring-core",
+                "ring/ring-devel",
+                "ring/ring-jetty-adapter"
+            ]
+        );
     }
 
     #[test]

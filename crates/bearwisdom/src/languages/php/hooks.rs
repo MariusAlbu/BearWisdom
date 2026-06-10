@@ -15,9 +15,7 @@ pub(crate) use super::predicates::normalize_php_ns;
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -32,10 +30,7 @@ fn ns_is_external(
 ) -> bool {
     let ns_root = normalized.split('.').next().unwrap_or(normalized);
     if let Some(ctx) = project_ctx {
-        if let Some(manifest) = ctx
-            .manifests_for(pkg_id)
-            .get(&ManifestKind::Composer)
-        {
+        if let Some(manifest) = ctx.manifests_for(pkg_id).get(&ManifestKind::Composer) {
             if is_composer_package_match(ns_root, &manifest.dependencies) {
                 return true;
             }
@@ -62,11 +57,7 @@ pub(crate) fn infer_external_inner(
     let pkg_id = ref_ctx.file_package_id;
 
     if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-        let import_path = ref_ctx
-            .extracted_ref
-            .module
-            .as_deref()
-            .unwrap_or(target);
+        let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
         let normalized = predicates::normalize_php_ns(import_path);
         if ns_is_external(project_ctx, pkg_id, lookup, &normalized) {
             return Some(normalized);
@@ -92,10 +83,7 @@ pub(crate) fn infer_external_inner(
 // composer.json `"vendor/package"` packages map to PHP namespace roots like
 // "Intervention" (vendor) or "Image" (package). Match against either
 // segment, hyphen-stripped, lowercase-normalized.
-fn is_composer_package_match(
-    ns_root: &str,
-    deps: &std::collections::HashSet<String>,
-) -> bool {
+fn is_composer_package_match(ns_root: &str, deps: &std::collections::HashSet<String>) -> bool {
     let ns_lower = ns_root.to_lowercase();
     for dep in deps {
         let (vendor, package) = if let Some(slash) = dep.find('/') {
@@ -178,27 +166,94 @@ pub(crate) fn detect_php_db_query_emission(
 fn parse_eloquent_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::DbQueryOp> {
     use crate::indexer::resolve::flow_emit::DbQueryOp;
     Some(match name {
-        "where" | "whereIn" | "whereNotIn" | "whereNull" | "whereNotNull"
-        | "whereBetween" | "whereDate" | "whereTime" | "whereYear" | "whereMonth"
-        | "whereDay" | "whereColumn" | "whereExists" | "whereHas" | "whereDoesntHave"
-        | "orWhere" | "orWhereIn" | "orWhereNull" | "orWhereNotNull" | "orWhereHas"
-        | "find" | "findOrFail" | "findOrNew" | "findMany"
-        | "first" | "firstOrFail" | "firstOr" | "firstWhere" | "sole"
-        | "get" | "all" | "pluck" | "value" | "count" | "exists" | "doesntExist"
-        | "min" | "max" | "sum" | "avg" | "average"
-        | "with" | "withCount" | "withTrashed" | "without" | "withoutGlobalScopes"
-        | "has" | "doesntHave" | "select" | "selectRaw" | "distinct"
-        | "orderBy" | "orderByDesc" | "orderByRaw" | "latest" | "oldest" | "inRandomOrder"
-        | "groupBy" | "groupByRaw" | "having" | "havingRaw"
-        | "limit" | "take" | "skip" | "offset" | "paginate" | "simplePaginate"
-        | "cursorPaginate" | "chunk" | "chunkById" | "lazy" | "lazyById"
-        | "join" | "leftJoin" | "rightJoin" | "crossJoin"
-        | "scope" | "newQuery" | "query" | "toBase" | "toSql"
-        | "pluckArr" | "values" | "keys" => DbQueryOp::Select,
+        "where"
+        | "whereIn"
+        | "whereNotIn"
+        | "whereNull"
+        | "whereNotNull"
+        | "whereBetween"
+        | "whereDate"
+        | "whereTime"
+        | "whereYear"
+        | "whereMonth"
+        | "whereDay"
+        | "whereColumn"
+        | "whereExists"
+        | "whereHas"
+        | "whereDoesntHave"
+        | "orWhere"
+        | "orWhereIn"
+        | "orWhereNull"
+        | "orWhereNotNull"
+        | "orWhereHas"
+        | "find"
+        | "findOrFail"
+        | "findOrNew"
+        | "findMany"
+        | "first"
+        | "firstOrFail"
+        | "firstOr"
+        | "firstWhere"
+        | "sole"
+        | "get"
+        | "all"
+        | "pluck"
+        | "value"
+        | "count"
+        | "exists"
+        | "doesntExist"
+        | "min"
+        | "max"
+        | "sum"
+        | "avg"
+        | "average"
+        | "with"
+        | "withCount"
+        | "withTrashed"
+        | "without"
+        | "withoutGlobalScopes"
+        | "has"
+        | "doesntHave"
+        | "select"
+        | "selectRaw"
+        | "distinct"
+        | "orderBy"
+        | "orderByDesc"
+        | "orderByRaw"
+        | "latest"
+        | "oldest"
+        | "inRandomOrder"
+        | "groupBy"
+        | "groupByRaw"
+        | "having"
+        | "havingRaw"
+        | "limit"
+        | "take"
+        | "skip"
+        | "offset"
+        | "paginate"
+        | "simplePaginate"
+        | "cursorPaginate"
+        | "chunk"
+        | "chunkById"
+        | "lazy"
+        | "lazyById"
+        | "join"
+        | "leftJoin"
+        | "rightJoin"
+        | "crossJoin"
+        | "scope"
+        | "newQuery"
+        | "query"
+        | "toBase"
+        | "toSql"
+        | "pluckArr"
+        | "values"
+        | "keys" => DbQueryOp::Select,
         "create" | "createMany" | "make" | "insert" | "insertGetId" | "insertOrIgnore"
         | "forceCreate" => DbQueryOp::Insert,
-        "update" | "updateOrCreate" | "save" | "push" | "touch" | "increment"
-        | "decrement" | "fill" | "forceFill" => DbQueryOp::Update,
+        "update" | "updateOrCreate" | "save" | "push" | "touch" | "increment" | "decrement"
+        | "fill" | "forceFill" => DbQueryOp::Update,
         "firstOrCreate" | "firstOrNew" | "upsert" => DbQueryOp::Upsert,
         "delete" | "destroy" | "forceDelete" | "truncate" | "restore" => DbQueryOp::Delete,
         _ => return None,
@@ -217,7 +272,9 @@ fn parse_doctrine_op(name: &str) -> Option<crate::indexer::resolve::flow_emit::D
 }
 
 fn is_pascal_case_first_php(name: &str) -> bool {
-    name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+    name.chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
 }
 
 // Common Laravel facades that look like static-call entry points but are
@@ -225,14 +282,53 @@ fn is_pascal_case_first_php(name: &str) -> bool {
 fn is_php_facade(name: &str) -> bool {
     matches!(
         name,
-        "Route" | "Auth" | "Log" | "Cache" | "Config" | "DB" | "Schema" | "Storage"
-            | "Mail" | "Queue" | "Event" | "Hash" | "Session" | "Cookie" | "Crypt"
-            | "Lang" | "Notification" | "URL" | "Validator" | "View" | "Request"
-            | "Response" | "Redirect" | "App" | "Artisan" | "Bus" | "Broadcast"
-            | "Date" | "File" | "Gate" | "Http" | "Lottery" | "Password" | "Pipeline"
-            | "Process" | "RateLimiter" | "Reminder" | "Sleep" | "Vite"
-            | "Carbon" | "Str" | "Arr" | "Collection" | "Builder"
-            | "self" | "static" | "parent"
+        "Route"
+            | "Auth"
+            | "Log"
+            | "Cache"
+            | "Config"
+            | "DB"
+            | "Schema"
+            | "Storage"
+            | "Mail"
+            | "Queue"
+            | "Event"
+            | "Hash"
+            | "Session"
+            | "Cookie"
+            | "Crypt"
+            | "Lang"
+            | "Notification"
+            | "URL"
+            | "Validator"
+            | "View"
+            | "Request"
+            | "Response"
+            | "Redirect"
+            | "App"
+            | "Artisan"
+            | "Bus"
+            | "Broadcast"
+            | "Date"
+            | "File"
+            | "Gate"
+            | "Http"
+            | "Lottery"
+            | "Password"
+            | "Pipeline"
+            | "Process"
+            | "RateLimiter"
+            | "Reminder"
+            | "Sleep"
+            | "Vite"
+            | "Carbon"
+            | "Str"
+            | "Arr"
+            | "Collection"
+            | "Builder"
+            | "self"
+            | "static"
+            | "parent"
     )
 }
 
@@ -350,10 +446,9 @@ pub(crate) fn detect_flow_inner(
     let r = &ref_ctx.extracted_ref;
 
     if r.kind == EdgeKind::TypeRef {
-        if let Some(emission) = detect_symfony_route_attribute_emission(
-            r.target_name.as_str(),
-            r.module.as_deref(),
-        ) {
+        if let Some(emission) =
+            detect_symfony_route_attribute_emission(r.target_name.as_str(), r.module.as_deref())
+        {
             return vec![emission];
         }
         return Vec::new();

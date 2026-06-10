@@ -15,7 +15,11 @@ impl LanguageEngineHooks for DockerfileHooks {
         _project_ctx: Option<&ProjectContext>,
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
-        if ref_ctx.extracted_ref.target_name.eq_ignore_ascii_case("scratch") {
+        if ref_ctx
+            .extracted_ref
+            .target_name
+            .eq_ignore_ascii_case("scratch")
+        {
             return Some("docker".to_string());
         }
         if matches!(

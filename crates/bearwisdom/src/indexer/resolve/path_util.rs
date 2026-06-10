@@ -22,10 +22,15 @@ pub(super) fn is_module_entry_point(path: &str) -> bool {
     let basename = path.rsplit('/').next().unwrap_or(path);
     matches!(
         basename,
-        "mod.rs" | "lib.rs"
+        "mod.rs"
+            | "lib.rs"
             | "__init__.py"
-            | "index.ts" | "index.tsx" | "index.js" | "index.jsx"
-            | "index.mts" | "index.mjs"
+            | "index.ts"
+            | "index.tsx"
+            | "index.js"
+            | "index.jsx"
+            | "index.mts"
+            | "index.mjs"
     )
 }
 
@@ -37,9 +42,7 @@ pub(super) fn file_path_matches_module(file_path: &str, module: &str) -> bool {
         return false;
     }
     // Relative TS path: strip leading `./` and common extensions.
-    let module_clean = module
-        .trim_start_matches("./")
-        .trim_start_matches("../");
+    let module_clean = module.trim_start_matches("./").trim_start_matches("../");
 
     // Try suffix match (e.g., "catalog" matches "src/catalog.ts").
     let file_stem = file_path
@@ -69,7 +72,10 @@ pub(super) fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> b
         // methods (`querySelector`, `getAttribute`, `dispatchEvent`), Function
         // prototype methods (`bind`, `apply`, `call`), and similar interface-
         // declared methods all land here.
-        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "constructor" | "test" | "property"),
+        EdgeKind::Calls => matches!(
+            sym_kind,
+            "method" | "function" | "constructor" | "test" | "property"
+        ),
         EdgeKind::Inherits => matches!(sym_kind, "class" | "struct"),
         EdgeKind::Implements => matches!(sym_kind, "interface"),
         EdgeKind::TypeRef => matches!(

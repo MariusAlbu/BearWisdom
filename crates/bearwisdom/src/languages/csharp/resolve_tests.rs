@@ -4,11 +4,11 @@
 // generic engine (see type_checker/core/{chain,default_resolver}_tests.rs).
 // =============================================================================
 
+use super::hooks::build_file_context_inner;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
-use super::hooks::build_file_context_inner;
 
 fn make_symbol(
     name: &str,
@@ -31,15 +31,17 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -105,7 +107,13 @@ fn test_infer_bcl_type_via_sdk_usings() {
     let ctx = make_web_project_ctx();
     let file = make_file(
         "src/Test.cs",
-        vec![make_symbol("Test", "App.Test", SymbolKind::Class, Visibility::Public, Some("App"))],
+        vec![make_symbol(
+            "Test",
+            "App.Test",
+            SymbolKind::Class,
+            Visibility::Public,
+            Some("App"),
+        )],
         vec![make_ref(0, "Guid", EdgeKind::TypeRef, 5)],
     );
 
@@ -114,14 +122,17 @@ fn test_infer_bcl_type_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     // The inference picks the longest external namespace from the file's imports.
@@ -134,7 +145,13 @@ fn test_infer_cancellation_token_via_sdk_usings() {
     let ctx = make_web_project_ctx();
     let file = make_file(
         "src/Test.cs",
-        vec![make_symbol("Test", "App.Test", SymbolKind::Class, Visibility::Public, Some("App"))],
+        vec![make_symbol(
+            "Test",
+            "App.Test",
+            SymbolKind::Class,
+            Visibility::Public,
+            Some("App"),
+        )],
         vec![make_ref(0, "CancellationToken", EdgeKind::TypeRef, 5)],
     );
 
@@ -143,17 +160,23 @@ fn test_infer_cancellation_token_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
-    assert!(ns.is_some(), "CancellationToken should be inferred as external");
+    assert!(
+        ns.is_some(),
+        "CancellationToken should be inferred as external"
+    );
 }
 
 #[test]
@@ -161,7 +184,13 @@ fn test_infer_linq_via_sdk_usings() {
     let ctx = make_web_project_ctx();
     let file = make_file(
         "src/Test.cs",
-        vec![make_symbol("Test", "App.Test", SymbolKind::Class, Visibility::Public, Some("App"))],
+        vec![make_symbol(
+            "Test",
+            "App.Test",
+            SymbolKind::Class,
+            Visibility::Public,
+            Some("App"),
+        )],
         vec![make_ref(0, "Select", EdgeKind::Calls, 5)],
     );
 
@@ -170,14 +199,17 @@ fn test_infer_linq_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(ns.is_some(), "Select should be inferred as external");
@@ -188,7 +220,13 @@ fn test_infer_ilogger_via_sdk_usings() {
     let ctx = make_web_project_ctx();
     let file = make_file(
         "src/Test.cs",
-        vec![make_symbol("Test", "App.Test", SymbolKind::Class, Visibility::Public, Some("App"))],
+        vec![make_symbol(
+            "Test",
+            "App.Test",
+            SymbolKind::Class,
+            Visibility::Public,
+            Some("App"),
+        )],
         vec![
             make_ref(0, "ILogger", EdgeKind::TypeRef, 3),
             make_ref(0, "LogInformation", EdgeKind::Calls, 10),
@@ -201,13 +239,16 @@ fn test_infer_ilogger_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx_type, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx_type,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(ns.is_some(), "ILogger should be inferred as external");
@@ -220,16 +261,22 @@ fn test_infer_ilogger_via_sdk_usings() {
         extracted_ref: &file.refs[1],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx_call, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx_call,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
-    assert!(ns.is_some(), "LogInformation should be inferred as external");
+    assert!(
+        ns.is_some(),
+        "LogInformation should be inferred as external"
+    );
 }
 
 #[test]
@@ -256,7 +303,9 @@ fn test_infer_no_false_positive_on_project_ref() {
         ],
         vec![make_ref(1, "MyService", EdgeKind::TypeRef, 5)],
     );
-    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    file.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
@@ -265,9 +314,9 @@ fn test_infer_no_false_positive_on_project_ref() {
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     // The file has only project usings (App.Models) plus SDK globals.
     let file_ctx = build_file_context_inner(&file, Some(&ctx));
@@ -275,7 +324,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     // With global usings injected, there are external namespaces present,
@@ -288,7 +337,10 @@ fn test_infer_no_false_positive_on_project_ref() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(ns.is_some() || ns.is_none()); // non-trivial assertion removed — see comment
@@ -299,11 +351,19 @@ fn test_infer_without_project_context_fallback() {
     // Without ProjectContext, only System/Microsoft prefixes are recognized.
     let mut file = make_file(
         "src/Test.cs",
-        vec![make_symbol("Test", "App.Test", SymbolKind::Class, Visibility::Public, Some("App"))],
+        vec![make_symbol(
+            "Test",
+            "App.Test",
+            SymbolKind::Class,
+            Visibility::Public,
+            Some("App"),
+        )],
         vec![make_ref(0, "Something", EdgeKind::TypeRef, 5)],
     );
     // Add a project using (non-external)
-    file.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    file.refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "App.Models".to_string(),
         kind: EdgeKind::Imports,
@@ -312,16 +372,16 @@ fn test_infer_without_project_context_fallback() {
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 
     let file_ctx = build_file_context_inner(&file, None);
     let ref_ctx = RefContext {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     // No ProjectContext, no external usings → should return None
@@ -329,10 +389,16 @@ fn test_infer_without_project_context_fallback() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, None, &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            None,
+            &empty_lookup,
         )
     };
-    assert!(ns.is_none(), "Without external usings, should not infer external");
+    assert!(
+        ns.is_none(),
+        "Without external usings, should not infer external"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +410,9 @@ fn workspace_project_namespace_not_classified_as_external() {
     // `using Shared.Models;` where `Shared.csproj` is a sibling workspace
     // project must NOT surface as external, even if a NuGet root-prefix
     // match would otherwise catch it.
-    let make_import_ref = |source_idx, target: &str, line| ExtractedRef { is_import_binding: false, is_reexport: false,
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -352,10 +420,10 @@ fn workspace_project_namespace_not_classified_as_external() {
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-    col: 0,
-};
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+        col: 0,
+    };
     let file = make_file(
         "App/Foo.cs",
         vec![make_symbol(
@@ -384,7 +452,10 @@ fn workspace_project_namespace_not_classified_as_external() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(
@@ -400,7 +471,9 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
     // The NuGet root-prefix classifier would normally say external; the
     // workspace guard must win.
     use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-    let make_import_ref = |source_idx, target: &str, line| ExtractedRef { is_import_binding: false, is_reexport: false,
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::Imports,
@@ -408,10 +481,10 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 1,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-    col: 0,
-};
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+        col: 0,
+    };
     let file = make_file(
         "App/Foo.cs",
         vec![make_symbol(
@@ -443,7 +516,10 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         let empty_lookup = SymbolIndex::build(&[], &HashMap::new());
         crate::languages::csharp::hooks::CSharpHooks.classify_external(
-            &ref_ctx, &file_ctx, Some(&ctx), &empty_lookup,
+            &ref_ctx,
+            &file_ctx,
+            Some(&ctx),
+            &empty_lookup,
         )
     };
     assert!(
@@ -463,30 +539,46 @@ fn make_chain(segments: &[&str]) -> MemberChain {
             .enumerate()
             .map(|(i, name)| ChainSegment {
                 name: name.to_string(),
-                node_kind: if i == 0 { "identifier".to_string() } else { "property_identifier".to_string() },
-                kind: if i == 0 { SegmentKind::Identifier } else { SegmentKind::Property },
+                node_kind: if i == 0 {
+                    "identifier".to_string()
+                } else {
+                    "property_identifier".to_string()
+                },
+                kind: if i == 0 {
+                    SegmentKind::Identifier
+                } else {
+                    SegmentKind::Property
+                },
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-})
+            })
             .collect(),
     }
 }
 
 #[test]
 fn test_csharp_httpclient_get_async_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
     use super::hooks::detect_csharp_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     let chain = make_chain(&["httpClient", "GetAsync"]);
     let call_args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_csharp_http_chain_emission(&chain, &call_args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users");
@@ -498,14 +590,11 @@ fn test_csharp_httpclient_get_async_emits_producer() {
 
 #[test]
 fn test_csharp_httpclient_post_async_emits_post() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_csharp_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     let chain = make_chain(&["httpClient", "PostAsJsonAsync"]);
-    let call_args = vec![
-        CallArg::StringLit("/api/login".to_string()),
-        CallArg::Other,
-    ];
+    let call_args = vec![CallArg::StringLit("/api/login".to_string()), CallArg::Other];
     match detect_csharp_http_chain_emission(&chain, &call_args).unwrap() {
         FlowEmission::NamedChannel { method, name, .. } => {
             assert_eq!(method, Some(HttpMethod::Post));
@@ -517,8 +606,8 @@ fn test_csharp_httpclient_post_async_emits_post() {
 
 #[test]
 fn test_csharp_httpclient_normalizes_dynamic_segments() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_csharp_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let chain = make_chain(&["httpClient", "GetAsync"]);
     let call_args = vec![CallArg::StringLit("/api/users/{id}/posts".to_string())];
@@ -530,8 +619,8 @@ fn test_csharp_httpclient_normalizes_dynamic_segments() {
 
 #[test]
 fn test_csharp_restsharp_execute_async_emits_any_method() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_csharp_http_chain_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     // RestSharp dispatches internally on the request's method, so the
     // static call shape doesn't carry a verb — emit `Any`.
@@ -566,11 +655,19 @@ fn test_csharp_http_no_emit_when_url_is_variable() {
 
 #[test]
 fn test_csharp_refit_get_attribute_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
     use super::hooks::detect_refit_attribute_emission;
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
 
     match detect_refit_attribute_emission("Get", Some("/api/users/{id}")).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, method, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            name,
+            method,
+            ..
+        } => {
             assert_eq!(kind, NamedChannelKind::HttpCall);
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "/api/users/{}");
@@ -582,8 +679,8 @@ fn test_csharp_refit_get_attribute_emits_producer() {
 
 #[test]
 fn test_csharp_refit_post_attribute_emits_post() {
-    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
     use super::hooks::detect_refit_attribute_emission;
+    use crate::indexer::resolve::flow_emit::{FlowEmission, HttpMethod};
 
     match detect_refit_attribute_emission("Post", Some("/api/login")).unwrap() {
         FlowEmission::NamedChannel { method, name, .. } => {
@@ -611,13 +708,16 @@ fn test_csharp_refit_attribute_no_emit_for_unrelated_attr() {
 
 #[test]
 fn test_csharp_efcore_dbset_where_emits_select() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["dbContext", "Users", "Where"]);
     let call_args: Vec<CallArg> = vec![];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "cs.Users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -627,13 +727,16 @@ fn test_csharp_efcore_dbset_where_emits_select() {
 
 #[test]
 fn test_csharp_efcore_dbset_add_emits_insert() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["context", "Polls", "Add"]);
     let call_args: Vec<CallArg> = vec![];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "cs.Polls");
             assert_eq!(operation, DbQueryOp::Insert);
         }
@@ -643,13 +746,16 @@ fn test_csharp_efcore_dbset_add_emits_insert() {
 
 #[test]
 fn test_csharp_efcore_savechanges_emits_dbquery() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["dbContext", "SaveChangesAsync"]);
     let call_args: Vec<CallArg> = vec![];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "cs.*");
             assert_eq!(operation, DbQueryOp::Other);
         }
@@ -659,15 +765,18 @@ fn test_csharp_efcore_savechanges_emits_dbquery() {
 
 #[test]
 fn test_csharp_dapper_query_parses_select_sql() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["connection", "QueryAsync"]);
     let call_args = vec![CallArg::StringLit(
         "SELECT Id, Name FROM Users WHERE Active = @active".to_string(),
     )];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "cs.Users");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -677,15 +786,18 @@ fn test_csharp_dapper_query_parses_select_sql() {
 
 #[test]
 fn test_csharp_dapper_execute_parses_update_sql() {
-    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
 
     let chain = make_chain(&["connection", "ExecuteAsync"]);
     let call_args = vec![CallArg::StringLit(
         "UPDATE Accounts SET Balance = @balance WHERE Id = @id".to_string(),
     )];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "cs.Accounts");
             assert_eq!(operation, DbQueryOp::Update);
         }
@@ -695,13 +807,11 @@ fn test_csharp_dapper_execute_parses_update_sql() {
 
 #[test]
 fn test_csharp_dapper_strips_schema_qualifier() {
-    use crate::indexer::resolve::flow_emit::FlowEmission;
     use super::hooks::detect_csharp_db_query_emission;
+    use crate::indexer::resolve::flow_emit::FlowEmission;
 
     let chain = make_chain(&["connection", "QueryAsync"]);
-    let call_args = vec![CallArg::StringLit(
-        "SELECT * FROM dbo.Users".to_string(),
-    )];
+    let call_args = vec![CallArg::StringLit("SELECT * FROM dbo.Users".to_string())];
     match detect_csharp_db_query_emission(&chain, &call_args).unwrap() {
         FlowEmission::DbQuery { entity_name, .. } => assert_eq!(entity_name, "cs.Users"),
         _ => panic!("expected DbQuery"),
@@ -730,10 +840,12 @@ fn test_csharp_db_no_emit_for_camel_case_middle() {
 
 #[test]
 fn test_csharp_signalr_hub_inherits_emits_ws_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_csharp_signalr_hub_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_csharp_signalr_hub_emission("Hub").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "cs.signalr");
@@ -756,10 +868,12 @@ fn test_csharp_signalr_rejects_non_hub_base() {
 
 #[test]
 fn test_csharp_hotchocolate_query_type_emits_graphql_consumer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     use super::hooks::detect_csharp_hotchocolate_emission;
+    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_csharp_hotchocolate_emission("QueryType").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::GraphQLOp));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "cs.hotchocolate.query");

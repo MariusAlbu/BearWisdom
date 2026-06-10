@@ -16,7 +16,10 @@ const PS_KIND_TABLE: KindTable = &[
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class]),
-    (EdgeKind::Implements, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::Implements,
+        &[SymbolKind::Class, SymbolKind::Interface],
+    ),
     (
         EdgeKind::TypeRef,
         &[
@@ -28,7 +31,10 @@ const PS_KIND_TABLE: KindTable = &[
             SymbolKind::Variable,
         ],
     ),
-    (EdgeKind::Instantiates, &[SymbolKind::Class, SymbolKind::Function]),
+    (
+        EdgeKind::Instantiates,
+        &[SymbolKind::Class, SymbolKind::Function],
+    ),
 ];
 
 const PS_PRIMITIVES: &[(&str, PrimKind)] = &[
@@ -78,7 +84,8 @@ pub const POWERSHELL_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

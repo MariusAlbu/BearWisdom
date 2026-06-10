@@ -38,8 +38,8 @@ mod manifest;
 mod source_discovery;
 mod symbol_index;
 
-pub use dll_metadata::{nuget_packages_root, parse_dotnet_externals};
 pub(crate) use dll_metadata::parse_dotnet_dll_public;
+pub use dll_metadata::{nuget_packages_root, parse_dotnet_externals};
 pub use manifest::{
     implicit_usings_for_sdk, most_capable_sdk, parse_global_usings, parse_package_references,
     parse_package_references_full, parse_project_references, parse_sdk_type, DotnetSdkType,
@@ -58,10 +58,18 @@ const LEGACY_ECOSYSTEM_TAG: &str = "dotnet";
 pub struct NugetEcosystem;
 
 impl Ecosystem for NugetEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
         // .NET project files embed the project name as the filename stem,
@@ -142,12 +150,18 @@ impl Ecosystem for NugetEcosystem {
 }
 
 impl ExternalSourceLocator for NugetEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
         let (mut parsed, source_pf) = parse_dotnet_externals_with_source(project_root);
         parsed.extend(source_pf);
-        if parsed.is_empty() { None } else { Some(parsed) }
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
+        }
     }
 }
 
@@ -163,12 +177,12 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::cs_header::scan_cs_header;
     use super::dll_metadata::{
         format_generic_suffix, strip_backtick_arity, substitute_generic_placeholders,
     };
     use super::source_discovery::discover_nuget_source_files;
+    use super::*;
 
     #[test]
     fn ecosystem_identity() {
@@ -205,21 +219,39 @@ mod tests {
     fn substitute_placeholders_swaps_ecma335_syntax() {
         let type_gen = vec!["T".to_string()];
         let method_gen = vec!["U".to_string(), "V".to_string()];
-        assert_eq!(substitute_generic_placeholders("!!0", &type_gen, &method_gen), "U");
-        assert_eq!(substitute_generic_placeholders("!!1", &type_gen, &method_gen), "V");
-        assert_eq!(substitute_generic_placeholders("!0", &type_gen, &method_gen), "T");
+        assert_eq!(
+            substitute_generic_placeholders("!!0", &type_gen, &method_gen),
+            "U"
+        );
+        assert_eq!(
+            substitute_generic_placeholders("!!1", &type_gen, &method_gen),
+            "V"
+        );
+        assert_eq!(
+            substitute_generic_placeholders("!0", &type_gen, &method_gen),
+            "T"
+        );
         assert_eq!(
             substitute_generic_placeholders("Func<!0, !!0, !!1>", &type_gen, &method_gen),
             "Func<T, U, V>"
         );
-        assert_eq!(substitute_generic_placeholders("!!5", &type_gen, &method_gen), "!!5");
+        assert_eq!(
+            substitute_generic_placeholders("!!5", &type_gen, &method_gen),
+            "!!5"
+        );
     }
 
     #[test]
     fn substitute_placeholders_multi_digit_indices() {
         let method_gen: Vec<String> = (0..15).map(|i| format!("T{i}")).collect();
-        assert_eq!(substitute_generic_placeholders("!!10", &[], &method_gen), "T10");
-        assert_eq!(substitute_generic_placeholders("!!14", &[], &method_gen), "T14");
+        assert_eq!(
+            substitute_generic_placeholders("!!10", &[], &method_gen),
+            "T10"
+        );
+        assert_eq!(
+            substitute_generic_placeholders("!!14", &[], &method_gen),
+            "T14"
+        );
     }
 
     #[test]
@@ -277,7 +309,10 @@ namespace MyLib.Core {
         let decls = scan_cs_header(src);
         let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"IRepository"), "should find IRepository");
-        assert!(names.contains(&"UserRepository"), "should find UserRepository");
+        assert!(
+            names.contains(&"UserRepository"),
+            "should find UserRepository"
+        );
     }
 
     #[test]
@@ -288,7 +323,10 @@ namespace Acme.Orders {
 }
 "#;
         let decls = scan_cs_header(src);
-        let svc = decls.iter().find(|d| d.name == "OrderService").expect("OrderService missing");
+        let svc = decls
+            .iter()
+            .find(|d| d.name == "OrderService")
+            .expect("OrderService missing");
         assert_eq!(svc.scope, "Acme.Orders");
     }
 

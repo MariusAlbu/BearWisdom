@@ -30,7 +30,8 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     module_skip: None,
     ambient_namespace_prefixes: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
         crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
     ),
@@ -44,11 +45,12 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
-        definitely_typed: true,
-        deep_import_peel: true,
-        decline_bare_directory_match: true,
-    },
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+            definitely_typed: true,
+            deep_import_peel: true,
+            decline_bare_directory_match: true,
+        },
     workspace_packages: true,
     overload_pick_all: true,
     argument_dependent_lookup: false,

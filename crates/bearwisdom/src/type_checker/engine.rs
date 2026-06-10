@@ -123,9 +123,7 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
         arena: std::sync::Arc<TypeArena>,
     ) -> Self {
-
-        let members =
-            MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
+        let members = MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
         let symbol_types = SymbolTypeMap::build_from_parsed_files(
             parsed,
             sym_id_map,
@@ -143,14 +141,8 @@ impl<'a> Engine<'a> {
         // Per-file-profile supertype build: each file's discovery rule comes
         // from its own language's profile, and the structural pass runs only
         // over types declared in Structural/Both-profile files.
-        let supertypes = SupertypeGraph::build_multi(
-            parsed,
-            &arena,
-            &profiles,
-            &members,
-            &symbol_types,
-            lookup,
-        );
+        let supertypes =
+            SupertypeGraph::build_multi(parsed, &arena, &profiles, &members, &symbol_types, lookup);
 
         // Aliases: aggregate every per-file `(qname, AliasTarget)` pair.
         // Externals contribute alias entries that the chain walker resolves
@@ -207,7 +199,8 @@ impl<'a> Engine<'a> {
             .copied()
             .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
 
-        self.members.ingest_files(new_files, sym_id_map, &self.arena);
+        self.members
+            .ingest_files(new_files, sym_id_map, &self.arena);
         self.symbol_types
             .ingest_files(new_files, sym_id_map, &self.arena, default_profile);
 
@@ -235,10 +228,7 @@ impl<'a> Engine<'a> {
     /// Look up the engine hooks registered for `language`. Returns `None`
     /// when no hooks plugin opted in; engine then uses the no-op default
     /// for that language.
-    pub fn hooks_for(
-        &self,
-        language: &str,
-    ) -> Option<&'static dyn LanguageEngineHooks> {
+    pub fn hooks_for(&self, language: &str) -> Option<&'static dyn LanguageEngineHooks> {
         self.hooks.get(language).copied()
     }
 
@@ -323,9 +313,7 @@ impl<'a> Engine<'a> {
                     .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
                     .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
                     .or_else(|| self.resolve_via_adl(ref_ctx, lookup, profile))
-                    .or_else(|| {
-                        hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
-                    });
+                    .or_else(|| hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup)));
                 if let Some(mut r) = bare {
                     self.select_bare_overload_override(&mut r, ref_ctx, lookup, profile);
                     self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
@@ -441,13 +429,12 @@ impl<'a> Engine<'a> {
 
         // Type each argument, then collect the declaring namespace of every
         // argument typed as a nominal class (looking through one `Apply` layer).
-        let arg_type_ids =
-            crate::type_checker::core::dispatch::resolve_arg_types(
-                &er.call_args,
-                &self.arena,
-                lookup,
-                profile,
-            );
+        let arg_type_ids = crate::type_checker::core::dispatch::resolve_arg_types(
+            &er.call_args,
+            &self.arena,
+            lookup,
+            profile,
+        );
         let mut candidates: Vec<SymbolInfo> = Vec::new();
         for &ty in &arg_type_ids {
             let Some(ns) = self.declaring_namespace_of(ty) else {
@@ -611,8 +598,7 @@ impl<'a> Engine<'a> {
             profile,
             lookup,
         );
-        r.resolved_yield_type =
-            walker.infer_bare_call_yield(sym, &ref_ctx.extracted_ref.call_args);
+        r.resolved_yield_type = walker.infer_bare_call_yield(sym, &ref_ctx.extracted_ref.call_args);
     }
 
     /// Same as `resolve` but exposes a caller-supplied `RootResolver` so
@@ -815,7 +801,7 @@ fn generic_file_context(
                     imported_name: r.target_name.clone(),
                     module_path: Some(module),
                     alias: None,
-                    is_wildcard: false,
+                    is_wildcard: r.target_name == "*",
                 })
             })
             .collect(),
@@ -831,7 +817,7 @@ fn generic_file_context(
                     ImportModulePath::FromModuleField => unreachable!(),
                 },
                 alias: None,
-                is_wildcard: false,
+                is_wildcard: r.target_name == "*",
             })
             .collect(),
     };

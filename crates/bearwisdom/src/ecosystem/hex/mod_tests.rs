@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::*;
 use super::discovery::{discover_erlang_mk_roots, discover_mix_roots, discover_rebar_roots};
 use super::reachability::{
     extract_elixir_module_refs, extract_erlang_module_refs, extract_gleam_module_refs,
@@ -9,6 +8,7 @@ use super::reachability::{
 };
 use super::symbol_index::{scan_elixir_header, scan_gleam_header};
 use super::walk::{detect_hex_language, walk_hex_root};
+use super::*;
 
 #[test]
 fn ecosystem_identity() {
@@ -45,9 +45,8 @@ fn capitalize(s: &str) -> String {
 
 fn make_elixir_fixture(tmp: &Path, deps: &[&str]) {
     std::fs::create_dir_all(tmp).unwrap();
-    let mut mix = String::from(
-        "defmodule MyApp.MixProject do\n  use Mix.Project\n  defp deps do\n    [\n",
-    );
+    let mut mix =
+        String::from("defmodule MyApp.MixProject do\n  use Mix.Project\n  defp deps do\n    [\n");
     for name in deps {
         mix.push_str(&format!("      {{:{name}, \"~> 1.0\"}},\n"));
     }
@@ -291,7 +290,10 @@ fn erlang_call_extracts_module_name() {
 #[test]
 fn gleam_import_extracts_module() {
     let mut out = std::collections::HashSet::new();
-    extract_gleam_module_refs("import gleam/list\nimport gleam/string.{contains}\n", &mut out);
+    extract_gleam_module_refs(
+        "import gleam/list\nimport gleam/string.{contains}\n",
+        &mut out,
+    );
     assert!(out.contains("gleam:gleam/list"));
     assert!(out.contains("gleam:gleam/string"));
 }
@@ -310,12 +312,21 @@ fn narrowed_walk_includes_siblings() {
     let lib = dep_root.join("lib").join("phoenix");
     std::fs::create_dir_all(&lib).unwrap();
     std::fs::create_dir_all(dep_root.join("lib").join("plug")).unwrap();
-    std::fs::write(lib.join("endpoint.ex"), "defmodule Phoenix.Endpoint do end\n").unwrap();
-    std::fs::write(lib.join("controller.ex"), "defmodule Phoenix.Controller do end\n").unwrap();
+    std::fs::write(
+        lib.join("endpoint.ex"),
+        "defmodule Phoenix.Endpoint do end\n",
+    )
+    .unwrap();
+    std::fs::write(
+        lib.join("controller.ex"),
+        "defmodule Phoenix.Controller do end\n",
+    )
+    .unwrap();
     std::fs::write(
         dep_root.join("lib").join("plug").join("conn.ex"),
         "defmodule Plug.Conn do end\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let dep = ExternalDepRoot {
         module_path: "phoenix".to_string(),
@@ -369,8 +380,10 @@ defmodule Demo.Repo do
 end
 "#;
     let names = scan_elixir_header(src);
-    assert!(names.contains(&"Demo.Repo".to_string()) || names.contains(&"Demo".to_string()),
-            "expected module name, got {names:?}");
+    assert!(
+        names.contains(&"Demo.Repo".to_string()) || names.contains(&"Demo".to_string()),
+        "expected module name, got {names:?}"
+    );
     assert!(names.contains(&"list_all".to_string()), "{names:?}");
     assert!(names.contains(&"secret".to_string()), "{names:?}");
 }

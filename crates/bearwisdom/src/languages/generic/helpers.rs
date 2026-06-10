@@ -88,8 +88,8 @@ fn extract_rust_import<'src>(
         for i in 0..node.child_count() {
             let child = node.child(i).unwrap();
             match child.kind() {
-                "scoped_identifier" | "identifier" | "use_wildcard"
-                | "use_as_clause" | "use_list" => return Some(child),
+                "scoped_identifier" | "identifier" | "use_wildcard" | "use_as_clause"
+                | "use_list" => return Some(child),
                 _ => {}
             }
         }
@@ -97,10 +97,15 @@ fn extract_rust_import<'src>(
     });
 
     let module = path_node.map(|n| ctx.text(n).trim().to_string());
-    let target = module.as_deref().and_then(|m| {
-        let m = m.trim_end_matches("::*");
-        m.rsplit("::").next().map(|s| s.trim_matches('{').trim_matches('}').trim().to_string())
-    }).filter(|s| !s.is_empty());
+    let target = module
+        .as_deref()
+        .and_then(|m| {
+            let m = m.trim_end_matches("::*");
+            m.rsplit("::")
+                .next()
+                .map(|s| s.trim_matches('{').trim_matches('}').trim().to_string())
+        })
+        .filter(|s| !s.is_empty());
 
     (module, target)
 }
@@ -282,7 +287,9 @@ fn extract_generic_import<'src>(
             let raw = ctx.text(n).trim();
             let text = raw.trim_matches('"').trim_matches('\'');
             if !text.is_empty() {
-                let target = text.rsplit('/').next()
+                let target = text
+                    .rsplit('/')
+                    .next()
                     .or_else(|| text.rsplit('.').next())
                     .map(|s| s.to_string());
                 return (Some(text.to_string()), target);
@@ -296,7 +303,9 @@ fn extract_generic_import<'src>(
             "string" | "string_literal" | "interpreted_string_literal" => {
                 let t = strip_quotes(ctx.text(child));
                 if !t.is_empty() {
-                    let target = t.rsplit('/').next()
+                    let target = t
+                        .rsplit('/')
+                        .next()
                         .or_else(|| t.rsplit('.').next())
                         .map(|s| s.to_string());
                     return (Some(t.to_string()), target);
@@ -305,7 +314,9 @@ fn extract_generic_import<'src>(
             "dotted_name" | "scoped_identifier" | "module_path" => {
                 let t = ctx.text(child).trim().to_string();
                 if !t.is_empty() {
-                    let target = t.rsplit('/').next()
+                    let target = t
+                        .rsplit('/')
+                        .next()
                         .or_else(|| t.rsplit('.').next())
                         .map(|s| s.to_string());
                     return (Some(t), target);
@@ -326,7 +337,9 @@ fn extract_generic_import<'src>(
             .trim_matches('\'')
             .trim_end_matches(';');
         if !cleaned.is_empty() {
-            let target = cleaned.rsplit('/').next()
+            let target = cleaned
+                .rsplit('/')
+                .next()
                 .or_else(|| cleaned.rsplit('.').next())
                 .map(|s| s.to_string());
             return (Some(cleaned.to_string()), target);
@@ -362,17 +375,21 @@ pub(super) fn is_call_node(kind: &str) -> bool {
             | "call"                    // Ruby
             | "function_call"           // Lua, some others
             | "invocation_expression"   // C# — e.g. `foo.Bar()`
-            | "method_invocation"       // Java — `object.method(args)`
+            | "method_invocation" // Java — `object.method(args)`
     )
 }
 
 /// Extract the callee name from a call node.
-pub(super) fn extract_call_target<'src>(node: Node<'_>, ctx: &ExtractionCtx<'src>) -> Option<String> {
+pub(super) fn extract_call_target<'src>(
+    node: Node<'_>,
+    ctx: &ExtractionCtx<'src>,
+) -> Option<String> {
     for field in &["function", "method", "name"] {
         if let Some(n) = node.child_by_field_name(field) {
             let name = match n.kind() {
                 "member_expression" | "field_expression" | "scoped_identifier" => {
-                    if let Some(prop) = n.child_by_field_name("property")
+                    if let Some(prop) = n
+                        .child_by_field_name("property")
                         .or_else(|| n.child_by_field_name("field"))
                         .or_else(|| n.child_by_field_name("name"))
                     {
@@ -506,11 +523,19 @@ pub(super) fn extract_type_name<'src>(node: Node<'_>, ctx: &ExtractionCtx<'src>)
     match node.kind() {
         "identifier" | "type_identifier" | "simple_identifier" | "constant" => {
             let t = ctx.text(node).trim().to_string();
-            if !t.is_empty() { Some(t) } else { None }
+            if !t.is_empty() {
+                Some(t)
+            } else {
+                None
+            }
         }
         "scoped_identifier" | "scope_resolution" | "member_expression" | "qualified_type" => {
             let t = ctx.text(node).trim().to_string();
-            if !t.is_empty() && t.len() <= 128 { Some(t) } else { None }
+            if !t.is_empty() && t.len() <= 128 {
+                Some(t)
+            } else {
+                None
+            }
         }
         "generic_type" | "parameterized_type" => {
             if let Some(base) = node.child(0) {
@@ -531,9 +556,14 @@ pub(super) fn extract_type_name<'src>(node: Node<'_>, ctx: &ExtractionCtx<'src>)
         _ => {
             for i in 0..node.child_count() {
                 let child = node.child(i).unwrap();
-                if matches!(child.kind(), "identifier" | "type_identifier" | "simple_identifier") {
+                if matches!(
+                    child.kind(),
+                    "identifier" | "type_identifier" | "simple_identifier"
+                ) {
                     let t = ctx.text(child).trim().to_string();
-                    if !t.is_empty() { return Some(t); }
+                    if !t.is_empty() {
+                        return Some(t);
+                    }
                 }
             }
             None
@@ -553,7 +583,9 @@ pub(super) fn for_each_type_child<'src>(
         let child = clause.child(i).unwrap();
         if child.is_named() {
             if let Some(name) = extract_type_name(child, ctx) {
-                ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                ctx.refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: edge_kind,
@@ -563,8 +595,8 @@ pub(super) fn for_each_type_child<'src>(
                     byte_offset: child.start_byte() as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
             }
         }
     }

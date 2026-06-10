@@ -40,7 +40,9 @@ fn return_ref_for(source: &str, qn: &str) -> Option<String> {
 #[test]
 fn struct_without_derive_yields_nothing() {
     assert!(
-        _test_synthesize("struct Config { name: String }").symbols.is_empty(),
+        _test_synthesize("struct Config { name: String }")
+            .symbols
+            .is_empty(),
         "a struct without #[derive(...)] must not trigger synthesis"
     );
 }
@@ -237,7 +239,10 @@ fn default_chains_through_at_index_level() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     for (i, sym) in all_symbols.iter().enumerate() {
-        id_map.insert(("src/config.rs".to_string(), sym.qualified_name.clone()), i as i64 + 1);
+        id_map.insert(
+            ("src/config.rs".to_string(), sym.qualified_name.clone()),
+            i as i64 + 1,
+        );
     }
 
     let index = SymbolIndex::build(&[pf], &id_map);

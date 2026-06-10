@@ -7,8 +7,11 @@ fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str) -> i64 {
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",
         [path],
-    ).unwrap();
-    let fid: i64 = conn.query_row("SELECT id FROM files WHERE path=?1", [path], |r| r.get(0)).unwrap();
+    )
+    .unwrap();
+    let fid: i64 = conn
+        .query_row("SELECT id FROM files WHERE path=?1", [path], |r| r.get(0))
+        .unwrap();
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, ?2, ?3, 'class', 1, 0)",
         rusqlite::params![fid, name, qname],
@@ -39,7 +42,7 @@ fn export_full_graph_includes_all_symbols_and_edges() {
 fn export_with_prefix_filter_excludes_other_namespaces() {
     let db = Database::open_in_memory().unwrap();
     let s1 = insert_symbol(&db, "a.cs", "CatalogService", "App.Catalog.CatalogService");
-    let s2 = insert_symbol(&db, "b.cs", "OrderService",   "App.Orders.OrderService");
+    let s2 = insert_symbol(&db, "b.cs", "OrderService", "App.Orders.OrderService");
     insert_edge(&db, s1, s2);
 
     let graph = export_graph(&db, Some("App.Catalog"), 1000).unwrap();
@@ -53,7 +56,7 @@ fn export_with_prefix_filter_excludes_other_namespaces() {
 fn export_with_concept_filter() {
     let db = Database::open_in_memory().unwrap();
     let s1 = insert_symbol(&db, "a.cs", "AuthService", "App.Auth.AuthService");
-    let _s2 = insert_symbol(&db, "b.cs", "Other",       "App.Other.Other");
+    let _s2 = insert_symbol(&db, "b.cs", "Other", "App.Other.Other");
 
     // Create concept and assign s1 to it.
     db.conn().execute(
@@ -61,10 +64,12 @@ fn export_with_concept_filter() {
         [],
     ).unwrap();
     let cid: i64 = db.conn().last_insert_rowid();
-    db.conn().execute(
-        "INSERT INTO concept_members (concept_id, symbol_id, auto_assigned) VALUES (?1, ?2, 1)",
-        rusqlite::params![cid, s1],
-    ).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO concept_members (concept_id, symbol_id, auto_assigned) VALUES (?1, ?2, 1)",
+            rusqlite::params![cid, s1],
+        )
+        .unwrap();
 
     let graph = export_graph(&db, Some("@auth"), 1000).unwrap();
     assert_eq!(graph.nodes.len(), 1);
@@ -76,7 +81,12 @@ fn export_respects_max_nodes_cap() {
     let db = Database::open_in_memory().unwrap();
     let mut ids = Vec::new();
     for i in 0..20 {
-        ids.push(insert_symbol(&db, "a.cs", &format!("Sym{i}"), &format!("App.Sym{i}")));
+        ids.push(insert_symbol(
+            &db,
+            "a.cs",
+            &format!("Sym{i}"),
+            &format!("App.Sym{i}"),
+        ));
     }
     // Connect them so they pass the "has edges" filter.
     for i in 0..19 {

@@ -2,18 +2,7 @@
 // Builtins and locals.scm content for `elixir` extracted from tree-sitter grammar.
 
 pub const BUILTINS: &[&str] = &[
-    "after",
-    "and",
-    "catch",
-    "do",
-    "else",
-    "end",
-    "fn",
-    "in",
-    "not",
-    "or",
-    "rescue",
-    "when",
+    "after", "and", "catch", "do", "else", "end", "fn", "in", "not", "or", "rescue", "when",
 ];
 
 pub const LOCALS_SCM: Option<&str> = None;

@@ -7,9 +7,9 @@
 // the `detect_language` helper used by the parser layer.
 // =============================================================================
 
+use anyhow::Result;
 use bearwisdom_profile::detect_language as profile_detect_language;
 use bearwisdom_profile::ScannedFile;
-use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 /// A file that was found and is ready to be parsed.
@@ -112,7 +112,9 @@ fn is_dot_ts(path: &Path) -> bool {
 /// files keeps the TS extractor from indexing thousands of XML elements
 /// as TypeScript symbols and refs.
 fn is_likely_qt_linguist(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     use std::io::Read;
     let mut head = [0u8; 256];
     let n = match (&file).take(256).read(&mut head) {
@@ -145,7 +147,9 @@ fn is_dot_css(path: &Path) -> bool {
 /// contains SCSS-specific syntax (`@mixin ` or `@include `). Plain CSS has no
 /// such at-rules; their presence unambiguously indicates a misnamed SCSS partial.
 fn file_looks_like_scss(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     use std::io::Read;
     let mut head = [0u8; 2048];
     let n = match (&file).take(2048).read(&mut head) {
@@ -161,7 +165,9 @@ fn file_looks_like_scss(path: &Path) -> bool {
 /// `(* ... *)` block-comment header style; Puppet manifests use `class`,
 /// `define`, `node`, `include`, `$var = ...` instead.
 fn is_likely_pascal(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     use std::io::Read;
     let mut head = [0u8; 512];
     let n = match (&file).take(512).read(&mut head) {
@@ -208,7 +214,9 @@ fn is_likely_pascal(path: &Path) -> bool {
 /// shebangs, and sigil-prefixed variables — none overlap with these
 /// markers.
 fn is_likely_prolog(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
     use std::io::Read;
     let mut head = [0u8; 1024];
     let n = match (&file).take(1024).read(&mut head) {

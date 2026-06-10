@@ -70,7 +70,9 @@ fn emit_annotation(
     }
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -79,9 +81,9 @@ fn emit_annotation(
             module: first_arg,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -222,7 +224,11 @@ fn first_string_in_args(args_node: &Node, src: &[u8]) -> Option<String> {
 
 fn strip_string(raw: String) -> Option<String> {
     let s = raw.trim_matches('"').trim_matches('\'').to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +277,9 @@ fn extract_when_entry_condition(
                 match child.kind() {
                     "user_type" => {
                         if let Some(name) = name_from_user_type(&child, src) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -280,14 +288,16 @@ fn extract_when_entry_condition(
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "type" => {
                         if let Some(name) = name_from_type_node(&child, src) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,
@@ -296,9 +306,9 @@ fn extract_when_entry_condition(
                                 module: None,
                                 chain: None,
                                 byte_offset: node.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -351,7 +361,9 @@ pub(super) fn extract_lambda_params_in_body(
             let lambda = if child.kind() == "annotated_lambda" {
                 // annotated_lambda → annotation* + lambda_literal
                 let mut lc = child.walk();
-                let found = child.children(&mut lc).find(|c| c.kind() == "lambda_literal");
+                let found = child
+                    .children(&mut lc)
+                    .find(|c| c.kind() == "lambda_literal");
                 found
             } else {
                 Some(child)
@@ -441,11 +453,11 @@ fn push_lambda_param(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -528,10 +540,14 @@ class Mapper {
 "#;
         let r = extract(src);
         assert!(
-            r.symbols.iter().any(|s| s.name == "user" && s.kind == SymbolKind::Variable),
+            r.symbols
+                .iter()
+                .any(|s| s.name == "user" && s.kind == SymbolKind::Variable),
             "lambda param 'user' not found; symbols: {:?}",
-            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+            r.symbols
+                .iter()
+                .map(|s| (&s.name, s.kind))
+                .collect::<Vec<_>>()
         );
     }
 }
-

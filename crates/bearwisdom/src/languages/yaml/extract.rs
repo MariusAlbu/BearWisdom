@@ -43,11 +43,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}];
+    }];
 
     // Walk source for lines of the form `key:` at column 0 (top-level).
     for (line_no, line) in source.lines().enumerate() {
@@ -62,7 +62,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             let key = line[..colon].trim();
             // A single identifier-like token.
             if !key.is_empty()
-                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+                && key
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
             {
                 symbols.push(ExtractedSymbol {
                     name: key.to_string(),
@@ -78,11 +80,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     scope_path: Some(stem.clone()),
                     parent_index: Some(0),
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
     }
@@ -110,13 +112,17 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
     let mut out = Vec::new();
     for (line_no, line) in source.lines().enumerate() {
-        let Some((_, raw_value)) = parse_uses_line(line) else { continue };
+        let Some((_, raw_value)) = parse_uses_line(line) else {
+            continue;
+        };
         let value = strip_inline_comment(raw_value).trim();
         // Strip surrounding quotes if present.
         let value = value.trim_matches(|c| c == '"' || c == '\'');
@@ -129,7 +135,9 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
         if !value.starts_with("./") && !value.starts_with("../") {
             continue;
         }
-        out.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        out.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: value.to_string(),
             kind: EdgeKind::Imports,

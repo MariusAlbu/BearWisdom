@@ -10,7 +10,9 @@
 //! component symbols.
 
 use super::super::markdown::{fenced, host_scan};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractionResult, MemberChain, SegmentKind};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractionResult, MemberChain, SegmentKind,
+};
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut scan = host_scan::scan(source, file_path);
@@ -34,14 +36,22 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
     while i < bytes.len() {
         if inside_any_range(i, &fence_ranges) {
             // Skip to the end of the current fence.
-            if let Some(end) = fence_ranges.iter().find(|(s, e)| i >= *s && i < *e).map(|(_, e)| *e) {
+            if let Some(end) = fence_ranges
+                .iter()
+                .find(|(s, e)| i >= *s && i < *e)
+                .map(|(_, e)| *e)
+            {
                 i = end;
                 continue;
             }
         }
         if inside_any_range(i, &inline_code_ranges) {
             // Skip past the end of the current inline-code span.
-            if let Some(end) = inline_code_ranges.iter().find(|(s, e)| i >= *s && i < *e).map(|(_, e)| *e) {
+            if let Some(end) = inline_code_ranges
+                .iter()
+                .find(|(s, e)| i >= *s && i < *e)
+                .map(|(_, e)| *e)
+            {
                 i = end;
                 continue;
             }
@@ -50,7 +60,9 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
             if let Some((name, consumed)) = scan_jsx_tag(&bytes[i..]) {
                 let line = line_of_byte(bytes, i);
                 let (target_name, chain) = build_jsx_ref(&name);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: host_index,
                     target_name,
                     kind: EdgeKind::Calls,
@@ -60,8 +72,8 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
                     byte_offset: i as u32,
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
-                                    col: 0,
-});
+                    col: 0,
+                });
                 i += consumed;
                 continue;
             }
@@ -174,11 +186,11 @@ fn build_jsx_ref(raw: &str) -> (String, Option<MemberChain>) {
             type_args: Vec::new(),
             optional_chaining: false,
             byte_offset: 0,
-                    declared_type_id: None,
+            declared_type_id: None,
             is_call: false,
             call_args: Vec::new(),
             type_arg_ids: Vec::new(),
-});
+        });
     }
     let leaf = parts.last().unwrap_or(&raw).to_string();
     (leaf, Some(MemberChain { segments }))
@@ -213,7 +225,9 @@ fn scan_jsx_tag(bytes: &[u8]) -> Option<(String, usize)> {
     while i < bytes.len() && is_jsx_ident_byte(bytes[i]) {
         i += 1;
     }
-    let first_segment = std::str::from_utf8(&bytes[first_segment_start..i]).ok()?.to_string();
+    let first_segment = std::str::from_utf8(&bytes[first_segment_start..i])
+        .ok()?
+        .to_string();
     let first_is_upper = first_segment
         .chars()
         .next()

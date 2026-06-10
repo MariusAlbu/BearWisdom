@@ -8,14 +8,14 @@
 //! - `derived_type_definition` → Struct
 //! - `use_statement` → Imports edge
 
-pub mod keywords;
 pub mod extract;
 mod extractors;
-mod walk;
 pub mod fypp;
+pub mod keywords;
+mod walk;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::FORTRAN_HOOKS;
@@ -36,17 +36,25 @@ use crate::types::ExtractionResult;
 pub struct FortranPlugin;
 
 impl LanguagePlugin for FortranPlugin {
-    fn id(&self) -> &str { "fortran" }
+    fn id(&self) -> &str {
+        "fortran"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["fortran"] }
+    fn language_ids(&self) -> &[&str] {
+        &["fortran"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".f90", ".f95", ".f03", ".f08", ".f", ".fypp"] }
+    fn extensions(&self) -> &[&str] {
+        &[".f90", ".f95", ".f03", ".f08", ".f", ".fypp"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_fortran::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         // For .fypp files, attempt fypp preprocessing to generate concrete
@@ -71,14 +79,12 @@ impl LanguagePlugin for FortranPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "use_statement",
-            "subroutine_call",
-            "call_expression",
-        ]
+        &["use_statement", "subroutine_call", "call_expression"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
     // Note: Fortran is case-insensitive — KEYWORDS holds lowercase entries
     // and the resolver below also runs a manual case-folded check before
     // delegating, so refs like `INTEGER` / `integer` both classify.
@@ -91,8 +97,7 @@ impl LanguagePlugin for FortranPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::FORTRAN_HOOKS)
     }
 }

@@ -63,7 +63,13 @@ pub(super) fn dispatch_embedded_regions(
         };
 
         let mut sub = sub_plugin.extract(&sub_text, file_path, &region.language_id);
-        super::local_refs::filter_local_refs(&sub_text, &region.language_id, sub_plugin, &sub.symbols, &mut sub.refs);
+        super::local_refs::filter_local_refs(
+            &sub_text,
+            &region.language_id,
+            sub_plugin,
+            &sub.symbols,
+            &mut sub.refs,
+        );
         super::local_refs::filter_operator_refs(&mut sub.refs);
 
         let symbol_offset = r.symbols.len();
@@ -141,9 +147,9 @@ pub(super) fn dispatch_embedded_regions(
         for slot in processed {
             let Some(mut sym) = slot else { continue };
             let had_parent = sym.parent_index.is_some();
-            sym.parent_index = sym.parent_index.and_then(|old_parent_sub_idx| {
-                sub_remap[old_parent_sub_idx]
-            });
+            sym.parent_index = sym
+                .parent_index
+                .and_then(|old_parent_sub_idx| sub_remap[old_parent_sub_idx]);
             if had_parent && sym.parent_index.is_none() {
                 // The parent was a synthetic wrapper that was dropped.
                 // Promote this symbol to top-level by clearing scope_path.
@@ -164,10 +170,7 @@ pub(super) fn dispatch_embedded_regions(
             // If the owning symbol was a synthetic wrapper that was dropped,
             // fall back to the host file's root symbol (index 0).
             let old_sub_idx = rf.source_symbol_index;
-            rf.source_symbol_index = sub_remap
-                .get(old_sub_idx)
-                .and_then(|m| *m)
-                .unwrap_or(0);
+            rf.source_symbol_index = sub_remap.get(old_sub_idx).and_then(|m| *m).unwrap_or(0);
             rf.line = rf.line.saturating_add(line_offset);
             rf.byte_offset = rf.byte_offset.saturating_add(region_host_byte);
             r.refs.push(rf);

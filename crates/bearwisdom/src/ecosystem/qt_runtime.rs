@@ -34,8 +34,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -47,9 +46,15 @@ const LANGUAGES: &[&str] = &["c", "cpp"];
 pub struct QtRuntimeEcosystem;
 
 impl Ecosystem for QtRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // Qt is declared in the C/C++ project's build manifest. Plain
@@ -107,18 +112,21 @@ impl Ecosystem for QtRuntimeEcosystem {
         Vec::new()
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     // Qt is workspace-level: a single Qt install serves every C/C++
     // translation unit declaring a Qt dep, regardless of how packages
     // were detected.
-    fn is_workspace_global(&self) -> bool { true }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_qt_header_index(dep_roots)
     }
 
@@ -137,7 +145,9 @@ impl Ecosystem for QtRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for QtRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_qt_include()
     }
@@ -170,7 +180,9 @@ fn discover_qt_include() -> Vec<ExternalDepRoot> {
     let mut seen = std::collections::HashSet::new();
 
     let mut push_root = |dir: PathBuf, out: &mut Vec<ExternalDepRoot>| {
-        if !dir.is_dir() { return; }
+        if !dir.is_dir() {
+            return;
+        }
         let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
         if seen.insert(canonical.clone()) {
             out.push(make_root(&dir));
@@ -226,7 +238,9 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
             for ver in newest_subdirs(Path::new(qt_root)) {
                 for kit in newest_subdirs(&ver) {
                     let include = kit.join("include");
-                    if include.is_dir() { out.push(include); }
+                    if include.is_dir() {
+                        out.push(include);
+                    }
                 }
             }
         }
@@ -234,7 +248,9 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
         for triple in ["mingw64", "mingw32", "ucrt64", "clang64"] {
             for qt_ver in ["qt5", "qt6"] {
                 let p = PathBuf::from(format!("C:/msys64/{triple}/include/{qt_ver}"));
-                if p.is_dir() { out.push(p); }
+                if p.is_dir() {
+                    out.push(p);
+                }
             }
         }
         // scoop install (less common but possible).
@@ -242,7 +258,9 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
             let scoop = PathBuf::from(home).join("scoop").join("apps");
             for app in ["qt", "qt5", "qt6"] {
                 let p = scoop.join(app).join("current").join("include");
-                if p.is_dir() { out.push(p); }
+                if p.is_dir() {
+                    out.push(p);
+                }
             }
         }
     }
@@ -254,16 +272,25 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
             for ver in newest_subdirs(Path::new(qt_root)) {
                 for kit in newest_subdirs(&ver) {
                     let include = kit.join("include");
-                    if include.is_dir() { out.push(include); }
+                    if include.is_dir() {
+                        out.push(include);
+                    }
                 }
             }
         }
         // Homebrew.
-        for prefix in ["/opt/homebrew/opt/qt", "/usr/local/opt/qt",
-                       "/opt/homebrew/opt/qt@5", "/usr/local/opt/qt@5",
-                       "/opt/homebrew/opt/qt@6", "/usr/local/opt/qt@6"] {
+        for prefix in [
+            "/opt/homebrew/opt/qt",
+            "/usr/local/opt/qt",
+            "/opt/homebrew/opt/qt@5",
+            "/usr/local/opt/qt@5",
+            "/opt/homebrew/opt/qt@6",
+            "/usr/local/opt/qt@6",
+        ] {
             let p = PathBuf::from(prefix).join("include");
-            if p.is_dir() { out.push(p); }
+            if p.is_dir() {
+                out.push(p);
+            }
         }
     }
 
@@ -281,19 +308,21 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
             "/usr/local/include/qt6",
         ] {
             let p = PathBuf::from(prefix);
-            if p.is_dir() { out.push(p); }
+            if p.is_dir() {
+                out.push(p);
+            }
         }
     }
 
     // aqtinstall lays Qt under ~/Qt/<version>/<kit>/include on every host.
-    if let Some(home) = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-    {
+    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
         let aqt_root = PathBuf::from(home).join("Qt");
         for ver in newest_subdirs(&aqt_root) {
             for kit in newest_subdirs(&ver) {
                 let include = kit.join("include");
-                if include.is_dir() { out.push(include); }
+                if include.is_dir() {
+                    out.push(include);
+                }
             }
         }
     }
@@ -304,8 +333,12 @@ fn autodetect_qt_include_dirs() -> Vec<PathBuf> {
 /// Return the dirs immediately below `parent`, sorted descending by name.
 /// Used to walk version directories where the highest-numbered dir wins.
 fn newest_subdirs(parent: &Path) -> Vec<PathBuf> {
-    if !parent.is_dir() { return Vec::new(); }
-    let Ok(entries) = std::fs::read_dir(parent) else { return Vec::new(); };
+    if !parent.is_dir() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
     let mut subs: Vec<PathBuf> = entries
         .flatten()
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
@@ -342,14 +375,13 @@ fn build_qt_header_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     idx
 }
 
-fn collect_qt_headers_rec(
-    root: &Path,
-    dir: &Path,
-    idx: &mut SymbolLocationIndex,
-    depth: u32,
-) {
-    if depth >= 8 { return; }
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+fn collect_qt_headers_rec(root: &Path, dir: &Path, idx: &mut SymbolLocationIndex, depth: u32) {
+    if depth >= 8 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -358,13 +390,19 @@ fn collect_qt_headers_rec(
             // them to keep the index smaller; user code shouldn't include
             // them.
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "private" { continue }
+                if name == "private" {
+                    continue;
+                }
             }
             collect_qt_headers_rec(root, &path, idx, depth + 1);
             continue;
         }
-        if !ft.is_file() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !ft.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         // Two header forms in Qt:
         //   * Real headers ending in .h / .hpp / .hh
         //   * Camelcase class wrappers with no extension (`QObject`,
@@ -374,11 +412,19 @@ fn collect_qt_headers_rec(
             || name.ends_with(".hxx")
             || name.ends_with(".hh");
         let is_qt_class_wrapper = name.starts_with('Q')
-            && name.chars().nth(1).map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+            && name
+                .chars()
+                .nth(1)
+                .map(|c| c.is_ascii_uppercase())
+                .unwrap_or(false)
             && !name.contains('.');
-        if !is_real_header && !is_qt_class_wrapper { continue }
+        if !is_real_header && !is_qt_class_wrapper {
+            continue;
+        }
 
-        let Ok(rel) = path.strip_prefix(root) else { continue };
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
+        };
         let rel_str = rel.to_string_lossy().replace('\\', "/");
 
         // Register at the relative path (`QtCore/QObject`, `QtCore/qobject.h`).
@@ -412,11 +458,16 @@ fn resolve_qt_header(dep: &ExternalDepRoot, header: &str) -> Option<WalkedFile> 
     // Basename-only fallback.
     let mut stack = vec![dep.root.clone()];
     while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let Ok(ft) = entry.file_type() else { continue };
             let path = entry.path();
-            if ft.is_dir() { stack.push(path); continue; }
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
             if ft.is_file() && path.file_name().and_then(|n| n.to_str()) == Some(header) {
                 return Some(WalkedFile {
                     relative_path: format!("ext:cpp:{}", path.to_string_lossy().replace('\\', "/")),

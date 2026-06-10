@@ -86,7 +86,11 @@ fn chunk_file_with_symbols_aligns_to_boundaries() {
     let chunks = chunk_file(&conn, file_id, content, 512).unwrap();
 
     // We expect at least 2 chunks (one per symbol).
-    assert!(chunks.len() >= 2, "Expected at least 2 chunks, got {}", chunks.len());
+    assert!(
+        chunks.len() >= 2,
+        "Expected at least 2 chunks, got {}",
+        chunks.len()
+    );
 
     // All chunks belong to this file.
     assert!(chunks.iter().all(|c| c.file_id == file_id));
@@ -102,8 +106,14 @@ fn chunk_file_symbol_gets_symbol_id() {
     let chunks = chunk_file(&conn, file_id, content, 512).unwrap();
 
     // At least one chunk should carry the symbol id.
-    let with_sym: Vec<_> = chunks.iter().filter(|c| c.symbol_id == Some(sym_id)).collect();
-    assert!(!with_sym.is_empty(), "At least one chunk should reference the symbol");
+    let with_sym: Vec<_> = chunks
+        .iter()
+        .filter(|c| c.symbol_id == Some(sym_id))
+        .collect();
+    assert!(
+        !with_sym.is_empty(),
+        "At least one chunk should reference the symbol"
+    );
 }
 
 #[test]
@@ -121,9 +131,11 @@ fn chunk_and_store_deletes_and_reinserts() {
     assert_eq!(n1, n2, "Second store should produce same count");
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM code_chunks WHERE file_id = ?1", params![file_id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM code_chunks WHERE file_id = ?1",
+            params![file_id],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, n2 as i64, "DB should contain exactly the new chunks");
 }
@@ -152,11 +164,17 @@ fn oversized_chunk_is_split() {
 
     // Create content larger than 512 tokens (> 2048 chars), no symbols.
     let big_line = "x".repeat(200);
-    let content = (0..20).map(|_| big_line.clone()).collect::<Vec<_>>().join("\n");
+    let content = (0..20)
+        .map(|_| big_line.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
     // 20 lines × 200 chars = 4000 chars → ~1000 tokens > 512 budget
 
     let chunks = chunk_file(&conn, file_id, &content, 512).unwrap();
-    assert!(chunks.len() > 1, "Oversized content should produce multiple chunks");
+    assert!(
+        chunks.len() > 1,
+        "Oversized content should produce multiple chunks"
+    );
 }
 
 #[test]
@@ -164,8 +182,10 @@ fn empty_content_produces_no_chunks() {
     let conn = make_db();
     let file_id = insert_file(&conn, "src/empty.rs");
     let chunks = chunk_file(&conn, file_id, "", 512).unwrap();
-    assert!(chunks.is_empty() || chunks.iter().all(|c| c.content.trim().is_empty()),
-        "Empty content should produce no meaningful chunks");
+    assert!(
+        chunks.is_empty() || chunks.iter().all(|c| c.content.trim().is_empty()),
+        "Empty content should produce no meaningful chunks"
+    );
 }
 
 #[test]
@@ -220,11 +240,16 @@ fn chunker_preserves_distinct_symbol_boundaries() {
     insert_symbol(&conn, file_id, "f1", 0, 2);
     insert_symbol(&conn, file_id, "f2", 4, 6);
     insert_symbol(&conn, file_id, "f3", 8, 10);
-    let content = (0..15).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let content = (0..15)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let chunks = chunk_file(&conn, file_id, &content, 512).unwrap();
-    let symbol_ids: std::collections::HashSet<_> = chunks
-        .iter()
-        .filter_map(|c| c.symbol_id)
-        .collect();
-    assert_eq!(symbol_ids.len(), 3, "each distinct range must get its own symbol_id-attached chunk");
+    let symbol_ids: std::collections::HashSet<_> =
+        chunks.iter().filter_map(|c| c.symbol_id).collect();
+    assert_eq!(
+        symbol_ids.len(),
+        3,
+        "each distinct range must get its own symbol_id-attached chunk"
+    );
 }

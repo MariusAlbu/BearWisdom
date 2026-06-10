@@ -1,10 +1,10 @@
 //! Nix language plugin.
 
-pub mod keywords;
 pub mod bindings;
 pub mod calls;
 pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::NIX_HOOKS;
@@ -48,21 +48,16 @@ impl LanguagePlugin for NixPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "binding",
-            "inherit",
-            "inherit_from",
-        ]
+        &["binding", "inherit", "inherit_from"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "apply_expression",
-            "with_expression",
-        ]
+        &["apply_expression", "with_expression"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     /// In Nix, curried application (`f a b`) parses as two nested
     /// `apply_expression` nodes. The extractor emits one ref per call site
@@ -80,8 +75,7 @@ impl LanguagePlugin for NixPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::NIX_HOOKS)
     }
 }

@@ -4,8 +4,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
-    SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
+    LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -18,10 +18,7 @@ const SWIFT_KIND_TABLE: KindTable = &[
             SymbolKind::Constructor,
         ],
     ),
-    (
-        EdgeKind::Inherits,
-        &[SymbolKind::Class],
-    ),
+    (EdgeKind::Inherits, &[SymbolKind::Class]),
     (
         EdgeKind::Implements,
         &[SymbolKind::Interface, SymbolKind::Trait],
@@ -103,7 +100,8 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

@@ -2,15 +2,15 @@
 // indexer/resolve/engine/mod_tests.rs — sibling tests for engine/mod.rs
 // =============================================================================
 
+use crate::indexer::resolve::engine::chain_walker::{
+    parse_declared_type_from_signature_for_lang, parse_param_types_from_signature,
+    parse_param_types_from_signature_for_lang, parse_return_type_from_signature,
+    resolve_type_name_in_scope, tuple_element,
+};
+use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{
     build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
-use crate::indexer::resolve::engine::chain_walker::{
-    parse_declared_type_from_signature_for_lang,
-    parse_param_types_from_signature, parse_param_types_from_signature_for_lang,
-    parse_return_type_from_signature, resolve_type_name_in_scope, tuple_element,
-};
-use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::type_checker::core::types::Type;
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::{BTreeMap, HashMap};
@@ -46,8 +46,7 @@ fn scope_resolve_walks_outward_and_matches_first() {
     let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
     map.insert("dayjs.Dayjs".to_string(), dummy_sym("dayjs.Dayjs"));
 
-    let resolved =
-        resolve_type_name_in_scope("Dayjs", Some("dayjs.Dayjs"), &map);
+    let resolved = resolve_type_name_in_scope("Dayjs", Some("dayjs.Dayjs"), &map);
     assert_eq!(resolved, "dayjs.Dayjs");
 }
 
@@ -59,8 +58,7 @@ fn scope_resolve_prefers_innermost_shadow() {
     map.insert("ns.Outer.X".to_string(), dummy_sym("ns.Outer.X"));
     map.insert("ns.X".to_string(), dummy_sym("ns.X"));
 
-    let resolved =
-        resolve_type_name_in_scope("X", Some("ns.Outer"), &map);
+    let resolved = resolve_type_name_in_scope("X", Some("ns.Outer"), &map);
     assert_eq!(resolved, "ns.Outer.X");
 }
 
@@ -69,8 +67,7 @@ fn scope_resolve_fallback_to_raw_when_no_match() {
     // When nothing matches, return the raw text so downstream
     // consumers can still use it (e.g. builtin type lookups).
     let map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
-    let resolved =
-        resolve_type_name_in_scope("boolean", Some("dayjs.Dayjs"), &map);
+    let resolved = resolve_type_name_in_scope("boolean", Some("dayjs.Dayjs"), &map);
     assert_eq!(resolved, "boolean");
 }
 
@@ -80,11 +77,7 @@ fn scope_resolve_preserves_already_qualified_name() {
     // even when the shorter form would match.
     let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
     map.insert("dayjs.Dayjs".to_string(), dummy_sym("dayjs.Dayjs"));
-    let resolved = resolve_type_name_in_scope(
-        "dayjs.Dayjs",
-        Some("dayjs.Dayjs"),
-        &map,
-    );
+    let resolved = resolve_type_name_in_scope("dayjs.Dayjs", Some("dayjs.Dayjs"), &map);
     assert_eq!(resolved, "dayjs.Dayjs");
 }
 
@@ -217,7 +210,10 @@ fn parse_declared_type_c_prefix() {
 
 #[test]
 fn parse_declared_type_empty_returns_none() {
-    assert_eq!(parse_declared_type_from_signature_for_lang("", "typescript"), None);
+    assert_eq!(
+        parse_declared_type_from_signature_for_lang("", "typescript"),
+        None
+    );
 }
 
 #[test]
@@ -237,9 +233,7 @@ fn parse_return_type_from_dotnet_signature() {
         Some("Task<T>".to_string())
     );
     assert_eq!(
-        parse_return_type_from_signature(
-            "Add<K, V>(K, V): Dictionary<K, V>"
-        ),
+        parse_return_type_from_signature("Add<K, V>(K, V): Dictionary<K, V>"),
         Some("Dictionary<K, V>".to_string())
     );
     // No trailing colon — Java style leading-return-type. Nothing to extract.
@@ -248,9 +242,7 @@ fn parse_return_type_from_dotnet_signature() {
     assert_eq!(parse_return_type_from_signature("Foo()"), None);
     // Generic with nested angle brackets — colons INSIDE must not fire.
     assert_eq!(
-        parse_return_type_from_signature(
-            "Map<K: Ord, V>(K): V"
-        ),
+        parse_return_type_from_signature("Map<K: Ord, V>(K): V"),
         Some("V".to_string())
     );
     assert_eq!(parse_return_type_from_signature(""), None);
@@ -333,27 +325,25 @@ fn test_symbol_index_by_name() {
         package_id: None,
         content: None,
         has_errors: false,
-        symbols: vec![
-            ExtractedSymbol {
-                name: "Foo".to_string(),
-                qualified_name: "NS.Foo".to_string(),
-                kind: SymbolKind::Class,
-                visibility: Some(Visibility::Public),
-                start_line: 1,
-                end_line: 10,
-                start_col: 0,
-                end_col: 0,
-                signature: None,
-                doc_comment: None,
-                scope_path: Some("NS".to_string()),
-                parent_index: None,
-                byte_offset: 0,
-                            declared_type: None,
-                return_type: None,
-                param_types: Vec::new(),
-                generic_params: Vec::new(),
-},
-        ],
+        symbols: vec![ExtractedSymbol {
+            name: "Foo".to_string(),
+            qualified_name: "NS.Foo".to_string(),
+            kind: SymbolKind::Class,
+            visibility: Some(Visibility::Public),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some("NS".to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
         refs: vec![],
         routes: vec![],
         db_sets: vec![],
@@ -453,7 +443,9 @@ fn class_symbol_return_type_id_interned_into_arena() {
     assert_eq!(index.return_type_name("NS.Foo"), Some("NS.Foo"));
 
     // TypeId surface: same data, interned.
-    let rt_id = index.return_type_id("NS.Foo").expect("class has return_type_id");
+    let rt_id = index
+        .return_type_id("NS.Foo")
+        .expect("class has return_type_id");
     let arena = index.type_arena().expect("SymbolIndex exposes an arena");
     match arena.get(rt_id) {
         Type::Class(q) => assert_eq!(q, "NS.Foo"),
@@ -511,12 +503,17 @@ fn signature_derived_return_type_id_interned() {
     };
 
     let mut id_map = HashMap::new();
-    id_map.insert(("ext:lib/foo.dll".to_string(), "Svc.GetUser".to_string()), 1);
+    id_map.insert(
+        ("ext:lib/foo.dll".to_string(), "Svc.GetUser".to_string()),
+        1,
+    );
 
     let index = SymbolIndex::build(&[pf], &id_map);
 
     assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
-    let rt_id = index.return_type_id("Svc.GetUser").expect("method has return_type_id");
+    let rt_id = index
+        .return_type_id("Svc.GetUser")
+        .expect("method has return_type_id");
     let arena = index.type_arena().expect("SymbolIndex exposes an arena");
     match arena.get(rt_id) {
         Type::Class(q) => assert_eq!(q, "User"),
@@ -663,7 +660,10 @@ fn signature_derived_return_type_arrow_form() {
 
     let mut id_map = HashMap::new();
     id_map.insert(
-        ("ext:site-packages/repo.py".to_string(), "Repo.find_one".to_string()),
+        (
+            "ext:site-packages/repo.py".to_string(),
+            "Repo.find_one".to_string(),
+        ),
         1,
     );
 
@@ -722,13 +722,19 @@ fn signature_derived_return_type_jvm_descriptor() {
 
     let mut id_map = HashMap::new();
     id_map.insert(
-        ("ext:maven/repo.class".to_string(), "com.foo.Repo.findOne".to_string()),
+        (
+            "ext:maven/repo.class".to_string(),
+            "com.foo.Repo.findOne".to_string(),
+        ),
         1,
     );
 
     let index = SymbolIndex::build(&[pf], &id_map);
 
-    assert_eq!(index.return_type_name("com.foo.Repo.findOne"), Some("com.foo.Bar"));
+    assert_eq!(
+        index.return_type_name("com.foo.Repo.findOne"),
+        Some("com.foo.Bar")
+    );
 }
 
 #[test]
@@ -783,11 +789,20 @@ fn c_external_struct_return_hydrates() {
     };
 
     let mut id_map = HashMap::new();
-    id_map.insert(("ext:c:curl/curl.h".to_string(), "curl_slist_append".to_string()), 1);
+    id_map.insert(
+        (
+            "ext:c:curl/curl.h".to_string(),
+            "curl_slist_append".to_string(),
+        ),
+        1,
+    );
 
     let index = SymbolIndex::build(&[pf], &id_map);
 
-    assert_eq!(index.return_type_name("curl_slist_append"), Some("curl_slist"));
+    assert_eq!(
+        index.return_type_name("curl_slist_append"),
+        Some("curl_slist")
+    );
 }
 
 #[test]
@@ -939,7 +954,9 @@ fn method_return_type_id_interned_via_typeref() {
             param_types: Vec::new(),
             generic_params: Vec::new(),
         }],
-        refs: vec![crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs: vec![crate::types::ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             kind: crate::types::EdgeKind::TypeRef,
             source_symbol_index: 0,
             target_name: "User".to_string(),
@@ -970,7 +987,9 @@ fn method_return_type_id_interned_via_typeref() {
 
     // TypeRef-derived path lands in both the string and TypeId surfaces.
     assert_eq!(index.return_type_name("Svc.GetUser"), Some("User"));
-    let rt_id = index.return_type_id("Svc.GetUser").expect("method has return_type_id");
+    let rt_id = index
+        .return_type_id("Svc.GetUser")
+        .expect("method has return_type_id");
     let arena = index.type_arena().expect("SymbolIndex exposes an arena");
     match arena.get(rt_id) {
         Type::Class(q) => assert_eq!(q, "User"),
@@ -1014,7 +1033,9 @@ fn generic_return_type_decomposes_into_apply() {
             param_types: Vec::new(),
             generic_params: Vec::new(),
         }],
-        refs: vec![crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs: vec![crate::types::ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             kind: crate::types::EdgeKind::TypeRef,
             source_symbol_index: 0,
             target_name: "Repository<User>".to_string(),
@@ -1166,7 +1187,10 @@ fn leading_form_generic_return_records_element_args() {
     };
 
     let mut id_map = HashMap::new();
-    id_map.insert(("src/Repo.java".to_string(), "Repo.getItems".to_string()), 1);
+    id_map.insert(
+        ("src/Repo.java".to_string(), "Repo.getItems".to_string()),
+        1,
+    );
 
     let index = SymbolIndex::build(&[pf], &id_map);
 
@@ -1357,11 +1381,11 @@ fn make_class_sym(name: &str, qname: &str) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_pf(path: &str, syms: Vec<ExtractedSymbol>) -> ParsedFile {
@@ -1502,7 +1526,11 @@ fn local_cache_reassignment_last_write_wins() {
 #[test]
 fn local_cache_clear_wipes_bindings() {
     let idx = make_empty_index();
-    idx.install_local_cache(vec![narrowing("x", "Bar", 0, 100)], Vec::new(), Default::default());
+    idx.install_local_cache(
+        vec![narrowing("x", "Bar", 0, 100)],
+        Vec::new(),
+        Default::default(),
+    );
     idx.record_local_type("x".to_string(), "Foo".to_string());
     idx.clear_local_cache();
     assert_eq!(idx.local_type("x"), None);
@@ -1522,7 +1550,11 @@ fn local_cache_install_resets_previous_bindings() {
 fn local_cache_narrowing_honors_cursor() {
     let idx = make_empty_index();
     // Narrowing for `x` as `Bar` valid in byte range [50, 80).
-    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new(), Default::default());
+    idx.install_local_cache(
+        vec![narrowing("x", "Bar", 50, 80)],
+        Vec::new(),
+        Default::default(),
+    );
     // Baseline forward type is `Foo`.
     idx.record_local_type("x".to_string(), "Foo".to_string());
 
@@ -1542,7 +1574,11 @@ fn local_cache_narrowing_honors_cursor() {
 #[test]
 fn local_cache_narrowing_upper_bound_exclusive() {
     let idx = make_empty_index();
-    idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)], Vec::new(), Default::default());
+    idx.install_local_cache(
+        vec![narrowing("x", "Bar", 50, 80)],
+        Vec::new(),
+        Default::default(),
+    );
     // Exactly at end is outside (half-open range).
     idx.set_cursor(80);
     assert_eq!(idx.local_type("x"), None);
@@ -1558,10 +1594,7 @@ fn local_cache_innermost_narrowing_wins() {
     // `x` to `B` across [40, 60). Both apply at cursor 50 — innermost
     // (smallest range) must win because `install_local_cache` sorts by
     // ascending range size.
-    let narrowings = vec![
-        narrowing("x", "A", 0, 100),
-        narrowing("x", "B", 40, 60),
-    ];
+    let narrowings = vec![narrowing("x", "A", 0, 100), narrowing("x", "B", 40, 60)];
     // The resolver sorts these before install; replicate that here.
     let mut sorted = narrowings.clone();
     sorted.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
@@ -1580,24 +1613,54 @@ fn local_cache_default_impls_noop_for_non_symbol_index() {
     // or change behavior when the resolver calls flow-cache methods.
     struct Empty;
     impl SymbolLookup for Empty {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
-        fn has_in_namespace(&self, _: &str) -> bool { false }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] { &[] }
-        fn field_type_name(&self, _: &str) -> Option<&str> { None }
-        fn return_type_name(&self, _: &str) -> Option<&str> { None }
-        fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
-        fn generic_params(&self, _: &str) -> Option<&[String]> { None }
-        fn reexports_from(&self, _: &str) -> &[(String, String)] { &[] }
-        fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+        fn by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+            None
+        }
+        fn members_of(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+            Vec::new()
+        }
+        fn has_in_namespace(&self, _: &str) -> bool {
+            false
+        }
+        fn in_file(&self, _: &str) -> &[SymbolInfo] {
+            &[]
+        }
+        fn field_type_name(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn return_type_name(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn field_type_args(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn generic_params(&self, _: &str) -> Option<&[String]> {
+            None
+        }
+        fn reexports_from(&self, _: &str) -> &[(String, String)] {
+            &[]
+        }
+        fn is_external_name(&self, _: &str, _: &str) -> bool {
+            false
+        }
     }
     let e = Empty;
     // All defaulted methods should be no-ops / None.
     assert_eq!(e.local_type("anything"), None);
-    e.install_local_cache(vec![narrowing("x", "Foo", 0, 10)], Vec::new(), Default::default());
+    e.install_local_cache(
+        vec![narrowing("x", "Foo", 0, 10)],
+        Vec::new(),
+        Default::default(),
+    );
     e.set_cursor(5);
     e.record_local_type("x".to_string(), "Foo".to_string());
     e.clear_local_cache();
@@ -1612,17 +1675,13 @@ fn local_cache_type_cache_generics_roundtrip() {
     // yield type comes out substituted.
     use crate::type_checker::type_env::TypeEnvironment;
     let mut env = TypeEnvironment::new();
-    let pushed = env.enter_generic_context(
-        "UserRepo.findOne",
-        &["User".to_string()],
-        |name| {
-            if name == "UserRepo.findOne" {
-                Some(vec!["T".to_string()])
-            } else {
-                None
-            }
-        },
-    );
+    let pushed = env.enter_generic_context("UserRepo.findOne", &["User".to_string()], |name| {
+        if name == "UserRepo.findOne" {
+            Some(vec!["T".to_string()])
+        } else {
+            None
+        }
+    });
     assert!(pushed);
     assert_eq!(env.resolve("T"), "User");
 }

@@ -196,10 +196,7 @@ pub fn unify_into(
         // A bindable type-parameter slot ⇄ a concrete arg: bind it (once,
         // and never to `Unknown`).
         (Type::Generic { param: p }, arg_ty) => {
-            if bindable.contains(&p)
-                && env.get(p).is_none()
-                && !matches!(arg_ty, Type::Unknown)
-            {
+            if bindable.contains(&p) && env.get(p).is_none() && !matches!(arg_ty, Type::Unknown) {
                 env.bind(p, arg);
             }
         }
@@ -216,8 +213,14 @@ pub fn unify_into(
         // Callback parameter (`(x: T) => U` ⇄ `(x: User) => Account`): unify
         // each parameter position and the return.
         (
-            Type::Function { params: pp, return_: pr },
-            Type::Function { params: ap, return_: ar },
+            Type::Function {
+                params: pp,
+                return_: pr,
+            },
+            Type::Function {
+                params: ap,
+                return_: ar,
+            },
         ) => {
             for (p, a) in pp.iter().zip(ap.iter()) {
                 unify_into(*p, *a, bindable, env, arena);

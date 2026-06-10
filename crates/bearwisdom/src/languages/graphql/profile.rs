@@ -52,7 +52,8 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
@@ -62,7 +63,9 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    // SDL types share one flat schema namespace across `.graphql` files, so a
+    // bare type/custom-scalar ref binds to its sibling-file declaration.
+    namespaceless_global_type_lookup: true,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

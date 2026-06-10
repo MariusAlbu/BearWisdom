@@ -47,17 +47,15 @@ use crate::types::{
 use std::collections::HashSet;
 use tree_sitter::{Node, Parser};
 
-
 use super::method_bodies::{
-    walk_extend_body, walk_proxy_body, walk_protocol_method_specs,
-    walk_reify_body, walk_with_method_bodies,
+    walk_extend_body, walk_protocol_method_specs, walk_proxy_body, walk_reify_body,
+    walk_with_method_bodies,
 };
 use super::reitit::scan_reitit_routes;
 use super::scope::{
-    collect_binding_form_locals, collect_defn_params, collect_fn_params,
-    collect_letfn_locals, collect_params_from_vec, extend_scope, is_clojure_skippable_symbol,
-    is_local, list_head_with_line, list_second_name_with_line, sym_lit_name, sym_lit_ns,
-    sym_name_line,
+    collect_binding_form_locals, collect_defn_params, collect_fn_params, collect_letfn_locals,
+    collect_params_from_vec, extend_scope, is_clojure_skippable_symbol, is_local,
+    list_head_with_line, list_second_name_with_line, sym_lit_name, sym_lit_ns, sym_name_line,
 };
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -79,7 +77,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = Vec::new();
     let locals = HashSet::new();
 
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, &locals);
+    walk_node(
+        tree.root_node(),
+        src,
+        &mut symbols,
+        &mut refs,
+        None,
+        &locals,
+    );
 
     // Reitit data-driven routes: `["/api" ["/users" {:get user-handler}]]`.
     // A second pass — independent of the call-tracking walker — looks for
@@ -96,7 +101,6 @@ pub fn extract(source: &str) -> ExtractionResult {
         tree.root_node().has_error(),
     )
 }
-
 
 // ---------------------------------------------------------------------------
 // Tree walk
@@ -143,7 +147,9 @@ pub(super) fn walk_node(
             && !is_local(node, src, &name, locals)
         {
             let ns = sym_lit_ns(node, src);
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name,
                 kind: EdgeKind::Calls,
@@ -152,9 +158,9 @@ pub(super) fn walk_node(
                 module: ns,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         return;
     }
@@ -166,11 +172,13 @@ pub(super) fn walk_node(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_skippable_symbol(&name)
+                && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -179,16 +187,15 @@ pub(super) fn walk_node(
                     module: ns,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else {
             walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
 }
-
 
 /// Process a `list_lit` node.
 ///
@@ -249,7 +256,9 @@ fn process_list(
         && !is_clojure_skippable_symbol(&head)
         && !head_is_local
     {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
             kind: EdgeKind::Calls,
@@ -258,9 +267,9 @@ fn process_list(
             module: head_ns,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     match head.as_str() {
@@ -270,7 +279,9 @@ fn process_list(
                 return;
             }
             // Emit a ref for the name sym_lit so its sym_name node is covered.
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -279,9 +290,9 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             let vis = if head == "defn-" {
                 Visibility::Private
             } else {
@@ -304,7 +315,9 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -313,9 +326,9 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             let idx = push_sym(
                 node,
                 name,
@@ -331,7 +344,9 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -340,9 +355,9 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             let idx = push_sym(
                 node,
                 name.clone(),
@@ -395,7 +410,9 @@ fn process_list(
             if name.is_empty() {
                 return;
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name.clone(),
                 kind: EdgeKind::Calls,
@@ -404,9 +421,9 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             let idx = push_sym(
                 node,
                 name,
@@ -427,7 +444,9 @@ fn process_list(
         "ns" => {
             let (ns_name, name_line) = list_second_name_with_line(node, src);
             if !ns_name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: ns_name.clone(),
                     kind: EdgeKind::Calls,
@@ -436,9 +455,9 @@ fn process_list(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 let idx = push_sym(
                     node,
                     ns_name,
@@ -457,8 +476,8 @@ fn process_list(
         // `[name expr]` pair, which the let-style collector handles
         // correctly because position 0 is still the binding name.
         "let" | "let*" | "loop" | "binding" | "with-redefs" | "with-bindings"
-        | "with-local-vars" | "if-let" | "when-let" | "if-some"
-        | "when-some" | "when-first" | "dotimes" => {
+        | "with-local-vars" | "if-let" | "when-let" | "if-some" | "when-some" | "when-first"
+        | "dotimes" => {
             let binding_locals = collect_binding_form_locals(node, src, locals);
             walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
         }
@@ -529,16 +548,16 @@ fn is_custom_def_macro(head: &str) -> bool {
     matches!(
         head,
         "def"
-        | "defn"
-        | "defn-"
-        | "defmacro"
-        | "defmulti"
-        | "defmethod"
-        | "defrecord"
-        | "deftype"
-        | "defprotocol"
-        | "definterface"
-        | "defonce"
+            | "defn"
+            | "defn-"
+            | "defmacro"
+            | "defmulti"
+            | "defmethod"
+            | "defrecord"
+            | "deftype"
+            | "defprotocol"
+            | "definterface"
+            | "defonce"
     ) == false
         && head.len() > 3
         && head
@@ -574,11 +593,13 @@ fn walk_def_macro_body(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_skippable_symbol(&name)
+                && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -664,11 +685,13 @@ fn walk_call_args(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_skippable_symbol(&name)
+                && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
@@ -677,9 +700,9 @@ fn walk_call_args(
                     module: ns,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         } else {
             walk_node(child, src, symbols, refs, parent_idx, locals);
@@ -753,11 +776,11 @@ fn extract_protocol_methods(
             scope_path: None,
             parent_index: parent_idx,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-};
+        };
         // Try to build a signature from the first vec_lit child (params).
         let mut inner = child.walk();
         for ic in child.children(&mut inner) {
@@ -774,56 +797,97 @@ fn extract_protocol_methods(
 }
 
 fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx: usize) {
-    // Walk children of the ns form looking for vec_lit / list_lit with :require/:use/:import
+    // Walk children of the ns form looking for vec_lit / list_lit with
+    // :require/:use/:import. A whole require clause may also sit inside a
+    // reader conditional — `#?(:clj (:require ...) :cljs ...)` — so descend
+    // into read_cond_lit branches and re-run the same scan there.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "vec_lit" || child.kind() == "list_lit" {
-            let mut inner = child.walk();
-            let mut first = true;
-            let mut is_import = false;
-            for inner_child in child.children(&mut inner) {
-                if inner_child.kind() == "kwd_lit" && first {
-                    let kw = inner_child.utf8_text(src).unwrap_or("");
-                    is_import = matches!(kw, ":require" | ":use" | ":import");
-                    first = false;
-                    continue;
-                }
-                if is_import {
-                    let name = extract_first_sym(inner_child, src);
-                    if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
-                            source_symbol_index: sym_idx,
-                            target_name: name.clone(),
-                            kind: EdgeKind::Imports,
-                            line: inner_child.start_position().row as u32,
-                            col: 0,
-                            module: None,
-                            chain: None,
-                            byte_offset: inner_child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
-                        // Per-name `:refer [n1 n2]` imports — emit each
-                        // referred symbol as its own Imports ref so the
-                        // resolver can match unqualified call sites
-                        // (`(match? a b)`) back to their source namespace
-                        // without static analysis of what's `:refer :all`'d.
-                        // Module on these refs IS the source namespace,
-                        // which infer_external_namespace then surfaces.
-                        if inner_child.kind() == "vec_lit" {
-                            collect_refer_names(
-                                inner_child,
-                                src,
-                                &name,
-                                sym_idx,
-                                refs,
-                            );
-                        }
-                    }
+        match child.kind() {
+            "vec_lit" | "list_lit" => extract_ns_clause(child, src, refs, sym_idx),
+            "read_cond_lit" | "splicing_read_cond_lit" => {
+                for branch in reader_conditional_branches(child) {
+                    extract_ns_clause(branch, src, refs, sym_idx);
                 }
             }
+            _ => {}
         }
     }
+}
+
+/// Scan one `(:require ...)` / `(:use ...)` / `(:import ...)` clause for
+/// import entries. Import entries may be plain `vec_lit`s
+/// (`[a.b :refer [foo]]`) or wrapped in a reader conditional
+/// (`#?(:clj [a.b :refer [foo]] :cljs [...])`) — both yield Imports refs.
+fn extract_ns_clause(clause: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx: usize) {
+    let mut inner = clause.walk();
+    let mut first = true;
+    let mut is_import = false;
+    for inner_child in clause.children(&mut inner) {
+        if inner_child.kind() == "kwd_lit" && first {
+            let kw = inner_child.utf8_text(src).unwrap_or("");
+            is_import = matches!(kw, ":require" | ":use" | ":import");
+            first = false;
+            continue;
+        }
+        if !is_import {
+            continue;
+        }
+        match inner_child.kind() {
+            "read_cond_lit" | "splicing_read_cond_lit" => {
+                for entry in reader_conditional_branches(inner_child) {
+                    emit_import_entry(entry, src, refs, sym_idx);
+                }
+            }
+            _ => emit_import_entry(inner_child, src, refs, sym_idx),
+        }
+    }
+}
+
+/// Emit an Imports ref for a single require entry (`a.b` or
+/// `[a.b :refer [foo]]`), plus per-name `:refer` refs when the entry is a vec.
+fn emit_import_entry(entry: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx: usize) {
+    let name = extract_first_sym(entry, src);
+    if name.is_empty() {
+        return;
+    }
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: sym_idx,
+        target_name: name.clone(),
+        kind: EdgeKind::Imports,
+        line: entry.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: entry.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+    // Per-name `:refer [n1 n2]` imports — emit each referred symbol as its
+    // own Imports ref so the resolver can match unqualified call sites
+    // (`(match? a b)`) back to their source namespace without static
+    // analysis of what's `:refer :all`'d. Module on these refs IS the source
+    // namespace, which infer_external_namespace then surfaces.
+    if entry.kind() == "vec_lit" {
+        collect_refer_names(entry, src, &name, sym_idx, refs);
+    }
+}
+
+/// Yield the data branches of a reader-conditional node, skipping the
+/// `:clj` / `:cljs` / `:default` platform tags. A `#?(:clj A :cljs B)` form
+/// is a flat sequence of alternating `kwd_lit` tags and value nodes; the
+/// values are the import entries (or clauses) we want.
+fn reader_conditional_branches(node: Node) -> Vec<Node> {
+    let mut out = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_named() && child.kind() != "kwd_lit" {
+            out.push(child);
+        }
+    }
+    out
 }
 
 /// Inside a `[ns :refer [n1 n2 ...]]` vec, find the `:refer` keyword
@@ -855,7 +919,9 @@ fn collect_refer_names(
                 if name.is_empty() {
                     continue;
                 }
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: EdgeKind::Imports,
@@ -914,11 +980,11 @@ fn push_sym(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     idx
 }
 

@@ -14,7 +14,9 @@ fn parse_lambda_call_args(source: &str) -> Vec<CallArg> {
         .into_iter()
         .find(|r| {
             r.kind == crate::types::EdgeKind::Calls
-                && r.call_args.iter().any(|a| matches!(a, CallArg::Lambda { .. }))
+                && r.call_args
+                    .iter()
+                    .any(|a| matches!(a, CallArg::Lambda { .. }))
         })
         .map(|r| r.call_args)
         .unwrap_or_default()

@@ -94,7 +94,9 @@ fn emit_type_ref_for_type_node(
     if type_name.is_empty() {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: type_name,
         kind: EdgeKind::TypeRef,
@@ -103,7 +105,7 @@ fn emit_type_ref_for_type_node(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }

@@ -24,11 +24,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let bytes = source.as_bytes();
@@ -72,11 +72,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             scope_path: Some(file_name.clone()),
                             parent_index: Some(host_index),
                             byte_offset: 0,
-                                                    declared_type: None,
+                            declared_type: None,
                             return_type: None,
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
-});
+                        });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix('>') {
                     // Partial include `{{> partial-name args}}` or
@@ -87,7 +87,9 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     // for the block content of a partial-block — not a real
                     // partial reference, no file to resolve.
                     if !name.is_empty() && name != "@partial-block" {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: host_index,
                             target_name: name,
                             kind: EdgeKind::Imports,
@@ -97,8 +99,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             byte_offset: i as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                                    col: 0,
-});
+                            col: 0,
+                        });
                     }
                 }
             }
@@ -125,10 +127,7 @@ fn find_close(bytes: &[u8], triple: bool) -> Option<usize> {
     let needed = if triple { 3 } else { 2 };
     let mut i = 0;
     while i + needed <= bytes.len() {
-        if bytes[i] == b'}'
-            && bytes[i + 1] == b'}'
-            && (!triple || bytes[i + 2] == b'}')
-        {
+        if bytes[i] == b'}' && bytes[i + 1] == b'}' && (!triple || bytes[i + 2] == b'}') {
             return Some(i);
         }
         i += 1;

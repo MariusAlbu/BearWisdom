@@ -85,7 +85,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Await { expr: Box::new(inner) }
+            CallArg::Await {
+                expr: Box::new(inner),
+            }
         }
 
         // `*xs` (iterable unpack) / `**kw` (mapping unpack) — single child,
@@ -95,7 +97,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, src, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Spread { expr: Box::new(inner) }
+            CallArg::Spread {
+                expr: Box::new(inner),
+            }
         }
 
         // `container[index]` — `value` is the container, `subscript` is the
@@ -165,7 +169,9 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         // `lambda u: u.name` — capture the lambda's own positional parameter
         // names so the chain walker can type them from the higher-order
         // method's callback-parameter signature.
-        "lambda" => CallArg::Lambda { params: lambda_param_names(node, src) },
+        "lambda" => CallArg::Lambda {
+            params: lambda_param_names(node, src),
+        },
 
         _ => CallArg::Other,
     }
@@ -281,9 +287,7 @@ pub(super) fn build_import_map(root: tree_sitter::Node, source: &str) -> HashMap
                     Some(m) => node_text(&m, source).trim_start_matches('.').to_string(),
                     None => continue,
                 };
-                let module_id = child
-                    .child_by_field_name("module_name")
-                    .map(|n| n.id());
+                let module_id = child.child_by_field_name("module_name").map(|n| n.id());
 
                 let mut ic = child.walk();
                 for item in child.children(&mut ic) {
@@ -338,7 +342,9 @@ pub(super) fn extract_calls_from_body(
                 // is satisfied (isinstance IS a call, just with extra semantics).
                 if func_name == "isinstance" {
                     extract_isinstance_type_ref(&child, source, source_symbol_index, refs);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: "isinstance".to_string(),
                         kind: EdgeKind::Calls,
@@ -347,9 +353,9 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                         byte_offset: func_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                     extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
                     continue;
                 }
@@ -378,10 +384,17 @@ pub(super) fn extract_calls_from_body(
                         Some(t.rsplit('.').next().unwrap_or(&t).to_string())
                     });
 
-                crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                crate::languages::emit_chain_type_ref(
+                    &chain,
+                    source_symbol_index,
+                    &func_node,
+                    refs,
+                );
                 if let Some(target_name) = target_name {
                     let call_args = extract_call_args(&child, source);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: EdgeKind::Calls,
@@ -390,9 +403,9 @@ pub(super) fn extract_calls_from_body(
                         module: resolved_module,
                         chain,
                         byte_offset: func_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args,
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
             }
         }
@@ -454,7 +467,9 @@ fn emit_isinstance_type_node(
         "identifier" => {
             let name = node_text(node, source);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -463,9 +478,9 @@ fn emit_isinstance_type_node(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // `isinstance(x, (Admin, User))` — tuple of types.
@@ -475,7 +490,9 @@ fn emit_isinstance_type_node(
                 if child.kind() == "identifier" {
                     let name = node_text(&child, source);
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -484,9 +501,9 @@ fn emit_isinstance_type_node(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -495,7 +512,9 @@ fn emit_isinstance_type_node(
         "attribute" => {
             let name = node_text(node, source);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -504,9 +523,9 @@ fn emit_isinstance_type_node(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         _ => {}
@@ -543,11 +562,11 @@ fn build_chain_inner(node: &Node, src: &str, segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -563,11 +582,11 @@ fn build_chain_inner(node: &Node, src: &str, segments: &mut Vec<ChainSegment>) -
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
 
@@ -605,7 +624,9 @@ pub(super) fn extract_import_statement(
                 };
                 // `import foo.bar` binds the TOP segment `foo` as the local name.
                 let local = parts.first().copied().unwrap_or(full.as_str());
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: dunder_all.contains(local),
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: dunder_all.contains(local),
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -614,9 +635,9 @@ pub(super) fn extract_import_statement(
                     module,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
@@ -632,8 +653,12 @@ pub(super) fn extract_import_statement(
                     let local = child
                         .child_by_field_name("alias")
                         .map(|a| node_text(&a, source))
-                        .unwrap_or_else(|| parts.first().map(|s| s.to_string()).unwrap_or_default());
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: dunder_all.contains(&local),
+                        .unwrap_or_else(|| {
+                            parts.first().map(|s| s.to_string()).unwrap_or_default()
+                        });
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: dunder_all.contains(&local),
                         source_symbol_index: current_symbol_count,
                         target_name: target,
                         kind: EdgeKind::Imports,
@@ -642,9 +667,9 @@ pub(super) fn extract_import_statement(
                         module,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {}
@@ -659,9 +684,9 @@ pub(super) fn extract_import_from_statement(
     current_symbol_count: usize,
     dunder_all: &FxHashSet<String>,
 ) {
-    let module = node.child_by_field_name("module_name").map(|m| {
-        node_text(&m, source).trim_start_matches('.').to_string()
-    });
+    let module = node
+        .child_by_field_name("module_name")
+        .map(|m| node_text(&m, source).trim_start_matches('.').to_string());
 
     let module_name_node = node.child_by_field_name("module_name");
 
@@ -682,7 +707,9 @@ pub(super) fn extract_import_from_statement(
                 let name = node_text(&child, source);
                 // `from .mod import A` binds `A` (the imported name) locally.
                 let is_reexport = dunder_all.contains(&name);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport,
                     source_symbol_index: current_symbol_count,
                     target_name: name,
                     kind: EdgeKind::Imports,
@@ -691,9 +718,9 @@ pub(super) fn extract_import_from_statement(
                     module: module.clone(),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
@@ -705,7 +732,9 @@ pub(super) fn extract_import_from_statement(
                         .map(|a| node_text(&a, source))
                         .unwrap_or_else(|| name.clone());
                     let is_reexport = dunder_all.contains(&local);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport,
                         source_symbol_index: current_symbol_count,
                         target_name: name,
                         kind: EdgeKind::Imports,
@@ -714,13 +743,15 @@ pub(super) fn extract_import_from_statement(
                         module: module.clone(),
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "wildcard_import" => {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: "*".to_string(),
                     kind: EdgeKind::Imports,
@@ -729,9 +760,9 @@ pub(super) fn extract_import_from_statement(
                     module: module.clone(),
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             _ => {}
         }
@@ -755,7 +786,13 @@ pub(super) fn extract_fstring_calls(
             let mut ic = child.walk();
             for expr in child.children(&mut ic) {
                 if expr.is_named() {
-                    extract_calls_from_body(&expr, source, enclosing_symbol_index, refs, import_map);
+                    extract_calls_from_body(
+                        &expr,
+                        source,
+                        enclosing_symbol_index,
+                        refs,
+                        import_map,
+                    );
                 }
             }
         }

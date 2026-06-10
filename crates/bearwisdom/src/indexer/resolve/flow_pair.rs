@@ -73,7 +73,8 @@ pub(super) fn flush_flow_emissions(
     {
         let paths: Vec<&str> = {
             let mut seen = std::collections::HashSet::new();
-            emissions.iter()
+            emissions
+                .iter()
                 .map(|(p, _, _)| p.as_str())
                 .filter(|p| seen.insert(*p))
                 .collect()
@@ -84,20 +85,25 @@ pub(super) fn flush_flow_emissions(
                 .collect::<Vec<_>>()
                 .join(",");
             let sql = format!("SELECT id, path FROM files WHERE path IN ({placeholders})");
-            let mut stmt = conn.prepare_cached(&sql)
+            let mut stmt = conn
+                .prepare_cached(&sql)
                 .context("Failed to prepare file_id lookup for flow emissions")?;
             let params: Vec<_> = chunk.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-            let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))
+            let mut rows = stmt
+                .query(rusqlite::params_from_iter(params.iter()))
                 .context("Failed to query file_ids for flow emissions")?;
             while let Some(row) = rows.next()? {
                 let id: i64 = row.get(0)?;
                 let path: String = row.get(1)?;
-                path_to_id.entry(
-                    emissions.iter()
-                        .find(|(p, _, _)| p == &path)
-                        .map(|(p, _, _)| p.as_str())
-                        .unwrap_or_default(),
-                ).or_insert(id);
+                path_to_id
+                    .entry(
+                        emissions
+                            .iter()
+                            .find(|(p, _, _)| p == &path)
+                            .map(|(p, _, _)| p.as_str())
+                            .unwrap_or_default(),
+                    )
+                    .or_insert(id);
             }
         }
     }
@@ -110,9 +116,14 @@ pub(super) fn flush_flow_emissions(
         line: u32,
         emission: &'a FlowEmission,
     }
-    let resolved: Vec<Resolved<'_>> = emissions.iter()
+    let resolved: Vec<Resolved<'_>> = emissions
+        .iter()
         .filter_map(|(path, line, emission)| {
-            path_to_id.get(path.as_str()).map(|&file_id| Resolved { file_id, line: *line, emission })
+            path_to_id.get(path.as_str()).map(|&file_id| Resolved {
+                file_id,
+                line: *line,
+                emission,
+            })
         })
         .collect();
 
@@ -155,14 +166,17 @@ pub(super) fn flush_flow_emissions(
         let mut seen: std::collections::HashSet<(i64, u32)> = Default::default();
         for r in &resolved {
             let key = (r.file_id, r.line);
-            if !seen.insert(key) { continue; }
+            if !seen.insert(key) {
+                continue;
+            }
             let qn = stmt
-                .query_row(rusqlite::params![r.file_id, r.line], |row| row.get::<_, String>(0))
+                .query_row(rusqlite::params![r.file_id, r.line], |row| {
+                    row.get::<_, String>(0)
+                })
                 .or_else(|_| {
-                    following_stmt.query_row(
-                        rusqlite::params![r.file_id, r.line],
-                        |row| row.get::<_, String>(0),
-                    )
+                    following_stmt.query_row(rusqlite::params![r.file_id, r.line], |row| {
+                        row.get::<_, String>(0)
+                    })
                 })
                 .ok();
             if let Some(qn) = qn {
@@ -235,68 +249,87 @@ pub(super) fn flush_flow_emissions(
         // wildcard passes share. Returns Ok(()) regardless of insert outcome;
         // pair tracking is updated via the captured `seen_pairs` /
         // `named_channel_paired` sets.
-        let mut pair_one = |pi: usize,
-                            ci: usize,
-                            url_pattern_override: Option<&str>,
-                            seen_pairs: &mut std::collections::HashSet<(i64, u32, i64, u32, &'static str)>,
-                            named_channel_paired: &mut std::collections::HashSet<usize>|
-         -> Result<()> {
-            let pr = &resolved[pi];
-            let cr = &resolved[ci];
-            let FlowEmission::NamedChannel { kind, method: prod_method, name, streaming: prod_streaming, .. } = pr.emission else {
-                return Ok(());
-            };
-            let (cons_method, cons_streaming) = if let FlowEmission::NamedChannel { method, streaming, .. } = &cr.emission {
-                (method.map(|m| m.as_str()), *streaming)
-            } else {
-                (None, None)
-            };
-            if !url_pattern::http_methods_compatible(
-                prod_method.map(|m| m.as_str()),
-                cons_method,
-            ) {
-                return Ok(());
-            }
-            // Streaming compatibility for RPC pairs: a unary producer must
-            // not pair with a streaming consumer (or vice versa). `None`
-            // and `Some(Unary)` are treated as equivalent so existing
-            // detectors that don't set streaming still pair correctly.
-            if !streaming_kinds_compatible(*prod_streaming, cons_streaming) {
-                return Ok(());
-            }
-            let edge_type = kind.edge_type_str();
-            let pair_key = (pr.file_id, pr.line, cr.file_id, cr.line, edge_type);
-            if !seen_pairs.insert(pair_key) {
-                named_channel_paired.insert(pi);
-                named_channel_paired.insert(ci);
-                return Ok(());
-            }
-            let url = url_pattern_override.unwrap_or(name.as_str());
-            // Stream-aware metadata: when the producer or consumer carries
-            // a non-unary StreamKind, record it on the edge. Unary RPC and
-            // non-RPC edges get NULL metadata.
-            let metadata = (*prod_streaming).or(cons_streaming).and_then(|s| {
-                if s == crate::indexer::resolve::flow_emit::StreamKind::Unary {
-                    None
-                } else {
-                    Some(s.as_str().to_string())
+        let mut pair_one =
+            |pi: usize,
+             ci: usize,
+             url_pattern_override: Option<&str>,
+             seen_pairs: &mut std::collections::HashSet<(i64, u32, i64, u32, &'static str)>,
+             named_channel_paired: &mut std::collections::HashSet<usize>|
+             -> Result<()> {
+                let pr = &resolved[pi];
+                let cr = &resolved[ci];
+                let FlowEmission::NamedChannel {
+                    kind,
+                    method: prod_method,
+                    name,
+                    streaming: prod_streaming,
+                    ..
+                } = pr.emission
+                else {
+                    return Ok(());
+                };
+                let (cons_method, cons_streaming) =
+                    if let FlowEmission::NamedChannel {
+                        method, streaming, ..
+                    } = &cr.emission
+                    {
+                        (method.map(|m| m.as_str()), *streaming)
+                    } else {
+                        (None, None)
+                    };
+                if !url_pattern::http_methods_compatible(
+                    prod_method.map(|m| m.as_str()),
+                    cons_method,
+                ) {
+                    return Ok(());
                 }
-            });
-            let n = pair_stmt.execute(rusqlite::params![
-                pr.file_id, pr.line, qname_for(pr.file_id, pr.line),
-                cr.file_id, cr.line, qname_for(cr.file_id, cr.line),
-                edge_type, kind.protocol_str(),
-                prod_method.map(|m| m.as_str()),
-                Some(url),
-                0.9_f64,
-                metadata,
-            ]).context("Failed to insert paired flow_edge")?;
-            if n > 0 {
-                named_channel_paired.insert(pi);
-                named_channel_paired.insert(ci);
-            }
-            Ok(())
-        };
+                // Streaming compatibility for RPC pairs: a unary producer must
+                // not pair with a streaming consumer (or vice versa). `None`
+                // and `Some(Unary)` are treated as equivalent so existing
+                // detectors that don't set streaming still pair correctly.
+                if !streaming_kinds_compatible(*prod_streaming, cons_streaming) {
+                    return Ok(());
+                }
+                let edge_type = kind.edge_type_str();
+                let pair_key = (pr.file_id, pr.line, cr.file_id, cr.line, edge_type);
+                if !seen_pairs.insert(pair_key) {
+                    named_channel_paired.insert(pi);
+                    named_channel_paired.insert(ci);
+                    return Ok(());
+                }
+                let url = url_pattern_override.unwrap_or(name.as_str());
+                // Stream-aware metadata: when the producer or consumer carries
+                // a non-unary StreamKind, record it on the edge. Unary RPC and
+                // non-RPC edges get NULL metadata.
+                let metadata = (*prod_streaming).or(cons_streaming).and_then(|s| {
+                    if s == crate::indexer::resolve::flow_emit::StreamKind::Unary {
+                        None
+                    } else {
+                        Some(s.as_str().to_string())
+                    }
+                });
+                let n = pair_stmt
+                    .execute(rusqlite::params![
+                        pr.file_id,
+                        pr.line,
+                        qname_for(pr.file_id, pr.line),
+                        cr.file_id,
+                        cr.line,
+                        qname_for(cr.file_id, cr.line),
+                        edge_type,
+                        kind.protocol_str(),
+                        prod_method.map(|m| m.as_str()),
+                        Some(url),
+                        0.9_f64,
+                        metadata,
+                    ])
+                    .context("Failed to insert paired flow_edge")?;
+                if n > 0 {
+                    named_channel_paired.insert(pi);
+                    named_channel_paired.insert(ci);
+                }
+                Ok(())
+            };
 
         // Exact-match pass.
         for (key, prod_idxs) in &producers {
@@ -477,7 +510,12 @@ pub(super) fn flush_flow_emissions(
         // making it reachable under either name.
         let mut entity_entries: Vec<(&str, usize)> = Vec::new();
         for (idx, r) in resolved.iter().enumerate() {
-            if let FlowEmission::DbEntity { table_name_hint, base_name_hint, .. } = r.emission {
+            if let FlowEmission::DbEntity {
+                table_name_hint,
+                base_name_hint,
+                ..
+            } = r.emission
+            {
                 if let Some(tname) = table_name_hint.as_deref() {
                     if !tname.is_empty() {
                         entity_entries.push((tname, idx));
@@ -503,7 +541,8 @@ pub(super) fn flush_flow_emissions(
         // case-insensitive pluralization-tolerant comparison.
         let find_entities = |name: &str| -> Vec<usize> {
             let mut seen = std::collections::HashSet::new();
-            entity_entries.iter()
+            entity_entries
+                .iter()
                 .filter(|(key, _)| url_pattern::entity_names_match(name, key))
                 .map(|(_, idx)| *idx)
                 .filter(|idx| seen.insert(*idx))
@@ -512,18 +551,30 @@ pub(super) fn flush_flow_emissions(
 
         // Pair DbQuery ↔ DbEntity.
         for (idx, r) in resolved.iter().enumerate() {
-            if let FlowEmission::DbQuery { entity_name, operation } = r.emission {
-                if entity_name.is_empty() { continue; }
+            if let FlowEmission::DbQuery {
+                entity_name,
+                operation,
+            } = r.emission
+            {
+                if entity_name.is_empty() {
+                    continue;
+                }
                 for ei in find_entities(entity_name) {
                     let er = &resolved[ei];
-                    let n = pair_stmt.execute(rusqlite::params![
-                        r.file_id, r.line, qname_for(r.file_id, r.line),
-                        er.file_id, er.line, qname_for(er.file_id, er.line),
-                        "db_query",
-                        Some(entity_name.as_str()),
-                        0.85_f64,
-                        Some(operation.as_str()),
-                    ]).context("Failed to insert db-query flow_edge")?;
+                    let n = pair_stmt
+                        .execute(rusqlite::params![
+                            r.file_id,
+                            r.line,
+                            qname_for(r.file_id, r.line),
+                            er.file_id,
+                            er.line,
+                            qname_for(er.file_id, er.line),
+                            "db_query",
+                            Some(entity_name.as_str()),
+                            0.85_f64,
+                            Some(operation.as_str()),
+                        ])
+                        .context("Failed to insert db-query flow_edge")?;
                     if n > 0 {
                         db_paired.insert(idx);
                         db_paired.insert(ei);
@@ -534,18 +585,30 @@ pub(super) fn flush_flow_emissions(
 
         // Pair MigrationTarget ↔ DbEntity.
         for (idx, r) in resolved.iter().enumerate() {
-            if let FlowEmission::MigrationTarget { table_name, direction } = r.emission {
-                if table_name.is_empty() { continue; }
+            if let FlowEmission::MigrationTarget {
+                table_name,
+                direction,
+            } = r.emission
+            {
+                if table_name.is_empty() {
+                    continue;
+                }
                 for ei in find_entities(table_name) {
                     let er = &resolved[ei];
-                    let n = pair_stmt.execute(rusqlite::params![
-                        r.file_id, r.line, qname_for(r.file_id, r.line),
-                        er.file_id, er.line, qname_for(er.file_id, er.line),
-                        "migration_target",
-                        Some(table_name.as_str()),
-                        0.85_f64,
-                        Some(direction.as_str()),
-                    ]).context("Failed to insert migration-target flow_edge")?;
+                    let n = pair_stmt
+                        .execute(rusqlite::params![
+                            r.file_id,
+                            r.line,
+                            qname_for(r.file_id, r.line),
+                            er.file_id,
+                            er.line,
+                            qname_for(er.file_id, er.line),
+                            "migration_target",
+                            Some(table_name.as_str()),
+                            0.85_f64,
+                            Some(direction.as_str()),
+                        ])
+                        .context("Failed to insert migration-target flow_edge")?;
                     if n > 0 {
                         db_paired.insert(idx);
                         db_paired.insert(ei);
@@ -573,17 +636,19 @@ pub(super) fn flush_flow_emissions(
         if named_channel_paired.contains(&idx) || db_paired.contains(&idx) {
             continue;
         }
-        let n = single_stmt.execute(rusqlite::params![
-            r.file_id,
-            r.line,
-            qname_for(r.file_id, r.line),
-            r.emission.edge_type(),
-            r.emission.protocol(),
-            r.emission.http_method_str(),
-            r.emission.url_pattern(),
-            0.9_f64,
-            r.emission.streaming_str(),
-        ]).context("Failed to insert single-ended flow_edge")?;
+        let n = single_stmt
+            .execute(rusqlite::params![
+                r.file_id,
+                r.line,
+                qname_for(r.file_id, r.line),
+                r.emission.edge_type(),
+                r.emission.protocol(),
+                r.emission.http_method_str(),
+                r.emission.url_pattern(),
+                0.9_f64,
+                r.emission.streaming_str(),
+            ])
+            .context("Failed to insert single-ended flow_edge")?;
         written += n as u32;
     }
 

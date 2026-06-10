@@ -5,19 +5,19 @@
 use tree_sitter::Node;
 
 use super::calls::extract_calls_from_body;
+use super::declarations::{
+    extract_enum_body, push_declaration, push_function_def, push_include, push_namespace,
+    push_namespace_alias, push_specifier, push_typedef,
+};
 use super::helpers::node_text;
 use super::macro_misparse::{
     detect_macro_class_misparse, emit_misparsed_base_class_refs, push_misparsed_class,
 };
 use super::predicates;
-use super::declarations::{
-    extract_enum_body, push_declaration, push_function_def, push_include, push_namespace,
-    push_namespace_alias, push_specifier, push_typedef,
-};
 use super::preproc::{push_preproc_def, push_preproc_function_def};
 use super::templates::{push_alias_decl, push_template_decl, push_using_decl};
-use super::typerefs::{emit_typerefs_for_type_descriptor, extract_bases};
 use super::type_refs::emit_param_type_refs;
+use super::typerefs::{emit_typerefs_for_type_descriptor, extract_bases};
 use crate::parser::scope_tree;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 
@@ -44,7 +44,13 @@ pub(super) fn extract_node<'a>(
             // C++ `template<typename T> class/struct/fn { ... }`
             "template_declaration" if language != "c" => {
                 let (idx, inner_node) = push_template_decl(
-                    &child, src, scope_tree, language, symbols, refs, parent_index,
+                    &child,
+                    src,
+                    scope_tree,
+                    language,
+                    symbols,
+                    refs,
+                    parent_index,
                 );
                 if let Some(inner) = inner_node {
                     // Inherit/bases for class/struct inner.
@@ -61,7 +67,8 @@ pub(super) fn extract_node<'a>(
                     if let Some(body) = body_opt {
                         match inner.kind() {
                             "function_definition" => {
-                                let sym_idx = idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
+                                let sym_idx =
+                                    idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
                                 extract_calls_from_body(&body, src, language, sym_idx, refs);
                                 // Also extract nested symbols inside the function body.
                                 extract_node(body, src, scope_tree, language, symbols, refs, idx);
@@ -106,7 +113,12 @@ pub(super) fn extract_node<'a>(
                 // erase every class declaration that uses them.
                 if let Some(real_name) = detect_macro_class_misparse(&child, src) {
                     let salvaged_idx = push_misparsed_class(
-                        &child, &real_name, src, scope_tree, symbols, parent_index,
+                        &child,
+                        &real_name,
+                        src,
+                        scope_tree,
+                        symbols,
+                        parent_index,
                     );
                     let sym_idx = salvaged_idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
                     // Body is a compound_statement here; recurse for inner
@@ -124,7 +136,8 @@ pub(super) fn extract_node<'a>(
                     continue;
                 }
 
-                let idx = push_function_def(&child, src, scope_tree, language, symbols, parent_index);
+                let idx =
+                    push_function_def(&child, src, scope_tree, language, symbols, parent_index);
                 // Even if push_function_def returns None (e.g. operator overloads
                 // not yet handled), still recurse into the body for nested symbols.
                 let sym_idx = idx.unwrap_or_else(|| symbols.len().saturating_sub(1));
@@ -154,17 +167,27 @@ pub(super) fn extract_node<'a>(
                     match type_node.kind() {
                         "struct_specifier" | "union_specifier" => {
                             let spec_idx = push_specifier(
-                                &type_node, src, scope_tree, SymbolKind::Struct,
-                                symbols, parent_index,
+                                &type_node,
+                                src,
+                                scope_tree,
+                                SymbolKind::Struct,
+                                symbols,
+                                parent_index,
                             );
                             if let Some(body) = type_node.child_by_field_name("body") {
-                                extract_node(body, src, scope_tree, language, symbols, refs, spec_idx);
+                                extract_node(
+                                    body, src, scope_tree, language, symbols, refs, spec_idx,
+                                );
                             }
                         }
                         "enum_specifier" => {
                             let spec_idx = push_specifier(
-                                &type_node, src, scope_tree, SymbolKind::Enum,
-                                symbols, parent_index,
+                                &type_node,
+                                src,
+                                scope_tree,
+                                SymbolKind::Enum,
+                                symbols,
+                                parent_index,
                             );
                             if let Some(body) = type_node.child_by_field_name("body") {
                                 extract_enum_body(&body, src, scope_tree, symbols, spec_idx);
@@ -175,7 +198,9 @@ pub(super) fn extract_node<'a>(
                         //   → TypeRef from SocketChannelPtr → SocketChannel
                         // This lets field_type_name("SocketChannelPtr") return "SocketChannel"
                         // after the type_info pass processes it.
-                        "type_identifier" | "pointer_declarator" | "template_type"
+                        "type_identifier"
+                        | "pointer_declarator"
+                        | "template_type"
                         | "qualified_identifier" => {
                             for sym_idx in pre_typedef_len..post_typedef_len {
                                 emit_typerefs_for_type_descriptor(type_node, src, sym_idx, refs);
@@ -187,7 +212,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "struct_specifier" | "union_specifier" => {
-                let idx = push_specifier(&child, src, scope_tree, SymbolKind::Struct, symbols, parent_index);
+                let idx = push_specifier(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Struct,
+                    symbols,
+                    parent_index,
+                );
                 if language != "c" {
                     if let Some(sym_idx) = idx {
                         extract_bases(&child, src, sym_idx, refs);
@@ -199,14 +231,28 @@ pub(super) fn extract_node<'a>(
             }
 
             "enum_specifier" => {
-                let idx = push_specifier(&child, src, scope_tree, SymbolKind::Enum, symbols, parent_index);
+                let idx = push_specifier(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Enum,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_enum_body(&body, src, scope_tree, symbols, idx);
                 }
             }
 
             "class_specifier" if language != "c" => {
-                let idx = push_specifier(&child, src, scope_tree, SymbolKind::Class, symbols, parent_index);
+                let idx = push_specifier(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Class,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_bases(&child, src, sym_idx, refs);
                 }
@@ -261,8 +307,12 @@ pub(super) fn extract_node<'a>(
                     match type_node.kind() {
                         "struct_specifier" | "union_specifier" => {
                             let spec_idx = push_specifier(
-                                &type_node, src, scope_tree, SymbolKind::Struct,
-                                symbols, parent_index,
+                                &type_node,
+                                src,
+                                scope_tree,
+                                SymbolKind::Struct,
+                                symbols,
+                                parent_index,
                             );
                             if language != "c" {
                                 if let Some(sidx) = spec_idx {
@@ -270,13 +320,19 @@ pub(super) fn extract_node<'a>(
                                 }
                             }
                             if let Some(body) = type_node.child_by_field_name("body") {
-                                extract_node(body, src, scope_tree, language, symbols, refs, spec_idx);
+                                extract_node(
+                                    body, src, scope_tree, language, symbols, refs, spec_idx,
+                                );
                             }
                         }
                         "enum_specifier" => {
                             let spec_idx = push_specifier(
-                                &type_node, src, scope_tree, SymbolKind::Enum,
-                                symbols, parent_index,
+                                &type_node,
+                                src,
+                                scope_tree,
+                                SymbolKind::Enum,
+                                symbols,
+                                parent_index,
                             );
                             if let Some(body) = type_node.child_by_field_name("body") {
                                 extract_enum_body(&body, src, scope_tree, symbols, spec_idx);
@@ -284,20 +340,28 @@ pub(super) fn extract_node<'a>(
                         }
                         "class_specifier" if language != "c" => {
                             let spec_idx = push_specifier(
-                                &type_node, src, scope_tree, SymbolKind::Class,
-                                symbols, parent_index,
+                                &type_node,
+                                src,
+                                scope_tree,
+                                SymbolKind::Class,
+                                symbols,
+                                parent_index,
                             );
                             if let Some(sidx) = spec_idx {
                                 extract_bases(&type_node, src, sidx, refs);
                             }
                             if let Some(body) = type_node.child_by_field_name("body") {
-                                extract_node(body, src, scope_tree, language, symbols, refs, spec_idx);
+                                extract_node(
+                                    body, src, scope_tree, language, symbols, refs, spec_idx,
+                                );
                             }
                         }
                         "type_identifier" => {
                             let name = node_text(type_node, src);
                             if !name.is_empty() && !predicates::is_c_primitive_type(&name) {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: type_source_idx,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -306,13 +370,18 @@ pub(super) fn extract_node<'a>(
                                     module: None,
                                     chain: None,
                                     byte_offset: type_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         "template_type" | "qualified_identifier" => {
-                            emit_typerefs_for_type_descriptor(type_node, src, type_source_idx, refs);
+                            emit_typerefs_for_type_descriptor(
+                                type_node,
+                                src,
+                                type_source_idx,
+                                refs,
+                            );
                         }
                         _ => {}
                     }
@@ -323,7 +392,15 @@ pub(super) fn extract_node<'a>(
                 // Also recurse fully into the declaration so that nested
                 // struct/enum/union specifiers in initializers and complex
                 // declarators are extracted as symbols.
-                extract_node(child, src, scope_tree, language, symbols, refs, parent_index);
+                extract_node(
+                    child,
+                    src,
+                    scope_tree,
+                    language,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
             }
 
             // Global-scope expression statements: e.g. `DEFINE_ALLOCATOR(argv_realloc, ...)`.
@@ -333,7 +410,15 @@ pub(super) fn extract_node<'a>(
                 let source_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
                 extract_calls_from_body(&child, src, language, source_idx, refs);
                 // Recurse for symbol extraction (e.g. compound literals with inline struct defs)
-                extract_node(child, src, scope_tree, language, symbols, refs, parent_index);
+                extract_node(
+                    child,
+                    src,
+                    scope_tree,
+                    language,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
             }
 
             // Recurse into ERROR nodes — tree-sitter ERROR blocks often wrap valid
@@ -341,11 +426,27 @@ pub(super) fn extract_node<'a>(
             // Skipping them silently causes massive coverage misses in projects that
             // use modern C++ (like entt which uses C++20 concepts/modules).
             "ERROR" | "MISSING" => {
-                extract_node(child, src, scope_tree, language, symbols, refs, parent_index);
+                extract_node(
+                    child,
+                    src,
+                    scope_tree,
+                    language,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
             }
 
             _ => {
-                extract_node(child, src, scope_tree, language, symbols, refs, parent_index);
+                extract_node(
+                    child,
+                    src,
+                    scope_tree,
+                    language,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
             }
         }
     }

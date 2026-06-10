@@ -51,7 +51,10 @@ fn named_channel_kind_edge_type_strings() {
     assert_eq!(NamedChannelKind::IpcCall.edge_type_str(), "ipc_call");
     assert_eq!(NamedChannelKind::BgJob.edge_type_str(), "bg_job");
     assert_eq!(NamedChannelKind::Mailer.edge_type_str(), "mailer");
-    assert_eq!(NamedChannelKind::MessageQueue.edge_type_str(), "message_queue");
+    assert_eq!(
+        NamedChannelKind::MessageQueue.edge_type_str(),
+        "message_queue"
+    );
     assert_eq!(NamedChannelKind::EventBus.edge_type_str(), "event_bus");
 }
 
@@ -137,7 +140,7 @@ fn http_call_emission_edge_type_and_protocol() {
         name: "/api/users".to_string(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Get),
-    streaming: None,
+        streaming: None,
     };
     assert_eq!(e.edge_type(), "http_call");
     assert_eq!(e.protocol(), Some("rest"));
@@ -152,7 +155,7 @@ fn http_call_empty_name_yields_no_url_pattern() {
         name: String::new(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Post),
-    streaming: None,
+        streaming: None,
     };
     assert_eq!(e.url_pattern(), None);
 }
@@ -164,7 +167,7 @@ fn websocket_emission_no_http_method() {
         name: "message".to_string(),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     };
     assert_eq!(e.edge_type(), "websocket");
     assert_eq!(e.http_method_str(), None);
@@ -178,7 +181,7 @@ fn ipc_call_emission_edge_type() {
         name: "get-settings".to_string(),
         role: ChannelRole::Producer,
         method: None,
-    streaming: None,
+        streaming: None,
     };
     assert_eq!(e.edge_type(), "ipc_call");
     assert_eq!(e.protocol(), Some("ipc"));
@@ -198,14 +201,18 @@ fn di_binding_emission() {
 
 #[test]
 fn config_lookup_emission_url_pattern_is_key() {
-    let e = FlowEmission::ConfigLookup { key: "DATABASE_URL".to_string() };
+    let e = FlowEmission::ConfigLookup {
+        key: "DATABASE_URL".to_string(),
+    };
     assert_eq!(e.edge_type(), "config_lookup");
     assert_eq!(e.url_pattern(), Some("DATABASE_URL"));
 }
 
 #[test]
 fn feature_flag_emission_url_pattern_is_flag_name() {
-    let e = FlowEmission::FeatureFlag { flag_name: "dark_mode".to_string() };
+    let e = FlowEmission::FeatureFlag {
+        flag_name: "dark_mode".to_string(),
+    };
     assert_eq!(e.edge_type(), "feature_flag");
     assert_eq!(e.url_pattern(), Some("dark_mode"));
 }
@@ -403,7 +410,7 @@ fn named_channel_is_not_single_ended() {
         name: "/api".to_string(),
         role: ChannelRole::Producer,
         method: Some(HttpMethod::Get),
-    streaming: None,
+        streaming: None,
     };
     assert!(!e.is_single_ended());
 }
@@ -450,35 +457,71 @@ fn stream_kind_as_str() {
 
 #[test]
 fn stream_kind_from_method_name_recognises_server_streaming_prefix() {
-    assert_eq!(StreamKind::from_method_name("stream_events"), StreamKind::ServerStreaming);
-    assert_eq!(StreamKind::from_method_name("subscribe_orders"), StreamKind::ServerStreaming);
-    assert_eq!(StreamKind::from_method_name("watch_pods"), StreamKind::ServerStreaming);
+    assert_eq!(
+        StreamKind::from_method_name("stream_events"),
+        StreamKind::ServerStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("subscribe_orders"),
+        StreamKind::ServerStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("watch_pods"),
+        StreamKind::ServerStreaming
+    );
 }
 
 #[test]
 fn stream_kind_from_method_name_recognises_server_streaming_suffix() {
-    assert_eq!(StreamKind::from_method_name("get_events_stream"), StreamKind::ServerStreaming);
+    assert_eq!(
+        StreamKind::from_method_name("get_events_stream"),
+        StreamKind::ServerStreaming
+    );
 }
 
 #[test]
 fn stream_kind_from_method_name_recognises_client_streaming() {
-    assert_eq!(StreamKind::from_method_name("upload_chunks"), StreamKind::ClientStreaming);
-    assert_eq!(StreamKind::from_method_name("record_route"), StreamKind::ClientStreaming);
-    assert_eq!(StreamKind::from_method_name("collect_metrics"), StreamKind::ClientStreaming);
+    assert_eq!(
+        StreamKind::from_method_name("upload_chunks"),
+        StreamKind::ClientStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("record_route"),
+        StreamKind::ClientStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("collect_metrics"),
+        StreamKind::ClientStreaming
+    );
 }
 
 #[test]
 fn stream_kind_from_method_name_recognises_bidi() {
-    assert_eq!(StreamKind::from_method_name("chat"), StreamKind::BidiStreaming);
-    assert_eq!(StreamKind::from_method_name("dialog_session"), StreamKind::BidiStreaming);
-    assert_eq!(StreamKind::from_method_name("route_bidi"), StreamKind::BidiStreaming);
+    assert_eq!(
+        StreamKind::from_method_name("chat"),
+        StreamKind::BidiStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("dialog_session"),
+        StreamKind::BidiStreaming
+    );
+    assert_eq!(
+        StreamKind::from_method_name("route_bidi"),
+        StreamKind::BidiStreaming
+    );
 }
 
 #[test]
 fn stream_kind_from_method_name_defaults_to_unary() {
     assert_eq!(StreamKind::from_method_name("get_user"), StreamKind::Unary);
-    assert_eq!(StreamKind::from_method_name("create_order"), StreamKind::Unary);
-    assert_eq!(StreamKind::from_method_name("HelloWorld"), StreamKind::Unary);
+    assert_eq!(
+        StreamKind::from_method_name("create_order"),
+        StreamKind::Unary
+    );
+    assert_eq!(
+        StreamKind::from_method_name("HelloWorld"),
+        StreamKind::Unary
+    );
 }
 
 #[test]
@@ -590,54 +633,69 @@ fn flow_edge_kind_non_channel_variants() {
             base_symbol_id: None,
             base_name_hint: "Model".to_string(),
             table_name_hint: None,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::DbEntity,
     );
     assert_eq!(
         FlowEmission::DbQuery {
             entity_name: "User".to_string(),
             operation: DbQueryOp::Select,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::DbQuery,
     );
     assert_eq!(
         FlowEmission::MigrationTarget {
             table_name: "users".to_string(),
             direction: MigrationDirection::Up,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::MigrationTarget,
     );
     assert_eq!(
         FlowEmission::DiBinding {
             service_symbol_id: 1,
             container: None,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::DiBinding,
     );
     assert_eq!(
-        FlowEmission::ConfigLookup { key: "DATABASE_URL".to_string() }.flow_edge_kind(),
+        FlowEmission::ConfigLookup {
+            key: "DATABASE_URL".to_string()
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::ConfigLookup,
     );
     assert_eq!(
-        FlowEmission::FeatureFlag { flag_name: "dark_mode".to_string() }.flow_edge_kind(),
+        FlowEmission::FeatureFlag {
+            flag_name: "dark_mode".to_string()
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::FeatureFlag,
     );
     assert_eq!(
         FlowEmission::AuthGuard {
             requirement: "admin".to_string(),
             kind: AuthGuardKind::Role,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::AuthGuard,
     );
     assert_eq!(
         FlowEmission::CliCommand {
             command_name: "deploy".to_string(),
             framework: None,
-        }.flow_edge_kind(),
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::CliCommand,
     );
     assert_eq!(
-        FlowEmission::ScheduledJob { schedule: "0 * * * *".to_string() }.flow_edge_kind(),
+        FlowEmission::ScheduledJob {
+            schedule: "0 * * * *".to_string()
+        }
+        .flow_edge_kind(),
         FlowEdgeKind::ScheduledJob,
     );
 }

@@ -20,7 +20,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -41,7 +43,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
 
         if let Some((var_name, dotnet_type)) = binding {
             if is_dotnet_type_name(&dotnet_type) && emitted_vars.insert(var_name.clone()) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
@@ -50,9 +54,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     module: Some(var_name),
                     chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 
@@ -64,7 +68,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
             if line.contains(&pattern) || line.contains(&format!("${registry_var}.")) {
                 let key = registry_var.to_string();
                 if emitted_vars.insert(key.clone()) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: 0,
                         target_name: DOTNET_BINDING_SENTINEL.to_string(),
                         kind: EdgeKind::Imports,
@@ -73,9 +79,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                         module: Some(key),
                         chain: None,
                         byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -84,7 +90,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // If this line references `$_.` we emit a sentinel for `_` bound to
         // System.Windows.UIElement. One sentinel per file is enough.
         if line.contains("$_.") && emitted_vars.insert("_".to_string()) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: 0,
                 target_name: DOTNET_BINDING_SENTINEL.to_string(),
                 kind: EdgeKind::Imports,
@@ -93,9 +101,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                 module: Some("_".to_string()),
                 chain: None,
                 byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
 
         // ---- Part 3: cmdlet-result chains `(Get-Xxx).Member` ----
@@ -103,7 +111,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // module tag if `Get-Xxx` is in the cmdlet type table.
         if let Some(tag) = try_parse_cmdlet_result_chain(line) {
             if emitted_vars.insert(tag.clone()) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
@@ -112,9 +122,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     module: Some(tag),
                     chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
 
@@ -128,9 +138,13 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // on the very first line that touches `$sync`.
         if let Some((lhs, rhs_root)) = try_parse_propagation(line) {
             let bound = emitted_vars.contains(&rhs_root)
-                || HASHTABLE_REGISTRY_VARS.iter().any(|v| *v == rhs_root.as_str());
+                || HASHTABLE_REGISTRY_VARS
+                    .iter()
+                    .any(|v| *v == rhs_root.as_str());
             if bound && emitted_vars.insert(lhs.clone()) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
@@ -139,9 +153,9 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     module: Some(lhs),
                     chain: None,
                     byte_offset: line_starts.get(line_no).copied().unwrap_or(0),
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -361,12 +375,7 @@ pub(crate) fn is_dotnet_type_name(type_name: &str) -> bool {
     let root = base.split('.').next().unwrap_or("");
     matches!(
         root,
-        "System"
-            | "Microsoft"
-            | "Windows"
-            | "WPF"
-            | "PresentationFramework"
-            | "PresentationCore"
+        "System" | "Microsoft" | "Windows" | "WPF" | "PresentationFramework" | "PresentationCore"
     )
 }
 

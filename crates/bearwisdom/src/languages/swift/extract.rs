@@ -2,8 +2,6 @@
 // parser/extractors/swift/mod.rs  —  Swift symbol and reference extractor
 // =============================================================================
 
-
-use super::{calls, symbols, helpers, decorators};
 use super::calls::extract_calls_from_body;
 use super::decorators::{
     extract_decorators, extract_extension_conformances, extract_guard_bindings,
@@ -15,6 +13,7 @@ use super::symbols::{
     push_extension, push_function_decl, push_import, push_init, push_parameters, push_property,
     push_subscript, push_type_decl, push_typealias, recurse_into_body,
 };
+use super::{calls, decorators, helpers, symbols};
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -25,11 +24,26 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static SWIFT_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "struct_declaration",   name_field: "name" },
-    ScopeKind { node_kind: "enum_declaration",     name_field: "name" },
-    ScopeKind { node_kind: "protocol_declaration", name_field: "name" },
-    ScopeKind { node_kind: "function_declaration", name_field: "name" },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "struct_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "protocol_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_declaration",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -100,7 +114,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "struct_declaration" => {
-                let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Struct, symbols, parent_index);
+                let idx = push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Struct,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
@@ -109,7 +130,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "enum_declaration" => {
-                let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Enum, symbols, parent_index);
+                let idx = push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Enum,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
@@ -118,7 +146,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "protocol_declaration" => {
-                let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
+                let idx = push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Interface,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
@@ -141,7 +176,8 @@ pub(super) fn extract_node<'a>(
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_function_type_refs(&child, src, sym_idx, refs);
                     push_parameters(&child, src, sym_idx, symbols, refs);
-                    let body = child.child_by_field_name("body")
+                    let body = child
+                        .child_by_field_name("body")
                         .or_else(|| find_child_by_kind(&child, "code_block"));
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
@@ -180,7 +216,8 @@ pub(super) fn extract_node<'a>(
                 let idx = push_init(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
-                    let body = child.child_by_field_name("body")
+                    let body = child
+                        .child_by_field_name("body")
                         .or_else(|| find_child_by_kind(&child, "code_block"))
                         .or_else(|| find_child_by_kind(&child, "function_body"));
                     if let Some(b) = body {
@@ -195,7 +232,8 @@ pub(super) fn extract_node<'a>(
             "deinit_declaration" => {
                 push_deinit(&child, src, scope_tree, symbols, parent_index);
                 // Recurse into body for local declarations.
-                let body = child.child_by_field_name("body")
+                let body = child
+                    .child_by_field_name("body")
                     .or_else(|| find_child_by_kind(&child, "code_block"));
                 if let Some(b) = body {
                     let sym_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
@@ -217,11 +255,18 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
-            "property_declaration" | "stored_property" | "variable_declaration"
-            | "willSet_didSet_block" | "computed_property" => {
+            "property_declaration"
+            | "stored_property"
+            | "variable_declaration"
+            | "willSet_didSet_block"
+            | "computed_property" => {
                 let pre_len = symbols.len();
                 push_property(&child, src, scope_tree, symbols, parent_index);
-                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                let sym_idx = if symbols.len() > pre_len {
+                    pre_len
+                } else {
+                    parent_index.unwrap_or(0)
+                };
                 if symbols.len() > pre_len {
                     extract_decorators(&child, src, sym_idx, refs);
                 }
@@ -306,7 +351,9 @@ pub(super) fn extract_node<'a>(
                             for inner in inherited.children(&mut iic) {
                                 match inner.kind() {
                                     "user_type" | "type_identifier" | "simple_identifier" => {
-                                        calls::extract_type_ref_from_swift_type(&inner, src, sym_idx, refs);
+                                        calls::extract_type_ref_from_swift_type(
+                                            &inner, src, sym_idx, refs,
+                                        );
                                     }
                                     _ => {}
                                 }
@@ -323,7 +370,8 @@ pub(super) fn extract_node<'a>(
             // type_annotation at declaration level (type ascriptions).
             "type_annotation" => {
                 let sym_idx = parent_index.unwrap_or(0);
-                if let Some(type_node) = child.child_by_field_name("type")
+                if let Some(type_node) = child
+                    .child_by_field_name("type")
                     .or_else(|| child.named_child(0))
                 {
                     if type_node.kind() == "protocol_composition_type" {
@@ -353,16 +401,26 @@ pub(super) fn extract_node<'a>(
                 for item in child.children(&mut ec) {
                     match item.kind() {
                         // Properties (computed or stored) inside enums — push directly.
-                        "property_declaration" | "stored_property" | "variable_declaration"
-                        | "willSet_didSet_block" | "computed_property" => {
+                        "property_declaration"
+                        | "stored_property"
+                        | "variable_declaration"
+                        | "willSet_didSet_block"
+                        | "computed_property" => {
                             let pre_len = symbols.len();
                             symbols::push_property(&item, src, scope_tree, symbols, parent_index);
-                            let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                            let sym_idx = if symbols.len() > pre_len {
+                                pre_len
+                            } else {
+                                parent_index.unwrap_or(0)
+                            };
                             if symbols.len() > pre_len {
                                 decorators::extract_decorators(&item, src, pre_len, refs);
                             }
-                            calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
-                            let body = item.child_by_field_name("value")
+                            calls::extract_all_type_identifiers_from_node(
+                                &item, src, sym_idx, refs,
+                            );
+                            let body = item
+                                .child_by_field_name("value")
                                 .or_else(|| find_child_by_kind(&item, "computed_property"))
                                 .or_else(|| find_child_by_kind(&item, "code_block"));
                             if let Some(b) = body {
@@ -373,7 +431,9 @@ pub(super) fn extract_node<'a>(
                             // Recurse for enum cases, functions, nested types, etc.
                             extract_node(item, src, scope_tree, symbols, refs, parent_index);
                             if let Some(sym_idx) = parent_index {
-                                calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
+                                calls::extract_all_type_identifiers_from_node(
+                                    &item, src, sym_idx, refs,
+                                );
                             }
                         }
                     }
@@ -441,13 +501,24 @@ pub(super) fn extract_function_type_refs(
             }
             // Direct type annotation at declaration level (protocol property, etc.)
             "type_annotation" => {
-                if let Some(type_node) = child.child_by_field_name("type")
+                if let Some(type_node) = child
+                    .child_by_field_name("type")
                     .or_else(|| child.child_by_field_name("name"))
                 {
                     if type_node.kind() == "protocol_composition_type" {
-                        calls::extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                        calls::extract_protocol_composition_refs(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     } else {
-                        calls::extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                        calls::extract_type_ref_from_swift_type(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     }
                 }
             }
@@ -477,18 +548,28 @@ fn extract_param_type_refs(
     for child in param.children(&mut cursor) {
         match child.kind() {
             "type_annotation" => {
-                if let Some(type_node) = child.child_by_field_name("type")
+                if let Some(type_node) = child
+                    .child_by_field_name("type")
                     .or_else(|| child.child_by_field_name("name"))
                 {
                     if type_node.kind() == "protocol_composition_type" {
-                        calls::extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                        calls::extract_protocol_composition_refs(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     } else {
-                        calls::extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                        calls::extract_type_ref_from_swift_type(
+                            &type_node,
+                            src,
+                            source_symbol_index,
+                            refs,
+                        );
                     }
                 }
             }
-            "user_type" | "optional_type" | "array_type" | "dictionary_type"
-            | "function_type" => {
+            "user_type" | "optional_type" | "array_type" | "dictionary_type" | "function_type" => {
                 calls::extract_type_ref_from_swift_type(&child, src, source_symbol_index, refs);
             }
             "protocol_composition_type" => {
@@ -526,7 +607,9 @@ fn infer_type_from_value(
                     }
                     "navigation_expression" => {
                         if let Some(chain) = calls::build_chain(func, src) {
-                            chain.segments.last()
+                            chain
+                                .segments
+                                .last()
                                 .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
                                 .map(|s| s.name.clone())
                         } else {
@@ -536,7 +619,9 @@ fn infer_type_from_value(
                     _ => None,
                 };
                 if let Some(name) = type_name {
-                    refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -555,7 +640,9 @@ fn infer_type_from_value(
         "simple_identifier" | "type_identifier" => {
             let name = helpers::node_text(*value_node, src);
             if name.starts_with(|c: char| c.is_uppercase()) {
-                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(crate::types::ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -576,4 +663,3 @@ fn infer_type_from_value(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

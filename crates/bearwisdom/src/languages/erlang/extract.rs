@@ -29,8 +29,8 @@ use crate::types::{
 use tree_sitter::{Node, Parser};
 
 use super::attributes::{
-    collect_exports, extract_behaviour, extract_callback, extract_import_attr,
-    extract_include, extract_module, extract_record, extract_type_alias, extract_wild_attr,
+    collect_exports, extract_behaviour, extract_callback, extract_import_attr, extract_include,
+    extract_module, extract_record, extract_type_alias, extract_wild_attr,
 };
 use super::cowboy::scan_cowboy_routes;
 use super::functions::{collect_calls, extract_function};
@@ -106,7 +106,13 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut routes: Vec<ExtractedRoute> = Vec::new();
     scan_cowboy_routes(tree.root_node(), source, &symbols, &mut routes);
 
-    ExtractionResult::with_connectors(symbols, refs, routes, Vec::<ExtractedDbSet>::new(), has_errors)
+    ExtractionResult::with_connectors(
+        symbols,
+        refs,
+        routes,
+        Vec::<ExtractedDbSet>::new(),
+        has_errors,
+    )
 }
 
 // ---------------------------------------------------------------------------

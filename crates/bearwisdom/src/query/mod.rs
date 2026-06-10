@@ -6,31 +6,31 @@ pub mod definitions;
 pub mod references;
 
 // New modules added in this update.
-pub mod hierarchy;
-pub mod hierarchy_drill;
-pub mod hierarchy_workspace;
 pub mod architecture;
 pub mod blast_radius;
 pub mod call_hierarchy;
 pub mod completion;
 pub mod concepts;
 pub mod context;
-pub mod diagnostics;
-pub mod investigate;
-pub mod search;
 pub mod coverage;
-pub mod full_trace;
-pub mod stats;
-pub mod subgraph;
-pub mod symbol_info;
-pub mod workspace;
 pub mod dead_code;
+pub mod diagnostics;
 pub mod entry_points;
-pub mod unresolved_classify;
+pub mod full_trace;
+pub mod hierarchy;
+pub mod hierarchy_drill;
+pub mod hierarchy_workspace;
+pub mod investigate;
 pub mod pattern;
 #[cfg(test)]
 #[path = "pattern_tests.rs"]
 mod pattern_tests;
+pub mod search;
+pub mod stats;
+pub mod subgraph;
+pub mod symbol_info;
+pub mod unresolved_classify;
+pub mod workspace;
 
 // ---------------------------------------------------------------------------
 // Shared query options — slim by default, opt-in for verbose

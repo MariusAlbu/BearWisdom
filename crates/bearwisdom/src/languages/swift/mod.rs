@@ -3,14 +3,14 @@
 mod calls;
 pub(crate) mod decorators;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-pub mod extract;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::SWIFT_HOOKS;
@@ -29,24 +29,32 @@ mod coverage_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct SwiftPlugin;
 
 impl LanguagePlugin for SwiftPlugin {
-    fn id(&self) -> &str { "swift" }
+    fn id(&self) -> &str {
+        "swift"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["swift"] }
+    fn language_ids(&self) -> &[&str] {
+        &["swift"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".swift"] }
+    fn extensions(&self) -> &[&str] {
+        &[".swift"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_swift::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::SWIFT_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::SWIFT_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -67,7 +75,7 @@ impl LanguagePlugin for SwiftPlugin {
             "class_declaration",
             "struct_declaration",
             "protocol_declaration",
-            "enum_declaration",    // ← was incorrectly "enum_class_body" (the body container)
+            "enum_declaration", // ← was incorrectly "enum_class_body" (the body container)
             "function_declaration",
             "init_declaration",
             "protocol_function_declaration",
@@ -111,8 +119,7 @@ impl LanguagePlugin for SwiftPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::SWIFT_HOOKS)
     }
 

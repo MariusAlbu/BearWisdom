@@ -6,7 +6,9 @@ fn test_fsharp_route_emits_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     let args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_fsharp_route("route", &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "/api/users");

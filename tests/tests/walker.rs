@@ -8,10 +8,18 @@ fn walk_discovers_all_source_files() {
     let project = TestProject::csharp_service();
     let files = walk(project.path()).unwrap();
 
-    assert!(files.len() >= 4, "expected at least 4 C# files, got {}", files.len());
+    assert!(
+        files.len() >= 4,
+        "expected at least 4 C# files, got {}",
+        files.len()
+    );
 
     for f in &files {
-        assert!(f.relative_path.ends_with(".cs"), "unexpected file: {}", f.relative_path);
+        assert!(
+            f.relative_path.ends_with(".cs"),
+            "unexpected file: {}",
+            f.relative_path
+        );
         assert_eq!(f.language, "csharp");
     }
 }
@@ -24,7 +32,10 @@ fn walk_multi_language() {
     let languages: std::collections::HashSet<&str> = files.iter().map(|f| f.language).collect();
     assert!(languages.contains("csharp"), "should find C# files");
     assert!(languages.contains("python"), "should find Python files");
-    assert!(languages.contains("typescript"), "should find TypeScript files");
+    assert!(
+        languages.contains("typescript"),
+        "should find TypeScript files"
+    );
 }
 
 #[test]

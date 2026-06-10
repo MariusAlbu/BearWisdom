@@ -9,7 +9,10 @@ fn ocaml_profile_identity() {
 
 #[test]
 fn ocaml_supertype_discovery_is_structural() {
-    assert_eq!(OCAML_PROFILE.supertype_discovery, SupertypeDiscovery::Structural);
+    assert_eq!(
+        OCAML_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Structural
+    );
 }
 
 #[test]

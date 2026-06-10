@@ -77,7 +77,6 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -103,11 +102,11 @@ pub(super) fn make_sym(
         scope_path: None,
         parent_index,
         byte_offset: node.start_byte() as u32,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 pub(super) fn node_text(node: Node, src: &str) -> String {
@@ -258,15 +257,27 @@ pub(super) fn extract_selector_base_name(child: &Node, src: &str) -> Option<Stri
                 .child_by_field_name("id_name")
                 .or_else(|| child.child(1))
                 .map(|n| node_text(n, src))?;
-            if !name.is_empty() { Some(name) } else { None }
+            if !name.is_empty() {
+                Some(name)
+            } else {
+                None
+            }
         }
         "placeholder" => {
             let name = child.child(1).map(|n| node_text(n, src))?;
-            if !name.is_empty() { Some(name) } else { None }
+            if !name.is_empty() {
+                Some(name)
+            } else {
+                None
+            }
         }
         "tag_name" | "nesting_selector" | "universal_selector" => {
             let t = node_text(*child, src);
-            if !t.is_empty() { Some(t) } else { None }
+            if !t.is_empty() {
+                Some(t)
+            } else {
+                None
+            }
         }
         // Pseudo-class / pseudo-element selectors that appear as standalone
         // rule starters (`:root`, `::before` at the top level) are kept.
@@ -274,7 +285,11 @@ pub(super) fn extract_selector_base_name(child: &Node, src: &str) -> Option<Stri
         // arm — they appear as sibling nodes in the grammar, not children.
         "pseudo_class_selector" | "pseudo_element_selector" => {
             let t = node_text(*child, src);
-            if !t.is_empty() && !t.contains('{') { Some(t) } else { None }
+            if !t.is_empty() && !t.contains('{') {
+                Some(t)
+            } else {
+                None
+            }
         }
         _ => None,
     }
@@ -305,13 +320,17 @@ pub(super) fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> 
                     .map(|n| node_text(n, src))
                     .filter(|s| !s.is_empty())
                 {
-                    if !out.contains(&name) { out.push(name); }
+                    if !out.contains(&name) {
+                        out.push(name);
+                    }
                 }
                 // Chained classes inside the same class_selector node
                 // (`.button.button-assertive` produces a nested class_selector
                 // for `.button-assertive` as a child of the outer one).
                 for j in 0..child.child_count() {
-                    let Some(inner) = child.child(j) else { continue };
+                    let Some(inner) = child.child(j) else {
+                        continue;
+                    };
                     if inner.kind() == "class_selector" {
                         if let Some(inner_name) = inner
                             .child_by_field_name("class_name")
@@ -319,15 +338,19 @@ pub(super) fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> 
                             .map(|n| node_text(n, src))
                             .filter(|s| !s.is_empty())
                         {
-                            if !out.contains(&inner_name) { out.push(inner_name); }
+                            if !out.contains(&inner_name) {
+                                out.push(inner_name);
+                            }
                         }
                     }
                 }
             }
-            "id_selector" | "placeholder" | "tag_name"
-            | "nesting_selector" | "universal_selector" => {
+            "id_selector" | "placeholder" | "tag_name" | "nesting_selector"
+            | "universal_selector" => {
                 if let Some(name) = extract_selector_base_name(&child, src) {
-                    if !out.contains(&name) { out.push(name); }
+                    if !out.contains(&name) {
+                        out.push(name);
+                    }
                 }
             }
             // Pseudo selectors can appear in two ways:
@@ -340,7 +363,9 @@ pub(super) fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> 
                 // Probe for a nested class_selector (case a).
                 let mut found_inner = false;
                 for j in 0..child.child_count() {
-                    let Some(inner) = child.child(j) else { continue };
+                    let Some(inner) = child.child(j) else {
+                        continue;
+                    };
                     if inner.kind() == "class_selector" {
                         if let Some(name) = inner
                             .child_by_field_name("class_name")
@@ -348,7 +373,9 @@ pub(super) fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> 
                             .map(|n| node_text(n, src))
                             .filter(|s| !s.is_empty())
                         {
-                            if !out.contains(&name) { out.push(name); }
+                            if !out.contains(&name) {
+                                out.push(name);
+                            }
                             found_inner = true;
                         }
                     }
@@ -368,5 +395,3 @@ pub(super) fn extract_all_selector_names(node: &Node, src: &str) -> Vec<String> 
 
     out
 }
-
-

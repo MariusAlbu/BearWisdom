@@ -2,7 +2,6 @@
 // ecosystem/maven/discovery.rs
 // =============================================================================
 
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -10,25 +9,23 @@ use rayon::prelude::*;
 use tracing::{debug, warn};
 use tree_sitter::{Node, Parser};
 
+use super::reachability::{collect_jvm_user_imports, walk_maven_narrowed};
+use super::ID;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{
     collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
-    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
-    resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator,
-    MAX_WALK_DEPTH,
+    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar,
+    resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
+    ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
-    clojure as clojure_manifest,
-    gradle as gradle_manifest,
-    sbt as sbt_manifest,
+    clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
 };
 use crate::walker::WalkedFile;
-use super::ID;
-use super::reachability::{collect_jvm_user_imports, walk_maven_narrowed};
 
 // ---------------------------------------------------------------------------
 // Discovery: walk every JVM manifest, collect coords, resolve against ~/.m2
@@ -60,9 +57,7 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
     // filters to only the package dirs actually referenced, collapsing the
     // cost of extracting spring-core or scala-library (~1000s of classes each)
     // to just the handful of packages the project consumes.
-    let user_imports: Vec<String> = collect_jvm_user_imports(project_root)
-        .into_iter()
-        .collect();
+    let user_imports: Vec<String> = collect_jvm_user_imports(project_root).into_iter().collect();
 
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -73,10 +68,16 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
     collect_pom_files_bounded(project_root, &mut pom_paths, 0);
     let mut pom_coords = Vec::new();
     for pom in &pom_paths {
-        let Ok(content) = std::fs::read_to_string(pom) else { continue };
+        let Ok(content) = std::fs::read_to_string(pom) else {
+            continue;
+        };
         pom_coords.extend(parse_pom_xml_coords(&content));
     }
-    debug!("Maven: {} pom.xml coords across {} files", pom_coords.len(), pom_paths.len());
+    debug!(
+        "Maven: {} pom.xml coords across {} files",
+        pom_coords.len(),
+        pom_paths.len()
+    );
     for coord in &pom_coords {
         resolve_and_push_jvm(
             m2.as_deref(),
@@ -93,7 +94,10 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
 
     // --- Gradle build.gradle[.kts] + version-catalog coords -------------
     let gradle_coords = collect_gradle_coords(project_root);
-    debug!("Gradle: {} coords from build.gradle + libs.versions.toml", gradle_coords.len());
+    debug!(
+        "Gradle: {} coords from build.gradle + libs.versions.toml",
+        gradle_coords.len()
+    );
     for coord in &gradle_coords {
         resolve_and_push_jvm(
             m2.as_deref(),
@@ -191,7 +195,10 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
             .map(|s| s.as_str())
             .collect();
         let suffix = if missing_sources_jars.len() > preview.len() {
-            format!(", … and {} more", missing_sources_jars.len() - preview.len())
+            format!(
+                ", … and {} more",
+                missing_sources_jars.len() - preview.len()
+            )
         } else {
             String::new()
         };
@@ -223,7 +230,9 @@ fn collect_gradle_coords(project_root: &Path) -> Vec<MavenCoord> {
 
     let mut out = Vec::new();
     for build_file in gradle_manifest::collect_gradle_build_files(project_root) {
-        let Ok(content) = std::fs::read_to_string(&build_file) else { continue };
+        let Ok(content) = std::fs::read_to_string(&build_file) else {
+            continue;
+        };
         out.extend(gradle_manifest::parse_gradle_coords(&content, &catalogs));
     }
     out
@@ -250,19 +259,18 @@ fn resolve_and_push_jvm(
     // close-enough version is more useful than no externals at all,
     // especially when the project's compile-classpath resolves to a
     // version that isn't pinned in the manifest verbatim.
-    let resolved = try_resolve_in_caches(m2, gradle_cache, coursier_cache, coord)
-        .or_else(|| {
-            if coord.version.is_some() {
-                let unpinned = MavenCoord {
-                    group_id: coord.group_id.clone(),
-                    artifact_id: coord.artifact_id.clone(),
-                    version: None,
-                };
-                try_resolve_in_caches(m2, gradle_cache, coursier_cache, &unpinned)
-            } else {
-                None
-            }
-        });
+    let resolved = try_resolve_in_caches(m2, gradle_cache, coursier_cache, coord).or_else(|| {
+        if coord.version.is_some() {
+            let unpinned = MavenCoord {
+                group_id: coord.group_id.clone(),
+                artifact_id: coord.artifact_id.clone(),
+                version: None,
+            };
+            try_resolve_in_caches(m2, gradle_cache, coursier_cache, &unpinned)
+        } else {
+            None
+        }
+    });
 
     let Some((version, sources_jar)) = resolved else {
         debug!(
@@ -314,7 +322,9 @@ fn resolve_and_push_jvm(
                         continue;
                     }
                 }
-                if !seen.insert(sub_cache.clone()) { continue; }
+                if !seen.insert(sub_cache.clone()) {
+                    continue;
+                }
                 roots.push(ExternalDepRoot {
                     module_path: format!("{}:{}", coord.group_id, sub_artifact),
                     version: sub_version,
@@ -329,7 +339,9 @@ fn resolve_and_push_jvm(
         return;
     }
 
-    if !seen.insert(cache_dir.clone()) { return }
+    if !seen.insert(cache_dir.clone()) {
+        return;
+    }
     roots.push(ExternalDepRoot {
         module_path: format!("{}:{}", coord.group_id, coord.artifact_id),
         version,
@@ -363,10 +375,8 @@ fn try_resolve_in_caches(
 ) -> Option<(String, PathBuf)> {
     if let Some(repo) = m2 {
         if let Some((version, artifact_dir)) = resolve_maven_artifact_dir(repo, coord) {
-            let sources_jar = artifact_dir.join(format!(
-                "{}-{}-sources.jar",
-                coord.artifact_id, version
-            ));
+            let sources_jar =
+                artifact_dir.join(format!("{}-{}-sources.jar", coord.artifact_id, version));
             if sources_jar.is_file() {
                 return Some((version, sources_jar));
             }
@@ -412,14 +422,15 @@ fn collect_sbt_artifacts(project_root: &Path) -> Vec<String> {
 /// `<project>/<module>/build.sbt`; collect those too.
 fn collect_sbt_coord_pairs(project_root: &Path) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
-    let mut seen: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
     let mut sbt_files = Vec::new();
     collect_sbt_files(project_root, &mut sbt_files, 0);
 
     for path in sbt_files {
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         for pair in sbt_manifest::parse_sbt_coord_pairs(&content) {
             if seen.insert(pair.clone()) {
                 out.push(pair);
@@ -441,26 +452,29 @@ fn collect_sbt_coord_triples(project_root: &Path) -> Vec<(String, String, Option
     // First pass: union all `val NAME = "VERSION"` bindings across every
     // manifest. sbt convention scatters them between root build.sbt and
     // project/Dependencies.scala — collect both before resolving deps.
-    let mut vars: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for path in &sbt_files {
-        let Ok(content) = std::fs::read_to_string(path) else { continue };
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
         for (k, v) in sbt_manifest::parse_sbt_version_vars(&content) {
             vars.insert(k, v);
         }
     }
 
     let mut out: Vec<(String, String, Option<String>)> = Vec::new();
-    let mut seen: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
     for path in &sbt_files {
-        let Ok(content) = std::fs::read_to_string(path) else { continue };
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
         for triple in sbt_manifest::parse_sbt_coord_triples(&content, &vars) {
             let key = (triple.0.clone(), triple.1.clone());
             // Last write wins for version: a later manifest mention with a
             // resolved version overrides an earlier coord-only mention.
-            if let Some(existing_idx) = out.iter().position(|t| t.0 == triple.0 && t.1 == triple.1) {
+            if let Some(existing_idx) = out.iter().position(|t| t.0 == triple.0 && t.1 == triple.1)
+            {
                 if out[existing_idx].2.is_none() && triple.2.is_some() {
                     out[existing_idx].2 = triple.2;
                 }
@@ -473,17 +487,21 @@ fn collect_sbt_coord_triples(project_root: &Path) -> Vec<(String, String, Option
 }
 
 fn collect_sbt_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if matches!(
                     name,
-                    ".git" | "target" | "build" | "node_modules"
-                        | ".gradle" | ".idea" | ".bsp"
-                ) || name.starts_with('.') {
+                    ".git" | "target" | "build" | "node_modules" | ".gradle" | ".idea" | ".bsp"
+                ) || name.starts_with('.')
+                {
                     continue;
                 }
             }
@@ -527,14 +545,22 @@ fn scan_maven_for_scala_artifact(
         group_parts: &mut Vec<String>,
         depth: u32,
     ) -> Option<(String, String, PathBuf)> {
-        if depth > 10 { return None }
-        let Ok(entries) = std::fs::read_dir(dir) else { return None };
+        if depth > 10 {
+            return None;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return None;
+        };
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.starts_with('.') { continue }
+            if name_str.starts_with('.') {
+                continue;
+            }
             let path = entry.path();
-            if !path.is_dir() { continue }
+            if !path.is_dir() {
+                continue;
+            }
 
             if name_str.as_ref() == artifact {
                 if let Ok(versions) = std::fs::read_dir(&path) {
@@ -564,7 +590,9 @@ fn scan_maven_for_scala_artifact(
                 }
             } else {
                 group_parts.push(name_str.to_string());
-                if let result @ Some(_) = scan_dir(&path, artifact, cache_base, group_parts, depth + 1) {
+                if let result @ Some(_) =
+                    scan_dir(&path, artifact, cache_base, group_parts, depth + 1)
+                {
                     return result;
                 }
                 group_parts.pop();
@@ -595,30 +623,53 @@ fn collect_clojure_deps_recursive(
     depth: usize,
 ) {
     const MAX_DEPTH: usize = 3;
-    if !seen.insert(dir.to_path_buf()) { return }
+    if !seen.insert(dir.to_path_buf()) {
+        return;
+    }
 
     if let Ok(content) = std::fs::read_to_string(dir.join("project.clj")) {
         for dep in clojure_manifest::parse_project_clj_deps(&content) {
-            if !all.contains(&dep) { all.push(dep); }
+            if !all.contains(&dep) {
+                all.push(dep);
+            }
         }
     }
     if let Ok(content) = std::fs::read_to_string(dir.join("deps.edn")) {
         for dep in clojure_manifest::parse_deps_edn_deps(&content) {
-            if !all.contains(&dep) { all.push(dep); }
+            if !all.contains(&dep) {
+                all.push(dep);
+            }
         }
     }
-    if depth >= MAX_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         if matches!(
             name,
-            ".git" | "target" | "out" | "node_modules" | ".clj-kondo"
-                | ".lsp" | ".cpcache" | "resources" | "doc" | "docs"
-        ) { continue }
+            ".git"
+                | "target"
+                | "out"
+                | "node_modules"
+                | ".clj-kondo"
+                | ".lsp"
+                | ".cpcache"
+                | "resources"
+                | "doc"
+                | "docs"
+        ) {
+            continue;
+        }
         collect_clojure_deps_recursive(&path, all, seen, depth + 1);
     }
 }
-

@@ -46,20 +46,17 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
-fn make_import_ref(
-    source_idx: usize,
-    target: &str,
-    module: &str,
-    kind: EdgeKind,
-) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+fn make_import_ref(source_idx: usize, target: &str, module: &str, kind: EdgeKind) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -131,9 +128,9 @@ fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String),
             flow: crate::types::FlowMeta::default(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
-        component_selectors: Vec::new(),
+            component_selectors: Vec::new(),
 
-        plugin_flow_emissions: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -155,7 +152,9 @@ fn test_init_reexport_submodule_resolution() {
     // posthog/api/views.py imports Person from posthog.models
     let consumer_sym = make_sym("get_person", "get_person", SymbolKind::Function);
     let import_ref = make_import_ref(0, "Person", "posthog.models", EdgeKind::Imports);
-    let call_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let call_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "Person".to_string(),
         kind: EdgeKind::Calls,
@@ -164,9 +163,9 @@ fn test_init_reexport_submodule_resolution() {
         module: None,
         chain: None,
         byte_offset: 1,
-                namespace_segments: Vec::new(),
-                call_args: Vec::new(),
-};
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
     let consumer_file = make_py_file(
         "posthog/api/views.py",
         vec![consumer_sym],
@@ -184,7 +183,7 @@ fn test_init_reexport_submodule_resolution() {
         extracted_ref: &consumer_file.refs[1], // the Calls ref
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(None),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let result = resolve_engine(&file_ctx, &ref_ctx, &index);
@@ -212,7 +211,9 @@ fn test_init_reexport_windows_path() {
 
     let consumer_sym = make_sym("handler", "handler", SymbolKind::Function);
     let import_ref = make_import_ref(0, "Team", "myapp.models", EdgeKind::Imports);
-    let call_ref = ExtractedRef { is_import_binding: false, is_reexport: false,
+    let call_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: "Team".to_string(),
         kind: EdgeKind::TypeRef,
@@ -221,9 +222,9 @@ fn test_init_reexport_windows_path() {
         module: None,
         chain: None,
         byte_offset: 1,
-                namespace_segments: Vec::new(),
-                call_args: Vec::new(),
-};
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
     let consumer_file = make_py_file(
         "myapp\\api\\views.py",
         vec![consumer_sym],
@@ -237,7 +238,7 @@ fn test_init_reexport_windows_path() {
         extracted_ref: &consumer_file.refs[1],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(None),
-    file_package_id: None,
+        file_package_id: None,
     };
 
     let result = resolve_engine(&file_ctx, &ref_ctx, &index);

@@ -140,11 +140,11 @@ fn extract_object_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // implements_interfaces → Implements edges
     extract_implements(node, src, idx, refs);
@@ -183,11 +183,11 @@ fn extract_interface_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     extract_implements(node, src, idx, refs);
     extract_fields(node, src, idx, symbols, refs);
@@ -224,11 +224,11 @@ fn extract_enum_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // enum_value_definition children
     let mut cursor = node.walk();
@@ -272,11 +272,11 @@ fn extract_enum_values(
                 scope_path: None,
                 parent_index: Some(parent_index),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 }
@@ -320,15 +320,17 @@ fn extract_union_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // TypeRef for each member type
     for member in &members {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: member.clone(),
             kind: EdgeKind::TypeRef,
@@ -337,9 +339,9 @@ fn extract_union_type(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -368,9 +370,7 @@ fn collect_union_member_types(node: &Node, src: &str, members: &mut Vec<String>)
                 collect_union_member_types(&child, src, members);
             }
             "named_type" => {
-                if let Some(name) = first_child_of_kind(&child, "name")
-                    .map(|n| node_text(n, src))
-                {
+                if let Some(name) = first_child_of_kind(&child, "name").map(|n| node_text(n, src)) {
                     if !name.is_empty() {
                         members.push(name);
                     }
@@ -406,11 +406,11 @@ fn extract_scalar_type(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -444,11 +444,11 @@ fn extract_input_type(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // input_fields_definition → input_value_definition
     let mut cursor = node.walk();
@@ -507,14 +507,16 @@ fn extract_input_value(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     if let Some(t) = type_ref {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -523,9 +525,9 @@ fn extract_input_value(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -553,11 +555,11 @@ fn extract_directive_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -585,18 +587,20 @@ fn extract_schema_def(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // root_operation_type_definition → named_type references
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "root_operation_type_definition" {
             if let Some(type_name) = resolve_named_type_in_subtree(&child, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -605,9 +609,9 @@ fn extract_schema_def(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -640,11 +644,11 @@ fn extract_operation_def(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymb
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -701,14 +705,16 @@ fn extract_fragment_def(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     if let Some(t) = on_type {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -717,9 +723,9 @@ fn extract_fragment_def(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -734,7 +740,9 @@ fn extract_type_extension(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = child_name_text(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -743,9 +751,9 @@ fn extract_type_extension(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -806,14 +814,16 @@ fn extract_field_def(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     if let Some(t) = type_ref {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: t,
             kind: EdgeKind::TypeRef,
@@ -822,9 +832,9 @@ fn extract_field_def(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -873,11 +883,11 @@ fn collect_implements_interfaces(
                 collect_implements_interfaces(&child, src, source_symbol_index, refs);
             }
             "named_type" => {
-                if let Some(name) =
-                    first_child_of_kind(&child, "name").map(|n| node_text(n, src))
-                {
+                if let Some(name) = first_child_of_kind(&child, "name").map(|n| node_text(n, src)) {
                     if !name.is_empty() {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Implements,
@@ -886,9 +896,9 @@ fn collect_implements_interfaces(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -955,7 +965,8 @@ fn resolve_named_type_in_subtree(node: &Node, src: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 fn extract_description(node: &Node, src: &str) -> Option<String> {
-    let desc_node = node.child_by_field_name("description")
+    let desc_node = node
+        .child_by_field_name("description")
         .or_else(|| first_child_of_kind(node, "description"))?;
 
     // description contains a string_value child
@@ -963,13 +974,13 @@ fn extract_description(node: &Node, src: &str) -> Option<String> {
         .map(|n| node_text(n, src))
         .unwrap_or_else(|| node_text(desc_node, src));
 
-    let trimmed = text
-        .trim_matches('"')
-        .trim_matches('`')
-        .trim()
-        .to_string();
+    let trimmed = text.trim_matches('"').trim_matches('`').trim().to_string();
 
-    if trimmed.is_empty() { None } else { Some(trimmed) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 // ---------------------------------------------------------------------------

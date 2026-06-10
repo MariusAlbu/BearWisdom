@@ -33,7 +33,9 @@ fn emits_resolver_stops() {
     let src = "gql`\nconst resolvers = {\n  myField: async (a, b) => null,\n};\n";
     let points = extract_svelte_graphql_points(src);
     assert!(
-        points.iter().any(|(_, e)| name_of(e) == "myField" && role_of(e) == ChannelRole::Consumer),
+        points
+            .iter()
+            .any(|(_, e)| name_of(e) == "myField" && role_of(e) == ChannelRole::Consumer),
         "expected myField Consumer, got {points:?}",
     );
 }

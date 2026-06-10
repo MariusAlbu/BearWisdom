@@ -17,20 +17,66 @@ use tree_sitter::Node;
 /// hundreds of false positives per C++ project without touching the tree-
 /// walk logic.
 const CPP_KEYWORD_BLOCKLIST: &[&str] = &[
-    "class", "struct", "union", "enum", "typename", "using", "namespace",
-    "public", "private", "protected", "virtual", "static", "extern",
-    "const", "constexpr", "consteval", "constinit", "volatile", "mutable",
-    "inline", "friend", "explicit", "operator", "template", "typedef",
-    "final", "override", "noexcept", "throw",
-    "true", "false", "nullptr", "this",
-    "return", "if", "else", "for", "while", "do", "switch", "case", "default",
-    "break", "continue", "goto",
-    "sizeof", "alignof", "decltype", "new", "delete",
-    "auto", "void",
+    "class",
+    "struct",
+    "union",
+    "enum",
+    "typename",
+    "using",
+    "namespace",
+    "public",
+    "private",
+    "protected",
+    "virtual",
+    "static",
+    "extern",
+    "const",
+    "constexpr",
+    "consteval",
+    "constinit",
+    "volatile",
+    "mutable",
+    "inline",
+    "friend",
+    "explicit",
+    "operator",
+    "template",
+    "typedef",
+    "final",
+    "override",
+    "noexcept",
+    "throw",
+    "true",
+    "false",
+    "nullptr",
+    "this",
+    "return",
+    "if",
+    "else",
+    "for",
+    "while",
+    "do",
+    "switch",
+    "case",
+    "default",
+    "break",
+    "continue",
+    "goto",
+    "sizeof",
+    "alignof",
+    "decltype",
+    "new",
+    "delete",
+    "auto",
+    "void",
     // Template type-parameter placeholder names the extractor emits but
     // which are NEVER resolvable — they're locally-scoped and should stay
     // inside the template definition.
-    "T", "U", "V", "K", "Args",
+    "T",
+    "U",
+    "V",
+    "K",
+    "Args",
 ];
 
 fn is_cpp_keyword(name: &str) -> bool {
@@ -51,7 +97,9 @@ fn is_cpp_keyword(name: &str) -> bool {
 ///     and acronym-only names like `URL` aren't misclassified — those go
 ///     through the normal name path)
 pub(super) fn looks_like_attribute_macro(name: &str) -> bool {
-    if name.is_empty() { return false }
+    if name.is_empty() {
+        return false;
+    }
     let mut has_underscore = false;
     for ch in name.chars() {
         if ch == '_' {
@@ -126,13 +174,13 @@ pub(super) fn find_real_specifier_name(node: &Node, src: &[u8]) -> Option<String
 /// Emit a single TypeRef edge from `source_idx` to the type named by `name_node`.
 fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let name = node_text(name_node, src);
-    if name.is_empty()
-        || is_cpp_keyword(&name)
-        || super::predicates::is_c_compiler_intrinsic(&name)
+    if name.is_empty() || is_cpp_keyword(&name) || super::predicates::is_c_compiler_intrinsic(&name)
     {
         return;
     }
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: name,
         kind: EdgeKind::TypeRef,
@@ -141,9 +189,9 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         module: None,
         chain: None,
         byte_offset: name_node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// Walk a `type_descriptor` (or any node) and emit TypeRef for every
@@ -185,7 +233,9 @@ pub(super) fn extract_bases(
                 match base.kind() {
                     "type_identifier" => {
                         let name = node_text(base, src);
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: name,
                             kind: EdgeKind::Inherits,
@@ -194,16 +244,18 @@ pub(super) fn extract_bases(
                             module: None,
                             chain: None,
                             byte_offset: base.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                     "base_class_specifier" => {
                         let mut ic = base.walk();
                         for inner in base.children(&mut ic) {
                             if inner.kind() == "type_identifier" {
                                 let name = node_text(inner, src);
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: source_idx,
                                     target_name: name,
                                     kind: EdgeKind::Inherits,
@@ -212,9 +264,9 @@ pub(super) fn extract_bases(
                                     module: None,
                                     chain: None,
                                     byte_offset: inner.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }

@@ -31,8 +31,8 @@ pub use common::infer_external_common;
 pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
 pub use types::{
-    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution,
-    SymbolInfo, TypeInfo, RESOLVED_CONFIDENCE,
+    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
+    TypeInfo, RESOLVED_CONFIDENCE,
 };
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 
@@ -42,9 +42,8 @@ pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 // internal carve-up.
 pub(crate) use chain_walker::{
     find_matching_bracket, first_generic_arg, infer_type_from_chain, is_jvm_language,
-    merge_where_bounds,
-    is_plain_type_name, parse_generic_param_clause, parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature,
+    is_plain_type_name, merge_where_bounds, parse_generic_param_clause,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
     parse_type_head_and_args_bracket, resolve_type_name_in_scope, strip_generic_args,
 };

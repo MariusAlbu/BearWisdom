@@ -9,15 +9,15 @@ use crate::types::CallArg;
 
 #[test]
 fn template_no_substitution_passes_through() {
-    assert_eq!(replace_template_substitutions("`hello world`"), "`hello world`");
+    assert_eq!(
+        replace_template_substitutions("`hello world`"),
+        "`hello world`"
+    );
 }
 
 #[test]
 fn template_single_substitution_replaced() {
-    assert_eq!(
-        replace_template_substitutions("`/api/${id}`"),
-        "`/api/{}`"
-    );
+    assert_eq!(replace_template_substitutions("`/api/${id}`"), "`/api/{}`");
 }
 
 #[test]
@@ -77,7 +77,8 @@ function caller() { fetch("/api/users"); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/users")),
         "expected StringLit(\"/api/users\"), got: {args:?}"
     );
 }
@@ -89,7 +90,8 @@ function caller() { fetch('/api/posts'); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/posts")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "/api/posts")),
         "expected StringLit(\"/api/posts\"), got: {args:?}"
     );
 }
@@ -102,7 +104,8 @@ function caller() { fetch(`/api/users/${id}`); }
     let args = parse_call_args(src);
     // Should be TemplateLit with `{}` placeholder.
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::TemplateLit(s) if s.contains("{}"))),
+        args.iter()
+            .any(|a| matches!(a, CallArg::TemplateLit(s) if s.contains("{}"))),
         "expected TemplateLit with placeholder, got: {args:?}"
     );
 }
@@ -114,7 +117,8 @@ function caller(url) { fetch(url); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
         "expected Ident(\"url\"), got: {args:?}"
     );
 }
@@ -169,7 +173,8 @@ function caller() { setTimeout(cb, 1000); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Literal(s) if s == "1000")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Literal(s) if s == "1000")),
         "expected Literal(\"1000\"), got: {args:?}"
     );
 }
@@ -186,7 +191,11 @@ function caller() { doThing(); }
         .into_iter()
         .find(|r| r.kind == crate::types::EdgeKind::Calls && r.target_name == "doThing");
     if let Some(r) = ref_with_call {
-        assert!(r.call_args.is_empty(), "expected empty call_args for no-arg call, got: {:?}", r.call_args);
+        assert!(
+            r.call_args.is_empty(),
+            "expected empty call_args for no-arg call, got: {:?}",
+            r.call_args
+        );
     }
 }
 
@@ -213,7 +222,8 @@ function caller(x, y) { f([x, y]); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::ArrayLiteral { .. })),
         "expected ArrayLiteral variant for array arg, got: {args:?}"
     );
 }
@@ -249,7 +259,8 @@ function caller(a, i) { f(a[i]); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected IndexAccess variant for subscript arg, got: {args:?}"
     );
 }
@@ -261,7 +272,8 @@ function caller(a, b) { f(a + b); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
+        args.iter()
+            .any(|a| matches!(a, CallArg::Binary { op, .. } if op == "+")),
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }
@@ -313,5 +325,8 @@ function caller(arr) { arr.map(x => { return x; }); }
                 c.segments.first().map(|s| s.name.as_str()) == Some("x")
             })
     });
-    assert!(!leaked, "block-body arrow should not emit a member chain ref");
+    assert!(
+        !leaked,
+        "block-body arrow should not emit a member chain ref"
+    );
 }

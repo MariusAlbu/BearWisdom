@@ -27,9 +27,7 @@ use serde::{Deserialize, Serialize};
 
 /// One architectural source for an unresolved reference. Stable string ids
 /// so reports can be diffed across runs.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnresolvedCategory {
     /// Extractor emitted a ref that should not exist (keyword, literal,
@@ -182,11 +180,9 @@ pub fn classify_unresolved(
         .context("classify_unresolved: prepare internal unresolved scan")?;
 
     // (language, kind, category) -> count
-    let mut bucket_counts: BTreeMap<(String, String, UnresolvedCategory), u64> =
-        BTreeMap::new();
+    let mut bucket_counts: BTreeMap<(String, String, UnresolvedCategory), u64> = BTreeMap::new();
     // "lang.category" -> target_name -> (count, example_file, example_line)
-    let mut sample_counts: BTreeMap<String, HashMap<String, SampleEntry>> =
-        BTreeMap::new();
+    let mut sample_counts: BTreeMap<String, HashMap<String, SampleEntry>> = BTreeMap::new();
     let mut by_language: BTreeMap<String, u64> = BTreeMap::new();
     let mut by_category: BTreeMap<String, u64> = BTreeMap::new();
     let mut total: u64 = 0;
@@ -194,23 +190,22 @@ pub fn classify_unresolved(
     let rows = stmt
         .query_map([], |r| {
             Ok((
-                r.get::<_, String>(0)?,           // target_name
-                r.get::<_, String>(1)?,           // kind
-                r.get::<_, Option<String>>(2)?,   // module
-                r.get::<_, Option<u32>>(3)?,      // source_line
-                r.get::<_, i64>(4)?,              // file_id
-                r.get::<_, String>(5)?,           // file_path
-                r.get::<_, String>(6)?,           // file_language
+                r.get::<_, String>(0)?,         // target_name
+                r.get::<_, String>(1)?,         // kind
+                r.get::<_, Option<String>>(2)?, // module
+                r.get::<_, Option<u32>>(3)?,    // source_line
+                r.get::<_, i64>(4)?,            // file_id
+                r.get::<_, String>(5)?,         // file_path
+                r.get::<_, String>(6)?,         // file_language
             ))
         })
         .context("classify_unresolved: execute internal unresolved scan")?;
 
     for row in rows {
-        let (target_name, kind, module, source_line, file_id, file_path, language) =
-            match row {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
+        let (target_name, kind, module, source_line, file_id, file_path, language) = match row {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
 
         let row = ClassifyRow {
             target_name: &target_name,
@@ -219,15 +214,13 @@ pub fn classify_unresolved(
             file_path: &file_path,
             language: &language,
         };
-        let category = classify_row(
-            &row,
-            &external_names,
-            imports_by_file.get(&file_id),
-        );
+        let category = classify_row(&row, &external_names, imports_by_file.get(&file_id));
 
         total += 1;
         *by_language.entry(language.clone()).or_default() += 1;
-        *by_category.entry(category.as_str().to_string()).or_default() += 1;
+        *by_category
+            .entry(category.as_str().to_string())
+            .or_default() += 1;
         *bucket_counts
             .entry((language.clone(), kind.clone(), category))
             .or_default() += 1;
@@ -268,7 +261,11 @@ pub fn classify_unresolved(
     let mut samples: BTreeMap<String, Vec<SampleEntry>> = BTreeMap::new();
     for (key, name_map) in sample_counts {
         let mut entries: Vec<SampleEntry> = name_map.into_values().collect();
-        entries.sort_by(|a, b| b.count.cmp(&a.count).then(a.target_name.cmp(&b.target_name)));
+        entries.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then(a.target_name.cmp(&b.target_name))
+        });
         entries.truncate(samples_per_group);
         samples.insert(key, entries);
     }
@@ -325,9 +322,7 @@ fn classify_row(
 
     // 4. Embedded-region issue — host language with a target shape that
     //    typically belongs to the embedded sub-language.
-    if is_embedded_host_language(row.language)
-        && looks_like_sub_language_target(row.target_name)
-    {
+    if is_embedded_host_language(row.language) && looks_like_sub_language_target(row.target_name) {
         return UnresolvedCategory::EmbeddedRegionIssue;
     }
 
@@ -384,11 +379,19 @@ fn is_keyword_or_literal(name: &str, language: &str) -> bool {
     // Cross-language literals.
     matches!(
         name,
-        "true" | "false" | "null" | "undefined" | "None" | "True" | "False"
-            | "nil" | "this" | "self" | "super"
-    )
-    || is_numeric_literal(name)
-    || is_language_keyword(name, language)
+        "true"
+            | "false"
+            | "null"
+            | "undefined"
+            | "None"
+            | "True"
+            | "False"
+            | "nil"
+            | "this"
+            | "self"
+            | "super"
+    ) || is_numeric_literal(name)
+        || is_language_keyword(name, language)
 }
 
 fn is_numeric_literal(name: &str) -> bool {
@@ -404,42 +407,96 @@ fn is_language_keyword(name: &str, language: &str) -> bool {
     // refs. This isn't a full keyword table — it's the "shouldn't have
     // been emitted as a target_name" set.
     let common = [
-        "if", "else", "for", "while", "do", "return", "break", "continue",
-        "switch", "case", "default", "try", "catch", "finally", "throw",
-        "new", "delete", "in", "of", "as", "is",
+        "if", "else", "for", "while", "do", "return", "break", "continue", "switch", "case",
+        "default", "try", "catch", "finally", "throw", "new", "delete", "in", "of", "as", "is",
     ];
     if common.contains(&name) {
         return true;
     }
     let extra: &[&str] = match language {
         "typescript" | "javascript" | "tsx" | "jsx" | "vue" | "svelte" => &[
-            "let", "const", "var", "function", "class", "interface", "type",
-            "enum", "import", "export", "from", "async", "await", "yield",
-            "void", "any", "never", "unknown",
+            "let",
+            "const",
+            "var",
+            "function",
+            "class",
+            "interface",
+            "type",
+            "enum",
+            "import",
+            "export",
+            "from",
+            "async",
+            "await",
+            "yield",
+            "void",
+            "any",
+            "never",
+            "unknown",
         ],
         "python" => &[
-            "def", "class", "lambda", "import", "from", "as", "with", "yield",
-            "async", "await", "pass", "raise", "global", "nonlocal", "and",
-            "or", "not",
+            "def", "class", "lambda", "import", "from", "as", "with", "yield", "async", "await",
+            "pass", "raise", "global", "nonlocal", "and", "or", "not",
         ],
         "rust" => &[
-            "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl",
-            "trait", "where", "ref", "match", "loop", "move", "dyn",
+            "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait", "where",
+            "ref", "match", "loop", "move", "dyn",
         ],
         "csharp" => &[
-            "using", "namespace", "class", "struct", "interface", "enum",
-            "record", "public", "private", "internal", "protected", "static",
-            "readonly", "sealed", "abstract", "virtual", "override", "ref",
-            "out", "params", "var",
+            "using",
+            "namespace",
+            "class",
+            "struct",
+            "interface",
+            "enum",
+            "record",
+            "public",
+            "private",
+            "internal",
+            "protected",
+            "static",
+            "readonly",
+            "sealed",
+            "abstract",
+            "virtual",
+            "override",
+            "ref",
+            "out",
+            "params",
+            "var",
         ],
         "go" => &[
-            "func", "var", "const", "type", "struct", "interface", "package",
-            "import", "go", "defer", "chan", "map", "range", "select",
+            "func",
+            "var",
+            "const",
+            "type",
+            "struct",
+            "interface",
+            "package",
+            "import",
+            "go",
+            "defer",
+            "chan",
+            "map",
+            "range",
+            "select",
         ],
         "java" | "kotlin" => &[
-            "class", "interface", "package", "import", "public", "private",
-            "protected", "static", "final", "abstract", "extends", "implements",
-            "fun", "val", "var",
+            "class",
+            "interface",
+            "package",
+            "import",
+            "public",
+            "private",
+            "protected",
+            "static",
+            "final",
+            "abstract",
+            "extends",
+            "implements",
+            "fun",
+            "val",
+            "var",
         ],
         _ => &[],
     };
@@ -495,8 +552,17 @@ fn looks_generated_or_vendor(path: &str) -> bool {
 fn is_embedded_host_language(language: &str) -> bool {
     matches!(
         language,
-        "vue" | "svelte" | "astro" | "mdx" | "razor" | "markdown" | "html"
-            | "handlebars" | "ejs" | "pug" | "liquid"
+        "vue"
+            | "svelte"
+            | "astro"
+            | "mdx"
+            | "razor"
+            | "markdown"
+            | "html"
+            | "handlebars"
+            | "ejs"
+            | "pug"
+            | "liquid"
     )
 }
 

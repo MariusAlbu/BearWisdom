@@ -147,14 +147,9 @@ fn external_php_vendor_is_indexed_and_resolved() {
     let search_hits =
         bearwisdom::query::search::search_symbols(&db, "route", 10, &Default::default()).unwrap();
     assert!(
-        search_hits
-            .iter()
-            .all(|s| !s.file_path.starts_with("ext:")),
+        search_hits.iter().all(|s| !s.file_path.starts_with("ext:")),
         "search_symbols leaked an external symbol: {:?}",
-        search_hits
-            .iter()
-            .map(|s| &s.file_path)
-            .collect::<Vec<_>>()
+        search_hits.iter().map(|s| &s.file_path).collect::<Vec<_>>()
     );
 
     // --- Assertion 5: internal→external edge exists (Controller uses Auth) ---

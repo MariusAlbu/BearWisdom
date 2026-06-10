@@ -230,9 +230,7 @@ pub trait LanguageEngineHooks: Send + Sync {
     /// `this`, Ruby `self` in a class) DO NOT need to override this —
     /// `DefaultRootResolver` finds the enclosing type via
     /// `source_symbol.scope_path` and that's correct for them.
-    fn root_resolver(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
+    fn root_resolver(&self) -> Option<&'static dyn crate::type_checker::core::chain::RootResolver> {
         None
     }
 }

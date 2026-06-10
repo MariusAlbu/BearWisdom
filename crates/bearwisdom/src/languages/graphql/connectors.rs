@@ -19,8 +19,7 @@ use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannel
 pub fn extract_schema_starts(source: &str) -> Vec<(u32, FlowEmission)> {
     let re_type_block =
         Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("graphql type block regex");
-    let re_field =
-        Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("graphql field regex");
+    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("graphql field regex");
 
     let mut out: Vec<(u32, FlowEmission)> = Vec::new();
     let mut in_op_block = false;

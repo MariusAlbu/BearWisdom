@@ -183,7 +183,14 @@ fn extract_resource_block(
     let sig = format!("resource \"{}\" \"{}\"", res_type, res_name);
 
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Class,
+        node,
+        Some(sig),
+        None,
+    ));
     extract_block_refs(node, src, idx, symbols, refs);
 }
 
@@ -212,7 +219,14 @@ fn extract_data_block(
     let sig = format!("data \"{}\" \"{}\"", data_type, data_name);
 
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Class,
+        node,
+        Some(sig),
+        None,
+    ));
     extract_block_refs(node, src, idx, symbols, refs);
 }
 
@@ -233,7 +247,14 @@ fn extract_variable_block(
     };
     let sig = format!("variable \"{}\"", name);
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Variable, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        node,
+        Some(sig),
+        None,
+    ));
     extract_block_refs(node, src, idx, symbols, refs);
 }
 
@@ -254,7 +275,14 @@ fn extract_output_block(
     };
     let sig = format!("output \"{}\"", name);
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Variable, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        node,
+        Some(sig),
+        None,
+    ));
     extract_block_refs(node, src, idx, symbols, refs);
 }
 
@@ -277,11 +305,20 @@ fn extract_module_block(
     let sig = format!("module \"{}\"", label);
 
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Namespace, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Namespace,
+        node,
+        Some(sig),
+        None,
+    ));
 
     // Look for `source = "..."` attribute in the block body — emit as Imports
     if let Some(source_val) = find_attribute_value(node, src, "source") {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: source_val.clone(),
             kind: EdgeKind::Imports,
@@ -290,9 +327,9 @@ fn extract_module_block(
             module: Some(source_val),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     extract_block_refs(node, src, idx, symbols, refs);
@@ -315,7 +352,14 @@ fn extract_provider_block(
     };
     let sig = format!("provider \"{}\"", name);
     let idx = symbols.len();
-    symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Class,
+        node,
+        Some(sig),
+        None,
+    ));
     extract_block_refs(node, src, idx, symbols, refs);
 }
 
@@ -497,7 +541,10 @@ fn extract_reference_chain(
     };
 
     // Terraform meta-references — no project symbol to resolve against.
-    if matches!(root.as_str(), "each" | "count" | "self" | "path" | "terraform") {
+    if matches!(
+        root.as_str(),
+        "each" | "count" | "self" | "path" | "terraform"
+    ) {
         return;
     }
 
@@ -537,7 +584,9 @@ fn extract_reference_chain(
         return;
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::TypeRef,
@@ -546,9 +595,9 @@ fn extract_reference_chain(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 /// Emit a Calls edge for a function_call node.
@@ -559,7 +608,9 @@ fn extract_function_call_ref(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = first_identifier_text(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::Calls,
@@ -568,9 +619,9 @@ fn extract_function_call_ref(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -685,12 +736,12 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-    byte_offset: 0,
-            declared_type: None,
+        byte_offset: 0,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn node_text(node: Node, src: &str) -> String {

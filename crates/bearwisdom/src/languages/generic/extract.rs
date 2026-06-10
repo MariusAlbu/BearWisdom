@@ -22,8 +22,6 @@
 // use it in preference to this module.
 // =============================================================================
 
-
-
 use super::helpers;
 use crate::parser::languages;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
@@ -46,52 +44,124 @@ pub struct GenericExtraction {
 
 /// Scope-opening node kinds for Python.
 static PYTHON_SCOPE_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_definition",   name_field: "name" },
-    ScopeKind { node_kind: "function_definition", name_field: "name" },
+    ScopeKind {
+        node_kind: "class_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_definition",
+        name_field: "name",
+    },
 ];
 
 /// Scope-opening node kinds for Java.
 static JAVA_SCOPE_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_declaration",     name_field: "name" },
-    ScopeKind { node_kind: "interface_declaration", name_field: "name" },
-    ScopeKind { node_kind: "enum_declaration",      name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "constructor_declaration", name_field: "name" },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "interface_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "constructor_declaration",
+        name_field: "name",
+    },
 ];
 
 /// Scope-opening node kinds for Go.
 static GO_SCOPE_CONFIG: &[ScopeKind] = &[
     // type_spec holds the name of the type (struct, interface, alias).
-    ScopeKind { node_kind: "type_spec",           name_field: "name" },
-    ScopeKind { node_kind: "function_declaration", name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",  name_field: "name" },
+    ScopeKind {
+        node_kind: "type_spec",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
 ];
 
 /// Scope-opening node kinds for Rust.
 static RUST_SCOPE_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "mod_item",      name_field: "name" },
-    ScopeKind { node_kind: "struct_item",   name_field: "name" },
-    ScopeKind { node_kind: "enum_item",     name_field: "name" },
-    ScopeKind { node_kind: "trait_item",    name_field: "name" },
+    ScopeKind {
+        node_kind: "mod_item",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "struct_item",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_item",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "trait_item",
+        name_field: "name",
+    },
     // impl_item uses "type" as the name field (e.g. `impl Point`).
-    ScopeKind { node_kind: "impl_item",     name_field: "type" },
-    ScopeKind { node_kind: "function_item", name_field: "name" },
+    ScopeKind {
+        node_kind: "impl_item",
+        name_field: "type",
+    },
+    ScopeKind {
+        node_kind: "function_item",
+        name_field: "name",
+    },
 ];
 
 /// Scope-opening node kinds for Ruby.
 static RUBY_SCOPE_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class",            name_field: "name" },
-    ScopeKind { node_kind: "module",           name_field: "name" },
-    ScopeKind { node_kind: "method",           name_field: "name" },
-    ScopeKind { node_kind: "singleton_method", name_field: "name" },
+    ScopeKind {
+        node_kind: "class",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "module",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "singleton_method",
+        name_field: "name",
+    },
 ];
 
 /// Scope-opening node kinds for PHP.
 static PHP_SCOPE_CONFIG: &[ScopeKind] = &[
-    ScopeKind { node_kind: "namespace_definition", name_field: "name" },
-    ScopeKind { node_kind: "class_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",   name_field: "name" },
-    ScopeKind { node_kind: "function_definition",  name_field: "name" },
+    ScopeKind {
+        node_kind: "namespace_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_definition",
+        name_field: "name",
+    },
 ];
 
 /// Return the scope config slice for a given language identifier.
@@ -99,13 +169,13 @@ static PHP_SCOPE_CONFIG: &[ScopeKind] = &[
 /// by dedicated extractors; others fall back to no scope qualification).
 pub fn scope_config_for(lang: &str) -> &'static [ScopeKind] {
     match lang {
-        "python"     => PYTHON_SCOPE_CONFIG,
-        "java"       => JAVA_SCOPE_CONFIG,
-        "go"         => GO_SCOPE_CONFIG,
-        "rust"       => RUST_SCOPE_CONFIG,
-        "ruby"       => RUBY_SCOPE_CONFIG,
-        "php"        => PHP_SCOPE_CONFIG,
-        _            => &[],
+        "python" => PYTHON_SCOPE_CONFIG,
+        "java" => JAVA_SCOPE_CONFIG,
+        "go" => GO_SCOPE_CONFIG,
+        "rust" => RUST_SCOPE_CONFIG,
+        "ruby" => RUBY_SCOPE_CONFIG,
+        "php" => PHP_SCOPE_CONFIG,
+        _ => &[],
     }
 }
 
@@ -287,7 +357,7 @@ fn is_import_node(kind: &str) -> bool {
             | "use_declaration"       // Rust
             | "include_statement"     // PHP
             | "require_call"          // Ruby (heuristic)
-            | "load_statement"        // Starlark/Bazel
+            | "load_statement" // Starlark/Bazel
     )
 }
 
@@ -317,7 +387,8 @@ fn extract_name<'src>(node: Node, ctx: &ExtractionCtx<'src>) -> Option<String> {
         if kind == "identifier"
             || kind == "type_identifier"
             || kind == "simple_identifier" // Kotlin/Swift
-            || kind == "name_identifier"   // Kotlin
+            || kind == "name_identifier"
+        // Kotlin
         {
             let text = ctx.text(child).trim();
             if !text.is_empty() {
@@ -343,7 +414,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
 
         if let Some(target_name) = target_name_opt {
             // Only emit the ref if we have a real target name.
-            ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            ctx.refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1).max(0),
                 target_name,
                 kind: EdgeKind::Imports,
@@ -352,9 +425,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         // Don't recurse into imports — there's nothing useful inside.
         return;
@@ -373,7 +446,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
         // the enclosing scope's node kind is a type-level construct.
         if sym_kind == SymbolKind::Function {
             let enclosing = scope_tree::find_enclosing_scope(
-                &ctx.scope_tree, node.start_byte(), node.end_byte(),
+                &ctx.scope_tree,
+                node.start_byte(),
+                node.end_byte(),
             );
             if let Some(scope) = enclosing {
                 match scope.node_kind {
@@ -389,7 +464,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
         if let Some(name) = extract_name(node, ctx) {
             // Use the enclosing scope (not the node's own scope) for qualified naming.
             let containing_scope = scope_tree::find_enclosing_scope(
-                &ctx.scope_tree, node.start_byte(), node.end_byte(),
+                &ctx.scope_tree,
+                node.start_byte(),
+                node.end_byte(),
             );
             let qualified_name = scope_tree::qualify(&name, containing_scope);
             let sp = scope_tree::scope_path(containing_scope);
@@ -416,11 +493,11 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 scope_path: sp,
                 parent_index: ctx.parent_symbol_index(),
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // Push parent index for nested symbols, and recurse.
             let pushes_parent = matches!(
@@ -446,7 +523,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
     // ---- Call references ---------------------------------------------------
     if helpers::is_call_node(kind) {
         if let Some(callee_name) = helpers::extract_call_target(node, ctx) {
-            ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            ctx.refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1),
                 target_name: callee_name,
                 kind: EdgeKind::Calls,
@@ -455,9 +534,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         recurse_children(node, ctx, language);
         return;
@@ -469,7 +548,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
             if !helpers::is_declaration_name_position(node, parent) {
                 let name = ctx.text(node).trim();
                 if !name.is_empty() && name != "void" && name != "var" {
-                    ctx.refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    ctx.refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: ctx.symbols.len().saturating_sub(1),
                         target_name: name.to_string(),
                         kind: EdgeKind::TypeRef,
@@ -478,9 +559,9 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                         module: None,
                         chain: None,
                         byte_offset: node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -501,4 +582,3 @@ fn recurse_children<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, languag
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

@@ -57,12 +57,12 @@ pub(super) fn push_variable_decl(
                         doc_comment: None,
                         scope_path: scope_path.clone(),
                         parent_index,
-                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                        byte_offset: 0,
+                        declared_type: None,
+                        return_type: None,
+                        param_types: Vec::new(),
+                        generic_params: Vec::new(),
+                    });
 
                     // Extract TypeRef from variable type annotation: `const repo: Repository`
                     if let Some(type_ann) = child.child_by_field_name("type") {
@@ -90,7 +90,9 @@ pub(super) fn push_variable_decl(
                                         .map(|s| s.name.clone())
                                         .unwrap_or_default();
                                     if !target.is_empty() {
-                                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
                                             source_symbol_index: idx,
                                             target_name: target,
                                             kind: EdgeKind::TypeRef,
@@ -99,23 +101,24 @@ pub(super) fn push_variable_decl(
                                             module: None,
                                             chain: Some(chain),
                                             byte_offset: init_node.start_byte() as u32,
-                                                                                    namespace_segments: Vec::new(),
-                                                                                    call_args: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
                                     }
                                 }
                             }
                         } else if init_node.kind() == "new_expression" {
                             // `const map = new Map()` → type is the constructor name
-                            if let Some(constructor) = init_node.child_by_field_name("constructor") {
+                            if let Some(constructor) = init_node.child_by_field_name("constructor")
+                            {
                                 let type_name = match constructor.kind() {
-                                    "identifier" | "type_identifier" => {
-                                        node_text(constructor, src)
-                                    }
+                                    "identifier" | "type_identifier" => node_text(constructor, src),
                                     _ => String::new(),
                                 };
                                 if !type_name.is_empty() {
-                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index: idx,
                                         target_name: type_name,
                                         kind: EdgeKind::TypeRef,
@@ -124,9 +127,9 @@ pub(super) fn push_variable_decl(
                                         module: None,
                                         chain: None,
                                         byte_offset: constructor.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
+                                    });
                                 }
                             }
                         } else if init_node.kind() == "member_expression" {
@@ -138,7 +141,9 @@ pub(super) fn push_variable_decl(
                                     .map(|s| s.name.clone())
                                     .unwrap_or_default();
                                 if !target.is_empty() {
-                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index: idx,
                                         target_name: target,
                                         kind: EdgeKind::TypeRef,
@@ -147,9 +152,9 @@ pub(super) fn push_variable_decl(
                                         module: None,
                                         chain: Some(chain),
                                         byte_offset: init_node.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
+                                    });
                                 }
                             }
                         } else if init_node.kind() == "as_expression" {
@@ -164,9 +169,7 @@ pub(super) fn push_variable_decl(
                             // `const obj = { a: 1 } satisfies Config` → type is Config
                             // satisfies_expression: <expr> satisfies <type>
                             // The type is the last named child after the `satisfies` keyword.
-                            extract_type_ref_from_satisfies_expression(
-                                &init_node, src, idx, refs,
-                            );
+                            extract_type_ref_from_satisfies_expression(&init_node, src, idx, refs);
                         }
                     }
                 } else if name_node.kind() == "object_pattern" {
@@ -242,12 +245,12 @@ pub(super) fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
 
                         // Emit chain to source with property name appended so the
                         // index builder can resolve the type of this property.
@@ -261,12 +264,14 @@ pub(super) fn push_variable_decl(
                                 type_args: vec![],
                                 optional_chaining: false,
                                 byte_offset: 0,
-                                                            declared_type_id: None,
+                                declared_type_id: None,
                                 is_call: false,
                                 call_args: Vec::new(),
                                 type_arg_ids: Vec::new(),
-});
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            });
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: prop_idx,
                                 target_name: source_prop,
                                 kind: EdgeKind::TypeRef,
@@ -275,8 +280,8 @@ pub(super) fn push_variable_decl(
                                 module: None,
                                 chain: Some(prop_chain),
                                 byte_offset: prop.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
                             });
                         }
                     }
@@ -332,9 +337,8 @@ pub(super) fn push_variable_decl(
                             }
                             "rest_pattern" => {
                                 let mut rc = element.walk();
-                                let inner = element
-                                    .children(&mut rc)
-                                    .find(|c| c.kind() == "identifier");
+                                let inner =
+                                    element.children(&mut rc).find(|c| c.kind() == "identifier");
                                 let Some(inner) = inner else {
                                     elem_index += 1;
                                     continue;
@@ -366,12 +370,12 @@ pub(super) fn push_variable_decl(
                             doc_comment: None,
                             scope_path: scope_path.clone(),
                             parent_index,
-                                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                            byte_offset: 0,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
 
                         // Rest elements (`...rest`) bind an array of the
                         // remaining tuple elements — tuple-index inference
@@ -393,12 +397,14 @@ pub(super) fn push_variable_decl(
                                     type_args: vec![],
                                     optional_chaining: false,
                                     byte_offset: 0,
-                                                                    declared_type_id: None,
+                                    declared_type_id: None,
                                     is_call: false,
                                     call_args: Vec::new(),
                                     type_arg_ids: Vec::new(),
-});
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                });
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index: elem_sym_idx,
                                     target_name: elem_name,
                                     kind: EdgeKind::TypeRef,
@@ -407,9 +413,9 @@ pub(super) fn push_variable_decl(
                                     module: None,
                                     chain: Some(elem_chain),
                                     byte_offset: elem_node.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
 

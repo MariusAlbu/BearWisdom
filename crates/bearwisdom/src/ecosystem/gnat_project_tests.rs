@@ -145,7 +145,11 @@ fn discover_yields_external_with_when_path_escapes_root() {
     .unwrap();
     std::fs::create_dir_all(project_a.join("src")).unwrap();
     std::fs::create_dir_all(project_b.join("src")).unwrap();
-    std::fs::write(project_b.join("src").join("b.ads"), "package B is\nend B;\n").unwrap();
+    std::fs::write(
+        project_b.join("src").join("b.ads"),
+        "package B is\nend B;\n",
+    )
+    .unwrap();
 
     let roots = discover_gnat_project_externals(&project_a);
     assert_eq!(
@@ -203,7 +207,11 @@ fn walk_collects_ads_and_adb_files() {
     std::fs::write(src.join("foo.adb"), "package body Foo is\nend Foo;\n").unwrap();
     // Pruned:
     std::fs::create_dir_all(tmp.join("obj")).unwrap();
-    std::fs::write(tmp.join("obj").join("noise.ads"), "package Noise is\nend Noise;\n").unwrap();
+    std::fs::write(
+        tmp.join("obj").join("noise.ads"),
+        "package Noise is\nend Noise;\n",
+    )
+    .unwrap();
 
     let dep = ExternalDepRoot {
         module_path: "demo".to_string(),

@@ -24,7 +24,7 @@ use tracing::debug;
 // used by callers still on the old import paths.
 
 // Re-exports of functions that moved to ecosystem modules, for back-compat.
-pub use crate::ecosystem::nuget::{parse_dotnet_externals, nuget_packages_root};
+pub use crate::ecosystem::nuget::{nuget_packages_root, parse_dotnet_externals};
 
 /// A discovered external dependency root — the directory containing one
 /// version of one package on disk.
@@ -423,7 +423,12 @@ pub fn coursier_cache_root() -> Option<PathBuf> {
     let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
         let mut v = Vec::new();
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            v.push(PathBuf::from(local).join("Coursier").join("Cache").join("v1"));
+            v.push(
+                PathBuf::from(local)
+                    .join("Coursier")
+                    .join("Cache")
+                    .join("v1"),
+            );
         }
         if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
             v.push(
@@ -449,7 +454,12 @@ pub fn coursier_cache_root() -> Option<PathBuf> {
         if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
             v.push(PathBuf::from(xdg).join("coursier").join("v1"));
         }
-        v.push(PathBuf::from(home).join(".cache").join("coursier").join("v1"));
+        v.push(
+            PathBuf::from(home)
+                .join(".cache")
+                .join("coursier")
+                .join("v1"),
+        );
         v
     };
     candidates.into_iter().find(|p| p.is_dir())
@@ -493,7 +503,9 @@ pub(crate) fn resolve_coursier_sources_jar(
             if !path.is_dir() {
                 continue;
             }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             // Direct hit: we found the artifact's group-first directory.
             // Walk to <group-rest>/<artifact>/<version>/<artifact>-<version>-sources.jar.
             if name == group_first {
@@ -522,10 +534,9 @@ pub(crate) fn resolve_coursier_sources_jar(
                         .collect();
                     pick_newest_version(&versions)?
                 };
-                let jar = group_path.join(&version).join(format!(
-                    "{}-{}-sources.jar",
-                    coord.artifact_id, version
-                ));
+                let jar = group_path
+                    .join(&version)
+                    .join(format!("{}-{}-sources.jar", coord.artifact_id, version));
                 if jar.is_file() {
                     return Some((version, jar));
                 }
@@ -563,13 +574,19 @@ pub(crate) fn resolve_coursier_submodule_jars(
 ) -> Vec<(String, String, PathBuf)> {
     // Walk scheme/host/repo-base wrappers to locate the Coursier group dir.
     fn find_group_dir(dir: &Path, group_id: &str, depth: u32) -> Option<PathBuf> {
-        if depth > 8 { return None; }
+        if depth > 8 {
+            return None;
+        }
         let group_first = group_id.split('.').next()?;
         let entries = std::fs::read_dir(dir).ok()?;
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() { continue; }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if name == group_first {
                 // Navigate remaining group segments.
                 let mut group_path = path.clone();
@@ -598,32 +615,46 @@ pub(crate) fn resolve_coursier_submodule_jars(
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() { continue; }
-        let Some(artifact_dir_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(artifact_dir_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
 
         // Strip the Scala version suffix to get the base artifact name, then
         // check that it starts with our prefix. `scalatest-core_2.13` →
         // base = `scalatest-core`; `scalatest_2.13` itself is the aggregator
         // we already processed — skip it.
         let base = strip_scala_suffix(artifact_dir_name);
-        if !base.starts_with(artifact_prefix) { continue; }
+        if !base.starts_with(artifact_prefix) {
+            continue;
+        }
         // Skip the aggregator itself (exact match after suffix strip).
-        if base == artifact_prefix { continue; }
+        if base == artifact_prefix {
+            continue;
+        }
 
         // Pick version: preferred first, then newest available.
         let version = if let Some(v) = preferred_version {
             let vdir = path.join(v);
-            if vdir.is_dir() { v.to_string() }
-            else {
-                let Some(newest) = pick_newest_version_from_dir(&path) else { continue };
+            if vdir.is_dir() {
+                v.to_string()
+            } else {
+                let Some(newest) = pick_newest_version_from_dir(&path) else {
+                    continue;
+                };
                 newest
             }
         } else {
-            let Some(newest) = pick_newest_version_from_dir(&path) else { continue };
+            let Some(newest) = pick_newest_version_from_dir(&path) else {
+                continue;
+            };
             newest
         };
 
-        let sources_jar = path.join(&version)
+        let sources_jar = path
+            .join(&version)
             .join(format!("{artifact_dir_name}-{version}-sources.jar"));
         if sources_jar.is_file() {
             out.push((artifact_dir_name.to_string(), version, sources_jar));
@@ -646,7 +677,8 @@ pub(crate) fn strip_scala_suffix(name: &str) -> &str {
 }
 
 fn pick_newest_version_from_dir(dir: &Path) -> Option<String> {
-    let versions: Vec<String> = std::fs::read_dir(dir).ok()?
+    let versions: Vec<String> = std::fs::read_dir(dir)
+        .ok()?
         .flatten()
         .filter_map(|e| {
             if e.file_type().ok()?.is_dir() {
@@ -676,8 +708,14 @@ pub(crate) fn collect_pom_files_bounded(dir: &Path, out: &mut Vec<PathBuf>, dept
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if matches!(
                         name,
-                        ".git" | "target" | "build" | "node_modules"
-                            | ".gradle" | "bin" | "obj" | ".idea"
+                        ".git"
+                            | "target"
+                            | "build"
+                            | "node_modules"
+                            | ".gradle"
+                            | "bin"
+                            | "obj"
+                            | ".idea"
                     ) {
                         continue;
                     }
@@ -775,7 +813,8 @@ pub(crate) fn extract_java_sources_jar(jar_path: &Path, dest: &Path) -> std::io:
 
 /// Find the first subdirectory under `dir`.
 pub(crate) fn find_first_subdir(dir: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir).ok()?
+    std::fs::read_dir(dir)
+        .ok()?
         .flatten()
         .find(|e| e.path().is_dir())
         .map(|e| e.path())

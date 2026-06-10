@@ -21,7 +21,11 @@ fn powershell_kind_table_matches_former_predicate() {
     ] {
         assert!(KindCompatibility::check(t, EdgeKind::Calls, k));
     }
-    assert!(!KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Variable));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
     // TypeRef accepts the type-and-value kinds the predicate allowed.
     for k in [
         SymbolKind::Class,

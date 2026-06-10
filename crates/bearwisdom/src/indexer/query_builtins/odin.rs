@@ -23,7 +23,8 @@ pub const BUILTINS: &[&str] = &[
     "using",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "; Scopes\n\
 \n\
 [\n\
   (block)\n\
@@ -64,4 +65,5 @@ pub const LOCALS_SCM: Option<&str> = Some("; Scopes\n\
 (field (identifier) @definition.field \":\")\n\
 \n\
 (label_statement (identifier) @definition \":\")\n\
-");
+",
+);

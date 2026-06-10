@@ -39,8 +39,12 @@ pub(super) fn expand_python_reexports_into(
     seen: &mut std::collections::HashSet<PathBuf>,
     depth: u32,
 ) {
-    if !seen.insert(file.to_path_buf()) { return }
-    if !file.is_file() { return }
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    if !file.is_file() {
+        return;
+    }
 
     let rel_sub = match file.strip_prefix(pkg_root) {
         Ok(p) => p.to_string_lossy().replace('\\', "/"),
@@ -56,9 +60,13 @@ pub(super) fn expand_python_reexports_into(
         language: "python",
     });
 
-    if depth >= PY_REEXPORT_MAX_DEPTH { return }
+    if depth >= PY_REEXPORT_MAX_DEPTH {
+        return;
+    }
 
-    let Ok(src) = std::fs::read_to_string(file) else { return };
+    let Ok(src) = std::fs::read_to_string(file) else {
+        return;
+    };
     for target in extract_python_relative_imports(&src) {
         let Some(next) = resolve_python_relative_path(file, pkg_root, &target) else {
             continue;
@@ -75,13 +83,19 @@ fn extract_python_relative_imports(src: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in src.lines() {
         let t = line.trim_start();
-        if !t.starts_with("from ") { continue }
+        if !t.starts_with("from ") {
+            continue;
+        }
         // Take the portion between `from ` and ` import`
         let after_from = &t[5..];
-        let Some(import_ix) = after_from.find(" import ") else { continue };
+        let Some(import_ix) = after_from.find(" import ") else {
+            continue;
+        };
         let spec = after_from[..import_ix].trim();
         // Relative specs start with one or more dots.
-        if !spec.starts_with('.') { continue }
+        if !spec.starts_with('.') {
+            continue;
+        }
         out.push(spec.to_string());
     }
     out
@@ -94,9 +108,15 @@ fn resolve_python_relative_path(from_file: &Path, pkg_root: &Path, spec: &str) -
     // Count leading dots.
     let mut dots = 0usize;
     for c in spec.chars() {
-        if c == '.' { dots += 1 } else { break }
+        if c == '.' {
+            dots += 1
+        } else {
+            break;
+        }
     }
-    if dots == 0 { return None }
+    if dots == 0 {
+        return None;
+    }
     let rest = &spec[dots..]; // may be empty
 
     // Walk up `dots - 1` levels from the file's parent directory.
@@ -108,7 +128,9 @@ fn resolve_python_relative_path(from_file: &Path, pkg_root: &Path, spec: &str) -
     // Safety: don't escape the package root.
     if let Ok(canon_pkg) = pkg_root.canonicalize() {
         if let Ok(canon_base) = base.canonicalize() {
-            if !canon_base.starts_with(&canon_pkg) { return None }
+            if !canon_base.starts_with(&canon_pkg) {
+                return None;
+            }
         }
     }
 
@@ -120,9 +142,13 @@ fn resolve_python_relative_path(from_file: &Path, pkg_root: &Path, spec: &str) -
 
     // Try as file first: target + .py
     let as_file = target.with_extension("py");
-    if as_file.is_file() { return Some(as_file) }
+    if as_file.is_file() {
+        return Some(as_file);
+    }
     // Fallback: target is a directory with __init__.py
     let as_init = target.join("__init__.py");
-    if as_init.is_file() { return Some(as_init) }
+    if as_init.is_file() {
+        return Some(as_init);
+    }
     None
 }

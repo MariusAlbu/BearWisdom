@@ -19,7 +19,11 @@ pub(crate) fn detect_groovy_gorm_emission(
     }
     let root = chain.segments[0].name.as_str();
     let leaf = chain.segments.last()?.name.as_str();
-    if !root.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+    if !root
+        .chars()
+        .next()
+        .map_or(false, |c| c.is_ascii_uppercase())
+    {
         return None;
     }
     let op = match leaf {
@@ -53,8 +57,7 @@ impl LanguageEngineHooks for GroovyHooks {
         ref_ctx: &RefContext<'_>,
         _lookup: &dyn SymbolLookup,
     ) -> Vec<crate::indexer::resolve::flow_emit::FlowEmission> {
-        let mut emissions =
-            crate::languages::java::hooks::detect_flow_inner(file_ctx, ref_ctx);
+        let mut emissions = crate::languages::java::hooks::detect_flow_inner(file_ctx, ref_ctx);
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
             if let Some(em) = detect_groovy_gorm_emission(chain) {
                 emissions.push(em);

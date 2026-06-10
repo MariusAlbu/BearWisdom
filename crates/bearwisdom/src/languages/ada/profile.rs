@@ -29,7 +29,10 @@ const ADA_KIND_TABLE: KindTable = &[
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Struct]),
-    (EdgeKind::Implements, &[SymbolKind::Class, SymbolKind::Interface]),
+    (
+        EdgeKind::Implements,
+        &[SymbolKind::Class, SymbolKind::Interface],
+    ),
     (
         EdgeKind::TypeRef,
         &[
@@ -49,7 +52,11 @@ const ADA_KIND_TABLE: KindTable = &[
     ),
     (
         EdgeKind::Instantiates,
-        &[SymbolKind::Class, SymbolKind::Function, SymbolKind::Namespace],
+        &[
+            SymbolKind::Class,
+            SymbolKind::Function,
+            SymbolKind::Namespace,
+        ],
     ),
 ];
 
@@ -109,7 +116,8 @@ pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
-    module_prefix_rewrites: crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+    module_prefix_rewrites:
+        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,

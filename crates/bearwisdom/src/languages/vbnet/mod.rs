@@ -13,9 +13,9 @@
 //! - `imports_statement` → Imports edge
 //! - `inherits_clause` → Inherits edge
 
-pub(crate) mod keywords;
 pub mod extract;
 pub mod hooks;
+pub(crate) mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::VBNET_HOOKS;
@@ -36,17 +36,25 @@ use crate::types::ExtractionResult;
 pub struct VbNetPlugin;
 
 impl LanguagePlugin for VbNetPlugin {
-    fn id(&self) -> &str { "vbnet" }
+    fn id(&self) -> &str {
+        "vbnet"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["vbnet"] }
+    fn language_ids(&self) -> &[&str] {
+        &["vbnet"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".vb"] }
+    fn extensions(&self) -> &[&str] {
+        &[".vb"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_vb_dotnet::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -92,8 +100,7 @@ impl LanguagePlugin for VbNetPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::VBNET_HOOKS)
     }
 }

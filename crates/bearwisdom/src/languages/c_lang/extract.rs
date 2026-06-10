@@ -19,17 +19,41 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
 // ---------------------------------------------------------------------------
 
 pub(crate) static C_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "struct_specifier", name_field: "name" },
-    ScopeKind { node_kind: "enum_specifier",   name_field: "name" },
-    ScopeKind { node_kind: "union_specifier",  name_field: "name" },
+    ScopeKind {
+        node_kind: "struct_specifier",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_specifier",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "union_specifier",
+        name_field: "name",
+    },
 ];
 
 pub(crate) static CPP_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "namespace_definition", name_field: "name" },
-    ScopeKind { node_kind: "class_specifier",      name_field: "name" },
-    ScopeKind { node_kind: "struct_specifier",     name_field: "name" },
-    ScopeKind { node_kind: "enum_specifier",       name_field: "name" },
-    ScopeKind { node_kind: "union_specifier",      name_field: "name" },
+    ScopeKind {
+        node_kind: "namespace_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "class_specifier",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "struct_specifier",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_specifier",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "union_specifier",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -44,7 +68,13 @@ fn is_cpp_content(source: &str) -> bool {
     // body (i.e. the first `{`). Using byte search avoids regex overhead.
     let sentinel = source.find('{').unwrap_or(source.len());
     let header = &source[..sentinel];
-    for token in ["namespace ", "template<", "template <", "class ", "operator "] {
+    for token in [
+        "namespace ",
+        "template<",
+        "template <",
+        "class ",
+        "operator ",
+    ] {
         if header.contains(token) {
             return true;
         }
@@ -56,11 +86,7 @@ pub fn extract(source: &str, language: &str) -> super::ExtractionResult {
     extract_with_file(source, "", language)
 }
 
-pub fn extract_with_file(
-    source: &str,
-    file_path: &str,
-    language: &str,
-) -> super::ExtractionResult {
+pub fn extract_with_file(source: &str, file_path: &str, language: &str) -> super::ExtractionResult {
     // Upgrade ".h" files that contain C++-only constructs to the C++ grammar.
     // The language-profile detector maps ".h" → "c" (correct for pure C
     // projects), but in mixed or C++-only projects the header files contain
@@ -92,13 +118,25 @@ pub fn extract_with_file(
     let src = source.as_bytes();
     let has_errors = root.has_error();
 
-    let scope_config = if effective_language == "c" { C_SCOPE_KINDS } else { CPP_SCOPE_KINDS };
+    let scope_config = if effective_language == "c" {
+        C_SCOPE_KINDS
+    } else {
+        CPP_SCOPE_KINDS
+    };
     let scope_tree = scope_tree::build(root, src, scope_config);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    extract_node(root, src, &scope_tree, effective_language, &mut symbols, &mut refs, None);
+    extract_node(
+        root,
+        src,
+        &scope_tree,
+        effective_language,
+        &mut symbols,
+        &mut refs,
+        None,
+    );
 
     // Full-CST type-ref sweep: emit TypeRef for every non-builtin type_identifier
     // and a ref for every template_argument_list in the CST.  This ensures the
@@ -159,4 +197,3 @@ pub fn extract_with_file(
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
-

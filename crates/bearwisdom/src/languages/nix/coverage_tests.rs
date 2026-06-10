@@ -24,9 +24,14 @@ fn cov_binding_produces_variable() {
     let src = "let foo = pkgs.hello; in foo";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "foo"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "foo"),
         "binding should produce Variable(foo); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -38,7 +43,10 @@ fn cov_function_binding_produces_function() {
     assert!(
         r.symbols.iter().any(|s| s.name == "myFunc"),
         "function binding should produce symbol(myFunc); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -52,9 +60,14 @@ fn cov_apply_expression_produces_calls() {
     let src = "import ./foo.nix";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls || rf.kind == EdgeKind::Imports),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls || rf.kind == EdgeKind::Imports),
         "apply_expression should produce Calls or Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -64,9 +77,14 @@ fn cov_callpackage_emits_imports_ref() {
     let src = "let result = pkgs.callPackage ./package.nix { }; in result";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("package.nix")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("package.nix")),
         "callPackage should emit Imports ref to path; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -76,9 +94,14 @@ fn cov_curried_call_emits_ref() {
     let src = "let x = lib.optionalAttrs (a == b) { flag = true; }; in x";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("optionalAttrs")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("optionalAttrs")),
         "curried call should emit Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,9 +112,14 @@ fn cov_formal_default_import_emits_ref() {
     let src = "{ pkgs ? import <nixpkgs> { } }: pkgs.hello";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports || rf.kind == EdgeKind::Calls),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports || rf.kind == EdgeKind::Calls),
         "formal default with import should emit a ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -101,9 +129,14 @@ fn cov_string_interpolation_apply_emits_ref() {
     let src = r#"let x = "prefix ${lib.toHexString val} suffix"; in x"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("toHexString")),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("toHexString")),
         "apply in string interpolation should emit Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -113,9 +146,14 @@ fn cov_with_expression_produces_imports() {
     let src = "with pkgs; [ hello git ]";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
         "with_expression should emit Imports(pkgs); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -125,9 +163,14 @@ fn cov_import_with_complex_path_emits_calls_ref() {
     let src = r#"let x = import (nixpkgs + "/nixos/lib/eval-config.nix"); in x"#;
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls || rf.kind == EdgeKind::Imports),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls || rf.kind == EdgeKind::Imports),
         "import with non-literal path should emit at least one ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -142,14 +185,24 @@ fn cov_inherit_produces_variable() {
     let src = "{ inherit gcc clang; }";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "gcc"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "gcc"),
         "inherit should produce Variable(gcc); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "clang"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "clang"),
         "inherit should produce Variable(clang); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -159,14 +212,24 @@ fn cov_inherit_from_produces_variables() {
     let src = "{ inherit (pkgs) hello git; }";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "hello"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "hello"),
         "inherit_from should produce Variable(hello); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "git"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "git"),
         "inherit_from should produce Variable(git); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -177,9 +240,14 @@ fn cov_inherit_from_produces_imports_ref() {
     let src = "let x = { inherit (pkgs) hello; }; in x";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
         "inherit_from should emit Imports(pkgs); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -193,7 +261,10 @@ fn cov_dotted_binding_produces_qualified_variable() {
             .iter()
             .any(|s| s.kind == SymbolKind::Variable && s.name.contains('.')),
         "dotted binding should produce Variable with dotted name; got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -203,9 +274,14 @@ fn cov_rec_attrset_binding_produces_variable() {
     let src = "rec { x = 1; y = x + 1; }";
     let r = extract::extract(src, lang());
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "x"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Variable && s.name == "x"),
         "rec attrset binding should produce Variable(x); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -219,7 +295,10 @@ fn cov_import_literal_path_emits_imports_ref() {
             .iter()
             .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("config.nix")),
         "import with literal path should emit Imports ref to path; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -236,6 +315,9 @@ fn cov_mkderivation_binding_produces_variable() {
     assert!(
         r.symbols.iter().any(|s| s.name == "myPkg"),
         "mkDerivation binding should produce symbol(myPkg); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }

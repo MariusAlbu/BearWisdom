@@ -91,7 +91,10 @@ pub fn find_scope_at(tree: &ScopeTree, byte_offset: usize) -> Option<&ScopeEntry
     // partition_point bounds the scan to that prefix and rev().find returns that
     // scope, without scanning entries that start after the offset.
     let prefix = tree.partition_point(|s| s.start_byte <= byte_offset);
-    tree[..prefix].iter().rev().find(|s| byte_offset < s.end_byte)
+    tree[..prefix]
+        .iter()
+        .rev()
+        .find(|s| byte_offset < s.end_byte)
 }
 
 /// Find the deepest scope that ENCLOSES `[node_start, node_end)` — i.e. the
@@ -267,7 +270,10 @@ fn walk(
         let scope_match = config
             .iter()
             .find(|k| k.node_kind == node.kind())
-            .and_then(|k| node.child_by_field_name(k.name_field).map(|n| (k.node_kind, n)));
+            .and_then(|k| {
+                node.child_by_field_name(k.name_field)
+                    .map(|n| (k.node_kind, n))
+            });
 
         let (child_chain, child_depth) = if let Some((node_kind, name_node)) = scope_match {
             // For C# `qualified_name` nodes (namespace "Foo.Bar"), keep the full text.

@@ -1,11 +1,11 @@
 //! Dockerfile language plugin.
 
-pub(crate) mod hooks;
-pub(crate) mod profile;
 pub mod connectors;
-pub mod keywords;
 pub mod embedded;
 pub mod extract;
+pub(crate) mod hooks;
+pub mod keywords;
+pub(crate) mod profile;
 
 pub use hooks::DOCKERFILE_HOOKS;
 pub use profile::DOCKERFILE_PROFILE;
@@ -67,12 +67,12 @@ impl LanguagePlugin for DockerfilePlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "copy_instruction",
-        ]
+        &["copy_instruction"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn post_index(
         &self,
@@ -91,8 +91,7 @@ impl LanguagePlugin for DockerfilePlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::DOCKERFILE_HOOKS)
     }
 }

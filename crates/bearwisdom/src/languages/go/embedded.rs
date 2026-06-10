@@ -13,7 +13,10 @@ use tree_sitter::{Node, Parser};
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     let mut parser = Parser::new();
-    if parser.set_language(&tree_sitter_go::LANGUAGE.into()).is_err() {
+    if parser
+        .set_language(&tree_sitter_go::LANGUAGE.into())
+        .is_err()
+    {
         return Vec::new();
     }
     let Some(tree) = parser.parse(source, None) else {
@@ -137,7 +140,10 @@ mod tests {
     fn go_generate_directive_emits_build_tool_shell() {
         let src = "package p\n\n//go:generate stringer -type=Pill\n//go:generate protoc --go_out=. api.proto\nfunc f() {}\n";
         let regions = detect_regions(src);
-        let bash: Vec<_> = regions.iter().filter(|r| r.origin == EmbeddedOrigin::BuildToolShell).collect();
+        let bash: Vec<_> = regions
+            .iter()
+            .filter(|r| r.origin == EmbeddedOrigin::BuildToolShell)
+            .collect();
         assert_eq!(bash.len(), 2);
         assert_eq!(bash[0].language_id, "bash");
         assert!(bash[0].text.contains("stringer"));
@@ -150,6 +156,8 @@ mod tests {
         // directive by Go tooling — Mark it skipped.
         let src = "package p\n\n// go:generate echo hi\n";
         let regions = detect_regions(src);
-        assert!(regions.iter().all(|r| r.origin != EmbeddedOrigin::BuildToolShell));
+        assert!(regions
+            .iter()
+            .all(|r| r.origin != EmbeddedOrigin::BuildToolShell));
     }
 }

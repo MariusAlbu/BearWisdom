@@ -1,4 +1,6 @@
-use super::hooks::{detect_haskell_http_producer, detect_haskell_persistent_emission, detect_haskell_scotty_route};
+use super::hooks::{
+    detect_haskell_http_producer, detect_haskell_persistent_emission, detect_haskell_scotty_route,
+};
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -98,10 +100,13 @@ fn constraint_tyvar_resolves_via_engine_generic_param() {
     // generic_params map from that Vec; and the shared ladder's
     // `resolve_via_generic_param` rung binds the ref to `f` at confidence 1.0.
     let pf = parsed_haskell("src/M.hs", "f :: Ord a => a -> a -> Bool\nf x y = x == y\n");
-    let res = resolve_ref(&pf, "a", EdgeKind::TypeRef)
-        .expect("constraint tyvar `a` must resolve");
+    let res = resolve_ref(&pf, "a", EdgeKind::TypeRef).expect("constraint tyvar `a` must resolve");
     assert_eq!(res.strategy, "engine_generic_param");
-    assert!(res.confidence >= 1.0, "expected confidence 1.0; got {}", res.confidence);
+    assert!(
+        res.confidence >= 1.0,
+        "expected confidence 1.0; got {}",
+        res.confidence
+    );
 
     // The generic-param strategy only ever resolves a tyvar to its own
     // declaring symbol (the ref's source qname), so the bind cannot be a
@@ -127,8 +132,8 @@ fn forall_tyvar_resolves_via_engine_generic_param() {
     // The explicit `forall a b.` quantifier supplies the tyvars; the
     // constraint occurrence of `a` still binds through the generic rung.
     let pf = parsed_haskell("src/M.hs", "h :: forall a b. (Eq a) => a -> b -> Bool\n");
-    let res = resolve_ref(&pf, "a", EdgeKind::TypeRef)
-        .expect("forall constraint tyvar `a` must resolve");
+    let res =
+        resolve_ref(&pf, "a", EdgeKind::TypeRef).expect("forall constraint tyvar `a` must resolve");
     assert_eq!(res.strategy, "engine_generic_param");
 }
 

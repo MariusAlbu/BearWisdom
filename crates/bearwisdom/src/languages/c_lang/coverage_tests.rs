@@ -26,7 +26,11 @@ use crate::types::{EdgeKind, SymbolKind};
 fn cov_function_definition_emits_function() {
     let r = extract::extract("int foo() { return 0; }", "c");
     let sym = r.symbols.iter().find(|s| s.name == "foo");
-    assert!(sym.is_some(), "expected Function 'foo'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'foo'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -35,7 +39,11 @@ fn cov_function_definition_emits_function() {
 fn cov_declaration_emits_variable() {
     let r = extract::extract("int count;", "c");
     let sym = r.symbols.iter().find(|s| s.name == "count");
-    assert!(sym.is_some(), "expected Variable 'count'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'count'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// struct_specifier → SymbolKind::Struct
@@ -43,7 +51,11 @@ fn cov_declaration_emits_variable() {
 fn cov_struct_specifier_emits_struct() {
     let r = extract::extract("struct Point { int x; int y; };", "c");
     let sym = r.symbols.iter().find(|s| s.name == "Point");
-    assert!(sym.is_some(), "expected Struct 'Point'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct 'Point'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -52,7 +64,11 @@ fn cov_struct_specifier_emits_struct() {
 fn cov_union_specifier_emits_struct() {
     let r = extract::extract("union Data { int i; float f; };", "c");
     let sym = r.symbols.iter().find(|s| s.name == "Data");
-    assert!(sym.is_some(), "expected Struct(union) 'Data'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Struct(union) 'Data'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
 }
 
@@ -70,7 +86,11 @@ fn cov_enum_specifier_emits_enum() {
 fn cov_enumerator_emits_variable_symbols() {
     let r = extract::extract("enum Status { PENDING, ACTIVE, DONE };", "c");
     let sym = r.symbols.iter().find(|s| s.name == "PENDING");
-    assert!(sym.is_some(), "expected enumerator 'PENDING'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected enumerator 'PENDING'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// field_declaration — the extractor processes field declarations inside struct bodies.
@@ -80,11 +100,23 @@ fn cov_enumerator_emits_variable_symbols() {
 fn cov_field_declaration_struct_and_members_extracted() {
     let r = extract::extract("struct Point { int x; int y; };", "c");
     let has_struct = r.symbols.iter().any(|s| s.name == "Point");
-    assert!(has_struct, "expected Struct 'Point' from struct_specifier; got: {:?}", r.symbols);
+    assert!(
+        has_struct,
+        "expected Struct 'Point' from struct_specifier; got: {:?}",
+        r.symbols
+    );
     let has_x = r.symbols.iter().any(|s| s.name == "x");
-    assert!(has_x, "expected field member 'x' from field_identifier; got: {:?}", r.symbols);
+    assert!(
+        has_x,
+        "expected field member 'x' from field_identifier; got: {:?}",
+        r.symbols
+    );
     let has_y = r.symbols.iter().any(|s| s.name == "y");
-    assert!(has_y, "expected field member 'y' from field_identifier; got: {:?}", r.symbols);
+    assert!(
+        has_y,
+        "expected field member 'y' from field_identifier; got: {:?}",
+        r.symbols
+    );
 }
 
 /// type_definition → SymbolKind::TypeAlias
@@ -92,7 +124,11 @@ fn cov_field_declaration_struct_and_members_extracted() {
 fn cov_type_definition_emits_type_alias() {
     let r = extract::extract("typedef unsigned int uint32;", "c");
     let sym = r.symbols.iter().find(|s| s.name == "uint32");
-    assert!(sym.is_some(), "expected TypeAlias 'uint32'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'uint32'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// preproc_def → SymbolKind::Variable (macro constant)
@@ -100,7 +136,11 @@ fn cov_type_definition_emits_type_alias() {
 fn cov_preproc_def_emits_variable() {
     let r = extract::extract("#define MAX_BUF 1024\n", "c");
     let sym = r.symbols.iter().find(|s| s.name == "MAX_BUF");
-    assert!(sym.is_some(), "expected Variable(macro) 'MAX_BUF'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable(macro) 'MAX_BUF'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// preproc_function_def → SymbolKind::Function (function-like macro)
@@ -108,7 +148,11 @@ fn cov_preproc_def_emits_variable() {
 fn cov_preproc_function_def_emits_function() {
     let r = extract::extract("#define MAX(a, b) ((a) > (b) ? (a) : (b))\n", "c");
     let sym = r.symbols.iter().find(|s| s.name == "MAX");
-    assert!(sym.is_some(), "expected Function(macro) 'MAX'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function(macro) 'MAX'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -121,7 +165,11 @@ fn cov_preproc_function_def_emits_function() {
 fn cov_class_specifier_emits_class() {
     let r = extract::extract("class Animal { public: int id; };", "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "Animal");
-    assert!(sym.is_some(), "expected Class 'Animal'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class 'Animal'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Class);
 }
 
@@ -130,7 +178,11 @@ fn cov_class_specifier_emits_class() {
 fn cov_namespace_definition_emits_namespace() {
     let r = extract::extract("namespace myns { int x; }", "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "myns");
-    assert!(sym.is_some(), "expected Namespace 'myns'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Namespace 'myns'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Namespace);
 }
 
@@ -150,7 +202,11 @@ fn cov_namespace_alias_definition_does_not_crash() {
 fn cov_alias_declaration_emits_type_alias() {
     let r = extract::extract("using MyInt = int;", "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "MyInt");
-    assert!(sym.is_some(), "expected TypeAlias 'MyInt'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'MyInt'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// template_declaration → wraps function/class and emits the inner symbol
@@ -158,7 +214,11 @@ fn cov_alias_declaration_emits_type_alias() {
 fn cov_template_declaration_emits_inner_symbol() {
     let r = extract::extract("template<typename T> class Box { T val; };", "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "Box");
-    assert!(sym.is_some(), "expected symbol 'Box' from template_declaration; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected symbol 'Box' from template_declaration; got: {:?}",
+        r.symbols
+    );
 }
 
 /// concept_definition → SymbolKind::Interface  (C++20)
@@ -187,7 +247,10 @@ fn cov_call_expression_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"printf"), "expected Calls to 'printf'; got: {calls:?}");
+    assert!(
+        calls.contains(&"printf"),
+        "expected Calls to 'printf'; got: {calls:?}"
+    );
 }
 
 /// preproc_include → EdgeKind::Imports
@@ -308,11 +371,16 @@ fn cov_import_declaration_does_not_crash() {
 fn cov_declaration_function_declarator_emits_function() {
     let r = extract::extract("int compute(int a, int b);", "c");
     let sym = r.symbols.iter().find(|s| s.name == "compute");
-    assert!(sym.is_some(), "expected a symbol for forward-decl 'compute'; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected a symbol for forward-decl 'compute'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(
         sym.unwrap().kind,
         SymbolKind::Function,
-        "expected Function for forward-decl 'compute'; got: {:?}", sym.unwrap().kind
+        "expected Function for forward-decl 'compute'; got: {:?}",
+        sym.unwrap().kind
     );
 }
 
@@ -322,7 +390,11 @@ fn cov_declaration_function_declarator_emits_function() {
 fn cov_typedef_anonymous_struct_emits_type_alias() {
     let r = extract::extract("typedef struct { int x; int y; } Point;", "c");
     let sym = r.symbols.iter().find(|s| s.name == "Point");
-    assert!(sym.is_some(), "expected TypeAlias 'Point' from typedef struct; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'Point' from typedef struct; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -331,7 +403,11 @@ fn cov_typedef_anonymous_struct_emits_type_alias() {
 fn cov_typedef_function_pointer_emits_type_alias() {
     let r = extract::extract("typedef int (*Callback)(void *ctx);", "c");
     let sym = r.symbols.iter().find(|s| s.name == "Callback");
-    assert!(sym.is_some(), "expected TypeAlias 'Callback' from typedef fn ptr; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'Callback' from typedef fn ptr; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -340,7 +416,11 @@ fn cov_typedef_function_pointer_emits_type_alias() {
 fn cov_static_function_emits_function() {
     let r = extract::extract("static int helper(void) { return 0; }", "c");
     let sym = r.symbols.iter().find(|s| s.name == "helper");
-    assert!(sym.is_some(), "expected Function 'helper' from static fn; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'helper' from static fn; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Function);
 }
 
@@ -349,7 +429,11 @@ fn cov_static_function_emits_function() {
 fn cov_extern_declaration_emits_variable() {
     let r = extract::extract("extern int global_count;", "c");
     let sym = r.symbols.iter().find(|s| s.name == "global_count");
-    assert!(sym.is_some(), "expected Variable 'global_count' from extern decl; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'global_count' from extern decl; got: {:?}",
+        r.symbols
+    );
 }
 
 /// init_declarator path: `int x = 0;` → Variable (declarator wraps identifier via init_declarator)
@@ -357,7 +441,11 @@ fn cov_extern_declaration_emits_variable() {
 fn cov_declaration_init_declarator_emits_variable() {
     let r = extract::extract("int count = 42;", "c");
     let sym = r.symbols.iter().find(|s| s.name == "count");
-    assert!(sym.is_some(), "expected Variable 'count' from init_declarator; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'count' from init_declarator; got: {:?}",
+        r.symbols
+    );
 }
 
 /// enumerator with explicit value → EnumMember
@@ -365,7 +453,11 @@ fn cov_declaration_init_declarator_emits_variable() {
 fn cov_enumerator_with_value_emits_enum_member() {
     let r = extract::extract("enum Dir { NORTH = 0, SOUTH = 1 };", "c");
     let north = r.symbols.iter().find(|s| s.name == "NORTH");
-    assert!(north.is_some(), "expected EnumMember 'NORTH'; got: {:?}", r.symbols);
+    assert!(
+        north.is_some(),
+        "expected EnumMember 'NORTH'; got: {:?}",
+        r.symbols
+    );
     assert_eq!(north.unwrap().kind, SymbolKind::EnumMember);
 }
 
@@ -401,8 +493,15 @@ fn cov_method_in_class_emits_method() {
 fn cov_constructor_emits_constructor() {
     let src = "class Engine { public: Engine() {} };";
     let r = extract::extract(src, "cpp");
-    let sym = r.symbols.iter().find(|s| s.name == "Engine" && s.kind == SymbolKind::Constructor);
-    assert!(sym.is_some(), "expected Constructor 'Engine'; got: {:?}", r.symbols);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Engine" && s.kind == SymbolKind::Constructor);
+    assert!(
+        sym.is_some(),
+        "expected Constructor 'Engine'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// destructor: `~ClassName()` → Method (destructor)
@@ -411,8 +510,15 @@ fn cov_destructor_emits_method() {
     let src = "class Engine { public: ~Engine() {} };";
     let r = extract::extract(src, "cpp");
     // Destructor is emitted as Method named ~Engine.
-    let sym = r.symbols.iter().find(|s| s.name.contains("Engine") && s.kind == SymbolKind::Method);
-    assert!(sym.is_some(), "expected Method destructor '~Engine'; got: {:?}", r.symbols);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name.contains("Engine") && s.kind == SymbolKind::Method);
+    assert!(
+        sym.is_some(),
+        "expected Method destructor '~Engine'; got: {:?}",
+        r.symbols
+    );
 }
 
 /// operator overload → Method (inside class) with operator name
@@ -421,7 +527,11 @@ fn cov_operator_overload_emits_method() {
     let src = "class Vec { public: Vec operator+(const Vec& o) const { return *this; } };";
     let r = extract::extract(src, "cpp");
     let sym = r.symbols.iter().find(|s| s.name.contains("operator"));
-    assert!(sym.is_some(), "expected Method 'operator+' from overload; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method 'operator+' from overload; got: {:?}",
+        r.symbols
+    );
 }
 
 /// pure virtual declaration in class → Method (virtual/abstract)
@@ -430,13 +540,22 @@ fn cov_pure_virtual_declaration_emits_method() {
     let src = "class Shape { public: virtual int area() = 0; };";
     let r = extract::extract(src, "cpp");
     let shape = r.symbols.iter().find(|s| s.name == "Shape");
-    assert!(shape.is_some(), "expected Class 'Shape' to be extracted; got: {:?}", r.symbols);
+    assert!(
+        shape.is_some(),
+        "expected Class 'Shape' to be extracted; got: {:?}",
+        r.symbols
+    );
     let area = r.symbols.iter().find(|s| s.name == "area");
-    assert!(area.is_some(), "expected Method 'area' from pure-virtual declaration; got: {:?}", r.symbols);
+    assert!(
+        area.is_some(),
+        "expected Method 'area' from pure-virtual declaration; got: {:?}",
+        r.symbols
+    );
     assert_eq!(
         area.unwrap().kind,
         SymbolKind::Method,
-        "expected Method for pure-virtual 'area'; got: {:?}", area.unwrap().kind
+        "expected Method for pure-virtual 'area'; got: {:?}",
+        area.unwrap().kind
     );
 }
 
@@ -446,7 +565,11 @@ fn cov_nested_class_emits_class() {
     let src = "class Outer { public: class Inner {}; };";
     let r = extract::extract(src, "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "Inner");
-    assert!(sym.is_some(), "expected Class 'Inner' from nested class; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class 'Inner' from nested class; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Class);
 }
 
@@ -457,7 +580,11 @@ fn cov_anonymous_namespace_does_not_crash() {
     let r = extract::extract(src, "cpp");
     // Anonymous namespace has no name — we just verify no panic and inner symbols present.
     let sym = r.symbols.iter().find(|s| s.name == "internal_val");
-    assert!(sym.is_some(), "expected Variable 'internal_val' inside anonymous namespace; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Variable 'internal_val' inside anonymous namespace; got: {:?}",
+        r.symbols
+    );
 }
 
 /// template function definition → Function symbol emitted
@@ -466,7 +593,11 @@ fn cov_template_function_emits_function() {
     let src = "template<typename T> T identity(T val) { return val; }";
     let r = extract::extract(src, "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "identity");
-    assert!(sym.is_some(), "expected Function 'identity' from template fn; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Function 'identity' from template fn; got: {:?}",
+        r.symbols
+    );
 }
 
 /// alias_declaration inside class with type ref → TypeAlias + TypeRef edge
@@ -475,7 +606,11 @@ fn cov_alias_declaration_in_class_emits_type_alias_and_typeref() {
     let src = "class Wrapper { public: using ValueType = int; };";
     let r = extract::extract(src, "cpp");
     let sym = r.symbols.iter().find(|s| s.name == "ValueType");
-    assert!(sym.is_some(), "expected TypeAlias 'ValueType' inside class; got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias 'ValueType' inside class; got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
 }
 
@@ -494,7 +629,10 @@ fn cov_call_via_field_expression_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"init"), "expected Calls to 'init' via field_expression; got: {calls:?}");
+    assert!(
+        calls.contains(&"init"),
+        "expected Calls to 'init' via field_expression; got: {calls:?}"
+    );
 }
 
 /// type_identifier in return type → TypeRef
@@ -601,11 +739,23 @@ fn cov_variable_declaration_type_identifier_emits_type_ref() {
 #[test]
 fn cov_preproc_include_quoted_sets_module() {
     let r = extract::extract("#include \"utils/queue.h\"\n", "c");
-    let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports && r.target_name.contains("queue"));
-    assert!(imp.is_some(), "expected Imports ref for queue.h; got: {:?}", r.refs);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports && r.target_name.contains("queue"));
     assert!(
-        imp.unwrap().module.as_deref().map(|m| m.contains("queue")).unwrap_or(false),
-        "expected module path to contain 'queue'; got: {:?}", imp.unwrap().module
+        imp.is_some(),
+        "expected Imports ref for queue.h; got: {:?}",
+        r.refs
+    );
+    assert!(
+        imp.unwrap()
+            .module
+            .as_deref()
+            .map(|m| m.contains("queue"))
+            .unwrap_or(false),
+        "expected module path to contain 'queue'; got: {:?}",
+        imp.unwrap().module
     );
 }
 
@@ -624,7 +774,10 @@ fn cov_qualified_call_expression_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"sqrt"), "expected Calls to 'sqrt' via qualified_identifier; got: {calls:?}");
+    assert!(
+        calls.contains(&"sqrt"),
+        "expected Calls to 'sqrt' via qualified_identifier; got: {calls:?}"
+    );
 }
 
 /// call_expression with template_function (foo<T>(...)) → Calls
@@ -679,7 +832,10 @@ fn cov_lambda_body_calls_emits_calls() {
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"process"), "expected Calls to 'process' from lambda body; got: {calls:?}");
+    assert!(
+        calls.contains(&"process"),
+        "expected Calls to 'process' from lambda body; got: {calls:?}"
+    );
 }
 
 /// catch_clause parameter type → TypeRef

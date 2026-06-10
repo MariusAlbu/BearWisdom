@@ -11,8 +11,8 @@
 //! - `package Name::Space` → Namespace
 //! - `use Module` → Imports
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -35,17 +35,27 @@ use crate::types::ExtractionResult;
 pub struct PerlPlugin;
 
 impl LanguagePlugin for PerlPlugin {
-    fn id(&self) -> &str { "perl" }
+    fn id(&self) -> &str {
+        "perl"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["perl"] }
+    fn language_ids(&self) -> &[&str] {
+        &["perl"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".pl", ".pm"] }
+    fn extensions(&self) -> &[&str] {
+        &[".pl", ".pm"]
+    }
 
     /// No grammar available: tree-sitter-perl 1.1 requires tree-sitter 0.26
     /// (ABI conflict). Returns None so the plugin falls through to line scanning.
-    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> { None }
+    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
+        None
+    }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -62,7 +72,9 @@ impl LanguagePlugin for PerlPlugin {
         &["use_statement", "function_call"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -72,8 +84,7 @@ impl LanguagePlugin for PerlPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::PERL_HOOKS)
     }
 }

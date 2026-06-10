@@ -133,13 +133,31 @@ pub struct IndexBody {
     pub(crate) path: String,
 }
 
-pub(crate) fn default_visibility_all() -> String { "all".to_string() }
+pub(crate) fn default_visibility_all() -> String {
+    "all".to_string()
+}
 
-pub(crate) fn default_limit_20() -> usize { 20 }
-pub(crate) fn default_limit_100() -> usize { 100 }
-pub(crate) fn default_limit_200() -> usize { 200 }
-pub(crate) fn default_limit_500() -> usize { 500 }
-pub(crate) fn default_depth_3() -> u32 { 3 }
-pub(crate) fn default_max_nodes() -> usize { 500 }
-pub(crate) fn default_true() -> bool { true }
-pub(crate) fn default_forward() -> String { "forward".to_string() }
+pub(crate) fn default_limit_20() -> usize {
+    20
+}
+pub(crate) fn default_limit_100() -> usize {
+    100
+}
+pub(crate) fn default_limit_200() -> usize {
+    200
+}
+pub(crate) fn default_limit_500() -> usize {
+    500
+}
+pub(crate) fn default_depth_3() -> u32 {
+    3
+}
+pub(crate) fn default_max_nodes() -> usize {
+    500
+}
+pub(crate) fn default_true() -> bool {
+    true
+}
+pub(crate) fn default_forward() -> String {
+    "forward".to_string()
+}

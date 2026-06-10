@@ -52,8 +52,7 @@ where
             Some(parent_qname) => {
                 let candidate = format!("{parent_qname}.{method_name}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if is_visible(file_ctx, ref_ctx, sym) && kind_compatible(edge_kind, &sym.kind)
-                    {
+                    if is_visible(file_ctx, ref_ctx, sym) && kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: RESOLVED_CONFIDENCE,

@@ -40,23 +40,100 @@ pub(super) fn is_external_c_namespace(ns: &str) -> bool {
 
 /// C standard library header names (used to classify `#include <header>`).
 const C_STDLIB_HEADERS: &[&str] = &[
-    "stdio", "stdlib", "string", "math", "assert", "ctype", "errno",
-    "float", "limits", "locale", "setjmp", "signal", "stdarg", "stddef",
-    "stdint", "inttypes", "time", "wchar", "wctype", "stdbool", "complex",
-    "tgmath", "fenv", "iso646", "threads", "uchar",
+    "stdio",
+    "stdlib",
+    "string",
+    "math",
+    "assert",
+    "ctype",
+    "errno",
+    "float",
+    "limits",
+    "locale",
+    "setjmp",
+    "signal",
+    "stdarg",
+    "stddef",
+    "stdint",
+    "inttypes",
+    "time",
+    "wchar",
+    "wctype",
+    "stdbool",
+    "complex",
+    "tgmath",
+    "fenv",
+    "iso646",
+    "threads",
+    "uchar",
     // C++ standard headers (common subset)
-    "algorithm", "array", "bitset", "chrono", "codecvt", "complex",
-    "condition_variable", "deque", "exception", "filesystem", "forward_list",
-    "fstream", "functional", "future", "initializer_list", "iomanip", "ios",
-    "iosfwd", "iostream", "istream", "iterator", "limits", "list", "locale",
-    "map", "memory", "mutex", "new", "numeric", "optional", "ostream",
-    "queue", "random", "ratio", "regex", "set", "shared_mutex", "sstream",
-    "stack", "stdexcept", "streambuf", "string", "string_view", "system_error",
-    "thread", "tuple", "type_traits", "typeindex", "typeinfo", "unordered_map",
-    "unordered_set", "utility", "valarray", "variant", "vector",
+    "algorithm",
+    "array",
+    "bitset",
+    "chrono",
+    "codecvt",
+    "complex",
+    "condition_variable",
+    "deque",
+    "exception",
+    "filesystem",
+    "forward_list",
+    "fstream",
+    "functional",
+    "future",
+    "initializer_list",
+    "iomanip",
+    "ios",
+    "iosfwd",
+    "iostream",
+    "istream",
+    "iterator",
+    "limits",
+    "list",
+    "locale",
+    "map",
+    "memory",
+    "mutex",
+    "new",
+    "numeric",
+    "optional",
+    "ostream",
+    "queue",
+    "random",
+    "ratio",
+    "regex",
+    "set",
+    "shared_mutex",
+    "sstream",
+    "stack",
+    "stdexcept",
+    "streambuf",
+    "string",
+    "string_view",
+    "system_error",
+    "thread",
+    "tuple",
+    "type_traits",
+    "typeindex",
+    "typeinfo",
+    "unordered_map",
+    "unordered_set",
+    "utility",
+    "valarray",
+    "variant",
+    "vector",
     // POSIX headers
-    "unistd", "fcntl", "sys/types", "sys/stat", "sys/socket", "netinet/in",
-    "arpa/inet", "netdb", "dirent", "pthread", "semaphore",
+    "unistd",
+    "fcntl",
+    "sys/types",
+    "sys/stat",
+    "sys/socket",
+    "netinet/in",
+    "arpa/inet",
+    "netdb",
+    "dirent",
+    "pthread",
+    "semaphore",
 ];
 
 /// Check whether a `#include` path is a system/stdlib header.
@@ -108,7 +185,13 @@ pub(super) fn is_template_param(name: &str) -> bool {
         return true;
     }
     // Single uppercase letter: T, U, V, K, N, E, etc.
-    if name.len() == 1 && name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+    if name.len() == 1
+        && name
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+    {
         return true;
     }
     // Names ending in "Type" are almost always template type parameters
@@ -125,7 +208,12 @@ pub(super) fn is_template_param(name: &str) -> bool {
     // TypeRefs inflates unresolved counts (5K+ on zig-compiler-fresh's
     // vendored libc++).
     if let Some(rest) = name.strip_prefix('_') {
-        if rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+        if rest
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+        {
             return true;
         }
     }
@@ -608,4 +696,3 @@ pub fn is_r_c_api_symbol(name: &str) -> bool {
             | "STRING_PTR"
     )
 }
-

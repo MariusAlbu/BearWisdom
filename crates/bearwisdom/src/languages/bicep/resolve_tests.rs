@@ -1,10 +1,7 @@
 // Tests for bicep external classification — Azure resource types and child
 // resource shorthand routed via `classify_external`.
 
-
-use crate::indexer::resolve::engine::{
-    FileContext, RefContext, SymbolIndex,
-};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolIndex};
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
 };
@@ -52,15 +49,17 @@ fn make_sym(name: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_calls(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::Calls,
@@ -75,7 +74,9 @@ fn make_calls(target: &str) -> ExtractedRef {
 }
 
 fn make_type_ref(target: &str) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: target.to_string(),
         kind: EdgeKind::TypeRef,
@@ -99,7 +100,9 @@ fn child_resource_shorthand_classifies_as_azure() {
         let index = SymbolIndex::build(&parsed, &HashMap::new());
         let file_ctx = {
             use crate::type_checker::profile::hooks::LanguageEngineHooks;
-            super::hooks::BicepHooks.build_file_context(&parsed[0], None).unwrap()
+            super::hooks::BicepHooks
+                .build_file_context(&parsed[0], None)
+                .unwrap()
         };
         let ref_ctx = RefContext {
             extracted_ref: &tr,
@@ -109,12 +112,14 @@ fn child_resource_shorthand_classifies_as_azure() {
         };
         let ns = {
             use crate::type_checker::profile::hooks::LanguageEngineHooks;
-            crate::languages::bicep::hooks::BicepHooks.classify_external(
-                &ref_ctx, &file_ctx, None, &index,
-            )
+            crate::languages::bicep::hooks::BicepHooks
+                .classify_external(&ref_ctx, &file_ctx, None, &index)
         };
-        assert_eq!(ns.as_deref(), Some("azure"),
-            "child-resource shorthand `{name}` should classify as azure");
+        assert_eq!(
+            ns.as_deref(),
+            Some("azure"),
+            "child-resource shorthand `{name}` should classify as azure"
+        );
     }
 }
 
@@ -127,9 +132,11 @@ fn user_symbol_not_child_shorthand() {
     let parsed = vec![file];
     let index = SymbolIndex::build(&parsed, &HashMap::new());
     let file_ctx = {
-            use crate::type_checker::profile::hooks::LanguageEngineHooks;
-            super::hooks::BicepHooks.build_file_context(&parsed[0], None).unwrap()
-        };
+        use crate::type_checker::profile::hooks::LanguageEngineHooks;
+        super::hooks::BicepHooks
+            .build_file_context(&parsed[0], None)
+            .unwrap()
+    };
     let ref_ctx = RefContext {
         extracted_ref: &tr,
         source_symbol: &sym,
@@ -138,8 +145,11 @@ fn user_symbol_not_child_shorthand() {
     };
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        crate::languages::bicep::hooks::BicepHooks.classify_external(&ref_ctx, &file_ctx, None, &index)
+        crate::languages::bicep::hooks::BicepHooks
+            .classify_external(&ref_ctx, &file_ctx, None, &index)
     };
-    assert_eq!(ns, None, "PascalCase target should not be routed as azure shorthand");
+    assert_eq!(
+        ns, None,
+        "PascalCase target should not be routed as azure shorthand"
+    );
 }
-

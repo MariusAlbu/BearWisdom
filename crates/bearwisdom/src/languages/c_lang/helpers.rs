@@ -45,10 +45,10 @@ pub(super) fn detect_visibility(node: &Node, src: &[u8]) -> Option<Visibility> {
                 let text = node_text(s, src);
                 let text = text.trim_end_matches(':').trim();
                 return match text {
-                    "public"    => Some(Visibility::Public),
-                    "private"   => Some(Visibility::Private),
+                    "public" => Some(Visibility::Public),
+                    "private" => Some(Visibility::Private),
                     "protected" => Some(Visibility::Protected),
-                    _           => None,
+                    _ => None,
                 };
             }
             "{" => break,
@@ -121,9 +121,14 @@ pub(super) fn extract_declarator_name(node: &Node, src: &[u8]) -> (Option<String
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "function_declarator" | "identifier" | "field_identifier"
-                    | "type_identifier" | "qualified_identifier" | "destructor_name"
-                    | "operator_name" | "operator_cast" => {
+                    "function_declarator"
+                    | "identifier"
+                    | "field_identifier"
+                    | "type_identifier"
+                    | "qualified_identifier"
+                    | "destructor_name"
+                    | "operator_name"
+                    | "operator_cast" => {
                         let (name, is_dtor) = extract_declarator_name(&child, src);
                         if name.is_some() {
                             return (name, is_dtor);
@@ -187,7 +192,10 @@ pub(super) fn call_target_name(node: &Node, src: &[u8]) -> String {
 
 /// Walk a node tree looking for the first `type_identifier` leaf.
 pub(super) fn first_type_identifier(node: &Node, src: &[u8]) -> Option<String> {
-    if matches!(node.kind(), "type_identifier" | "identifier" | "field_identifier") {
+    if matches!(
+        node.kind(),
+        "type_identifier" | "identifier" | "field_identifier"
+    ) {
         return Some(node_text(*node, src));
     }
     let mut cursor = node.walk();

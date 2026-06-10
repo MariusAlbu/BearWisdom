@@ -12,8 +12,16 @@ fn scala_profile_identity() {
 #[test]
 fn scala_inherits_accepts_class_and_trait() {
     let t = SCALA_PROFILE.kind_compatible_table;
-    assert!(KindCompatibility::check(t, EdgeKind::Inherits, SymbolKind::Class));
-    assert!(KindCompatibility::check(t, EdgeKind::Inherits, SymbolKind::Trait));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Inherits,
+        SymbolKind::Class
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Inherits,
+        SymbolKind::Trait
+    ));
 }
 
 #[test]

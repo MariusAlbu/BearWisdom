@@ -9,7 +9,9 @@ use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 pub struct GoModManifest;
 
 impl ManifestReader for GoModManifest {
-    fn kind(&self) -> ManifestKind { ManifestKind::GoMod }
+    fn kind(&self) -> ManifestKind {
+        ManifestKind::GoMod
+    }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
         let go_mod_path = find_go_mod(project_root)?;
@@ -39,12 +41,16 @@ pub struct GoModDep {
 
 pub fn find_go_mod(root: &Path) -> Option<PathBuf> {
     let candidate = root.join("go.mod");
-    if candidate.is_file() { return Some(candidate) }
+    if candidate.is_file() {
+        return Some(candidate);
+    }
     if let Ok(entries) = std::fs::read_dir(root) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let nested = entry.path().join("go.mod");
-                if nested.is_file() { return Some(nested) }
+                if nested.is_file() {
+                    return Some(nested);
+                }
             }
         }
     }
@@ -67,22 +73,33 @@ pub fn parse_go_mod(content: &str) -> GoModData {
         let path = tokens.next()?.to_string();
         let version = tokens.next()?.to_string();
         let indirect = comment.contains("indirect");
-        Some(GoModDep { path, version, indirect })
+        Some(GoModDep {
+            path,
+            version,
+            indirect,
+        })
     }
 
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("//") { continue }
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("module ") {
             let path = rest.split_whitespace().next().unwrap_or("").trim();
-            if !path.is_empty() { module_path = Some(path.to_string()) }
+            if !path.is_empty() {
+                module_path = Some(path.to_string())
+            }
             continue;
         }
         if trimmed == "require (" || trimmed.starts_with("require (") {
             in_require_block = true;
             continue;
         }
-        if trimmed == ")" { in_require_block = false; continue }
+        if trimmed == ")" {
+            in_require_block = false;
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("require ") {
             let rest = rest.trim();
             if rest != "(" && !rest.is_empty() {
@@ -101,5 +118,9 @@ pub fn parse_go_mod(content: &str) -> GoModData {
         }
     }
 
-    GoModData { module_path, require_paths, require_deps }
+    GoModData {
+        module_path,
+        require_paths,
+        require_deps,
+    }
 }

@@ -100,7 +100,12 @@ fn assign_package_ids_root_package_claims_all_files() {
 
     assign_package_ids(&mut parsed, &packages);
     for p in &parsed {
-        assert_eq!(p.package_id, Some(7), "root package should claim {}", p.path);
+        assert_eq!(
+            p.package_id,
+            Some(7),
+            "root package should claim {}",
+            p.path
+        );
     }
 }
 
@@ -133,8 +138,16 @@ fn assign_package_ids_deeper_prefix_beats_root() {
     let mut parsed = vec![pf("apps/web/src/index.ts"), pf("tools/lint.ts")];
 
     assign_package_ids(&mut parsed, &packages);
-    assert_eq!(parsed[0].package_id, Some(2), "web file picks the deeper package");
-    assert_eq!(parsed[1].package_id, Some(1), "unrelated file falls through to root");
+    assert_eq!(
+        parsed[0].package_id,
+        Some(2),
+        "web file picks the deeper package"
+    );
+    assert_eq!(
+        parsed[1].package_id,
+        Some(1),
+        "unrelated file falls through to root"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -211,30 +224,52 @@ fn survivor_keeps_id_across_body_change() {
 
     let mut foo1 = esym("C.foo", SymbolKind::Method, Some("fn foo() {1}"), 2);
     foo1.parent_index = Some(0);
-    let v1 = pfile("a.rs", "rust", vec![esym("C", SymbolKind::Class, Some("class C v1"), 1), foo1]);
+    let v1 = pfile(
+        "a.rs",
+        "rust",
+        vec![esym("C", SymbolKind::Class, Some("class C v1"), 1), foo1],
+    );
     write_parsed_files_incremental(&db, std::slice::from_ref(&v1), Some(&arena)).unwrap();
     let foo_id = sym_id(&db, "C.foo").unwrap();
     let c_id = sym_id(&db, "C").unwrap();
 
     let mut foo2 = esym("C.foo", SymbolKind::Method, Some("fn foo() {2}"), 5);
     foo2.parent_index = Some(0);
-    let v2 = pfile("a.rs", "rust", vec![esym("C", SymbolKind::Class, Some("class C v2"), 1), foo2]);
+    let v2 = pfile(
+        "a.rs",
+        "rust",
+        vec![esym("C", SymbolKind::Class, Some("class C v2"), 1), foo2],
+    );
     write_parsed_files_incremental(&db, std::slice::from_ref(&v2), Some(&arena)).unwrap();
 
-    assert_eq!(sym_id(&db, "C.foo"), Some(foo_id), "body change keeps the method id");
+    assert_eq!(
+        sym_id(&db, "C.foo"),
+        Some(foo_id),
+        "body change keeps the method id"
+    );
     assert_eq!(sym_id(&db, "C"), Some(c_id), "class id stable");
 
     // The survivor's mutable columns are refreshed from the new declaration.
     let line: i64 = db
         .conn()
-        .query_row("SELECT line FROM symbols WHERE id = ?1", [foo_id], |r| r.get(0))
+        .query_row("SELECT line FROM symbols WHERE id = ?1", [foo_id], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(line, 5, "survivor position refreshed");
     let cid: Option<i64> = db
         .conn()
-        .query_row("SELECT containing_id FROM symbols WHERE id = ?1", [foo_id], |r| r.get(0))
+        .query_row(
+            "SELECT containing_id FROM symbols WHERE id = ?1",
+            [foo_id],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert_eq!(cid, Some(c_id), "containment edge re-pointed to the surviving parent");
+    assert_eq!(
+        cid,
+        Some(c_id),
+        "containment edge re-pointed to the surviving parent"
+    );
 }
 
 /// A parameter-type change is a contract change: the key churns, so the old
@@ -258,10 +293,17 @@ fn param_change_replaces_symbol_and_reports_new_name() {
 
     let id2 = sym_id(&db, "M.foo").unwrap();
     assert_ne!(id1, id2, "param-type change → new id");
-    assert!(report.new_symbol_names.contains("foo"), "new key reported as a new name");
+    assert!(
+        report.new_symbol_names.contains("foo"),
+        "new key reported as a new name"
+    );
     let cnt: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM symbols WHERE qualified_name = 'M.foo'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'M.foo'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(cnt, 1, "old M.foo vanished, exactly one remains");
 }
@@ -274,23 +316,43 @@ fn mergeable_namespace_shares_one_id_across_files() {
     let arena = TypeArena::new();
 
     let files = vec![
-        pfile("a.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)]),
-        pfile("b.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)]),
+        pfile(
+            "a.cs",
+            "csharp",
+            vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        ),
+        pfile(
+            "b.cs",
+            "csharp",
+            vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        ),
     ];
     write_parsed_files_incremental(&db, &files, Some(&arena)).unwrap();
 
     let cnt: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM symbols WHERE qualified_name = 'App.Models'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(cnt, 1, "namespace collapses to one logical symbol");
     let id = sym_id(&db, "App.Models").unwrap();
-    assert_eq!(loc_count(&db, id), 2, "declared in two files → two locations");
+    assert_eq!(
+        loc_count(&db, id),
+        2,
+        "declared in two files → two locations"
+    );
 
     // b.cs no longer declares it: location dropped, id stable (primary is a.cs).
     let b_empty = pfile("b.cs", "csharp", vec![]);
     write_parsed_files_incremental(&db, std::slice::from_ref(&b_empty), Some(&arena)).unwrap();
-    assert_eq!(sym_id(&db, "App.Models"), Some(id), "id stable when one file drops it");
+    assert_eq!(
+        sym_id(&db, "App.Models"),
+        Some(id),
+        "id stable when one file drops it"
+    );
     assert_eq!(loc_count(&db, id), 1, "only a.cs's location remains");
 }
 
@@ -302,8 +364,16 @@ fn mergeable_rehomes_primary_when_primary_file_drops_it() {
     let arena = TypeArena::new();
 
     let files = vec![
-        pfile("a.cs", "csharp", vec![esym("App.Svc", SymbolKind::Namespace, None, 3)]),
-        pfile("b.cs", "csharp", vec![esym("App.Svc", SymbolKind::Namespace, None, 7)]),
+        pfile(
+            "a.cs",
+            "csharp",
+            vec![esym("App.Svc", SymbolKind::Namespace, None, 3)],
+        ),
+        pfile(
+            "b.cs",
+            "csharp",
+            vec![esym("App.Svc", SymbolKind::Namespace, None, 7)],
+        ),
     ];
     write_parsed_files_incremental(&db, &files, Some(&arena)).unwrap();
     let id = sym_id(&db, "App.Svc").unwrap();
@@ -313,7 +383,9 @@ fn mergeable_rehomes_primary_when_primary_file_drops_it() {
         .unwrap();
     let primary: i64 = db
         .conn()
-        .query_row("SELECT file_id FROM symbols WHERE id = ?1", [id], |r| r.get(0))
+        .query_row("SELECT file_id FROM symbols WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(primary, file_a, "a.cs is the primary site");
 
@@ -327,9 +399,14 @@ fn mergeable_rehomes_primary_when_primary_file_drops_it() {
         .unwrap();
     let primary_after: i64 = db
         .conn()
-        .query_row("SELECT file_id FROM symbols WHERE id = ?1", [id], |r| r.get(0))
+        .query_row("SELECT file_id FROM symbols WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
         .unwrap();
-    assert_eq!(primary_after, file_b, "primary re-homed to the surviving file");
+    assert_eq!(
+        primary_after, file_b,
+        "primary re-homed to the surviving file"
+    );
     assert_eq!(loc_count(&db, id), 1);
 }
 
@@ -350,7 +427,11 @@ fn vanished_reports_dependents_and_clears_only_outgoing() {
                 esym("M.helper", SymbolKind::Function, None, 2),
             ],
         ),
-        pfile("b.rs", "rust", vec![esym("N.bar", SymbolKind::Function, None, 1)]),
+        pfile(
+            "b.rs",
+            "rust",
+            vec![esym("N.bar", SymbolKind::Function, None, 1)],
+        ),
     ];
     write_parsed_files_incremental(&db, &files, Some(&arena)).unwrap();
     let foo = sym_id(&db, "M.foo").unwrap();
@@ -362,7 +443,11 @@ fn vanished_reports_dependents_and_clears_only_outgoing() {
     insert_edge(&db, bar, helper); // b depends on the surviving helper (inbound)
 
     // Reparse a.rs without foo — foo vanishes, helper survives.
-    let a2 = pfile("a.rs", "rust", vec![esym("M.helper", SymbolKind::Function, None, 2)]);
+    let a2 = pfile(
+        "a.rs",
+        "rust",
+        vec![esym("M.helper", SymbolKind::Function, None, 2)],
+    );
     let (_, _, report) =
         write_parsed_files_incremental(&db, std::slice::from_ref(&a2), Some(&arena)).unwrap();
 
@@ -376,12 +461,23 @@ fn vanished_reports_dependents_and_clears_only_outgoing() {
 
     let helper_out: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM edges WHERE source_id = ?1", [helper], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE source_id = ?1",
+            [helper],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert_eq!(helper_out, 0, "survivor's outgoing edges cleared for re-resolution");
+    assert_eq!(
+        helper_out, 0,
+        "survivor's outgoing edges cleared for re-resolution"
+    );
     let helper_in: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM edges WHERE target_id = ?1", [helper], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE target_id = ?1",
+            [helper],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(helper_in, 1, "inbound edge to the survivor is preserved");
 }

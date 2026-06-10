@@ -2,9 +2,9 @@
 
 pub mod connectors;
 pub mod embedded;
-pub mod keywords;
 pub mod extract;
 pub(crate) mod hooks;
+pub mod keywords;
 pub(crate) mod profile;
 
 pub use hooks::HCL_HOOKS;
@@ -56,21 +56,16 @@ impl LanguagePlugin for HclPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "block",
-            "attribute",
-        ]
+        &["block", "attribute"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "variable_expr",
-            "get_attr",
-            "function_call",
-        ]
+        &["variable_expr", "get_attr", "function_call"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn post_index(
         &self,
@@ -89,8 +84,7 @@ impl LanguagePlugin for HclPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::HCL_HOOKS)
     }
 }

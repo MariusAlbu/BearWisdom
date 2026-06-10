@@ -36,8 +36,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    SymbolLocationIndex,
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -58,9 +57,15 @@ pub struct ErlangOtpEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for ErlangOtpEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         // OTP is the Erlang language substrate — every Erlang project
@@ -80,9 +85,15 @@ impl Ecosystem for ErlangOtpEcosystem {
         walk(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
-    fn is_workspace_global(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
+    fn is_workspace_global(&self) -> bool {
+        true
+    }
 
     fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
         // Eagerly surface kernel and stdlib so the resolver can bind
@@ -104,9 +115,15 @@ impl Ecosystem for ErlangOtpEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for ErlangOtpEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> { discover() }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk(dep) }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover()
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk(dep)
+    }
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
@@ -202,7 +219,11 @@ fn check_otp_root(root: &Path) -> Option<PathBuf> {
         return None;
     }
     let lib = root.join("lib");
-    if lib.is_dir() { Some(lib) } else { None }
+    if lib.is_dir() {
+        Some(lib)
+    } else {
+        None
+    }
 }
 
 fn platform_install_roots() -> Vec<PathBuf> {
@@ -261,7 +282,11 @@ fn platform_install_roots() -> Vec<PathBuf> {
 fn probe_erl_binary() -> Option<PathBuf> {
     for program in ["erl", "erl.exe"] {
         let Ok(out) = Command::new(program)
-            .args(["-noshell", "-eval", "io:format(\"~s\", [code:lib_dir()]), halt()."])
+            .args([
+                "-noshell",
+                "-eval",
+                "io:format(\"~s\", [code:lib_dir()]), halt().",
+            ])
             .output()
         else {
             continue;
@@ -359,8 +384,16 @@ pub(crate) fn build_otp_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             // Index under the OTP app name so `locate("kernel", "gen_server")`
             // resolves, and also under the module name directly so chain
             // walkers that know only the Erlang module name can find the file.
-            index.insert(&dep.module_path, module_name.clone(), wf.absolute_path.clone());
-            index.insert(module_name.clone(), module_name.clone(), wf.absolute_path.clone());
+            index.insert(
+                &dep.module_path,
+                module_name.clone(),
+                wf.absolute_path.clone(),
+            );
+            index.insert(
+                module_name.clone(),
+                module_name.clone(),
+                wf.absolute_path.clone(),
+            );
         }
     }
 

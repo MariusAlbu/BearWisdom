@@ -1,7 +1,7 @@
 use super::hooks::{
     detect_elixir_ecto_emission, detect_elixir_grpc_emission, detect_elixir_http_emission,
-    detect_elixir_mailer_emission, detect_elixir_oban_emission,
-    detect_elixir_phoenix_channel_use, ElixirHooks,
+    detect_elixir_mailer_emission, detect_elixir_oban_emission, detect_elixir_phoenix_channel_use,
+    ElixirHooks,
 };
 use super::profile::ELIXIR_PROFILE;
 use crate::indexer::resolve::engine::{RefContext, SymbolIndex};
@@ -14,7 +14,10 @@ use std::collections::HashMap;
 fn test_elixir_ecto_repo_get_emits_db_select() {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     match detect_elixir_ecto_emission("Repo", "get").unwrap() {
-        FlowEmission::DbQuery { entity_name, operation } => {
+        FlowEmission::DbQuery {
+            entity_name,
+            operation,
+        } => {
             assert_eq!(entity_name, "ex.*");
             assert_eq!(operation, DbQueryOp::Select);
         }
@@ -38,10 +41,18 @@ fn test_elixir_ecto_rejects_non_repo() {
 
 #[test]
 fn test_elixir_httpoison_get_emits_producer() {
-    use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, HttpMethod, NamedChannelKind};
+    use crate::indexer::resolve::flow_emit::{
+        ChannelRole, FlowEmission, HttpMethod, NamedChannelKind,
+    };
     let args = vec![CallArg::StringLit("/api/users".to_string())];
     match detect_elixir_http_emission("HTTPoison", "get", &args).unwrap() {
-        FlowEmission::NamedChannel { kind, role, method, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind,
+            role,
+            method,
+            name,
+            ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::HttpCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(method, Some(HttpMethod::Get));
@@ -54,7 +65,10 @@ fn test_elixir_httpoison_get_emits_producer() {
 #[test]
 fn test_elixir_tesla_post_emits_producer() {
     use crate::indexer::resolve::flow_emit::FlowEmission;
-    let args = vec![CallArg::Ident("client".to_string()), CallArg::StringLit("/x".to_string())];
+    let args = vec![
+        CallArg::Ident("client".to_string()),
+        CallArg::StringLit("/x".to_string()),
+    ];
     assert!(matches!(
         detect_elixir_http_emission("Tesla", "post", &args).unwrap(),
         FlowEmission::NamedChannel { .. }
@@ -71,7 +85,9 @@ fn test_elixir_http_rejects_non_http_module() {
 fn test_elixir_grpc_stub_emits_rpc_call() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_elixir_grpc_emission("Helloworld.Greeter.Stub", "say_hello").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::RpcCall));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "Greeter.say_hello");
@@ -101,7 +117,9 @@ fn test_elixir_oban_insert_emits_bg_job() {
 fn test_elixir_bamboo_deliver_now_emits_mailer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_elixir_mailer_emission("MyApp.Mailer", "deliver_now").unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::Mailer));
             assert_eq!(role, ChannelRole::Producer);
             assert_eq!(name, "ex.Mailer");
@@ -130,7 +148,9 @@ fn test_elixir_mailer_rejects_non_mailer_module() {
 fn test_elixir_phoenix_channel_use_emits_ws_consumer() {
     use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind};
     match detect_elixir_phoenix_channel_use("Phoenix.Channel", None).unwrap() {
-        FlowEmission::NamedChannel { kind, role, name, .. } => {
+        FlowEmission::NamedChannel {
+            kind, role, name, ..
+        } => {
             assert!(matches!(kind, NamedChannelKind::WebSocket));
             assert_eq!(role, ChannelRole::Consumer);
             assert_eq!(name, "ex.Phoenix.Channel");
@@ -249,10 +269,7 @@ fn alias_module_qname_binds_bare_alias_to_module_symbol() {
     let caller = make_file(
         "lib/my_app/bar.ex",
         vec![make_sym("Bar", "MyApp.Bar", SymbolKind::Module)],
-        vec![
-            make_alias_import("Foo", "MyApp.Foo"),
-            make_call("Foo"),
-        ],
+        vec![make_alias_import("Foo", "MyApp.Foo"), make_call("Foo")],
     );
 
     let mut id_map = HashMap::new();

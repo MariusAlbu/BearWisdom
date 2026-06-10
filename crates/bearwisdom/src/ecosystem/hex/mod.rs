@@ -50,19 +50,27 @@ pub struct HexEcosystem;
 // ---------------------------------------------------------------------------
 
 impl Ecosystem for HexEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
-    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Package
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] {
+        MANIFESTS
+    }
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         // Hex covers the Erlang/Elixir/Gleam triumvirate. Each tool brings
         // its own manifest filename; map them to distinct kinds so users
         // can tell them apart in queries.
         &[
-            ("mix.exs",      "elixir"),
+            ("mix.exs", "elixir"),
             ("rebar.config", "erlang"),
-            ("gleam.toml",   "gleam"),
+            ("gleam.toml", "gleam"),
         ]
     }
 
@@ -86,7 +94,9 @@ impl Ecosystem for HexEcosystem {
         walk_hex_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
     fn resolve_import(
         &self,
@@ -97,22 +107,17 @@ impl Ecosystem for HexEcosystem {
         walk_hex_narrowed(dep)
     }
 
-    fn resolve_symbol(
-        &self,
-        dep: &ExternalDepRoot,
-        _fqn: &str,
-    ) -> Vec<WalkedFile> {
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, _fqn: &str) -> Vec<WalkedFile> {
         walk_hex_narrowed(dep)
     }
 
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_hex_symbol_index(dep_roots)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +125,9 @@ impl Ecosystem for HexEcosystem {
 // ---------------------------------------------------------------------------
 
 impl ExternalSourceLocator for HexEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_hex_roots(project_root)

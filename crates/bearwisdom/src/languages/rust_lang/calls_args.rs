@@ -83,7 +83,9 @@ fn extract_arg(node: &Node, source: &str, depth: u32) -> CallArg {
                 .named_child(0)
                 .map(|n| extract_arg(&n, source, depth + 1))
                 .unwrap_or(CallArg::Other);
-            CallArg::Await { expr: Box::new(inner) }
+            CallArg::Await {
+                expr: Box::new(inner),
+            }
         }
         // `container[index]` — two unnamed-field children in order.
         "index_expression" => {
@@ -147,7 +149,9 @@ fn extract_arg(node: &Node, source: &str, depth: u32) -> CallArg {
         // `|x| x.foo()`, `|a, b| f(a, b)` — closure expression. Capture the
         // closure's own positional parameter names so the chain walker can type
         // them from the higher-order method's callback-parameter signature.
-        "closure_expression" => CallArg::Lambda { params: closure_param_names(node, source) },
+        "closure_expression" => CallArg::Lambda {
+            params: closure_param_names(node, source),
+        },
         _ => CallArg::Other,
     }
 }
@@ -203,8 +207,13 @@ pub(super) fn extract_macro_string_args(macro_node: &Node, source: &str) -> Vec<
         .map(|s| s.trim())
     {
         if !first.is_empty()
-            && first.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
-            && first.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+            && first
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+            && first
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
         {
             // Bare identifier or scoped identifier — capture last segment.
             let simple = first.rsplit("::").next().unwrap_or(first).to_string();

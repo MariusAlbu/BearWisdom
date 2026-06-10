@@ -65,9 +65,9 @@ struct Candidate {
     kind: String,
     file_path: String,
     line: u32,
-    semantic_score: f64,  // from FTS5 BM25
-    min_hop: u32,         // distance from nearest seed (0 = is a seed)
-    incoming_edges: u32,  // centrality signal
+    semantic_score: f64, // from FTS5 BM25
+    min_hop: u32,        // distance from nearest seed (0 = is a seed)
+    incoming_edges: u32, // centrality signal
     concept_overlap: bool,
     avg_confidence: f64,
 }
@@ -104,10 +104,9 @@ fn estimate_tokens(kind: &str) -> u32 {
 /// Common English stop words that are useless as FTS5 symbol search terms.
 static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
-        "a", "an", "the", "is", "are", "to", "from", "with", "for", "of",
-        "in", "on", "by", "and", "or", "not", "this", "that", "it", "be",
-        "do", "if", "at", "as", "no", "has", "have", "was", "were", "will",
-        "can", "new", "all", "get", "set", "add", "make", "find", "what",
+        "a", "an", "the", "is", "are", "to", "from", "with", "for", "of", "in", "on", "by", "and",
+        "or", "not", "this", "that", "it", "be", "do", "if", "at", "as", "no", "has", "have",
+        "was", "were", "will", "can", "new", "all", "get", "set", "add", "make", "find", "what",
         "how", "where", "which", "when", "why", "who",
     ]
     .into_iter()
@@ -125,7 +124,10 @@ static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::SearchResult> {
     use super::search::SearchResult;
 
-    let opts = super::QueryOptions { include_signature: false, ..Default::default() };
+    let opts = super::QueryOptions {
+        include_signature: false,
+        ..Default::default()
+    };
     let mut by_qn: HashMap<String, SearchResult> = HashMap::new();
 
     // --- Strategy 1: raw FTS5 ---
@@ -163,10 +165,7 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
 
     // --- Strategy 3: LIKE-based fallback ---
     {
-        let words: Vec<&str> = task
-            .split_whitespace()
-            .filter(|w| w.len() >= 4)
-            .collect();
+        let words: Vec<&str> = task.split_whitespace().filter(|w| w.len() >= 4).collect();
 
         for word in &words {
             let pattern = format!("%{}%", word.to_lowercase());
@@ -204,7 +203,11 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
 
     // Sort by score descending, cap at limit.
     let mut results: Vec<SearchResult> = by_qn.into_values().collect();
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
     results
 }
@@ -252,7 +255,11 @@ pub fn smart_context(
     }
 
     // Normalise BM25 scores to 0.0–1.0.
-    let max_score = seeds.iter().map(|s| s.score).fold(0.0f64, f64::max).max(1.0);
+    let max_score = seeds
+        .iter()
+        .map(|s| s.score)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
 
     // Build candidate map: qualified_name → Candidate.
     let mut candidates: HashMap<String, Candidate> = HashMap::new();
@@ -270,7 +277,11 @@ pub fn smart_context(
 
     // Batch resolve: one query for all seed qualified_names.
     if !seed_qnames.is_empty() {
-        let placeholders = seed_qnames.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = seed_qnames
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT s.id, s.qualified_name, s.incoming_edge_count
              FROM symbols s
@@ -321,8 +332,7 @@ pub fn smart_context(
                 .iter()
                 .map(|id| id as &dyn rusqlite::types::ToSql)
                 .collect();
-            let rows = stmt
-                .query_map(params.as_slice(), |r| Ok(r.get::<_, String>(1)?))?;
+            let rows = stmt.query_map(params.as_slice(), |r| Ok(r.get::<_, String>(1)?))?;
             for row in rows {
                 if let Ok(concept) = row {
                     seed_concepts.insert(concept);
@@ -362,8 +372,16 @@ pub fn smart_context(
                 .collect();
             let rows: Vec<(i64, String, String, String, String, u32, f64, u32)> = stmt
                 .query_map(params.as_slice(), |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
-                        r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
                 })?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -376,11 +394,22 @@ pub fn smart_context(
                     continue;
                 }
                 next_frontier.push(id);
-                candidates.insert(qn.clone(), Candidate {
-                    id, name, qualified_name: qn, kind, file_path: fp, line,
-                    semantic_score: 0.0, min_hop: hop, incoming_edges: incoming,
-                    concept_overlap: false, avg_confidence: conf,
-                });
+                candidates.insert(
+                    qn.clone(),
+                    Candidate {
+                        id,
+                        name,
+                        qualified_name: qn,
+                        kind,
+                        file_path: fp,
+                        line,
+                        semantic_score: 0.0,
+                        min_hop: hop,
+                        incoming_edges: incoming,
+                        concept_overlap: false,
+                        avg_confidence: conf,
+                    },
+                );
             }
         }
 
@@ -401,8 +430,16 @@ pub fn smart_context(
                 .collect();
             let rows: Vec<(i64, String, String, String, String, u32, f64, u32)> = stmt
                 .query_map(params.as_slice(), |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
-                        r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
                 })?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -415,11 +452,22 @@ pub fn smart_context(
                     continue;
                 }
                 next_frontier.push(id);
-                candidates.insert(qn.clone(), Candidate {
-                    id, name, qualified_name: qn, kind, file_path: fp, line,
-                    semantic_score: 0.0, min_hop: hop, incoming_edges: incoming,
-                    concept_overlap: false, avg_confidence: conf,
-                });
+                candidates.insert(
+                    qn.clone(),
+                    Candidate {
+                        id,
+                        name,
+                        qualified_name: qn,
+                        kind,
+                        file_path: fp,
+                        line,
+                        semantic_score: 0.0,
+                        min_hop: hop,
+                        incoming_edges: incoming,
+                        concept_overlap: false,
+                        avg_confidence: conf,
+                    },
+                );
             }
         }
 
@@ -432,7 +480,11 @@ pub fn smart_context(
     if !seed_concepts.is_empty() {
         // Collect all symbol IDs that belong to any seed concept.
         let concept_member_ids: HashSet<i64> = {
-            let placeholders = seed_concepts.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let placeholders = seed_concepts
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!(
                 "SELECT cm.symbol_id FROM concept_members cm
                  JOIN concepts c ON c.id = cm.concept_id

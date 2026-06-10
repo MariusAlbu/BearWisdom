@@ -87,8 +87,7 @@ impl TaskSet {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialise TaskSet")?;
+        let json = serde_json::to_string_pretty(self).context("Failed to serialise TaskSet")?;
         std::fs::write(path, json)
             .with_context(|| format!("Failed to write task set to {}", path.display()))
     }

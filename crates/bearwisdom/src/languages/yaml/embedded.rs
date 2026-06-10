@@ -104,8 +104,7 @@ fn extract_scalar_blocks(
                 let value = value.trim_start();
                 // Block scalar?
                 if value.starts_with('|') || value.starts_with('>') {
-                    let (block_body, consumed) =
-                        collect_block_scalar(&lines, i + 1, key_indent);
+                    let (block_body, consumed) = collect_block_scalar(&lines, i + 1, key_indent);
                     if !block_body.trim().is_empty() {
                         regions.push(EmbeddedRegion {
                             language_id: lang.into(),
@@ -142,7 +141,10 @@ fn extract_scalar_blocks(
 
 /// Split a line into (indent_columns, rest).
 fn split_indent(line: &str) -> (usize, &str) {
-    let indent = line.bytes().take_while(|&b| b == b' ' || b == b'\t').count();
+    let indent = line
+        .bytes()
+        .take_while(|&b| b == b' ' || b == b'\t')
+        .count();
     (indent, &line[indent..])
 }
 
@@ -176,11 +178,7 @@ fn split_key_value(content: &str) -> Option<(&str, &str)> {
 /// `start_line`. The block ends at the first non-empty line whose
 /// indent is ≤ `key_indent`. Returns the joined body text and the
 /// next line index to resume scanning at.
-fn collect_block_scalar(
-    lines: &[&str],
-    start_line: usize,
-    key_indent: usize,
-) -> (String, usize) {
+fn collect_block_scalar(lines: &[&str], start_line: usize, key_indent: usize) -> (String, usize) {
     let mut body = String::new();
     let mut body_indent: Option<usize> = None;
     let mut i = start_line;

@@ -12,9 +12,25 @@ fn elixir_profile_identity() {
 fn elixir_kind_table_accepts_module_and_callable_kinds() {
     let t = ELIXIR_PROFILE.kind_compatible_table;
     // Module is a Calls target (defmodule functions live under a module).
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Function));
-    assert!(KindCompatibility::check(t, EdgeKind::Calls, SymbolKind::Module));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Function
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::Module
+    ));
     // TypeRef accepts module/type kinds.
-    assert!(KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Module));
-    assert!(KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::TypeAlias));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Module
+    ));
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::TypeAlias
+    ));
 }

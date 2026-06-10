@@ -72,9 +72,13 @@ pub fn parse_sbt_coord_pairs(content: &str) -> Vec<(String, String)> {
     let mut seen = std::collections::HashSet::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("//") { continue; }
+        if trimmed.starts_with("//") {
+            continue;
+        }
         for (artifact, group, _version) in extract_sbt_coords(trimmed) {
-            if artifact.is_empty() || group.is_empty() { continue; }
+            if artifact.is_empty() || group.is_empty() {
+                continue;
+            }
             let key = (group.clone(), artifact.clone());
             if seen.insert(key.clone()) {
                 out.push(key);
@@ -105,11 +109,17 @@ pub fn parse_sbt_coord_triples(
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("//") { continue; }
+        if trimmed.starts_with("//") {
+            continue;
+        }
         for (artifact, group, version_token) in extract_sbt_coords(trimmed) {
-            if artifact.is_empty() || group.is_empty() { continue; }
+            if artifact.is_empty() || group.is_empty() {
+                continue;
+            }
             let key = (group.clone(), artifact.clone());
-            if !seen.insert(key) { continue; }
+            if !seen.insert(key) {
+                continue;
+            }
             let version = resolve_version_token(&version_token, vars);
             out.push((group, artifact, version));
         }
@@ -125,11 +135,15 @@ pub fn parse_sbt_version_vars(content: &str) -> std::collections::HashMap<String
     let mut out = std::collections::HashMap::new();
     for raw in content.lines() {
         let line = raw.trim();
-        if line.starts_with("//") { continue; }
+        if line.starts_with("//") {
+            continue;
+        }
         // Match `val NAME = "VERSION"` and `val NAME: String = "VERSION"`.
         // Inside `object V { val cats = "..." }` the `val` lines are
         // indented but trim() handles that.
-        let Some(rest) = line.strip_prefix("val ") else { continue; };
+        let Some(rest) = line.strip_prefix("val ") else {
+            continue;
+        };
         let bytes = rest.as_bytes();
         // Walk to either '=' or ':' (type annotation).
         let mut name_end = 0;
@@ -138,13 +152,17 @@ pub fn parse_sbt_version_vars(content: &str) -> std::collections::HashMap<String
         {
             name_end += 1;
         }
-        if name_end == 0 { continue; }
+        if name_end == 0 {
+            continue;
+        }
         let name = &rest[..name_end];
         let after_name = rest[name_end..].trim_start();
         // Skip optional `: Type` annotation.
         let value_part = if let Some(colon_rest) = after_name.strip_prefix(':') {
             // Find the `=` after the type annotation.
-            let Some(eq_pos) = colon_rest.find('=') else { continue; };
+            let Some(eq_pos) = colon_rest.find('=') else {
+                continue;
+            };
             colon_rest[eq_pos + 1..].trim_start()
         } else if let Some(eq_rest) = after_name.strip_prefix('=') {
             eq_rest.trim_start()
@@ -153,13 +171,19 @@ pub fn parse_sbt_version_vars(content: &str) -> std::collections::HashMap<String
         };
         // Only accept a bare quoted-string value: `"X.Y.Z"`. Skip anything
         // that does string interpolation or arithmetic.
-        let Some(value) = value_part.strip_prefix('"') else { continue; };
-        let Some(end_quote) = value.find('"') else { continue; };
+        let Some(value) = value_part.strip_prefix('"') else {
+            continue;
+        };
+        let Some(end_quote) = value.find('"') else {
+            continue;
+        };
         let version = &value[..end_quote];
         // After the closing quote, only whitespace / comment / line end is
         // acceptable. `"X" + suffix` and similar are not version pins.
         let tail = value[end_quote + 1..].trim_start();
-        if !tail.is_empty() && !tail.starts_with("//") { continue; }
+        if !tail.is_empty() && !tail.starts_with("//") {
+            continue;
+        }
         out.insert(name.to_string(), version.to_string());
     }
     out
@@ -206,13 +230,19 @@ fn extract_sbt_coords(line: &str) -> Vec<(String, String, String)> {
             if let Some((group, end)) = extract_quoted(line, i) {
                 i = end;
                 // Skip whitespace
-                while i < len && bytes[i].is_ascii_whitespace() { i += 1; }
+                while i < len && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
                 // Match %% or %%% or %
                 if i < len && bytes[i] == b'%' {
                     i += 1;
-                    while i < len && bytes[i] == b'%' { i += 1; }
+                    while i < len && bytes[i] == b'%' {
+                        i += 1;
+                    }
                     // Skip whitespace
-                    while i < len && bytes[i].is_ascii_whitespace() { i += 1; }
+                    while i < len && bytes[i].is_ascii_whitespace() {
+                        i += 1;
+                    }
                     // Extract artifact (quoted string or s"..." interpolation)
                     let mut artifact_opt: Option<(String, usize)> = None;
                     if i < len && bytes[i] == b'"' {
@@ -259,13 +289,19 @@ fn extract_version_token(line: &str, start: usize) -> String {
     let bytes = line.as_bytes();
     let len = bytes.len();
     let mut i = start;
-    while i < len && bytes[i].is_ascii_whitespace() { i += 1; }
+    while i < len && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
     if i >= len || bytes[i] != b'%' {
         return String::new();
     }
     i += 1;
-    while i < len && bytes[i] == b'%' { i += 1; }
-    while i < len && bytes[i].is_ascii_whitespace() { i += 1; }
+    while i < len && bytes[i] == b'%' {
+        i += 1;
+    }
+    while i < len && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
     if i >= len {
         return String::new();
     }
@@ -332,7 +368,10 @@ libraryDependencies ++= List(
 )
 "#;
         let deps = parse_sbt_deps(content);
-        assert_eq!(deps, vec!["http4s-dsl", "http4s-ember-server", "circe-core"]);
+        assert_eq!(
+            deps,
+            vec!["http4s-dsl", "http4s-ember-server", "circe-core"]
+        );
     }
 
     #[test]
@@ -344,7 +383,8 @@ libraryDependencies ++= List(
 
     #[test]
     fn skips_comments() {
-        let content = "// \"org.fake\" %% \"fake-lib\" % \"1.0\"\n\"org.real\" %% \"real-lib\" % \"1.0\"";
+        let content =
+            "// \"org.fake\" %% \"fake-lib\" % \"1.0\"\n\"org.real\" %% \"real-lib\" % \"1.0\"";
         let deps = parse_sbt_deps(content);
         assert_eq!(deps, vec!["real-lib"]);
     }
@@ -442,24 +482,34 @@ object Dependencies {
 "#;
         let vars = parse_sbt_version_vars(content);
         let triples = parse_sbt_coord_triples(content, &vars);
-        let by_artifact: std::collections::HashMap<&str, &Option<String>> = triples
-            .iter()
-            .map(|(_, a, v)| (a.as_str(), v))
-            .collect();
+        let by_artifact: std::collections::HashMap<&str, &Option<String>> =
+            triples.iter().map(|(_, a, v)| (a.as_str(), v)).collect();
         assert_eq!(
-            by_artifact.get("cats-core").and_then(|v| v.as_ref()).map(|s| s.as_str()),
+            by_artifact
+                .get("cats-core")
+                .and_then(|v| v.as_ref())
+                .map(|s| s.as_str()),
             Some("2.12.0")
         );
         assert_eq!(
-            by_artifact.get("cats-effect").and_then(|v| v.as_ref()).map(|s| s.as_str()),
+            by_artifact
+                .get("cats-effect")
+                .and_then(|v| v.as_ref())
+                .map(|s| s.as_str()),
             Some("3.6.1")
         );
         assert_eq!(
-            by_artifact.get("fs2-core").and_then(|v| v.as_ref()).map(|s| s.as_str()),
+            by_artifact
+                .get("fs2-core")
+                .and_then(|v| v.as_ref())
+                .map(|s| s.as_str()),
             Some("3.12.0")
         );
         assert_eq!(
-            by_artifact.get("http4s-dsl").and_then(|v| v.as_ref()).map(|s| s.as_str()),
+            by_artifact
+                .get("http4s-dsl")
+                .and_then(|v| v.as_ref())
+                .map(|s| s.as_str()),
             Some("1.0.0-M43")
         );
     }

@@ -82,7 +82,6 @@ pub(super) fn is_external_swift_module(module: &str) -> bool {
     false
 }
 
-
 /// Swift primitive type names + universal language tokens that the
 /// extractor emits as type_identifier nodes. Filtered at extract time.
 /// Stdlib types (Array, Dictionary, Optional, Result) flow through and

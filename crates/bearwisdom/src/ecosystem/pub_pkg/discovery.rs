@@ -12,12 +12,16 @@ use crate::ecosystem::externals::ExternalDepRoot;
 
 pub fn discover_dart_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let pubspec_path = project_root.join("pubspec.yaml");
-    if !pubspec_path.is_file() { return Vec::new() }
+    if !pubspec_path.is_file() {
+        return Vec::new();
+    }
     let Ok(pubspec_content) = std::fs::read_to_string(&pubspec_path) else {
         return Vec::new();
     };
     let declared = parse_pubspec_deps(&pubspec_content);
-    if declared.is_empty() { return Vec::new() }
+    if declared.is_empty() {
+        return Vec::new();
+    }
 
     // Strategy 1: .dart_tool/package_config.json
     //
@@ -38,9 +42,13 @@ pub fn discover_dart_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             .unwrap_or_else(|_| project_root.to_path_buf());
         for (pkg_name, entry) in &pkg_config {
             let lib_dir = entry.root.join(&entry.package_uri);
-            if !lib_dir.is_dir() { continue }
+            if !lib_dir.is_dir() {
+                continue;
+            }
             if let Ok(canonical) = lib_dir.canonicalize() {
-                if canonical.starts_with(&project_canonical) { continue }
+                if canonical.starts_with(&project_canonical) {
+                    continue;
+                }
             }
             result.push(ExternalDepRoot {
                 module_path: pkg_name.clone(),
@@ -84,13 +92,17 @@ pub(crate) fn discover_dart_externals_from_cache(
         if locked.is_empty() {
             debug!("Dart: no pubspec.lock and no pub cache; skipping");
         } else {
-            debug!("Dart: {} locked deps but no pub cache; skipping", locked.len());
+            debug!(
+                "Dart: {} locked deps but no pub cache; skipping",
+                locked.len()
+            );
         }
         return Vec::new();
     }
 
     let version_map: std::collections::HashMap<String, String> = locked.into_iter().collect();
-    let declared_set: std::collections::HashSet<&str> = declared.iter().map(|s| s.as_str()).collect();
+    let declared_set: std::collections::HashSet<&str> =
+        declared.iter().map(|s| s.as_str()).collect();
 
     let mut result = Vec::new();
     let project_canonical = project_root
@@ -99,17 +111,26 @@ pub(crate) fn discover_dart_externals_from_cache(
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     for dep_name in declared {
-        let version = version_map.get(dep_name.as_str()).cloned().unwrap_or_default();
+        let version = version_map
+            .get(dep_name.as_str())
+            .cloned()
+            .unwrap_or_default();
         for cache_root in cache_roots {
             let lib_dir = if version.is_empty() {
                 find_latest_in_cache(cache_root, dep_name)
             } else {
                 let pkg_dir = cache_root.join(format!("{dep_name}-{version}"));
-                if pkg_dir.is_dir() { Some((pkg_dir, version.clone())) } else { None }
+                if pkg_dir.is_dir() {
+                    Some((pkg_dir, version.clone()))
+                } else {
+                    None
+                }
             };
             if let Some((pkg_dir, resolved_version)) = lib_dir {
                 let candidate = pkg_dir.join("lib");
-                if !candidate.is_dir() { continue }
+                if !candidate.is_dir() {
+                    continue;
+                }
                 if let Ok(canonical) = candidate.canonicalize() {
                     if canonical.starts_with(&project_canonical) || seen.contains(&canonical) {
                         continue;
@@ -131,12 +152,16 @@ pub(crate) fn discover_dart_externals_from_cache(
 
     // Transitive deps from lock file
     for (trans_name, trans_version) in &version_map {
-        if declared_set.contains(trans_name.as_str()) { continue }
+        if declared_set.contains(trans_name.as_str()) {
+            continue;
+        }
         for cache_root in cache_roots {
             let pkg_dir = cache_root.join(format!("{trans_name}-{trans_version}"));
             if pkg_dir.is_dir() {
                 let candidate = pkg_dir.join("lib");
-                if !candidate.is_dir() { continue }
+                if !candidate.is_dir() {
+                    continue;
+                }
                 if let Ok(canonical) = candidate.canonicalize() {
                     if canonical.starts_with(&project_canonical) || seen.contains(&canonical) {
                         continue;
@@ -175,26 +200,38 @@ pub fn parse_pubspec_lock(content: &str) -> Vec<(String, String)> {
         }
         if !raw_line.starts_with(' ') && !raw_line.starts_with('\t') && !trimmed.is_empty() {
             if in_packages {
-                if let (Some(name), Some(ver), Some(src)) =
-                    (current_name.take(), current_version.take(), current_source.take())
-                {
-                    if src == "hosted" { result.push((name, ver)) }
+                if let (Some(name), Some(ver), Some(src)) = (
+                    current_name.take(),
+                    current_version.take(),
+                    current_source.take(),
+                ) {
+                    if src == "hosted" {
+                        result.push((name, ver))
+                    }
                 }
             }
             in_packages = false;
             continue;
         }
-        if !in_packages { continue }
+        if !in_packages {
+            continue;
+        }
 
         let indent = raw_line.len() - raw_line.trim_start().len();
         if indent == 2 {
-            if let (Some(name), Some(ver), Some(src)) =
-                (current_name.take(), current_version.take(), current_source.take())
-            {
-                if src == "hosted" { result.push((name, ver)) }
+            if let (Some(name), Some(ver), Some(src)) = (
+                current_name.take(),
+                current_version.take(),
+                current_source.take(),
+            ) {
+                if src == "hosted" {
+                    result.push((name, ver))
+                }
             }
             let key = trimmed.trim_end_matches(':').trim();
-            if !key.is_empty() { current_name = Some(key.to_string()) }
+            if !key.is_empty() {
+                current_name = Some(key.to_string())
+            }
             continue;
         }
         if indent == 4 {
@@ -210,10 +247,10 @@ pub fn parse_pubspec_lock(content: &str) -> Vec<(String, String)> {
         }
     }
 
-    if let (Some(name), Some(ver), Some(src)) =
-        (current_name, current_version, current_source)
-    {
-        if src == "hosted" { result.push((name, ver)) }
+    if let (Some(name), Some(ver), Some(src)) = (current_name, current_version, current_source) {
+        if src == "hosted" {
+            result.push((name, ver))
+        }
     }
     result
 }
@@ -222,27 +259,48 @@ pub fn find_pub_cache() -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Some(raw) = std::env::var_os("BEARWISDOM_DART_PUB_CACHE") {
         for seg in std::env::split_paths(&raw) {
-            if seg.as_os_str().is_empty() { continue }
+            if seg.as_os_str().is_empty() {
+                continue;
+            }
             let hosted = seg.join("hosted").join("pub.dev");
-            if hosted.is_dir() { out.push(hosted); }
-            else if seg.is_dir() { out.push(seg); }
+            if hosted.is_dir() {
+                out.push(hosted);
+            } else if seg.is_dir() {
+                out.push(seg);
+            }
         }
-        if !out.is_empty() { return out }
+        if !out.is_empty() {
+            return out;
+        }
     }
     if let Some(raw) = std::env::var_os("PUB_CACHE") {
         let base = PathBuf::from(raw);
         let hosted = base.join("hosted").join("pub.dev");
-        if hosted.is_dir() { out.push(hosted); return out }
+        if hosted.is_dir() {
+            out.push(hosted);
+            return out;
+        }
     }
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
         let candidate = PathBuf::from(local_app_data)
-            .join("Pub").join("Cache").join("hosted").join("pub.dev");
-        if candidate.is_dir() { out.push(candidate); return out }
+            .join("Pub")
+            .join("Cache")
+            .join("hosted")
+            .join("pub.dev");
+        if candidate.is_dir() {
+            out.push(candidate);
+            return out;
+        }
     }
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     if let Some(home) = home {
-        let candidate = PathBuf::from(home).join(".pub-cache").join("hosted").join("pub.dev");
-        if candidate.is_dir() { out.push(candidate) }
+        let candidate = PathBuf::from(home)
+            .join(".pub-cache")
+            .join("hosted")
+            .join("pub.dev");
+        if candidate.is_dir() {
+            out.push(candidate)
+        }
     }
     out
 }
@@ -273,7 +331,9 @@ struct DartPackageEntry {
     version: String,
 }
 
-fn parse_dart_package_config(project_root: &Path) -> std::collections::HashMap<String, DartPackageEntry> {
+fn parse_dart_package_config(
+    project_root: &Path,
+) -> std::collections::HashMap<String, DartPackageEntry> {
     let config_path = project_root.join(".dart_tool").join("package_config.json");
     let Ok(content) = std::fs::read_to_string(&config_path) else {
         return std::collections::HashMap::new();
@@ -287,12 +347,31 @@ fn parse_dart_package_config(project_root: &Path) -> std::collections::HashMap<S
     let config_dir = config_path.parent().unwrap_or(project_root);
     let mut map = std::collections::HashMap::new();
     for pkg in packages {
-        let Some(name) = pkg.get("name").and_then(|v| v.as_str()) else { continue };
-        let Some(root_uri) = pkg.get("rootUri").and_then(|v| v.as_str()) else { continue };
-        let package_uri = pkg.get("packageUri").and_then(|v| v.as_str()).unwrap_or("lib/").to_string();
+        let Some(name) = pkg.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(root_uri) = pkg.get("rootUri").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let package_uri = pkg
+            .get("packageUri")
+            .and_then(|v| v.as_str())
+            .unwrap_or("lib/")
+            .to_string();
         let root = parse_file_uri(root_uri, config_dir);
-        let version = pkg.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        map.insert(name.to_string(), DartPackageEntry { root, package_uri, version });
+        let version = pkg
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        map.insert(
+            name.to_string(),
+            DartPackageEntry {
+                root,
+                package_uri,
+                version,
+            },
+        );
     }
     map
 }

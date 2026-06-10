@@ -66,11 +66,11 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // `this.X` resolution in SFC methods goes through the profile-driven
     // `ProfileRootResolver` reading `VUE_PROFILE.self_receiver_discovery`
@@ -136,7 +136,9 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
 
     // Component usages: PascalCase or kebab-case with hyphens
     if let Some(component_name) = as_component_name(&tag) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: component_name,
             kind: EdgeKind::Calls,
@@ -212,7 +214,9 @@ fn try_extract_event_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef
         return; // inline expression, skip
     }
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: handler,
         kind: EdgeKind::Calls,

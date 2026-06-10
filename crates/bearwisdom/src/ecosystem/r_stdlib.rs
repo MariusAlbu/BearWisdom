@@ -36,9 +36,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use crate::walker::WalkedFile;
@@ -53,17 +51,34 @@ const KIND_NAMESPACE: &str = "r-stdlib-ns";
 
 /// R base packages shipped in `<R-src>/src/library/` or `<R_HOME>/library/`.
 const BASE_PACKAGES: &[&str] = &[
-    "base", "stats", "utils", "graphics", "grDevices", "methods",
-    "tools", "datasets", "stats4", "splines", "grid", "parallel",
-    "compiler", "tcltk",
+    "base",
+    "stats",
+    "utils",
+    "graphics",
+    "grDevices",
+    "methods",
+    "tools",
+    "datasets",
+    "stats4",
+    "splines",
+    "grid",
+    "parallel",
+    "compiler",
+    "tcltk",
 ];
 
 pub struct RStdlibEcosystem;
 
 impl Ecosystem for RStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("r")
@@ -89,12 +104,18 @@ impl Ecosystem for RStdlibEcosystem {
         }
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for RStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
 
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_r_stdlib()
@@ -117,7 +138,11 @@ impl ExternalSourceLocator for RStdlibEcosystem {
                 out.extend(synthesize_from_namespace(&root.root));
             }
         }
-        if out.is_empty() { None } else { Some(out) }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 }
 
@@ -142,8 +167,10 @@ pub(super) fn discover_r_stdlib() -> Vec<ExternalDepRoot> {
     if !installed.is_empty() {
         return installed;
     }
-    debug!("r-stdlib: no R source distribution or install found \
-            (set BEARWISDOM_R_SRC or R_HOME, or install R)");
+    debug!(
+        "r-stdlib: no R source distribution or install found \
+            (set BEARWISDOM_R_SRC or R_HOME, or install R)"
+    );
     Vec::new()
 }
 
@@ -162,7 +189,10 @@ fn probe_r_source_distro() -> Option<ExternalDepRoot> {
         );
         return None;
     }
-    debug!("r-stdlib: using source distro at {}", library_root.display());
+    debug!(
+        "r-stdlib: using source distro at {}",
+        library_root.display()
+    );
     Some(ExternalDepRoot {
         module_path: KIND_SOURCE.to_string(),
         version: String::new(),
@@ -228,8 +258,18 @@ fn find_user_libraries() -> Vec<PathBuf> {
     {
         if let Some(home) = std::env::var_os("USERPROFILE") {
             let home = PathBuf::from(home);
-            collect_library_versions(&home.join("Documents").join("R").join("win-library"), &mut out);
-            collect_library_versions(&home.join("AppData").join("Local").join("R").join("win-library"), &mut out);
+            collect_library_versions(
+                &home.join("Documents").join("R").join("win-library"),
+                &mut out,
+            );
+            collect_library_versions(
+                &home
+                    .join("AppData")
+                    .join("Local")
+                    .join("R")
+                    .join("win-library"),
+                &mut out,
+            );
             collect_library_versions(&home.join("R").join("win-library"), &mut out);
         }
     }
@@ -271,7 +311,9 @@ fn collect_library_versions(root: &Path, out: &mut Vec<PathBuf>) {
 /// each of which has a `DESCRIPTION` file. Spot-check by looking for any
 /// child directory with a DESCRIPTION.
 fn looks_like_library_dir(path: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(path) else { return false };
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
     for entry in entries.flatten() {
         let p = entry.path();
         if p.is_dir() && p.join("DESCRIPTION").is_file() {
@@ -315,10 +357,7 @@ fn find_r_home() -> Option<PathBuf> {
 /// the `reg query` subprocess — no additional crate dependency required.
 #[cfg(target_os = "windows")]
 fn probe_windows_registry() -> Option<PathBuf> {
-    for subkey in &[
-        r"HKLM\Software\R-core\R64",
-        r"HKLM\Software\R-core\R",
-    ] {
+    for subkey in &[r"HKLM\Software\R-core\R64", r"HKLM\Software\R-core\R"] {
         if let Some(p) = read_registry_install_path(subkey) {
             return Some(p);
         }
@@ -367,11 +406,17 @@ fn probe_windows_program_files() -> Option<PathBuf> {
         .flatten()
         .filter_map(|e| {
             let ft = e.file_type().ok()?;
-            if !ft.is_dir() { return None; }
+            if !ft.is_dir() {
+                return None;
+            }
             let name = e.file_name();
             let s = name.to_string_lossy();
             // Match "R-4.3.2", "R-4.4.0-win", etc.
-            if s.starts_with("R-") { Some(e.path()) } else { None }
+            if s.starts_with("R-") {
+                Some(e.path())
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -397,7 +442,11 @@ fn probe_r_rhome_subprocess() -> Option<PathBuf> {
         return None;
     }
     let p = PathBuf::from(trimmed);
-    if p.is_dir() { Some(p) } else { None }
+    if p.is_dir() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -408,26 +457,38 @@ fn walk_r_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     for pkg in BASE_PACKAGES {
         let pkg_r_dir = dep.root.join(pkg).join("R");
-        if !pkg_r_dir.is_dir() { continue }
+        if !pkg_r_dir.is_dir() {
+            continue;
+        }
         walk_dir(&pkg_r_dir, &mut out, 0);
     }
     out
 }
 
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= 6 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".R") && !name.ends_with(".r") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".R") && !name.ends_with(".r") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:r-stdlib:{display}"),
@@ -452,7 +513,10 @@ pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> 
     let mut needs_rscript: Vec<String> = Vec::new();
 
     let Ok(entries) = std::fs::read_dir(library_root) else {
-        debug!("r-stdlib: could not read library root {}", library_root.display());
+        debug!(
+            "r-stdlib: could not read library root {}",
+            library_root.display()
+        );
         return Vec::new();
     };
     for entry in entries.flatten() {
@@ -460,7 +524,9 @@ pub(super) fn synthesize_from_namespace(library_root: &Path) -> Vec<ParsedFile> 
         if !pkg_dir.is_dir() {
             continue;
         }
-        let Some(pkg) = pkg_dir.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(pkg) = pkg_dir.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         if pkg.starts_with('.') {
             continue;
         }
@@ -603,7 +669,11 @@ pub(super) fn dump_exports_via_rscript(
         rscript
     } else {
         // Fallback to PATH.
-        PathBuf::from(if cfg!(target_os = "windows") { "Rscript.exe" } else { "Rscript" })
+        PathBuf::from(if cfg!(target_os = "windows") {
+            "Rscript.exe"
+        } else {
+            "Rscript"
+        })
     };
 
     // Build a single R expression that prints each package's exports
@@ -711,7 +781,11 @@ fn strip_directive<'a>(line: &'a str, directive: &str) -> Option<&'a str> {
     let rest = line.strip_prefix(directive)?;
     // Allow optional whitespace before `(`.
     let rest = rest.trim_start();
-    if rest.starts_with('(') { Some(rest) } else { None }
+    if rest.starts_with('(') {
+        Some(rest)
+    } else {
+        None
+    }
 }
 
 /// Extract the text between the outermost `(` and `)`. Handles multi-line
@@ -719,7 +793,11 @@ fn strip_directive<'a>(line: &'a str, directive: &str) -> Option<&'a str> {
 fn extract_paren_body(s: &str) -> Option<&str> {
     let start = s.find('(')?;
     let end = s.rfind(')')?;
-    if end > start { Some(&s[start + 1..end]) } else { None }
+    if end > start {
+        Some(&s[start + 1..end])
+    } else {
+        None
+    }
 }
 
 /// Split a comma-separated argument list, respecting backtick-quoted names
@@ -764,13 +842,10 @@ fn clean_name(s: &str) -> String {
 
 /// Parse a directive whose argument list is a sequence of exported names and
 /// append one `ExtractedSymbol` per name.
-fn extract_names(
-    rest: &str,
-    pkg: &str,
-    kind: SymbolKind,
-    out: &mut Vec<ExtractedSymbol>,
-) {
-    let Some(inner) = extract_paren_body(rest) else { return };
+fn extract_names(rest: &str, pkg: &str, kind: SymbolKind, out: &mut Vec<ExtractedSymbol>) {
+    let Some(inner) = extract_paren_body(rest) else {
+        return;
+    };
     for raw in split_args(inner) {
         let name = clean_name(raw);
         if !name.is_empty() {
@@ -794,11 +869,11 @@ fn make_sym(name: &str, pkg: &str, kind: SymbolKind) -> ExtractedSymbol {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 #[cfg(test)]

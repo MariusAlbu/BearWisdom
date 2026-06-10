@@ -33,16 +33,20 @@ pub(crate) fn mailer_template_name_for_path(path: &str) -> Option<String> {
         return None;
     }
     let basename = norm.last()?;
-    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
+    let stem = basename
+        .rsplit_once('.')
+        .map(|(s, _)| s)
+        .unwrap_or(basename);
     if stem.is_empty() {
         return None;
     }
     let parent_segments = &norm[..norm.len() - 1];
     for root in ROOTS {
-        if parent_segments
-            .windows(root.len())
-            .any(|w| w.iter().zip(root.iter()).all(|(a, b)| a.eq_ignore_ascii_case(b)))
-        {
+        if parent_segments.windows(root.len()).any(|w| {
+            w.iter()
+                .zip(root.iter())
+                .all(|(a, b)| a.eq_ignore_ascii_case(b))
+        }) {
             return Some(stem.to_string());
         }
     }

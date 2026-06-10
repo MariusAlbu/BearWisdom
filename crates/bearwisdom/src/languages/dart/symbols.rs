@@ -3,7 +3,9 @@
 // =============================================================================
 
 use super::calls::extract_dart_calls;
-use super::helpers::{first_child_text_of_kind, get_field_text, node_text, qualify, scope_from_prefix};
+use super::helpers::{
+    first_child_text_of_kind, get_field_text, node_text, qualify, scope_from_prefix,
+};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
@@ -42,12 +44,12 @@ pub(super) fn extract_class(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     extract_dart_heritage(node, src, idx, refs);
 
@@ -87,12 +89,12 @@ pub(super) fn extract_mixin(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(body) = node.child_by_field_name("body") {
         extract_class_body(&body, src, symbols, refs, Some(idx), &new_prefix);
@@ -127,12 +129,12 @@ pub(super) fn extract_extension(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(body) = node.child_by_field_name("body") {
         extract_class_body(&body, src, symbols, refs, Some(idx), &new_prefix);
@@ -168,12 +170,12 @@ pub(super) fn extract_enum(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Enum constants live inside an `enum_body` child (Dart grammar 0.1).
     // Walk the direct children first; if we find an enum_body, recurse into it.
@@ -198,11 +200,11 @@ pub(super) fn extract_enum(
             scope_path: Some(qualified_name.clone()),
             parent_index: Some(idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     };
 
     // Check both direct children and those inside `enum_body`.
@@ -243,13 +245,26 @@ pub(super) fn extract_class_body(
                 let mut mc = child.walk();
                 for inner in child.named_children(&mut mc) {
                     match inner.kind() {
-                        "factory_constructor_signature" | "redirecting_factory_constructor_signature" => {
-                            extract_factory_constructor(&inner, src, symbols, parent_index, qualified_prefix);
+                        "factory_constructor_signature"
+                        | "redirecting_factory_constructor_signature" => {
+                            extract_factory_constructor(
+                                &inner,
+                                src,
+                                symbols,
+                                parent_index,
+                                qualified_prefix,
+                            );
                             handled = true;
                             break;
                         }
                         "constructor_signature" => {
-                            extract_constructor(&inner, src, symbols, parent_index, qualified_prefix);
+                            extract_constructor(
+                                &inner,
+                                src,
+                                symbols,
+                                parent_index,
+                                qualified_prefix,
+                            );
                             handled = true;
                             break;
                         }
@@ -275,7 +290,11 @@ pub(super) fn extract_class_body(
                 extract_field(&child, src, symbols, parent_index, qualified_prefix);
                 // Emit TypeRef for the field's type annotation by routing through
                 // extract_dart_calls which handles type_identifier at every level.
-                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                let sym_idx = if symbols.len() > pre_len {
+                    pre_len
+                } else {
+                    parent_index.unwrap_or(0)
+                };
                 extract_dart_calls(&child, src, sym_idx, refs);
                 // Type inference from initializer: if no explicit type annotation,
                 // infer from constructor call. `final repo = Repository();` → TypeRef "Repository".
@@ -333,7 +352,7 @@ fn extract_method(
         }
         match found {
             Some(fs) => fs,
-            None => *node,  // Fallback to method_signature itself
+            None => *node, // Fallback to method_signature itself
         }
     } else {
         *node
@@ -368,12 +387,12 @@ fn extract_method(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // The function body is the next sibling of `node` (method_signature) within class_member.
     if let Some(body) = node.next_sibling() {
@@ -421,12 +440,12 @@ fn extract_constructor(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 fn extract_field(
@@ -472,12 +491,12 @@ fn extract_field(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 }
@@ -509,12 +528,12 @@ pub(super) fn extract_top_level_function(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 pub(super) fn extract_variable(
@@ -544,12 +563,12 @@ pub(super) fn extract_variable(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -572,7 +591,11 @@ fn extract_import_spec_recursive(
     refs: &mut Vec<ExtractedRef>,
 ) {
     let k = node.kind();
-    if k == "import_specification" || k == "library_import" || k == "import_or_export" || k == "library_export" {
+    if k == "import_specification"
+        || k == "library_import"
+        || k == "import_or_export"
+        || k == "library_export"
+    {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let ck = child.kind();
@@ -590,7 +613,9 @@ fn extract_import_spec_recursive(
                     .unwrap_or(&module)
                     .trim_end_matches(".dart")
                     .to_string();
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: current_symbol_count,
                     target_name: target,
                     kind: EdgeKind::Imports,
@@ -602,7 +627,10 @@ fn extract_import_spec_recursive(
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
-            } else if ck == "import_specification" || ck == "library_import" || ck == "library_export" {
+            } else if ck == "import_specification"
+                || ck == "library_import"
+                || ck == "library_export"
+            {
                 extract_import_spec_recursive(&child, src, current_symbol_count, refs);
             }
         }
@@ -626,7 +654,9 @@ pub(super) fn extract_part_directive(
                 .unwrap_or(&module)
                 .trim_end_matches(".dart")
                 .to_string();
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: current_symbol_count,
                 target_name: target,
                 kind: EdgeKind::Imports,
@@ -682,12 +712,12 @@ pub(super) fn extract_typedef(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit Method symbols for `getter_signature` and `setter_signature` nodes.
@@ -730,12 +760,12 @@ pub(super) fn extract_getter_setter(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract calls from the body (sibling node).
     if let Some(body) = node.next_sibling() {
@@ -807,12 +837,12 @@ fn extract_factory_constructor(
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 /// Emit TypeRef edges for the declared type of a field declaration.
@@ -836,11 +866,18 @@ fn emit_field_type_refs(
         refs: &mut Vec<ExtractedRef>,
         found: &mut bool,
     ) {
-        if *found { return; }
+        if *found {
+            return;
+        }
         match node.kind() {
             "type_identifier" => {
                 let name = node_text(*node, src);
-                if !name.is_empty() && !matches!(name.as_str(), "final" | "static" | "late" | "const" | "var" | "void") {
+                if !name.is_empty()
+                    && !matches!(
+                        name.as_str(),
+                        "final" | "static" | "late" | "const" | "var" | "void"
+                    )
+                {
                     emit_dart_type_ref(*node, src, source_symbol_index, refs);
                     *found = true;
                 }
@@ -852,7 +889,9 @@ fn emit_field_type_refs(
             _ => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    if *found { break; }
+                    if *found {
+                        break;
+                    }
                     emit_field_type_refs_inner(&child, src, source_symbol_index, refs, found);
                 }
             }
@@ -880,7 +919,9 @@ pub(super) fn extract_dart_heritage(
         if let Some(type_node) = superclass_node.child_by_field_name("type") {
             let name = node_text(type_node, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Inherits,
@@ -898,7 +939,9 @@ pub(super) fn extract_dart_heritage(
             let mut c = superclass_node.walk();
             for n in superclass_node.children(&mut c) {
                 if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: source_idx,
                         target_name: node_text(n, src),
                         kind: EdgeKind::Inherits,
@@ -921,7 +964,9 @@ pub(super) fn extract_dart_heritage(
         let mut c = interfaces_node.walk();
         for n in interfaces_node.children(&mut c) {
             if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: node_text(n, src),
                     kind: EdgeKind::Implements,
@@ -944,7 +989,9 @@ pub(super) fn extract_dart_heritage(
         let mut c = mixins_node.walk();
         for n in mixins_node.children(&mut c) {
             if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: node_text(n, src),
                     kind: EdgeKind::TypeRef,
@@ -1023,7 +1070,9 @@ fn infer_type_from_dart_initializer(
             "identifier" => {
                 let name = node_text(child, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -1044,7 +1093,9 @@ fn infer_type_from_dart_initializer(
                     if inner.kind() == "identifier" {
                         let name = node_text(inner, src);
                         if name.starts_with(|c: char| c.is_uppercase()) {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index: sym_idx,
                                 target_name: name,
                                 kind: EdgeKind::TypeRef,

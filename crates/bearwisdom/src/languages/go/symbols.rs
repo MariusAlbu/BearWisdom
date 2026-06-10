@@ -5,8 +5,7 @@
 use super::calls::extract_body_with_symbols;
 use super::helpers::{
     build_fn_signature_from_source, extract_go_doc_comment, extract_go_type_name, go_visibility,
-    is_go_builtin_type, is_test_function, node_text, pointer_type_name, qualify,
-    scope_from_prefix,
+    is_go_builtin_type, is_test_function, node_text, pointer_type_name, qualify, scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
@@ -44,11 +43,11 @@ pub(super) fn extract_package_clause(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
             return;
         }
     }
@@ -98,9 +97,7 @@ fn emit_import_ref(
     let mut path_text: Option<String> = None;
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "interpreted_string_literal"
-            || child.kind() == "raw_string_literal"
-        {
+        if child.kind() == "interpreted_string_literal" || child.kind() == "raw_string_literal" {
             path_text = Some(node_text(&child, source));
         }
     }
@@ -125,7 +122,9 @@ fn emit_import_ref(
         Some(full_path.to_string())
     };
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: current_symbol_count,
         target_name,
         kind: EdgeKind::Imports,
@@ -134,9 +133,9 @@ fn emit_import_ref(
         module,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -187,19 +186,26 @@ pub(super) fn extract_function_declaration(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract TypeRef edges from parameter and return types.
     super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
 
     // Extract typed parameters as Property symbols scoped to this function.
     if let Some(params) = params_opt {
-        extract_go_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name);
+        extract_go_typed_params_as_symbols(
+            &params,
+            source,
+            symbols,
+            refs,
+            Some(idx),
+            &qualified_name,
+        );
     }
 
     if let Some(body) = body_opt {
@@ -293,19 +299,26 @@ pub(super) fn extract_method_declaration(
         doc_comment,
         scope_path: scope_from_prefix(&method_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract TypeRef edges from parameter and return types.
     super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
 
     // Extract typed parameters as Property symbols scoped to this method.
     if let Some(params) = params_opt {
-        extract_go_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name);
+        extract_go_typed_params_as_symbols(
+            &params,
+            source,
+            symbols,
+            refs,
+            Some(idx),
+            &qualified_name,
+        );
     }
 
     if let Some(body) = body_opt {
@@ -321,7 +334,12 @@ pub(super) fn extract_method_declaration(
 fn parse_method_decl_children<'a>(
     node: &'a Node<'a>,
     source: &str,
-) -> (Option<String>, Option<String>, Option<Node<'a>>, Option<Node<'a>>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<Node<'a>>,
+    Option<Node<'a>>,
+) {
     let mut receiver_type: Option<String> = None;
     let mut method_name: Option<String> = None;
     let mut params: Option<Node<'a>> = None;
@@ -474,14 +492,16 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 doc_comment: None,
                 scope_path,
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
 
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: param_idx,
                 target_name: type_name.clone(),
                 kind: EdgeKind::TypeRef,
@@ -490,9 +510,9 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 module: None,
                 chain: None,
                 byte_offset: child.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }

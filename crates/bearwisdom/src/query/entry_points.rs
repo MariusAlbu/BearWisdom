@@ -142,7 +142,10 @@ pub fn load_entry_point_ids_for_exclusion(db: &Database) -> QueryResult<HashSet<
         )
         .context("entry_points: load exclusion ids")?;
     let mut out = HashSet::new();
-    for row in stmt.query_map([KIND_TEST], |r| r.get::<_, i64>(0))?.flatten() {
+    for row in stmt
+        .query_map([KIND_TEST], |r| r.get::<_, i64>(0))?
+        .flatten()
+    {
         out.insert(row);
     }
     Ok(out)
@@ -226,10 +229,7 @@ pub fn find_entry_points(db: &Database) -> QueryResult<EntryPointsReport> {
 // ---------------------------------------------------------------------------
 
 /// `main` / `Main` / `Program.Main` functions and methods.
-fn contribute_main(
-    conn: &rusqlite::Connection,
-    out: &mut Vec<EntryPointRow>,
-) -> QueryResult<()> {
+fn contribute_main(conn: &rusqlite::Connection, out: &mut Vec<EntryPointRow>) -> QueryResult<()> {
     let mut stmt = conn
         .prepare(
             "SELECT id FROM symbols \
@@ -250,10 +250,7 @@ fn contribute_main(
 }
 
 /// Symbols recorded in the `routes` table.
-fn contribute_routes(
-    conn: &rusqlite::Connection,
-    out: &mut Vec<EntryPointRow>,
-) -> QueryResult<()> {
+fn contribute_routes(conn: &rusqlite::Connection, out: &mut Vec<EntryPointRow>) -> QueryResult<()> {
     let mut stmt = conn
         .prepare("SELECT DISTINCT symbol_id FROM routes WHERE symbol_id IS NOT NULL")
         .context("entry_points: prepare routes")?;
@@ -457,11 +454,10 @@ fn contribute_test_functions(
 /// test DBs) or the file doesn't exist. Malformed JSON logs a warning
 /// rather than failing the whole query — the rest of the contributor
 /// model keeps running.
-fn contribute_user_roots(
-    db: &Database,
-    out: &mut Vec<EntryPointRow>,
-) -> QueryResult<()> {
-    let Some(db_path) = db.path.as_ref() else { return Ok(()); };
+fn contribute_user_roots(db: &Database, out: &mut Vec<EntryPointRow>) -> QueryResult<()> {
+    let Some(db_path) = db.path.as_ref() else {
+        return Ok(());
+    };
     // db path is `<project_root>/.bearwisdom/index.db`; project_root is two
     // parents up. Walking through `.parent().parent()` keeps the resolver
     // honest if a future caller opens a DB from somewhere unusual.
@@ -499,7 +495,9 @@ fn contribute_user_roots(
             )
             .context("entry_points: prepare user qname query")?;
         for entry in arr {
-            let Some(q) = entry.as_str() else { continue; };
+            let Some(q) = entry.as_str() else {
+                continue;
+            };
             for id in stmt.query_map([q], |r| r.get::<_, i64>(0))?.flatten() {
                 out.push(EntryPointRow {
                     symbol_id: id,
@@ -520,7 +518,9 @@ fn contribute_user_roots(
             )
             .context("entry_points: prepare user name query")?;
         for entry in arr {
-            let Some(pat) = entry.as_str() else { continue; };
+            let Some(pat) = entry.as_str() else {
+                continue;
+            };
             let sql_pat = glob_to_sql_like(pat);
             for id in stmt
                 .query_map([sql_pat.as_str()], |r| r.get::<_, i64>(0))?
@@ -546,7 +546,9 @@ fn contribute_user_roots(
             )
             .context("entry_points: prepare user glob query")?;
         for entry in arr {
-            let Some(pat) = entry.as_str() else { continue; };
+            let Some(pat) = entry.as_str() else {
+                continue;
+            };
             let sql_pat = glob_to_sql_like(pat);
             for id in stmt
                 .query_map([sql_pat.as_str()], |r| r.get::<_, i64>(0))?

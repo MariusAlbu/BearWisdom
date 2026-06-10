@@ -24,9 +24,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::walker::WalkedFile;
@@ -50,9 +48,15 @@ const STDLIB_MODULE_PREFIXES: &[&str] = &[
 pub struct PowerShellStdlibEcosystem;
 
 impl Ecosystem for PowerShellStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("powershell")
@@ -66,9 +70,13 @@ impl Ecosystem for PowerShellStdlibEcosystem {
         super::psgallery::walk_ps_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::psgallery::build_powershell_symbol_index(dep_roots)
@@ -76,7 +84,9 @@ impl Ecosystem for PowerShellStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for PowerShellStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_powershell_stdlib()
     }
@@ -88,7 +98,9 @@ impl ExternalSourceLocator for PowerShellStdlibEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PowerShellStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(PowerShellStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(PowerShellStdlibEcosystem))
+        .clone()
 }
 
 // ===========================================================================
@@ -103,20 +115,27 @@ fn discover_powershell_stdlib() -> Vec<ExternalDepRoot> {
 
     let modules_dir = pshome.join("Modules");
     if !modules_dir.is_dir() {
-        debug!("powershell-stdlib: PSHOME/Modules not found at {}", modules_dir.display());
+        debug!(
+            "powershell-stdlib: PSHOME/Modules not found at {}",
+            modules_dir.display()
+        );
         return Vec::new();
     }
 
     debug!("powershell-stdlib: walking {}", modules_dir.display());
     let mut roots = Vec::new();
 
-    let Ok(entries) = std::fs::read_dir(&modules_dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&modules_dir) else {
+        return Vec::new();
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         if !STDLIB_MODULE_PREFIXES.iter().any(|&prefix| name == prefix) {
             continue;
         }
@@ -141,7 +160,9 @@ fn discover_powershell_stdlib() -> Vec<ExternalDepRoot> {
 /// Pick the "best" root inside a module dir — prefer the highest-version
 /// numbered subdir; fall back to the module dir itself.
 fn pick_module_root(module_dir: &Path) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(module_dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(module_dir) else {
+        return None;
+    };
     let mut versioned: Vec<PathBuf> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
@@ -189,9 +210,7 @@ pub(crate) fn probe_pshome() -> Option<PathBuf> {
     }
 
     // 3. Deterministic fallbacks.
-    static_pshome_candidates()
-        .into_iter()
-        .find(|p| p.is_dir())
+    static_pshome_candidates().into_iter().find(|p| p.is_dir())
 }
 
 fn ask_pwsh_pshome() -> Option<PathBuf> {
@@ -222,8 +241,7 @@ fn static_pshome_candidates() -> Vec<PathBuf> {
     if cfg!(windows) {
         // Enumerate versioned dirs under Program Files\PowerShell (PS 7+).
         let mut cands: Vec<PathBuf> = Vec::new();
-        let pf = std::env::var("ProgramFiles")
-            .unwrap_or_else(|_| "C:/Program Files".to_string());
+        let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:/Program Files".to_string());
         let ps_base = PathBuf::from(&pf).join("PowerShell");
         if ps_base.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&ps_base) {
@@ -284,7 +302,10 @@ mod tests {
 
     #[test]
     fn legacy_locator_tag() {
-        assert_eq!(ExternalSourceLocator::ecosystem(&PowerShellStdlibEcosystem), "powershell-stdlib");
+        assert_eq!(
+            ExternalSourceLocator::ecosystem(&PowerShellStdlibEcosystem),
+            "powershell-stdlib"
+        );
     }
 
     #[test]
@@ -300,7 +321,10 @@ mod tests {
     fn stdlib_module_prefixes_are_non_empty() {
         assert!(!STDLIB_MODULE_PREFIXES.is_empty());
         for p in STDLIB_MODULE_PREFIXES {
-            assert!(p.starts_with("Microsoft.PowerShell."), "unexpected prefix: {p}");
+            assert!(
+                p.starts_with("Microsoft.PowerShell."),
+                "unexpected prefix: {p}"
+            );
         }
     }
 
@@ -325,7 +349,10 @@ mod tests {
         let roots = discover_powershell_stdlib();
         std::env::remove_var("BEARWISDOM_PSHOME");
         let _ = std::fs::remove_dir_all(&tmp);
-        assert!(roots.is_empty(), "expected empty roots for PSHOME without Modules/");
+        assert!(
+            roots.is_empty(),
+            "expected empty roots for PSHOME without Modules/"
+        );
     }
 
     #[test]
@@ -357,8 +384,11 @@ mod tests {
         let tmp = std::env::temp_dir().join("bw-test-ps-walk-stdlib");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("Microsoft.PowerShell.Utility.psm1"), "function Get-Date { }\n")
-            .unwrap();
+        std::fs::write(
+            tmp.join("Microsoft.PowerShell.Utility.psm1"),
+            "function Get-Date { }\n",
+        )
+        .unwrap();
         std::fs::write(tmp.join("helper.ps1"), "function help { }\n").unwrap();
 
         let dep = ExternalDepRoot {

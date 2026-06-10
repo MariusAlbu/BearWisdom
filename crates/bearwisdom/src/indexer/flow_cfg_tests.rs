@@ -62,10 +62,7 @@ fn factmap_join_unions_disagreeing_facts() {
     let mut b = FactMap::default();
     b.insert("x".into(), Fact::Single("B".into()));
     a.join(&b);
-    assert_eq!(
-        a.get("x"),
-        Some(&Fact::Union(vec!["A".into(), "B".into()]))
-    );
+    assert_eq!(a.get("x"), Some(&Fact::Union(vec!["A".into(), "B".into()])));
 }
 
 // ---------- AST → CFG: builder sanity ----------------------------------------
@@ -96,7 +93,9 @@ fn cfg_typeof_guard_narrows_then_block() {
     let src = "function f(x: unknown) { if (typeof x === \"string\") { x.length; } }\n";
     let fc = _test_build_for_ts(src);
     let probe = src.find("x.length").unwrap() as u32;
-    let f = fc.fact_at("x", probe).expect("typeof guard narrows x in then");
+    let f = fc
+        .fact_at("x", probe)
+        .expect("typeof guard narrows x in then");
     assert_eq!(f, Fact::Single("string".into()));
 }
 
@@ -105,7 +104,9 @@ fn cfg_instanceof_guard_narrows_then_block() {
     let src = "function f(x: Base) { if (x instanceof Derived) { x.foo(); } }\n";
     let fc = _test_build_for_ts(src);
     let probe = src.find("x.foo()").unwrap() as u32;
-    let f = fc.fact_at("x", probe).expect("instanceof narrows x in then");
+    let f = fc
+        .fact_at("x", probe)
+        .expect("instanceof narrows x in then");
     assert_eq!(f, Fact::Single("Derived".into()));
 }
 
@@ -492,7 +493,8 @@ fn cfg_ruby_is_a_narrows_via_cfg() {
 #[test]
 fn cfg_kotlin_structural_function_body_builds() {
     use crate::languages::kotlin::KotlinPlugin;
-    let src = "fun f(x: Any): Int {\n  if (x is String) {\n    return x.length\n  }\n  return 0\n}\n";
+    let src =
+        "fun f(x: Any): Int {\n  if (x is String) {\n    return x.length\n  }\n  return 0\n}\n";
     let fc = _build_cfg_via_runner(&KotlinPlugin, "kotlin", src);
     assert!(
         !fc.is_empty(),
@@ -503,7 +505,8 @@ fn cfg_kotlin_structural_function_body_builds() {
 #[test]
 fn cfg_scala_structural_function_body_builds() {
     use crate::languages::scala::ScalaPlugin;
-    let src = "object O {\n  def f(x: Any): Int = {\n    if (x.isInstanceOf[String]) 1 else 0\n  }\n}\n";
+    let src =
+        "object O {\n  def f(x: Any): Int = {\n    if (x.isInstanceOf[String]) 1 else 0\n  }\n}\n";
     let fc = _build_cfg_via_runner(&ScalaPlugin, "scala", src);
     assert!(!fc.is_empty(), "scala CFG should be built");
 }
@@ -605,7 +608,10 @@ fn cfg_go_flow_config_enabled_no_oom() {
     );
     let src = "package p\nfunc f(x interface{}) {\n    rec := db.Find(\"c\")\n    sel := rec.Field\n    switch v := x.(type) {\n    case *Foo:\n        v.bar()\n    }\n    _ = sel\n}\n";
     let fc = _build_cfg_via_runner(&GoPlugin, "go", src);
-    assert!(!fc.is_empty(), "go CFG should be built with flow_config enabled");
+    assert!(
+        !fc.is_empty(),
+        "go CFG should be built with flow_config enabled"
+    );
     let probe = src.find("v.bar()").unwrap() as u32;
     assert_eq!(
         fc.fact_string_at("v", probe),

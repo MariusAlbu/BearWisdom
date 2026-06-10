@@ -20,19 +20,13 @@
 // =============================================================================
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
 use crate::indexer::project_context::ProjectContext;
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::indexer::resolve::flow_emit::FlowEmission;
 use crate::types::{EdgeKind, ParsedFile};
 
-use super::aliases::{
-    classify_passthrough_alias, is_npm_package_match,
-};
-use super::flow_detectors::{
-    BGJOB_QUEUE_BINDING_KEY, CONTROLLER_PREFIX_KEY,
-};
+use super::aliases::{classify_passthrough_alias, is_npm_package_match};
+use super::flow_detectors::{BGJOB_QUEUE_BINDING_KEY, CONTROLLER_PREFIX_KEY};
 
 // Re-export the helpers that the sibling test file and other TS modules
 // historically reached via `super::resolve::X`. Keeps the existing
@@ -46,9 +40,9 @@ pub(crate) use super::flow_detectors::{
     detect_decorator_flow_emission, detect_decorator_flow_emission_with_imports,
     detect_feature_flag_chain_emission, detect_grpc_decorator_flow_emission,
     detect_mailer_chain_emission, detect_member_access_config_emission,
-    detect_member_access_feature_flag_emission, detect_mq_chain_emission, detect_rpc_chain_emission,
-    detect_route_decorator_flow_emission, detect_trpc_chain_emission, join_route_segments,
-    lookup_controller_prefix, parse_gql_operation,
+    detect_member_access_feature_flag_emission, detect_mq_chain_emission,
+    detect_route_decorator_flow_emission, detect_rpc_chain_emission, detect_trpc_chain_emission,
+    join_route_segments, lookup_controller_prefix, parse_gql_operation,
 };
 
 pub use predicates::is_bare_specifier;
@@ -93,7 +87,6 @@ pub(crate) static TS_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
         },
     };
 
-
 pub(crate) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
@@ -130,7 +123,10 @@ pub(crate) fn infer_external_inner(
             }
             // Manifest-driven: check package.json dependencies first.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
+                if let Some(manifest) = ctx
+                    .manifests_for(ref_ctx.file_package_id)
+                    .get(&ManifestKind::Npm)
+                {
                     if is_npm_package_match(module, &manifest.dependencies) {
                         return Some(module.clone());
                     }
@@ -169,7 +165,10 @@ pub(crate) fn infer_external_inner(
         }
         // Manifest-driven: check package.json dependencies first.
         if let Some(ctx) = project_ctx {
-            if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
+            if let Some(manifest) = ctx
+                .manifests_for(ref_ctx.file_package_id)
+                .get(&ManifestKind::Npm)
+            {
                 if is_npm_package_match(module_path, &manifest.dependencies) {
                     return Some(module_path.clone());
                 }
@@ -202,7 +201,9 @@ pub(crate) fn infer_external_inner(
                             }
                         }
                         let is_external = match project_ctx {
-                            Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
+                            Some(ctx) => {
+                                is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path)
+                            }
                             None => true,
                         };
                         if is_external {
@@ -232,9 +233,7 @@ pub(crate) fn infer_external_inner_with_lookup(
     lookup: &dyn SymbolLookup,
 ) -> Option<String> {
     // Try the lookup-free path first — covers the common cases.
-    if let Some(ns) =
-        infer_external_inner(file_ctx, ref_ctx, project_ctx)
-    {
+    if let Some(ns) = infer_external_inner(file_ctx, ref_ctx, project_ctx) {
         return Some(ns);
     }
     // R2: alias → barrel → external. When `@/foo/bar` resolves through
@@ -247,13 +246,9 @@ pub(crate) fn infer_external_inner_with_lookup(
 
     // Check the ref's own module first.
     if let Some(module) = &ref_ctx.extracted_ref.module {
-        if let Some(ns) = classify_passthrough_alias(
-            module,
-            target,
-            ref_ctx.file_package_id,
-            project_ctx,
-            lookup,
-        ) {
+        if let Some(ns) =
+            classify_passthrough_alias(module, target, ref_ctx.file_package_id, project_ctx, lookup)
+        {
             return Some(ns);
         }
     } else {
@@ -420,7 +415,9 @@ pub(crate) fn detect_flow_inner(
     if r.kind != EdgeKind::Calls && r.kind != EdgeKind::Instantiates {
         return Vec::new();
     }
-    let Some(chain_ref) = r.chain.as_ref() else { return Vec::new(); };
+    let Some(chain_ref) = r.chain.as_ref() else {
+        return Vec::new();
+    };
 
     // gRPC `server.addService(SvcDef, { m1: h, m2: h })`: expand to one
     // Consumer emission per registered method when the object-literal
@@ -462,7 +459,9 @@ pub(crate) fn build_file_context_inner(
             // Import ref — `import { Controller } from '@nestjs/common'`.
             continue;
         }
-        let Some(sym) = file.symbols.get(r.source_symbol_index) else { continue; };
+        let Some(sym) = file.symbols.get(r.source_symbol_index) else {
+            continue;
+        };
         let prefix = r
             .call_args
             .iter()
@@ -520,7 +519,6 @@ pub(crate) fn build_file_context_inner(
         file_namespace: None,
     }
 }
-
 
 // =============================================================================
 // LanguageEngineHooks impl + static instance.

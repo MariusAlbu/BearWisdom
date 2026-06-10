@@ -3,9 +3,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolLookup,
-};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -26,7 +24,7 @@ pub struct CHooks;
 pub(crate) static C_LANG_CHAIN_CONFIG: crate::type_checker::chain::ChainConfig =
     crate::type_checker::chain::ChainConfig {
         strategy_prefix: "c",
-        normalize_type: normalize_type,
+        normalize_type,
         has_self_ref: true,
         enclosing_type_kinds: &["class", "struct"],
         static_type_kinds: &["class", "struct", "interface", "enum", "type_alias"],
@@ -105,7 +103,11 @@ impl LanguageEngineHooks for CHooks {
         // synthetic name is `operator` followed by a symbol token, so a normal
         // identifier (`operatorNew`) is not matched.
         if let Some(sym) = target.strip_prefix("operator") {
-            if sym.chars().next().is_some_and(|c| !c.is_alphanumeric() && c != '_') {
+            if sym
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_alphanumeric() && c != '_')
+            {
                 return Some("cpp.operator".to_string());
             }
         }
@@ -164,7 +166,9 @@ impl LanguageEngineHooks for CHooks {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
-            let header = r.target_name.trim_matches(|c| c == '<' || c == '>' || c == '"');
+            let header = r
+                .target_name
+                .trim_matches(|c| c == '<' || c == '>' || c == '"');
             imports.push(ImportEntry {
                 imported_name: header.to_string(),
                 module_path: Some(header.to_string()),

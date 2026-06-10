@@ -6,10 +6,8 @@
 // lives in walk.rs.
 // =============================================================================
 
-use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
 use super::extract::{first_word, text};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 /// Find the `name` field within a named child of the given kind.
@@ -21,14 +19,18 @@ pub(super) fn find_child_name(node: Node, src: &[u8], child_kind: &str) -> Optio
         if child.kind() == child_kind {
             if let Some(name_node) = child.child_by_field_name("name") {
                 let n = first_word(name_node, src);
-                if !n.is_empty() { return Some(n); }
+                if !n.is_empty() {
+                    return Some(n);
+                }
             }
             // Fallback: first `name` child
             let mut c2 = child.walk();
             for gc in child.children(&mut c2) {
                 if gc.kind() == "name" {
                     let n = first_word(gc, src);
-                    if !n.is_empty() { return Some(n); }
+                    if !n.is_empty() {
+                        return Some(n);
+                    }
                 }
             }
         }
@@ -48,7 +50,9 @@ pub(super) fn find_module_name(node: Node, src: &[u8]) -> Option<String> {
             for gc in child.children(&mut c2) {
                 if gc.kind() == "name" {
                     let n = first_word(gc, src);
-                    if !n.is_empty() { return Some(n); }
+                    if !n.is_empty() {
+                        return Some(n);
+                    }
                 }
             }
         }
@@ -64,7 +68,9 @@ pub(super) fn find_derived_type_name(node: Node, src: &[u8]) -> Option<String> {
             for gc in child.children(&mut c2) {
                 if gc.kind() == "type_name" {
                     let n = first_word(gc, src);
-                    if !n.is_empty() { return Some(n); }
+                    if !n.is_empty() {
+                        return Some(n);
+                    }
                 }
             }
         }
@@ -167,7 +173,9 @@ pub(super) fn extract_extends(
                         if ggc.kind() == "identifier" {
                             let base_name = text(ggc, src);
                             if !base_name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: base_name,
                                     kind: EdgeKind::Inherits,
@@ -176,9 +184,9 @@ pub(super) fn extract_extends(
                                     module: None,
                                     chain: None,
                                     byte_offset: gc.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                     }
@@ -204,13 +212,17 @@ pub(super) fn extract_variable_declaration(
             "identifier" => text(child, src),
             "init_declarator" => {
                 // left field = identifier | sized_declarator | coarray_declarator
-                child.child_by_field_name("left")
+                child
+                    .child_by_field_name("left")
                     .map(|n| text(n, src))
                     .unwrap_or_default()
             }
             "sized_declarator" => {
                 // first named child is the identifier
-                child.named_child(0).map(|n| text(n, src)).unwrap_or_default()
+                child
+                    .named_child(0)
+                    .map(|n| text(n, src))
+                    .unwrap_or_default()
             }
             _ => continue,
         };
@@ -231,11 +243,11 @@ pub(super) fn extract_variable_declaration(
             scope_path: None,
             parent_index: parent_idx,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
         let _ = source_symbol_index; // used for scope association via parent_idx
     }
 }
@@ -243,7 +255,10 @@ pub(super) fn extract_variable_declaration(
 /// Collect all `local_name => source_name` rename aliases declared by
 /// `use_statement` children of `module_node`.  Returns a map from the
 /// local (call-site) name to the canonical source name.
-fn collect_module_rename_aliases(module_node: Node, src: &[u8]) -> std::collections::HashMap<String, String> {
+fn collect_module_rename_aliases(
+    module_node: Node,
+    src: &[u8],
+) -> std::collections::HashMap<String, String> {
     let mut aliases: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut cursor = module_node.walk();
     for child in module_node.children(&mut cursor) {
@@ -350,11 +365,11 @@ pub(super) fn emit_reexport_synthetics(
             scope_path: None,
             parent_index: Some(module_sym_idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -383,7 +398,11 @@ pub(super) fn extract_bound_procedures(
             for proc_stmt in child.children(&mut pc) {
                 if proc_stmt.kind() == "procedure_statement" {
                     emit_procedure_statement_members(
-                        proc_stmt, src, type_name, type_sym_idx, symbols,
+                        proc_stmt,
+                        src,
+                        type_name,
+                        type_sym_idx,
+                        symbols,
                     );
                 }
             }
@@ -431,11 +450,11 @@ fn emit_procedure_statement_members(
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
             "binding" => {
@@ -473,11 +492,11 @@ fn emit_procedure_statement_members(
                         scope_path: None,
                         parent_index: Some(type_sym_idx),
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
             _ => {}

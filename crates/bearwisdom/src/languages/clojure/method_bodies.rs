@@ -105,9 +105,7 @@ pub(super) fn walk_with_method_bodies(
             past_fields = true;
             continue;
         }
-        descend_method_or_protocol(
-            child, src, symbols, refs, parent_idx, field_locals,
-        );
+        descend_method_or_protocol(child, src, symbols, refs, parent_idx, field_locals);
     }
 }
 
@@ -166,7 +164,9 @@ pub(super) fn walk_method_body(
             if child.kind() == "sym_lit" {
                 let name = sym_lit_name(child, src);
                 if !name.is_empty() && !name.starts_with(':') {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: parent_idx.unwrap_or(0),
                         target_name: name,
                         kind: EdgeKind::Calls,
@@ -175,9 +175,9 @@ pub(super) fn walk_method_body(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 past_head = true;
             }

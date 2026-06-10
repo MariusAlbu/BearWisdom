@@ -15,8 +15,7 @@ use super::package_declares_globals;
 use super::ts_scan::{scan_declare_global_blocks, scan_ts_file_exports, ExportSource, FileExports};
 use super::walk::{
     extract_relative_reexports, is_test_or_story_file, resolve_package_entry_path,
-    resolve_relative_ts_path, walk_ts_dep_entry_only, walk_ts_external_root,
-    REEXPORT_MAX_DEPTH,
+    resolve_relative_ts_path, walk_ts_dep_entry_only, walk_ts_external_root, REEXPORT_MAX_DEPTH,
 };
 
 // ---------------------------------------------------------------------------
@@ -91,12 +90,9 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // HashSet<PathBuf> of every scanned file (for `resolve_relative_in_set`
     // so we don't hit the filesystem per edge) and a HashMap<Path, &exports>
     // so resolve_definition can follow named re-exports through the graph.
-    let known_paths: HashSet<PathBuf> =
-        scanned.iter().map(|(_, p, _)| p.clone()).collect();
-    let by_path: HashMap<&Path, &FileExports> = scanned
-        .iter()
-        .map(|(_, p, e)| (p.as_path(), e))
-        .collect();
+    let known_paths: HashSet<PathBuf> = scanned.iter().map(|(_, p, _)| p.clone()).collect();
+    let by_path: HashMap<&Path, &FileExports> =
+        scanned.iter().map(|(_, p, e)| (p.as_path(), e)).collect();
 
     let mut index = SymbolLocationIndex::new();
     for (module, file, exports) in &scanned {
@@ -115,14 +111,8 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         // definition instead of the barrel.
         for (exposed, source) in &exports.named {
             let mut visited = HashSet::new();
-            let def_file = resolve_definition(
-                &by_path,
-                &known_paths,
-                file,
-                source,
-                &mut visited,
-            )
-            .unwrap_or_else(|| file.clone());
+            let def_file = resolve_definition(&by_path, &known_paths, file, source, &mut visited)
+                .unwrap_or_else(|| file.clone());
             index.insert(module, exposed.clone(), def_file);
         }
 
@@ -138,7 +128,9 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             if !wc.starts_with('.') {
                 continue;
             }
-            let Some(parent) = file.parent() else { continue };
+            let Some(parent) = file.parent() else {
+                continue;
+            };
             let Some(wc_path) = resolve_relative_in_set(parent, wc, &known_paths) else {
                 continue;
             };
@@ -206,13 +198,7 @@ pub(crate) fn resolve_definition(
             }
             let target_exports = by_path.get(target.as_path())?;
             if let Some(inner) = target_exports.named.get(original) {
-                return resolve_definition(
-                    by_path,
-                    known_paths,
-                    &target,
-                    inner,
-                    visited,
-                );
+                return resolve_definition(by_path, known_paths, &target, inner, visited);
             }
             // Name not directly in target.named — try wildcard re-exports
             // in the target file. `export * from './sub'` surfaces every
@@ -221,23 +207,19 @@ pub(crate) fn resolve_definition(
                 if !wc.starts_with('.') {
                     continue;
                 }
-                let Some(wc_parent) = target.parent() else { continue };
-                let Some(wc_path) =
-                    resolve_relative_in_set(wc_parent, wc, known_paths)
-                else {
+                let Some(wc_parent) = target.parent() else {
+                    continue;
+                };
+                let Some(wc_path) = resolve_relative_in_set(wc_parent, wc, known_paths) else {
                     continue;
                 };
                 let Some(wc_exports) = by_path.get(wc_path.as_path()) else {
                     continue;
                 };
                 if let Some(inner) = wc_exports.named.get(original) {
-                    if let Some(def) = resolve_definition(
-                        by_path,
-                        known_paths,
-                        &wc_path,
-                        inner,
-                        visited,
-                    ) {
+                    if let Some(def) =
+                        resolve_definition(by_path, known_paths, &wc_path, inner, visited)
+                    {
                         return Some(def);
                     }
                 }
@@ -261,7 +243,9 @@ pub(crate) fn collect_wildcard_names(
     if !seen.insert(file.to_path_buf()) {
         return;
     }
-    let Some(exports) = by_path.get(file) else { return };
+    let Some(exports) = by_path.get(file) else {
+        return;
+    };
     for (name, source) in &exports.named {
         if out.contains_key(name) {
             continue;
@@ -275,7 +259,9 @@ pub(crate) fn collect_wildcard_names(
         if !wc.starts_with('.') {
             continue;
         }
-        let Some(parent) = file.parent() else { continue };
+        let Some(parent) = file.parent() else {
+            continue;
+        };
         let Some(wc_path) = resolve_relative_in_set(parent, wc, known_paths) else {
             continue;
         };
@@ -293,9 +279,7 @@ pub(crate) fn resolve_relative_in_set(
     known: &HashSet<PathBuf>,
 ) -> Option<PathBuf> {
     let target = base_dir.join(specifier);
-    const EXTS: &[&str] = &[
-        "ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs",
-    ];
+    const EXTS: &[&str] = &["ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs"];
     for ext in EXTS {
         let candidate = target.with_extension(ext);
         if known.contains(&candidate) {

@@ -29,9 +29,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -42,9 +40,15 @@ const LANGUAGES: &[&str] = &["perl"];
 pub struct PerlStdlibEcosystem;
 
 impl Ecosystem for PerlStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("perl")
@@ -58,12 +62,18 @@ impl Ecosystem for PerlStdlibEcosystem {
         walk_perl_tree(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for PerlStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { TAG }
+    fn ecosystem(&self) -> &'static str {
+        TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_perl_stdlib()
     }
@@ -75,7 +85,9 @@ impl ExternalSourceLocator for PerlStdlibEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<PerlStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(PerlStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(PerlStdlibEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +113,9 @@ fn discover_perl_stdlib() -> Vec<ExternalDepRoot> {
 fn probe_perl_lib() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_PERL_STDLIB") {
         let p = PathBuf::from(explicit);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     if let Some(p) = probe_via_perl_v() {
         return Some(p);
@@ -112,8 +126,13 @@ fn probe_perl_lib() -> Option<PathBuf> {
 fn probe_via_perl_v() -> Option<PathBuf> {
     // `perl -V:installprivlib` prints `installprivlib='<path>';` on stdout.
     // Robust across Linux distros and Strawberry/ActivePerl on Windows.
-    let output = Command::new("perl").arg("-V:installprivlib").output().ok()?;
-    if !output.status.success() { return None; }
+    let output = Command::new("perl")
+        .arg("-V:installprivlib")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     for line in stdout.lines() {
         let trimmed = line.trim();
@@ -121,7 +140,9 @@ fn probe_via_perl_v() -> Option<PathBuf> {
             // Strip the trailing `';` (sometimes plus extra whitespace).
             let path = rest.trim_end_matches(';').trim_end_matches('\'');
             let p = PathBuf::from(path);
-            if p.is_dir() { return Some(p); }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
@@ -143,7 +164,9 @@ fn probe_standard_perl_paths() -> Option<PathBuf> {
         "/usr/local/lib/perl5",
     ] {
         let p = PathBuf::from(candidate);
-        if p.is_dir() { return Some(p); }
+        if p.is_dir() {
+            return Some(p);
+        }
         // Try with versioned subdir (e.g. /usr/share/perl/5.36/)
         let parent = PathBuf::from(candidate);
         if parent.is_dir() {
@@ -164,9 +187,16 @@ fn probe_standard_perl_paths() -> Option<PathBuf> {
 }
 
 fn looks_like_perl_version(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return false };
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
     // Match `5.30`, `5.36.0`, `5.40` — perl version stamp.
-    name.starts_with("5.") && name.chars().nth(2).map(|c| c.is_ascii_digit()).unwrap_or(false)
+    name.starts_with("5.")
+        && name
+            .chars()
+            .nth(2)
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +212,12 @@ fn walk_perl_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     // Perl module trees go ~6 levels deep (`Net/HTTP/NB.pm`,
     // `Mojolicious/Plugin/RenderFile.pm`). Cap at 12 for safety.
-    if depth >= 12 { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= 12 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
@@ -194,12 +228,18 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
                 if matches!(name, "t" | "test" | "tests" | "auto" | "unicore") {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.ends_with(".pm") { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".pm") {
+                continue;
+            }
             let display = path.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
                 relative_path: format!("ext:perl-stdlib:{display}"),

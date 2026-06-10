@@ -155,11 +155,23 @@ fn multi_arg_dispatch_picks_signature_matching_arg_types() {
     let mut members = MembersIndex::new();
     members.add_direct(
         target,
-        sym(10, "compare", "Comparator.compare", "method", Some("Comparator")),
+        sym(
+            10,
+            "compare",
+            "Comparator.compare",
+            "method",
+            Some("Comparator"),
+        ),
     );
     members.add_direct(
         target,
-        sym(11, "compare", "Comparator.compare", "method", Some("Comparator")),
+        sym(
+            11,
+            "compare",
+            "Comparator.compare",
+            "method",
+            Some("Comparator"),
+        ),
     );
 
     let mut symbol_types = SymbolTypeMap::new();
@@ -235,7 +247,13 @@ fn multi_arg_dispatch_falls_back_to_receiver_when_no_signature_matches() {
     let mut members = MembersIndex::new();
     members.add_direct(
         target,
-        sym(10, "compare", "Comparator.compare", "method", Some("Comparator")),
+        sym(
+            10,
+            "compare",
+            "Comparator.compare",
+            "method",
+            Some("Comparator"),
+        ),
     );
 
     let mut symbol_types = SymbolTypeMap::new();
@@ -285,8 +303,14 @@ fn return_type_dispatch_picks_candidate_with_matching_return() {
     let str_ty = arena.primitive(PrimKind::Str);
 
     let mut members = MembersIndex::new();
-    members.add_direct(cls, sym(20, "from", "Convert.from", "method", Some("Convert")));
-    members.add_direct(cls, sym(21, "from", "Convert.from", "method", Some("Convert")));
+    members.add_direct(
+        cls,
+        sym(20, "from", "Convert.from", "method", Some("Convert")),
+    );
+    members.add_direct(
+        cls,
+        sym(21, "from", "Convert.from", "method", Some("Convert")),
+    );
 
     let mut symbol_types = SymbolTypeMap::new();
     symbol_types.insert(
@@ -338,7 +362,10 @@ fn return_type_dispatch_falls_back_to_receiver_when_no_expected_return() {
     let int_ty = arena.primitive(PrimKind::Int);
 
     let mut members = MembersIndex::new();
-    members.add_direct(cls, sym(20, "from", "Convert.from", "method", Some("Convert")));
+    members.add_direct(
+        cls,
+        sym(20, "from", "Convert.from", "method", Some("Convert")),
+    );
     let mut symbol_types = SymbolTypeMap::new();
     symbol_types.insert(
         20,
@@ -429,12 +456,30 @@ fn multi_arg_dispatch_picks_most_specific_overload() {
     let admin = arena.class("Admin");
 
     let mut members = MembersIndex::new();
-    members.add_direct(target, sym(40, "handle", "Handler.handle", "method", Some("Handler")));
-    members.add_direct(target, sym(41, "handle", "Handler.handle", "method", Some("Handler")));
+    members.add_direct(
+        target,
+        sym(40, "handle", "Handler.handle", "method", Some("Handler")),
+    );
+    members.add_direct(
+        target,
+        sym(41, "handle", "Handler.handle", "method", Some("Handler")),
+    );
 
     let mut symbol_types = SymbolTypeMap::new();
-    symbol_types.insert(40, SymbolTypeData { param_types: vec![user], ..Default::default() });
-    symbol_types.insert(41, SymbolTypeData { param_types: vec![admin], ..Default::default() });
+    symbol_types.insert(
+        40,
+        SymbolTypeData {
+            param_types: vec![user],
+            ..Default::default()
+        },
+    );
+    symbol_types.insert(
+        41,
+        SymbolTypeData {
+            param_types: vec![admin],
+            ..Default::default()
+        },
+    );
 
     let supertypes = SupertypeGraph::new();
     let lookup = EmptyLookup::new().with_parent("Admin", "User");
@@ -460,7 +505,10 @@ fn multi_arg_dispatch_picks_most_specific_overload() {
         &lookup,
     )
     .expect("most-specific dispatch hits");
-    assert_eq!(result.id, 41, "Admin arg should pick the Admin overload, not User");
+    assert_eq!(
+        result.id, 41,
+        "Admin arg should pick the Admin overload, not User"
+    );
 }
 
 // =============================================================================
@@ -512,7 +560,9 @@ fn ternary_same_string_branches_types_str() {
 fn ternary_same_class_branches_types_that_class() {
     // `cond ? a : b` where both `a` and `b` are `User` → User.
     let arena = TypeArena::new();
-    let lookup = EmptyLookup::new().with_local("a", "User").with_local("b", "User");
+    let lookup = EmptyLookup::new()
+        .with_local("a", "User")
+        .with_local("b", "User");
     let args = ts_call_args(r#"function c(cond, a, b) { f(cond ? a : b); }"#);
     let user = arena.class("User");
     assert_eq!(ts_resolve(&args, &arena, &lookup), vec![user]);
@@ -544,10 +594,15 @@ fn ternary_one_branch_unknown_types_unknown() {
 fn array_literal_homogeneous_class_types_array_of_that_class() {
     // `[u1, u2]` where both are `User` → Apply<Array, [User]>.
     let arena = TypeArena::new();
-    let lookup = EmptyLookup::new().with_local("u1", "User").with_local("u2", "User");
+    let lookup = EmptyLookup::new()
+        .with_local("u1", "User")
+        .with_local("u2", "User");
     let args = ts_call_args(r#"function c(u1, u2) { f([u1, u2]); }"#);
     let user = arena.class("User");
-    let arr = arena.intern(Type::Apply { base: arena.class("Array"), args: vec![user] });
+    let arr = arena.intern(Type::Apply {
+        base: arena.class("Array"),
+        args: vec![user],
+    });
     assert_eq!(ts_resolve(&args, &arena, &lookup), vec![arr]);
 }
 
@@ -578,7 +633,11 @@ fn array_literal_empty_types_unknown() {
     let lookup = EmptyLookup::new();
     let unknown = arena.intern(Type::Unknown);
     assert_eq!(
-        ts_resolve(&[CallArg::ArrayLiteral { elements: vec![] }], &arena, &lookup),
+        ts_resolve(
+            &[CallArg::ArrayLiteral { elements: vec![] }],
+            &arena,
+            &lookup
+        ),
         vec![unknown]
     );
 }
@@ -591,7 +650,9 @@ fn array_literal_empty_types_unknown() {
 // by the extract slice). These resolve-side tests feed the structured
 // `Await { expr: Ident(_) }` directly so they exercise the typing arm itself.
 fn await_arg(inner: CallArg) -> CallArg {
-    CallArg::Await { expr: Box::new(inner) }
+    CallArg::Await {
+        expr: Box::new(inner),
+    }
 }
 
 #[test]
@@ -685,7 +746,8 @@ fn index_access_array_yields_element_type() {
     let lookup = EmptyLookup::new().with_local("arr", "Array<User>");
     let args = ts_call_args(r#"function c(arr) { f(arr[0]); }"#);
     assert!(
-        args.iter().any(|a| matches!(a, CallArg::IndexAccess { .. })),
+        args.iter()
+            .any(|a| matches!(a, CallArg::IndexAccess { .. })),
         "expected an IndexAccess arg, got {args:?}"
     );
     let user = arena.class("User");
@@ -761,7 +823,10 @@ fn index_access_tuple_non_literal_index_types_unknown() {
     let tuple = arena.intern(Type::Tuple(vec![user]));
     let unknown = arena.intern(Type::Unknown);
     let dyn_idx = _test_index_into(tuple, &CallArg::Ident("i".into()), &arena, &lookup);
-    assert_eq!(dyn_idx, unknown, "tuple with dynamic index should be Unknown");
+    assert_eq!(
+        dyn_idx, unknown,
+        "tuple with dynamic index should be Unknown"
+    );
 }
 
 // --- Binary ---------------------------------------------------------------
@@ -837,7 +902,9 @@ fn binary_string_concat_types_str() {
 fn binary_arithmetic_subtraction_numeric_locals_types_number() {
     // `x - y` where both `x` and `y` are `number` → Float (numeric).
     let arena = TypeArena::new();
-    let lookup = EmptyLookup::new().with_local("x", "number").with_local("y", "number");
+    let lookup = EmptyLookup::new()
+        .with_local("x", "number")
+        .with_local("y", "number");
     let args = ts_call_args(r#"function c(x, y) { f(x - y); }"#);
     let float_ty = arena.primitive(PrimKind::Float);
     assert_eq!(ts_resolve(&args, &arena, &lookup), vec![float_ty]);

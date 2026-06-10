@@ -1,4 +1,6 @@
-use super::hooks::{detect_clj_compojure_route, detect_clj_http_producer, detect_clj_jdbc_db_query};
+use super::hooks::{
+    detect_clj_compojure_route, detect_clj_http_producer, detect_clj_jdbc_db_query,
+};
 use crate::types::*;
 
 #[test]

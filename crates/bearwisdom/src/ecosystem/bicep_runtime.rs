@@ -47,9 +47,15 @@ const LANGUAGES: &[&str] = &["bicep"];
 pub struct BicepRuntimeEcosystem;
 
 impl Ecosystem for BicepRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("bicep")
@@ -69,7 +75,9 @@ impl Ecosystem for BicepRuntimeEcosystem {
         Vec::new()
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
         Some(synthesise_bicep_namespace_file(&dep.root))
@@ -77,13 +85,17 @@ impl Ecosystem for BicepRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for BicepRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_bicep_source(project_root)
     }
 
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> { Vec::new() }
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
         let roots = discover_bicep_source(project_root);
@@ -95,7 +107,9 @@ impl ExternalSourceLocator for BicepRuntimeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<BicepRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(BicepRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(BicepRuntimeEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -103,12 +117,17 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // ---------------------------------------------------------------------------
 
 fn discover_bicep_source(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let Some(clone) = find_bicep_clone_in_tree(project_root) else { return Vec::new() };
+    let Some(clone) = find_bicep_clone_in_tree(project_root) else {
+        return Vec::new();
+    };
     // The two namespace files plus LanguageConstants live under the same
     // Bicep.Core C# project. `looks_like_bicep_clone` already proved the
     // marker pair, so src/Bicep.Core exists.
     let bicep_core = clone.join("src").join("Bicep.Core");
-    tracing::info!("bicep-runtime: using Bicep source at {}", bicep_core.display());
+    tracing::info!(
+        "bicep-runtime: using Bicep source at {}",
+        bicep_core.display()
+    );
     vec![ExternalDepRoot {
         module_path: "bicep-core".to_string(),
         version: String::from("local"),
@@ -166,22 +185,14 @@ fn walk_for_clone(dir: &Path, depth: u32) -> Option<PathBuf> {
 fn is_pruned_search_dir(name: &str) -> bool {
     matches!(
         name,
-        "node_modules"
-            | "target"
-            | "bin"
-            | "obj"
-            | "dist"
-            | "build"
-            | "out"
-            | ".bearwisdom"
+        "node_modules" | "target" | "bin" | "obj" | "dist" | "build" | "out" | ".bearwisdom"
     ) || name.starts_with('.')
 }
 
 fn looks_like_bicep_clone(p: &Path) -> bool {
     p.is_dir()
         && p.join("src/Bicep.Core/Bicep.Core.csproj").is_file()
-        && p
-            .join("src/Bicep.Core/Semantics/Namespaces/SystemNamespaceType.cs")
+        && p.join("src/Bicep.Core/Semantics/Namespaces/SystemNamespaceType.cs")
             .is_file()
 }
 
@@ -221,9 +232,13 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
     let lang_const_src = read(&lang_constants);
 
     let mut consts: HashMap<String, String> = HashMap::new();
-    for src in [sys_src.as_deref(), az_src.as_deref(), lang_const_src.as_deref()]
-        .into_iter()
-        .flatten()
+    for src in [
+        sys_src.as_deref(),
+        az_src.as_deref(),
+        lang_const_src.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
     {
         collect_string_consts(src, &mut consts);
     }
@@ -231,36 +246,60 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut emitted: std::collections::HashSet<(String, &'static str)> =
         std::collections::HashSet::new();
-    let mut emit = |name: String, module: &'static str, kind: SymbolKind, symbols: &mut Vec<ExtractedSymbol>, emitted: &mut std::collections::HashSet<(String, &'static str)>| {
-        if name.is_empty() { return }
-        if !emitted.insert((name.clone(), module)) { return }
-        symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name: format!("{module}.{name}"),
-            kind,
-            visibility: Some(Visibility::Public),
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: Some(format!("from {} (Bicep upstream)", module)),
-            doc_comment: None,
-            scope_path: Some(module.to_string()),
-            parent_index: None,
-            byte_offset: 0,
-                    declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-});
-    };
+    let mut emit =
+        |name: String,
+         module: &'static str,
+         kind: SymbolKind,
+         symbols: &mut Vec<ExtractedSymbol>,
+         emitted: &mut std::collections::HashSet<(String, &'static str)>| {
+            if name.is_empty() {
+                return;
+            }
+            if !emitted.insert((name.clone(), module)) {
+                return;
+            }
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: format!("{module}.{name}"),
+                kind,
+                visibility: Some(Visibility::Public),
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+                signature: Some(format!("from {} (Bicep upstream)", module)),
+                doc_comment: None,
+                scope_path: Some(module.to_string()),
+                parent_index: None,
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
+        };
 
-    for src in [sys_src.as_deref(), az_src.as_deref()].into_iter().flatten() {
+    for src in [sys_src.as_deref(), az_src.as_deref()]
+        .into_iter()
+        .flatten()
+    {
         for name in extract_function_names(src, &consts) {
-            emit(name, "bicep.builtins", SymbolKind::Function, &mut symbols, &mut emitted);
+            emit(
+                name,
+                "bicep.builtins",
+                SymbolKind::Function,
+                &mut symbols,
+                &mut emitted,
+            );
         }
         for name in extract_decorator_names(src, &consts) {
-            emit(name, "bicep.decorators", SymbolKind::Function, &mut symbols, &mut emitted);
+            emit(
+                name,
+                "bicep.decorators",
+                SymbolKind::Function,
+                &mut symbols,
+                &mut emitted,
+            );
         }
     }
     // Namespace aliases — derived from the file names that are present
@@ -268,10 +307,22 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
     // Convention from upstream Bicep: the file's class name has a `Type`
     // suffix and the namespace alias is the lowercase prefix before it.
     if sys_src.is_some() {
-        emit("sys".to_string(), "bicep.namespace", SymbolKind::Class, &mut symbols, &mut emitted);
+        emit(
+            "sys".to_string(),
+            "bicep.namespace",
+            SymbolKind::Class,
+            &mut symbols,
+            &mut emitted,
+        );
     }
     if az_src.is_some() {
-        emit("az".to_string(), "bicep.namespace", SymbolKind::Class, &mut symbols, &mut emitted);
+        emit(
+            "az".to_string(),
+            "bicep.namespace",
+            SymbolKind::Class,
+            &mut symbols,
+            &mut emitted,
+        );
     }
 
     if symbols.is_empty() {
@@ -353,7 +404,11 @@ fn extract_function_names(source: &str, consts: &HashMap<String, String>) -> Vec
     // Three constructor names. `find_str_after` returns the byte index
     // immediately after the matched name, so `pos` already sits at the
     // first char *after* the ctor.
-    for ctor in ["FunctionOverloadBuilder", "BannedFunctionBuilder", "BannedFunction"] {
+    for ctor in [
+        "FunctionOverloadBuilder",
+        "BannedFunctionBuilder",
+        "BannedFunction",
+    ] {
         let mut search = 0;
         while let Some(pos) = find_str_after(bytes, search, ctor.as_bytes()) {
             // Special-case `BannedFunction.CreateForOperator("name", "+")` —
@@ -406,7 +461,9 @@ fn extract_decorator_names(source: &str, consts: &HashMap<String, String>) -> Ve
 // --- byte-level helpers (avoid pulling in regex) ---
 
 fn find_str_after(haystack: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-    if from > haystack.len() || needle.is_empty() { return None }
+    if from > haystack.len() || needle.is_empty() {
+        return None;
+    }
     haystack[from..]
         .windows(needle.len())
         .position(|w| w == needle)
@@ -421,18 +478,30 @@ fn read_ident(bytes: &[u8], from: usize) -> Option<(&str, usize)> {
     let begin = start;
     while start < bytes.len() {
         let b = bytes[start];
-        if b.is_ascii_alphanumeric() || b == b'_' { start += 1 } else { break }
+        if b.is_ascii_alphanumeric() || b == b'_' {
+            start += 1
+        } else {
+            break;
+        }
     }
-    if begin == start { return None }
-    std::str::from_utf8(&bytes[begin..start]).ok().map(|s| (s, start))
+    if begin == start {
+        return None;
+    }
+    std::str::from_utf8(&bytes[begin..start])
+        .ok()
+        .map(|s| (s, start))
 }
 
 fn skip_whitespace_eq(bytes: &[u8], from: usize) -> Option<usize> {
     let mut i = from;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1 }
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        i += 1
+    }
     if i < bytes.len() && bytes[i] == b'=' {
         i += 1;
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1 }
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+            i += 1
+        }
         Some(i)
     } else {
         None
@@ -441,21 +510,38 @@ fn skip_whitespace_eq(bytes: &[u8], from: usize) -> Option<usize> {
 
 fn skip_to_paren(bytes: &[u8], from: usize) -> Option<usize> {
     let mut i = from;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() { i += 1 }
-    if i < bytes.len() && bytes[i] == b'(' { Some(i + 1) } else { None }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1
+    }
+    if i < bytes.len() && bytes[i] == b'(' {
+        Some(i + 1)
+    } else {
+        None
+    }
 }
 
 fn read_string_literal(bytes: &[u8], from: usize) -> Option<(&str, usize)> {
-    if from >= bytes.len() || bytes[from] != b'"' { return None }
+    if from >= bytes.len() || bytes[from] != b'"' {
+        return None;
+    }
     let begin = from + 1;
     let mut i = begin;
     while i < bytes.len() {
-        if bytes[i] == b'\\' { i += 2; continue }
-        if bytes[i] == b'"' { break }
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'"' {
+            break;
+        }
         i += 1;
     }
-    if i >= bytes.len() { return None }
-    std::str::from_utf8(&bytes[begin..i]).ok().map(|s| (s, i + 1))
+    if i >= bytes.len() {
+        return None;
+    }
+    std::str::from_utf8(&bytes[begin..i])
+        .ok()
+        .map(|s| (s, i + 1))
 }
 
 /// Read the first argument of a builder call. Either a string literal or
@@ -463,8 +549,12 @@ fn read_string_literal(bytes: &[u8], from: usize) -> Option<(&str, usize)> {
 /// `LanguageConstants.<X>` or just `<X>` — accept both.
 fn read_first_arg(bytes: &[u8], from: usize, consts: &HashMap<String, String>) -> Option<String> {
     let mut i = from;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() { i += 1 }
-    if i >= bytes.len() { return None }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1
+    }
+    if i >= bytes.len() {
+        return None;
+    }
     if bytes[i] == b'"' {
         return read_string_literal(bytes, i).map(|(s, _)| s.to_string());
     }

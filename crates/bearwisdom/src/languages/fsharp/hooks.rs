@@ -118,9 +118,7 @@ pub(crate) fn detect_fsharp_http_producer(
     }
     let url = call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }
@@ -141,9 +139,7 @@ pub(crate) fn detect_fsharp_db_query(
 ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
     let op = match (module.rsplit('.').next().unwrap_or(module), target) {
-        ("Sql", "execute") | ("Sql", "executeAsync") | ("Sql", "executeReader") => {
-            DbQueryOp::Other
-        }
+        ("Sql", "execute") | ("Sql", "executeAsync") | ("Sql", "executeReader") => DbQueryOp::Other,
         ("Sql", "executeRowAsync") | ("Sql", "executeRow") => DbQueryOp::Select,
         _ => return None,
     };

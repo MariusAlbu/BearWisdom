@@ -24,8 +24,8 @@
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
-use tree_sitter::{Node, Parser};
 use std::collections::HashSet;
+use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -125,11 +125,11 @@ fn extract_create_table(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Extract column definitions as Field children
     extract_column_definitions(node, src, idx, symbols, refs);
@@ -150,9 +150,7 @@ fn extract_create_view(
         Some(n) => n,
         None => {
             // Fallback: first identifier child
-            match first_child_of_kind(node, "identifier")
-                .map(|n| node_text(n, src))
-            {
+            match first_child_of_kind(node, "identifier").map(|n| node_text(n, src)) {
                 Some(n) if !n.is_empty() => n,
                 _ => return,
             }
@@ -173,11 +171,11 @@ fn extract_create_view(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -209,11 +207,11 @@ fn extract_create_function(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -246,11 +244,11 @@ fn extract_create_trigger(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -286,15 +284,17 @@ fn extract_create_index(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // TypeRef to the table the index is on (object_reference child)
     if let Some(table_name) = first_object_reference_name(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: idx,
             target_name: table_name,
             kind: EdgeKind::TypeRef,
@@ -303,9 +303,9 @@ fn extract_create_index(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -321,7 +321,9 @@ fn extract_alter_table(
 ) {
     // alter_table: first object_reference is the table being altered
     if let Some(name) = first_object_reference_name(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -330,9 +332,9 @@ fn extract_alter_table(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -353,7 +355,12 @@ fn extract_cte(
         match child.kind() {
             "cte_name" | "alias" | "identifier" => {
                 let name = node_text(child, src);
-                if !name.is_empty() && !matches!(name.to_uppercase().as_str(), "WITH" | "AS" | "SELECT" | "FROM") {
+                if !name.is_empty()
+                    && !matches!(
+                        name.to_uppercase().as_str(),
+                        "WITH" | "AS" | "SELECT" | "FROM"
+                    )
+                {
                     symbols.push(ExtractedSymbol {
                         name: name.clone(),
                         qualified_name: name.clone(),
@@ -368,11 +375,11 @@ fn extract_cte(
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                     found_name = true;
                     break;
                 }
@@ -397,11 +404,11 @@ fn extract_cte(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -429,13 +436,22 @@ fn collect_all_cte_nodes(
                     if matches!(k, "identifier" | "cte_name" | "alias") {
                         let t = node_text(child, src);
                         let upper = t.to_uppercase();
-                        if !t.is_empty() && !matches!(upper.as_str(), "AS" | "WITH" | "SELECT" | "FROM" | "WHERE") {
+                        if !t.is_empty()
+                            && !matches!(
+                                upper.as_str(),
+                                "AS" | "WITH" | "SELECT" | "FROM" | "WHERE"
+                            )
+                        {
                             found = t;
                             break;
                         }
                     }
                 }
-                if found.is_empty() { "cte".to_string() } else { found }
+                if found.is_empty() {
+                    "cte".to_string()
+                } else {
+                    found
+                }
             };
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
@@ -451,11 +467,11 @@ fn collect_all_cte_nodes(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
         // Recurse to find nested CTEs
         let mut cursor = node.walk();
@@ -487,8 +503,12 @@ fn collect_all_column_definitions(
         if let Some(first) = node.child(0) {
             if matches!(
                 first.kind(),
-                "keyword_constraint" | "keyword_primary" | "keyword_foreign"
-                    | "keyword_check" | "keyword_unique" | "keyword_include"
+                "keyword_constraint"
+                    | "keyword_primary"
+                    | "keyword_foreign"
+                    | "keyword_check"
+                    | "keyword_unique"
+                    | "keyword_include"
                     | "keyword_index"
             ) {
                 return;
@@ -502,7 +522,11 @@ fn collect_all_column_definitions(
             // Extract column name: try `name` field, then first identifier
             let name = if let Some(n) = node.child_by_field_name("name") {
                 let t = node_text(n, src);
-                if t.is_empty() { "col".to_string() } else { t }
+                if t.is_empty() {
+                    "col".to_string()
+                } else {
+                    t
+                }
             } else {
                 let mut found = String::new();
                 let mut cursor = node.walk();
@@ -515,7 +539,11 @@ fn collect_all_column_definitions(
                         }
                     }
                 }
-                if found.is_empty() { "col".to_string() } else { found }
+                if found.is_empty() {
+                    "col".to_string()
+                } else {
+                    found
+                }
             };
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
@@ -531,11 +559,11 @@ fn collect_all_column_definitions(
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
         return; // Don't recurse inside column_definition
     }
@@ -607,8 +635,12 @@ fn has_constraint_clause_marker(node: Node, src: &str) -> bool {
     fn walk(n: Node) -> bool {
         if matches!(
             n.kind(),
-            "keyword_constraint" | "keyword_primary" | "keyword_foreign"
-                | "keyword_check" | "keyword_unique" | "keyword_include"
+            "keyword_constraint"
+                | "keyword_primary"
+                | "keyword_foreign"
+                | "keyword_check"
+                | "keyword_unique"
+                | "keyword_include"
         ) {
             return true;
         }
@@ -668,8 +700,12 @@ fn extract_column(
         let leading = first.kind();
         if matches!(
             leading,
-            "keyword_constraint" | "keyword_primary" | "keyword_foreign"
-                | "keyword_check" | "keyword_unique" | "keyword_include"
+            "keyword_constraint"
+                | "keyword_primary"
+                | "keyword_foreign"
+                | "keyword_check"
+                | "keyword_unique"
+                | "keyword_include"
                 | "keyword_index"
         ) {
             return;
@@ -682,7 +718,11 @@ fn extract_column(
     // Try named field first, then first identifier child as fallback
     let name = if let Some(n) = node.child_by_field_name("name") {
         let t = node_text(n, src);
-        if !t.is_empty() { t } else { return; }
+        if !t.is_empty() {
+            t
+        } else {
+            return;
+        }
     } else {
         // Fallback: first identifier child
         let mut found = String::new();
@@ -696,7 +736,9 @@ fn extract_column(
                 }
             }
         }
-        if found.is_empty() { return; }
+        if found.is_empty() {
+            return;
+        }
         found
     };
 
@@ -732,15 +774,17 @@ fn extract_column(
         scope_path: None,
         parent_index: Some(parent_index),
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // TypeRef for custom type
     if let Some(ct) = custom_type {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: col_idx,
             target_name: ct,
             kind: EdgeKind::TypeRef,
@@ -749,9 +793,9 @@ fn extract_column(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Check for REFERENCES clause (foreign key inline constraint)
@@ -778,7 +822,9 @@ fn extract_fk_refs(
             saw_references = true;
         } else if saw_references && child.kind() == "object_reference" {
             if let Some(name) = object_reference_name(&child, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -787,9 +833,9 @@ fn extract_fk_refs(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             saw_references = false;
         }
@@ -834,11 +880,11 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         } else if upper.starts_with("CREATE INDEX") || upper.starts_with("CREATE UNIQUE INDEX") {
             if let Some(name) = parse_create_index_name(line) {
@@ -856,13 +902,14 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
-        } else if upper.starts_with("CREATE VIEW") || upper.starts_with("CREATE OR REPLACE VIEW")
+        } else if upper.starts_with("CREATE VIEW")
+            || upper.starts_with("CREATE OR REPLACE VIEW")
             || upper.starts_with("CREATE MATERIALIZED VIEW")
         {
             if let Some(name) = parse_create_view_name(line) {
@@ -880,11 +927,11 @@ fn extract_ddl_fallback(
                     scope_path: None,
                     parent_index: None,
                     byte_offset: 0,
-                                    declared_type: None,
+                    declared_type: None,
                     return_type: None,
                     param_types: Vec::new(),
                     generic_params: Vec::new(),
-});
+                });
             }
         }
     }
@@ -907,7 +954,11 @@ fn parse_create_table_name(line: &str) -> Option<String> {
             }
             _ => {
                 // This token is the table name (possibly schema.name)
-                let name = tok.trim_end_matches('(').trim_end_matches(';').trim().to_string();
+                let name = tok
+                    .trim_end_matches('(')
+                    .trim_end_matches(';')
+                    .trim()
+                    .to_string();
                 if !name.is_empty() && !name.starts_with('(') {
                     return Some(name);
                 }
@@ -946,7 +997,11 @@ fn parse_create_view_name(line: &str) -> Option<String> {
         match upper.as_str() {
             "CREATE" | "OR" | "REPLACE" | "MATERIALIZED" | "VIEW" | "IF" | "NOT" | "EXISTS" => {}
             _ => {
-                let name = tok.trim_end_matches('(').trim_end_matches(';').trim().to_string();
+                let name = tok
+                    .trim_end_matches('(')
+                    .trim_end_matches(';')
+                    .trim()
+                    .to_string();
                 if !name.is_empty() {
                     return Some(name);
                 }
@@ -977,7 +1032,10 @@ fn first_object_reference_name(node: &Node, src: &str) -> Option<String> {
     // Second pass: inside create_query / qualified_name / table_name wrappers
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if matches!(child.kind(), "create_query" | "qualified_name" | "table_name" | "relation") {
+        if matches!(
+            child.kind(),
+            "create_query" | "qualified_name" | "table_name" | "relation"
+        ) {
             let mut ic = child.walk();
             for inner in child.children(&mut ic) {
                 if inner.kind() == "object_reference" {

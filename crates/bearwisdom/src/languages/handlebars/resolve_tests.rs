@@ -111,7 +111,11 @@ fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
 
 #[test]
 fn relative_partial_in_same_dir_resolves() {
-    let target = make_file("themes/casper/header.hbs", vec![make_class_symbol("header")], vec![]);
+    let target = make_file(
+        "themes/casper/header.hbs",
+        vec![make_class_symbol("header")],
+        vec![],
+    );
     let source = make_file(
         "themes/casper/index.hbs",
         vec![make_class_symbol("index")],
@@ -148,7 +152,11 @@ fn nested_partial_via_partials_dir_resolves() {
 #[test]
 fn mustache_underscore_prefix_resolves() {
     // Mustache convention: `{{> footer}}` matches `_footer.mustache` in same dir.
-    let target = make_file("templates/_footer.mustache", vec![make_class_symbol("_footer")], vec![]);
+    let target = make_file(
+        "templates/_footer.mustache",
+        vec![make_class_symbol("_footer")],
+        vec![],
+    );
     let source = make_file(
         "templates/index.mustache",
         vec![make_class_symbol("index")],
@@ -202,8 +210,8 @@ fn camelcase_partial_resolves_to_kebab_case_file() {
         vec![make_partial_ref("feedbackButton")],
     );
     let (index, _id_map) = build_env(&[&source, &target]);
-    let res = resolve(&source, &index)
-        .expect("camelCase partial should resolve to kebab-case file");
+    let res =
+        resolve(&source, &index).expect("camelCase partial should resolve to kebab-case file");
     assert_eq!(res.strategy, "handlebars_partial");
 }
 

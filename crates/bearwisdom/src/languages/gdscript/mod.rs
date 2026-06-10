@@ -11,9 +11,9 @@
 //! - `variable_statement` / `const_statement` → Variable / Field
 //! - `enum_definition` → Enum
 
-pub mod keywords;
 pub mod extract;
 pub mod flow;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -32,17 +32,25 @@ use crate::types::ExtractionResult;
 pub struct GDScriptPlugin;
 
 impl LanguagePlugin for GDScriptPlugin {
-    fn id(&self) -> &str { "gdscript" }
+    fn id(&self) -> &str {
+        "gdscript"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["gdscript"] }
+    fn language_ids(&self) -> &[&str] {
+        &["gdscript"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".gd"] }
+    fn extensions(&self) -> &[&str] {
+        &[".gd"]
+    }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         Some(tree_sitter_gdscript::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        &[]
+    }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
@@ -63,10 +71,7 @@ impl LanguagePlugin for GDScriptPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call",
-            "extends_statement",
-        ]
+        &["call", "extends_statement"]
     }
 
     fn keywords(&self) -> &'static [&'static str] {
@@ -81,8 +86,7 @@ impl LanguagePlugin for GDScriptPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::GDSCRIPT_HOOKS)
     }
 

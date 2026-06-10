@@ -30,7 +30,10 @@ fn test_parse_package_references() {
   </ItemGroup>
 </Project>"#;
     let pkgs = parse_package_references(csproj);
-    assert_eq!(pkgs, vec!["Newtonsoft.Json", "MediatR", "Serilog.AspNetCore"]);
+    assert_eq!(
+        pkgs,
+        vec!["Newtonsoft.Json", "MediatR", "Serilog.AspNetCore"]
+    );
 }
 
 #[test]
@@ -54,11 +57,14 @@ global using eShop.Basket.API.Extensions;
 global using static System.Math;
 "#;
     let usings = parse_global_usings(content);
-    assert_eq!(usings, vec![
-        "System.ComponentModel.DataAnnotations",
-        "System.Security.Claims",
-        "eShop.Basket.API.Extensions",
-    ]);
+    assert_eq!(
+        usings,
+        vec![
+            "System.ComponentModel.DataAnnotations",
+            "System.Security.Claims",
+            "eShop.Basket.API.Extensions",
+        ]
+    );
 }
 
 #[test]
@@ -100,12 +106,20 @@ fn test_is_external_namespace() {
 
 #[test]
 fn test_most_capable_sdk() {
-    assert_eq!(most_capable_sdk(&[DotnetSdkType::Base, DotnetSdkType::Web]), DotnetSdkType::Web);
-    assert_eq!(most_capable_sdk(&[DotnetSdkType::Worker]), DotnetSdkType::Worker);
+    assert_eq!(
+        most_capable_sdk(&[DotnetSdkType::Base, DotnetSdkType::Web]),
+        DotnetSdkType::Web
+    );
+    assert_eq!(
+        most_capable_sdk(&[DotnetSdkType::Worker]),
+        DotnetSdkType::Worker
+    );
     assert_eq!(most_capable_sdk(&[]), DotnetSdkType::Other);
-    assert_eq!(most_capable_sdk(&[DotnetSdkType::Base]), DotnetSdkType::Base);
+    assert_eq!(
+        most_capable_sdk(&[DotnetSdkType::Base]),
+        DotnetSdkType::Base
+    );
 }
-
 
 // ===========================================================================
 // M2 — per-package context lookups
@@ -113,8 +127,8 @@ fn test_most_capable_sdk() {
 
 #[cfg(test)]
 mod m2_tests {
-    use super::super::*;
     use super::super::manifest::ManifestKind;
+    use super::super::*;
     use crate::types::PackageInfo;
     use std::fs;
     use tempfile::TempDir;
@@ -269,8 +283,8 @@ mod m2_tests {
 #[cfg(test)]
 mod activation_eval_tests {
     use super::*;
-    use crate::ecosystem::{EcosystemActivation, EcosystemId};
     use crate::ecosystem::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::{EcosystemActivation, EcosystemId};
     use std::fs;
 
     fn ctx_with_manifests(kinds: &[ManifestKind]) -> ProjectContext {
@@ -333,7 +347,12 @@ mod activation_eval_tests {
         // The maven ecosystem claims Maven, Gradle, Sbt, Clojure. Any one
         // satisfies ManifestMatch.
         let maven = EcosystemId::new("maven");
-        for kind in [ManifestKind::Maven, ManifestKind::Gradle, ManifestKind::Sbt, ManifestKind::Clojure] {
+        for kind in [
+            ManifestKind::Maven,
+            ManifestKind::Gradle,
+            ManifestKind::Sbt,
+            ManifestKind::Clojure,
+        ] {
             let ctx = ctx_with_manifests(&[kind]);
             assert!(
                 super::evaluate_activation(&EcosystemActivation::ManifestMatch, maven, &ctx, &[]),
@@ -356,7 +375,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "dom",
         };
-        assert!(super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -373,7 +397,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "DOM",
         };
-        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(!super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -390,7 +419,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "DOM",
         };
-        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(!super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -409,7 +443,12 @@ mod activation_eval_tests {
             field_path: "dependencies",
             value: "flutter",
         };
-        assert!(super::evaluate_activation(&act, EcosystemId::new("flutter-sdk"), &ctx, &[]));
+        assert!(super::evaluate_activation(
+            &act,
+            EcosystemId::new("flutter-sdk"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -426,7 +465,12 @@ mod activation_eval_tests {
             field_path: "dependencies",
             value: "flutter",
         };
-        assert!(!super::evaluate_activation(&act, EcosystemId::new("flutter-sdk"), &ctx, &[]));
+        assert!(!super::evaluate_activation(
+            &act,
+            EcosystemId::new("flutter-sdk"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -438,7 +482,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "DOM",
         };
-        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(!super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -451,7 +500,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "DOM",
         };
-        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(!super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -470,7 +524,12 @@ mod activation_eval_tests {
             field_path: "compilerOptions.lib",
             value: "DOM",
         };
-        assert!(super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+        assert!(super::evaluate_activation(
+            &act,
+            EcosystemId::new("ts-lib-dom"),
+            &ctx,
+            &[]
+        ));
     }
 
     #[test]
@@ -489,7 +548,12 @@ mod activation_eval_tests {
             field_path: "application",
             value: "config/name",
         };
-        assert!(super::evaluate_activation(&act, EcosystemId::new("godot-api"), &ctx, &[]));
+        assert!(super::evaluate_activation(
+            &act,
+            EcosystemId::new("godot-api"),
+            &ctx,
+            &[]
+        ));
     }
 }
 
@@ -556,8 +620,7 @@ mod per_package_activation_tests {
 
         let ctx = build_project_context_with_packages(root, &packages);
         let registry = ecosystem::default_registry();
-        let per_pkg =
-            super::evaluate_active_ecosystems_per_package(&ctx, registry, &packages);
+        let per_pkg = super::evaluate_active_ecosystems_per_package(&ctx, registry, &packages);
 
         let ts_lib_dom = EcosystemId::new("ts-lib-dom");
         let web_actives = per_pkg.get(&1).expect("web package must be evaluated");
@@ -639,8 +702,7 @@ mod per_package_activation_tests {
         );
 
         let registry = ecosystem::default_registry();
-        let ctx =
-            ProjectContext::initialize(root, &[], std::iter::empty::<String>(), registry);
+        let ctx = ProjectContext::initialize(root, &[], std::iter::empty::<String>(), registry);
 
         assert!(ctx.active_ecosystems_by_package.is_empty());
         let ts_lib_dom = EcosystemId::new("ts-lib-dom");
@@ -767,12 +829,7 @@ mod per_package_activation_tests {
         ];
 
         let registry = ecosystem::default_registry();
-        let ctx = ProjectContext::initialize(
-            root,
-            &packages,
-            vec!["kotlin".to_string()],
-            registry,
-        );
+        let ctx = ProjectContext::initialize(root, &packages, vec!["kotlin".to_string()], registry);
 
         let kotlin_stdlib = EcosystemId::new("kotlin-stdlib");
         // Both packages activate kotlin-stdlib because workspace-wide
@@ -819,11 +876,7 @@ mod per_package_activation_tests {
         per_pkg.insert(42, HashSet::from(["go".to_string()]));
 
         // Workspace-wide presence covers everything actually on disk.
-        let workspace_langs = vec![
-            "go".to_string(),
-            "cpp".to_string(),
-            "c".to_string(),
-        ];
+        let workspace_langs = vec!["go".to_string(), "cpp".to_string(), "c".to_string()];
 
         let registry = ecosystem::default_registry();
         let ctx = ProjectContext::initialize_with_per_package_languages(
@@ -958,7 +1011,10 @@ mod per_package_activation_tests {
 
         // Per-package language presence: web package has typescript and vue files.
         let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();
-        per_pkg.insert(1, HashSet::from(["typescript".to_string(), "vue".to_string()]));
+        per_pkg.insert(
+            1,
+            HashSet::from(["typescript".to_string(), "vue".to_string()]),
+        );
 
         let workspace_langs = vec!["typescript".to_string(), "vue".to_string()];
 

@@ -7,12 +7,12 @@ mod calls_symbols;
 pub mod connectors;
 pub(crate) mod decorators;
 mod embedded;
+pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
 mod types;
-pub mod extract;
 
 pub mod hooks;
 mod predicates;
@@ -42,24 +42,32 @@ mod coverage_tests;
 mod calls_tests;
 
 use crate::languages::{LanguagePlugin, Synthesized};
-use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
 
 pub struct CSharpPlugin;
 
 impl LanguagePlugin for CSharpPlugin {
-    fn id(&self) -> &str { "csharp" }
+    fn id(&self) -> &str {
+        "csharp"
+    }
 
-    fn language_ids(&self) -> &[&str] { &["csharp"] }
+    fn language_ids(&self) -> &[&str] {
+        &["csharp"]
+    }
 
-    fn extensions(&self) -> &[&str] { &[".cs"] }
+    fn extensions(&self) -> &[&str] {
+        &[".cs"]
+    }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         let _ = lang_id;
         Some(tree_sitter_c_sharp::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::CSHARP_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] {
+        extract::CSHARP_SCOPE_KINDS
+    }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
@@ -141,8 +149,7 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&CSHARP_HOOKS)
     }
 

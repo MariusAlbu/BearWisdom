@@ -18,11 +18,11 @@
 // the chain segments via chain.segments.iter().map(|s| &s.name).join(".").
 // =============================================================================
 
+use crate::types::ExtractionResult;
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
     Visibility,
 };
-use crate::types::ExtractionResult;
 use tree_sitter::{Node, Parser};
 
 // Rule-like builtins that define rule types → emit as Function
@@ -63,11 +63,11 @@ pub fn extract(source: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     walk(root, src, &mut symbols, &mut refs, None);
 
@@ -140,11 +140,11 @@ fn extract_function(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     Some(idx)
 }
 
@@ -196,11 +196,11 @@ fn extract_assignment(
         scope_path: None,
         parent_index: parent_idx,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     // Emit a call ref for the RHS callee if applicable.
     if let Some(rhs) = right {
@@ -223,15 +223,14 @@ fn extract_assignment(
                     };
                     let chain = attr_node.and_then(|n| build_attribute_chain(n, src));
                     let target_name = if let Some(ref mc) = chain {
-                        mc.segments
-                            .last()
-                            .map(|s| s.name.clone())
-                            .unwrap_or(callee)
+                        mc.segments.last().map(|s| s.name.clone()).unwrap_or(callee)
                     } else {
                         callee
                     };
                     let sym_idx = parent_idx.unwrap_or(idx);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name,
                         kind: EdgeKind::Calls,
@@ -258,13 +257,22 @@ fn classify_rhs(node: Node, src: &[u8], lhs_name: &str) -> (SymbolKind, Option<S
         if let Some(callee_node) = actual.child_by_field_name("function") {
             let callee = text(callee_node, src);
             if RULE_FUNCS.contains(&callee.as_str()) {
-                return (SymbolKind::Function, Some(format!("{} = {}(...)", lhs_name, callee)));
+                return (
+                    SymbolKind::Function,
+                    Some(format!("{} = {}(...)", lhs_name, callee)),
+                );
             }
             if STRUCT_FUNCS.contains(&callee.as_str()) {
-                return (SymbolKind::Struct, Some(format!("{} = {}(...)", lhs_name, callee)));
+                return (
+                    SymbolKind::Struct,
+                    Some(format!("{} = {}(...)", lhs_name, callee)),
+                );
             }
             if callee.ends_with("_test") {
-                return (SymbolKind::Test, Some(format!("{} = {}(...)", lhs_name, callee)));
+                return (
+                    SymbolKind::Test,
+                    Some(format!("{} = {}(...)", lhs_name, callee)),
+                );
             }
         }
     }
@@ -300,12 +308,7 @@ fn unwrap_expression(node: Node) -> Node {
     }
 }
 
-fn extract_call(
-    node: Node,
-    src: &[u8],
-    refs: &mut Vec<ExtractedRef>,
-    parent_idx: Option<usize>,
-) {
+fn extract_call(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, parent_idx: Option<usize>) {
     let sym_idx = parent_idx.unwrap_or(0);
     // call.function is a `primary_expression` — could be identifier or attribute.
     if let Some(fn_node) = node.child_by_field_name("function") {
@@ -349,15 +352,14 @@ fn extract_call(
             };
             let chain = attr_node.and_then(|n| build_attribute_chain(n, src));
             let target_name = if let Some(ref mc) = chain {
-                mc.segments
-                    .last()
-                    .map(|s| s.name.clone())
-                    .unwrap_or(name)
+                mc.segments.last().map(|s| s.name.clone()).unwrap_or(name)
             } else {
                 name
             };
 
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: sym_idx,
                 target_name,
                 kind: EdgeKind::Calls,
@@ -366,9 +368,9 @@ fn extract_call(
                 module: None,
                 chain,
                 byte_offset: fn_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -393,7 +395,11 @@ fn build_attribute_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
     Some(MemberChain { segments })
 }
 
-fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+fn collect_attribute_segments(
+    node: Node,
+    src: &[u8],
+    segments: &mut Vec<ChainSegment>,
+) -> Option<()> {
     match node.kind() {
         "identifier" => {
             let name = text(node, src);
@@ -409,11 +415,11 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         "attribute" => {
@@ -432,11 +438,11 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
                 type_args: vec![],
                 optional_chaining: false,
                 byte_offset: 0,
-                            declared_type_id: None,
+                declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
-});
+            });
             Some(())
         }
         // Starlark `primary_expression` wrappers — unwrap one level.
@@ -451,12 +457,7 @@ fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSe
     }
 }
 
-fn extract_load_refs(
-    call_node: Node,
-    src: &[u8],
-    sym_idx: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_load_refs(call_node: Node, src: &[u8], sym_idx: usize, refs: &mut Vec<ExtractedRef>) {
     // load("label", "sym1", alias="sym2", ...)
     if let Some(args) = call_node.child_by_field_name("arguments") {
         let mut cursor = args.walk();
@@ -469,7 +470,9 @@ fn extract_load_refs(
         if module_label.is_empty() {
             return;
         }
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: sym_idx,
             target_name: module_label.clone(),
             kind: EdgeKind::Imports,
@@ -478,9 +481,9 @@ fn extract_load_refs(
             module: Some(module_label.clone()),
             chain: None,
             byte_offset: call_node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
         // Remaining args are symbol names or `alias = "sym"` pairs.
         // For aliased loads use the alias (the name used inside this file)
         // as target_name — the resolver needs to match local invocations
@@ -502,7 +505,9 @@ fn extract_load_refs(
                 _ => String::new(),
             };
             if !sym.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: sym,
                     kind: EdgeKind::Imports,
@@ -511,9 +516,9 @@ fn extract_load_refs(
                     module: Some(module_label.clone()),
                     chain: None,
                     byte_offset: call_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
     }
@@ -566,5 +571,8 @@ fn text(node: Node, src: &[u8]) -> String {
 /// literals always bind to builtin types, never user symbols.
 fn starts_with_literal(name: &str) -> bool {
     let first = name.chars().next();
-    matches!(first, Some('"') | Some('\'') | Some('[') | Some('{') | Some('('))
+    matches!(
+        first,
+        Some('"') | Some('\'') | Some('[') | Some('{') | Some('(')
+    )
 }

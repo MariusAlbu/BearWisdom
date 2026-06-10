@@ -37,7 +37,9 @@ pub(super) fn extract_calls(
                     // require('foo') → Imports edge instead of Calls
                     if callee == "require" {
                         if let Some(module) = extract_require_path(&child, src) {
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: module.clone(),
                                 kind: EdgeKind::Imports,
@@ -47,14 +49,16 @@ pub(super) fn extract_calls(
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                     // import('foo') — dynamic import → Imports edge
                     else if callee == "import" {
                         if let Some(module) = extract_first_string_arg(&child, src) {
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: module.clone(),
                                 kind: EdgeKind::Imports,
@@ -64,8 +68,8 @@ pub(super) fn extract_calls(
                                 byte_offset: child.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args: Vec::new(),
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                     // Regular call — emit with chain for member access resolution.
@@ -83,9 +87,16 @@ pub(super) fn extract_calls(
                             None => is_enclosing_function_parameter(func_node, src, &callee),
                         };
                         if !shadowed {
-                            crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                            crate::languages::emit_chain_type_ref(
+                                &chain,
+                                source_symbol_index,
+                                &func_node,
+                                refs,
+                            );
                             let call_args = extract_call_args(&child, src);
-                            refs.push(Ref { is_import_binding: false, is_reexport: false,
+                            refs.push(Ref {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: callee,
                                 kind: EdgeKind::Calls,
@@ -95,8 +106,8 @@ pub(super) fn extract_calls(
                                 byte_offset: func_node.start_byte() as u32,
                                 namespace_segments: Vec::new(),
                                 call_args,
-                                    col: 0,
-                                });
+                                col: 0,
+                            });
                         }
                     }
                 }
@@ -109,7 +120,9 @@ pub(super) fn extract_calls(
                     let name = callee_name(constructor, src);
                     if !name.is_empty() {
                         let call_args = extract_call_args(&child, src);
-                        refs.push(Ref { is_import_binding: false, is_reexport: false,
+                        refs.push(Ref {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -119,8 +132,8 @@ pub(super) fn extract_calls(
                             byte_offset: constructor.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args,
-                                col: 0,
-                            });
+                            col: 0,
+                        });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -137,10 +150,15 @@ pub(super) fn extract_calls(
                             .map(|tmpl| {
                                 let raw = node_text(tmpl, src);
                                 let body = raw.trim_matches('`').to_string();
-                                vec![CallArg::TaggedTemplate { tag: name.clone(), body }]
+                                vec![CallArg::TaggedTemplate {
+                                    tag: name.clone(),
+                                    body,
+                                }]
                             })
                             .unwrap_or_default();
-                        refs.push(Ref { is_import_binding: false, is_reexport: false,
+                        refs.push(Ref {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::Calls,
@@ -150,8 +168,8 @@ pub(super) fn extract_calls(
                             byte_offset: tag.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args,
-                                col: 0,
-                            });
+                            col: 0,
+                        });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -193,7 +211,9 @@ pub(super) fn extract_calls(
                             &tag_node,
                             refs,
                         );
-                        refs.push(Ref { is_import_binding: false, is_reexport: false,
+                        refs.push(Ref {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: target,
                             kind: EdgeKind::Calls,
@@ -203,8 +223,8 @@ pub(super) fn extract_calls(
                             byte_offset: tag_node.start_byte() as u32,
                             namespace_segments: Vec::new(),
                             call_args: Vec::new(),
-                                col: 0,
-                            });
+                            col: 0,
+                        });
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -290,7 +310,9 @@ pub(super) fn emit_call_ref_js(
 
     if callee == "require" {
         if let Some(module) = extract_require_path(call_node, src) {
-            refs.push(Ref { is_import_binding: false, is_reexport: false,
+            refs.push(Ref {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: module.clone(),
                 kind: EdgeKind::Imports,
@@ -300,12 +322,14 @@ pub(super) fn emit_call_ref_js(
                 byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                    col: 0,
-                });
+                col: 0,
+            });
         }
     } else if callee == "import" {
         if let Some(module) = extract_first_string_arg(call_node, src) {
-            refs.push(Ref { is_import_binding: false, is_reexport: false,
+            refs.push(Ref {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: module.clone(),
                 kind: EdgeKind::Imports,
@@ -315,8 +339,8 @@ pub(super) fn emit_call_ref_js(
                 byte_offset: call_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args: Vec::new(),
-                    col: 0,
-                });
+                col: 0,
+            });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
         // Parameter-shadow filter: `(setter) => setter(e.target.value)`
@@ -341,7 +365,9 @@ pub(super) fn emit_call_ref_js(
         // Emit a TypeRef for the chain receiver when it looks like a type name.
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         let call_args = extract_call_args(call_node, src);
-        refs.push(Ref { is_import_binding: false, is_reexport: false,
+        refs.push(Ref {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: callee,
             kind: EdgeKind::Calls,
@@ -351,8 +377,8 @@ pub(super) fn emit_call_ref_js(
             byte_offset: func_node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args,
-                col: 0,
-            });
+            col: 0,
+        });
     }
 }
 
@@ -365,13 +391,45 @@ pub(super) fn emit_call_ref_js(
 fn is_js_keyword(name: &str) -> bool {
     matches!(
         name,
-        "super" | "this" | "new" | "typeof" | "instanceof" | "void"
-            | "yield" | "await" | "delete" | "in" | "of" | "return"
-            | "throw" | "try" | "catch" | "finally" | "debugger"
-            | "if" | "else" | "switch" | "case" | "default" | "break"
-            | "continue" | "for" | "while" | "do" | "function" | "class"
-            | "extends" | "const" | "let" | "var" | "static" | "async"
-            | "true" | "false" | "null" | "undefined"
+        "super"
+            | "this"
+            | "new"
+            | "typeof"
+            | "instanceof"
+            | "void"
+            | "yield"
+            | "await"
+            | "delete"
+            | "in"
+            | "of"
+            | "return"
+            | "throw"
+            | "try"
+            | "catch"
+            | "finally"
+            | "debugger"
+            | "if"
+            | "else"
+            | "switch"
+            | "case"
+            | "default"
+            | "break"
+            | "continue"
+            | "for"
+            | "while"
+            | "do"
+            | "function"
+            | "class"
+            | "extends"
+            | "const"
+            | "let"
+            | "var"
+            | "static"
+            | "async"
+            | "true"
+            | "false"
+            | "null"
+            | "undefined"
     )
 }
 
@@ -443,9 +501,7 @@ fn parameter_list_binds(params: Node, src: &[u8], name: &str) -> bool {
 ///                           JS grammar also accepts them in .tsx files.
 fn pattern_binds_name(node: Node, src: &[u8], name: &str) -> bool {
     match node.kind() {
-        "identifier" | "shorthand_property_identifier_pattern" => {
-            node_text(node, src) == name
-        }
+        "identifier" | "shorthand_property_identifier_pattern" => node_text(node, src) == name,
         "rest_pattern" | "spread_element" => {
             // `...rest` — the identifier lives under the rest marker.
             node.named_child(0)
@@ -499,7 +555,9 @@ pub(super) fn emit_new_ref_js(
     let name = callee_name(constructor, src);
     if !name.is_empty() {
         let call_args = extract_call_args(new_node, src);
-        refs.push(Ref { is_import_binding: false, is_reexport: false,
+        refs.push(Ref {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::Calls,
@@ -509,7 +567,7 @@ pub(super) fn emit_new_ref_js(
             byte_offset: constructor.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args,
-                col: 0,
-            });
+            col: 0,
+        });
     }
 }

@@ -21,9 +21,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
@@ -34,9 +32,15 @@ const LANGUAGES: &[&str] = &["pascal"];
 pub struct FreePascalRuntimeEcosystem;
 
 impl Ecosystem for FreePascalRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("pascal")
@@ -63,7 +67,9 @@ impl Ecosystem for FreePascalRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for FreePascalRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_freepascal_roots()
     }
@@ -75,7 +81,9 @@ impl ExternalSourceLocator for FreePascalRuntimeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<FreePascalRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(FreePascalRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(FreePascalRuntimeEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -195,8 +203,11 @@ fn discover_freepascal_roots() -> Vec<ExternalDepRoot> {
 /// Listed in fallback order — first match wins.
 fn rtl_host_targets() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
-        if cfg!(target_pointer_width = "64") { &["win64", "win32", "win"] }
-        else { &["win32", "win"] }
+        if cfg!(target_pointer_width = "64") {
+            &["win64", "win32", "win"]
+        } else {
+            &["win32", "win"]
+        }
     } else if cfg!(target_os = "linux") {
         &["linux", "unix"]
     } else if cfg!(target_os = "macos") {
@@ -209,7 +220,9 @@ fn rtl_host_targets() -> &'static [&'static str] {
 }
 
 fn first_subdir(dir: &Path) -> Option<PathBuf> {
-    if !dir.is_dir() { return None }
+    if !dir.is_dir() {
+        return None;
+    }
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -224,18 +237,28 @@ fn lazarus_install_root() -> Option<PathBuf> {
     // Explicit override.
     if let Ok(val) = std::env::var("BEARWISDOM_LAZARUS_DIR") {
         let p = PathBuf::from(val);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     // Standard Lazarus env (set by the IDE installer).
     if let Ok(val) = std::env::var("LAZARUS_DIR") {
         let p = PathBuf::from(val);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // Scoop install on Windows (most common dev path on this user's machine).
     if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-        let scoop = PathBuf::from(home).join("scoop").join("apps").join("lazarus").join("current");
-        if scoop.is_dir() { return Some(scoop) }
+        let scoop = PathBuf::from(home)
+            .join("scoop")
+            .join("apps")
+            .join("lazarus")
+            .join("current");
+        if scoop.is_dir() {
+            return Some(scoop);
+        }
     }
 
     // Standard install paths.
@@ -304,7 +327,10 @@ fn is_platform_excluded(pkg_name: &str) -> bool {
         return !cfg!(target_os = "macos");
     }
     // X11 / GTK bindings: only useful on Linux/BSD.
-    if matches!(pkg_name, "x11" | "gtk1" | "gtk2" | "fpgtk" | "gnome1" | "ggi" | "svgalib" | "ptc") {
+    if matches!(
+        pkg_name,
+        "x11" | "gtk1" | "gtk2" | "fpgtk" | "gnome1" | "ggi" | "svgalib" | "ptc"
+    ) {
         return !cfg!(target_os = "linux") && !cfg!(target_os = "freebsd");
     }
     // Win32 / Win CE bindings: only useful on Windows.
@@ -312,8 +338,20 @@ fn is_platform_excluded(pkg_name: &str) -> bool {
         return !cfg!(target_os = "windows");
     }
     // AROS / AmigaOS / MorphOS / Palm / DOS units: never relevant on a modern host.
-    if matches!(pkg_name, "arosunits" | "ami-extra" | "amunits" | "os2units" | "os4units"
-        | "morphunits" | "tosunits" | "palmunits" | "libgbafpc" | "libndsfpc" | "libogcfpc") {
+    if matches!(
+        pkg_name,
+        "arosunits"
+            | "ami-extra"
+            | "amunits"
+            | "os2units"
+            | "os4units"
+            | "morphunits"
+            | "tosunits"
+            | "palmunits"
+            | "libgbafpc"
+            | "libndsfpc"
+            | "libogcfpc"
+    ) {
         return true;
     }
     false
@@ -336,22 +374,37 @@ fn walk_pascal_dir(
     out: &mut Vec<WalkedFile>,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "examples" | "demos" | "languages" | "images") {
+                if matches!(
+                    name,
+                    "tests" | "examples" | "demos" | "languages" | "images"
+                ) {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             walk_pascal_dir(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if !is_pascal_source(name) { continue }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !is_pascal_source(name) {
+                continue;
+            }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

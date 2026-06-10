@@ -11,7 +11,10 @@ fn at_brace_code_block() {
     assert_eq!(regions[0].origin, EmbeddedOrigin::RazorCode);
     assert!(regions[0].text.contains("var x = 1; var y = 2;"));
     assert!(regions[0].text.contains("class __RazorBody"));
-    assert_eq!(regions[0].strip_scope_prefix.as_deref(), Some("__RazorBody"));
+    assert_eq!(
+        regions[0].strip_scope_prefix.as_deref(),
+        Some("__RazorBody")
+    );
 }
 
 #[test]
@@ -88,7 +91,11 @@ var d = @@literal;
         raw_content.matches('\n').count(),
         "masking must preserve newline count"
     );
-    assert_eq!(text.len(), raw_content.len(), "masking must preserve length");
+    assert_eq!(
+        text.len(),
+        raw_content.len(),
+        "masking must preserve length"
+    );
 }
 
 #[test]
@@ -139,7 +146,9 @@ fn model_directive_surfaces_type_as_field() {
     let regions = detect_regions(src);
     assert_eq!(regions.len(), 1);
     assert_eq!(regions[0].language_id, "csharp");
-    assert!(regions[0].text.contains("MyApp.Models.Product __razor_model"));
+    assert!(regions[0]
+        .text
+        .contains("MyApp.Models.Product __razor_model"));
     assert!(regions[0].text.contains("class __RazorBody"));
 }
 
@@ -156,7 +165,9 @@ fn using_directive_emits_using_statement() {
     let src = "@using Microsoft.Extensions.Logging\n<h1>x</h1>";
     let regions = detect_regions(src);
     assert_eq!(regions.len(), 1);
-    assert!(regions[0].text.contains("using Microsoft.Extensions.Logging;"));
+    assert!(regions[0]
+        .text
+        .contains("using Microsoft.Extensions.Logging;"));
     assert!(regions[0].text.contains("class __RazorBody"));
 }
 
@@ -220,7 +231,9 @@ fn foreach_control_flow_matched() {
     let src = "@foreach (var item in Model.Items) { <li>@item.Name</li> }";
     let regions = detect_regions(src);
     assert_eq!(regions.len(), 1);
-    assert!(regions[0].text.contains("foreach (var item in Model.Items)"));
+    assert!(regions[0]
+        .text
+        .contains("foreach (var item in Model.Items)"));
 }
 
 #[test]
@@ -262,7 +275,8 @@ fn switch_and_while_and_for_control_flow() {
 
 #[test]
 fn multiple_constructs_coexist() {
-    let src = "@model Foo\n@{ var a = 1; }\n@if (a > 0) { <p>yes</p> }\n<script>alert('hi');</script>";
+    let src =
+        "@model Foo\n@{ var a = 1; }\n@if (a > 0) { <p>yes</p> }\n<script>alert('hi');</script>";
     let regions = detect_regions(src);
     assert_eq!(regions.len(), 4);
     assert_eq!(
@@ -270,7 +284,10 @@ fn multiple_constructs_coexist() {
         3
     );
     assert_eq!(
-        regions.iter().filter(|r| r.language_id == "javascript").count(),
+        regions
+            .iter()
+            .filter(|r| r.language_id == "javascript")
+            .count(),
         1
     );
 }

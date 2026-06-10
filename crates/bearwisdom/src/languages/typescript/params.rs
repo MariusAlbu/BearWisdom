@@ -81,12 +81,12 @@ pub(super) fn extract_constructor_params(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Extract TypeRef from the type annotation.
         if let Some(type_ann) = param.child_by_field_name("type") {
@@ -180,16 +180,20 @@ pub(super) fn extract_catch_variable(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Emit TypeRef if the catch variable has a type annotation.
     // Annotation may live on the `catch_parameter` node or directly on `param`.
-    let annotation_parent = if param.kind() == "identifier" { node } else { &param };
+    let annotation_parent = if param.kind() == "identifier" {
+        node
+    } else {
+        &param
+    };
     let mut acursor = annotation_parent.walk();
     for child in annotation_parent.children(&mut acursor) {
         if child.kind() == "type_annotation" {
@@ -273,12 +277,12 @@ pub(super) fn extract_for_loop_var(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Build a chain from the iterable (right side) so the index builder can
     // infer the element type.  For `for (const item of this.repo.findAll())`,
@@ -301,7 +305,11 @@ pub(super) fn extract_for_loop_var(
     };
 
     if let Some(chain) = build_chain(chain_source, src) {
-        let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
+        let target = chain
+            .segments
+            .last()
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
         // Parameter-shadow filter: `(mutations) => { for (const m of mutations) }`
         // has `mutations` as an arrow-function parameter. The iterable TypeRef
         // would never resolve — the binding is a local, not a declared type.
@@ -312,7 +320,9 @@ pub(super) fn extract_for_loop_var(
                 &target,
             );
         if !target.is_empty() && !shadowed {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: target,
                 kind: EdgeKind::TypeRef,
@@ -321,9 +331,9 @@ pub(super) fn extract_for_loop_var(
                 module: None,
                 chain: Some(chain),
                 byte_offset: iterable_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     } else if iterable_node.kind() == "identifier" {
         // Simple identifier iterable: `for (const item of items)` — emit a
@@ -335,7 +345,9 @@ pub(super) fn extract_for_loop_var(
             &target,
         );
         if !target.is_empty() && !shadowed {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index: idx,
                 target_name: target,
                 kind: EdgeKind::TypeRef,
@@ -344,9 +356,9 @@ pub(super) fn extract_for_loop_var(
                 module: None,
                 chain: None,
                 byte_offset: iterable_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }

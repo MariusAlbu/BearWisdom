@@ -105,7 +105,7 @@ impl FlowJumpMap {
             "SELECT source_symbol, target_symbol, edge_type
              FROM flow_edges
              WHERE source_symbol IS NOT NULL
-               AND target_symbol IS NOT NULL"
+               AND target_symbol IS NOT NULL",
         )?;
 
         let mut rows = stmt.query([])?;
@@ -114,11 +114,17 @@ impl FlowJumpMap {
             let tgt: String = row.get(1)?;
             let et: String = row.get(2)?;
 
-            by_source.entry(src.clone()).or_default().push((tgt.clone(), et.clone()));
+            by_source
+                .entry(src.clone())
+                .or_default()
+                .push((tgt.clone(), et.clone()));
             by_target.entry(tgt).or_default().push((src, et));
         }
 
-        Ok(Self { by_source, by_target })
+        Ok(Self {
+            by_source,
+            by_target,
+        })
     }
 
     /// Get jump targets for a symbol (check both directions).
@@ -232,7 +238,7 @@ pub fn trace_from_entry_points(
            -- Prioritize: zero incoming calls first, then by outgoing degree
            CASE WHEN in_calls = 0 THEN 0 ELSE 1 END,
            out_degree DESC
-         LIMIT ?1"
+         LIMIT ?1",
     )?;
 
     let mut roots: Vec<SymRow> = Vec::new();
@@ -255,7 +261,7 @@ pub fn trace_from_entry_points(
              JOIN symbols s ON s.file_id = tf.id
                            AND (s.name = fe.target_symbol OR s.qualified_name = fe.target_symbol)
              WHERE fe.target_symbol IS NOT NULL
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
         let mut rows = stmt.query([max_traces as i64 * 2])?;
         while let Some(row) = rows.next()? {
@@ -362,7 +368,7 @@ fn build_trace_node(
                  WHERE s.scope_path = ?1
                    AND s.kind IN ('method', 'function', 'constructor', 'property')
                  ORDER BY s.line
-                 LIMIT 30"
+                 LIMIT 30",
             )?;
 
             let mut member_rows = Vec::new();
@@ -401,7 +407,14 @@ fn build_trace_node(
                 }
 
                 let child = build_trace_node(
-                    conn, member, "member", depth + 1, max_depth, jumps, visited, flow_jump_count,
+                    conn,
+                    member,
+                    "member",
+                    depth + 1,
+                    max_depth,
+                    jumps,
+                    visited,
+                    flow_jump_count,
                 )?;
                 children.push(child);
             }
@@ -416,7 +429,7 @@ fn build_trace_node(
              WHERE e.source_id = ?1
                AND e.kind IN ('calls', 'type_ref', 'instantiates')
              ORDER BY e.source_line
-             LIMIT 20"
+             LIMIT 20",
         )?;
 
         let mut call_rows = Vec::new();
@@ -442,7 +455,14 @@ fn build_trace_node(
                 continue;
             }
             let child = build_trace_node(
-                conn, child_sym, ek, depth + 1, max_depth, jumps, visited, flow_jump_count,
+                conn,
+                child_sym,
+                ek,
+                depth + 1,
+                max_depth,
+                jumps,
+                visited,
+                flow_jump_count,
             )?;
             children.push(child);
         }
@@ -463,7 +483,14 @@ fn build_trace_node(
                 }
                 *flow_jump_count += 1;
                 let child = build_trace_node(
-                    conn, target_sym, flow_type, depth + 1, max_depth, jumps, visited, flow_jump_count,
+                    conn,
+                    target_sym,
+                    flow_type,
+                    depth + 1,
+                    max_depth,
+                    jumps,
+                    visited,
+                    flow_jump_count,
                 )?;
                 children.push(child);
             }
@@ -488,15 +515,17 @@ fn build_trace_node(
 
 fn resolve_symbol_rows(conn: &rusqlite::Connection, name: &str) -> QueryResult<Vec<SymRow>> {
     // Try qualified name first, then simple name.
-    let mut stmt = conn.prepare_cached(
-        "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
          FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE s.qualified_name = ?1
             OR s.name = ?1
          ORDER BY CASE WHEN s.qualified_name = ?1 THEN 0 ELSE 1 END
-         LIMIT 5"
-    ).context("Failed to prepare resolve_symbol_rows")?;
+         LIMIT 5",
+        )
+        .context("Failed to prepare resolve_symbol_rows")?;
 
     let mut results = Vec::new();
     let mut rows = stmt.query([name])?;
@@ -648,7 +677,15 @@ mod tests {
         assert_eq!(root.entry.name, "HttpClient");
 
         // Client → IService (type_ref) → ServiceImpl (di_binding jump) → Repo (calls)
-        assert!(root.node_count >= 3, "Expected at least 3 nodes, got {}", root.node_count);
-        assert!(result.flow_jumps >= 1, "Expected at least 1 flow jump, got {}", result.flow_jumps);
+        assert!(
+            root.node_count >= 3,
+            "Expected at least 3 nodes, got {}",
+            root.node_count
+        );
+        assert!(
+            result.flow_jumps >= 1,
+            "Expected at least 1 flow jump, got {}",
+            result.flow_jumps
+        );
     }
 }

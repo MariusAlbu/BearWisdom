@@ -3,7 +3,8 @@ use crate::types::*;
 static CARGO_FETCH: RestoreStep = RestoreStep {
     id: "cargo-fetch",
     title: "Fetch Cargo dependencies",
-    description: "Runs `cargo fetch` to download all crate dependencies into the local registry cache.",
+    description:
+        "Runs `cargo fetch` to download all crate dependencies into the local registry cache.",
     trigger: RestoreTrigger::DirMissing,
     watch_path: "target",
     commands: ShellCommands::same("cargo fetch"),

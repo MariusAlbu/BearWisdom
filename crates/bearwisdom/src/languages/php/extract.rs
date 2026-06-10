@@ -2,8 +2,7 @@
 // parser/extractors/php/mod.rs  —  PHP symbol and reference extractor
 // =============================================================================
 
-
-use super::{calls, symbols, decorators};
+use super::{calls, decorators, symbols};
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
@@ -13,13 +12,34 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static PHP_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "namespace_definition", name_field: "name" },
-    ScopeKind { node_kind: "class_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "interface_declaration", name_field: "name" },
-    ScopeKind { node_kind: "trait_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "enum_declaration",     name_field: "name" },
-    ScopeKind { node_kind: "method_declaration",   name_field: "name" },
-    ScopeKind { node_kind: "function_definition",  name_field: "name" },
+    ScopeKind {
+        node_kind: "namespace_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "interface_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "trait_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "method_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_definition",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -62,11 +82,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     extract_from_node(root, src, &mut syms, &mut refs, None, "", "");
 
@@ -244,12 +264,26 @@ pub(super) fn extract_from_node(
 
             // `global $var;` — scope modifier, extract as variable.
             "global_declaration" => {
-                symbols::extract_global_static_vars(&child, src, symbols, parent_index, qualified_prefix, false);
+                symbols::extract_global_static_vars(
+                    &child,
+                    src,
+                    symbols,
+                    parent_index,
+                    qualified_prefix,
+                    false,
+                );
             }
 
             // `static $cache = [];` — static local variable.
             "static_variable_declaration" => {
-                symbols::extract_global_static_vars(&child, src, symbols, parent_index, qualified_prefix, true);
+                symbols::extract_global_static_vars(
+                    &child,
+                    src,
+                    symbols,
+                    parent_index,
+                    qualified_prefix,
+                    true,
+                );
             }
 
             // `[$name] = $user->toArray()` / `list($a, $b) = $tuple`
@@ -273,12 +307,7 @@ pub(super) fn extract_from_node(
             | "nullsafe_member_call_expression"
             | "static_call_expression"
             | "object_creation_expression" => {
-                calls::extract_calls_from_body(
-                    &child,
-                    src,
-                    parent_index.unwrap_or(0),
-                    refs,
-                );
+                calls::extract_calls_from_body(&child, src, parent_index.unwrap_or(0), refs);
             }
 
             // `use TraitName;` inside a class body at top-level traversal
@@ -316,7 +345,11 @@ pub(super) fn extract_from_node(
 /// PHP primitives (int, float, string, bool, void, null, array, object,
 /// mixed, never, callable, iterable, self, static, parent, true, false) are
 /// filtered out — they are always available and never in the project index.
-fn scan_all_type_refs(node: tree_sitter::Node, src: &[u8], refs: &mut Vec<crate::types::ExtractedRef>) {
+fn scan_all_type_refs(
+    node: tree_sitter::Node,
+    src: &[u8],
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
     scan_type_refs_inner(node, src, 0, refs);
 }
 
@@ -339,7 +372,9 @@ fn scan_type_refs_inner(
                 .unwrap_or(&raw)
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
-                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(crate::types::ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -362,7 +397,9 @@ fn scan_type_refs_inner(
                 .unwrap_or(&raw)
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
-                refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(crate::types::ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -385,7 +422,9 @@ fn scan_type_refs_inner(
             let mut cursor = node.walk();
             let children: Vec<_> = node.children(&mut cursor).collect();
             for (i, child) in children.iter().enumerate() {
-                if child.kind() == "instanceof" || super::helpers::node_text(child, src) == "instanceof" {
+                if child.kind() == "instanceof"
+                    || super::helpers::node_text(child, src) == "instanceof"
+                {
                     has_instanceof = true;
                     // RHS is the next sibling
                     if let Some(rhs) = children.get(i + 1) {
@@ -405,7 +444,9 @@ fn scan_type_refs_inner(
                         .unwrap_or(&raw)
                         .to_string();
                     if !name.is_empty() && !is_php_primitive(&name) {
-                        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(crate::types::ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index,
                             target_name: name,
                             kind: crate::types::EdgeKind::TypeRef,
@@ -444,13 +485,26 @@ fn scan_type_refs_inner(
 fn is_php_primitive(name: &str) -> bool {
     matches!(
         name,
-        "int" | "float" | "string" | "bool" | "void" | "null"
-            | "array" | "object" | "mixed" | "never" | "callable"
-            | "iterable" | "self" | "static" | "parent" | "true" | "false"
+        "int"
+            | "float"
+            | "string"
+            | "bool"
+            | "void"
+            | "null"
+            | "array"
+            | "object"
+            | "mixed"
+            | "never"
+            | "callable"
+            | "iterable"
+            | "self"
+            | "static"
+            | "parent"
+            | "true"
+            | "false"
     )
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

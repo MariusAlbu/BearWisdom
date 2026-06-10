@@ -65,11 +65,7 @@ export default defineComponent({
         "apps/server/package.json",
         r#"{"name":"server","dependencies":{"express":"4"}}"#,
     );
-    write_file(
-        root,
-        "apps/server/src/app.ts",
-        r#"export const x = 1;"#,
-    );
+    write_file(root, "apps/server/src/app.ts", r#"export const x = 1;"#);
 
     let mut db = TestProject::in_memory_db();
     std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
@@ -77,7 +73,9 @@ export default defineComponent({
 
     // Identify packages.
     let web_id: i64 = db
-        .query_row("SELECT id FROM packages WHERE name = 'web'", [], |r| r.get(0))
+        .query_row("SELECT id FROM packages WHERE name = 'web'", [], |r| {
+            r.get(0)
+        })
         .expect("web package missing");
 
     // The Vue file itself should have package_id = web.
@@ -151,11 +149,7 @@ fn root_script_falls_back_to_union_manifest() {
         "apps/web/package.json",
         r#"{"name":"web","dependencies":{"lodash":"4"}}"#,
     );
-    write_file(
-        root,
-        "apps/web/src/index.ts",
-        r#"export const x = 1;"#,
-    );
+    write_file(root, "apps/web/src/index.ts", r#"export const x = 1;"#);
     // Root-level shared script — no package_id.
     write_file(
         root,
@@ -178,7 +172,10 @@ export const deb = debounce;
             |r| r.get(0),
         )
         .expect("build.ts row missing");
-    assert_eq!(root_pkg, None, "root-level script should have no package_id");
+    assert_eq!(
+        root_pkg, None,
+        "root-level script should have no package_id"
+    );
 
     // `lodash` is declared in apps/web only. Since root script's
     // package_id is None, manifests_for(None) returns the union which

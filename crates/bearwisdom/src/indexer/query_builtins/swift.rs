@@ -43,7 +43,8 @@ pub const BUILTINS: &[&str] = &[
     "willSet",
 ];
 
-pub const LOCALS_SCM: Option<&str> = Some("(import_declaration\n\
+pub const LOCALS_SCM: Option<&str> = Some(
+    "(import_declaration\n\
   (identifier) @local.definition.import)\n\
 \n\
 (function_declaration\n\
@@ -66,4 +67,5 @@ pub const LOCALS_SCM: Option<&str> = Some("(import_declaration\n\
 ] @local.scope\n\
 \n\
 \n\
-");
+",
+);

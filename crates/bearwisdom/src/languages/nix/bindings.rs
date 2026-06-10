@@ -67,12 +67,12 @@ fn emit_inherit_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,9 @@ pub(super) fn extract_inherit_from(
     // Emit an Imports ref to the source if it's a named variable
     let dummy_source_idx = symbols.len();
     if let Some(src_name) = &source_name {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: dummy_source_idx,
             target_name: src_name.clone(),
             kind: EdgeKind::Imports,
@@ -102,9 +104,9 @@ pub(super) fn extract_inherit_from(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 
     // Extract the inherited attribute names
@@ -201,21 +203,20 @@ pub(super) fn binding_name(node: &Node, src: &str) -> Option<String> {
 
 /// Get the value node from a binding (the expression after `=`).
 pub(super) fn binding_value<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
-    node.child_by_field_name("expression")
-        .or_else(|| {
-            // Find the expression after `=` sign
-            let mut cursor = node.walk();
-            let mut past_eq = false;
-            for child in node.children(&mut cursor) {
-                if past_eq && is_expr_node(&child) {
-                    return Some(child);
-                }
-                if node_is_eq_sign(&child) {
-                    past_eq = true;
-                }
+    node.child_by_field_name("expression").or_else(|| {
+        // Find the expression after `=` sign
+        let mut cursor = node.walk();
+        let mut past_eq = false;
+        for child in node.children(&mut cursor) {
+            if past_eq && is_expr_node(&child) {
+                return Some(child);
             }
-            None
-        })
+            if node_is_eq_sign(&child) {
+                past_eq = true;
+            }
+        }
+        None
+    })
 }
 
 fn node_is_eq_sign(node: &Node) -> bool {

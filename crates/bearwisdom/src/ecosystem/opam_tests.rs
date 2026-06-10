@@ -47,10 +47,14 @@ depends: [
 "#;
     let mut union: Vec<String> = Vec::new();
     for dep in parse_opam_depends(file_a) {
-        if !union.contains(&dep) { union.push(dep); }
+        if !union.contains(&dep) {
+            union.push(dep);
+        }
     }
     for dep in parse_opam_depends(file_b) {
-        if !union.contains(&dep) { union.push(dep); }
+        if !union.contains(&dep) {
+            union.push(dep);
+        }
     }
     assert!(union.contains(&"cmdliner".to_string()));
     assert!(union.contains(&"ctypes".to_string()));
@@ -79,6 +83,12 @@ fn ocaml_extracts_open_and_dotted() {
 
 #[test]
 fn ocaml_module_path_tail_is_lowercase_ml() {
-    assert_eq!(ocaml_module_to_path_tail("Core"), Some("core.ml".to_string()));
-    assert_eq!(ocaml_module_to_path_tail("Cohttp_lwt_unix"), Some("cohttp_lwt_unix.ml".to_string()));
+    assert_eq!(
+        ocaml_module_to_path_tail("Core"),
+        Some("core.ml".to_string())
+    );
+    assert_eq!(
+        ocaml_module_to_path_tail("Cohttp_lwt_unix"),
+        Some("cohttp_lwt_unix.ml".to_string())
+    );
 }

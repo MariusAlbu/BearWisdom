@@ -19,31 +19,46 @@ pub(super) fn extract_bare_reexports_via_imports(
 
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        if child.kind() != "export_statement" { continue; }
+        if child.kind() != "export_statement" {
+            continue;
+        }
         // The with-source path is owned by `extract_reexports`. Skip it
         // here so we don't double-emit Imports refs for the same clause.
-        if child.child_by_field_name("source").is_some() { continue; }
+        if child.child_by_field_name("source").is_some() {
+            continue;
+        }
 
         // `export type { … }` — the whole clause is type-only. The
         // grammar surfaces `type` as a top-level keyword child of the
         // export_statement, before the export_clause.
         let stmt_type_only = (0..child.child_count()).any(|i| {
-            child.child(i).map(|c| c.kind() == "type" && i < 2).unwrap_or(false)
+            child
+                .child(i)
+                .map(|c| c.kind() == "type" && i < 2)
+                .unwrap_or(false)
         });
 
         let mut ec = child.walk();
         for clause in child.children(&mut ec) {
-            if clause.kind() != "export_clause" { continue; }
+            if clause.kind() != "export_clause" {
+                continue;
+            }
             let mut sc = clause.walk();
             for spec in clause.children(&mut sc) {
-                if spec.kind() != "export_specifier" { continue; }
+                if spec.kind() != "export_specifier" {
+                    continue;
+                }
                 let name = spec
                     .child_by_field_name("name")
                     .map(|n| helpers::node_text(n, src))
                     .unwrap_or_default();
-                if name.is_empty() { continue; }
+                if name.is_empty() {
+                    continue;
+                }
 
-                let Some(import) = import_map.get(&name) else { continue };
+                let Some(import) = import_map.get(&name) else {
+                    continue;
+                };
 
                 // The canonical name in the source module — for renamed
                 // imports (`import { X as Y }`), the source's export
@@ -62,16 +77,21 @@ pub(super) fn extract_bare_reexports_via_imports(
                     .child_by_field_name("alias")
                     .map(|n| helpers::node_text(n, src))
                     .unwrap_or_default();
-                let exposed = if !alias.is_empty() { alias.clone() } else { name.clone() };
+                let exposed = if !alias.is_empty() {
+                    alias.clone()
+                } else {
+                    name.clone()
+                };
 
                 // Per-specifier `type` modifier: `export { type X }`.
-                let spec_type_only = (0..spec.child_count()).any(|i| {
-                    spec.child(i).map(|c| c.kind() == "type").unwrap_or(false)
-                });
+                let spec_type_only = (0..spec.child_count())
+                    .any(|i| spec.child(i).map(|c| c.kind() == "type").unwrap_or(false));
                 let type_only = stmt_type_only || spec_type_only;
 
                 let source_idx = symbols.len().saturating_sub(1);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: true,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: true,
                     source_symbol_index: source_idx,
                     target_name: exported_in_source,
                     kind: EdgeKind::Imports,
@@ -84,9 +104,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                     call_args: Vec::new(),
                 });
 
-                let already_emitted = symbols
-                    .iter()
-                    .any(|s| s.qualified_name == exposed);
+                let already_emitted = symbols.iter().any(|s| s.qualified_name == exposed);
                 if !already_emitted {
                     let kind = if type_only {
                         SymbolKind::TypeAlias
@@ -111,11 +129,11 @@ pub(super) fn extract_bare_reexports_via_imports(
                         scope_path: None,
                         parent_index: None,
                         byte_offset: 0,
-                                            declared_type: None,
+                        declared_type: None,
                         return_type: None,
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
-});
+                    });
                 }
             }
         }
@@ -164,7 +182,9 @@ pub(super) fn push_triple_slash_imports(source: &str, refs: &mut Vec<ExtractedRe
         // Match `<reference path="X" />` and `<reference types="X" />`.
         // The exact form is: `<reference KIND="VALUE" />` with optional
         // additional attributes and varying whitespace.
-        let Some(rest) = body.strip_prefix("<reference") else { continue };
+        let Some(rest) = body.strip_prefix("<reference") else {
+            continue;
+        };
         let rest = rest.trim_start();
         for kind in &["path", "types"] {
             let prefix = format!("{kind}=");
@@ -240,7 +260,9 @@ fn emit_triple_slash_ref(
         "types" => format!("@types/{value}"),
         _ => value.to_string(),
     };
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: 0,
         target_name: module.clone(),
         kind: EdgeKind::Imports,
@@ -321,7 +343,9 @@ pub(super) fn extract_reexports(
     // Tree-sitter typescript surfaces this as a `type` keyword child of the
     // export_statement node itself, before the `export_clause`.
     let stmt_type_only = (0..node.child_count()).any(|i| {
-        node.child(i).map(|c| c.kind() == "type" && i < 2).unwrap_or(false)
+        node.child(i)
+            .map(|c| c.kind() == "type" && i < 2)
+            .unwrap_or(false)
     });
 
     let mut cursor = node.walk();
@@ -343,15 +367,16 @@ pub(super) fn extract_reexports(
                             .map(|n| helpers::node_text(n, src))
                             .unwrap_or_default();
                         // Per-specifier `type` modifier: `export { type X as Y }`.
-                        let spec_type_only = (0..spec.child_count()).any(|i| {
-                            spec.child(i).map(|c| c.kind() == "type").unwrap_or(false)
-                        });
+                        let spec_type_only = (0..spec.child_count())
+                            .any(|i| spec.child(i).map(|c| c.kind() == "type").unwrap_or(false));
                         let type_only = stmt_type_only || spec_type_only;
                         if !original_name.is_empty() {
                             // The Imports ref encodes the redirection — store
                             // the original so the resolver can find it in the
                             // source module. (Unchanged from prior behavior.)
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: true,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: true,
                                 source_symbol_index: source_idx,
                                 target_name: original_name.clone(),
                                 kind: EdgeKind::Imports,
@@ -360,8 +385,8 @@ pub(super) fn extract_reexports(
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: spec.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
                             });
                         }
 
@@ -406,11 +431,11 @@ pub(super) fn extract_reexports(
                                 scope_path: None,
                                 parent_index: None,
                                 byte_offset: 0,
-                                                            declared_type: None,
+                                declared_type: None,
                                 return_type: None,
                                 param_types: Vec::new(),
                                 generic_params: Vec::new(),
-});
+                            });
                         }
                     }
                 }
@@ -429,7 +454,9 @@ pub(super) fn extract_reexports(
     }
 
     if has_wildcard {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: true,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: true,
             source_symbol_index: source_idx,
             target_name: "*".to_string(),
             kind: EdgeKind::Imports,
@@ -437,10 +464,9 @@ pub(super) fn extract_reexports(
             module: module_path.clone(),
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-    col: 0,
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            col: 0,
+        });
     }
 }
-

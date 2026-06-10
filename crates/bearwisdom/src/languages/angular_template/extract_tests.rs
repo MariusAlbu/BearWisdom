@@ -55,7 +55,11 @@ fn ng_container_ignored_as_builtin() {
 fn kebab_tag_module_is_none() {
     let src = "<app-user-card></app-user-card>";
     let r = extract(src, "parent.component.html");
-    let ref0 = r.refs.iter().find(|r| r.target_name == "AppUserCard").unwrap();
+    let ref0 = r
+        .refs
+        .iter()
+        .find(|r| r.target_name == "AppUserCard")
+        .unwrap();
     // The raw selector is re-derived from PascalCase target_name at
     // resolve time. Leaving module None keeps the engine's generic
     // module-based external classifier from mis-treating the kebab tag
@@ -132,7 +136,10 @@ fn camel_case_attr_directive_emitted() {
     let src = r#"<div appHighlight></div>"#;
     let r = extract(src, "parent.component.html");
     let names: Vec<&str> = r.refs.iter().map(|r| r.target_name.as_str()).collect();
-    assert!(names.contains(&"appHighlight"), "expected appHighlight in {names:?}");
+    assert!(
+        names.contains(&"appHighlight"),
+        "expected appHighlight in {names:?}"
+    );
 }
 
 #[test]
@@ -152,22 +159,40 @@ fn attribute_directive_module_is_none() {
 
 #[test]
 fn normalize_structural_directives() {
-    assert_eq!(normalize_attribute_as_directive("*ngFor"), Some("ngFor".to_string()));
-    assert_eq!(normalize_attribute_as_directive("*ngIf"), Some("ngIf".to_string()));
-    assert_eq!(normalize_attribute_as_directive("*ngSwitchCase"), Some("ngSwitchCase".to_string()));
+    assert_eq!(
+        normalize_attribute_as_directive("*ngFor"),
+        Some("ngFor".to_string())
+    );
+    assert_eq!(
+        normalize_attribute_as_directive("*ngIf"),
+        Some("ngIf".to_string())
+    );
+    assert_eq!(
+        normalize_attribute_as_directive("*ngSwitchCase"),
+        Some("ngSwitchCase".to_string())
+    );
 }
 
 #[test]
 fn normalize_property_bindings() {
-    assert_eq!(normalize_attribute_as_directive("[ngClass]"), Some("ngClass".to_string()));
-    assert_eq!(normalize_attribute_as_directive("[appHighlight]"), Some("appHighlight".to_string()));
+    assert_eq!(
+        normalize_attribute_as_directive("[ngClass]"),
+        Some("ngClass".to_string())
+    );
+    assert_eq!(
+        normalize_attribute_as_directive("[appHighlight]"),
+        Some("appHighlight".to_string())
+    );
     // Lowercase-only property binding not emitted (likely native).
     assert_eq!(normalize_attribute_as_directive("[class]"), None);
 }
 
 #[test]
 fn normalize_two_way_bindings() {
-    assert_eq!(normalize_attribute_as_directive("[(ngModel)]"), Some("ngModel".to_string()));
+    assert_eq!(
+        normalize_attribute_as_directive("[(ngModel)]"),
+        Some("ngModel".to_string())
+    );
 }
 
 #[test]

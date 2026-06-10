@@ -66,9 +66,7 @@ pub(crate) fn detect_ocaml_cohttp_producer(
     };
     let url = call_args.iter().find_map(|a| match a {
         CallArg::StringLit(s)
-            if s.starts_with('/')
-                || s.starts_with("http://")
-                || s.starts_with("https://") =>
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") =>
         {
             Some(s.as_str())
         }
@@ -96,8 +94,8 @@ pub(crate) fn detect_ocaml_caqti_with_imports(
     aliases: &[(String, String)],
 ) -> Option<crate::indexer::resolve::flow_emit::FlowEmission> {
     use crate::indexer::resolve::flow_emit::{DbQueryOp, FlowEmission};
-    let canonical_match = module.contains("Caqti")
-        || matches!(module, "Db" | "Database" | "Repo" | "Q" | "Conn");
+    let canonical_match =
+        module.contains("Caqti") || matches!(module, "Db" | "Database" | "Repo" | "Q" | "Conn");
     let m_root = module.split('.').next().unwrap_or(module);
     let alias_match = aliases
         .iter()

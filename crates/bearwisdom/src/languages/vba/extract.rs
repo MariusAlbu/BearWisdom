@@ -26,8 +26,8 @@
 //     statements work regardless of which branch the VBA compiler selects.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -42,7 +42,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         let mut pos: u32 = 0;
         for b in source.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -217,7 +219,9 @@ pub fn extract(source: &str) -> ExtractionResult {
         if in_proc && !is_continuation {
             let source_idx = current_proc.unwrap_or(0);
             if let Some(target) = parse_call_stmt(&upper, line) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: source_idx,
                     target_name: target,
                     kind: EdgeKind::Calls,
@@ -250,7 +254,11 @@ fn parse_vb_name(line: &str) -> Option<String> {
     let eq_pos = line.find('=')?;
     let rest = line[eq_pos + 1..].trim();
     let name = rest.trim_matches('"').to_string();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Parse Sub/Function header: optionally preceded by Public/Private/Friend/Static.
@@ -382,7 +390,11 @@ fn parse_property(upper: &str, original: &str) -> Option<String> {
     let orig_body = strip_visibility_prefix_original(original);
     let orig_tokens: Vec<&str> = orig_body.split_whitespace().collect();
     let name = if orig_tokens.len() >= 3 {
-        orig_tokens[2].split('(').next().unwrap_or(&name_upper).to_string()
+        orig_tokens[2]
+            .split('(')
+            .next()
+            .unwrap_or(&name_upper)
+            .to_string()
     } else {
         name_upper
     };
@@ -393,9 +405,15 @@ fn parse_property(upper: &str, original: &str) -> Option<String> {
 fn parse_variable_decl(upper: &str, original: &str) -> Option<String> {
     let keyword = if upper.starts_with("DIM ") {
         "DIM"
-    } else if upper.starts_with("PUBLIC ") && !upper.contains("SUB ") && !upper.contains("FUNCTION ") {
+    } else if upper.starts_with("PUBLIC ")
+        && !upper.contains("SUB ")
+        && !upper.contains("FUNCTION ")
+    {
         "PUBLIC"
-    } else if upper.starts_with("PRIVATE ") && !upper.contains("SUB ") && !upper.contains("FUNCTION ") {
+    } else if upper.starts_with("PRIVATE ")
+        && !upper.contains("SUB ")
+        && !upper.contains("FUNCTION ")
+    {
         "PRIVATE"
     } else {
         return None;
@@ -442,7 +460,8 @@ fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
         || first_token.contains('(')
         || first_token.contains(',')   // trailing comma → this token is an argument
         || first_token.contains('/')   // path-like string
-        || first_token.contains('\\')  // path-like string
+        || first_token.contains('\\')
+    // path-like string
     {
         return None;
     }
@@ -460,7 +479,9 @@ fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
     }
     // Strip trailing punctuation that can cling to an identifier (e.g. "QuoteChar,").
     let raw = first_token.split('(').next().unwrap_or(first_token);
-    let name = raw.trim_end_matches(|c: char| c == ',' || c == ')' || c == ';' || c == ':' || c.is_whitespace());
+    let name = raw.trim_end_matches(|c: char| {
+        c == ',' || c == ')' || c == ';' || c == ':' || c.is_whitespace()
+    });
     if name.is_empty() {
         return None;
     }
@@ -535,9 +556,9 @@ fn make_symbol(
         scope_path: None,
         parent_index,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }

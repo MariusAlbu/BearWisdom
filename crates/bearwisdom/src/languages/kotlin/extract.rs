@@ -2,17 +2,18 @@
 // parser/extractors/kotlin/mod.rs  —  Kotlin symbol and reference extractor
 // =============================================================================
 
-
-use super::{calls, symbols, helpers, decorators};
 use super::calls::extract_calls_from_body;
-use super::decorators::{annotation_name_pub, extract_decorators, extract_lambda_params, extract_when_patterns};
+use super::decorators::{
+    annotation_name_pub, extract_decorators, extract_lambda_params, extract_when_patterns,
+};
 use super::helpers::{classify_class, find_child_by_kind, node_text};
 use super::symbols::{
     emit_import, extract_class_body, extract_delegation_specifiers, extract_imports,
-    extract_primary_constructor_params, extract_type_parameter_bounds,
-    push_companion_object, push_function_decl, push_getter_decl, push_property_decl,
-    push_secondary_constructor, push_setter_decl, push_type_decl,
+    extract_primary_constructor_params, extract_type_parameter_bounds, push_companion_object,
+    push_function_decl, push_getter_decl, push_property_decl, push_secondary_constructor,
+    push_setter_decl, push_type_decl,
 };
+use super::{calls, decorators, helpers, symbols};
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -23,10 +24,22 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static KOTLIN_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_declaration",     name_field: "name" },
-    ScopeKind { node_kind: "object_declaration",    name_field: "name" },
-    ScopeKind { node_kind: "interface_declaration", name_field: "name" },
-    ScopeKind { node_kind: "function_declaration",  name_field: "name" },
+    ScopeKind {
+        node_kind: "class_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "object_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "interface_declaration",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_declaration",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -93,11 +106,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
         }
     }
 
@@ -232,7 +245,10 @@ fn collect_type_param_scopes(
                 // wrapped in `type` / `user_type` nodes we skip here.
                 let mut tpc = tp.walk();
                 for c in tp.children(&mut tpc) {
-                    if matches!(c.kind(), "simple_identifier" | "identifier" | "type_identifier") {
+                    if matches!(
+                        c.kind(),
+                        "simple_identifier" | "identifier" | "type_identifier"
+                    ) {
                         if let Ok(name) = c.utf8_text(src) {
                             if !name.is_empty() {
                                 out.push((name.to_string(), start_line, end_line));
@@ -296,7 +312,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "object_declaration" => {
-                let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Class, symbols, parent_index);
+                let idx = push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Class,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
@@ -312,7 +335,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "interface_declaration" => {
-                let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
+                let idx = push_type_decl(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Interface,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
@@ -332,7 +362,8 @@ pub(super) fn extract_node<'a>(
                     // annotations on parameters, return type).
                     extract_function_param_types(&child, src, sym_idx, refs);
                     // function_body is a child (not a named field) in kotlin-ng 1.1.
-                    let body = child.child_by_field_name("body")
+                    let body = child
+                        .child_by_field_name("body")
                         .or_else(|| find_child_by_kind(&child, "function_body"));
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
@@ -354,7 +385,11 @@ pub(super) fn extract_node<'a>(
             "property_declaration" => {
                 let pre_len = symbols.len();
                 push_property_decl(&child, src, scope_tree, symbols, parent_index);
-                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                let sym_idx = if symbols.len() > pre_len {
+                    pre_len
+                } else {
+                    parent_index.unwrap_or(0)
+                };
                 // Emit TypeRef edges for annotations on this property (@Inject, @Autowired, etc.).
                 extract_decorators(&child, src, sym_idx, refs);
                 // In kotlin-ng, the declared type lives inside:
@@ -537,12 +572,12 @@ fn push_type_decl_alias(
         doc_comment: None,
         scope_path,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // The aliased type is the unnamed `type` child (the `type` field is the
     // alias name). Its base name is the alias's underlying type.
@@ -550,8 +585,12 @@ fn push_type_decl_alias(
     for child in node.children(&mut cursor) {
         if matches!(
             child.kind(),
-            "type" | "user_type" | "nullable_type" | "non_nullable_type"
-                | "parenthesized_type" | "function_type"
+            "type"
+                | "user_type"
+                | "nullable_type"
+                | "non_nullable_type"
+                | "parenthesized_type"
+                | "function_type"
         ) {
             let target = calls::kotlin_type_name(&child, src);
             if !target.is_empty() {
@@ -591,7 +630,9 @@ fn emit_annotation_ref(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if let Some(name) = annotation_type_name(node, src) {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index,
             target_name: name,
             kind: EdgeKind::TypeRef,
@@ -600,9 +641,9 @@ fn emit_annotation_ref(
             module: None,
             chain: None,
             byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 
@@ -667,7 +708,9 @@ fn scan_type_refs_inner(
             // Emit TypeRef for all user_type nodes — builtins will be unresolved
             // but we need the ref emitted for coverage credit at this line.
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -676,9 +719,9 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Recurse ONLY into type_arguments children (for generic params like
             // `List<Foo>`) — skip everything else.  FQN segments of a qualified
@@ -701,7 +744,9 @@ fn scan_type_refs_inner(
             // (the nullable_type node itself is the ref_node_kind being tracked).
             let name = calls::kotlin_type_name(&node, src);
             if !name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -710,9 +755,9 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -731,7 +776,9 @@ fn scan_type_refs_inner(
         // in ref_node_kinds, so we need a dedicated ref at this line).
         "annotation" | "file_annotation" => {
             if let Some(name) = annotation_name_pub(&node, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -740,9 +787,9 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Recurse to handle type args inside annotations and nested annotations.
             let mut cursor = node.walk();
@@ -775,7 +822,9 @@ fn scan_type_refs_inner(
                 }
             }
             if !found_name.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: found_name,
                     kind: EdgeKind::TypeRef,
@@ -784,9 +833,9 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -832,8 +881,8 @@ fn extract_function_param_types(
                 }
             }
             // Return type — field "type" on function_declaration holds the return type.
-            "type" | "user_type" | "nullable_type" | "function_type"
-            | "non_nullable_type" | "parenthesized_type" => {
+            "type" | "user_type" | "nullable_type" | "function_type" | "non_nullable_type"
+            | "parenthesized_type" => {
                 calls::extract_type_ref_from_type_node(&child, src, source_symbol_index, refs);
             }
             _ => {}
@@ -889,7 +938,8 @@ fn infer_type_from_initializer(
                         "navigation_expression" => {
                             let chain = calls::build_chain(&callee, src);
                             chain.and_then(|c| {
-                                c.segments.last()
+                                c.segments
+                                    .last()
                                     .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
                                     .map(|s| s.name.clone())
                             })
@@ -897,7 +947,9 @@ fn infer_type_from_initializer(
                         _ => None,
                     };
                     if let Some(name) = type_name {
-                        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: sym_idx,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
@@ -906,9 +958,9 @@ fn infer_type_from_initializer(
                             module: None,
                             chain: None,
                             byte_offset: child.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
             }
@@ -916,7 +968,9 @@ fn infer_type_from_initializer(
             "simple_identifier" | "identifier" => {
                 let name = node_text(child, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -925,9 +979,9 @@ fn infer_type_from_initializer(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {}

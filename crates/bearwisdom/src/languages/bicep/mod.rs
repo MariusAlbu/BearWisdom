@@ -1,10 +1,10 @@
 //! Bicep (Azure IaC) language plugin.
 
-mod predicates;
-pub(crate) mod hooks;
-pub(crate) mod profile;
 pub mod embedded;
 pub mod extract;
+pub(crate) mod hooks;
+mod predicates;
+pub(crate) mod profile;
 
 pub use hooks::BICEP_HOOKS;
 pub use profile::BICEP_PROFILE;
@@ -105,8 +105,7 @@ impl LanguagePlugin for BicepPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::BICEP_HOOKS)
     }
 }

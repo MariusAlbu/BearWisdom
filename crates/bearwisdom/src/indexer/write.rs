@@ -45,7 +45,9 @@ fn symbol_insert_sql(rows: usize) -> String {
          VALUES ",
     );
     for i in 0..rows {
-        if i > 0 { sql.push(','); }
+        if i > 0 {
+            sql.push(',');
+        }
         sql.push_str("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     }
     sql.push_str(" RETURNING id");
@@ -54,11 +56,11 @@ fn symbol_insert_sql(rows: usize) -> String {
 
 fn import_insert_sql(rows: usize) -> String {
     let mut sql = String::with_capacity(128 + rows * 24);
-    sql.push_str(
-        "INSERT INTO imports (file_id, imported_name, module_path, alias, line) VALUES ",
-    );
+    sql.push_str("INSERT INTO imports (file_id, imported_name, module_path, alias, line) VALUES ");
     for i in 0..rows {
-        if i > 0 { sql.push(','); }
+        if i > 0 {
+            sql.push(',');
+        }
         sql.push_str("(?,?,?,?,?)");
     }
     sql
@@ -137,7 +139,9 @@ fn insert_symbols_batched(
     symbol_id_map: &mut SymbolIdMap,
     arena: Option<&TypeArena>,
 ) -> Result<()> {
-    if pf.symbols.is_empty() { return Ok(()); }
+    if pf.symbols.is_empty() {
+        return Ok(());
+    }
 
     let total = pf.symbols.len();
     // Positional id capture (RETURNING is in VALUES order) so containment and
@@ -168,7 +172,9 @@ fn insert_symbols_batched(
         if ids.len() != rows {
             anyhow::bail!(
                 "RETURNING id count mismatch: expected {} rows, got {} for {}",
-                rows, ids.len(), pf.path,
+                rows,
+                ids.len(),
+                pf.path,
             );
         }
         for (i, sym_id) in (start..end).zip(ids.iter()) {
@@ -207,9 +213,13 @@ fn write_containment_and_locations(
             let end = (start + LOC_BATCH_ROWS).min(total);
             let rows = end - start;
             let mut sql = String::with_capacity(96 + rows * 12);
-            sql.push_str("INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col) VALUES ");
+            sql.push_str(
+                "INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col) VALUES ",
+            );
             for i in 0..rows {
-                if i > 0 { sql.push(','); }
+                if i > 0 {
+                    sql.push(',');
+                }
                 sql.push_str("(?,?,?,?)");
             }
             let mut params: Vec<Value> = Vec::with_capacity(rows * LOC_COLS);
@@ -253,7 +263,9 @@ fn insert_imports_batched(
         .iter()
         .filter(|r| r.kind == crate::types::EdgeKind::Imports)
         .collect();
-    if imports.is_empty() { return Ok(()); }
+    if imports.is_empty() {
+        return Ok(());
+    }
 
     let mut start = 0;
     while start < imports.len() {
@@ -344,7 +356,15 @@ pub fn write_parsed_files_incremental(
             .context("Failed to prepare import delete")?
             .execute([file_id])?;
 
-        survivor_match_file(&tx, file_id, pf, "internal", arena, &mut symbol_id_map, &mut report)?;
+        survivor_match_file(
+            &tx,
+            file_id,
+            pf,
+            "internal",
+            arena,
+            &mut symbol_id_map,
+            &mut report,
+        )?;
 
         insert_routes_incremental(&tx, file_id, pf, &symbol_id_map)?;
         insert_imports_batched(&tx, file_id, pf)?;
@@ -383,7 +403,16 @@ fn upsert_file_row(
     )
     .context("Failed to prepare file upsert")?
     .query_row(
-        rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64, pf.package_id, origin],
+        rusqlite::params![
+            pf.path,
+            pf.content_hash,
+            pf.language,
+            now,
+            pf.mtime,
+            pf.size as i64,
+            pf.package_id,
+            origin
+        ],
         |r| r.get(0),
     )
     .with_context(|| format!("Failed to upsert file {}", pf.path))
@@ -550,8 +579,10 @@ fn survivor_match_file(
                 .query_row([id], |r| r.get(0))?;
             if cur_file == file_id {
                 let (nf, nl, nc) = remaining[0];
-                tx.prepare_cached("UPDATE symbols SET file_id = ?1, line = ?2, col = ?3 WHERE id = ?4")?
-                    .execute(rusqlite::params![nf, nl, nc, id])?;
+                tx.prepare_cached(
+                    "UPDATE symbols SET file_id = ?1, line = ?2, col = ?3 WHERE id = ?4",
+                )?
+                .execute(rusqlite::params![nf, nl, nc, id])?;
             }
         }
     }
@@ -646,7 +677,12 @@ fn upsert_location(
          ON CONFLICT(symbol_id, file_id) DO UPDATE SET line = excluded.line, col = excluded.col",
     )
     .context("Failed to prepare symbol_locations upsert")?
-    .execute(rusqlite::params![symbol_id, file_id, sym.start_line as i64, sym.start_col as i64])?;
+    .execute(rusqlite::params![
+        symbol_id,
+        file_id,
+        sym.start_line as i64,
+        sym.start_col as i64
+    ])?;
     Ok(())
 }
 
@@ -775,7 +811,9 @@ fn insert_routes_incremental(
             sym_id,
             route.http_method,
             route.template,
-            pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
+            pf.symbols
+                .get(route.handler_symbol_index)
+                .map(|s| s.start_line),
         ])
         .with_context(|| format!("Failed to insert route for {}", pf.path))?;
     }
@@ -860,7 +898,9 @@ pub fn write_one_parsed_file(
             sym_id,
             route.http_method,
             route.template,
-            pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
+            pf.symbols
+                .get(route.handler_symbol_index)
+                .map(|s| s.start_line),
         ])
         .with_context(|| format!("Failed to insert route for {}", pf.path))?;
     }
@@ -992,7 +1032,9 @@ fn write_parsed_files_with_origin_impl(
                 sym_id,
                 route.http_method,
                 route.template,
-                pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
+                pf.symbols
+                    .get(route.handler_symbol_index)
+                    .map(|s| s.start_line),
             ])
             .with_context(|| format!("Failed to insert route for {}", pf.path))?;
         }
@@ -1248,9 +1290,7 @@ pub fn write_packages(
             .map(|i| format!("(?{}, ?{})", i * 2 - 1, i * 2))
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!(
-            "DELETE FROM packages WHERE (path, kind) NOT IN (VALUES {tuples})"
-        );
+        let sql = format!("DELETE FROM packages WHERE (path, kind) NOT IN (VALUES {tuples})");
         let mut stmt = conn.prepare_cached(&sql)?;
         let mut params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(packages.len() * 2);
         for (pkg, kind) in packages.iter().zip(kind_buf.iter()) {
@@ -1340,7 +1380,9 @@ pub fn write_package_deps(
     )?;
     let mut written = 0usize;
     for (pkg_id, ecosystem, dep_name, version, kind) in entries {
-        stmt.execute(rusqlite::params![pkg_id, ecosystem, dep_name, version, kind])?;
+        stmt.execute(rusqlite::params![
+            pkg_id, ecosystem, dep_name, version, kind
+        ])?;
         written += 1;
     }
     Ok(written)

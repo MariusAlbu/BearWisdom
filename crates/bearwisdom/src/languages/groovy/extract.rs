@@ -23,12 +23,12 @@
 //   method_invocation  (fields: name, arguments)
 // =============================================================================
 
-use crate::types::{
-    EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility,
-};
-use super::predicates;
 use super::ast_visit::visit;
 use super::node_helpers::build_qualified_name;
+use super::predicates;
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -70,7 +70,15 @@ pub fn extract(source: &str) -> ExtractionResult {
     // top-level scan suffices.
     let namespace = pre_scan_namespace(tree.root_node(), source);
 
-    visit(tree.root_node(), source, &mut symbols, &mut refs, None, false, namespace.as_deref());
+    visit(
+        tree.root_node(),
+        source,
+        &mut symbols,
+        &mut refs,
+        None,
+        false,
+        namespace.as_deref(),
+    );
 
     // Fallback for files where the grammar fails to parse the class_declaration
     // (e.g. Groovy grammar misparses certain single-quoted literals or GString
@@ -104,11 +112,11 @@ pub fn extract(source: &str) -> ExtractionResult {
                 scope_path: None,
                 parent_index: None,
                 byte_offset: 0,
-                            declared_type: None,
+                declared_type: None,
                 return_type: None,
                 param_types: Vec::new(),
                 generic_params: Vec::new(),
-});
+            });
 
             // Retroactively fix scope_path on orphan methods so the inheritance
             // resolver can walk up from the correct class.
@@ -137,7 +145,13 @@ pub fn extract(source: &str) -> ExtractionResult {
                 .map(|s| s.start_col as usize)
                 .min()
                 .unwrap_or(2);
-            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted, fallback_member_indent);
+            let new_methods = scan_methods_from_source(
+                source,
+                class_idx,
+                &class_qname,
+                &already_extracted,
+                fallback_member_indent,
+            );
             symbols.extend(new_methods);
         }
     } else {
@@ -174,7 +188,13 @@ pub fn extract(source: &str) -> ExtractionResult {
             // methods of an outer class (at col 0 → members at col 2) are found
             // by the scanner, not only inner-class members (at col 2 → members at col 4).
             let member_indent = class_col as usize + 2;
-            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted_names, member_indent);
+            let new_methods = scan_methods_from_source(
+                source,
+                class_idx,
+                &class_qname,
+                &already_extracted_names,
+                member_indent,
+            );
             symbols.extend(new_methods);
         }
     }
@@ -212,23 +232,33 @@ fn enrich_hierarchy_refs_from_imports(refs: &mut Vec<ExtractedRef>) {
         .filter(|r| r.kind == EdgeKind::Imports)
         .filter_map(|r| {
             // Skip wildcards and empty refs.
-            if r.target_name.is_empty() || r.target_name == "*" { return None; }
+            if r.target_name.is_empty() || r.target_name == "*" {
+                return None;
+            }
             let fqn = r.target_name.as_str();
             // Single-class imports have at least one dot; skip bare names.
             let dot = fqn.rfind('.')?;
             let simple = &fqn[dot + 1..];
             // Static-member imports have a lowercase simple name (method/field).
             // Only class imports start with uppercase.
-            if !simple.starts_with(|c: char| c.is_uppercase()) { return None; }
+            if !simple.starts_with(|c: char| c.is_uppercase()) {
+                return None;
+            }
             Some((simple.to_string(), fqn.to_string()))
         })
         .collect();
 
-    if import_map.is_empty() { return; }
+    if import_map.is_empty() {
+        return;
+    }
 
     for r in refs.iter_mut() {
-        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) { continue; }
-        if r.module.is_some() { continue; }
+        if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
+            continue;
+        }
+        if r.module.is_some() {
+            continue;
+        }
         if let Some(fqn) = import_map.get(&r.target_name) {
             r.module = Some(fqn.clone());
         }
@@ -271,8 +301,21 @@ fn scan_methods_from_source(
     // method name "boolean" — the scanner consumes the primitive and takes the
     // next token as the method name.
     const OTHER_MODS: &[&str] = &[
-        "static", "abstract", "final", "synchronized", "native", "void", "def",
-        "boolean", "int", "long", "double", "float", "char", "byte", "short",
+        "static",
+        "abstract",
+        "final",
+        "synchronized",
+        "native",
+        "void",
+        "def",
+        "boolean",
+        "int",
+        "long",
+        "double",
+        "float",
+        "char",
+        "byte",
+        "short",
     ];
 
     // Build the exact indent prefix for this class's members (e.g. "  " for 2-space).
@@ -294,7 +337,11 @@ fn scan_methods_from_source(
         }
 
         // Skip comments
-        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") || trimmed.starts_with("@") {
+        if trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*")
+            || trimmed.starts_with("@")
+        {
             continue;
         }
 
@@ -326,7 +373,10 @@ fn scan_methods_from_source(
 
         if method_name.is_empty()
             || seen.contains(method_name)
-            || !method_name.chars().next().map_or(false, |c| c.is_lowercase() || c == '_')
+            || !method_name
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_lowercase() || c == '_')
             || predicates::is_groovy_keyword(method_name)
         {
             continue;
@@ -353,11 +403,11 @@ fn scan_methods_from_source(
             scope_path: Some(class_qname.to_string()),
             parent_index: Some(parent_idx),
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
     methods
 }
@@ -370,7 +420,12 @@ fn scan_class_name_from_source(src: &str) -> Option<(String, u32)> {
         // Match: (optional visibility/modifiers) `class` <Name> (optional generics/extends/implements)
         let after_class = trimmed
             .split_whitespace()
-            .skip_while(|&tok| matches!(tok, "public" | "protected" | "private" | "abstract" | "final" | "static"))
+            .skip_while(|&tok| {
+                matches!(
+                    tok,
+                    "public" | "protected" | "private" | "abstract" | "final" | "static"
+                )
+            })
             .next()
             .filter(|&tok| tok == "class")
             .and_then(|_| {
@@ -387,7 +442,8 @@ fn scan_class_name_from_source(src: &str) -> Option<(String, u32)> {
         if let Some(raw_name) = after_class {
             // Strip any trailing `<...>` generic suffix from the name token
             let name = raw_name
-                .split('<').next()
+                .split('<')
+                .next()
                 .unwrap_or(raw_name)
                 .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
             if !name.is_empty() && name.chars().next().map_or(false, |c| c.is_uppercase()) {
@@ -405,7 +461,9 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
         let mut pos: u32 = 0;
         for b in src.bytes() {
             pos += 1;
-            if b == b'\n' { offsets.push(pos); }
+            if b == b'\n' {
+                offsets.push(pos);
+            }
         }
         offsets
     };
@@ -417,13 +475,17 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
         // Extract the name after "extends "
         if let Some(after) = trimmed.split(" extends ").nth(1) {
             let superclass = after
-                .split_whitespace().next()
+                .split_whitespace()
+                .next()
                 .unwrap_or("")
-                .split('<').next()
+                .split('<')
+                .next()
                 .unwrap_or("")
                 .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
             if !superclass.is_empty() {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: class_idx,
                     target_name: superclass.to_string(),
                     kind: EdgeKind::Inherits,
@@ -432,9 +494,9 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     module: None,
                     chain: None,
                     byte_offset: line_starts.get(line_idx).copied().unwrap_or(0),
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         break; // class declaration is always a single logical line
@@ -459,11 +521,18 @@ fn neutralize_angle_bracket_sqstrings(src: &str) -> String {
             i += 1;
             let content_start = i;
             while i < len && bytes[i] != b'\'' && bytes[i] != b'\n' {
-                if bytes[i] == b'\\' { i += 1; } // skip escape
+                if bytes[i] == b'\\' {
+                    i += 1;
+                } // skip escape
                 i += 1;
             }
             // Include closing quote if present.
-            let close = if i < len && bytes[i] == b'\'' { i += 1; i - 1 } else { len };
+            let close = if i < len && bytes[i] == b'\'' {
+                i += 1;
+                i - 1
+            } else {
+                len
+            };
             let content = &bytes[content_start..close.min(len)];
             if content.iter().any(|&b| b == b'<' || b == b'>') {
                 // Emit the full single-quoted region as spaces.

@@ -57,7 +57,11 @@ pub struct SymbolDetail {
 /// qualified name (returns at most one match).
 ///
 /// Returns an empty vec if nothing is found.
-pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> QueryResult<Vec<SymbolDetail>> {
+pub fn symbol_info(
+    db: &Database,
+    query: &str,
+    opts: &super::QueryOptions,
+) -> QueryResult<Vec<SymbolDetail>> {
     let _timer = db.timer("symbol_info");
 
     // Check cache first.
@@ -73,7 +77,18 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
 
     // --- Step 1: Resolve to symbol rows ---
     // We resolve a list of IDs, then fetch full detail for each.
-    let symbol_rows: Vec<(i64, String, String, String, String, u32, u32, Option<String>, Option<String>, Option<String>)> = {
+    let symbol_rows: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        String,
+        u32,
+        u32,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = {
         let (sql, param) = if query.contains('.') {
             (
                 "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
@@ -100,23 +115,26 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
             )
         };
 
-        let mut stmt = conn.prepare(sql)
+        let mut stmt = conn
+            .prepare(sql)
             .context("Failed to prepare symbol_info lookup")?;
 
-        let rows = stmt.query_map([param], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,         // id
-                row.get::<_, String>(1)?,        // name
-                row.get::<_, String>(2)?,        // qualified_name
-                row.get::<_, String>(3)?,        // kind
-                row.get::<_, String>(4)?,        // file_path
-                row.get::<_, u32>(5)?,           // start_line
-                row.get::<_, u32>(6)?,           // end_line
-                row.get::<_, Option<String>>(7)?,// signature
-                row.get::<_, Option<String>>(8)?,// doc_comment
-                row.get::<_, Option<String>>(9)?,// visibility
-            ))
-        }).context("Failed to execute symbol_info lookup")?;
+        let rows = stmt
+            .query_map([param], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,            // id
+                    row.get::<_, String>(1)?,         // name
+                    row.get::<_, String>(2)?,         // qualified_name
+                    row.get::<_, String>(3)?,         // kind
+                    row.get::<_, String>(4)?,         // file_path
+                    row.get::<_, u32>(5)?,            // start_line
+                    row.get::<_, u32>(6)?,            // end_line
+                    row.get::<_, Option<String>>(7)?, // signature
+                    row.get::<_, Option<String>>(8)?, // doc_comment
+                    row.get::<_, Option<String>>(9)?, // visibility
+                ))
+            })
+            .context("Failed to execute symbol_info lookup")?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("Failed to collect symbol_info rows")?
@@ -129,42 +147,62 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
     // --- Step 2: For each symbol, fetch edge counts + children ---
     let mut details = Vec::with_capacity(symbol_rows.len());
 
-    for (id, name, qualified_name, kind, file_path, start_line, end_line, signature, doc_comment, visibility) in symbol_rows {
+    for (
+        id,
+        name,
+        qualified_name,
+        kind,
+        file_path,
+        start_line,
+        end_line,
+        signature,
+        doc_comment,
+        visibility,
+    ) in symbol_rows
+    {
         // Incoming edge count: edges pointing at this symbol.
-        let incoming_edge_count: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM edges WHERE target_id = ?1",
-            [id],
-            |r| r.get(0),
-        ).context("Failed to count incoming edges")?;
+        let incoming_edge_count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE target_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .context("Failed to count incoming edges")?;
 
         // Outgoing edge count: edges originating from this symbol.
-        let outgoing_edge_count: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM edges WHERE source_id = ?1",
-            [id],
-            |r| r.get(0),
-        ).context("Failed to count outgoing edges")?;
+        let outgoing_edge_count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE source_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .context("Failed to count outgoing edges")?;
 
         // Children: symbols whose scope_path equals our qualified_name.
         // Skipped unless opts.include_children is set.
         let children: Vec<SymbolSummary> = if opts.include_children {
-            let mut stmt = conn.prepare(
-                "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
+            let mut stmt = conn
+                .prepare(
+                    "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.scope_path = ?1
                    AND s.origin = 'internal'
                  ORDER BY s.line",
-            ).context("Failed to prepare children query")?;
+                )
+                .context("Failed to prepare children query")?;
 
-            let rows = stmt.query_map([&qualified_name], |row| {
-                Ok(SymbolSummary {
-                    name:           row.get(0)?,
-                    qualified_name: row.get(1)?,
-                    kind:           row.get(2)?,
-                    file_path:      row.get(3)?,
-                    line:           row.get(4)?,
+            let rows = stmt
+                .query_map([&qualified_name], |row| {
+                    Ok(SymbolSummary {
+                        name: row.get(0)?,
+                        qualified_name: row.get(1)?,
+                        kind: row.get(2)?,
+                        file_path: row.get(3)?,
+                        line: row.get(4)?,
+                    })
                 })
-            }).context("Failed to execute children query")?;
+                .context("Failed to execute children query")?;
 
             rows.collect::<rusqlite::Result<Vec<_>>>()
                 .context("Failed to collect children")?
@@ -179,7 +217,11 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
             file_path,
             start_line,
             end_line,
-            signature: if opts.include_signature { signature } else { None },
+            signature: if opts.include_signature {
+                signature
+            } else {
+                None
+            },
             doc_comment: if opts.include_doc { doc_comment } else { None },
             visibility,
             incoming_edge_count,
@@ -258,10 +300,12 @@ fn merge_by_qualified_name(details: Vec<SymbolDetail>) -> Vec<SymbolDetail> {
         group.sort_by_key(|d| (canonical_kind_priority(&d.kind), d.start_line));
         let mut canonical = group.remove(0);
         for other in group {
-            canonical.incoming_edge_count =
-                canonical.incoming_edge_count.saturating_add(other.incoming_edge_count);
-            canonical.outgoing_edge_count =
-                canonical.outgoing_edge_count.saturating_add(other.outgoing_edge_count);
+            canonical.incoming_edge_count = canonical
+                .incoming_edge_count
+                .saturating_add(other.incoming_edge_count);
+            canonical.outgoing_edge_count = canonical
+                .outgoing_edge_count
+                .saturating_add(other.outgoing_edge_count);
             canonical.children.extend(other.children);
             // Doc / signature on a struct row is preferred; if the canonical
             // didn't have them but a sibling did, fold them in.
@@ -344,45 +388,69 @@ pub fn file_symbols(
 ) -> QueryResult<Vec<FileSymbol>> {
     let _timer = db.timer("file_symbols");
     let conn = db.conn();
-    let mut stmt = conn.prepare(
-        "SELECT s.name, s.kind, s.line, s.col, s.end_line,
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.name, s.kind, s.line, s.col, s.end_line,
                 s.signature, s.qualified_name, s.visibility, s.scope_path
          FROM symbols s JOIN files f ON s.file_id = f.id
          WHERE f.path = ?1
            AND s.origin = 'internal'
          ORDER BY s.line",
-    ).context("file_symbols: prepare")?;
+        )
+        .context("file_symbols: prepare")?;
 
-    let rows = stmt.query_map([file_path], |row| {
-        let name: String = row.get(0)?;
-        let kind: String = row.get(1)?;
-        let line: u32 = row.get(2)?;
-        let col: u32 = row.get(3)?;
-        let end_line: Option<u32> = row.get(4)?;
-        let signature: Option<String> = row.get(5)?;
-        let qualified_name: Option<String> = row.get(6)?;
-        let visibility: Option<String> = row.get(7)?;
-        let scope_path: Option<String> = row.get(8)?;
+    let rows = stmt
+        .query_map([file_path], |row| {
+            let name: String = row.get(0)?;
+            let kind: String = row.get(1)?;
+            let line: u32 = row.get(2)?;
+            let col: u32 = row.get(3)?;
+            let end_line: Option<u32> = row.get(4)?;
+            let signature: Option<String> = row.get(5)?;
+            let qualified_name: Option<String> = row.get(6)?;
+            let visibility: Option<String> = row.get(7)?;
+            let scope_path: Option<String> = row.get(8)?;
 
-        Ok(match mode {
-            FileSymbolsMode::Names => FileSymbol {
-                name, kind, line,
-                col: None, end_line: None, signature: None,
-                qualified_name: None, visibility: None, scope_path: None,
-            },
-            FileSymbolsMode::Outline => FileSymbol {
-                name, kind, line,
-                col: None, end_line, signature,
-                qualified_name: None, visibility: None, scope_path: None,
-            },
-            FileSymbolsMode::Full => FileSymbol {
-                name, kind, line, col: Some(col), end_line, signature,
-                qualified_name, visibility, scope_path,
-            },
+            Ok(match mode {
+                FileSymbolsMode::Names => FileSymbol {
+                    name,
+                    kind,
+                    line,
+                    col: None,
+                    end_line: None,
+                    signature: None,
+                    qualified_name: None,
+                    visibility: None,
+                    scope_path: None,
+                },
+                FileSymbolsMode::Outline => FileSymbol {
+                    name,
+                    kind,
+                    line,
+                    col: None,
+                    end_line,
+                    signature,
+                    qualified_name: None,
+                    visibility: None,
+                    scope_path: None,
+                },
+                FileSymbolsMode::Full => FileSymbol {
+                    name,
+                    kind,
+                    line,
+                    col: Some(col),
+                    end_line,
+                    signature,
+                    qualified_name,
+                    visibility,
+                    scope_path,
+                },
+            })
         })
-    }).context("file_symbols: query")?;
+        .context("file_symbols: query")?;
 
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()
         .context("file_symbols: collect")?)
 }
 

@@ -36,11 +36,7 @@ pub fn infer_external_common(
 
     // Import refs: the import path is the external namespace.
     if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-        let ns = ref_ctx
-            .extracted_ref
-            .module
-            .as_deref()
-            .unwrap_or(target);
+        let ns = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
         return Some(ns.to_string());
     }
 
@@ -56,9 +52,7 @@ pub fn infer_external_common(
             let Some(module_path) = &import.module_path else {
                 continue;
             };
-            if import.imported_name == *module
-                || module_path.contains(module.as_str())
-            {
+            if import.imported_name == *module || module_path.contains(module.as_str()) {
                 return Some(module_path.clone());
             }
         }
@@ -91,9 +85,7 @@ pub fn infer_external_common(
         // see deps that only `e2e/` declares.
         let pkg_id = ref_ctx.file_package_id;
         let pkg_manifests = project_ctx.map(|ctx| ctx.manifests_for(pkg_id));
-        let has_manifest = pkg_manifests
-            .map(|m| !m.is_empty())
-            .unwrap_or(false);
+        let has_manifest = pkg_manifests.map(|m| !m.is_empty()).unwrap_or(false);
 
         // Named import match: `from foo import Bar` → target "Bar" matches.
         if !import.is_wildcard && import.imported_name == simple {
@@ -155,9 +147,7 @@ pub fn infer_external_common(
                     continue;
                 }
                 let is_ext = match project_ctx {
-                    Some(ctx) => {
-                        is_manifest_dependency(ctx, ref_ctx.file_package_id, module_path)
-                    }
+                    Some(ctx) => is_manifest_dependency(ctx, ref_ctx.file_package_id, module_path),
                     None => true,
                 };
                 if is_ext {
@@ -200,8 +190,12 @@ fn is_manifest_dependency(
     for manifest in manifests.values() {
         if manifest.dependencies.contains(root)
             || manifest.dependencies.contains(&root_lower)
-            || manifest.dependencies.contains(&root_lower.replace('_', "-"))
-            || manifest.dependencies.contains(&root_lower.replace('-', "_"))
+            || manifest
+                .dependencies
+                .contains(&root_lower.replace('_', "-"))
+            || manifest
+                .dependencies
+                .contains(&root_lower.replace('-', "_"))
         {
             return true;
         }

@@ -21,8 +21,7 @@ use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannel
 /// per RPC. The pairing key is `Service.Rpc`; streaming kind is derived from
 /// the `stream` keyword on either side of the RPC declaration.
 pub fn extract_proto_grpc_starts(source: &str) -> Vec<(u32, FlowEmission)> {
-    let re_service =
-        Regex::new(r#"(?m)^\s*service\s+(\w+)\s*\{"#).expect("service regex");
+    let re_service = Regex::new(r#"(?m)^\s*service\s+(\w+)\s*\{"#).expect("service regex");
     // Allow optional `stream` modifier on request and/or response sides.
     let re_rpc = Regex::new(
         r#"(?m)^\s*rpc\s+(\w+)\s*\(\s*(stream\s+)?\w+\s*\)\s+returns\s+\(\s*(stream\s+)?\w+\s*\)"#,
@@ -89,7 +88,11 @@ fn find_closing_brace(source: &str, start: usize) -> usize {
 
 fn line_number_at(source: &str, offset: usize) -> u32 {
     let safe_offset = offset.min(source.len());
-    source[..safe_offset].bytes().filter(|&b| b == b'\n').count() as u32 + 1
+    source[..safe_offset]
+        .bytes()
+        .filter(|&b| b == b'\n')
+        .count() as u32
+        + 1
 }
 
 #[cfg(test)]

@@ -127,6 +127,11 @@ mod tests {
     #[test]
     fn external_import_not_in_files() {
         let files: &[&str] = &[];
-        assert!(resolve("org.springframework.boot.SpringApplication", "App.java", files).is_none());
+        assert!(resolve(
+            "org.springframework.boot.SpringApplication",
+            "App.java",
+            files
+        )
+        .is_none());
     }
 }

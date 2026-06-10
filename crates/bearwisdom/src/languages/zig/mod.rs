@@ -17,11 +17,11 @@
 //! - `identifier(` patterns in bodies → Calls edges
 //! - `@builtin(` patterns (everywhere) → Calls edges
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
-mod predicates;
 pub(crate) mod hooks;
+mod predicates;
 pub(crate) mod profile;
 
 pub use hooks::ZIG_HOOKS;
@@ -73,10 +73,7 @@ impl LanguagePlugin for ZigPlugin {
         // The extractor intentionally skips local variables (they are noise), so
         // including variable_declaration in coverage rules would inflate the
         // denominator with thousands of local variables that are never extracted.
-        &[
-            "function_declaration",
-            "test_declaration",
-        ]
+        &["function_declaration", "test_declaration"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
@@ -86,14 +83,42 @@ impl LanguagePlugin for ZigPlugin {
     fn keywords(&self) -> &'static [&'static str] {
         // Zig primitive types
         &[
-            "bool", "void", "noreturn", "type", "anyerror", "anyframe", "anytype",
-            "comptime_int", "comptime_float",
-            "i8", "i16", "i32", "i64", "i128", "isize",
-            "u8", "u16", "u32", "u64", "u128", "usize",
-            "f16", "f32", "f64", "f80", "f128",
-            "c_short", "c_int", "c_long", "c_longlong",
-            "c_ushort", "c_uint", "c_ulong", "c_ulonglong",
-            "c_char", "c_longdouble",
+            "bool",
+            "void",
+            "noreturn",
+            "type",
+            "anyerror",
+            "anyframe",
+            "anytype",
+            "comptime_int",
+            "comptime_float",
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+            "i128",
+            "isize",
+            "u8",
+            "u16",
+            "u32",
+            "u64",
+            "u128",
+            "usize",
+            "f16",
+            "f32",
+            "f64",
+            "f80",
+            "f128",
+            "c_short",
+            "c_int",
+            "c_long",
+            "c_longlong",
+            "c_ushort",
+            "c_uint",
+            "c_ulong",
+            "c_ulonglong",
+            "c_char",
+            "c_longdouble",
         ]
     }
 
@@ -105,8 +130,7 @@ impl LanguagePlugin for ZigPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ZIG_HOOKS)
     }
 }

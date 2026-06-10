@@ -38,7 +38,10 @@ pub(crate) fn nextjs_route_consumer_emissions(
     let basename = *segs.last().unwrap();
 
     // App Router: `app/**/route.{ts,tsx,js,jsx}` — exports name the verbs.
-    if matches!(basename, "route.ts" | "route.tsx" | "route.js" | "route.jsx") {
+    if matches!(
+        basename,
+        "route.ts" | "route.tsx" | "route.js" | "route.jsx"
+    ) {
         let Some(app_idx) = segs.iter().rposition(|s| *s == "app") else {
             return Vec::new();
         };
@@ -61,7 +64,7 @@ pub(crate) fn nextjs_route_consumer_emissions(
                     name: url.clone(),
                     role: flow_emit::ChannelRole::Consumer,
                     method: Some(method),
-                streaming: None,
+                    streaming: None,
                 })
                 .collect();
         }
@@ -76,7 +79,7 @@ pub(crate) fn nextjs_route_consumer_emissions(
             name: url,
             role: flow_emit::ChannelRole::Consumer,
             method: Some(flow_emit::HttpMethod::Any),
-        streaming: None,
+            streaming: None,
         }];
     }
 
@@ -84,7 +87,9 @@ pub(crate) fn nextjs_route_consumer_emissions(
     // whose basename starts with `_` (Next.js convention for non-route).
     let pages_idx = segs.iter().rposition(|s| *s == "pages");
     let api_after_pages = pages_idx.and_then(|p_idx| {
-        segs.get(p_idx + 1).filter(|s| **s == "api").map(|_| p_idx + 1)
+        segs.get(p_idx + 1)
+            .filter(|s| **s == "api")
+            .map(|_| p_idx + 1)
     });
     if let Some(api_idx) = api_after_pages {
         if basename.starts_with('_') {
@@ -114,7 +119,7 @@ pub(crate) fn nextjs_route_consumer_emissions(
             name: url,
             role: flow_emit::ChannelRole::Consumer,
             method: Some(flow_emit::HttpMethod::Any),
-        streaming: None,
+            streaming: None,
         }];
     }
 

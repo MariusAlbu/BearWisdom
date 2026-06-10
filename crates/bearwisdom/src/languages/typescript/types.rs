@@ -30,7 +30,9 @@ pub(super) fn extract_type_ref_from_annotation(
     match type_node.kind() {
         "type_identifier" | "identifier" => {
             let type_name = node_text(type_node, src);
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -39,9 +41,9 @@ pub(super) fn extract_type_ref_from_annotation(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         "generic_type" => {
             // Repository<User> → extract "Repository" as the ref target,
@@ -50,7 +52,9 @@ pub(super) fn extract_type_ref_from_annotation(
             if let Some(name) = type_node.child_by_field_name("name") {
                 let base_name = node_text(name, src);
                 // Emit base type ref (for edge resolution to the type itself).
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: base_name.clone(),
                     kind: EdgeKind::TypeRef,
@@ -59,9 +63,9 @@ pub(super) fn extract_type_ref_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
                 // Also extract type arguments for generic parameter resolution.
                 if let Some(type_args_node) = type_node.child_by_field_name("type_arguments") {
                     for i in 0..type_args_node.child_count() {
@@ -93,7 +97,9 @@ pub(super) fn extract_type_ref_from_annotation(
                                     _ => node_text(arg, src),
                                 };
                                 if !arg_name.is_empty() {
-                                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                    refs.push(ExtractedRef {
+                                        is_import_binding: false,
+                                        is_reexport: false,
                                         source_symbol_index,
                                         target_name: arg_name,
                                         kind: EdgeKind::TypeRef,
@@ -102,9 +108,9 @@ pub(super) fn extract_type_ref_from_annotation(
                                         module: None,
                                         chain: None,
                                         byte_offset: arg.start_byte() as u32,
-                                                                            namespace_segments: Vec::new(),
-                                                                            call_args: Vec::new(),
-});
+                                        namespace_segments: Vec::new(),
+                                        call_args: Vec::new(),
+                                    });
                                 }
                             }
                         }
@@ -126,7 +132,9 @@ pub(super) fn extract_type_ref_from_annotation(
             // standard import-resolution pipeline picks it up the
             // same way `import { Readable } from 'node:stream'` does.
             if let Some((module, ty)) = parse_import_type_expression(&type_name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: ty,
                     kind: EdgeKind::TypeRef,
@@ -140,7 +148,9 @@ pub(super) fn extract_type_ref_from_annotation(
                 });
                 return;
             }
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: type_name,
                 kind: EdgeKind::TypeRef,
@@ -149,9 +159,9 @@ pub(super) fn extract_type_ref_from_annotation(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         "function_type" => {
             // (req: Request, res: Response) => void
@@ -180,12 +190,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 if let Some(child) = type_node.child(i) {
                     if child.kind() == "=>" {
                         if let Some(ret) = type_node.child(i + 1) {
-                            extract_type_ref_from_annotation(
-                                &ret,
-                                src,
-                                source_symbol_index,
-                                refs,
-                            );
+                            extract_type_ref_from_annotation(&ret, src, source_symbol_index, refs);
                         }
                         break;
                     }
@@ -246,8 +251,12 @@ pub(super) fn extract_type_ref_from_annotation(
                 if let Some(child) = type_node.child(i) {
                     if !matches!(
                         child.kind(),
-                        "extends" | "?" | ":" | "conditional_type"
-                            | "type_identifier" | "identifier"
+                        "extends"
+                            | "?"
+                            | ":"
+                            | "conditional_type"
+                            | "type_identifier"
+                            | "identifier"
                     ) {
                         extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
                     }
@@ -259,8 +268,19 @@ pub(super) fn extract_type_ref_from_annotation(
             for i in 0..type_node.child_count() {
                 if let Some(child) = type_node.child(i) {
                     match child.kind() {
-                        "{" | "}" | "[" | "]" | "in" | ":" | "readonly" | "?" | "+" | "-"
-                        | "property_identifier" | "type_identifier" | "identifier" => {}
+                        "{"
+                        | "}"
+                        | "["
+                        | "]"
+                        | "in"
+                        | ":"
+                        | "readonly"
+                        | "?"
+                        | "+"
+                        | "-"
+                        | "property_identifier"
+                        | "type_identifier"
+                        | "identifier" => {}
                         _ => {
                             extract_type_ref_from_annotation(
                                 &child,
@@ -298,7 +318,9 @@ pub(super) fn extract_type_ref_from_annotation(
             if let Some(expr) = type_node.child_by_field_name("name") {
                 let name = node_text(expr, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -307,9 +329,9 @@ pub(super) fn extract_type_ref_from_annotation(
                         module: None,
                         chain: None,
                         byte_offset: expr.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             } else {
                 // Fallback: first named non-keyword child.
@@ -318,7 +340,9 @@ pub(super) fn extract_type_ref_from_annotation(
                         if child.kind() != "typeof" {
                             let name = node_text(child, src);
                             if !name.is_empty() {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -327,9 +351,9 @@ pub(super) fn extract_type_ref_from_annotation(
                                     module: None,
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                                 break;
                             }
                         }
@@ -369,7 +393,7 @@ pub(super) fn extract_type_ref_from_annotation(
                         "is" => {
                             after_is = true;
                         }
-                        ":" => {}  // colon in type_predicate_annotation
+                        ":" => {} // colon in type_predicate_annotation
                         _ => {
                             if after_is {
                                 extract_type_ref_from_annotation(
@@ -445,7 +469,9 @@ pub(super) fn extract_type_refs_recursive(
         "type_identifier" | "identifier" => {
             let name = node_text(*node, src);
             if !name.is_empty() && !is_ts_primitive(&name) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -454,20 +480,19 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // Skip inert tokens and binding-only nodes — including the
         // `string` / `number` / boolean nodes that can appear directly
         // (without a `literal_type` wrapper) when used as type members.
-        "infer_type" | "this_type" | "literal_type"
-        | "string" | "number" | "true" | "false" | "null" | "undefined"
-        | "string_fragment" | "regex" => {}
+        "infer_type" | "this_type" | "literal_type" | "string" | "number" | "true" | "false"
+        | "null" | "undefined" | "string_fragment" | "regex" => {}
         // Skip punctuation keywords that appear as unnamed children.
-        "extends" | "keyof" | "readonly" | "typeof" | "infer" | "is"
-        | "?" | ":" | "|" | "&" | "[" | "]" | "(" | ")" | "{" | "}" | "," | "=>" => {}
+        "extends" | "keyof" | "readonly" | "typeof" | "infer" | "is" | "?" | ":" | "|" | "&"
+        | "[" | "]" | "(" | ")" | "{" | "}" | "," | "=>" => {}
         // Object type literal — members are emitted as Property/Method symbols
         // by `extract_node` (driven by `recurse_for_object_types`). Walking
         // children here would emit property NAMES (like `action` in
@@ -478,8 +503,11 @@ pub(super) fn extract_type_refs_recursive(
         // handles these as symbols; the deep-walk fallback shouldn't visit
         // them. Without this, the property/parameter NAME identifier leaks
         // out as a spurious TypeRef.
-        "property_signature" | "method_signature" | "call_signature"
-        | "construct_signature" | "index_signature"
+        "property_signature"
+        | "method_signature"
+        | "call_signature"
+        | "construct_signature"
+        | "index_signature"
         | "abstract_method_signature" => {}
         // Function-type parameter list members. Walking these would emit
         // parameter NAMES (`req`, `res`, `args`) as TypeRefs. The proper
@@ -500,7 +528,9 @@ pub(super) fn extract_type_refs_recursive(
                         "type_identifier" | "identifier" => {
                             let name = node_text(child, src);
                             if !name.is_empty() && !is_ts_primitive(&name) {
-                                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
                                     source_symbol_index,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
@@ -509,9 +539,9 @@ pub(super) fn extract_type_refs_recursive(
                                     module: None,
                                     chain: None,
                                     byte_offset: child.start_byte() as u32,
-                                                                    namespace_segments: Vec::new(),
-                                                                    call_args: Vec::new(),
-});
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
                             }
                         }
                         "infer_type" | "this_type" | "literal_type" => {}
@@ -520,12 +550,22 @@ pub(super) fn extract_type_refs_recursive(
                         // parameter names) and should be processed by
                         // extract_node, not the type-ref deep-walk.
                         "object_type"
-                        | "property_signature" | "method_signature" | "call_signature"
-                        | "construct_signature" | "index_signature"
+                        | "property_signature"
+                        | "method_signature"
+                        | "call_signature"
+                        | "construct_signature"
+                        | "index_signature"
                         | "abstract_method_signature"
-                        | "required_parameter" | "optional_parameter" | "rest_parameter" => {}
+                        | "required_parameter"
+                        | "optional_parameter"
+                        | "rest_parameter" => {}
                         _ => {
-                            extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                            extract_type_ref_from_annotation(
+                                &child,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
                         }
                     }
                 }
@@ -540,8 +580,18 @@ pub(super) fn extract_type_refs_recursive(
 fn is_ts_primitive(name: &str) -> bool {
     matches!(
         name,
-        "string" | "number" | "boolean" | "void" | "any" | "unknown" | "never"
-            | "undefined" | "null" | "object" | "symbol" | "bigint"
+        "string"
+            | "number"
+            | "boolean"
+            | "void"
+            | "any"
+            | "unknown"
+            | "never"
+            | "undefined"
+            | "null"
+            | "object"
+            | "symbol"
+            | "bigint"
     )
 }
 
@@ -613,7 +663,9 @@ pub(super) fn extract_typed_params_as_symbols(
     };
 
     for i in 0..params.child_count() {
-        let Some(param) = params.child(i) else { continue };
+        let Some(param) = params.child(i) else {
+            continue;
+        };
         if param.kind() != "required_parameter" && param.kind() != "optional_parameter" {
             continue;
         }
@@ -662,12 +714,12 @@ pub(super) fn extract_typed_params_as_symbols(
             doc_comment: None,
             scope_path,
             parent_index,
-                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
 
         // Emit TypeRef from the parameter symbol to its type.
         extract_type_ref_from_annotation(&type_ann, src, idx, refs);

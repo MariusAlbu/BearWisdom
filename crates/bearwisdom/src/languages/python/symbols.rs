@@ -9,9 +9,8 @@ use super::helpers::{
     extract_python_type_name, is_test_function, node_text, qualify, scope_from_prefix,
 };
 use super::statements::{
-    extract_comprehension, extract_except_clause, extract_for_statement,
-    extract_match_statement, extract_named_expression, extract_raise_statement,
-    extract_with_statement,
+    extract_comprehension, extract_except_clause, extract_for_statement, extract_match_statement,
+    extract_named_expression, extract_raise_statement, extract_with_statement,
 };
 use super::types::extract_type_alias;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -37,9 +36,9 @@ pub(super) fn extract_function_definition(
     let visibility = detect_python_visibility(&name);
 
     let has_property = decorators.iter().any(|d| d == "property");
-    let has_test_decorator = decorators.iter().any(|d| {
-        d.starts_with("pytest.mark") || d == "test" || d.starts_with("pytest.fixture")
-    });
+    let has_test_decorator = decorators
+        .iter()
+        .any(|d| d.starts_with("pytest.mark") || d == "test" || d.starts_with("pytest.fixture"));
 
     let kind = if has_property {
         SymbolKind::Property
@@ -72,12 +71,12 @@ pub(super) fn extract_function_definition(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(params) = node.child_by_field_name("parameters") {
         extract_python_typed_params_as_symbols(
@@ -385,11 +384,19 @@ pub(super) fn extract_body_symbols(
             }
 
             // Structural/container expressions — recurse for calls.
-            "tuple" | "list" | "dictionary" | "set" | "slice"
-            | "parenthesized_expression" | "starred_expression"
-            | "binary_operator" | "boolean_operator"
-            | "comparison_operator" | "unary_operator"
-            | "not_operator" | "await" => {
+            "tuple"
+            | "list"
+            | "dictionary"
+            | "set"
+            | "slice"
+            | "parenthesized_expression"
+            | "starred_expression"
+            | "binary_operator"
+            | "boolean_operator"
+            | "comparison_operator"
+            | "unary_operator"
+            | "not_operator"
+            | "await" => {
                 extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
                 // Also recurse for nested body-symbols (e.g. comprehensions inside tuples).
                 extract_body_symbols(
@@ -483,14 +490,16 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     doc_comment: None,
                     scope_path,
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
 
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: param_idx,
                     target_name: type_name,
                     kind: EdgeKind::TypeRef,
@@ -499,9 +508,9 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     module: None,
                     chain: None,
                     byte_offset: type_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
 
             // Untyped default: `def foo(x=5)`.
@@ -527,12 +536,12 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     doc_comment: None,
                     scope_path: Some(func_qualified_name.to_string()),
                     parent_index,
-                                    byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                    byte_offset: 0,
+                    declared_type: None,
+                    return_type: None,
+                    param_types: Vec::new(),
+                    generic_params: Vec::new(),
+                });
             }
 
             // `*args` — list splat parameter.
@@ -556,12 +565,12 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 doc_comment: None,
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
-                                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                                byte_offset: 0,
+                                declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -588,12 +597,12 @@ pub(super) fn extract_python_typed_params_as_symbols(
                                 doc_comment: None,
                                 scope_path: Some(func_qualified_name.to_string()),
                                 parent_index,
-                                                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                                byte_offset: 0,
+                                declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+                            });
                         }
                         break;
                     }
@@ -654,12 +663,12 @@ pub(super) fn extract_class_definition(
         doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     if let Some(superclasses) = node.child_by_field_name("superclasses") {
         extract_superclass_refs(&superclasses, source, refs, idx);
@@ -672,7 +681,14 @@ pub(super) fn extract_class_definition(
         // imports (direct children of root) are tagged `is_reexport=true`.
         let nested_exports = rustc_hash::FxHashSet::default();
         super::extract::extract_from_node(
-            body_node, source, symbols, refs, Some(idx), &new_prefix, true, import_map,
+            body_node,
+            source,
+            symbols,
+            refs,
+            Some(idx),
+            &new_prefix,
+            true,
+            import_map,
             &nested_exports,
         );
     }
@@ -706,10 +722,9 @@ fn synthesize_dataclass_init(
         None => return,
     };
 
-    let explicit_init = symbols[class_idx + 1..].iter().any(|s| {
-        s.name == "__init__"
-            && s.scope_path.as_deref() == Some(class_qname)
-    });
+    let explicit_init = symbols[class_idx + 1..]
+        .iter()
+        .any(|s| s.name == "__init__" && s.scope_path.as_deref() == Some(class_qname));
     if explicit_init {
         return;
     }
@@ -801,7 +816,9 @@ fn extract_superclass_refs(
         match child.kind() {
             "identifier" => {
                 let name = node_text(&child, source);
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: class_idx,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -810,9 +827,9 @@ fn extract_superclass_refs(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             "attribute" => {
                 if let Some(attr) = child.child_by_field_name("attribute") {
@@ -820,7 +837,9 @@ fn extract_superclass_refs(
                     let obj = child
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source));
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: class_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -829,9 +848,9 @@ fn extract_superclass_refs(
                         module: obj,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             _ => {}
@@ -916,7 +935,6 @@ fn extract_decorator_names(node: &Node, source: &str) -> Vec<String> {
     names
 }
 
-
 pub(super) fn extract_lambda(
     node: &Node,
     source: &str,
@@ -954,12 +972,12 @@ pub(super) fn extract_lambda(
                 doc_comment: None,
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
-                            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
         }
     }
 
@@ -967,4 +985,3 @@ pub(super) fn extract_lambda(
         extract_calls_from_body(&body, source, enclosing_symbol_index, refs, import_map);
     }
 }
-

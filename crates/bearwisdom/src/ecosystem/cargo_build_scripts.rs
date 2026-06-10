@@ -49,9 +49,15 @@ const LANGUAGES: &[&str] = &["rust"];
 pub struct CargoBuildScriptsEcosystem;
 
 impl Ecosystem for CargoBuildScriptsEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("rust")
@@ -65,11 +71,15 @@ impl Ecosystem for CargoBuildScriptsEcosystem {
         walk_out_dir(dep)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { false }
+    fn uses_demand_driven_parse(&self) -> bool {
+        false
+    }
 }
 
 impl ExternalSourceLocator for CargoBuildScriptsEcosystem {
-    fn ecosystem(&self) -> &'static str { ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        ECOSYSTEM_TAG
+    }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_out_dirs(project_root)
@@ -83,7 +93,9 @@ impl ExternalSourceLocator for CargoBuildScriptsEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<CargoBuildScriptsEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(CargoBuildScriptsEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(CargoBuildScriptsEcosystem))
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -103,10 +115,14 @@ fn discover_out_dirs(project_root: &Path) -> Vec<ExternalDepRoot> {
         if !build_dir.is_dir() {
             continue;
         }
-        let Ok(entries) = std::fs::read_dir(&build_dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&build_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if !name.starts_with(&format!("{package_name}-")) {
                 continue;
             }
@@ -156,13 +172,15 @@ pub(crate) fn parse_package_name(toml_text: &str) -> Option<String> {
         }
         // `name = "scryer-prolog"` — strip whitespace around `=`, accept
         // either single or double quotes.
-        let Some(rest) = line.strip_prefix("name") else { continue };
+        let Some(rest) = line.strip_prefix("name") else {
+            continue;
+        };
         let rest = rest.trim_start();
-        let Some(rest) = rest.strip_prefix('=') else { continue };
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
         let rest = rest.trim();
-        let value = rest
-            .trim_matches(|c| c == '"' || c == '\'')
-            .trim();
+        let value = rest.trim_matches(|c| c == '"' || c == '\'').trim();
         if !value.is_empty() {
             return Some(value.to_string());
         }
@@ -217,14 +235,18 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     if depth > 8 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             walk_dir(&path, out, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if !name.ends_with(".rs") {
                 continue;
             }

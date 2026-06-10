@@ -17,8 +17,7 @@
 //   blocks are not symbols themselves; they set the prefix for their methods.
 // =============================================================================
 
-
-use super::{calls, symbols, helpers, decorators, patterns};
+use super::{calls, decorators, helpers, patterns, symbols};
 use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
@@ -29,8 +28,6 @@ pub(crate) use crate::types::{EdgeKind, SymbolKind, Visibility};
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
-
-
 
 /// Extract all symbols and references from Rust source code.
 pub fn extract(source: &str) -> ExtractionResult {
@@ -79,14 +76,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     let root = tree.root_node();
 
-    extract_from_node(
-        root,
-        source,
-        &mut syms,
-        &mut refs,
-        None,
-        "",
-    );
+    extract_from_node(root, source, &mut syms, &mut refs, None, "");
 
     // Second pass: scan the full CST for type_identifier and scoped_type_identifier
     // nodes, emitting TypeRef for each non-primitive type found anywhere in the file.
@@ -105,7 +95,9 @@ pub fn extract(source: &str) -> ExtractionResult {
             .iter()
             .filter(|r| r.kind == EdgeKind::Imports)
             .filter_map(|r| {
-                r.module.as_ref().map(|m| (r.target_name.clone(), m.clone()))
+                r.module
+                    .as_ref()
+                    .map(|m| (r.target_name.clone(), m.clone()))
             })
             .collect();
 
@@ -155,7 +147,12 @@ fn is_generic_param_noise(r: &ExtractedRef) -> bool {
     let target = &r.target_name;
     if r.kind == EdgeKind::TypeRef {
         let bare = target.trim_start_matches("::");
-        if bare.len() == 1 && bare.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+        if bare.len() == 1
+            && bare
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_uppercase())
+        {
             return true;
         }
     }
@@ -185,9 +182,15 @@ fn memchr_const_trait(source: &str) -> bool {
     let mut has_trait = false;
     while i + 5 <= bytes.len() {
         let head = &bytes[i..];
-        if !has_const && head.starts_with(b"const") { has_const = true }
-        if !has_trait && head.starts_with(b"trait") { has_trait = true }
-        if has_const && has_trait { return true }
+        if !has_const && head.starts_with(b"const") {
+            has_const = true
+        }
+        if !has_trait && head.starts_with(b"trait") {
+            has_trait = true
+        }
+        if has_const && has_trait {
+            return true;
+        }
         i += 1;
     }
     false
@@ -206,10 +209,10 @@ fn rewrite_const_trait(source: &str) -> String {
             && is_word_boundary_after(bytes, i + 5)
         {
             let mut j = i + 5;
-            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') { j += 1 }
-            if bytes[j..].starts_with(b"trait")
-                && is_word_boundary_after(bytes, j + 5)
-            {
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1
+            }
+            if bytes[j..].starts_with(b"trait") && is_word_boundary_after(bytes, j + 5) {
                 out_bytes.extend_from_slice(b"     ");
                 out_bytes.extend_from_slice(&bytes[i + 5..j]);
                 i = j;
@@ -230,13 +233,17 @@ fn rewrite_const_trait(source: &str) -> String {
 }
 
 fn is_word_boundary_before(bytes: &[u8], i: usize) -> bool {
-    if i == 0 { return true }
+    if i == 0 {
+        return true;
+    }
     let c = bytes[i - 1];
     !(c.is_ascii_alphanumeric() || c == b'_')
 }
 
 fn is_word_boundary_after(bytes: &[u8], i: usize) -> bool {
-    if i >= bytes.len() { return true }
+    if i >= bytes.len() {
+        return true;
+    }
     let c = bytes[i];
     !(c.is_ascii_alphanumeric() || c == b'_')
 }
@@ -292,9 +299,7 @@ fn extract_from_node(
                     // common case (non-callable parameters) — adding every
                     // parameter as a Variable would explode the symbol
                     // table without helping resolution.
-                    symbols::extract_callable_fn_params(
-                        &child, source, idx, &fn_qname, symbols,
-                    );
+                    symbols::extract_callable_fn_params(&child, source, idx, &fn_qname, symbols);
                     // where-clause and type-parameter bounds → TypeRef edges.
                     // Iterate children by kind rather than field_name to avoid
                     // grammar-version sensitivity.
@@ -313,7 +318,13 @@ fn extract_from_node(
                         }
                     }
                     if let Some(body) = child.child_by_field_name("body") {
-                        calls::extract_calls_from_body_with_symbols(&body, source, idx, refs, Some(symbols));
+                        calls::extract_calls_from_body_with_symbols(
+                            &body,
+                            source,
+                            idx,
+                            refs,
+                            Some(symbols),
+                        );
                     }
                 }
             }
@@ -329,7 +340,14 @@ fn extract_from_node(
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     // Extract field symbols and TypeRefs for field types.
-                    symbols::extract_struct_fields(&child, source, idx, &struct_prefix, symbols, refs);
+                    symbols::extract_struct_fields(
+                        &child,
+                        source,
+                        idx,
+                        &struct_prefix,
+                        symbols,
+                        refs,
+                    );
                 }
             }
 
@@ -342,7 +360,14 @@ fn extract_from_node(
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
-                        symbols::extract_enum_variants(&body, source, Some(idx), &new_prefix, symbols, refs);
+                        symbols::extract_enum_variants(
+                            &body,
+                            source,
+                            Some(idx),
+                            &new_prefix,
+                            symbols,
+                            refs,
+                        );
                     }
                 }
             }
@@ -359,7 +384,14 @@ fn extract_from_node(
                     patterns::extract_supertrait_bounds(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         // Extract associated types declared in the trait body.
-                        symbols::extract_trait_associated_types(&body, source, idx, &new_prefix, symbols, refs);
+                        symbols::extract_trait_associated_types(
+                            &body,
+                            source,
+                            idx,
+                            &new_prefix,
+                            symbols,
+                            refs,
+                        );
                         extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
                     }
                 }
@@ -437,10 +469,15 @@ fn extract_from_node(
                 if let Some(body) = child.child_by_field_name("body") {
                     let mut bc = body.walk();
                     for decl in body.children(&mut bc) {
-                        if decl.kind() == "function_item" || decl.kind() == "function_signature_item" {
-                            if let Some(sym) =
-                                symbols::extract_function(&decl, source, parent_index, qualified_prefix)
-                            {
+                        if decl.kind() == "function_item"
+                            || decl.kind() == "function_signature_item"
+                        {
+                            if let Some(sym) = symbols::extract_function(
+                                &decl,
+                                source,
+                                parent_index,
+                                qualified_prefix,
+                            ) {
                                 let idx = symbols.len();
                                 symbols.push(sym);
                                 decorators::extract_decorators(&decl, source, idx, refs);
@@ -484,7 +521,9 @@ fn extract_from_node(
                         _ => (None, raw.to_string()),
                     };
                     if !target.is_empty() {
-                        refs.push(crate::types::ExtractedRef { is_import_binding: false, is_reexport: false,
+                        refs.push(crate::types::ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
                             source_symbol_index: source_idx,
                             target_name: target,
                             kind: crate::types::EdgeKind::Calls,
@@ -493,9 +532,9 @@ fn extract_from_node(
                             module,
                             chain: None,
                             byte_offset: macro_node.start_byte() as u32,
-                                                    namespace_segments: Vec::new(),
-                                                    call_args: Vec::new(),
-});
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 // Recurse into token-tree arguments for nested calls.
@@ -511,14 +550,7 @@ fn extract_from_node(
             "ERROR" | "MISSING" => {}
 
             _ => {
-                extract_from_node(
-                    child,
-                    source,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                );
+                extract_from_node(child, source, symbols, refs, parent_index, qualified_prefix);
             }
         }
     }
@@ -583,7 +615,9 @@ fn scan_all_type_identifiers(
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(&child, source);
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -592,9 +626,9 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "scoped_type_identifier" if child.is_named() => {
@@ -607,7 +641,9 @@ fn scan_all_type_identifiers(
                         text.rsplit("::").next().unwrap_or(&text).to_string()
                     });
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
@@ -616,9 +652,9 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
                 // Don't recurse into scoped_type_identifier children — we already extracted the leaf.
                 continue;
@@ -632,4 +668,3 @@ fn scan_all_type_identifiers(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

@@ -37,17 +37,19 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
     let host_index = 0usize;
 
     let script_refs = extract_script_refs(source);
     let mut refs = Vec::with_capacity(script_refs.len());
     for sr in script_refs {
-        refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: host_index,
             target_name: sr.url.clone(),
             kind: EdgeKind::Imports,

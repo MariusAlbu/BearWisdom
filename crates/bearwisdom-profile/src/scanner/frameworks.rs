@@ -7,7 +7,9 @@ pub fn detect_test_frameworks(root: &Path, language_ids: &[String]) -> Vec<Detec
     let mut results = Vec::new();
 
     for id in language_ids {
-        let Some(lang) = crate::registry::find_language(id) else { continue };
+        let Some(lang) = crate::registry::find_language(id) else {
+            continue;
+        };
 
         for tf in lang.test_frameworks {
             if is_framework_present(root, tf) {

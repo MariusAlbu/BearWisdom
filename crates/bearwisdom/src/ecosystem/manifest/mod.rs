@@ -197,7 +197,9 @@ pub trait ManifestReader: Send + Sync {
     /// Default impl calls `read()` once at the root and returns a single entry.
     /// Monorepo-aware readers override this.
     fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
-        let Some(data) = self.read(project_root) else { return Vec::new() };
+        let Some(data) = self.read(project_root) else {
+            return Vec::new();
+        };
         vec![ReaderEntry {
             package_dir: project_root.to_path_buf(),
             manifest_path: project_root.to_path_buf(),
@@ -390,10 +392,7 @@ mod tests {
         fs::write(path, content).unwrap();
     }
 
-    fn names_by_kind<'a>(
-        manifests: &'a [PackageManifest],
-        kind: ManifestKind,
-    ) -> Vec<&'a str> {
+    fn names_by_kind<'a>(manifests: &'a [PackageManifest], kind: ManifestKind) -> Vec<&'a str> {
         let mut names: Vec<&str> = manifests
             .iter()
             .filter(|m| m.kind == kind)
@@ -426,8 +425,10 @@ mod tests {
         );
 
         let per_pkg = read_all_manifests_per_package(root);
-        let npm: Vec<&PackageManifest> =
-            per_pkg.iter().filter(|m| m.kind == ManifestKind::Npm).collect();
+        let npm: Vec<&PackageManifest> = per_pkg
+            .iter()
+            .filter(|m| m.kind == ManifestKind::Npm)
+            .collect();
 
         // 4 package.json files → 4 entries (root counts).
         assert_eq!(npm.len(), 4, "expected 4 npm manifests, got {}", npm.len());
@@ -506,8 +507,10 @@ mod tests {
         );
 
         let per_pkg = read_all_manifests_per_package(root);
-        let npm: Vec<&PackageManifest> =
-            per_pkg.iter().filter(|m| m.kind == ManifestKind::Npm).collect();
+        let npm: Vec<&PackageManifest> = per_pkg
+            .iter()
+            .filter(|m| m.kind == ManifestKind::Npm)
+            .collect();
 
         assert_eq!(npm.len(), 1);
         assert_eq!(npm[0].name, "solo");
@@ -565,8 +568,10 @@ mod tests {
         );
 
         let per_pkg = read_all_manifests_per_package(root);
-        let npm: Vec<&PackageManifest> =
-            per_pkg.iter().filter(|m| m.kind == ManifestKind::Npm).collect();
+        let npm: Vec<&PackageManifest> = per_pkg
+            .iter()
+            .filter(|m| m.kind == ManifestKind::Npm)
+            .collect();
         assert_eq!(npm.len(), 1);
         assert_eq!(npm[0].name, "host");
     }
@@ -594,11 +599,7 @@ mod tests {
     fn manifest_path_is_absolute() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
-        write_file(
-            root,
-            "package.json",
-            r#"{"name":"solo","dependencies":{}}"#,
-        );
+        write_file(root, "package.json", r#"{"name":"solo","dependencies":{}}"#);
 
         let per_pkg = read_all_manifests_per_package(root);
         let solo = per_pkg.iter().find(|m| m.name == "solo").unwrap();

@@ -92,7 +92,12 @@ fn visit_for_cowboy(
             // outermost square-bracketed list and extract triples.
             if let Some(args_node) = node.child_by_field_name("args") {
                 let args_text = node_text(&args_node, src);
-                extract_cowboy_triples_from_text(args_text, routes, symbols, node.start_position().row as u32 + 1);
+                extract_cowboy_triples_from_text(
+                    args_text,
+                    routes,
+                    symbols,
+                    node.start_position().row as u32 + 1,
+                );
             }
         }
     }
@@ -103,7 +108,9 @@ fn visit_for_cowboy(
 }
 
 fn is_cowboy_compile_call(node: &Node, src: &str) -> bool {
-    let Some(expr) = node.child_by_field_name("expr") else { return false };
+    let Some(expr) = node.child_by_field_name("expr") else {
+        return false;
+    };
     if expr.kind() != "remote" {
         return false;
     }

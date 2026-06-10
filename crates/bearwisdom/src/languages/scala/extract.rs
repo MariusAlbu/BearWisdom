@@ -2,8 +2,6 @@
 // parser/extractors/scala/mod.rs  —  Scala symbol and reference extractor
 // =============================================================================
 
-
-use super::{calls, symbols, helpers, decorators};
 use super::calls::extract_calls_from_body;
 use super::decorators::{extract_case_class_params, extract_decorators, extract_match_patterns};
 use super::helpers::{call_target_name, classify_class, node_text};
@@ -12,6 +10,7 @@ use super::symbols::{
     push_function_def, push_given_definition, push_import, push_package_clause, push_type_def,
     push_type_definition, push_val_var, recurse_body,
 };
+use super::{calls, decorators, helpers, symbols};
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -22,11 +21,26 @@ use tree_sitter::{Node, Parser};
 // ---------------------------------------------------------------------------
 
 pub(crate) static SCALA_SCOPE_KINDS: &[ScopeKind] = &[
-    ScopeKind { node_kind: "class_definition",    name_field: "name" },
-    ScopeKind { node_kind: "object_definition",   name_field: "name" },
-    ScopeKind { node_kind: "trait_definition",    name_field: "name" },
-    ScopeKind { node_kind: "enum_definition",     name_field: "name" },
-    ScopeKind { node_kind: "function_definition", name_field: "name" },
+    ScopeKind {
+        node_kind: "class_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "object_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "trait_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "enum_definition",
+        name_field: "name",
+    },
+    ScopeKind {
+        node_kind: "function_definition",
+        name_field: "name",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -291,8 +305,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "object_definition" => {
-                let idx =
-                    push_type_def(&child, src, scope_tree, SymbolKind::Namespace, symbols, parent_index);
+                let idx = push_type_def(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Namespace,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
@@ -301,8 +321,14 @@ pub(super) fn extract_node<'a>(
             }
 
             "trait_definition" => {
-                let idx =
-                    push_type_def(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
+                let idx = push_type_def(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Interface,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
@@ -312,8 +338,14 @@ pub(super) fn extract_node<'a>(
 
             // Scala 3 enum
             "enum_definition" => {
-                let idx =
-                    push_type_def(&child, src, scope_tree, SymbolKind::Enum, symbols, parent_index);
+                let idx = push_type_def(
+                    &child,
+                    src,
+                    scope_tree,
+                    SymbolKind::Enum,
+                    symbols,
+                    parent_index,
+                );
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
@@ -360,7 +392,7 @@ pub(super) fn extract_node<'a>(
                     // For declarations, use parent_index; for definitions, we'll use the symbol we just created.
                     let idx_to_use = match child.kind() {
                         "val_definition" | "var_definition" => symbols.len(), // Will be the index of the symbol we push below
-                        _ => parent_index.unwrap_or(0), // For declarations
+                        _ => parent_index.unwrap_or(0),                       // For declarations
                     };
                     push_val_var(&child, src, scope_tree, symbols, parent_index);
                     extract_type_refs_from_type_node(&type_node, src, idx_to_use, refs);
@@ -394,7 +426,8 @@ pub(super) fn extract_node<'a>(
 
             // Scala 3 `given` — implicit instance.
             "given_definition" => {
-                let idx = push_given_definition(&child, src, scope_tree, symbols, refs, parent_index);
+                let idx =
+                    push_given_definition(&child, src, scope_tree, symbols, refs, parent_index);
                 recurse_body(&child, src, scope_tree, symbols, refs, idx);
             }
 
@@ -418,10 +451,23 @@ pub(super) fn extract_node<'a>(
                     let mut cc = child.walk();
                     for inner in child.children(&mut cc) {
                         match inner.kind() {
-                            "class_definition" | "object_definition" | "trait_definition"
-                            | "enum_definition" | "function_definition" | "function_declaration"
-                            | "val_definition" | "var_definition" | "import_declaration" => {
-                                extract_node(inner, src, scope_tree, symbols, refs, effective_parent);
+                            "class_definition"
+                            | "object_definition"
+                            | "trait_definition"
+                            | "enum_definition"
+                            | "function_definition"
+                            | "function_declaration"
+                            | "val_definition"
+                            | "var_definition"
+                            | "import_declaration" => {
+                                extract_node(
+                                    inner,
+                                    src,
+                                    scope_tree,
+                                    symbols,
+                                    refs,
+                                    effective_parent,
+                                );
                             }
                             _ => {}
                         }
@@ -502,7 +548,9 @@ pub(super) fn extract_node<'a>(
                 let sym_idx = parent_index.unwrap_or(0);
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -511,9 +559,9 @@ pub(super) fn extract_node<'a>(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
 
@@ -543,7 +591,9 @@ fn extract_type_refs_from_type_node(
     if type_node.kind() == "type_identifier" {
         let name = helpers::node_text(*type_node, src);
         if !name.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -552,9 +602,9 @@ fn extract_type_refs_from_type_node(
                 module: None,
                 chain: None,
                 byte_offset: type_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         return;
     }
@@ -565,7 +615,9 @@ fn extract_type_refs_from_type_node(
             "type_identifier" => {
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -574,9 +626,9 @@ fn extract_type_refs_from_type_node(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
             "generic_type" => {
@@ -640,7 +692,9 @@ fn dispatch_body_node(
             if let Some(op) = node.child_by_field_name("operator") {
                 let target_name = node_text(op, src);
                 if !target_name.is_empty() {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: crate::types::EdgeKind::Calls,
@@ -649,9 +703,9 @@ fn dispatch_body_node(
                         module: None,
                         chain: None,
                         byte_offset: op.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -668,7 +722,9 @@ fn dispatch_body_node(
                     .unwrap_or_else(|| call_target_name(&callee, src));
                 if !target_name.is_empty() {
                     let call_args = calls::extract_call_args(&node, src);
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index,
                         target_name,
                         kind: crate::types::EdgeKind::Calls,
@@ -677,9 +733,9 @@ fn dispatch_body_node(
                         module: None,
                         chain,
                         byte_offset: callee.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args,
-});
+                        namespace_segments: Vec::new(),
+                        call_args,
+                    });
                 }
             }
         }
@@ -691,7 +747,9 @@ fn dispatch_body_node(
                     "type_identifier" => {
                         let name = node_text(inner, src);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: name,
                                 kind: crate::types::EdgeKind::Calls,
@@ -700,16 +758,18 @@ fn dispatch_body_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: inner.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     "stable_type_identifier" => {
                         let full = node_text(inner, src);
                         let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
                         if !simple.is_empty() {
-                            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
                                 source_symbol_index,
                                 target_name: simple,
                                 kind: crate::types::EdgeKind::Calls,
@@ -718,9 +778,9 @@ fn dispatch_body_node(
                                 module: Some(full),
                                 chain: None,
                                 byte_offset: inner.start_byte() as u32,
-                                                            namespace_segments: Vec::new(),
-                                                            call_args: Vec::new(),
-});
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                     _ => {}
@@ -754,7 +814,9 @@ fn scan_type_refs_inner(
     if node.kind() == "type_identifier" {
         let name = helpers::node_text(node, src);
         if !name.is_empty() && !super::predicates::is_scala_primitive_type(&name) {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: name,
                 kind: crate::types::EdgeKind::TypeRef,
@@ -763,9 +825,9 @@ fn scan_type_refs_inner(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
         // type_identifier is a leaf — no children to recurse into.
         return;
@@ -805,7 +867,9 @@ fn infer_type_from_value(
                     // `Foo.apply()` or `Foo.Bar()`
                     "field_expression" => {
                         if let Some(chain) = calls::build_chain(&func, src) {
-                            chain.segments.last()
+                            chain
+                                .segments
+                                .last()
                                 .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
                                 .map(|s| s.name.clone())
                         } else {
@@ -815,7 +879,9 @@ fn infer_type_from_value(
                     _ => None,
                 };
                 if let Some(name) = type_name {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -824,9 +890,9 @@ fn infer_type_from_value(
                         module: None,
                         chain: None,
                         byte_offset: value_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -834,7 +900,9 @@ fn infer_type_from_value(
         "identifier" => {
             let name = helpers::node_text(*value_node, src);
             if name.starts_with(|c: char| c.is_uppercase()) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index: sym_idx,
                     target_name: name,
                     kind: crate::types::EdgeKind::TypeRef,
@@ -843,9 +911,9 @@ fn infer_type_from_value(
                     module: None,
                     chain: None,
                     byte_offset: value_node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
         }
         // `new Repository()` — explicit instantiation (Scala 2 style).
@@ -854,7 +922,9 @@ fn infer_type_from_value(
             if let Some(type_node) = value_node.named_child(0) {
                 let name = helpers::node_text(type_node, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
-                    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
                         source_symbol_index: sym_idx,
                         target_name: name,
                         kind: crate::types::EdgeKind::TypeRef,
@@ -863,9 +933,9 @@ fn infer_type_from_value(
                         module: None,
                         chain: None,
                         byte_offset: value_node.start_byte() as u32,
-                                            namespace_segments: Vec::new(),
-                                            call_args: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
                 }
             }
         }
@@ -876,4 +946,3 @@ fn infer_type_from_value(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-

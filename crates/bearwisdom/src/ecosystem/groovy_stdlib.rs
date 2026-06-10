@@ -11,9 +11,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-use super::{
-    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-};
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, ExternalDepRoot, ExternalSourceLocator,
 };
@@ -26,20 +24,32 @@ const LANGUAGES: &[&str] = &["groovy"];
 pub struct GroovyStdlibEcosystem;
 
 impl Ecosystem for GroovyStdlibEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("groovy")
     }
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> { discover() }
+    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        discover()
+    }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         super::maven::walk_generic_jvm_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
+    fn supports_reachability(&self) -> bool {
+        true
+    }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(
         &self,
@@ -50,25 +60,37 @@ impl Ecosystem for GroovyStdlibEcosystem {
 }
 
 impl ExternalSourceLocator for GroovyStdlibEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> { discover() }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover()
+    }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         super::maven::walk_generic_jvm_root(dep)
     }
 }
 
 fn discover() -> Vec<ExternalDepRoot> {
-    let Some(home) = groovy_home() else { return Vec::new() };
+    let Some(home) = groovy_home() else {
+        return Vec::new();
+    };
     let lib = home.join("lib");
-    let Ok(entries) = std::fs::read_dir(&lib) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&lib) else {
+        return Vec::new();
+    };
     let cache_base = home.join("bearwisdom-groovy-stdlib-cache");
     let _ = std::fs::create_dir_all(&cache_base);
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         // groovy-X.Y.Z-sources.jar and groovy-all-X.Y.Z-sources.jar
-        if !name.starts_with("groovy") || !name.ends_with("-sources.jar") { continue }
+        if !name.starts_with("groovy") || !name.ends_with("-sources.jar") {
+            continue;
+        }
         let cache_dir = cache_base.join(name.trim_end_matches(".jar"));
         if !cache_dir.exists() || is_cache_stale(&path, &cache_dir) {
             if let Err(e) = extract_java_sources_jar(&path, &cache_dir) {
@@ -92,7 +114,9 @@ fn groovy_home() -> Option<PathBuf> {
     for var in ["GROOVY_HOME", "GROOVY_ROOT"] {
         if let Ok(v) = std::env::var(var) {
             let p = PathBuf::from(v);
-            if p.is_dir() { return Some(p); }
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
@@ -101,5 +125,7 @@ fn groovy_home() -> Option<PathBuf> {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<GroovyStdlibEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(GroovyStdlibEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(GroovyStdlibEcosystem))
+        .clone()
 }

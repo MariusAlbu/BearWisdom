@@ -202,8 +202,16 @@ fn scss_kebab_case_is_not_local() {
     // SCSS @include nb-install-component → kind=calls with kebab-case
     // name. SCSS variables are sigil-prefixed ($var); bare identifiers
     // are mixin/function calls, not locals.
-    assert!(!_test_looks_like_local("nb-install-component", "calls", "scss"));
-    assert!(!_test_looks_like_local("media-breakpoint-down", "calls", "scss"));
+    assert!(!_test_looks_like_local(
+        "nb-install-component",
+        "calls",
+        "scss"
+    ));
+    assert!(!_test_looks_like_local(
+        "media-breakpoint-down",
+        "calls",
+        "scss"
+    ));
     let cat = _test_classify_row(
         "nb-install-component",
         "calls",
@@ -242,8 +250,16 @@ fn kebab_case_outside_styles_also_not_local() {
     // Kebab-case names in TS/JS contexts are template tag names or web-
     // component selectors, never C-style locals. Same heuristic applies
     // independent of language.
-    assert!(!_test_looks_like_local("some-component", "calls", "typescript"));
-    assert!(!_test_looks_like_local("date-picker", "calls", "javascript"));
+    assert!(!_test_looks_like_local(
+        "some-component",
+        "calls",
+        "typescript"
+    ));
+    assert!(!_test_looks_like_local(
+        "date-picker",
+        "calls",
+        "javascript"
+    ));
 }
 
 #[test]
@@ -387,13 +403,28 @@ fn report_groups_and_samples() {
     let report = classify_unresolved(&db, 5).unwrap();
     assert_eq!(report.total, 4);
     assert_eq!(report.by_language.get("typescript").copied(), Some(4));
-    assert_eq!(report.by_category.get("local_false_positive").copied(), Some(2));
-    assert_eq!(report.by_category.get("external_api_unknown").copied(), Some(1));
-    assert_eq!(report.by_category.get("real_missing_symbol").copied(), Some(1));
+    assert_eq!(
+        report.by_category.get("local_false_positive").copied(),
+        Some(2)
+    );
+    assert_eq!(
+        report.by_category.get("external_api_unknown").copied(),
+        Some(1)
+    );
+    assert_eq!(
+        report.by_category.get("real_missing_symbol").copied(),
+        Some(1)
+    );
 
     // Top-N samples carry per-target counts.
-    let local_samples = report.samples.get("typescript.local_false_positive").unwrap();
-    let names: Vec<&str> = local_samples.iter().map(|s| s.target_name.as_str()).collect();
+    let local_samples = report
+        .samples
+        .get("typescript.local_false_positive")
+        .unwrap();
+    let names: Vec<&str> = local_samples
+        .iter()
+        .map(|s| s.target_name.as_str())
+        .collect();
     assert!(names.contains(&"i"));
     assert!(names.contains(&"j"));
 }

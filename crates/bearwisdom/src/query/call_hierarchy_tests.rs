@@ -7,19 +7,34 @@ fn setup(db: &Database) -> (i64, i64, i64) {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let fid = conn.last_insert_rowid();
 
-    for (name, qname, line) in [("Caller", "NS.Caller", 1i64), ("Service", "NS.Service", 10), ("Db", "NS.Db", 20)] {
+    for (name, qname, line) in [
+        ("Caller", "NS.Caller", 1i64),
+        ("Service", "NS.Service", 10),
+        ("Db", "NS.Db", 20),
+    ] {
         conn.execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col) VALUES (?1, ?2, ?3, 'method', ?4, 0)",
             rusqlite::params![fid, name, qname, line],
         ).unwrap();
     }
 
-    let caller:  i64 = conn.query_row("SELECT id FROM symbols WHERE name='Caller'",  [], |r| r.get(0)).unwrap();
-    let service: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Service'", [], |r| r.get(0)).unwrap();
-    let db_sym:  i64 = conn.query_row("SELECT id FROM symbols WHERE name='Db'",      [], |r| r.get(0)).unwrap();
+    let caller: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Caller'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let service: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Service'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let db_sym: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Db'", [], |r| r.get(0))
+        .unwrap();
 
     conn.execute("INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 5, 1.0)",  rusqlite::params![caller, service]).unwrap();
     conn.execute("INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 15, 1.0)", rusqlite::params![service, db_sym]).unwrap();
@@ -76,7 +91,8 @@ fn call_hierarchy_respects_limit() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('b.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let fid = conn.last_insert_rowid();
 
     conn.execute(
@@ -110,7 +126,8 @@ fn type_ref_edges_appear_in_call_hierarchy() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('c.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let fid = conn.last_insert_rowid();
 
     for (name, qname) in [("Src", "NS.Src"), ("Dst", "NS.Dst")] {
@@ -119,8 +136,12 @@ fn type_ref_edges_appear_in_call_hierarchy() {
             rusqlite::params![fid, name, qname],
         ).unwrap();
     }
-    let src: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Src'", [], |r| r.get(0)).unwrap();
-    let dst: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Dst'", [], |r| r.get(0)).unwrap();
+    let src: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Src'", [], |r| r.get(0))
+        .unwrap();
+    let dst: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Dst'", [], |r| r.get(0))
+        .unwrap();
 
     conn.execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'type_ref', 1.0)",
@@ -128,7 +149,11 @@ fn type_ref_edges_appear_in_call_hierarchy() {
     ).unwrap();
 
     let items = incoming_calls(&db, "Dst", 0).unwrap();
-    assert_eq!(items.len(), 1, "type_ref edges should appear as incoming calls (IDE-038)");
+    assert_eq!(
+        items.len(),
+        1,
+        "type_ref edges should appear as incoming calls (IDE-038)"
+    );
     assert_eq!(items[0].name, "Src");
 }
 
@@ -141,7 +166,8 @@ fn structural_edges_excluded_from_call_hierarchy() {
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('d.cs', 'h', 'csharp', 0)",
         [],
-    ).unwrap();
+    )
+    .unwrap();
     let fid = conn.last_insert_rowid();
 
     for (name, qname) in [("Child", "NS.Child"), ("Parent", "NS.Parent")] {
@@ -150,8 +176,16 @@ fn structural_edges_excluded_from_call_hierarchy() {
             rusqlite::params![fid, name, qname],
         ).unwrap();
     }
-    let child:  i64 = conn.query_row("SELECT id FROM symbols WHERE name='Child'",  [], |r| r.get(0)).unwrap();
-    let parent: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Parent'", [], |r| r.get(0)).unwrap();
+    let child: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Child'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let parent: i64 = conn
+        .query_row("SELECT id FROM symbols WHERE name='Parent'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
 
     conn.execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'inherits', 1.0)",
@@ -159,5 +193,8 @@ fn structural_edges_excluded_from_call_hierarchy() {
     ).unwrap();
 
     let items = incoming_calls(&db, "Parent", 0).unwrap();
-    assert!(items.is_empty(), "inherits edges should not appear in call hierarchy");
+    assert!(
+        items.is_empty(),
+        "inherits edges should not appear in call hierarchy"
+    );
 }

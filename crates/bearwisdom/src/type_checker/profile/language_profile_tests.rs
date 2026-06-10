@@ -40,20 +40,39 @@ fn kind_compat_table_respects_declared_kinds() {
     static TABLE: &[(EdgeKind, &[SymbolKind])] = &[
         (
             EdgeKind::Calls,
-            &[SymbolKind::Method, SymbolKind::Function, SymbolKind::Constructor],
+            &[
+                SymbolKind::Method,
+                SymbolKind::Function,
+                SymbolKind::Constructor,
+            ],
         ),
         (EdgeKind::Inherits, &[SymbolKind::Class]),
     ];
-    assert!(KindCompatibility::check(TABLE, EdgeKind::Calls, SymbolKind::Method));
-    assert!(!KindCompatibility::check(TABLE, EdgeKind::Calls, SymbolKind::Variable));
-    assert!(KindCompatibility::check(TABLE, EdgeKind::Inherits, SymbolKind::Class));
-    assert!(!KindCompatibility::check(TABLE, EdgeKind::Inherits, SymbolKind::Interface));
+    assert!(KindCompatibility::check(
+        TABLE,
+        EdgeKind::Calls,
+        SymbolKind::Method
+    ));
+    assert!(!KindCompatibility::check(
+        TABLE,
+        EdgeKind::Calls,
+        SymbolKind::Variable
+    ));
+    assert!(KindCompatibility::check(
+        TABLE,
+        EdgeKind::Inherits,
+        SymbolKind::Class
+    ));
+    assert!(!KindCompatibility::check(
+        TABLE,
+        EdgeKind::Inherits,
+        SymbolKind::Interface
+    ));
 }
 
 #[test]
 fn kind_compat_table_defaults_unlisted_edge_kinds_to_permissive() {
-    static TABLE: &[(EdgeKind, &[SymbolKind])] =
-        &[(EdgeKind::Calls, &[SymbolKind::Method])];
+    static TABLE: &[(EdgeKind, &[SymbolKind])] = &[(EdgeKind::Calls, &[SymbolKind::Method])];
     // TypeRef is not in the table → defaults to "any kind accepted".
     assert!(KindCompatibility::check(
         TABLE,

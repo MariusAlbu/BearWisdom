@@ -195,7 +195,10 @@ pub fn scan_global_registrations(
 
     // Scan entry-point files for app.use / Vue.use / app.component calls
     let entry_files = collect_entry_files(project_root, parsed_paths);
-    debug!("vue: scanning {} entry files for global registrations", entry_files.len());
+    debug!(
+        "vue: scanning {} entry files for global registrations",
+        entry_files.len()
+    );
 
     for file_path in &entry_files {
         let rel_path = file_path
@@ -477,15 +480,14 @@ fn extract_import_identifiers(line: &str) -> Option<Vec<String>> {
 
     // Handle `{ Bar, Baz as Z }` named imports — extract all identifiers
     // including renamed ones (`Foo as Bar` → we care about the local name `Bar`)
-    let (default_part, named_part) = if let (Some(lo), Some(hi)) =
-        (before_from.find('{'), before_from.rfind('}'))
-    {
-        let default_candidate = before_from[..lo].trim().trim_end_matches(',').trim();
-        let named = &before_from[lo + 1..hi];
-        (default_candidate, Some(named))
-    } else {
-        (before_from, None)
-    };
+    let (default_part, named_part) =
+        if let (Some(lo), Some(hi)) = (before_from.find('{'), before_from.rfind('}')) {
+            let default_candidate = before_from[..lo].trim().trim_end_matches(',').trim();
+            let named = &before_from[lo + 1..hi];
+            (default_candidate, Some(named))
+        } else {
+            (before_from, None)
+        };
 
     // Default / namespace import
     let default_part = default_part.trim_start_matches("type").trim();
@@ -512,12 +514,20 @@ fn extract_import_identifiers(line: &str) -> Option<Vec<String>> {
         }
     }
 
-    if ids.is_empty() { None } else { Some(ids) }
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
 }
 
 fn is_valid_ident(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
-        && s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_' || c == '$')
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        && s.chars()
+            .next()
+            .map_or(false, |c| c.is_alphabetic() || c == '_' || c == '$')
 }
 
 // ---------------------------------------------------------------------------
@@ -545,7 +555,11 @@ fn detect_app_use_calls(
         };
 
         // Extract first argument (identifier before `,` or `)`)
-        let arg = call.split(|c| c == ',' || c == ')' || c == '(').next().unwrap_or("").trim();
+        let arg = call
+            .split(|c| c == ',' || c == ')' || c == '(')
+            .next()
+            .unwrap_or("")
+            .trim();
         if arg.is_empty() {
             continue;
         }

@@ -18,7 +18,11 @@ fn cov_class_produces_class_symbol() {
     let src = "class Foo; end\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Foo");
-    assert!(sym.is_some(), "expected Class symbol 'Foo', got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Class symbol 'Foo', got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Class);
 }
 
@@ -28,7 +32,11 @@ fn cov_module_produces_interface_symbol() {
     let src = "module Bar; end\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "Bar");
-    assert!(sym.is_some(), "expected Interface symbol 'Bar', got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Interface symbol 'Bar', got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Interface);
 }
 
@@ -38,10 +46,15 @@ fn cov_method_top_level_produces_function_symbol() {
     let src = "def baz; end\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "baz");
-    assert!(sym.is_some(), "expected symbol for 'baz', got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected symbol for 'baz', got: {:?}",
+        r.symbols
+    );
     assert!(
         sym.unwrap().kind == SymbolKind::Function || sym.unwrap().kind == SymbolKind::Method,
-        "expected Function or Method, got: {:?}", sym.unwrap().kind
+        "expected Function or Method, got: {:?}",
+        sym.unwrap().kind
     );
 }
 
@@ -50,7 +63,11 @@ fn cov_method_inside_class_produces_method_symbol() {
     let src = "class Dog\n  def bark; end\nend\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "bark");
-    assert!(sym.is_some(), "expected Method symbol 'bark', got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol 'bark', got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Method);
 }
 
@@ -60,7 +77,11 @@ fn cov_singleton_method_produces_method_symbol() {
     let src = "class Repo\n  def self.find(id); end\nend\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "find");
-    assert!(sym.is_some(), "expected Method symbol 'find' from singleton_method, got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol 'find' from singleton_method, got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Method);
 }
 
@@ -70,11 +91,25 @@ fn cov_singleton_class_body_methods_extracted() {
     let src = "class Repo\n  class << self\n    def all; end\n  end\nend\n";
     let r = extract::extract(src);
     // The singleton_class itself should produce a Class symbol (named "<<self").
-    let sc_sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class && s.name.starts_with("<<"));
-    assert!(sc_sym.is_some(), "expected Class symbol for singleton_class, got: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    let sc_sym = r
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Class && s.name.starts_with("<<"));
+    assert!(
+        sc_sym.is_some(),
+        "expected Class symbol for singleton_class, got: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
     // Methods defined inside the singleton_class body must also be extracted.
     let sym = r.symbols.iter().find(|s| s.name == "all");
-    assert!(sym.is_some(), "expected method 'all' from singleton_class body, got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected method 'all' from singleton_class body, got: {:?}",
+        r.symbols
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -89,23 +124,36 @@ fn cov_singleton_class_body_methods_extracted() {
 fn cov_call_produces_calls_ref() {
     let src = "class Greeter\n  def greet\n    puts 'hello'\n  end\nend\n";
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"puts"), "expected Calls ref for 'puts', got: {calls:?}");
+    assert!(
+        calls.contains(&"puts"),
+        "expected Calls ref for 'puts', got: {calls:?}"
+    );
 }
 
 #[test]
 fn cov_call_with_receiver_produces_calls_ref() {
     let src = "class Order\n  def process\n    items.each { |i| i.save }\n  end\nend\n";
     let r = extract::extract(src);
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::Calls)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(calls.contains(&"each"), "expected Calls ref for 'each', got: {calls:?}");
-    assert!(calls.contains(&"save"), "expected Calls ref for 'save', got: {calls:?}");
+    assert!(
+        calls.contains(&"each"),
+        "expected Calls ref for 'each', got: {calls:?}"
+    );
+    assert!(
+        calls.contains(&"save"),
+        "expected Calls ref for 'save', got: {calls:?}"
+    );
 }
 
 /// Direct `call` at module top level (not inside a method) → Calls ref
@@ -135,12 +183,16 @@ rescue ActiveRecord::RecordNotFound => e
 end
 "#;
     let r = extract::extract(src);
-    let type_refs: Vec<&str> = r.refs.iter()
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
     assert!(
-        type_refs.iter().any(|n| n.contains("RecordNotFound") || n.contains("ActiveRecord")),
+        type_refs
+            .iter()
+            .any(|n| n.contains("RecordNotFound") || n.contains("ActiveRecord")),
         "expected TypeRef for ActiveRecord::RecordNotFound scope_resolution, got: {type_refs:?}"
     );
 }
@@ -151,12 +203,16 @@ fn cov_scope_resolution_in_superclass_produces_inherits_ref() {
     let src = "class Post < ActiveRecord::Base\nend\n";
     let r = extract::extract(src);
     // The extractor emits Inherits for the superclass constant text.
-    let inherits: Vec<&str> = r.refs.iter()
+    let inherits: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::Inherits)
         .map(|r| r.target_name.as_str())
         .collect();
     assert!(
-        inherits.iter().any(|n| n.contains("Base") || n.contains("ActiveRecord")),
+        inherits
+            .iter()
+            .any(|n| n.contains("Base") || n.contains("ActiveRecord")),
         "expected Inherits ref for ActiveRecord::Base, got: {inherits:?}"
     );
 }
@@ -170,7 +226,9 @@ fn cov_scope_resolution_in_superclass_produces_inherits_ref() {
 fn cov_constant_in_rescue_produces_type_ref() {
     let src = "def run\n  do_work\nrescue StandardError => e\n  nil\nend\n";
     let r = extract::extract(src);
-    let type_refs: Vec<&str> = r.refs.iter()
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
@@ -184,7 +242,9 @@ fn cov_constant_in_rescue_produces_type_ref() {
 fn cov_constant_in_superclass_produces_inherits_ref() {
     let src = "class Dog < Animal\nend\n";
     let r = extract::extract(src);
-    let inherits: Vec<&str> = r.refs.iter()
+    let inherits: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::Inherits)
         .map(|r| r.target_name.as_str())
         .collect();
@@ -200,11 +260,16 @@ fn cov_nested_calls_in_class_body_all_captured() {
     let src = "class Svc\n  setup(Logger.new(stdout))\nend\n";
     let r = extract::extract(src);
     // setup and new (or Logger) must appear
-    let calls: Vec<&str> = r.refs.iter()
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::Calls || r.kind == EdgeKind::Instantiates)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(!calls.is_empty(), "expected at least one call ref from nested call, got: {calls:?}");
+    assert!(
+        !calls.is_empty(),
+        "expected at least one call ref from nested call, got: {calls:?}"
+    );
 }
 
 /// `scope_resolution` in a general expression context → TypeRef.
@@ -212,12 +277,16 @@ fn cov_nested_calls_in_class_body_all_captured() {
 fn cov_scope_resolution_in_body_produces_type_ref() {
     let src = "class C\n  def go\n    x = ActiveRecord::Base.connection\n  end\nend\n";
     let r = extract::extract(src);
-    let type_refs: Vec<&str> = r.refs.iter()
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
     assert!(
-        type_refs.iter().any(|n| n.contains("Base") || n.contains("ActiveRecord")),
+        type_refs
+            .iter()
+            .any(|n| n.contains("Base") || n.contains("ActiveRecord")),
         "expected TypeRef for ActiveRecord::Base in body, got: {type_refs:?}"
     );
 }
@@ -227,7 +296,9 @@ fn cov_scope_resolution_in_body_produces_type_ref() {
 fn cov_constant_in_body_produces_type_ref() {
     let src = "def setup\n  adapter = JSONAdapter\nend\n";
     let r = extract::extract(src);
-    let type_refs: Vec<&str> = r.refs.iter()
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|r| r.kind == EdgeKind::TypeRef)
         .map(|r| r.target_name.as_str())
         .collect();
@@ -247,7 +318,11 @@ fn cov_initialize_produces_constructor_symbol() {
     let src = "class Person\n  def initialize(name)\n    @name = name\n  end\nend\n";
     let r = extract::extract(src);
     let sym = r.symbols.iter().find(|s| s.name == "initialize");
-    assert!(sym.is_some(), "expected Constructor symbol 'initialize', got: {:?}", r.symbols);
+    assert!(
+        sym.is_some(),
+        "expected Constructor symbol 'initialize', got: {:?}",
+        r.symbols
+    );
     assert_eq!(sym.unwrap().kind, SymbolKind::Constructor);
 }
 
@@ -260,11 +335,17 @@ fn cov_initialize_produces_constructor_symbol() {
 fn cov_attr_reader_produces_property_symbol() {
     let src = "class User\n  attr_reader :name\nend\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "name" && s.kind == SymbolKind::Property);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "name" && s.kind == SymbolKind::Property);
     assert!(
         sym.is_some(),
         "expected Property symbol 'name' from attr_reader, got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -273,11 +354,17 @@ fn cov_attr_reader_produces_property_symbol() {
 fn cov_attr_accessor_produces_property_symbol() {
     let src = "class Account\n  attr_accessor :email\nend\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "email" && s.kind == SymbolKind::Property);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "email" && s.kind == SymbolKind::Property);
     assert!(
         sym.is_some(),
         "expected Property symbol 'email' from attr_accessor, got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -286,11 +373,17 @@ fn cov_attr_accessor_produces_property_symbol() {
 fn cov_attr_writer_produces_property_symbol() {
     let src = "class Session\n  attr_writer :token\nend\n";
     let r = extract::extract(src);
-    let sym = r.symbols.iter().find(|s| s.name == "token" && s.kind == SymbolKind::Property);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "token" && s.kind == SymbolKind::Property);
     assert!(
         sym.is_some(),
         "expected Property symbol 'token' from attr_writer, got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -303,7 +396,9 @@ fn cov_attr_writer_produces_property_symbol() {
 fn cov_include_produces_implements_ref() {
     let src = "class Report\n  include Serializable\nend\n";
     let r = extract::extract(src);
-    let impls: Vec<&str> = r.refs.iter()
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Implements)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -318,7 +413,9 @@ fn cov_include_produces_implements_ref() {
 fn cov_extend_produces_implements_ref() {
     let src = "class Widget\n  extend ClassMethods\nend\n";
     let r = extract::extract(src);
-    let impls: Vec<&str> = r.refs.iter()
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Implements)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -333,7 +430,9 @@ fn cov_extend_produces_implements_ref() {
 fn cov_prepend_produces_implements_ref() {
     let src = "class Order\n  prepend Auditable\nend\n";
     let r = extract::extract(src);
-    let impls: Vec<&str> = r.refs.iter()
+    let impls: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Implements)
         .map(|rf| rf.target_name.as_str())
         .collect();
@@ -352,14 +451,19 @@ fn cov_prepend_produces_implements_ref() {
 fn cov_require_produces_imports_ref() {
     let src = "require 'json'\n";
     let r = extract::extract(src);
-    let imports: Vec<&str> = r.refs.iter()
+    let imports: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
         !imports.is_empty(),
         "expected Imports ref from require 'json', got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -368,14 +472,19 @@ fn cov_require_produces_imports_ref() {
 fn cov_require_relative_produces_imports_ref() {
     let src = "require_relative 'base'\n";
     let r = extract::extract(src);
-    let imports: Vec<&str> = r.refs.iter()
+    let imports: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Imports)
         .map(|rf| rf.target_name.as_str())
         .collect();
     assert!(
         !imports.is_empty(),
         "expected Imports ref from require_relative 'base', got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -388,7 +497,9 @@ fn cov_require_relative_produces_imports_ref() {
 fn cov_new_call_produces_instantiates_ref() {
     let src = "class Builder\n  def run\n    obj = Payload.new(1, 2)\n  end\nend\n";
     let r = extract::extract(src);
-    let insts: Vec<&str> = r.refs.iter()
+    let insts: Vec<&str> = r
+        .refs
+        .iter()
         .filter(|rf| rf.kind == EdgeKind::Instantiates)
         .map(|rf| rf.target_name.as_str())
         .collect();

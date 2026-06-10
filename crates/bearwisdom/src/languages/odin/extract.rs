@@ -16,12 +16,17 @@
 //   TypeRef    — using_statement
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
     let mut parser = Parser::new();
-    if parser.set_language(&tree_sitter_odin::LANGUAGE.into()).is_err() {
+    if parser
+        .set_language(&tree_sitter_odin::LANGUAGE.into())
+        .is_err()
+    {
         return ExtractionResult::empty();
     }
 
@@ -146,18 +151,20 @@ fn extract_import(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 
     let target = path
         .as_ref()
         .map(|p| p.trim_matches('"').to_string())
         .unwrap_or_else(|| name.clone());
 
-    refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: sym_idx,
         target_name: target,
         kind: EdgeKind::Imports,
@@ -166,9 +173,9 @@ fn extract_import(
         module: None,
         chain: None,
         byte_offset: node.start_byte() as u32,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-});
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -214,12 +221,12 @@ fn extract_procedure(
         doc_comment: None,
         scope_path: None,
         parent_index,
-            byte_offset: 0,
-    declared_type: None,
-    return_type: None,
-    param_types: Vec::new(),
-    generic_params: Vec::new(),
-});
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
 
     // Extract calls from the procedure body
     extract_calls_in_subtree(node, src, idx, refs);
@@ -265,22 +272,18 @@ fn extract_typed_decl(
         scope_path: None,
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-});
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Variable / constant declarations
 // ---------------------------------------------------------------------------
 
-fn extract_var_decl(
-    node: Node,
-    src: &[u8],
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_var_decl(node: Node, src: &[u8], symbols: &mut Vec<ExtractedSymbol>) {
     // Collect all identifier children (for grouped: `a, b :: value`)
     let names = collect_identifiers(node, src);
     if names.is_empty() {
@@ -307,20 +310,16 @@ fn extract_var_decl(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
 /// `Name :: Type` — for type alias / struct / enum / union used as constant type decl
-fn extract_const_type_decl(
-    node: Node,
-    src: &[u8],
-    symbols: &mut Vec<ExtractedSymbol>,
-) {
+fn extract_const_type_decl(node: Node, src: &[u8], symbols: &mut Vec<ExtractedSymbol>) {
     let names = collect_identifiers(node, src);
     for name in names {
         let vis = if name.starts_with('_') {
@@ -342,11 +341,11 @@ fn extract_const_type_decl(
             scope_path: None,
             parent_index: None,
             byte_offset: 0,
-                    declared_type: None,
+            declared_type: None,
             return_type: None,
             param_types: Vec::new(),
             generic_params: Vec::new(),
-});
+        });
     }
 }
 
@@ -375,16 +374,13 @@ fn collect_identifiers(node: Node, src: &[u8]) -> Vec<String> {
 // using_statement → TypeRef
 // ---------------------------------------------------------------------------
 
-fn extract_using(
-    node: Node,
-    src: &[u8],
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
+fn extract_using(node: Node, src: &[u8], source_symbol_index: usize, refs: &mut Vec<ExtractedRef>) {
     // `using pkg` or `using pkg.Type` — grab the identifier after "using"
     if let Some(id) = find_first_identifier(node, src) {
         if !id.is_empty() {
-            refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
                 source_symbol_index,
                 target_name: id,
                 kind: EdgeKind::TypeRef,
@@ -393,9 +389,9 @@ fn extract_using(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-});
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
         }
     }
 }
@@ -424,7 +420,9 @@ fn extract_calls_in_subtree(
             let target = target.rsplit('.').next().unwrap_or(&target).to_string();
 
             if !target.is_empty() && target != "(" {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: target,
                     kind: EdgeKind::Calls,
@@ -433,9 +431,9 @@ fn extract_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Recurse into arguments
             extract_calls_in_subtree(child, src, source_symbol_index, refs);

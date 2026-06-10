@@ -11,7 +11,10 @@ fn id_matches_language_extractor() {
 
 #[test]
 fn structural_choices_match_python_semantics() {
-    assert_eq!(PYTHON_PROFILE.supertype_discovery, SupertypeDiscovery::Explicit);
+    assert_eq!(
+        PYTHON_PROFILE.supertype_discovery,
+        SupertypeDiscovery::Explicit
+    );
     assert_eq!(PYTHON_PROFILE.dispatch_axis, DispatchAxis::Receiver);
     assert!(PYTHON_PROFILE.has_generics);
     assert!(!PYTHON_PROFILE.has_sum_types);
@@ -39,7 +42,10 @@ fn primitives_include_python_built_in_types() {
         .map(|(n, _)| *n)
         .collect();
     for canonical in ["str", "int", "float", "bool", "bytes", "None"] {
-        assert!(names.contains(&canonical), "missing Python primitive: {canonical}");
+        assert!(
+            names.contains(&canonical),
+            "missing Python primitive: {canonical}"
+        );
     }
 }
 

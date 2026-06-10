@@ -72,7 +72,12 @@ fn extract_parameter_and_return_attributes(
                         let mut p_cursor = param.walk();
                         for p_child in param.children(&mut p_cursor) {
                             if p_child.kind() == "attribute_list" {
-                                extract_from_attribute_list(&p_child, src, source_symbol_index, refs);
+                                extract_from_attribute_list(
+                                    &p_child,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
                             }
                         }
                     }
@@ -108,7 +113,9 @@ fn extract_from_attribute_list(
     for child in attr_list.children(&mut cursor) {
         if child.kind() == "attribute" {
             if let Some((name, first_arg)) = parse_attribute(&child, src) {
-                refs.push(ExtractedRef { is_import_binding: false, is_reexport: false,
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
                     source_symbol_index,
                     target_name: name,
                     kind: EdgeKind::TypeRef,
@@ -117,9 +124,9 @@ fn extract_from_attribute_list(
                     module: first_arg,
                     chain: None,
                     byte_offset: child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-});
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
             }
             // Also extract TypeRefs from attribute arguments (typeof, generic_name, cast, etc.)
             extract_attribute_arg_type_refs(&child, src, source_symbol_index, refs);
@@ -158,9 +165,9 @@ fn parse_attribute(attr: &Node, src: &[u8]) -> Option<(String, Option<String>)> 
     } else {
         // Fallback: walk children for the first identifier/qualified_name.
         let mut cursor = attr.walk();
-        let candidate = attr.children(&mut cursor).find(|c| {
-            matches!(c.kind(), "identifier" | "qualified_name" | "generic_name")
-        });
+        let candidate = attr
+            .children(&mut cursor)
+            .find(|c| matches!(c.kind(), "identifier" | "qualified_name" | "generic_name"));
         match candidate {
             Some(n) => {
                 let raw = node_text(n, src);
@@ -209,11 +216,12 @@ fn try_extract_string_from_node(node: &Node, src: &[u8]) -> Option<String> {
         "string_literal" | "verbatim_string_literal" => {
             let raw = node_text(*node, src);
             // Strip @"..." or "..." → inner content.
-            let inner = raw
-                .trim_start_matches('@')
-                .trim_matches('"')
-                .to_string();
-            if inner.is_empty() { None } else { Some(inner) }
+            let inner = raw.trim_start_matches('@').trim_matches('"').to_string();
+            if inner.is_empty() {
+                None
+            } else {
+                Some(inner)
+            }
         }
         _ => None,
     }

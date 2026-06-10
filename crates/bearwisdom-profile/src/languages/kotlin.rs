@@ -34,7 +34,12 @@ pub static KOTLIN: LanguageDescriptor = LanguageDescriptor {
     filenames: &[],
     aliases: &["kt"],
     exclude_dirs: &["build", ".gradle", "out"],
-    entry_point_files: &["build.gradle.kts", "build.gradle", "settings.gradle.kts", "pom.xml"],
+    entry_point_files: &[
+        "build.gradle.kts",
+        "build.gradle",
+        "settings.gradle.kts",
+        "pom.xml",
+    ],
     sdk: Some(SdkDescriptor {
         name: "Kotlin",
         version_command: "kotlin",

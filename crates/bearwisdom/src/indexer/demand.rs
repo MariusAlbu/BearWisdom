@@ -124,7 +124,9 @@ impl DemandSet {
 fn build_alias_to_module(refs: &[ExtractedRef]) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for r in refs {
-        let Some(module) = r.module.as_deref() else { continue };
+        let Some(module) = r.module.as_deref() else {
+            continue;
+        };
         if !is_bare_specifier(module) {
             continue;
         }
@@ -138,11 +140,7 @@ fn build_alias_to_module(refs: &[ExtractedRef]) -> HashMap<String, String> {
     out
 }
 
-fn add_from_ref(
-    set: &mut DemandSet,
-    r: &ExtractedRef,
-    alias_to_module: &HashMap<String, String>,
-) {
+fn add_from_ref(set: &mut DemandSet, r: &ExtractedRef, alias_to_module: &HashMap<String, String>) {
     // Case 1: ref has an explicit module and the module is bare — add
     // target_name to that module's demand.
     if let Some(module) = r.module.as_deref() {
@@ -225,7 +223,9 @@ mod tests {
     };
 
     fn mk_ref(target: &str, kind: EdgeKind, module: Option<&str>) -> ExtractedRef {
-        ExtractedRef { is_import_binding: false, is_reexport: false,
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: target.to_string(),
             kind,
@@ -240,7 +240,9 @@ mod tests {
     }
 
     fn mk_ref_with_chain(target: &str, root: &str) -> ExtractedRef {
-        ExtractedRef { is_import_binding: false, is_reexport: false,
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
             source_symbol_index: 0,
             target_name: target.to_string(),
             kind: EdgeKind::Calls,
@@ -256,12 +258,12 @@ mod tests {
                         declared_type: None,
                         type_args: Vec::new(),
                         optional_chaining: false,
-                                            byte_offset: 0,
-    declared_type_id: None,
-    is_call: false,
-    call_args: Vec::new(),
-    type_arg_ids: Vec::new(),
-},
+                        byte_offset: 0,
+                        declared_type_id: None,
+                        is_call: false,
+                        call_args: Vec::new(),
+                        type_arg_ids: Vec::new(),
+                    },
                     ChainSegment {
                         name: target.to_string(),
                         node_kind: "property_identifier".into(),
@@ -269,12 +271,12 @@ mod tests {
                         declared_type: None,
                         type_args: Vec::new(),
                         optional_chaining: false,
-                                            byte_offset: 0,
-    declared_type_id: None,
-    is_call: false,
-    call_args: Vec::new(),
-    type_arg_ids: Vec::new(),
-},
+                        byte_offset: 0,
+                        declared_type_id: None,
+                        is_call: false,
+                        call_args: Vec::new(),
+                        type_arg_ids: Vec::new(),
+                    },
                 ],
             }),
             namespace_segments: Vec::new(),

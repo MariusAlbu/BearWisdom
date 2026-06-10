@@ -4,8 +4,8 @@
 //! `grammar()` returns `None`; extraction uses a line-oriented scanner that
 //! recognises COBOL's division/section/paragraph structure.
 
-pub mod keywords;
 pub mod extract;
+pub mod keywords;
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
@@ -65,14 +65,12 @@ impl LanguagePlugin for CobolPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "perform_statement",
-            "call_statement",
-            "copy_statement",
-        ]
+        &["perform_statement", "call_statement", "copy_statement"]
     }
 
-    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords::KEYWORDS
+    }
 
     fn profile(
         &self,
@@ -82,8 +80,7 @@ impl LanguagePlugin for CobolPlugin {
 
     fn language_hooks(
         &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks>
-    {
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::COBOL_HOOKS)
     }
 }

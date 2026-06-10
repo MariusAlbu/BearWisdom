@@ -16,13 +16,7 @@ fn insert_file(db: &Database, path: &str) -> i64 {
     db.conn().last_insert_rowid()
 }
 
-fn insert_type(
-    db: &Database,
-    file_id: i64,
-    name: &str,
-    qname: &str,
-    kind: &str,
-) -> i64 {
+fn insert_type(db: &Database, file_id: i64, name: &str, qname: &str, kind: &str) -> i64 {
     db.conn()
         .execute(
             "INSERT INTO symbols \
@@ -34,12 +28,7 @@ fn insert_type(
     db.conn().last_insert_rowid()
 }
 
-fn insert_method(
-    db: &Database,
-    file_id: i64,
-    name: &str,
-    parent_qname: &str,
-) -> i64 {
+fn insert_method(db: &Database, file_id: i64, name: &str, parent_qname: &str) -> i64 {
     let qname = format!("{parent_qname}::{name}");
     db.conn()
         .execute(
@@ -156,8 +145,15 @@ fn transitive_inheritance_reaches_grandchild() {
     synthesize_dispatch_edges(&db).unwrap();
     let tgts = dispatch_targets(&db, base_run);
     // Both Mid::run and Leaf::run are valid dispatch targets from Base::run.
-    assert!(tgts.contains(&leaf_run), "transitive grandchild must be a dispatch target");
-    assert_eq!(tgts.len(), 2, "expected dispatch to both Mid::run and Leaf::run");
+    assert!(
+        tgts.contains(&leaf_run),
+        "transitive grandchild must be a dispatch target"
+    );
+    assert_eq!(
+        tgts.len(),
+        2,
+        "expected dispatch to both Mid::run and Leaf::run"
+    );
 }
 
 #[test]
@@ -277,7 +273,9 @@ fn rerun_clears_stale_edges_when_subclass_deleted() {
     assert_eq!(count_dispatch_edges(&db), 1);
 
     // Drop the inheritance edge — re-run must clear the dispatch row.
-    db.conn().execute("DELETE FROM edges WHERE kind = 'implements'", []).unwrap();
+    db.conn()
+        .execute("DELETE FROM edges WHERE kind = 'implements'", [])
+        .unwrap();
     synthesize_dispatch_edges(&db).unwrap();
     assert_eq!(count_dispatch_edges(&db), 0);
 }

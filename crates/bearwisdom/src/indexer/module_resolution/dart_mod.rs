@@ -83,7 +83,11 @@ fn join_paths(dir: &str, tail: &str) -> String {
     if dir.is_empty() || dir == "." {
         tail
     } else {
-        format!("{}/{}", dir.trim_end_matches('/'), tail.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            dir.trim_end_matches('/'),
+            tail.trim_start_matches('/')
+        )
     }
 }
 

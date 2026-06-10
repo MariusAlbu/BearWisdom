@@ -19,5 +19,9 @@ fn graphql_type_ref_accepts_type_kinds_rejects_callables() {
     ] {
         assert!(KindCompatibility::check(t, EdgeKind::TypeRef, k));
     }
-    assert!(!KindCompatibility::check(t, EdgeKind::TypeRef, SymbolKind::Function));
+    assert!(!KindCompatibility::check(
+        t,
+        EdgeKind::TypeRef,
+        SymbolKind::Function
+    ));
 }

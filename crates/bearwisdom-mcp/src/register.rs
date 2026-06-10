@@ -56,8 +56,7 @@ pub fn register(project_root: &Path) -> Result<()> {
     });
 
     // Write back with pretty-printing
-    let output =
-        serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
+    let output = serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
     std::fs::write(&settings_file, output).context("Failed to write settings.local.json")?;
 
     info!("Registered MCP server in {}", settings_file.display());
@@ -82,8 +81,8 @@ pub fn unregister(project_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(&settings_file)
-        .context("Failed to read settings.local.json")?;
+    let content =
+        std::fs::read_to_string(&settings_file).context("Failed to read settings.local.json")?;
     let mut settings: serde_json::Value =
         serde_json::from_str(&content).context("Failed to parse settings.local.json")?;
 
@@ -93,15 +92,12 @@ pub fn unregister(project_root: &Path) -> Result<()> {
         .and_then(|v| v.as_object_mut())
     {
         if servers.remove("bearwisdom").is_some() {
-            let output = serde_json::to_string_pretty(&settings)
-                .context("Failed to serialize settings")?;
+            let output =
+                serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
             std::fs::write(&settings_file, output)
                 .context("Failed to write settings.local.json")?;
             info!("Unregistered MCP server from {}", settings_file.display());
-            eprintln!(
-                "Unregistered bearwisdom from {}",
-                settings_file.display()
-            );
+            eprintln!("Unregistered bearwisdom from {}", settings_file.display());
         } else {
             eprintln!("bearwisdom was not registered — nothing to remove");
         }

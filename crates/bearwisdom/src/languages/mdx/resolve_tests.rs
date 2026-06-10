@@ -1,9 +1,9 @@
 use super::hooks::MdxHooks;
 use super::profile::MDX_PROFILE;
-use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -26,12 +26,7 @@ fn run_resolve(
     .resolve_all_with_profile(&MDX_PROFILE)
 }
 
-fn make_symbol(
-    name: &str,
-    qname: &str,
-    kind: SymbolKind,
-    scope: Option<&str>,
-) -> ExtractedSymbol {
+fn make_symbol(name: &str, qname: &str, kind: SymbolKind, scope: Option<&str>) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -46,15 +41,17 @@ fn make_symbol(
         scope_path: scope.map(|s| s.to_string()),
         parent_index: None,
         byte_offset: 0,
-            declared_type: None,
+        declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
-}
+    }
 }
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind,
@@ -64,12 +61,14 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
-    ExtractedRef { is_import_binding: false, is_reexport: false,
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
         source_symbol_index: source_idx,
         target_name: target.to_string(),
         kind: EdgeKind::TypeRef,
@@ -79,8 +78,8 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         byte_offset: if line > 0 { 1 } else { 0 },
         namespace_segments: Vec::new(),
         call_args: Vec::new(),
-            col: 0,
-}
+        col: 0,
+    }
 }
 
 fn make_file(
@@ -176,12 +175,7 @@ fn markdown_link_imports_route_through_markdown_resolver() {
     let target = make_file(
         "docs/api/overview.md",
         "markdown",
-        vec![make_symbol(
-            "overview",
-            "overview",
-            SymbolKind::Class,
-            None,
-        )],
+        vec![make_symbol("overview", "overview", SymbolKind::Class, None)],
         vec![],
     );
     let mdx = make_file(

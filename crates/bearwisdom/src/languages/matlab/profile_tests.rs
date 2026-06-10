@@ -11,10 +11,8 @@
 // =============================================================================
 
 use super::MATLAB_PROFILE;
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
-use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolIndex,
-};
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -139,7 +137,11 @@ fn sym_id(id_map: &HashMap<(String, String), i64>, file: &str, name: &str) -> i6
 
 fn resolve_call(file_path: &str, target: &str, all: &[&ParsedFile]) -> Option<Resolution> {
     let (index, _) = build_index(all);
-    let caller = make_file(file_path, vec![make_sym("caller", SymbolKind::Function)], vec![make_call(target)]);
+    let caller = make_file(
+        file_path,
+        vec![make_sym("caller", SymbolKind::Function)],
+        vec![make_call(target)],
+    );
     let file_ctx = FileContext {
         file_path: file_path.to_string(),
         language: "matlab".to_string(),
@@ -168,9 +170,21 @@ fn matlab_bare_call_binds_cross_dir_internal_via_namespaceless_global() {
     // ambient toolbox stub under ext:. With no same-dir sibling for the caller,
     // the bare call falls dead-last to the first-match-by-name rung and binds
     // an INTERNAL symbol, never the external stub.
-    let a = make_file("algorithms/NSGAII/NDSort.m", vec![make_sym("NDSort", SymbolKind::Function)], vec![]);
-    let b = make_file("algorithms/SPEA2/NDSort.m", vec![make_sym("NDSort", SymbolKind::Function)], vec![]);
-    let ext = make_file("ext:matlab:toolbox/NDSort.m", vec![make_sym("NDSort", SymbolKind::Function)], vec![]);
+    let a = make_file(
+        "algorithms/NSGAII/NDSort.m",
+        vec![make_sym("NDSort", SymbolKind::Function)],
+        vec![],
+    );
+    let b = make_file(
+        "algorithms/SPEA2/NDSort.m",
+        vec![make_sym("NDSort", SymbolKind::Function)],
+        vec![],
+    );
+    let ext = make_file(
+        "ext:matlab:toolbox/NDSort.m",
+        vec![make_sym("NDSort", SymbolKind::Function)],
+        vec![],
+    );
     let (id_a, id_b, ext_id) = {
         let (_, id_map) = build_index(&[&a, &b, &ext]);
         (
@@ -182,7 +196,10 @@ fn matlab_bare_call_binds_cross_dir_internal_via_namespaceless_global() {
     let res = resolve_call("algorithms/MOEAD/MOEAD.m", "NDSort", &[&a, &b, &ext])
         .expect("cross-dir bare call binds an internal function");
     assert_eq!(res.strategy, "default_namespaceless_global");
-    assert_ne!(res.target_symbol_id, ext_id, "must not bind the ext toolbox stub");
+    assert_ne!(
+        res.target_symbol_id, ext_id,
+        "must not bind the ext toolbox stub"
+    );
     assert!(
         res.target_symbol_id == id_a || res.target_symbol_id == id_b,
         "binds an internal NDSort (got {})",
@@ -194,14 +211,32 @@ fn matlab_bare_call_binds_cross_dir_internal_via_namespaceless_global() {
 fn matlab_same_dir_sibling_wins_over_cross_dir() {
     // When a same-folder sibling exists, MATLAB path precedence binds it first:
     // the same-dir rung runs ahead of the namespaceless-global rung.
-    let sibling = make_file("algorithms/NSGAII/CalFitness.m", vec![make_sym("CalFitness", SymbolKind::Function)], vec![]);
-    let other = make_file("algorithms/SPEA2/CalFitness.m", vec![make_sym("CalFitness", SymbolKind::Function)], vec![]);
+    let sibling = make_file(
+        "algorithms/NSGAII/CalFitness.m",
+        vec![make_sym("CalFitness", SymbolKind::Function)],
+        vec![],
+    );
+    let other = make_file(
+        "algorithms/SPEA2/CalFitness.m",
+        vec![make_sym("CalFitness", SymbolKind::Function)],
+        vec![],
+    );
     let (id_sibling, _) = {
         let (_, id_map) = build_index(&[&sibling, &other]);
-        (sym_id(&id_map, "algorithms/NSGAII/CalFitness.m", "CalFitness"), ())
+        (
+            sym_id(&id_map, "algorithms/NSGAII/CalFitness.m", "CalFitness"),
+            (),
+        )
     };
-    let res = resolve_call("algorithms/NSGAII/main.m", "CalFitness", &[&sibling, &other])
-        .expect("same-dir sibling resolves");
+    let res = resolve_call(
+        "algorithms/NSGAII/main.m",
+        "CalFitness",
+        &[&sibling, &other],
+    )
+    .expect("same-dir sibling resolves");
     assert_eq!(res.strategy, "default_same_dir");
-    assert_eq!(res.target_symbol_id, id_sibling, "binds the same-folder sibling");
+    assert_eq!(
+        res.target_symbol_id, id_sibling,
+        "binds the same-folder sibling"
+    );
 }

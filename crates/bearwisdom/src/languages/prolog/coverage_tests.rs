@@ -21,9 +21,14 @@ fn cov_fact_produces_function_symbol() {
     // Names are in functor/arity format: animal/1
     let r = extract::extract("animal(dog).\nanimal(cat).\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name.starts_with("animal")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name.starts_with("animal")),
         "Prolog fact should produce Function(animal/N); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -33,9 +38,14 @@ fn cov_rule_produces_function_symbol() {
     // Name is functor/arity: foo/1
     let r = extract::extract("foo(X) :- bar(X).\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name.starts_with("foo")),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Function && s.name.starts_with("foo")),
         "Prolog rule should produce Function(foo/N); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -48,9 +58,14 @@ fn cov_rule_body_produces_calls() {
     // Goals in a rule body → Calls edges
     let r = extract::extract("parent(X, Y) :- mother(X, Y).\n");
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "mother"),
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "mother"),
         "rule body goal should produce Calls(mother); got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -61,7 +76,10 @@ fn cov_use_module_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "use_module should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -74,9 +92,14 @@ fn cov_module_declaration_produces_namespace() {
     // `:- module(mymod, [pred/1]).` → Namespace symbol
     let r = extract::extract(":- module(mymod, [pred/1]).\n");
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace && s.name == "mymod"),
+        r.symbols
+            .iter()
+            .any(|s| s.kind == SymbolKind::Namespace && s.name == "mymod"),
         "module declaration should produce Namespace(mymod); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -89,7 +112,10 @@ fn cov_nullary_fact_produces_function_symbol() {
             .iter()
             .any(|s| s.kind == SymbolKind::Function && s.name.starts_with("connected")),
         "nullary fact should produce Function(connected/0); got: {:?}",
-        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -104,7 +130,10 @@ fn cov_ensure_loaded_library_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "ensure_loaded(library(...)) should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -115,7 +144,10 @@ fn cov_ensure_loaded_path_produces_imports() {
     assert!(
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
         "ensure_loaded(path) should produce Imports ref; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -128,7 +160,10 @@ fn cov_use_module_path_produces_imports() {
             .iter()
             .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("utils")),
         "use_module(path) should produce Imports ref to path; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -136,11 +171,18 @@ fn cov_use_module_path_produces_imports() {
 #[test]
 fn cov_multi_goal_body_produces_multiple_calls() {
     let r = extract::extract("grandparent(X, Z) :- parent(X, Y), parent(Y, Z).\n");
-    let calls: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.len() >= 2,
         "rule with two body goals should produce at least 2 Calls refs; got: {:?}",
-        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -179,7 +221,11 @@ fn cov_list_unification_does_not_emit_call() {
 fn cov_operator_goals_skipped() {
     let src = "p(X, Y, Z) :- X is Y + Z, Y > 0, _Tmp = X.\n";
     let r = extract::extract(src);
-    let calls: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).collect();
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .collect();
     assert!(
         calls.is_empty(),
         "operator-style goals should produce zero Calls refs; got: {:?}",

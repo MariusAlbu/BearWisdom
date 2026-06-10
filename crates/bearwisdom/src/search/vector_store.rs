@@ -70,9 +70,7 @@ pub fn upsert_vectors(conn: &Connection, vectors: &[(i64, &[f32])]) -> Result<u3
     }
 
     let mut stmt = conn
-        .prepare_cached(
-            "INSERT OR REPLACE INTO vec_chunks(chunk_id, embedding) VALUES (?1, ?2)",
-        )
+        .prepare_cached("INSERT OR REPLACE INTO vec_chunks(chunk_id, embedding) VALUES (?1, ?2)")
         .context("Failed to prepare vec upsert")?;
 
     let mut count = 0u32;
@@ -155,8 +153,7 @@ pub fn vector_count(conn: &Connection) -> Result<u32> {
     if !vec_table_exists(conn) {
         return Ok(0);
     }
-    let count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM vec_chunks", [], |r| r.get(0))?;
+    let count: u32 = conn.query_row("SELECT COUNT(*) FROM vec_chunks", [], |r| r.get(0))?;
     Ok(count)
 }
 
