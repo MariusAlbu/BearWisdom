@@ -21,6 +21,14 @@ pub(crate) mod profile;
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 
+#[cfg(test)]
+#[path = "predicates_tests.rs"]
+mod predicates_tests;
+
+#[cfg(test)]
+#[path = "keywords_tests.rs"]
+mod keywords_tests;
+
 pub use hooks::FSHARP_HOOKS;
 pub use profile::FSHARP_PROFILE;
 mod applications;

@@ -3,8 +3,12 @@
 // Ported from pre-restructure commit 8dcc438 (dangling in object store).
 
 use super::hooks::{ends_with_path_suffix, shell_path_suffix, BashHooks};
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
+use crate::indexer::resolve::engine::{
+    build_scope_chain, FileContext, ImportEntry, RefContext, Resolution, SymbolIndex,
+};
+use crate::type_checker::core::SymbolIdMap;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
+use crate::type_checker::Engine;
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
 };
@@ -303,4 +307,89 @@ fn shell_source_skips_absolute_source_path() {
         );
     }
     // If None, the test passes (no false shell-source match).
+}
+
+// ---------------------------------------------------------------------------
+// Global-function binding — a sourced shell function called from a file that
+// does NOT carry a usable `source <path>` literal still binds, because shell
+// functions are global once sourced. Driven through the whole engine so the
+// hook (`bash_shell_source`) declines first and the generic ladder's
+// namespaceless-global rung binds.
+// ---------------------------------------------------------------------------
+
+/// Build a real `SymbolIndex` + `Engine` over `files` and resolve the bare
+/// `Calls` ref in `caller` whose target is `target`.
+fn resolve_bare_call(files: &[ParsedFile], caller: usize, target: &str) -> Option<Resolution> {
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for pf in files {
+        for s in &pf.symbols {
+            id_map.insert((pf.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = SymbolIndex::build(files, &id_map);
+    let mut eng_ids = SymbolIdMap::default();
+    for pf in files {
+        for (i, s) in pf.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(pf.path.clone(), s.qualified_name.clone())) {
+                eng_ids.insert((pf.path.clone(), i), id);
+            }
+        }
+    }
+    let engine = Engine::build_from_registry(files, &eng_ids, &index, index.type_arena_arc());
+    let pf = &files[caller];
+    let r = pf
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == target)
+        .expect("the bare call ref");
+    let source = &pf.symbols[r.source_symbol_index];
+    let file_ctx = BashHooks.build_file_context(pf, None).unwrap();
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: source,
+        scope_chain: build_scope_chain(source.scope_path.as_deref()),
+        file_package_id: None,
+    };
+    engine.resolve(&ref_ctx, &file_ctx, &index)
+}
+
+#[test]
+fn glob_sourced_function_binds_via_global_lookup() {
+    // util.sh defines `_omb_util_print`. main.sh glob-sources its libs
+    // (`for f in lib/*.sh; do source "$f"; done`) so it carries NO `source`
+    // literal naming util.sh — the structural hook can't bind, but the call
+    // is to a project-global function and must still resolve.
+    let util = make_sh_file("lib/util.sh", vec![make_fn_sym("_omb_util_print")], vec![]);
+    let main_sh = make_sh_file(
+        "main.sh",
+        vec![make_fn_sym("main")],
+        vec![make_calls_ref("_omb_util_print")],
+    );
+    let parsed = vec![util, main_sh];
+
+    let res = resolve_bare_call(&parsed, 1, "_omb_util_print")
+        .expect("glob-sourced function must bind via the namespaceless-global rung");
+    assert_eq!(
+        res.strategy, "default_namespaceless_global",
+        "binding must come from the global rung, not the source-path hook"
+    );
+}
+
+#[test]
+fn bare_system_command_does_not_bind() {
+    // `mysql` is an external system command with no project symbol; the global
+    // rung must leave it unresolved so external classification can brand it.
+    let main_sh = make_sh_file(
+        "main.sh",
+        vec![make_fn_sym("main")],
+        vec![make_calls_ref("mysql")],
+    );
+    let parsed = vec![main_sh];
+
+    assert!(
+        resolve_bare_call(&parsed, 0, "mysql").is_none(),
+        "a command with no project definition must not first-match-bind"
+    );
 }

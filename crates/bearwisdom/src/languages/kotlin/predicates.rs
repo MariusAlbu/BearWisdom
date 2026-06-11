@@ -24,21 +24,13 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Always-external Kotlin/JVM namespace roots.
+/// JVM + Kotlin platform namespace roots — the runtime substrate every Kotlin
+/// project links unconditionally (the Java/Jakarta platform, the Kotlin stdlib,
+/// the Android platform SDK). This is the closed platform set, not a dependency
+/// list. Third-party group-ids (Spring, Ktor, Jackson, JUnit, …) are classified
+/// from the Maven/Gradle manifest at the resolver hooks, never here.
 const ALWAYS_EXTERNAL: &[&str] = &[
-    "kotlin",
-    "kotlinx",
-    "java",
-    "javax",
-    "jakarta",
-    "android",
-    "androidx",
-    "org.junit",
-    "org.assertj",
-    "io.mockk",
-    "org.springframework",
-    "com.fasterxml",
-    "io.ktor",
+    "kotlin", "kotlinx", "java", "javax", "jakarta", "android", "androidx",
 ];
 
 /// Check whether a Kotlin namespace or import path is external.
@@ -59,7 +51,9 @@ pub(super) fn is_external_kotlin_namespace(ns: &str, project_ctx: Option<&Projec
 /// Check whether a Kotlin/JVM namespace is external using Maven/Gradle manifests directly.
 pub(super) fn is_manifest_jvm_external(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
-    if matches!(root, "java" | "javax" | "jakarta" | "sun" | "org") {
+    // JDK/Jakarta platform roots are always external; `sun` is the JDK-internal
+    // implementation namespace. These are the platform spec, not dependencies.
+    if matches!(root, "java" | "javax" | "jakarta" | "sun") {
         return true;
     }
     for kind in [ManifestKind::Maven, ManifestKind::Gradle] {

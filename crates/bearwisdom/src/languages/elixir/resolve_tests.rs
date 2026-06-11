@@ -230,6 +230,212 @@ fn make_call(target: &str) -> ExtractedRef {
     }
 }
 
+fn make_type_ref(target: &str) -> ExtractedRef {
+    ExtractedRef {
+        kind: EdgeKind::TypeRef,
+        ..make_call(target)
+    }
+}
+
+/// A consuming file with source `content` set, so `build_file_context` can scan
+/// it for `use M` sites.
+fn make_file_with_content(
+    path: &str,
+    content: &str,
+    symbols: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+) -> ParsedFile {
+    ParsedFile {
+        content: Some(content.to_string()),
+        ..make_file(path, symbols, refs)
+    }
+}
+
+fn ctx_with_using(parsed: &[ParsedFile]) -> crate::indexer::project_context::ProjectContext {
+    let mut ctx = crate::indexer::project_context::ProjectContext::default();
+    ctx.plugin_state
+        .set(super::using_injection::build_using_injection_map(parsed));
+    ctx
+}
+
+fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i64>) {
+    let mut id_map = HashMap::new();
+    let mut next = 1i64;
+    for pf in files {
+        for s in &pf.symbols {
+            id_map.insert((pf.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let owned: Vec<ParsedFile> = files
+        .iter()
+        .map(|f| make_file(&f.path, f.symbols.clone(), f.refs.clone()))
+        .collect();
+    (SymbolIndex::build(&owned, &id_map), id_map)
+}
+
+#[test]
+fn use_injected_import_binds_bare_helper_call() {
+    // A test file `use MyApp.DataCase`; DataCase's `__using__` quote block does
+    // `use MyApp.TestUtils`; TestUtils's quote block does `import MyApp.TestUtils`,
+    // which defines `populate_stats`. The bare call must bind to TestUtils through
+    // the transitively-injected import (generic imported-namespace rung).
+    let test_utils = make_file_with_content(
+        "test/support/test_utils.ex",
+        "defmodule MyApp.TestUtils do\n  defmacro __using__(_) do\n    quote do\n      import MyApp.TestUtils\n    end\n  end\n  def populate_stats(_), do: :ok\nend\n",
+        vec![
+            make_sym("TestUtils", "MyApp.TestUtils", SymbolKind::Module),
+            make_sym("populate_stats", "MyApp.TestUtils.populate_stats", SymbolKind::Method),
+        ],
+        vec![],
+    );
+    let data_case = make_file_with_content(
+        "test/support/data_case.ex",
+        "defmodule MyApp.DataCase do\n  defmacro __using__(_) do\n    quote do\n      use MyApp.TestUtils\n    end\n  end\nend\n",
+        vec![make_sym("DataCase", "MyApp.DataCase", SymbolKind::Module)],
+        vec![],
+    );
+    let caller = make_file_with_content(
+        "test/some_test.exs",
+        "defmodule MyApp.SomeTest do\n  use MyApp.DataCase\n\n  test \"x\" do\n    populate_stats(:ok)\n  end\nend\n",
+        vec![make_sym("SomeTest", "MyApp.SomeTest", SymbolKind::Module)],
+        vec![make_call("populate_stats")],
+    );
+
+    let (index, id_map) = build_index(&[&test_utils, &data_case, &caller]);
+    let ctx = ctx_with_using(&[
+        make_file_with_content(&test_utils.path, test_utils.content.as_deref().unwrap(), vec![], vec![]),
+        make_file_with_content(&data_case.path, data_case.content.as_deref().unwrap(), vec![], vec![]),
+    ]);
+
+    let file_ctx = ElixirHooks.build_file_context(&caller, Some(&ctx)).unwrap();
+    let r = &caller.refs[0];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &caller.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &index,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&ELIXIR_PROFILE)
+    .expect("bare populate_stats binds via the use-injected import");
+
+    let expected = *id_map
+        .get(&(
+            "test/support/test_utils.ex".to_string(),
+            "MyApp.TestUtils.populate_stats".to_string(),
+        ))
+        .unwrap();
+    assert_eq!(res.target_symbol_id, expected);
+}
+
+#[test]
+fn use_injected_alias_binds_bare_type_ref() {
+    // `use MyApp.Repo` injects `alias MyApp.Repo` (its `__using__` quote block).
+    // A bare `Repo` in a TYPE position must bind to the module through the
+    // generic alias→module-qname rung — no literal `alias` in the consuming file.
+    let repo = make_file_with_content(
+        "lib/my_app/repo.ex",
+        "defmodule MyApp.Repo do\n  defmacro __using__(_) do\n    quote do\n      alias MyApp.Repo\n    end\n  end\nend\n",
+        vec![make_sym("Repo", "MyApp.Repo", SymbolKind::Module)],
+        vec![],
+    );
+    let caller = make_file_with_content(
+        "lib/my_app/schema.ex",
+        "defmodule MyApp.Schema do\n  use MyApp.Repo\n  @spec all() :: Repo.t()\nend\n",
+        vec![make_sym("Schema", "MyApp.Schema", SymbolKind::Module)],
+        vec![make_type_ref("Repo")],
+    );
+
+    let (index, id_map) = build_index(&[&repo, &caller]);
+    let ctx = ctx_with_using(&[make_file_with_content(
+        &repo.path,
+        repo.content.as_deref().unwrap(),
+        vec![],
+        vec![],
+    )]);
+
+    let file_ctx = ElixirHooks.build_file_context(&caller, Some(&ctx)).unwrap();
+    let r = &caller.refs[0];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &caller.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &index,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&ELIXIR_PROFILE)
+    .expect("bare Repo type_ref binds via the use-injected alias");
+
+    assert_eq!(res.strategy, "default_alias_module_qname");
+    let expected = *id_map
+        .get(&("lib/my_app/repo.ex".to_string(), "MyApp.Repo".to_string()))
+        .unwrap();
+    assert_eq!(res.target_symbol_id, expected);
+}
+
+#[test]
+fn use_injected_third_party_import_stays_unresolved() {
+    // Documented scope boundary: `use MyApp.Factory` whose quote block imports a
+    // THIRD-PARTY module (`import ExMachina`) injects only what the engine can
+    // see. `build` is defined by ExMachina's own macros, not by any project
+    // symbol, so it stays unresolved (later classified external by mix.exs) —
+    // the one-hop-over-internal-modules approximation does not fabricate it.
+    let factory = make_file_with_content(
+        "test/support/factory.ex",
+        "defmodule MyApp.Factory do\n  defmacro __using__(_) do\n    quote do\n      import ExMachina\n    end\n  end\nend\n",
+        vec![make_sym("Factory", "MyApp.Factory", SymbolKind::Module)],
+        vec![],
+    );
+    let caller = make_file_with_content(
+        "test/factory_test.exs",
+        "defmodule MyApp.FactoryTest do\n  use MyApp.Factory\n\n  test \"x\" do\n    build(:user)\n  end\nend\n",
+        vec![make_sym("FactoryTest", "MyApp.FactoryTest", SymbolKind::Module)],
+        vec![make_call("build")],
+    );
+
+    let (index, _id_map) = build_index(&[&factory, &caller]);
+    let ctx = ctx_with_using(&[make_file_with_content(
+        &factory.path,
+        factory.content.as_deref().unwrap(),
+        vec![],
+        vec![],
+    )]);
+
+    let file_ctx = ElixirHooks.build_file_context(&caller, Some(&ctx)).unwrap();
+    let r = &caller.refs[0];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &caller.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = DefaultResolver {
+        file_ctx: &file_ctx,
+        ref_ctx: &ref_ctx,
+        lookup: &index,
+        kind_compatible: |_, _| true,
+    }
+    .resolve_all_with_profile(&ELIXIR_PROFILE);
+
+    // `build` has no project symbol; the injected `import ExMachina` names an
+    // external module with no indexed `build`, so resolution declines here.
+    assert!(
+        res.is_none(),
+        "build must not bind to a project symbol: {res:?}"
+    );
+}
+
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),

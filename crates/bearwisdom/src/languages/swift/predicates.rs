@@ -22,8 +22,12 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Always-external Swift framework/module names.
-const ALWAYS_EXTERNAL_MODULES: &[&str] = &[
+/// Apple platform-SDK framework modules — the frameworks bundled with Xcode /
+/// the Swift toolchain (`Swift`, `Dispatch`, `Darwin`, `XCTest`) that every
+/// project links without declaring a dependency. This is the closed platform
+/// set, not a dependency list. SwiftPM packages (Vapor, Alamofire, RxSwift, …)
+/// are classified from `Package.swift` at the resolver hooks, never here.
+const PLATFORM_MODULES: &[&str] = &[
     "Foundation",
     "UIKit",
     "SwiftUI",
@@ -47,34 +51,16 @@ const ALWAYS_EXTERNAL_MODULES: &[&str] = &[
     "Swift",
     "Dispatch",
     "Darwin",
-    "Vapor",
-    "Fluent",
-    "Leaf",
-    "Queues",
-    "JWT",
-    "RxSwift",
-    "RxCocoa",
-    "Combine",
-    "Alamofire",
-    "Moya",
-    "SnapKit",
-    "Kingfisher",
-    "SDWebImage",
-    "RealmSwift",
-    "Realm",
-    "Firebase",
-    "FirebaseFirestore",
-    "FirebaseAuth",
-    "FirebaseStorage",
-    "Quick",
-    "Nimble",
 ];
 
-/// Check whether a Swift `import` module name is external.
+/// Check whether a Swift `import` module name is an Apple platform-SDK
+/// framework. SwiftPM package modules are NOT recognized here — they are
+/// classified from `Package.swift` at the resolver hooks. A package module
+/// without a manifest declaration is honestly unresolved.
 pub(super) fn is_external_swift_module(module: &str) -> bool {
     // The root module name (before the first `.`).
     let root = module.split('.').next().unwrap_or(module);
-    for &ext in ALWAYS_EXTERNAL_MODULES {
+    for &ext in PLATFORM_MODULES {
         if root == ext {
             return true;
         }

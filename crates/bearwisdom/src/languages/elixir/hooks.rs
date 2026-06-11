@@ -206,6 +206,34 @@ fn is_mix_dep_match(module_root: &str, deps: &std::collections::HashSet<String>)
     false
 }
 
+#[cfg(test)]
+pub(super) fn _test_is_mix_dep_match(
+    module_root: &str,
+    deps: &std::collections::HashSet<String>,
+) -> bool {
+    is_mix_dep_match(module_root, deps)
+}
+
+/// Classify an Elixir module root as external: a declared `mix.exs` Hex
+/// dependency (matched CamelCase↔snake_case) or a stdlib/OTP runtime module.
+/// `root` is the first dotted segment of the module path. Shared with the
+/// HEEx hook so `.heex` templates classify `Phoenix.*` the same way `.ex`
+/// source does — manifest first, stdlib subset second.
+pub(crate) fn classify_elixir_module_root(
+    root: &str,
+    project_ctx: Option<&ProjectContext>,
+    file_package_id: Option<i64>,
+) -> bool {
+    if let Some(ctx) = project_ctx {
+        if let Some(manifest) = ctx.manifests_for(file_package_id).get(&ManifestKind::Mix) {
+            if is_mix_dep_match(root, &manifest.dependencies) {
+                return true;
+            }
+        }
+    }
+    predicates::is_external_elixir_module(root)
+}
+
 pub(crate) fn infer_external_inner(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
@@ -480,7 +508,7 @@ pub(crate) fn detect_flow_inner(
 
 pub(crate) fn build_file_context_inner(
     file: &ParsedFile,
-    _project_ctx: Option<&ProjectContext>,
+    project_ctx: Option<&ProjectContext>,
 ) -> FileContext {
     let mut imports = Vec::new();
 
@@ -528,6 +556,21 @@ pub(crate) fn build_file_context_inner(
             alias,
             is_wildcard: false,
         });
+    }
+
+    // `use M` injects whatever M's `__using__` quote block imports/aliases.
+    // The injection set lives in M's source file, so it is resolved from the
+    // project-wide `ElixirProjectState` and expanded transitively here, where
+    // the consuming file's import table is built.
+    if let Some(state) = project_ctx
+        .and_then(|ctx| ctx.plugin_state.get::<super::using_injection::ElixirProjectState>())
+    {
+        if let Some(src) = file.content.as_deref() {
+            let mut seen = std::collections::HashSet::new();
+            for module in super::using_injection::collect_use_sites(src) {
+                super::using_injection::expand_use(&module, state, &mut imports, &mut seen);
+            }
+        }
     }
 
     FileContext {

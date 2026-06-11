@@ -3,7 +3,7 @@
 // DEFAULT_PROFILE at runtime.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, NamespaceScope, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -89,8 +89,13 @@ pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup:
-        crate::type_checker::profile::language_profile::NamespaceScope::Off,
+    // Shell functions are global once a script sources the file that defines
+    // them. The `bash_shell_source` hook binds a call when the importer's own
+    // `source <path>` literal matches the defining file; transitive, glob-
+    // sourced (`for f in lib/*.sh; do source "$f"; done`), and extension-less
+    // sources carry no usable path, so a bare call to such a function reaches
+    // here and first-match-binds the project-internal function of that name.
+    namespaceless_global_type_lookup: NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

@@ -1026,13 +1026,6 @@ impl SymbolIndex {
 
         // Snapshot tsconfig aliases — per-package if available, plus a union
         // derived from the NPM manifest for files with no package_id.
-        //
-        // tsconfig `paths` targets are relative to each package's own
-        // directory, not the workspace root. In a monorepo with
-        // `apps/landing/tsconfig.json` declaring `"@/*": ["src/*"]`, a
-        // rewritten `@/components/x` must land at
-        // `apps/landing/src/components/x` for `in_file()` to find the file.
-        // Prepend the package path to each target at snapshot time.
         let mut path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
         let mut path_aliases_union: Vec<(String, String)> = Vec::new();
         let mut tsconfig_types_union: Vec<String> = Vec::new();
@@ -1041,25 +1034,11 @@ impl SymbolIndex {
                 path_aliases_union = npm.path_aliases.clone();
                 tsconfig_types_union = npm.tsconfig_types.clone();
             }
-            for (&pkg_id, manifests) in &ctx.by_package {
-                if let Some(npm) = manifests.get(&crate::ecosystem::manifest::ManifestKind::Npm) {
-                    if !npm.path_aliases.is_empty() {
-                        let pkg_path = ctx.workspace_pkg_paths.get(&pkg_id);
-                        let rewritten: Vec<(String, String)> = npm
-                            .path_aliases
-                            .iter()
-                            .map(|(alias, target)| {
-                                let full_target = match pkg_path {
-                                    Some(p) if !p.is_empty() => format!("{p}/{target}"),
-                                    _ => target.clone(),
-                                };
-                                (alias.clone(), full_target)
-                            })
-                            .collect();
-                        path_aliases_by_pkg.insert(pkg_id, rewritten);
-                    }
-                }
-            }
+            path_aliases_by_pkg = snapshot_path_aliases(
+                &path_aliases_union,
+                &ctx.by_package,
+                &ctx.workspace_pkg_paths,
+            );
         }
 
         // Build the Angular selector map: raw selector → class qualified name.
@@ -1220,6 +1199,83 @@ impl SymbolIndex {
             type_arena,
         }
     }
+}
+
+/// Build the per-package tsconfig path-alias map, keyed by `package_id`.
+///
+/// tsconfig `paths` targets are relative to each package's own directory, not
+/// the workspace root. In a monorepo where `apps/landing/tsconfig.json`
+/// declares `"@/*": ["src/*"]`, a rewritten `@/components/x` must land at
+/// `apps/landing/src/components/x` for `in_file()` to find it. Each target is
+/// therefore prefixed with the owning package's directory at snapshot time.
+///
+/// Two sources feed each package's entry, in precedence order:
+///   1. The package's own NPM manifest aliases (when it declares any).
+///   2. Otherwise the root-manifest `union_aliases`, prefixed with the
+///      package's directory — so a package that inherits the root alias still
+///      resolves to its own files rather than the workspace root's.
+///
+/// Packages with no own aliases AND no known directory are omitted; their
+/// files fall through to the raw `union_aliases` at lookup time. Files with no
+/// `package_id` are never keyed here and always read the raw union.
+fn snapshot_path_aliases(
+    union_aliases: &[(String, String)],
+    by_package: &HashMap<i64, HashMap<crate::ecosystem::manifest::ManifestKind, crate::ecosystem::manifest::ManifestData>>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+) -> FxHashMap<i64, Vec<(String, String)>> {
+    let prefix_targets = |pkg_path: Option<&String>, aliases: &[(String, String)]| -> Vec<(String, String)> {
+        aliases
+            .iter()
+            .map(|(alias, target)| {
+                let full_target = match pkg_path {
+                    Some(p) if !p.is_empty() => format!("{p}/{target}"),
+                    _ => target.clone(),
+                };
+                (alias.clone(), full_target)
+            })
+            .collect()
+    };
+
+    let mut by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
+    // Every package with either own manifests OR a known directory is a
+    // candidate: a package that declares no own aliases still inherits the
+    // prefixed root union as long as its directory anchors the rewrite.
+    let pkg_ids = by_package
+        .keys()
+        .chain(workspace_pkg_paths.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<i64>>();
+    for pkg_id in pkg_ids {
+        let pkg_path = workspace_pkg_paths.get(&pkg_id);
+        let own_npm = by_package
+            .get(&pkg_id)
+            .and_then(|m| m.get(&crate::ecosystem::manifest::ManifestKind::Npm));
+        match own_npm {
+            Some(npm) if !npm.path_aliases.is_empty() => {
+                by_pkg.insert(pkg_id, prefix_targets(pkg_path, &npm.path_aliases));
+            }
+            _ => {
+                // Package declares no own aliases: inherit the root union,
+                // prefixed with this package's directory so the targets point
+                // at package-relative files instead of the workspace root.
+                if !union_aliases.is_empty() {
+                    if let Some(p) = pkg_path.filter(|p| !p.is_empty()) {
+                        by_pkg.insert(pkg_id, prefix_targets(Some(p), union_aliases));
+                    }
+                }
+            }
+        }
+    }
+    by_pkg
+}
+
+#[cfg(test)]
+pub(super) fn _test_snapshot_path_aliases(
+    union_aliases: &[(String, String)],
+    by_package: &HashMap<i64, HashMap<crate::ecosystem::manifest::ManifestKind, crate::ecosystem::manifest::ManifestData>>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+) -> FxHashMap<i64, Vec<(String, String)>> {
+    snapshot_path_aliases(union_aliases, by_package, workspace_pkg_paths)
 }
 
 /// Entry-file extensions probed when mapping a workspace package's declared

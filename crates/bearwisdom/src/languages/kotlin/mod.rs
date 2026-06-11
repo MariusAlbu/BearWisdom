@@ -33,6 +33,10 @@ mod resolve_tests;
 #[path = "data_class_tests.rs"]
 mod data_class_tests;
 
+#[cfg(test)]
+#[path = "predicates_tests.rs"]
+mod predicates_tests;
+
 use crate::ecosystem::manifest::gradle::discover_gradle_catalog_names;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;

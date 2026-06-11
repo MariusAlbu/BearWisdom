@@ -52,11 +52,16 @@ fn seed_external(db: &Database, source_id: i64, target_name: &str, kind: &str, n
 }
 
 fn seed_edge(db: &Database, source_id: i64, target_id: i64) {
+    // Distinct source_line per insert so repeated edges between the same
+    // (source, target, kind) pair don't collide on the unique index.
+    use std::sync::atomic::{AtomicI64, Ordering};
+    static NEXT_LINE: AtomicI64 = AtomicI64::new(1);
+    let source_line = NEXT_LINE.fetch_add(1, Ordering::Relaxed);
     db.conn()
         .execute(
             "INSERT INTO edges (source_id, target_id, kind, source_line, confidence, strategy)
-             VALUES (?1, ?2, 'calls', 1, 1.0, 'test')",
-            rusqlite::params![source_id, target_id],
+             VALUES (?1, ?2, 'calls', ?3, 1.0, 'test')",
+            rusqlite::params![source_id, target_id, source_line],
         )
         .unwrap();
 }
@@ -126,6 +131,142 @@ fn external_known_unhydrated_excluded_from_precision_denominator() {
         rb.precision, 100.0,
         "unhydrated deps must not count as failures"
     );
+}
+
+fn seed_symbol_origin_lang(
+    db: &Database,
+    file_id: i64,
+    name: &str,
+    origin_language: &str,
+) -> i64 {
+    db.conn()
+        .execute(
+            "INSERT INTO symbols
+                (file_id, name, qualified_name, kind, line, col, origin, origin_language)
+             VALUES (?1, ?2, ?3, 'function', 1, 0, 'internal', ?4)",
+            rusqlite::params![file_id, name, format!("mod::{name}"), origin_language],
+        )
+        .unwrap();
+    db.conn().last_insert_rowid()
+}
+
+#[test]
+fn rate_by_language_splits_two_languages() {
+    // Two languages with different resolved/unresolved ratios must each
+    // get their own edge total and rate; a language present on only one
+    // side still appears.
+    let db = open();
+    let f_ts = seed_file(&db, "src/a.ts", "typescript", "internal");
+    let f_go = seed_file(&db, "src/b.go", "go", "internal");
+
+    let ts_caller = seed_symbol(&db, f_ts, "tsCaller", "internal");
+    let ts_callee = seed_symbol(&db, f_ts, "tsCallee", "internal");
+    let go_caller = seed_symbol(&db, f_go, "goCaller", "internal");
+    let go_callee = seed_symbol(&db, f_go, "goCallee", "internal");
+
+    // typescript: 3 resolved edges, 1 unresolved → 75.00%.
+    seed_edge(&db, ts_caller, ts_callee);
+    seed_edge(&db, ts_caller, ts_callee);
+    seed_edge(&db, ts_caller, ts_callee);
+    seed_unresolved(&db, ts_caller, "tsMissing", "calls", 0);
+
+    // go: 1 resolved edge, 3 unresolved → 25.00%.
+    seed_edge(&db, go_caller, go_callee);
+    seed_unresolved(&db, go_caller, "goMiss1", "calls", 0);
+    seed_unresolved(&db, go_caller, "goMiss2", "type_ref", 0);
+    seed_unresolved(&db, go_caller, "goMiss3", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    assert_eq!(rb.internal_edges_by_lang.get("typescript").copied(), Some(3));
+    assert_eq!(rb.internal_edges_by_lang.get("go").copied(), Some(1));
+
+    assert_eq!(rb.rate_by_language.get("typescript").copied(), Some(75.0));
+    assert_eq!(rb.rate_by_language.get("go").copied(), Some(25.0));
+
+    // Headline pooled rate is the corpus-wide value, distinct from either
+    // per-language rate: 4 edges / (4 + 4) = 50%.
+    assert_eq!(rb.internal_edges, 4);
+    assert_eq!(rb.internal_unresolved, 4);
+    assert_eq!(rb.resolution_rate, 50.0);
+}
+
+#[test]
+fn rate_by_language_present_on_one_side_only() {
+    // A language with edges but no unresolved refs scores 100.0; one with
+    // only unresolved refs scores 0.0.
+    let db = open();
+    let f_rs = seed_file(&db, "src/a.rs", "rust", "internal");
+    let f_py = seed_file(&db, "src/b.py", "python", "internal");
+    let rs_caller = seed_symbol(&db, f_rs, "rsCaller", "internal");
+    let rs_callee = seed_symbol(&db, f_rs, "rsCallee", "internal");
+    let py_caller = seed_symbol(&db, f_py, "pyCaller", "internal");
+
+    seed_edge(&db, rs_caller, rs_callee);
+    seed_unresolved(&db, py_caller, "pyMissing", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    assert_eq!(rb.rate_by_language.get("rust").copied(), Some(100.0));
+    assert_eq!(rb.rate_by_language.get("python").copied(), Some(0.0));
+    assert_eq!(rb.internal_edges_by_lang.get("rust").copied(), Some(1));
+    assert_eq!(rb.internal_edges_by_lang.get("python"), None);
+}
+
+#[test]
+fn rate_by_language_attributes_via_origin_language() {
+    // The load-bearing case: a symbol whose `origin_language` differs from
+    // its file's language is attributed to `origin_language`, not the file
+    // language — so a C codebase indexed under a non-C project name reports
+    // its edges and rate under C.
+    let db = open();
+    let f = seed_file(&db, "src/perl_internals.c", "perl", "internal");
+    let caller = seed_symbol_origin_lang(&db, f, "cCaller", "c");
+    let callee = seed_symbol_origin_lang(&db, f, "cCallee", "c");
+
+    seed_edge(&db, caller, callee);
+    seed_unresolved(&db, caller, "cMissing", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Attribution follows origin_language: the rate lands under "c", and the
+    // file's nominal "perl" language carries nothing.
+    assert_eq!(rb.internal_edges_by_lang.get("c").copied(), Some(1));
+    assert_eq!(rb.rate_by_language.get("c").copied(), Some(50.0));
+    assert_eq!(rb.internal_edges_by_lang.get("perl"), None);
+    assert_eq!(rb.rate_by_language.get("perl"), None);
+}
+
+#[test]
+fn rate_by_language_two_decimals() {
+    // 1 edge, 2 unresolved → 33.33%, matching the two-decimal rounding the
+    // headline rate uses.
+    let db = open();
+    let f = seed_file(&db, "src/a.ts", "typescript", "internal");
+    let caller = seed_symbol(&db, f, "caller", "internal");
+    let callee = seed_symbol(&db, f, "callee", "internal");
+    seed_edge(&db, caller, callee);
+    seed_unresolved(&db, caller, "m1", "calls", 0);
+    seed_unresolved(&db, caller, "m2", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+    assert_eq!(rb.rate_by_language.get("typescript").copied(), Some(33.33));
+}
+
+#[test]
+fn rate_by_language_excludes_doc_link_refs() {
+    // The denominator must honor CODE_REF_FILTER: markdown `imports` refs
+    // are doc cross-references, not resolution failures, and must not drag a
+    // language's rate down. With only a doc-link miss, markdown has no
+    // counted unresolved ref, so it stays off the map entirely.
+    let db = open();
+    let f_md = seed_file(&db, "README.md", "markdown", "internal");
+    let s_md = seed_symbol(&db, f_md, "README", "internal");
+    seed_unresolved(&db, s_md, "doc/Other", "imports", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+    assert_eq!(rb.rate_by_language.get("markdown"), None);
+    assert_eq!(rb.internal_edges_by_lang.get("markdown"), None);
 }
 
 #[test]

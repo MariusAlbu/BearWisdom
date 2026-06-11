@@ -1899,6 +1899,7 @@ fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Resul
         updated["internal_unresolved"] = serde_json::json!(rb.internal_unresolved);
         updated["resolution_rate"] = serde_json::json!(rb.resolution_rate);
         updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
+        updated["rate_by_language"] = serde_json::json!(rb.rate_by_language);
         updated["flow_edges"] = serde_json::json!(stats.flow_edge_count);
         updated["flow_edge_types"] = serde_json::json!(flow_edge_types);
         updated["routes"] = serde_json::json!(stats.route_count);

@@ -24,28 +24,12 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Always-external Scala/JVM namespace roots.
-const ALWAYS_EXTERNAL: &[&str] = &[
-    "scala",
-    "java",
-    "javax",
-    "jakarta",
-    "akka",
-    "cats",
-    "zio",
-    "fs2",
-    "http4s",
-    "io.circe",
-    "circe",
-    "play",
-    "org.scalatest",
-    "org.specs2",
-    "org.scalamock",
-    "com.typesafe",
-    "slick",
-    "doobie",
-    "pekko",
-];
+/// Scala/JVM platform namespace roots — the runtime substrate every Scala
+/// project links unconditionally (the Scala stdlib, the Java/Jakarta platform).
+/// This is the closed platform set, not a dependency list. Third-party
+/// group-ids (Akka, Cats, ZIO, http4s, Play, ScalaTest, …) are classified from
+/// the Maven/Gradle manifest at the resolver hooks, never here.
+const ALWAYS_EXTERNAL: &[&str] = &["scala", "java", "javax", "jakarta"];
 
 /// Check whether a Scala namespace or import path is external.
 pub(super) fn is_external_scala_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
@@ -77,7 +61,9 @@ pub(super) fn is_external_scala_namespace(ns: &str, project_ctx: Option<&Project
 /// Check whether a Scala/JVM namespace is external using Maven/Gradle manifests directly.
 pub(super) fn is_manifest_jvm_external(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
-    if matches!(root, "java" | "javax" | "jakarta" | "sun" | "org") {
+    // JDK/Jakarta platform roots are always external; `sun` is the JDK-internal
+    // implementation namespace. These are the platform spec, not dependencies.
+    if matches!(root, "java" | "javax" | "jakarta" | "sun") {
         return true;
     }
     for kind in [ManifestKind::Maven, ManifestKind::Gradle] {

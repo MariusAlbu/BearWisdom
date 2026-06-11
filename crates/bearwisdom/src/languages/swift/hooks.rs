@@ -159,6 +159,14 @@ fn manifest_dep_match(
     })
 }
 
+#[cfg(test)]
+pub(super) fn _test_manifest_dep_match(
+    project_ctx: Option<&ProjectContext>,
+    root: &str,
+) -> bool {
+    manifest_dep_match(project_ctx, None, root)
+}
+
 fn module_is_external(
     project_ctx: Option<&ProjectContext>,
     pkg_id: Option<i64>,

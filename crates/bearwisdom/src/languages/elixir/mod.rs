@@ -8,6 +8,7 @@ mod helpers;
 pub(crate) mod keywords;
 pub(crate) mod phoenix_routes;
 mod type_refs;
+pub(crate) mod using_injection;
 
 pub(crate) mod hooks;
 pub(crate) mod predicates;
@@ -27,6 +28,10 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
+
+#[cfg(test)]
+#[path = "predicates_tests.rs"]
+mod predicates_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -103,5 +108,15 @@ impl LanguagePlugin for ElixirPlugin {
         &self,
     ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
         Some(&hooks::ELIXIR_HOOKS)
+    }
+
+    fn populate_project_state(
+        &self,
+        state: &mut crate::indexer::plugin_state::PluginStateBag,
+        parsed: &[crate::types::ParsedFile],
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        state.set(using_injection::build_using_injection_map(parsed));
     }
 }

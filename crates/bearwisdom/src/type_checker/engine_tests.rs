@@ -2029,3 +2029,399 @@ fn nim_named_export_resolves_through_file_imports_and_transitive_reexports() {
         "named export should expand through file imports, then follow transitive stdlib re-exports"
     );
 }
+
+// =============================================================================
+// E2 — bare-call implicit-self synthesis. A chainless bare call inside a method
+// of a class that inherits never reaches the ChainWalker; the implicit-self
+// rung retries it as a synthetic `self.name()` chain so an inherited member —
+// internal OR reachable-external base — binds.
+// =============================================================================
+
+/// A chainless `Calls` ref to a bare `target` (no chain, no qualifier).
+fn e2_bare_call_ref(source_symbol_index: usize, target: &str) -> ExtractedRef {
+    ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index,
+        target_name: target.to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+    }
+}
+
+/// Build a `SymbolIndex` + `SymbolIdMap` over `files`, keying ids by
+/// declaration order. Mirrors the ext2 harness setup the chain tests use.
+fn e2_build_index(
+    files: &[ParsedFile],
+) -> (
+    crate::indexer::resolve::engine::SymbolIndex,
+    SymbolIdMap,
+    HashMap<(String, String), i64>,
+) {
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for p in files {
+        for s in &p.symbols {
+            id_map.insert((p.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = crate::indexer::resolve::engine::SymbolIndex::build(files, &id_map);
+    let mut eng = SymbolIdMap::default();
+    for p in files {
+        for (i, s) in p.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(p.path.clone(), s.qualified_name.clone())) {
+                eng.insert((p.path.clone(), i), id);
+            }
+        }
+    }
+    (index, eng, id_map)
+}
+
+/// Internal base file: `class A { helper() {} }`. Kept in a SEPARATE file from
+/// the subclass so the generic ladder's `default_same_file` strategy (simple-name
+/// match over the call's own file) can't bind `A.helper` by coincidence — only
+/// the inheritance climb reaches it, which is what the synthesis exercises.
+fn e2_internal_base_file() -> ParsedFile {
+    ext2_pf(
+        "base.ts",
+        vec![
+            ext2_sym("A", "A", SymbolKind::Class, None, Some("class A")),
+            ext2_sym("helper", "A.helper", SymbolKind::Method, Some("A"), None),
+        ],
+        vec![],
+    )
+}
+
+/// Subclass file: `class B extends A { run() { <bare call to `target`> } }`.
+fn e2_subclass_file(target: &str) -> ParsedFile {
+    ext2_pf(
+        "sub.ts",
+        vec![
+            ext2_sym("B", "B", SymbolKind::Class, None, Some("class B")),
+            ext2_sym("run", "B.run", SymbolKind::Method, Some("B"), None),
+        ],
+        vec![
+            {
+                // B inherits A (source symbol = B, idx 0).
+                let mut r = e2_bare_call_ref(0, "A");
+                r.kind = EdgeKind::Inherits;
+                r
+            },
+            // Bare `target()` inside B.run (idx 1).
+            e2_bare_call_ref(1, target),
+        ],
+    )
+}
+
+#[test]
+fn enclosing_member_rung_binds_inherited_internal_base_member() {
+    // `class B extends A`; B's method `run` contains a bare `helper()` call, and
+    // `helper` is defined on A (a DIFFERENT file). The `Inherits` edge populates
+    // `inherits_by_id`, so the ladder's `engine_enclosing_member` rung climbs
+    // `parent_class_qname` + `members_of` and binds A.helper directly — the
+    // implicit-self synthesis never runs (the bare ladder did not decline).
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let files = vec![e2_internal_base_file(), e2_subclass_file("helper")];
+    let (index, eng, id_map) = e2_build_index(&files);
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let sub_file = &files[1];
+    let call_ref = &sub_file.refs[1];
+    let fc = file_ctx_ts("sub.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &sub_file.symbols[1],
+        scope_chain: build_scope_chain(sub_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&rc, &fc, &index);
+    let helper_id = id_map[&("base.ts".to_string(), "A.helper".to_string())];
+    let misses = index.take_chain_misses();
+    assert_eq!(
+        resolution.as_ref().map(|r| r.target_symbol_id),
+        Some(helper_id),
+        "bare helper() in B.run must bind the inherited A.helper via implicit-self synthesis; chain misses: {:?}",
+        misses
+            .iter()
+            .map(|m| (&m.current_type, &m.target_name))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        resolution.map(|r| r.strategy),
+        Some("engine_enclosing_member"),
+        "the inherited bind resolves through the ladder's enclosing-member climb"
+    );
+}
+
+#[test]
+fn enclosing_member_rung_binds_inherited_external_base_member() {
+    // Same shape, but the base `A` is an EXTERNAL class. Externals land in the
+    // string-keyed `members_by_parent` + `inherits_by_id` maps (their symbols are
+    // in `parsed` with ids), so the `engine_enclosing_member` rung climbs and
+    // binds the external `A.helper` directly — the implicit-self synthesis never
+    // runs here either.
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let ext = ext2_pf(
+        "ext:ts:base/index.d.ts",
+        vec![
+            ext2_sym("A", "A", SymbolKind::Class, None, Some("class A")),
+            ext2_sym("helper", "A.helper", SymbolKind::Method, Some("A"), None),
+        ],
+        vec![],
+    );
+    let app = ext2_pf(
+        "app.ts",
+        vec![
+            ext2_sym("B", "B", SymbolKind::Class, None, Some("class B")),
+            ext2_sym("run", "B.run", SymbolKind::Method, Some("B"), None),
+        ],
+        vec![
+            {
+                // B inherits external A (source symbol = B, idx 0).
+                let mut r = e2_bare_call_ref(0, "A");
+                r.kind = EdgeKind::Inherits;
+                r
+            },
+            // Bare `helper()` inside B.run (idx 1).
+            e2_bare_call_ref(1, "helper"),
+        ],
+    );
+
+    let files = vec![ext, app];
+    let (index, eng, id_map) = e2_build_index(&files);
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let app_file = &files[1];
+    let call_ref = &app_file.refs[1];
+    let fc = file_ctx_ts("app.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &app_file.symbols[1],
+        scope_chain: build_scope_chain(app_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&rc, &fc, &index);
+    let helper_id = id_map[&("ext:ts:base/index.d.ts".to_string(), "A.helper".to_string())];
+    let misses = index.take_chain_misses();
+    assert_eq!(
+        resolution.as_ref().map(|r| r.target_symbol_id),
+        Some(helper_id),
+        "bare helper() must bind the reachable external base member A.helper; chain misses: {:?}",
+        misses
+            .iter()
+            .map(|m| (&m.current_type, &m.target_name))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        resolution.map(|r| r.strategy),
+        Some("engine_enclosing_member"),
+    );
+}
+
+/// Interface base file: `interface I { helper(): void }`. The member is a
+/// Method scoped to `I` so it lands in `members_by_parent["I"]` and
+/// `MembersIndex.direct_of(class("I"))` alike — only the inheritance EDGE
+/// differs between the two reach paths.
+fn e2_iface_base_file() -> ParsedFile {
+    ext2_pf(
+        "iface.ts",
+        vec![
+            ext2_sym("I", "I", SymbolKind::Interface, None, Some("interface I")),
+            ext2_sym("helper", "I.helper", SymbolKind::Method, Some("I"), None),
+        ],
+        vec![],
+    )
+}
+
+/// Subclass file: `class B implements I { run() { helper() } }`. The `B → I`
+/// edge is an `Implements` ref, NOT `Inherits`.
+fn e2_implements_subclass_file() -> ParsedFile {
+    ext2_pf(
+        "impl.ts",
+        vec![
+            ext2_sym("B", "B", SymbolKind::Class, None, Some("class B")),
+            ext2_sym("run", "B.run", SymbolKind::Method, Some("B"), None),
+        ],
+        vec![
+            {
+                // B implements I (source symbol = B, idx 0).
+                let mut r = e2_bare_call_ref(0, "I");
+                r.kind = EdgeKind::Implements;
+                r
+            },
+            // Bare `helper()` inside B.run (idx 1).
+            e2_bare_call_ref(1, "helper"),
+        ],
+    )
+}
+
+#[test]
+fn implicit_self_binds_implements_only_inherited_member() {
+    // The differentiator the rung CANNOT reach: `class B implements I` where
+    // `helper` is declared on the interface `I` (a separate file). The string
+    // `inherits_by_id` map is built from `Inherits` refs ONLY, so an `Implements`
+    // edge populates no `parent_class_qname` entry and the ladder's
+    // `engine_enclosing_member` rung climbs nothing — the bare ladder declines.
+    // The implicit-self synthesis gates on `SupertypeGraph::parents_of`, which
+    // `build_explicit` populates from BOTH `Inherits` and `Implements`, so its
+    // synthesized `self.helper()` chain walks `B → I` through the typed graph and
+    // binds `I.helper` under the `implicit_self_member` strategy.
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let files = vec![e2_iface_base_file(), e2_implements_subclass_file()];
+    let (index, eng, id_map) = e2_build_index(&files);
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let sub_file = &files[1];
+    let call_ref = &sub_file.refs[1];
+    let fc = file_ctx_ts("impl.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &sub_file.symbols[1],
+        scope_chain: build_scope_chain(sub_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&rc, &fc, &index);
+    let helper_id = id_map[&("iface.ts".to_string(), "I.helper".to_string())];
+    let misses = index.take_chain_misses();
+    assert_eq!(
+        resolution.as_ref().map(|r| r.target_symbol_id),
+        Some(helper_id),
+        "bare helper() in B.run must bind I.helper via implicit-self synthesis (the rung's Inherits-only map can't reach an Implements edge); chain misses: {:?}",
+        misses
+            .iter()
+            .map(|m| (&m.current_type, &m.target_name))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        resolution.map(|r| r.strategy),
+        Some("implicit_self_member"),
+        "the bind must come from the synthesis, not the enclosing-member rung — the Implements edge is invisible to inherits_by_id"
+    );
+}
+
+#[test]
+fn implicit_self_declines_when_no_enclosing_member_matches() {
+    // B extends A, but the bare call names `missing` which no ancestor declares.
+    // The synthesis runs (B has supertypes) but the walker finds nothing, so the
+    // ref stays unresolved — no spurious bind, no regression to the unresolved
+    // accounting.
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let files = vec![e2_internal_base_file(), e2_subclass_file("missing")];
+    let (index, eng, _id_map) = e2_build_index(&files);
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let sub_file = &files[1];
+    let call_ref = &sub_file.refs[1];
+    let fc = file_ctx_ts("sub.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &sub_file.symbols[1],
+        scope_chain: build_scope_chain(sub_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    assert!(
+        engine.resolve(&rc, &fc, &index).is_none(),
+        "a bare call matching no enclosing-type member must stay unresolved"
+    );
+}
+
+/// Profile mirroring DEFAULT (Explicit supertype discovery) but declining the
+/// name `helper` as a builtin — exercising the bare_decline gate in the
+/// implicit-self synthesis.
+static SKIP_HELPER_PROFILE: LanguageProfile = LanguageProfile {
+    builtin_skip: Some(|n| n == "helper"),
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn implicit_self_does_not_resurrect_builtin_skipped_name() {
+    // B extends A (separate files) where A has `helper`, but the profile's
+    // builtin_skip declines `helper`. The decline is a decision — the synthesis
+    // consults the same bare_decline gate, so it must NOT resurrect the
+    // inherited member.
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let files = vec![e2_internal_base_file(), e2_subclass_file("helper")];
+    let (index, eng, _id_map) = e2_build_index(&files);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("typescript", &SKIP_HELPER_PROFILE);
+    let engine = Engine::build_with_hooks(
+        &files,
+        &eng,
+        profiles,
+        FxHashMap::default(),
+        &index,
+        index.type_arena_arc(),
+    );
+
+    let sub_file = &files[1];
+    let call_ref = &sub_file.refs[1];
+    let fc = file_ctx_ts("sub.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &sub_file.symbols[1],
+        scope_chain: build_scope_chain(sub_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    assert!(
+        engine.resolve(&rc, &fc, &index).is_none(),
+        "a builtin_skip-declined name must not be resurrected by implicit-self synthesis"
+    );
+}
+
+#[test]
+fn implicit_self_not_entered_for_free_function() {
+    // A bare `helper()` inside a FREE function (no enclosing type → no
+    // scope_path) must not enter the synthesis path. `A.helper` exists in a
+    // separate file, so a synthesis bug would mis-bind it; the gate's scope_path
+    // requirement keeps the free function out and the ref stays unresolved.
+    use crate::indexer::resolve::engine::build_scope_chain;
+
+    let caller = ext2_pf(
+        "caller.ts",
+        // Free function — scope_path None — calling bare `helper()`.
+        vec![ext2_sym(
+            "freeFn",
+            "freeFn",
+            SymbolKind::Function,
+            None,
+            None,
+        )],
+        vec![e2_bare_call_ref(0, "helper")],
+    );
+    let files = vec![e2_internal_base_file(), caller];
+    let (index, eng, _id_map) = e2_build_index(&files);
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let caller_file = &files[1];
+    let call_ref = &caller_file.refs[0];
+    let fc = file_ctx_ts("caller.ts");
+    let rc = RefContext {
+        extracted_ref: call_ref,
+        source_symbol: &caller_file.symbols[0],
+        scope_chain: build_scope_chain(caller_file.symbols[0].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    assert!(
+        engine.resolve(&rc, &fc, &index).is_none(),
+        "a bare call in a free function must not enter the implicit-self synthesis"
+    );
+}

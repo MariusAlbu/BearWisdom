@@ -19,9 +19,9 @@ use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, Symb
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
-// composer-manifest match + hardcoded `is_external_php_namespace` set +
-// structural fallback via `lookup.has_in_namespace` for PHP runtime classes
-// (Closure/Throwable) and vendor packages without a stub on disk.
+// composer-manifest match (`is_external_php_namespace` consults composer.json
+// only) + structural fallback via `lookup.has_in_namespace` for PHP runtime
+// classes (Closure/Throwable) and vendor packages without a stub on disk.
 fn ns_is_external(
     project_ctx: Option<&ProjectContext>,
     pkg_id: Option<i64>,

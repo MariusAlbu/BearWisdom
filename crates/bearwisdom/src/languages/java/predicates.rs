@@ -32,8 +32,12 @@ pub(super) fn first_segment(path: &str) -> &str {
     }
 }
 
-/// Always-external Java namespace roots (stdlib + test frameworks).
-const ALWAYS_EXTERNAL: &[&str] = &["java", "javax", "jakarta", "org.junit", "sun", "com.sun"];
+/// Java platform namespace roots — the JDK runtime substrate every Java
+/// project links unconditionally (the Java/Jakarta platform plus the
+/// JDK-internal `sun` / `com.sun` namespaces). This is the closed platform set,
+/// not a dependency list. Third-party group-ids (JUnit, Spring, Jackson, …) are
+/// classified from the Maven/Gradle manifest at the resolver hooks, never here.
+const ALWAYS_EXTERNAL: &[&str] = &["java", "javax", "jakarta", "sun", "com.sun"];
 
 /// Check whether a Java namespace or import path is external.
 pub(super) fn is_external_java_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
@@ -55,7 +59,9 @@ pub(super) fn is_external_java_namespace(ns: &str, project_ctx: Option<&ProjectC
 /// Check whether a Java namespace is external using Maven/Gradle manifests directly.
 pub(super) fn is_manifest_jvm_external(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
-    if matches!(root, "java" | "javax" | "jakarta" | "sun" | "org") {
+    // JDK/Jakarta platform roots are always external; `sun` is the JDK-internal
+    // implementation namespace. These are the platform spec, not dependencies.
+    if matches!(root, "java" | "javax" | "jakarta" | "sun") {
         return true;
     }
     for kind in [ManifestKind::Maven, ManifestKind::Gradle] {

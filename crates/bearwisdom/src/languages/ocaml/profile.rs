@@ -88,7 +88,9 @@ pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
+        underscore_prefix: false,
+    },
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,

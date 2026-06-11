@@ -852,6 +852,13 @@ pub fn quality_check(rb: &ResolutionBreakdown) -> String {
             let _ = writeln!(body, "{key}|{count}");
         }
     }
+    if !rb.rate_by_language.is_empty() {
+        body.push_str("\n#rate_by_language\n");
+        for (lang, rate) in &rb.rate_by_language {
+            let edges = rb.internal_edges_by_lang.get(lang).copied().unwrap_or(0);
+            let _ = writeln!(body, "{lang}|{rate:.2}%|{edges}edges");
+        }
+    }
     if !rb.unresolved_by_origin_language.is_empty() {
         body.push_str("\n#unresolved_by_origin_lang\n");
         for (lang, count) in &rb.unresolved_by_origin_language {

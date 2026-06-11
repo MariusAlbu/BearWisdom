@@ -396,23 +396,130 @@ fn transparent_mapped_readonly_collapses_to_source_arg() {
 }
 
 #[test]
-fn non_transparent_mapped_returns_none() {
-    // `type Record<K, V> = { [P in K]: V }` — value template is "V",
-    // not "{source}[K]". Can't collapse without member synthesis.
+fn record_mapped_projects_value_type_from_param_arg() {
+    // `type Record<K, V> = { [P in K]: V }` — the iteration source K is not a
+    // `keyof` shape, so the extractor leaves `source` empty; the value
+    // template is the flat value head "V". expand("Record", ["string", "User"])
+    // projects the value slot: V binds to "User", so the alias yields User and
+    // chain walking continues against User's members.
     let lookup = AliasFixture::new()
         .with_alias(
             "Record",
             AliasTarget::Mapped {
-                source: "K".to_string(),
+                source: String::new(),
                 value_template: "V".to_string(),
             },
         )
         .with_generic("Record", &["K", "V"]);
     let mut env = TypeEnvironment::new();
+    let (root, args) =
+        expand_alias("Record", &s(&["string", "User"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "User");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn record_mapped_with_concrete_value_projects_that_type() {
+    // `type AllBool<K> = { [P in K]: boolean }` — value head is a concrete
+    // type written directly in the mapping, not a generic param. Every key
+    // projects `boolean`, so the alias yields it regardless of caller args.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "AllBool",
+            AliasTarget::Mapped {
+                source: String::new(),
+                value_template: "boolean".to_string(),
+            },
+        )
+        .with_generic("AllBool", &["K"]);
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("AllBool", &s(&["string"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "boolean");
+}
+
+#[test]
+fn record_mapped_with_keyof_source_projects_value_type() {
+    // `type Values<X> = { [K in keyof X]: V }` — keyof source is populated but
+    // the value template is still a flat head, so it projects the value slot
+    // the same way the empty-source Record form does.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Values",
+            AliasTarget::Mapped {
+                source: "X".to_string(),
+                value_template: "V".to_string(),
+            },
+        )
+        .with_generic("Values", &["X", "V"]);
+    let mut env = TypeEnvironment::new();
+    let (root, _) =
+        expand_alias("Values", &s(&["Container", "User"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "User");
+}
+
+#[test]
+fn record_mapped_chains_into_value_alias() {
+    // Value head is itself an alias — the loop re-enters and collapses it.
+    // `type Wrap<K> = { [P in K]: UserMap }`; `type UserMap = Map<string, User>`.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Wrap",
+            AliasTarget::Mapped {
+                source: String::new(),
+                value_template: "UserMap".to_string(),
+            },
+        )
+        .with_generic("Wrap", &["K"])
+        .with_alias(
+            "UserMap",
+            AliasTarget::Application {
+                root: "Map".to_string(),
+                args: s(&["string", "User"]),
+            },
+        );
+    let mut env = TypeEnvironment::new();
+    let (root, args) = expand_alias("Wrap", &s(&["string"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Map");
+    assert_eq!(args, s(&["string", "User"]));
+}
+
+#[test]
+fn custom_mapped_function_value_returns_none() {
+    // `type Getters<T> = { [K in keyof T]: () => T[K] }` — the value template
+    // carries a function arrow, not a flat type head. Projecting it would be a
+    // guess, so the expander declines.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Getters",
+            AliasTarget::Mapped {
+                source: "T".to_string(),
+                value_template: "() => T[K]".to_string(),
+            },
+        )
+        .with_generic("Getters", &["T"]);
+    let mut env = TypeEnvironment::new();
     assert_eq!(
-        expand_alias("Record", &s(&["string", "boolean"]), &lookup, &mut env),
+        expand_alias("Getters", &s(&["User"]), &lookup, &mut env),
         None
     );
+}
+
+#[test]
+fn record_mapped_unbound_param_value_returns_none() {
+    // Record referenced without the value arg: the value head "V" is a param
+    // with no caller arg to bind. Projecting the bare param name would feed the
+    // walker a non-type, so the expander declines.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Record",
+            AliasTarget::Mapped {
+                source: String::new(),
+                value_template: "V".to_string(),
+            },
+        )
+        .with_generic("Record", &["K", "V"]);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Record", &[], &lookup, &mut env), None);
 }
 
 #[test]
@@ -514,6 +621,64 @@ fn conditional_chains_into_alias_target() {
     let (root, args) = expand_alias("Cond", &[], &lookup, &mut env).expect("expanded");
     assert_eq!(root, "Map");
     assert_eq!(args, s(&["string", "User"]));
+}
+
+// ---------------------------------------------------------------------------
+// infer / template-literal — declined by design (extract-side capture gap)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn infer_conditional_declines_cleanly() {
+    // `type Elem<T> = T extends Array<infer U> ? U : never`.
+    //
+    // AliasTarget::Conditional stores only HEAD names: the extractor's
+    // `head_type_name` reduces `Array<infer U>` to "Array", dropping the
+    // `<infer U>` argument, and there is no field on the Conditional arm that
+    // records the `infer U` binding or which Apply slot it captures. So the
+    // expander cannot relate U to T's element type — it has nothing to bind U
+    // to. With T unbound the subtype check on `T extends Array` is undecidable,
+    // so the arm returns None: a clean miss against the alias, never a guess at
+    // a head named "U". Implementing this slice requires extract-side capture
+    // (an infer-binding field on Conditional, plus the captured Apply arg).
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Elem",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Array".to_string(),
+                true_branch: "U".to_string(),
+                false_branch: "never".to_string(),
+            },
+        )
+        .with_generic("Elem", &["T"]);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Elem", &s(&["User"]), &lookup, &mut env), None);
+}
+
+#[test]
+fn template_literal_other_declines_cleanly() {
+    // `type Path = ` + "`/${string}`" + ` — a template-literal type denotes an
+    // unbounded string set with no member-bearing head. The extractor
+    // classifies it to `Other`; the expander declines without a panic path.
+    let lookup = AliasFixture::new().with_alias("Path", AliasTarget::Other);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Path", &[], &lookup, &mut env), None);
+
+    let mut arena = TypeArena::new();
+    let pairs = vec![("Path".to_string(), AliasTarget::Other)];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let path = arena.class("Path");
+    assert_eq!(
+        expand_alias_typed(
+            path,
+            &mut arena,
+            &aliases,
+            &lookup,
+            &empty_members(),
+            &empty_symbol_types()
+        ),
+        None
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -899,21 +1064,79 @@ fn typed_transparent_mapped_returns_source() {
 }
 
 #[test]
-fn typed_non_transparent_mapped_returns_none() {
+fn typed_record_mapped_with_concrete_value_returns_value_class() {
+    // `{ [P in K]: boolean }` — flat concrete value head projects to
+    // Class("boolean") so member access on the receiver continues against it.
     let mut arena = TypeArena::new();
     let lookup = AliasFixture::new();
     let pairs = vec![(
-        "Foo".to_string(),
+        "Flags".to_string(),
         AliasTarget::Mapped {
-            source: "User".to_string(),
+            source: String::new(),
             value_template: "boolean".to_string(),
         },
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
-    let foo = arena.class("Foo");
+    let flags = arena.class("Flags");
+    let out = expand_alias_typed(
+        flags,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
+    assert_eq!(arena.get(out), Type::Class("boolean".into()));
+}
+
+#[test]
+fn typed_record_mapped_with_param_value_passes_param_through() {
+    // `{ [P in K]: V }` — the value head is a generic param. The single-hop
+    // typed path interns it as Class("V"); the chain walker binds V against the
+    // receiver's args downstream, mirroring how the Application arm leaves its
+    // args unsubstituted.
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Record".to_string(),
+        AliasTarget::Mapped {
+            source: String::new(),
+            value_template: "V".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let record = arena.class("Record");
+    let out = expand_alias_typed(
+        record,
+        &mut arena,
+        &aliases,
+        &lookup,
+        &empty_members(),
+        &empty_symbol_types(),
+    )
+    .expect("expanded");
+    assert_eq!(arena.get(out), Type::Class("V".into()));
+}
+
+#[test]
+fn typed_custom_mapped_function_value_returns_none() {
+    // `{ [K in keyof T]: () => T[K] }` — value template carries an operator,
+    // not a flat head. Not a projectable value slot, so the typed path declines.
+    let mut arena = TypeArena::new();
+    let lookup = AliasFixture::new();
+    let pairs = vec![(
+        "Getters".to_string(),
+        AliasTarget::Mapped {
+            source: "T".to_string(),
+            value_template: "() => T[K]".to_string(),
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &mut arena);
+    let getters = arena.class("Getters");
     assert_eq!(
         expand_alias_typed(
-            foo,
+            getters,
             &mut arena,
             &aliases,
             &lookup,

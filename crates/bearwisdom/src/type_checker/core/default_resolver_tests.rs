@@ -2989,6 +2989,76 @@ fn ocaml_profile_resolves_dotted_module_via_file_stem() {
     assert_eq!(resolved.strategy, "default_module_anchor");
 }
 
+/// `open Mylib` injects every top-level binding of `mylib.ml` into bare scope.
+/// A top-level `let helper` carries qname `helper` (no module prefix), so the
+/// candidate's FILE-stem — not its qname — names the open'd module; the
+/// FileStem wildcard rung binds the bare `helper` call.
+#[test]
+fn ocaml_open_injects_module_members_into_bare_scope() {
+    let lookup = Lookup::new().with(sym(81, "helper", "helper", "function", "lib/mylib.ml"));
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("Mylib")], None);
+    fc.language = "ocaml".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::ocaml::OCAML_PROFILE)
+    .expect("open'd module member binds via file-stem wildcard");
+    assert_eq!(resolved.target_symbol_id, 81);
+    assert_eq!(resolved.strategy, "default_wildcard_import");
+}
+
+/// A bare name that lives in no open'd module declines — the open'd file is the
+/// gate, so `helper` in `other.ml` is unreachable through `open Mylib`.
+#[test]
+fn ocaml_bare_name_outside_open_declines() {
+    let lookup = Lookup::new().with(sym(82, "helper", "helper", "function", "lib/other.ml"));
+    let r = extracted_call("helper");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("Mylib")], None);
+    fc.language = "ocaml".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::ocaml::OCAML_PROFILE)
+        .is_none(),
+        "a bare name in an un-open'd module must not bind"
+    );
+}
+
+/// Qualified `Mylib.helper` still binds through `module_anchor` (ByFileStem),
+/// untouched by the wildcard flip — the wildcard rung is skipped for dotted
+/// targets, so qualified resolution stays on the anchor path.
+#[test]
+fn ocaml_qualified_member_still_binds_via_module_anchor() {
+    let lookup = Lookup::new().with(sym(83, "helper", "helper", "function", "lib/mylib.ml"));
+    let r = extracted_call_with_module("helper", "Mylib");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![], None);
+    fc.language = "ocaml".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::ocaml::OCAML_PROFILE)
+    .expect("qualified Mylib.helper resolves via module anchor");
+    assert_eq!(resolved.target_symbol_id, 83);
+    assert_eq!(resolved.strategy, "default_module_anchor");
+}
+
 #[test]
 fn fortran_profile_resolves_derived_type_member_case_insensitively() {
     let lookup = Lookup::new().with_member(

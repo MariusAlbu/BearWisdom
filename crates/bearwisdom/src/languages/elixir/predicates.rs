@@ -73,11 +73,13 @@ pub(crate) fn is_elixir_special_form(name: &str) -> bool {
     )
 }
 
-/// Always-external Elixir/Erlang/OTP module roots.
-///
-/// Elixir module names are dot-separated CamelCase atoms starting with a
-/// capital letter. We check the root segment.
-const ALWAYS_EXTERNAL: &[&str] = &[
+/// The closed Elixir / Erlang-OTP standard-library module set — the runtime
+/// every Elixir project links unconditionally (lowercase OTP atoms, the Elixir
+/// stdlib modules, the built-in exception types, and the toolchain-bundled
+/// `ExUnit` / `Mix`). This is the language/runtime substrate, not a dependency
+/// list. Hex-package modules are classified via the `mix.exs` manifest at the
+/// resolver hooks, never here.
+const STDLIB_MODULES: &[&str] = &[
     // Erlang/OTP (bare atoms, lowercase)
     "erlang",
     "lists",
@@ -186,82 +188,19 @@ const ALWAYS_EXTERNAL: &[&str] = &[
     "UndefinedFunctionError",
     "WithClauseError",
     "UnicodeConversionError",
-    // Testing
+    // Toolchain-bundled (ship with every Elixir install, not Hex packages)
     "ExUnit",
     "Mix",
-    // Hex packages
-    "Phoenix",
-    "Ecto",
-    "Plug",
-    "Tesla",
-    "Jason",
-    "Logger",
-    "Poison",
-    "Swoosh",
-    "Oban",
-    "Broadway",
-    "Commanded",
-    "Absinthe",
-    "Ash",
-    "Surface",
-    "LiveView",
-    "Finch",
-    "Req",
-    "Mint",
-    "Bandit",
-    "Cowboy",
-    "Hackney",
-    "HTTPoison",
-    "HTTPotion",
-    "Postgrex",
-    "MyXQL",
-    "Redix",
-    "Cachex",
-    "ConCache",
-    "NimbleCSV",
-    "NimbleParsec",
-    "NimbleTOTP",
-    "NimbleOptions",
-    "NimblePool",
-    "Floki",
-    "Mox",
-    "Bypass",
-    "ExMachina",
-    "Faker",
-    "Credo",
-    "Dialyxir",
-    "ExDoc",
-    "Gettext",
-    "Timex",
-    "Tzdata",
-    "Decimal",
-    "Money",
-    "Bamboo",
-    "Hammer",
-    "Guardian",
-    "Pow",
-    "Comeonin",
-    "Bcrypt",
-    "Argon2",
-    "Pbkdf2",
-    "ExAws",
-    "Sentry",
-    "OpenApiSpex",
-    "PromEx",
-    "Telemetry",
-    "TelemetryMetrics",
-    "OpenTelemetry",
-    "RefInspector",
-    "UAInspector",
-    "Kaffy",
-    "LazyHTML",
 ];
 
-/// Check whether an Elixir module alias is external (stdlib, OTP, or hex package).
+/// Check whether an Elixir module alias is a standard-library / OTP runtime
+/// module. Hex-package modules are NOT recognized here — they are classified
+/// from the project's `mix.exs` dependency list at the resolver hooks. A
+/// dependency module without a `mix.exs` declaration is honestly unresolved.
 pub(crate) fn is_external_elixir_module(module: &str) -> bool {
     // The root segment of the module (before the first `.`).
     let root = module.split('.').next().unwrap_or(module);
-    for &ext in ALWAYS_EXTERNAL {
+    for &ext in STDLIB_MODULES {
         if root == ext {
             return true;
         }

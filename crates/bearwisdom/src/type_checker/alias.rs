@@ -118,48 +118,57 @@ pub fn expand_alias(
                 };
                 (new_head, Vec::new())
             }
-            // `type Partial<T> = { [K in keyof T]?: T[K] }` and the
-            // sibling utility types (Required, Readonly) are
-            // *transparent* — accessing a property on the mapped
-            // type behaves the same as accessing it on the source.
-            // Detect the pattern syntactically: `value_template`
-            // matches `{source}[{anything}]`. When it does, the
-            // mapped alias collapses to the concrete source type
-            // bound in the caller's args; chain walking continues
-            // against the source's members directly. Everything
-            // else (Record's flat value, fully custom mappings)
-            // returns None — those need member synthesis a future
-            // PR provides.
+            // Two expandable mapped shapes:
+            //   1. *Transparent* (`Partial`/`Required`/`Readonly`):
+            //      `value_template` is `{source}[{anything}]`. Property
+            //      access behaves the same as on the source, so the alias
+            //      collapses to the concrete source type bound in the
+            //      caller's args.
+            //   2. *Record-shaped* (`{ [P in K]: V }`): `value_template` is
+            //      a flat type head. Every key projects the same value type
+            //      (`Map<K, V>` value-slot semantics), so member access
+            //      yields that value type, bound from the caller's args when
+            //      the head is a generic param.
+            // Custom mappings whose value template carries an operator
+            // (function value, union, nested index access) return None — the
+            // engine must not guess at their member set.
             AliasTarget::Mapped {
                 source,
                 value_template,
             } => {
-                if !is_transparent_mapped(source, value_template) {
-                    return None;
-                }
-                // Resolve `source` (the alias's generic param,
-                // typically "T") through the caller's args and the
-                // ambient env. The result is the concrete type the
-                // caller passed for that param.
                 let params = lookup
                     .generic_params(&head)
                     .map(|p| p.to_vec())
                     .unwrap_or_default();
-                let resolved_source = if let Some(idx) = params.iter().position(|p| p == source) {
-                    if idx < args.len() {
-                        args[idx].clone()
-                    } else {
-                        env.resolve(source)
+                if is_transparent_mapped(source, value_template) {
+                    // Resolve `source` (the alias's generic param,
+                    // typically "T") through the caller's args and the
+                    // ambient env. The result is the concrete type the
+                    // caller passed for that param.
+                    let resolved_source =
+                        if let Some(idx) = params.iter().position(|p| p == source) {
+                            if idx < args.len() {
+                                args[idx].clone()
+                            } else {
+                                env.resolve(source)
+                            }
+                        } else {
+                            env.resolve(source)
+                        };
+                    if resolved_source == *source {
+                        // Still bound to the param name (e.g. `Partial<T>`
+                        // where T is unbound) — nothing to expand into.
+                        return None;
                     }
+                    (resolved_source, Vec::new())
+                } else if let Some(value) = record_value_type(value_template, &params, &args) {
+                    // Record-shaped mapping (`{ [P in K]: V }`): member
+                    // access yields the flat value type. Re-enter the loop
+                    // so a value that is itself an alias collapses further.
+                    (value, Vec::new())
                 } else {
-                    env.resolve(source)
-                };
-                if resolved_source == *source {
-                    // Still bound to the param name (e.g. `Partial<T>`
-                    // where T is unbound) — nothing to expand into.
                     return None;
                 }
-                (resolved_source, Vec::new())
             }
             // `type Foo<T> = T extends U ? X : Y` — pick a branch
             // when the subtype check decides definitively. Resolve
@@ -273,6 +282,50 @@ fn is_transparent_mapped(source: &str, value_template: &str) -> bool {
     rest.trim_end().ends_with(']')
 }
 
+/// Resolve the *value-slot* type of a Record-shaped mapped alias.
+///
+/// A mapped type whose value template is a single plain type head —
+/// `{ [P in K]: V }` (`Record<K, V>`) or `{ [K in keyof X]: V }` — projects
+/// the SAME value type onto every key, exactly as `Map<K, V>` projects `V`
+/// from its value slot. A member lookup on a receiver of this type therefore
+/// yields that value type, so chain walking can continue against the value's
+/// members.
+///
+/// `value_template` must be a single bare identifier so the projection is
+/// unambiguous. Anything carrying an operator (`T[K]` index access, `() => U`
+/// function value, `A | B` union, generic args) is NOT a flat value slot —
+/// either it is the transparent `source[...]` pattern handled separately, or
+/// it is a custom mapping the engine must not guess at, so this declines.
+///
+/// When the value head is one of the alias's own generic params it is bound
+/// to the caller's concrete arg at that position; a non-param head (a concrete
+/// type written directly in the mapping) passes through unchanged. Returns
+/// `None` when the head is not a flat identifier or stays unbound to the param
+/// name — the caller then misses against the alias rather than guessing.
+fn record_value_type(value_template: &str, params: &[String], args: &[String]) -> Option<String> {
+    let head = value_template.trim();
+    if head.is_empty() || !is_plain_type_head(head) {
+        return None;
+    }
+    if let Some(idx) = params.iter().position(|p| p == head) {
+        // Value head is a generic param — bind it to the caller's arg.
+        return args.get(idx).cloned();
+    }
+    // Concrete value head written directly in the mapping (`{ [P in K]: User }`).
+    Some(head.to_string())
+}
+
+/// True when `s` is a single bare type identifier: a non-empty run of
+/// identifier characters (alphanumeric, `_`, `$`) plus the `.` of a dotted
+/// qname, with no operator, bracket, or whitespace. Distinguishes the flat
+/// value slot of a Record-shaped mapping from index-access / function /
+/// generic-application value templates that must not be projected.
+fn is_plain_type_head(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '$' || c == '.')
+}
+
 // ---------------------------------------------------------------------------
 // TypeId form — Phase 2 of the engine pivot.
 //
@@ -315,7 +368,9 @@ pub fn build_alias_index(pairs: &[(String, AliasTarget)], arena: &TypeArena) -> 
 ///   `return_type_name`) via `lookup` and interns the result as a Class.
 /// - `IndexedAccess { object, key }` → looks up `field_type_name("object.key")`
 ///   and interns as Class.
-/// - `Mapped` → transparent-pattern case returns `arena.class(source)`.
+/// - `Mapped` → transparent-pattern case returns `arena.class(source)`;
+///   Record-shaped case (`{ [P in K]: V }` with a flat value head) returns
+///   `arena.class(value)` so member access projects the value type.
 /// - `Conditional` → consults `is_assignable_to_typed`; picks the deciding
 ///   branch and interns as Class.
 ///
@@ -369,10 +424,18 @@ pub fn expand_alias_typed(
             source,
             value_template,
         } => {
-            if !is_transparent_mapped(&source, &value_template) {
-                return None;
+            if is_transparent_mapped(&source, &value_template) {
+                return Some(arena.class(&source));
             }
-            Some(arena.class(&source))
+            // Record-shaped mapping (`{ [P in K]: V }`): the flat value
+            // template is the value-slot type, projected onto every key the
+            // same way `Map<K, V>` projects `V`. Intern the value head as a
+            // Class so member access on the receiver continues against it;
+            // a value head that is a generic param stays a param name here —
+            // the chain walker binds it against the receiver's args, exactly
+            // as the `Application` arm leaves its args unsubstituted.
+            let value = record_value_type(&value_template, &[], &[])?;
+            Some(arena.class(&value))
         }
         AliasTarget::Conditional {
             check,

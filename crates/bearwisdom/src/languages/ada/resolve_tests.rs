@@ -8,11 +8,12 @@ use crate::indexer::resolve::engine::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::SymbolIdMap;
+use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::Engine;
 use crate::types::*;
 use std::collections::HashMap;
 
-use super::hooks::spec_for_body;
+use super::hooks::{spec_for_body, AdaHooks};
 
 #[test]
 fn spec_for_body_returns_ads_for_adb() {
@@ -165,5 +166,109 @@ fn receiver_field_chain_resolves_through_generic_walker() {
     assert_eq!(
         res.target_symbol_id, ccer,
         "expected the chain to bind the CCER component"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// use'd-package bare member resolution, end-to-end through the generic engine.
+// `use Pkg;` brings Pkg's members into bare scope; a bare `Member` call must
+// bind to `Pkg.Member`. The ada hook turns the `use` clause into a wildcard
+// import, so the candidate qualifies under the wildcard rung.
+// ---------------------------------------------------------------------------
+
+/// Build a real `SymbolIndex` + `Engine` over `files` and resolve the bare
+/// (chain-less) `Calls` ref named `target` in `caller`, with the file's
+/// `use`/`with` clauses turned into FileContext imports by the ada hook.
+fn resolve_bare_call(files: &[ParsedFile], caller: usize, target: &str) -> Option<Resolution> {
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for pf in files {
+        for s in &pf.symbols {
+            id_map.insert((pf.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = SymbolIndex::build(files, &id_map);
+    let mut eng_ids = SymbolIdMap::default();
+    for pf in files {
+        for (i, s) in pf.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(pf.path.clone(), s.qualified_name.clone())) {
+                eng_ids.insert((pf.path.clone(), i), id);
+            }
+        }
+    }
+    let engine = Engine::build_from_registry(files, &eng_ids, &index, index.type_arena_arc());
+    let pf = &files[caller];
+    let r = pf
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.chain.is_none() && r.target_name == target)
+        .expect("the bare call ref");
+    let source = &pf.symbols[r.source_symbol_index];
+    let file_ctx = AdaHooks.build_file_context(pf, None).unwrap();
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: source,
+        scope_chain: build_scope_chain(source.scope_path.as_deref()),
+        file_package_id: None,
+    };
+    engine.resolve(&ref_ctx, &file_ctx, &index)
+}
+
+const USE_MEMBER_PKG_SRC: &str = concat!(
+    "package Pkg is\n",
+    "   procedure Member;\n",
+    "end Pkg;\n"
+);
+
+const USE_MEMBER_CLIENT_SRC: &str = concat!(
+    "with Pkg;\n",
+    "use Pkg;\n",
+    "procedure Client is\n",
+    "begin\n",
+    "   Member;\n",
+    "end Client;\n"
+);
+
+#[test]
+fn used_package_bare_member_resolves() {
+    let files = vec![
+        ada_parsed_file("pkg.ads", USE_MEMBER_PKG_SRC),
+        ada_parsed_file("client.adb", USE_MEMBER_CLIENT_SRC),
+    ];
+    let res = resolve_bare_call(&files, 1, "Member")
+        .expect("bare `Member` after `use Pkg;` must bind to Pkg.Member");
+    // Re-derive the expected id the same way the harness assigns them.
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for pf in &files {
+        for s in &pf.symbols {
+            id_map.insert((pf.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let member = id_map[&("pkg.ads".to_string(), "Pkg.Member".to_string())];
+    assert_eq!(res.target_symbol_id, member);
+}
+
+#[test]
+fn unused_package_bare_member_with_no_definition_declines() {
+    // `Nonexistent` is not declared in any project file; the bare call must
+    // stay unresolved so external classification can brand it.
+    let client_src = concat!(
+        "with Pkg;\n",
+        "use Pkg;\n",
+        "procedure Client is\n",
+        "begin\n",
+        "   Nonexistent;\n",
+        "end Client;\n"
+    );
+    let files = vec![
+        ada_parsed_file("pkg.ads", USE_MEMBER_PKG_SRC),
+        ada_parsed_file("client.adb", client_src),
+    ];
+    assert!(
+        resolve_bare_call(&files, 1, "Nonexistent").is_none(),
+        "a bare name with no project definition must not bind"
     );
 }

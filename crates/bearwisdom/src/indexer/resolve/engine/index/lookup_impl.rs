@@ -438,3 +438,7 @@ impl SymbolLookup for SymbolIndex {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "lookup_impl_tests.rs"]
+mod tests;

@@ -40,28 +40,11 @@ pub(crate) fn normalize_php_ns(ns: &str) -> String {
     trimmed.replace('\\', ".")
 }
 
-/// Always-external PHP namespace roots (frameworks + major libraries).
-const ALWAYS_EXTERNAL: &[&str] = &[
-    "Illuminate", // Laravel
-    "Symfony",    // Symfony
-    "Doctrine",   // Doctrine ORM
-    "PHPUnit",    // PHPUnit
-    "Psr",        // PSR interfaces
-    "GuzzleHttp", // Guzzle HTTP
-    "Carbon",     // Carbon date
-    "Monolog",    // Monolog logging
-];
-
-/// Check whether a PHP namespace (dotted form) is external.
+/// Check whether a PHP namespace (dotted form) is external. A namespace is
+/// external only when the project's `composer.json` declares the owning
+/// package — there is no hardcoded framework list. With no Composer manifest
+/// on disk, the namespace is left unresolved (honestly) rather than guessed.
 pub(super) fn is_external_php_namespace(ns: &str, project_ctx: Option<&ProjectContext>) -> bool {
-    // Always-external first.
-    for prefix in ALWAYS_EXTERNAL {
-        if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
-            return true;
-        }
-    }
-
-    // Check Composer manifest directly.
     if let Some(ctx) = project_ctx {
         return is_manifest_php_external(ctx, ns);
     }
@@ -72,20 +55,14 @@ pub(super) fn is_external_php_namespace(ns: &str, project_ctx: Option<&ProjectCo
 /// Check whether a PHP namespace is external using the Composer manifest directly.
 pub(super) fn is_manifest_php_external(ctx: &ProjectContext, ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
-    // Always-external check.
-    for prefix in ALWAYS_EXTERNAL {
-        if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
-            return true;
-        }
-    }
     if let Some(m) = ctx.manifest(ManifestKind::Composer) {
         if m.dependencies.contains(ns) {
             return true;
         }
         for dep in &m.dependencies {
-            // Composer package names use "vendor/package" form; namespace roots are
-            // the second segment (e.g., "laravel/framework" → namespace root "Illuminate").
-            // We match against the namespace root segment.
+            // Composer package names use "vendor/package" form. Match the
+            // namespace root segment against the package segment (the part
+            // after "/"), and also against the full "vendor/package" prefix.
             let dep_ns_root = dep.split('/').nth(1).unwrap_or(dep.as_str());
             if root == dep_ns_root {
                 return true;

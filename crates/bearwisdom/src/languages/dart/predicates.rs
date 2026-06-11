@@ -22,36 +22,6 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Always-external Dart package prefixes (retained for future use).
-#[allow(dead_code)]
-const ALWAYS_EXTERNAL: &[&str] = &[
-    "dart:",
-    "package:flutter",
-    "package:provider",
-    "package:riverpod",
-    "package:flutter_riverpod",
-    "package:bloc",
-    "package:flutter_bloc",
-    "package:dio",
-    "package:http",
-    "package:get",
-    "package:get_it",
-    "package:injectable",
-    "package:freezed",
-    "package:json_annotation",
-    "package:hive",
-    "package:isar",
-    "package:sqflite",
-    "package:firebase_core",
-    "package:firebase_auth",
-    "package:cloud_firestore",
-    "package:go_router",
-    "package:auto_route",
-    "package:mockito",
-    "package:flutter_test",
-    "package:test",
-];
-
 /// Check whether a Dart import URI is external (stdlib or pub package).
 pub(super) fn is_external_dart_import(uri: &str) -> bool {
     // dart: scheme = stdlib

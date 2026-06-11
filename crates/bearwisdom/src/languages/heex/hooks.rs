@@ -44,13 +44,17 @@ impl LanguageEngineHooks for HeexHooks {
         &self,
         ref_ctx: &RefContext<'_>,
         _file_ctx: &FileContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
         _lookup: &dyn SymbolLookup,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
         if target.contains('.') {
             let root = target.split('.').next().unwrap_or(target);
-            if elixir::predicates::is_external_elixir_module(root) {
+            if elixir::hooks::classify_elixir_module_root(
+                root,
+                project_ctx,
+                ref_ctx.file_package_id,
+            ) {
                 return Some(root.to_string());
             }
         }

@@ -627,6 +627,14 @@ fn infer_external_namespace_from_hash_r_import() {
         file_package_id: None,
     };
 
+    // `Fornax` is a NuGet package, not a .NET platform root — it classifies
+    // external only when the NuGet manifest declares it. The `#r "Fornax.Core"`
+    // wildcard import brings `div` into scope from that external assembly.
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
+    let mut project_ctx = crate::indexer::project_context::ProjectContext::default();
+    let mut nuget = ManifestData::default();
+    nuget.dependencies.insert("Fornax.Core".to_string());
+    project_ctx.manifests.insert(ManifestKind::NuGet, nuget);
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
@@ -635,7 +643,7 @@ fn infer_external_namespace_from_hash_r_import() {
         crate::languages::fsharp::hooks::FsharpHooks.classify_external(
             &ref_ctx,
             &file_ctx,
-            None,
+            Some(&project_ctx),
             &empty_lookup,
         )
     };

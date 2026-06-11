@@ -262,6 +262,7 @@ fn dotted_target_skipped_by_resolver() {
 
 #[test]
 fn infer_external_namespace_dotted_phoenix_root() {
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let heex_file = make_file(
         "lib/web/templates/page/index.html.heex",
         "heex",
@@ -276,6 +277,13 @@ fn infer_external_namespace_dotted_phoenix_root() {
         scope_chain: build_scope_chain(None),
         file_package_id: None,
     };
+    // `Phoenix` is a Hex dependency, not stdlib — it classifies external only
+    // when a mix.exs manifest declares it. The .heex hook reuses the elixir
+    // mix-dependency path.
+    let mut project_ctx = crate::indexer::project_context::ProjectContext::default();
+    let mut mix = ManifestData::default();
+    mix.dependencies.insert("phoenix".to_string());
+    project_ctx.manifests.insert(ManifestKind::Mix, mix);
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
@@ -284,7 +292,7 @@ fn infer_external_namespace_dotted_phoenix_root() {
         crate::languages::heex::hooks::HeexHooks.classify_external(
             &ref_ctx,
             &file_ctx,
-            None,
+            Some(&project_ctx),
             &empty_lookup,
         )
     };

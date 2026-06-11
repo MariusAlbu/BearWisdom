@@ -28,7 +28,7 @@ use crate::type_checker::core::symbol_types::{SymbolIdMap, SymbolTypeMap};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::type_checker::profile::language_profile::LanguageProfile;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{ChainSegment, EdgeKind, MemberChain, ParsedFile, SegmentKind};
 
 /// Kind-check seed for the generic resolver when the engine drives it: the
 /// real gate is the profile's `kind_compatible_table`, applied via
@@ -316,6 +316,14 @@ impl<'a> Engine<'a> {
                         self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
                         return Some(r);
                     }
+                    // The bare ladder declined. If the enclosing type inherits,
+                    // retry the bare name as a synthetic `self.name()` chain so
+                    // an inherited member can bind through the walker.
+                    if let Some(r) =
+                        self.try_implicit_self_member(ref_ctx, file_ctx, lookup, profile)
+                    {
+                        return Some(r);
+                    }
                 }
             } else {
                 // Chain-less ref: bare-name path. Hook pre-pass, then the
@@ -331,6 +339,12 @@ impl<'a> Engine<'a> {
                 if let Some(mut r) = bare {
                     self.select_bare_overload_override(&mut r, ref_ctx, lookup, profile);
                     self.fill_bare_call_yield(&mut r, ref_ctx, lookup, profile);
+                    return Some(r);
+                }
+                // The bare ladder declined. If the enclosing type inherits,
+                // retry the bare name as a synthetic `self.name()` chain so an
+                // inherited member can bind through the walker.
+                if let Some(r) = self.try_implicit_self_member(ref_ctx, file_ctx, lookup, profile) {
                     return Some(r);
                 }
             }
@@ -359,33 +373,56 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
     ) -> Option<Resolution> {
+        if self.bare_decline(ref_ctx, file_ctx, profile) {
+            return None;
+        }
+        crate::type_checker::core::DefaultResolver {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind_compatible: permissive_kind,
+        }
+        .resolve_all_with_profile(profile)
+    }
+
+    /// True when the profile deliberately declines this bare target before the
+    /// ladder ever runs — a builtin/primitive, a name reserved inside the file's
+    /// namespace, or a qualified target whose leading segment names an imported
+    /// dependency. A `true` here is a decision, not a miss: the target is
+    /// external/builtin and no project symbol may bind it. Consulted both by
+    /// `resolve_generic` (so the ladder skips it) and by the implicit-self
+    /// synthesis (so a declined name is never resurrected as an inherited member).
+    fn bare_decline(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        profile: &LanguageProfile,
+    ) -> bool {
         // Language builtins/primitives (scalar types, built-in functions,
-        // operators, reserved namespace prefixes) are not project symbols.
-        // Decline before the ladder so they are never bound to a same-named
-        // project symbol and never seed a chain miss — Tier 1.5 classifies
-        // them as external/builtin instead.
+        // operators, reserved namespace prefixes) are not project symbols, so
+        // they are never bound to a same-named project symbol and never seed a
+        // chain miss — Tier 1.5 classifies them as external/builtin instead.
         if let Some(is_builtin) = profile.builtin_skip {
             if is_builtin(ref_ctx.extracted_ref.target_name.as_str()) {
-                return None;
+                return true;
             }
         }
         // Two-key sibling of `builtin_skip`: a name reserved only inside a
-        // specific kind of file. Declines before the ladder when the file's
-        // namespace arms the rule AND the target is reserved, so a same-named
-        // project symbol can't bind; external classification brands it after.
+        // specific kind of file. Declines when the file's namespace arms the
+        // rule AND the target is reserved, so a same-named project symbol can't
+        // bind; external classification brands it after.
         if let Some(nd) = profile.namespace_decline {
             if file_ctx.file_namespace.as_deref() == Some(nd.file_namespace)
                 && (nd.is_reserved)(ref_ctx.extracted_ref.target_name.as_str())
             {
-                return None;
+                return true;
             }
         }
         // Import-prefix decline: a qualified target whose leading namespace
         // segment names a declared dependency module is external, not a project
-        // symbol. Declines before the ladder so no same-named local binds and
-        // external classification brands it. The import-set-keyed sibling of
-        // `namespace_decline` — keyed on the target's own leading segment rather
-        // than the resolving file's namespace.
+        // symbol. The import-set-keyed sibling of `namespace_decline` — keyed on
+        // the target's own leading segment rather than the resolving file's
+        // namespace.
         if profile.decline_qualified_when_prefix_imported {
             let target = ref_ctx.extracted_ref.target_name.as_str();
             let sep = profile.qname_separator;
@@ -397,17 +434,117 @@ impl<'a> Engine<'a> {
                         .iter()
                         .any(|i| i.module_path.as_deref() == Some(bare_head))
                 {
-                    return None;
+                    return true;
                 }
             }
         }
-        crate::type_checker::core::DefaultResolver {
-            file_ctx,
-            ref_ctx,
-            lookup,
-            kind_compatible: permissive_kind,
+        false
+    }
+
+    /// Last-resort bare-call rung: an inherited-member retry for a chainless
+    /// call the ladder declined. A bare `helper()` inside a method of a class
+    /// that `extends`/`implements` a base never reaches the ChainWalker — it has
+    /// no receiver — so an inherited member (internal or reachable-external base)
+    /// can't bind. When the enclosing type has supertype edges, re-issue the
+    /// bare name as a synthetic `self.name(...)` chain through the walker so its
+    /// supertype walk + qname-keyed inheritance fallback find the member.
+    ///
+    /// Gating, in order:
+    ///   - the ref is a `Calls`/`Instantiates` (member/call-shaped) bare target;
+    ///   - the profile did NOT `bare_decline` it (a builtin/namespace/import
+    ///     decline must still win — never resurrect a deliberately-declined name);
+    ///   - the enclosing symbol's `scope_path` names a type that has supertype
+    ///     edges (`SupertypeGraph::parents_of`), so a plain free function — whose
+    ///     enclosing scope is absent or names a supertype-less owner — never
+    ///     pays the walk, and flat-global languages keep their semantics.
+    /// A success carries the `implicit_self_member` strategy so the synthesized
+    /// origin is legible; the resolution is otherwise shaped exactly as an
+    /// explicit `self.name()` chain would produce.
+    fn try_implicit_self_member(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) -> Option<Resolution> {
+        let er = ref_ctx.extracted_ref;
+        // Member/call-shaped only. A bare TypeRef to an inherited nested type is
+        // a different case and is not retried here.
+        if !matches!(er.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
+            return None;
         }
-        .resolve_all_with_profile(profile)
+        // A qualified target already carries its own receiver — the implicit
+        // self is for an unqualified bare name.
+        let target = er.target_name.as_str();
+        if target.contains('.') || target.contains("::") || target.contains('/') {
+            return None;
+        }
+        // Never resurrect a name the profile deliberately declines.
+        if self.bare_decline(ref_ctx, file_ctx, profile) {
+            return None;
+        }
+        // The enclosing type must have supertype edges — otherwise an own-class
+        // member would already have bound via the ladder, and a free function
+        // has no enclosing type to walk.
+        let scope = ref_ctx.source_symbol.scope_path.as_deref().filter(|s| !s.is_empty())?;
+        let enclosing_ty = self.arena.class(scope);
+        if self.supertypes.parents_of(enclosing_ty).is_empty() {
+            return None;
+        }
+
+        // Synthesize `self.name(args)`: a `SelfRef` root the walker types to the
+        // enclosing class from `scope_path` (same mechanism as an explicit
+        // `self` receiver), then a member segment carrying the call's shape so
+        // the terminal-call yield / overload logic matches `self.name()`.
+        let chain = MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "self".to_string(),
+                    node_kind: "self".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
+                ChainSegment {
+                    name: target.to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: true,
+                    call_args: er.call_args.clone(),
+                    type_arg_ids: Vec::new(),
+                },
+            ],
+        };
+
+        let walker = ChainWalker::new(
+            &self.arena,
+            &self.members,
+            &self.supertypes,
+            &self.symbol_types,
+            &self.aliases,
+            profile,
+            lookup,
+        );
+        let profile_root = ProfileRootResolver::new(profile.self_receiver_discovery);
+        let cr = walker.walk_with_root(&chain, ref_ctx, file_ctx, &profile_root)?;
+        Some(Resolution {
+            target_symbol_id: cr.target_symbol_id,
+            confidence: 1.0,
+            strategy: "implicit_self_member",
+            resolved_yield_type: self.yield_or_none(cr.resolved_yield_type),
+            flow_emit: None,
+        })
     }
 
     /// Argument-dependent lookup (ADL). A strict fallback for a bare call the

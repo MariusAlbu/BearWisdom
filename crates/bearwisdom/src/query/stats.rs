@@ -223,6 +223,20 @@ pub struct ResolutionBreakdown {
     /// number of unresolved refs in user code of that language and kind.
     /// Pinpoints which extractor / resolver is leaking.
     pub unresolved_by_lang_kind: BTreeMap<String, u32>,
+    /// Map keyed by `COALESCE(origin_language, file_language)` → resolved
+    /// internal-edge count for that language. The resolved-side mirror of
+    /// `unresolved_by_lang_kind` (aggregated across kinds), attributing
+    /// embedded-region edges to the language they're written in. The
+    /// numerator of `rate_by_language`.
+    pub internal_edges_by_lang: BTreeMap<String, u32>,
+    /// Per-language resolution rate, two decimals: `edges / (edges +
+    /// unresolved) * 100` over the same `COALESCE(origin_language,
+    /// file_language)` attribution. A language present on only one side
+    /// still appears (the absent side contributes zero). Lets per-language
+    /// corpus tables come from the DB instead of project-name prefixes,
+    /// so a C codebase indexed under a `perl-*`/`make-*` project name is
+    /// attributed to C, not to the project's nominal language.
+    pub rate_by_language: BTreeMap<String, f64>,
     /// Map keyed by source-symbol `origin_language` → unresolved count.
     /// Distinguishes refs originating in embedded sub-language regions
     /// (e.g. JS inside .vue/.svelte/.astro/.razor host files) from refs
@@ -341,6 +355,75 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         for row in rows {
             let (lang, kind, count) = row?;
             unresolved_by_lang_kind.insert(format!("{lang}.{kind}"), count);
+        }
+    }
+
+    // Resolved internal edges per language, attributed by the same
+    // `COALESCE(origin_language, file_language)` rule as
+    // `unresolved_by_lang_kind` — the resolved-side numerator for
+    // `rate_by_language`. Aggregated across edge kinds (no kind split):
+    // the per-language rate needs a single edge total, not a per-kind one.
+    let mut internal_edges_by_lang: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(s.origin_language, f.language) AS lang, COUNT(*)
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'
+             GROUP BY lang
+             ORDER BY lang",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
+        for row in rows {
+            let (lang, count) = row?;
+            internal_edges_by_lang.insert(lang, count);
+        }
+    }
+
+    // Unresolved internal refs per language (across kinds), same
+    // attribution and the same `CODE_REF_FILTER` as
+    // `unresolved_by_lang_kind`. Recomputed from SQL rather than re-summed
+    // from the kind-split map so the denominator of `rate_by_language`
+    // doesn't depend on string-splitting the `"lang.kind"` keys.
+    let mut unresolved_by_lang: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let by_lang_sql = format!(
+            "SELECT COALESCE(s.origin_language, f.language) AS lang, COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             GROUP BY lang
+             ORDER BY lang"
+        );
+        let mut stmt = conn.prepare(&by_lang_sql)?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
+        for row in rows {
+            let (lang, count) = row?;
+            unresolved_by_lang.insert(lang, count);
+        }
+    }
+
+    // Per-language rate over languages present on either side. A language
+    // with edges but no unresolved refs scores 100.0; one with unresolved
+    // refs but no edges scores 0.0.
+    let mut rate_by_language: BTreeMap<String, f64> = BTreeMap::new();
+    {
+        let langs: std::collections::BTreeSet<&String> = internal_edges_by_lang
+            .keys()
+            .chain(unresolved_by_lang.keys())
+            .collect();
+        for lang in langs {
+            let edges = internal_edges_by_lang.get(lang).copied().unwrap_or(0);
+            let unresolved = unresolved_by_lang.get(lang).copied().unwrap_or(0);
+            let denom = edges + unresolved;
+            let rate = if denom == 0 {
+                100.0
+            } else {
+                (edges as f64) * 100.0 / (denom as f64)
+            };
+            rate_by_language.insert(lang.clone(), (rate * 100.0).round() / 100.0);
         }
     }
 
@@ -472,6 +555,8 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         precision: resolution_rate,
         resolution_rate,
         unresolved_by_lang_kind,
+        internal_edges_by_lang,
+        rate_by_language,
         unresolved_by_origin_language,
         unresolved_by_package,
         resolved_by_strategy,
