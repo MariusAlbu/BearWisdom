@@ -26,3 +26,21 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         _ => true,
     }
 }
+
+/// True when `name` is an implicitly-imported `Prelude` primitive type, data
+/// constructor, function, or surface operator — the closed Prelude/operator set
+/// that every Haskell module sees without an explicit import. Drives the
+/// profile's `builtin_skip` so such a bare reference declines before the
+/// strategy ladder rather than binding a same-named project symbol; external
+/// classification brands it after.
+///
+/// Single source of truth — the closed set lives in `keywords::KEYWORDS`. Named
+/// library types/typeclasses (Text, Map, ToJSON, …) are deliberately absent
+/// from that set so they resolve to indexed externals.
+pub(super) fn is_haskell_prelude_builtin(name: &str) -> bool {
+    super::keywords::KEYWORDS.contains(&name)
+}
+
+#[cfg(test)]
+#[path = "predicates_tests.rs"]
+mod tests;

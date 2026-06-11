@@ -66,6 +66,10 @@ fn emit_param_types_from_declarator(
 ///
 /// This sweep runs after the main extraction and ensures the coverage engine can
 /// match all relevant ref-producing node kinds regardless of nesting depth.
+///
+/// Calling-convention / export-qualifier macros that tree-sitter parses as a
+/// leading type token are dropped by a catalog-driven `retain` in the caller,
+/// after this sweep — see `extract_with_file`.
 pub(super) fn sweep_typerefs<'a>(
     node: Node<'a>,
     src: &[u8],

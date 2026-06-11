@@ -91,6 +91,28 @@ fn cov_keyword_invocation_in_test_case_produces_calls() {
 }
 
 #[test]
+fn group_control_keyword_not_emitted_as_call() {
+    // `GROUP` opens a Robot Framework 7 named block — its label cell is data,
+    // not a keyword call. The block body's real keyword still emits.
+    let src = "*** Test Cases ***\nSample\n    GROUP    Login flow\n        Log    Hello\n    END\n";
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !calls.contains(&"GROUP"),
+        "GROUP must not be emitted as a Calls ref; got {calls:?}"
+    );
+    assert!(
+        calls.contains(&"Log"),
+        "the keyword inside the GROUP block must still emit; got {calls:?}"
+    );
+}
+
+#[test]
 fn cov_library_setting_produces_imports() {
     let src = "*** Settings ***\nLibrary    Collections\n";
     let r = extract::extract(src);

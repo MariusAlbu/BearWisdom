@@ -44,6 +44,37 @@ pub(super) fn is_bazel_framework_chain(name: &str) -> bool {
     BAZEL_FRAMEWORK_ROOTS.contains(&root)
 }
 
+/// Starlark spec global functions — the closed set of built-ins the Starlark
+/// interpreter and Bazel's universal global namespace inject into every file.
+/// These are language/build-spec constructs, never user-defined or library
+/// symbols, so a bare reference to one declines before the ladder rather than
+/// binding to a same-named project symbol. Bazel native RULES (`cc_library`,
+/// `proto_library`, …) and skylib helpers are NOT here — they are provided by
+/// loaded `.bzl` files / native rule sets, resolved as externals.
+const STARLARK_SPEC_GLOBALS: &[&str] = &[
+    "rule",
+    "aspect",
+    "provider",
+    "depset",
+    "struct",
+    "select",
+    "glob",
+    "load",
+    "attr",
+    "repository_rule",
+    "module_extension",
+    "tag_class",
+    "use_extension",
+    "use_repo",
+    "visibility",
+];
+
+/// True when `name` is one of the Starlark spec global built-in functions
+/// (see `STARLARK_SPEC_GLOBALS`). Drives the profile's `builtin_skip`.
+pub(super) fn is_starlark_spec_global(name: &str) -> bool {
+    STARLARK_SPEC_GLOBALS.contains(&name)
+}
+
 /// True when a dotted call's last segment is a Python/Starlark built-in
 /// type method (str/list/dict/set/depset). `auth_info.get`, `output.append`,
 /// `filename.endswith`, `kwargs.pop` all bind to runtime types, never to

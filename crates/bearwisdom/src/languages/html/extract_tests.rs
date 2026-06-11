@@ -110,6 +110,38 @@ fn standard_html_tags_emit_no_component_refs() {
 }
 
 #[test]
+fn uppercase_legacy_html_tags_emit_no_component_refs() {
+    // HTML4 documents write standard elements in all-caps. These case-insensitively
+    // match real HTML elements and must never be mistaken for components.
+    let src = "<HTML><BODY><TABLE><TR><TD><A><BR></TD></TR></TABLE></BODY></HTML>";
+    let r = extract(src, "legacy.html");
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.is_empty(),
+        "all-uppercase legacy tags must not emit component Calls refs, got {calls:?}"
+    );
+}
+
+#[test]
+fn pascalcase_component_tag_still_emits_call() {
+    // Guard: a genuine PascalCase component tag (capital + lowercase) still emits.
+    let src = "<html><body><UserCard></UserCard></body></html>";
+    let r = extract(src, "page.html");
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UserCard"),
+        "PascalCase <UserCard> should still emit a Calls ref, got {:?}",
+        r.refs
+    );
+}
+
+#[test]
 fn generator_meta_outside_first_16kb_not_detected() {
     // If a generator marker only appears far past the head, we don't
     // bail. Real generators always put the marker in <head>, so this

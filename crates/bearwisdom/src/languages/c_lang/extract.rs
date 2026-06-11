@@ -12,7 +12,7 @@ use super::salvage_template_class::salvage_missed_template_class_decls;
 use super::type_refs::sweep_typerefs;
 use super::visitor::extract_node;
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{ExtractedRef, ExtractedSymbol};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol};
 
 // ---------------------------------------------------------------------------
 // Scope configuration
@@ -142,8 +142,23 @@ pub fn extract_with_file(source: &str, file_path: &str, language: &str) -> super
     // and a ref for every template_argument_list in the CST.  This ensures the
     // ref coverage engine can match all type_identifier and template_argument_list
     // nodes, regardless of their depth or syntactic context.
+    let macro_catalog = super::macro_catalog::catalog_for_file(file_path);
     let sweep_idx = symbols.len().saturating_sub(1);
     sweep_typerefs(root, src, sweep_idx, effective_language, &mut refs);
+
+    // Drop TypeRefs whose name is a calling-convention / export-qualifier macro
+    // (`pTHX_`, `LUA_API`, `WINAPI`, `GLAPI`, `__aio`). Tree-sitter, lacking
+    // preprocessing, parses such a leading macro token as a `type_identifier`
+    // in return-type / parameter position; the macro expands to a storage or
+    // linkage specifier, never a type, so the ref can only ever be unresolvable.
+    // Filtering here — after both the visitor and the sweep have emitted — is
+    // the single chokepoint every TypeRef-producing path converges on.
+    if !macro_catalog.is_empty() {
+        refs.retain(|r| {
+            r.kind != EdgeKind::TypeRef
+                || !macro_catalog.by_name.contains_key(r.target_name.as_str())
+        });
+    }
 
     // Raw-text fallback for `#define` symbols that tree-sitter-c missed
     // due to error recovery. Real-world C headers (curl_setup.h, libuv,

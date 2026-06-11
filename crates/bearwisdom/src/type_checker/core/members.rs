@@ -182,6 +182,107 @@ impl MembersIndex {
         }
     }
 
+    /// Compute the reachability-bounded external type set and admit its
+    /// members in one step. Runs after the supertype graph is built (the graph
+    /// supplies the internal → external inheritance seed). A no-op when no
+    /// external type is reachable, so a single-language build is unaffected.
+    pub fn admit_reachable_externals(
+        &mut self,
+        parsed: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        arena: &TypeArena,
+        supertypes: &SupertypeGraph,
+    ) {
+        let reachable = reachable_external_types(parsed, arena, supertypes);
+        self.ingest_external_reachable(parsed, sym_id_map, arena, &reachable);
+    }
+
+    /// Admit the direct members of every external type named in
+    /// `reachable_ext_types` (a set of generics-stripped qnames). The first
+    /// `ingest_files` pass skips external Class/Struct methods wholesale — a
+    /// receiver typed by an external class then carries no members and a chain
+    /// stops at its first hop. This second pass relaxes the skip for the
+    /// bounded slice of external types an internal symbol actually reaches:
+    /// only those land here, so the write set stays |reached types| × methods
+    /// rather than the whole dependency tree.
+    ///
+    /// Append-only and idempotent like `ingest_files`: re-admitting a type
+    /// whose members are already present re-pushes the same `SymbolInfo`s in
+    /// the same order, so `find_on_chain`'s first-match is unchanged. The
+    /// caller (engine build) runs this once after the supertype graph exists,
+    /// and the trait/interface admission from the first pass is untouched.
+    pub fn ingest_external_reachable(
+        &mut self,
+        parsed: &[ParsedFile],
+        sym_id_map: &SymbolIdMap,
+        arena: &TypeArena,
+        reachable_ext_types: &FxHashSet<String>,
+    ) {
+        if reachable_ext_types.is_empty() {
+            return;
+        }
+        // An owner already keyed in `direct` was admitted by the first pass
+        // (a trait/interface default) or a prior reachability pass. Re-admitting
+        // its members would duplicate entries and shift first-match order, so
+        // those owners are excluded WHOLESALE here — decided once up front, not
+        // per-symbol, so a second member of a freshly-admitted owner is not
+        // mistaken for an already-keyed owner.
+        let already_keyed: FxHashSet<&str> = reachable_ext_types
+            .iter()
+            .filter(|q| {
+                arena
+                    .class_lookup(q)
+                    .is_some_and(|ty| self.direct.contains_key(&ty))
+            })
+            .map(|q| q.as_str())
+            .collect();
+        for pf in parsed {
+            if !pf.path.starts_with("ext:") {
+                continue;
+            }
+            let file_path: Arc<str> = Arc::from(pf.path.as_str());
+            for (idx, sym) in pf.symbols.iter().enumerate() {
+                // Direct membership requires a scope naming the owner type;
+                // the owner must be a reachable external type. A scope-less
+                // symbol (the type-defining symbol itself, a free function) is
+                // not a member and is skipped.
+                let Some(scope) = &sym.scope_path else {
+                    continue;
+                };
+                if scope.is_empty() {
+                    continue;
+                }
+                let bare_scope = strip_generic_args(scope);
+                if !reachable_ext_types.contains(bare_scope.as_str())
+                    || already_keyed.contains(bare_scope.as_str())
+                {
+                    continue;
+                }
+                let parent_ty = arena.class(scope);
+                let bare_parent_ty =
+                    (bare_scope.as_str() != scope.as_str()).then(|| arena.class(&bare_scope));
+                let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
+                    continue;
+                };
+                let info = SymbolInfo {
+                    id: sym_id,
+                    name: sym.name.clone(),
+                    qualified_name: sym.qualified_name.clone(),
+                    kind: sym.kind.as_str().to_string(),
+                    visibility: sym.visibility.map(|v| v.as_str().to_string()),
+                    file_path: file_path.clone(),
+                    scope_path: sym.scope_path.clone(),
+                    package_id: pf.package_id,
+                    signature: sym.signature.clone(),
+                };
+                if let Some(bare_ty) = bare_parent_ty {
+                    self.direct.entry(bare_ty).or_default().push(info.clone());
+                }
+                self.direct.entry(parent_ty).or_default().push(info);
+            }
+        }
+    }
+
     /// Number of types with at least one direct member recorded.
     pub fn direct_type_count(&self) -> usize {
         self.direct.len()
@@ -508,6 +609,162 @@ fn trait_interface_qnames(pf: &ParsedFile) -> FxHashSet<&str> {
         .filter(|s| matches!(s.kind, SymbolKind::Trait | SymbolKind::Interface))
         .map(|s| s.qualified_name.as_str())
         .collect()
+}
+
+/// The generics-stripped qnames of external types an internal symbol reaches,
+/// closed over the type edges between external types so a chain can walk past
+/// the first external hop.
+///
+/// Seed (depth 1 from project code):
+///   - the parent of every supertype edge whose child is internal and whose
+///     parent is an external type (a project class extending an external base);
+///   - every external type named as the declared / return / parameter type of
+///     an internal symbol (a field/local/return typed by an external class).
+///
+/// Closure: an admitted external type's own members yield further external
+/// types (`Kysely.selectFrom(): SelectQueryBuilder`); those are the receiver of
+/// the next chain hop, so their members must also be admitted. The closure
+/// follows member return / declared / parameter types from external type to
+/// external type until no new type is reached. It stays within the reachable
+/// component — never the whole dependency tree — so the admitted write set is
+/// bounded by `|reached types| × methods`, the same bound the seed has.
+///
+/// The set is empty when no external file is present (the common single-language
+/// build), so the caller's second admission pass is a no-op there.
+fn reachable_external_types(
+    parsed: &[ParsedFile],
+    arena: &TypeArena,
+    supertypes: &SupertypeGraph,
+) -> FxHashSet<String> {
+    // Every external type's bare qname. A child / referenced type is "external"
+    // iff it is declared in an `ext:` file, so this set is the membership test
+    // for both the seed and the closure.
+    let mut ext_type_qnames: FxHashSet<String> = FxHashSet::default();
+    // For each external type, the external types its members reference through
+    // a return / declared / parameter type — the closure's adjacency.
+    let mut ext_member_edges: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
+    for pf in parsed {
+        if !pf.path.starts_with("ext:") {
+            continue;
+        }
+        for sym in &pf.symbols {
+            if is_type_defining_kind(sym.kind) {
+                ext_type_qnames.insert(strip_generic_args(&sym.qualified_name));
+            }
+        }
+    }
+
+    let mut reachable: FxHashSet<String> = FxHashSet::default();
+
+    // Seed 1: external parents of internal → external supertype edges. The
+    // child is internal exactly when its bare qname is not an external type.
+    for (child, parent) in supertypes.child_parent_pairs() {
+        let parent_qname = base_class_qname(parent, arena);
+        let Some(parent_qname) = parent_qname else {
+            continue;
+        };
+        if !ext_type_qnames.contains(parent_qname.as_str()) {
+            continue;
+        }
+        let child_qname = base_class_qname(child, arena);
+        let child_external = child_qname
+            .as_deref()
+            .is_some_and(|q| ext_type_qnames.contains(q));
+        if !child_external {
+            reachable.insert(parent_qname);
+        }
+    }
+
+    // Seed 2: external types named by an internal symbol's type metadata, and
+    // collect each external type's member-edge adjacency for the closure.
+    for pf in parsed {
+        let is_external = pf.path.starts_with("ext:");
+        for sym in &pf.symbols {
+            let referenced = symbol_referenced_types(sym, arena, &ext_type_qnames);
+            if is_external {
+                if let Some(scope) = &sym.scope_path {
+                    let owner = strip_generic_args(scope);
+                    if ext_type_qnames.contains(owner.as_str()) && !referenced.is_empty() {
+                        ext_member_edges.entry(owner).or_default().extend(referenced);
+                    }
+                }
+            } else {
+                reachable.extend(referenced);
+            }
+        }
+    }
+
+    // Closure: walk member-type edges between external types from the seed.
+    let mut frontier: Vec<String> = reachable.iter().cloned().collect();
+    while let Some(ty) = frontier.pop() {
+        let Some(next) = ext_member_edges.get(&ty) else {
+            continue;
+        };
+        for n in next {
+            if reachable.insert(n.clone()) {
+                frontier.push(n.clone());
+            }
+        }
+    }
+
+    reachable
+}
+
+/// The external type qnames (generics-stripped) named by `sym`'s declared,
+/// return, and parameter types, keeping only those in `ext_type_qnames`. Each
+/// type is decomposed to its base class qname (`Repository<User>` →
+/// `Repository`), so a generic application over an external base is recognized.
+fn symbol_referenced_types(
+    sym: &crate::types::ExtractedSymbol,
+    arena: &TypeArena,
+    ext_type_qnames: &FxHashSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut consider = |id: Option<TypeId>| {
+        if let Some(id) = id {
+            if let Some(q) = base_class_qname(id, arena) {
+                if ext_type_qnames.contains(q.as_str()) {
+                    out.push(q);
+                }
+            }
+        }
+    };
+    consider(sym.declared_type);
+    consider(sym.return_type);
+    for &p in &sym.param_types {
+        consider(Some(p));
+    }
+    out
+}
+
+/// The base nominal qname of a type, generics dropped, or `None` for a type
+/// with no nominal base (primitive, function, tuple, literal, unknown). Peels
+/// `Apply` to its base and the single-payload wrappers (`Optional`,
+/// `AsyncWrapper`, `Iterator`) to their inner type so an external class wrapped
+/// in `Promise<…>` / `…?` / `Iterator<…>` is still recognized.
+fn base_class_qname(id: TypeId, arena: &TypeArena) -> Option<String> {
+    match arena.get(id) {
+        Type::Class(q) => Some(strip_generic_args(&q)),
+        Type::Apply { base, .. } => base_class_qname(base, arena),
+        Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
+            base_class_qname(inner, arena)
+        }
+        _ => None,
+    }
+}
+
+/// Symbol kinds that declare a nominal type with a member set — the owners
+/// admitted by the reachability-bounded external pass.
+fn is_type_defining_kind(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Class
+            | SymbolKind::Struct
+            | SymbolKind::Interface
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+            | SymbolKind::TypeAlias
+    )
 }
 
 /// True when the language declares an extension function with the receiver

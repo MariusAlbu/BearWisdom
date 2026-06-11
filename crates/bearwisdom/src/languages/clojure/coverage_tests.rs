@@ -184,6 +184,41 @@ fn ref_namespace_qualified_symbol() {
     );
 }
 
+/// Dotted namespace head in call position (`sci.core`, `datascript.db`) is a
+/// require/namespace reference, not a callable — it must not emit a Calls ref.
+#[test]
+fn ref_dotted_namespace_head_not_a_call() {
+    let r = extract("(defn run [] (sci.core opts))");
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !calls.contains(&"sci.core"),
+        "dotted namespace head `sci.core` must not be a Calls ref; got {calls:?}"
+    );
+}
+
+/// Guard: a static-method interop call (`Math/abs`) keeps its `/`-stripped name
+/// and a constructor (`Date.`) and member access (`.getName`) are unaffected —
+/// only an interior-dot, unqualified name is suppressed.
+#[test]
+fn ref_dotted_callables_still_emit() {
+    let r = extract("(defn calc [d] (Math/abs (.getTime d)))");
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"abs"),
+        "static interop call `Math/abs` must still emit `abs`; got {calls:?}"
+    );
+}
+
 /// Unqualified symbol: no slash → module stays None
 #[test]
 fn ref_unqualified_symbol_no_module() {

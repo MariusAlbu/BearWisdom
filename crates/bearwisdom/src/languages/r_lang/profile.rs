@@ -70,7 +70,7 @@ pub const R_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: R_PRIMITIVES,
     kind_compatible_table: R_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_r_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

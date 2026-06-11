@@ -450,13 +450,4 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "S",
     "N",
     "M",
-    "BasicJsonType",
-    "IteratorType",
-    "AllocatorType",
-    "ValueType",
-    "ConstructibleArrayType",
-    "SAX",
-    "LhsT",
-    "RhsT",
-    "ArgT",
 ];

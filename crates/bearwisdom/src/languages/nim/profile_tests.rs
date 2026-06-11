@@ -36,6 +36,17 @@ fn nim_calls_row_accepts_object_construction_without_dropping_procs() {
 }
 
 #[test]
+fn nim_calls_row_accepts_enum_member() {
+    let t = NIM_PROFILE.kind_compatible_table;
+    // An enum value used call-syntactically binds to the EnumMember.
+    assert!(KindCompatibility::check(
+        t,
+        EdgeKind::Calls,
+        SymbolKind::EnumMember
+    ));
+}
+
+#[test]
 fn nim_profile_identity_and_shadow_mode() {
     assert_eq!(NIM_PROFILE.id, "nim");
     assert!(NIM_PROFILE.has_generics);

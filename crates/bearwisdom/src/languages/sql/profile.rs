@@ -56,7 +56,16 @@ pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
-    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    // SQL identifiers are case-insensitive per ANSI — a table/type reference
+    // written in any casing binds to a same-name candidate.
+    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::Spec(
+        crate::type_checker::profile::language_profile::NormSpec {
+            case_insensitive: true,
+            strip_chars: &[],
+            strip_prefixes: &[],
+            strip_sigils: &[],
+        },
+    ),
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,

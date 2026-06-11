@@ -123,7 +123,7 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
         arena: std::sync::Arc<TypeArena>,
     ) -> Self {
-        let members = MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
+        let mut members = MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
         let symbol_types = SymbolTypeMap::build_from_parsed_files(
             parsed,
             sym_id_map,
@@ -143,6 +143,13 @@ impl<'a> Engine<'a> {
         // over types declared in Structural/Both-profile files.
         let supertypes =
             SupertypeGraph::build_multi(parsed, &arena, &profiles, &members, &symbol_types, lookup);
+
+        // Second external-admission pass, now that the supertype graph exists:
+        // admit the members of the external types an internal symbol reaches
+        // (inheritance parents + referenced field/return/param types), so a
+        // chain rooted on an external receiver walks past its first hop. The
+        // trait/interface default-method admission from the first pass stands.
+        members.admit_reachable_externals(parsed, sym_id_map, &arena, &supertypes);
 
         // Aliases: aggregate every per-file `(qname, AliasTarget)` pair.
         // Externals contribute alias entries that the chain walker resolves
@@ -212,6 +219,13 @@ impl<'a> Engine<'a> {
             &self.symbol_types,
             lookup,
         );
+
+        // Re-run the reachability-bounded external admission over the full set:
+        // appended files may reference new external types, and the rebuilt
+        // graph may add internal → external inheritance edges. The pass skips
+        // owners already keyed, so it only admits the newly-reached types.
+        self.members
+            .admit_reachable_externals(parsed, sym_id_map, &self.arena, &self.supertypes);
 
         let mut alias_pairs: Vec<(String, crate::types::AliasTarget)> = Vec::new();
         for pf in parsed {

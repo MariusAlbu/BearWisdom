@@ -1,6 +1,87 @@
 use super::extract as run_extract;
 use crate::languages::erlang::cowboy::extract_cowboy_triples_from_text;
-use crate::types::ExtractedRoute;
+use crate::types::{EdgeKind, ExtractedRoute};
+
+/// Collect the `target_name`s of all `Calls` refs from a full extract.
+fn call_targets(src: &str) -> Vec<String> {
+    run_extract(src)
+        .refs
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name)
+        .collect()
+}
+
+#[test]
+fn higher_order_variable_call_not_emitted() {
+    // `Fun(X)` invokes a bound variable (capitalized = variable in Erlang).
+    // It names no function symbol and must not produce a Calls ref.
+    let src = r#"
+-module(myapp).
+-export([run/2]).
+
+run(Fun, X) ->
+    Fun(X).
+"#;
+    let targets = call_targets(src);
+    assert!(
+        !targets.contains(&"Fun".to_string()) && !targets.contains(&"Fun/1".to_string()),
+        "variable callee `Fun(X)` must not emit a Calls ref; got {targets:?}"
+    );
+}
+
+#[test]
+fn higher_order_remote_variable_fun_not_emitted() {
+    // `Mod:Fun(X)` — the function part is a variable; suppress like the bare form.
+    let src = r#"
+-module(myapp).
+-export([run/3]).
+
+run(Mod, Fun, X) ->
+    Mod:Fun(X).
+"#;
+    let targets = call_targets(src);
+    assert!(
+        !targets.contains(&"Fun".to_string()) && !targets.contains(&"Fun/1".to_string()),
+        "variable remote-fun `Mod:Fun(X)` must not emit a Calls ref; got {targets:?}"
+    );
+}
+
+#[test]
+fn named_call_still_emitted() {
+    // Guard: an ordinary named call must still emit an arity-qualified Calls ref.
+    let src = r#"
+-module(myapp).
+-export([run/1]).
+
+run(X) ->
+    helper(X).
+
+helper(Y) -> Y.
+"#;
+    let targets = call_targets(src);
+    assert!(
+        targets.contains(&"helper/1".to_string()),
+        "named call `helper(X)` must still emit; got {targets:?}"
+    );
+}
+
+#[test]
+fn named_remote_call_still_emitted() {
+    // Guard: a named remote call (`lists:reverse(X)`) must still emit.
+    let src = r#"
+-module(myapp).
+-export([run/1]).
+
+run(X) ->
+    lists:reverse(X).
+"#;
+    let targets = call_targets(src);
+    assert!(
+        targets.contains(&"reverse/1".to_string()),
+        "named remote call must still emit; got {targets:?}"
+    );
+}
 
 fn collect(text: &str) -> Vec<ExtractedRoute> {
     let mut routes = Vec::new();

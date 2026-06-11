@@ -237,6 +237,16 @@ impl SupertypeGraph {
         self.edges.get(&ty).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Every direct `(child, parent)` supertype edge. Lets a consumer that
+    /// needs the full edge set — rather than the parents of one node — read it
+    /// without re-deriving the graph. Order follows the underlying map
+    /// iteration and is not significant to callers.
+    pub fn child_parent_pairs(&self) -> impl Iterator<Item = (TypeId, TypeId)> + '_ {
+        self.edges
+            .iter()
+            .flat_map(|(&child, parents)| parents.iter().map(move |&parent| (child, parent)))
+    }
+
     /// BFS over the supertype graph from `start`. Yields `start` first, then
     /// every transitive ancestor in breadth-first order with duplicates
     /// suppressed. Caller stops at the first match for any "find on

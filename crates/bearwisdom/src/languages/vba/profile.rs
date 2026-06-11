@@ -59,8 +59,10 @@ pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
+    // VBA has no import mechanism — every module/class/procedure is in one
+    // global scope, so a bare reference binds flat-globally across the project.
     namespaceless_global_type_lookup:
-        crate::type_checker::profile::language_profile::NamespaceScope::Off,
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

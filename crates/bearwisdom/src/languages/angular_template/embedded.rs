@@ -18,12 +18,95 @@ use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     let mut regions = Vec::new();
-    collect_interpolations(source, &mut regions);
-    collect_binding_attributes(source, &mut regions);
+    // Template reference variables (`#grid`, `#userForm`) are local declarations
+    // scoped to the template, not component members. Collect them once and seed
+    // every binding region with a local so their uses resolve in-region instead
+    // of emitting an unresolved ref to a non-existent component property.
+    let template_refs = collect_template_ref_vars(source);
+    collect_interpolations(source, &template_refs, &mut regions);
+    collect_binding_attributes(source, &template_refs, &mut regions);
     regions
 }
 
-fn collect_interpolations(source: &str, regions: &mut Vec<EmbeddedRegion>) {
+/// Collect the names of Angular template reference variables declared in the
+/// source — the `#name` (and legacy `ref-name`) attribute form. These are
+/// template-local bindings; identifier uses elsewhere in the template refer to
+/// them, never to a component member.
+fn collect_template_ref_vars(source: &str) -> Vec<String> {
+    let bytes = source.as_bytes();
+    let mut names: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    let mut in_tag = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if !in_tag && b == b'<' {
+            in_tag = true;
+            i += 1;
+            continue;
+        }
+        if in_tag && b == b'>' {
+            in_tag = false;
+            i += 1;
+            continue;
+        }
+        // Skip quoted attribute values — a `#` inside a value (an href fragment,
+        // a CSS color) is data, not a reference-variable declaration.
+        if in_tag && (b == b'"' || b == b'\'') {
+            let quote = b;
+            i += 1;
+            while i < bytes.len() && bytes[i] != quote {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        // A `#` inside a tag, at an attribute boundary (preceded by whitespace or
+        // the tag open), introduces a reference variable.
+        if in_tag && b == b'#' && (i == 0 || bytes[i - 1].is_ascii_whitespace() || bytes[i - 1] == b'<') {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'$') {
+                j += 1;
+            }
+            if j > start {
+                if let Some(name) = source.get(start..j) {
+                    let owned = name.to_string();
+                    if !names.contains(&owned) {
+                        names.push(owned);
+                    }
+                }
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+    names
+}
+
+/// Build the `let name: any;` local-declaration prelude that seeds a binding
+/// region with the template's reference variables. Empty when none are declared.
+fn template_ref_prelude(refs: &[String]) -> String {
+    let mut out = String::new();
+    for name in refs {
+        out.push_str(&format!("let {name}: any; "));
+    }
+    out
+}
+
+/// Normalize an Angular binding expression into plain TypeScript. `$any(expr)`
+/// is the template language's no-op cast — rewriting the `$any(` token to a bare
+/// `(` keeps the parentheses balanced and drops the synthetic `$any` call that
+/// would otherwise be emitted as an unresolved ref.
+fn normalize_ng_expr(expr: &str) -> String {
+    expr.replace("$any(", "(")
+}
+
+fn collect_interpolations(
+    source: &str,
+    template_refs: &[String],
+    regions: &mut Vec<EmbeddedRegion>,
+) {
     let bytes = source.as_bytes();
     let mut idx = 0u32;
     let mut i = 0usize;
@@ -39,7 +122,7 @@ fn collect_interpolations(source: &str, regions: &mut Vec<EmbeddedRegion>) {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
                     let (line, col) = line_col_at(bytes, expr_start);
-                    regions.push(make_binding_region(trimmed, line, col, idx));
+                    regions.push(make_binding_region(trimmed, template_refs, line, col, idx));
                     idx += 1;
                 }
             }
@@ -65,8 +148,13 @@ fn find_double_close(bytes: &[u8]) -> Option<usize> {
 /// `*ngIf="..."`, `*ngFor="let x of xs"`. We look for the leading
 /// punctuation (`[`, `(`, `*`) inside HTML start tags and parse the
 /// quoted RHS as a TypeScript expression.
-fn collect_binding_attributes(source: &str, regions: &mut Vec<EmbeddedRegion>) {
+fn collect_binding_attributes(
+    source: &str,
+    template_refs: &[String],
+    regions: &mut Vec<EmbeddedRegion>,
+) {
     let bytes = source.as_bytes();
+    let prelude = template_ref_prelude(template_refs);
     let mut idx = 1000u32; // distinct from interpolation indices
     let mut i = 0usize;
     let mut in_tag = false;
@@ -89,10 +177,11 @@ fn collect_binding_attributes(source: &str, regions: &mut Vec<EmbeddedRegion>) {
                     if !trimmed.is_empty() {
                         let (line, col) = line_col_at(bytes, expr_start);
                         let is_structural = b == b'*' && trimmed.starts_with("let ");
+                        let expr = normalize_ng_expr(trimmed);
                         let wrapped = if is_structural {
-                            format!("function __NgExpr{idx}() {{ for ({trimmed}) {{}} }}\n")
+                            format!("function __NgExpr{idx}() {{ {prelude}for ({expr}) {{}} }}\n")
                         } else {
-                            format!("function __NgExpr{idx}() {{ return ({trimmed}); }}\n")
+                            format!("function __NgExpr{idx}() {{ {prelude}return ({expr}); }}\n")
                         };
                         regions.push(EmbeddedRegion {
                             language_id: "typescript".to_string(),
@@ -122,10 +211,18 @@ fn collect_binding_attributes(source: &str, regions: &mut Vec<EmbeddedRegion>) {
     }
 }
 
-fn make_binding_region(expr: &str, line: u32, col: u32, idx: u32) -> EmbeddedRegion {
+fn make_binding_region(
+    expr: &str,
+    template_refs: &[String],
+    line: u32,
+    col: u32,
+    idx: u32,
+) -> EmbeddedRegion {
+    let prelude = template_ref_prelude(template_refs);
+    let body = normalize_ng_expr(expr);
     EmbeddedRegion {
         language_id: "typescript".to_string(),
-        text: format!("function __NgInterp{idx}() {{ return ({expr}); }}\n"),
+        text: format!("function __NgInterp{idx}() {{ {prelude}return ({body}); }}\n"),
         line_offset: line,
         col_offset: col,
         origin: EmbeddedOrigin::StringDsl,
@@ -208,60 +305,5 @@ fn line_col_at(bytes: &[u8], byte_pos: usize) -> (u32, u32) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn interpolation_becomes_region() {
-        let src = "<div>{{ userName }}</div>";
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("userName")));
-    }
-
-    #[test]
-    fn property_binding_becomes_region() {
-        let src = r#"<img [src]="avatarUrl" />"#;
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("avatarUrl")));
-    }
-
-    #[test]
-    fn event_binding_becomes_region() {
-        let src = r#"<button (click)="handleClick($event)">Go</button>"#;
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("handleClick")));
-    }
-
-    #[test]
-    fn ng_for_becomes_for_of_region() {
-        let src = r#"<li *ngFor="let user of users">{{user.name}}</li>"#;
-        let regions = detect_regions(src);
-        assert!(
-            regions
-                .iter()
-                .any(|r| r.text.contains("for (let user of users)")),
-            "got regions: {regions:#?}"
-        );
-    }
-
-    #[test]
-    fn ng_if_becomes_region() {
-        let src = r#"<div *ngIf="isActive">x</div>"#;
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("isActive")));
-    }
-
-    #[test]
-    fn empty_interpolation_skipped() {
-        let src = "{{  }}";
-        let regions = detect_regions(src);
-        assert!(regions.is_empty());
-    }
-
-    #[test]
-    fn full_input_line_with_two_bindings_produces_two_regions() {
-        let src = r#"<input [value]="formName" (input)="handleInput($event)" />"#;
-        let regions = detect_regions(src);
-        assert_eq!(regions.len(), 2, "expected 2 regions, got {regions:#?}");
-    }
-}
+#[path = "embedded_tests.rs"]
+mod tests;

@@ -2,7 +2,20 @@ use super::hooks::{
     classify_dart_import_uri, detect_dart_drift_emission, detect_dart_grpc_emission,
     detect_dart_http_chain, detect_dart_shelf_route,
 };
+use crate::ecosystem::manifest::{ManifestData, ManifestKind};
+use crate::indexer::project_context::ProjectContext;
 use crate::types::*;
+
+/// A `ProjectContext` whose pubspec declares `name: <self_pkg>` — the own-name
+/// signal `classify_dart_import_uri` consults to tell a `package:<self>/...`
+/// URI from a third-party one.
+fn ctx_with_pubspec(self_pkg: &str) -> ProjectContext {
+    let mut manifest = ManifestData::default();
+    manifest.package_names.push(self_pkg.to_string());
+    let mut ctx = ProjectContext::default();
+    ctx.manifests.insert(ManifestKind::Pubspec, manifest);
+    ctx
+}
 
 fn make_chain(segments: &[&str]) -> MemberChain {
     MemberChain {
@@ -139,4 +152,46 @@ fn classify_relative_uri_is_project_local() {
     // prefixed ref is bound in the index rather than branded external.
     assert!(classify_dart_import_uri("tables.dart", None, None).is_none());
     assert!(classify_dart_import_uri("../models/user.dart", None, None).is_none());
+}
+
+#[test]
+fn classify_self_package_uri_is_project_local() {
+    // `package:<self>/...` is the idiomatic intra-package absolute import.
+    // With the pubspec `name:` matching the URI's package segment, the ref is
+    // project-local — bound under `lib/`, not branded external.
+    let ctx = ctx_with_pubspec("myapp");
+    assert!(classify_dart_import_uri("package:myapp/models/user.dart", None, Some(&ctx)).is_none());
+}
+
+#[test]
+fn classify_third_party_package_uri_stays_external() {
+    // A `package:` URI whose segment is not the own package brands external by
+    // its package name, even alongside the self-package guard.
+    let ctx = ctx_with_pubspec("myapp");
+    assert_eq!(
+        classify_dart_import_uri("package:third_party/x.dart", None, Some(&ctx)).as_deref(),
+        Some("third_party")
+    );
+}
+
+#[test]
+fn classify_dart_scheme_stays_external_with_self_package() {
+    // The self-package guard never affects `dart:` URIs — stdlib stays external.
+    let ctx = ctx_with_pubspec("myapp");
+    assert_eq!(
+        classify_dart_import_uri("dart:io", None, Some(&ctx)).as_deref(),
+        Some("dart.stdlib")
+    );
+}
+
+#[test]
+fn classify_workspace_sibling_package_is_project_local() {
+    // In a melos workspace the union pubspec carries every member's name, so a
+    // sibling `package:` URI is recognized as project-local rather than
+    // external.
+    let mut ctx = ctx_with_pubspec("myapp");
+    if let Some(m) = ctx.manifests.get_mut(&ManifestKind::Pubspec) {
+        m.package_names.push("myapp_core".to_string());
+    }
+    assert!(classify_dart_import_uri("package:myapp_core/api.dart", None, Some(&ctx)).is_none());
 }

@@ -4,6 +4,15 @@
 
 use super::*;
 use std::fs;
+use std::sync::Mutex;
+
+// `discover_swipl_roots()` reads `BEARWISDOM_SWIPL_SOURCE` from the process
+// environment, and the discovery tests set/remove it. Cargo's default runner
+// spreads tests across threads, so without a guard one test's env mutation
+// leaks into another's `discover_swipl_roots()` call mid-flight — the reader
+// then falls back to host discovery and the root count assertion fails. Any
+// test that touches the var holds this mutex for its full duration.
+static ENV_GUARD: Mutex<()> = Mutex::new(());
 
 /// Builds a synthetic SWI-Prolog source layout in a tempdir, then asserts
 /// `looks_like_swipl_source` accepts it. The probe checks for `library/`
@@ -36,6 +45,7 @@ fn looks_like_swipl_source_rejects_library_without_lists_pl() {
 /// exposes them; only `library/` when `boot/` is missing.
 #[test]
 fn discovery_returns_library_and_boot_when_present() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     let library = root.join("library");
@@ -58,6 +68,7 @@ fn discovery_returns_library_and_boot_when_present() {
 
 #[test]
 fn discovery_returns_only_library_when_boot_absent() {
+    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     let library = root.join("library");

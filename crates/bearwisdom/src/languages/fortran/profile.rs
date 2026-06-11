@@ -9,6 +9,8 @@ use crate::types::{EdgeKind, SymbolKind};
 const FORTRAN_KIND_TABLE: KindTable = &[
     (EdgeKind::Calls, &[SymbolKind::Function, SymbolKind::Method]),
     (EdgeKind::TypeRef, &[SymbolKind::Struct, SymbolKind::Module]),
+    // An EXTENDS clause's base is another derived type, extracted as Struct.
+    (EdgeKind::Inherits, &[SymbolKind::Struct]),
 ];
 
 const FORTRAN_PRIMITIVES: &[(&str, PrimKind)] = &[

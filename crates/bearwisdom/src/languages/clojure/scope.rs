@@ -162,7 +162,26 @@ pub(super) fn is_clojure_non_callable_token(name: &str) -> bool {
 ///
 /// Used at every sym_lit Calls-ref emission site.
 pub(super) fn is_clojure_skippable_symbol(name: &str) -> bool {
-    is_clojure_non_callable_token(name) || name.starts_with('?') || name.ends_with('#')
+    is_clojure_non_callable_token(name)
+        || name.starts_with('?')
+        || name.ends_with('#')
+        || is_clojure_namespace_ref(name)
+}
+
+/// True when `name` is a dotted namespace/package reference rather than a
+/// callable — `sci.core`, `datascript.db`. Clojure namespace names use interior
+/// dots as segment separators; var and function names never contain them. The
+/// callable dotted forms are distinguished by their dot position: Java member
+/// access is a leading dot (`.method`), a constructor is a trailing dot
+/// (`Date.`), and a static-method call carries a `/` qualifier (`Math/abs`, so
+/// the bare name has no dot at all). An interior dot with neither marker is a
+/// namespace head, which the `:require` clause already models as an Imports
+/// target.
+fn is_clojure_namespace_ref(name: &str) -> bool {
+    match name.find('.') {
+        Some(pos) => pos > 0 && pos < name.len() - 1,
+        None => false,
+    }
 }
 
 /// Returns true if `name` is a local binding (unqualified symbol in the locals set).

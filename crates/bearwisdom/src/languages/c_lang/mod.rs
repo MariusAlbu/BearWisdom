@@ -47,6 +47,10 @@ mod coverage_tests;
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 
+#[cfg(test)]
+#[path = "type_refs_tests.rs"]
+mod type_refs_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
@@ -146,10 +150,7 @@ impl LanguagePlugin for CLangPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "int", "char", "void", "float", "double", "short", "long", "unsigned", "signed",
-            "size_t", "bool", "auto",
-        ]
+        keywords::KEYWORDS
     }
 
     fn profile(

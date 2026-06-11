@@ -53,3 +53,24 @@ fn framework_chain_does_not_match_non_framework() {
         "native.* (separate check)"
     );
 }
+
+#[test]
+fn spec_globals_decline_before_ladder() {
+    assert!(is_starlark_spec_global("depset"));
+    assert!(is_starlark_spec_global("rule"));
+    assert!(is_starlark_spec_global("glob"));
+    assert!(is_starlark_spec_global("select"));
+    assert!(is_starlark_spec_global("provider"));
+    assert!(is_starlark_spec_global("repository_rule"));
+}
+
+#[test]
+fn spec_globals_exclude_native_rules_and_skylib() {
+    // Native rules and skylib helpers come from loaded rule sets / .bzl files,
+    // not the spec global namespace — they resolve as externals, not declines.
+    assert!(!is_starlark_spec_global("cc_library"));
+    assert!(!is_starlark_spec_global("java_library"));
+    assert!(!is_starlark_spec_global("proto_library"));
+    assert!(!is_starlark_spec_global("paths.join"));
+    assert!(!is_starlark_spec_global("my_rule"));
+}

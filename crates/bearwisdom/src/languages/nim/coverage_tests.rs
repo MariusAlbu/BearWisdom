@@ -627,6 +627,82 @@ fn cov_when_block_proc_produces_function() {
     );
 }
 
+/// Proc nested deeper than 2 levels (`when` inside `when`, indent 4) still
+/// produces a Function symbol — the indent gate is a multiple of Nim's step,
+/// not a fixed depth.
+#[test]
+fn cov_deeply_nested_when_proc_produces_function() {
+    let src = concat!(
+        "when defined(posix):\n",
+        "  when defined(linux):\n",
+        "    proc epollWait*(fd: cint): cint =\n",
+        "      discard\n",
+    );
+    let r = extract::extract(src);
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.name == "epollWait" && s.kind == SymbolKind::Function),
+        "proc nested at indent 4 should still produce a Function; got: {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Identifiers inside triple-quoted (`"""..."""`) multi-line string content must
+/// not emit Calls refs.
+#[test]
+fn cov_triple_quoted_string_content_emits_no_calls() {
+    let src = concat!(
+        "proc render(): string =\n",
+        "  result = \"\"\"\n",
+        "  notAcall(x)\n",
+        "  alsoNot(y)\n",
+        "  \"\"\"\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !calls.contains(&"notAcall") && !calls.contains(&"alsoNot"),
+        "identifiers inside triple-quoted string content must not emit Calls; got {calls:?}"
+    );
+}
+
+/// Guard: a real call after a triple-quoted string closes still emits — the
+/// string-state tracking resumes normal extraction past the closing `\"\"\"`.
+#[test]
+fn cov_call_after_triple_quote_still_emits() {
+    let src = concat!(
+        "proc run() =\n",
+        "  let s = \"\"\"\n",
+        "  inside(noEmit)\n",
+        "  \"\"\"\n",
+        "  realCall(s)\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"realCall"),
+        "a call after the triple-quoted string closes must still emit; got {calls:?}"
+    );
+    assert!(
+        !calls.contains(&"inside"),
+        "the in-string identifier must not emit; got {calls:?}"
+    );
+}
+
 /// Pragma-annotated type at indent 0 single-line form: `type cint* {.importc.} = int32`
 #[test]
 fn cov_single_line_pragma_type_produces_symbol() {

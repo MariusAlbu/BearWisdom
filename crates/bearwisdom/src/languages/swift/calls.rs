@@ -271,7 +271,11 @@ pub(super) fn swift_type_name(node: &Node, src: &[u8]) -> String {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "type_identifier" | "simple_identifier" | "identifier" => {
+                    // Only `type_identifier` names a type. A `user_type` that
+                    // wraps a `simple_identifier` is a value expression the
+                    // grammar mis-grouped (closure param, local) — emitting its
+                    // text as a TypeRef pollutes the type graph.
+                    "type_identifier" => {
                         last = node_text(child, src);
                     }
                     _ => {}
@@ -315,7 +319,9 @@ pub(super) fn swift_type_name(node: &Node, src: &[u8]) -> String {
             }
             String::new()
         }
-        "type_identifier" | "simple_identifier" | "identifier" => node_text(*node, src),
+        // `simple_identifier` / `identifier` are value identifiers (closure
+        // params, locals); only `type_identifier` denotes a Swift type.
+        "type_identifier" => node_text(*node, src),
         // `SomeProtocol & AnotherProtocol` — emit the first component
         "protocol_composition_type" => {
             let mut cursor = node.walk();

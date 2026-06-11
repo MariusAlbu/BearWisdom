@@ -57,14 +57,38 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut in_type_section = false;
     // Indentation of the type section body (first indented line after `type`)
     let mut type_section_indent: usize = 0;
+    // Track whether the line we're about to process begins inside a triple-quoted
+    // (`"""..."""`) string. The single-line scanner in `extract_calls` only
+    // balances same-line `"`; multi-line string content would otherwise have its
+    // identifiers mis-read as call sites. While inside, the line is skipped and
+    // only its `"""` delimiters update the state.
+    let mut in_triple_string = false;
 
     while i < lines.len() {
         let raw = lines[i];
         let trimmed = raw.trim();
 
+        if in_triple_string {
+            // Inside multi-line string content — skip extraction. The closing
+            // `"""` on this line (if any) flips the state back so the next line
+            // is processed normally.
+            if line_toggles_triple_string(raw) {
+                in_triple_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
         if trimmed.is_empty() || trimmed.starts_with('#') {
             i += 1;
             continue;
+        }
+
+        // A line that opens a triple-quoted string without closing it puts the
+        // following lines into string-content mode. The opening line itself is
+        // still processed normally — code before the `"""` is real (`s = """`).
+        if line_toggles_triple_string(raw) {
+            in_triple_string = true;
         }
 
         let indent = leading_spaces(raw);
@@ -105,8 +129,23 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // Also surface nested proc/template declarations so local
                 // helper calls inside the same file can bind through the
                 // generic same-file strategy.
+                // Track triple-quoted (`"""..."""`) string state across the body
+                // so identifiers in multi-line string content are not mis-read as
+                // call sites or nested declarations. The signature line (the first
+                // iteration) cannot itself sit inside an open string.
+                let mut body_in_triple = false;
                 for body_line_idx in i..=end as usize {
-                    let body_trimmed = lines[body_line_idx].trim();
+                    let body_raw = lines[body_line_idx];
+                    let body_trimmed = body_raw.trim();
+                    if body_in_triple {
+                        if line_toggles_triple_string(body_raw) {
+                            body_in_triple = false;
+                        }
+                        continue;
+                    }
+                    if line_toggles_triple_string(body_raw) {
+                        body_in_triple = true;
+                    }
                     if body_line_idx != i {
                         if let Some((nested_name, nested_kind, nested_vis)) =
                             parse_proc_line(body_trimmed)
@@ -170,7 +209,14 @@ pub fn extract(source: &str) -> ExtractionResult {
                 i += 1;
                 continue;
             }
-        } else if indent == 2 && !in_type_section {
+        } else if indent > 0 && indent % 2 == 0 && !in_type_section {
+            // Any even indent reached by the main line walk — the body of a
+            // top-level `when`/`block`/`static` conditional-compilation section.
+            // Procs nest arbitrarily deep inside these (`when A:` → `when B:` →
+            // `proc f`), so the gate is a multiple of Nim's 2-space step, not a
+            // fixed depth. Symbols stay flat (no scope_path) as elsewhere; the
+            // main loop walks each body line independently, registering any
+            // deeper-nested proc as it reaches that line.
             if trimmed == "import" || trimmed.starts_with("import ") || trimmed.starts_with("from ")
             {
                 let byte_off = line_starts.get(i).copied().unwrap_or(0);
@@ -196,12 +242,12 @@ pub fn extract(source: &str) -> ExtractionResult {
                 continue;
             }
 
-            // Proc/func/template/etc. declarations at one level of indentation
-            // are module-level routines inside conditional compilation blocks
-            // (`when defined(...)`, `when not weirdTarget`, etc.).  These are
-            // public API that callers import and must be indexed as symbols.
-            // We register the symbol but do NOT skip the body — the call
-            // extraction loop below handles body lines independently.
+            // Proc/func/template/etc. declarations nested inside conditional
+            // compilation blocks (`when defined(...)`, `when not weirdTarget`,
+            // etc.). These are public API that callers import and must be indexed
+            // as symbols. We register the symbol but do NOT skip the body — the
+            // call extraction loop below handles body lines independently, so a
+            // proc nested deeper still registers when the walk reaches its line.
             if let Some((name, kind, vis)) = parse_proc_line(trimmed) {
                 let line = i as u32;
                 symbols.push(make_sym(name, kind, vis, line, line));
@@ -389,6 +435,33 @@ fn skip_generic_params(bytes: &[u8], mut pos: usize) -> usize {
         }
     }
     pos
+}
+
+/// Count the number of `"""` triple-quote delimiters on a line.
+///
+/// Nim triple-quoted strings are raw — backslash does not escape — so a simple
+/// non-overlapping scan for the three-quote token is exact. `"""a"""` yields 2;
+/// a lone opening `"""` yields 1.
+fn count_triple_quotes(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut count = 0usize;
+    let mut i = 0usize;
+    while i + 3 <= bytes.len() {
+        if bytes[i] == b'"' && bytes[i + 1] == b'"' && bytes[i + 2] == b'"' {
+            count += 1;
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    count
+}
+
+/// True when a line carries an odd number of `"""` delimiters, so it flips the
+/// in-string state: an outside-string line with an odd count opens an unclosed
+/// string, and an inside-string line with an odd count closes the open one.
+fn line_toggles_triple_string(line: &str) -> bool {
+    count_triple_quotes(line) % 2 == 1
 }
 
 /// Strip everything from the first unquoted `#` onward.

@@ -50,7 +50,7 @@ pub const ODIN_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
-    module_skip: None,
+    module_skip: Some(super::predicates::is_builtin_collection_module),
     ambient_namespace_prefixes: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,

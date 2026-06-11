@@ -197,6 +197,12 @@ fn collect_component_tags(
 /// Return `(target_name, byte_offset, line)` for a component/custom-element tag,
 /// or `None` for a standard HTML element. PascalCase tags pass through; kebab
 /// custom elements are normalized to PascalCase.
+///
+/// A component name is PascalCase: an initial uppercase letter followed by at
+/// least one lowercase letter (`UserCard`, `MyWidget`). Legacy HTML4 documents
+/// write standard elements in all-caps (`<A>`, `<BR>`, `<TABLE>`); those lack
+/// the trailing lowercase and so are never mistaken for components. A custom
+/// element is identified by the spec-mandated `-` in its name.
 fn component_tag_ref(element: &Node, source: &str) -> Option<(String, u32, u32)> {
     let tag = element_tag_name(element, source);
     if tag.is_empty() {
@@ -204,13 +210,22 @@ fn component_tag_ref(element: &Node, source: &str) -> Option<(String, u32, u32)>
     }
     let byte_offset = element.start_byte() as u32;
     let line = element.start_position().row as u32;
-    if tag.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+    if is_pascal_case(&tag) {
         return Some((tag, byte_offset, line));
     }
     if tag.contains('-') {
         return Some((kebab_to_pascal(&tag), byte_offset, line));
     }
     None
+}
+
+/// True when `tag` has PascalCase shape — an uppercase first character with at
+/// least one lowercase letter somewhere after it. All-uppercase legacy HTML
+/// tags (`A`, `BR`, `TABLE`) and lowercase standard tags fail this test.
+fn is_pascal_case(tag: &str) -> bool {
+    let mut chars = tag.chars();
+    let starts_upper = chars.next().is_some_and(|c| c.is_ascii_uppercase());
+    starts_upper && chars.any(|c| c.is_ascii_lowercase())
 }
 
 fn element_tag_name(element: &Node, source: &str) -> String {

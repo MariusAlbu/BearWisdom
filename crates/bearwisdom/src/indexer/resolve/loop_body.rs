@@ -598,6 +598,28 @@ fn resolve_iteration_body(
                     // resolver body) for everything the engine declines.
                     let resolution = type_engine
                         .resolve(&ref_ctx, file_ctx, index)
+                        // Embedded-origin miss → host-hook fallback. A cross-lang
+                        // embedded ref dispatches against the ORIGIN language's
+                        // file_ctx, so a host plugin's scope-directed binding (a
+                        // HEEx template helper → its co-located Phoenix `*View`
+                        // function) is unreachable through the engine path. On a
+                        // miss, retry once through the HOST language's hook with
+                        // the host file context. Strict widening: fires only for
+                        // cross-lang embedded refs that the engine declined; the
+                        // host hook either has no `resolve_ref` or is
+                        // scope-directed and declines for everything else.
+                        .or_else(|| {
+                            if !is_cross_lang_embedded {
+                                return None;
+                            }
+                            let host_ctx = host_file_ctx.as_ref()?;
+                            type_engine.resolve_ref_via_hook(
+                                &pf.language,
+                                host_ctx,
+                                &ref_ctx,
+                                index,
+                            )
+                        })
                         .map(|r| (r, true));
 
                     if let Some((resolution, came_from_engine)) = resolution {
@@ -1288,3 +1310,7 @@ fn read_file_imports_from_db(conn: &rusqlite::Connection, file_path: &str) -> Ve
         Err(_) => Vec::new(),
     }
 }
+
+#[cfg(test)]
+#[path = "loop_body_tests.rs"]
+mod tests;

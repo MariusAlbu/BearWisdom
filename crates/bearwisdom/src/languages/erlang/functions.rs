@@ -177,6 +177,13 @@ pub(super) fn collect_calls(
 
                 let target = if let Some(expr) = child.child_by_field_name("expr") {
                     match expr.kind() {
+                        // Higher-order variable call: `Fun(X)`, `Apply(Args)`.
+                        // The callee is a bound variable (Erlang variables start
+                        // with an uppercase letter), not a named function. It has
+                        // no function symbol to bind to, so emitting a Calls ref
+                        // produces a permanently unresolved edge. Suppress it; the
+                        // body's own argument expressions still recurse below.
+                        "var" => String::new(),
                         "atom" => {
                             let name = node_text(&expr, src);
                             format!("{}/{}", name, arg_count)
@@ -188,7 +195,11 @@ pub(super) fn collect_calls(
                                 let module = expr
                                     .child_by_field_name("module")
                                     .map(|n| node_text(&n, src).to_string());
-                                if !fun_name.is_empty() {
+                                // A variable function part (`Mod:Fun(X)`) names a
+                                // bound value, not a function symbol — suppress
+                                // the same way as the bare `Fun(X)` form above.
+                                let fun_is_var = fun_node.kind() == "var";
+                                if !fun_name.is_empty() && !fun_is_var {
                                     refs.push(ExtractedRef {
                                         is_import_binding: false,
                                         is_reexport: false,

@@ -11,6 +11,8 @@ const NIM_KIND_TABLE: KindTable = &[
         EdgeKind::Calls,
         // Object construction `Foo(field: x)` and distinct/type conversion
         // `Slot(x)` are call-syntactic in Nim and bind to the type declaration.
+        // An enum value `Color.Red` / a pure-enum member used call-syntactically
+        // binds to the EnumMember.
         &[
             SymbolKind::Function,
             SymbolKind::Method,
@@ -19,6 +21,7 @@ const NIM_KIND_TABLE: KindTable = &[
             SymbolKind::Struct,
             SymbolKind::Class,
             SymbolKind::Enum,
+            SymbolKind::EnumMember,
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Struct]),
@@ -72,7 +75,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: NIM_PRIMITIVES,
     kind_compatible_table: NIM_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_nim_system_magic),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

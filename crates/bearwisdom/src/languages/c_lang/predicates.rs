@@ -195,9 +195,25 @@ pub(super) fn is_template_param(name: &str) -> bool {
         return true;
     }
     // Names ending in "Type" are almost always template type parameters
-    // (e.g. BasicJsonType, CharType, IteratorType, KeyType, ValueType).
+    // (e.g. CharType, KeyType, ValueType, IteratorType).
     if name.ends_with("Type") && name.len() > 4 {
         return true;
+    }
+    // The `<Word>T` template-parameter convention: a CamelCase word followed
+    // by a single trailing capital `T` standing for "type" (`CharT`, `LhsT`,
+    // `RhsT`, `ArgT`). Require a lowercase char immediately before the final
+    // `T` so this matches the convention without swallowing all-caps acronyms
+    // or ordinary type names that merely end in `T`.
+    if name.len() >= 3 {
+        let bytes = name.as_bytes();
+        let last = bytes[bytes.len() - 1];
+        let before = bytes[bytes.len() - 2];
+        if last == b'T'
+            && before.is_ascii_lowercase()
+            && bytes[0].is_ascii_uppercase()
+        {
+            return true;
+        }
     }
     // Leading-underscore + uppercase is the C++ standard library implementation
     // convention for template parameter names — `_Range`, `_Pred`, `_Proj`,

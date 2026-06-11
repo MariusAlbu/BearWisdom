@@ -161,12 +161,22 @@ pub(crate) fn detect_flow_inner(
 /// Classify a Dart import URI to its external namespace, or `None` when the
 /// URI names project-local code. `dart:` URIs map to `dart.stdlib`;
 /// `package:<pkg>/...` URIs map to `<pkg>` when the package is a manifest
-/// dependency or matches the known-external predicate.
+/// dependency or matches the known-external predicate. A `package:<self>/...`
+/// URI — where `<self>` is the project's own pubspec `name:` — is project-local
+/// (the idiomatic intra-package absolute import); it returns `None` so the
+/// import binds under `lib/` through the module-resolution plumbing instead of
+/// being branded external.
 pub(crate) fn classify_dart_import_uri(
     uri: &str,
     file_package_id: Option<i64>,
     project_ctx: Option<&ProjectContext>,
 ) -> Option<String> {
+    if let Some(pkg_path) = uri.strip_prefix("package:") {
+        let pkg_name = pkg_path.split('/').next().unwrap_or(pkg_path);
+        if is_own_package(pkg_name, file_package_id, project_ctx) {
+            return None;
+        }
+    }
     if predicates::is_external_dart_import(uri) {
         let ns = if uri.starts_with("dart:") {
             "dart.stdlib"
@@ -191,6 +201,25 @@ pub(crate) fn classify_dart_import_uri(
         }
     }
     None
+}
+
+/// Whether `pkg_name` names the project's own pubspec package. The own name is
+/// the pubspec `name:`, folded into the package-visible `ManifestData`'s
+/// `package_names` (the same signal `DartModuleResolver` consumes to map a
+/// `package:<self>/...` URI to `lib/`). In a melos workspace `package_names`
+/// carries every member's name, so a sibling-package `package:` URI is also
+/// recognized as project-local. Returns false when no pubspec is visible.
+fn is_own_package(
+    pkg_name: &str,
+    file_package_id: Option<i64>,
+    project_ctx: Option<&ProjectContext>,
+) -> bool {
+    project_ctx
+        .and_then(|ctx| {
+            ctx.manifests_for(file_package_id)
+                .get(&ManifestKind::Pubspec)
+        })
+        .is_some_and(|manifest| manifest.package_names.iter().any(|n| n == pkg_name))
 }
 
 impl LanguageEngineHooks for DartHooks {
@@ -235,6 +264,13 @@ impl LanguageEngineHooks for DartHooks {
             } else {
                 ""
             };
+            // A `package:<self>/...` import is project-local; it must not brand
+            // any ref external through this import, regardless of alias.
+            if !pkg_name_from_uri.is_empty()
+                && is_own_package(pkg_name_from_uri, ref_ctx.file_package_id, project_ctx)
+            {
+                continue;
+            }
             let is_manifest_external = !pkg_name_from_uri.is_empty()
                 && project_ctx
                     .and_then(|ctx| {

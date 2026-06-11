@@ -8,6 +8,7 @@ pub mod flow;
 pub mod keywords;
 
 pub(crate) mod hooks;
+pub(crate) mod predicates;
 pub(crate) mod profile;
 
 #[cfg(test)]

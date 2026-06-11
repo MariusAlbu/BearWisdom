@@ -387,3 +387,4 @@ fun fetch(url: String) {
         "local `response` must not appear as bare Calls ref; refs: {calls_refs:?}"
     );
 }
+

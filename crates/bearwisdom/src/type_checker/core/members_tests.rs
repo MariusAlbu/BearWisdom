@@ -1230,6 +1230,393 @@ fn external_supertrait_default_method_is_reachable_transitively() {
     );
 }
 
+/// Build an internal `ExtractedSymbol` whose declared_type is the interned
+/// class `type_name` (the field-typed-by-external-class seed for the
+/// reachability pass).
+fn ex_field_typed(
+    name: &str,
+    qname: &str,
+    scope: &str,
+    type_name: &str,
+    arena: &TypeArena,
+) -> crate::types::ExtractedSymbol {
+    crate::types::ExtractedSymbol {
+        declared_type: Some(arena.class(type_name)),
+        scope_path: Some(scope.to_string()),
+        ..ex_sym(name, qname, crate::types::SymbolKind::Field, Some(scope))
+    }
+}
+
+/// Set the return_type of an `ExtractedSymbol` to the interned class
+/// `type_name` — used to wire an external method's return type so the
+/// reachability closure follows it to the next external receiver.
+fn with_return(
+    mut sym: crate::types::ExtractedSymbol,
+    type_name: &str,
+    arena: &TypeArena,
+) -> crate::types::ExtractedSymbol {
+    sym.return_type = Some(arena.class(type_name));
+    sym
+}
+
+#[test]
+fn reachable_external_class_member_admitted_via_internal_field_type() {
+    // An internal class has a field typed by external class `Kysely`. The first
+    // pass skips `Kysely`'s methods (a non-trait external type), so the second
+    // reachability pass must admit `selectFrom` because an internal symbol's
+    // declared_type names `Kysely`.
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    let ext_file = parsed(
+        "ext:ts:kysely/index.d.ts",
+        "typescript",
+        vec![
+            ex_sym("Kysely", "Kysely", SymbolKind::Class, None),
+            ex_sym(
+                "selectFrom",
+                "Kysely.selectFrom",
+                SymbolKind::Method,
+                Some("Kysely"),
+            ),
+        ],
+        Vec::new(),
+    );
+    let app_file = parsed(
+        "app.ts",
+        "typescript",
+        vec![
+            ex_sym("Db", "Db", SymbolKind::Class, None),
+            ex_field_typed("conn", "Db.conn", "Db", "Kysely", &arena),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 0), 100);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 1), 101);
+    sym_ids.insert(("app.ts".to_string(), 0), 200);
+    sym_ids.insert(("app.ts".to_string(), 1), 201);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let kysely = arena.class("Kysely");
+    assert!(
+        members.direct_of(kysely).is_empty(),
+        "first pass must skip the external class method"
+    );
+
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    assert!(
+        members.direct_of(kysely).iter().any(|m| m.id == 101),
+        "reachability pass must admit the external class method named by an internal field"
+    );
+}
+
+#[test]
+fn unreferenced_external_class_member_not_admitted() {
+    // The bound holds: an external class that NO internal type map and NO
+    // supertype edge references gains no members from the reachability pass.
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    // Reachable external `Kysely` (named by the internal field) sits next to an
+    // unreferenced external `Unused`. Only `Kysely`'s member may be admitted.
+    let ext_file = parsed(
+        "ext:ts:kysely/index.d.ts",
+        "typescript",
+        vec![
+            ex_sym("Kysely", "Kysely", SymbolKind::Class, None),
+            ex_sym(
+                "selectFrom",
+                "Kysely.selectFrom",
+                SymbolKind::Method,
+                Some("Kysely"),
+            ),
+            ex_sym("Unused", "Unused", SymbolKind::Class, None),
+            ex_sym(
+                "neverCalled",
+                "Unused.neverCalled",
+                SymbolKind::Method,
+                Some("Unused"),
+            ),
+        ],
+        Vec::new(),
+    );
+    let app_file = parsed(
+        "app.ts",
+        "typescript",
+        vec![
+            ex_sym("Db", "Db", SymbolKind::Class, None),
+            ex_field_typed("conn", "Db.conn", "Db", "Kysely", &arena),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 0), 100);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 1), 101);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 2), 102);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 3), 103);
+    sym_ids.insert(("app.ts".to_string(), 0), 200);
+    sym_ids.insert(("app.ts".to_string(), 1), 201);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    let unused = arena.class("Unused");
+    assert!(
+        members.direct_of(unused).is_empty(),
+        "an external class no internal symbol references must stay skipped"
+    );
+    // Sanity: the referenced external class WAS admitted, so the bound is the
+    // reason `Unused` is empty — not a dead pass.
+    let kysely = arena.class("Kysely");
+    assert!(
+        members.direct_of(kysely).iter().any(|m| m.id == 101),
+        "the referenced external class is admitted (control)"
+    );
+}
+
+#[test]
+fn external_trait_default_method_still_admitted_with_reachability_pass() {
+    // Regression guard: the first pass admits an external trait's default
+    // method body; the second reachability pass must neither drop it nor
+    // re-admit it (which would shift first-match order). It stays admitted
+    // exactly once.
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    let ext_file = parsed(
+        "ext:rust:greet/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Greet", "Greet", SymbolKind::Trait, None),
+            ex_sym("hello", "Greet.hello", SymbolKind::Function, Some("Greet")),
+        ],
+        Vec::new(),
+    );
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![
+            ex_sym("<impl Dog@1>", "<impl Dog@1>", SymbolKind::Namespace, None),
+            ex_sym("Dog", "Dog", SymbolKind::Struct, None),
+        ],
+        vec![
+            ex_ref(0, "Greet", EdgeKind::Implements),
+            ex_ref(0, "Dog", EdgeKind::TypeRef),
+        ],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:greet/lib.rs".to_string(), 0), 100);
+    sym_ids.insert(("ext:rust:greet/lib.rs".to_string(), 1), 101);
+    sym_ids.insert(("app.rs".to_string(), 0), 200);
+    sym_ids.insert(("app.rs".to_string(), 1), 201);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    let greet = arena.class("Greet");
+    assert_eq!(
+        members
+            .direct_of(greet)
+            .iter()
+            .filter(|m| m.id == 101)
+            .count(),
+        1,
+        "trait default method stays admitted exactly once after the reachability pass"
+    );
+    // And it remains reachable from the implementing type Dog.
+    let dog = arena.class("Dog");
+    let found = members
+        .lookup(
+            dog,
+            "hello",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
+        .expect("trait default still reachable from the implementing type");
+    assert_eq!(found.id, 101);
+}
+
+#[test]
+fn internal_class_extends_external_base_resolves_base_method_via_members() {
+    // An internal struct `Dog` extends an EXTERNAL base class `Animal` whose
+    // method `speak` lives in an ext: file. The `Dog → Animal` supertype edge
+    // seeds the reachability set with `Animal`, the second pass admits
+    // `Animal.speak`, and the member walk resolves `speak` on `Dog` THROUGH
+    // MembersIndex (not only the qname-climb fallback).
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    let ext_file = parsed(
+        "ext:rust:zoo/lib.rs",
+        "rust",
+        vec![
+            ex_sym("Animal", "Animal", SymbolKind::Class, None),
+            ex_sym("speak", "Animal.speak", SymbolKind::Method, Some("Animal")),
+        ],
+        Vec::new(),
+    );
+    let app_file = parsed(
+        "app.rs",
+        "rust",
+        vec![ex_sym("Dog", "Dog", SymbolKind::Struct, None)],
+        vec![ex_ref(0, "Animal", EdgeKind::Inherits)],
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:rust:zoo/lib.rs".to_string(), 0), 100);
+    sym_ids.insert(("ext:rust:zoo/lib.rs".to_string(), 1), 101);
+    sym_ids.insert(("app.rs".to_string(), 0), 200);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    let dog = arena.class("Dog");
+    let found = members
+        .lookup(
+            dog,
+            "speak",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
+        .expect("external base method must resolve through the member walk");
+    assert_eq!(found.id, 101, "resolves to the external base's method body");
+}
+
+#[test]
+fn reachability_closure_admits_second_hop_return_type() {
+    // The closure follows external member return types: `Kysely.selectFrom`
+    // returns `SelectQueryBuilder`, so `SelectQueryBuilder.where` must also be
+    // admitted even though no internal symbol names `SelectQueryBuilder`.
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    let ext_file = parsed(
+        "ext:ts:kysely/index.d.ts",
+        "typescript",
+        vec![
+            ex_sym("Kysely", "Kysely", SymbolKind::Class, None),
+            with_return(
+                ex_sym(
+                    "selectFrom",
+                    "Kysely.selectFrom",
+                    SymbolKind::Method,
+                    Some("Kysely"),
+                ),
+                "SelectQueryBuilder",
+                &arena,
+            ),
+            ex_sym(
+                "SelectQueryBuilder",
+                "SelectQueryBuilder",
+                SymbolKind::Class,
+                None,
+            ),
+            ex_sym(
+                "where_",
+                "SelectQueryBuilder.where_",
+                SymbolKind::Method,
+                Some("SelectQueryBuilder"),
+            ),
+        ],
+        Vec::new(),
+    );
+    let app_file = parsed(
+        "app.ts",
+        "typescript",
+        vec![
+            ex_sym("Db", "Db", SymbolKind::Class, None),
+            ex_field_typed("conn", "Db.conn", "Db", "Kysely", &arena),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 0), 100);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 1), 101);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 2), 102);
+    sym_ids.insert(("ext:ts:kysely/index.d.ts".to_string(), 3), 103);
+    sym_ids.insert(("app.ts".to_string(), 0), 200);
+    sym_ids.insert(("app.ts".to_string(), 1), 201);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    let builder = arena.class("SelectQueryBuilder");
+    assert!(
+        members.direct_of(builder).iter().any(|m| m.id == 103),
+        "closure must admit the return-typed external class reached through an admitted member"
+    );
+}
+
 #[test]
 fn external_non_trait_member_still_skipped() {
     // The write-storm guard: an external Class `Curl` with a Method `perform`

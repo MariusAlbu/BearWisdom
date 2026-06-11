@@ -377,6 +377,9 @@ fn extract_keyword_invocation(
             | "RETURN"
             | "BREAK"
             | "CONTINUE"
+            // `GROUP` opens a Robot Framework 7 named block; the second cell is
+            // the group's label (data), not a keyword call.
+            | "GROUP"
             | "..."
             | "\\END"
             | "VAR"

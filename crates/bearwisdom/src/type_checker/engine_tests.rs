@@ -1741,6 +1741,156 @@ fn ext2_external_class_method_chain_resolves_end_to_end() {
 }
 
 #[test]
+fn e1_external_builder_chain_resolves_both_hops_via_reachable_members() {
+    // E1 end to end. An internal class `Db` has a field `conn` declared as the
+    // external type `kysely.Kysely`. The ext: dep defines `Kysely.selectFrom():
+    // SelectQueryBuilder` and `SelectQueryBuilder.where_(): void`. The chain
+    // `conn.selectFrom().where_()` must bind BOTH hops: hop 1 because the
+    // reachability seed admits `Kysely` (named by the internal field), hop 2
+    // because the closure follows `selectFrom`'s return type to admit
+    // `SelectQueryBuilder`. Roots on the field's external type via a declared
+    // assertion so the test isolates the reachable-member walk.
+    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::type_checker::core::SymbolIdMap;
+    use std::collections::HashMap;
+
+    let ext = ext2_pf(
+        "ext:ts:kysely/index.d.ts",
+        vec![
+            ext2_sym(
+                "Kysely",
+                "kysely.Kysely",
+                SymbolKind::Class,
+                None,
+                Some("class Kysely"),
+            ),
+            ext2_sym(
+                "selectFrom",
+                "kysely.Kysely.selectFrom",
+                SymbolKind::Method,
+                Some("kysely.Kysely"),
+                Some("selectFrom(): kysely.SelectQueryBuilder"),
+            ),
+            ext2_sym(
+                "SelectQueryBuilder",
+                "kysely.SelectQueryBuilder",
+                SymbolKind::Class,
+                None,
+                Some("class SelectQueryBuilder"),
+            ),
+            ext2_sym(
+                "where_",
+                "kysely.SelectQueryBuilder.where_",
+                SymbolKind::Method,
+                Some("kysely.SelectQueryBuilder"),
+                Some("where_(): void"),
+            ),
+        ],
+        vec![],
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            ext2_seg("conn", SegmentKind::Identifier, Some("kysely.Kysely"), false),
+            ext2_seg("selectFrom", SegmentKind::Property, None, true),
+            ext2_seg("where_", SegmentKind::Property, None, true),
+        ],
+    };
+    let chain_ref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 2,
+        target_name: "conn.selectFrom.where_".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        chain: Some(chain),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+
+    // Internal `Db` class (idx 0) with a field `conn` typed `kysely.Kysely`
+    // (idx 1) — the seed that makes `Kysely` reachable — and a `query` method
+    // (idx 2) holding the chain.
+    let app = ext2_pf(
+        "app.ts",
+        vec![
+            ext2_sym("Db", "Db", SymbolKind::Class, None, Some("class Db")),
+            ext2_sym(
+                "conn",
+                "Db.conn",
+                SymbolKind::Field,
+                Some("Db"),
+                Some("conn: Kysely"),
+            ),
+            ext2_sym("query", "Db.query", SymbolKind::Method, Some("Db"), None),
+        ],
+        vec![chain_ref],
+    );
+
+    let mut files = vec![ext, app];
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next = 1i64;
+    for p in &files {
+        for s in &p.symbols {
+            id_map.insert((p.path.clone(), s.qualified_name.clone()), next);
+            next += 1;
+        }
+    }
+    let index = SymbolIndex::build(&files, &id_map);
+    // The engine shares the index's arena; intern the metadata TypeIds the
+    // real pipeline's metadata pass would set into that arena. The field's
+    // declared_type is the reachability seed (`kysely.Kysely`); selectFrom's
+    // return_type is the closure edge that makes `SelectQueryBuilder` reachable
+    // for the second hop.
+    let shared = index.type_arena_arc();
+    files[1].symbols[1].declared_type = Some(shared.class("kysely.Kysely"));
+    files[0].symbols[1].return_type = Some(shared.class("kysely.SelectQueryBuilder"));
+    let mut eng = SymbolIdMap::default();
+    for p in &files {
+        for (i, s) in p.symbols.iter().enumerate() {
+            if let Some(&id) = id_map.get(&(p.path.clone(), s.qualified_name.clone())) {
+                eng.insert((p.path.clone(), i), id);
+            }
+        }
+    }
+    let engine = Engine::build_from_registry(&files, &eng, &index, index.type_arena_arc());
+
+    let app_file = &files[1];
+    let r = &app_file.refs[0];
+    let fc = FileContext {
+        file_path: "app.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let rc = RefContext {
+        extracted_ref: r,
+        source_symbol: &app_file.symbols[2],
+        scope_chain: build_scope_chain(app_file.symbols[2].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let resolution = engine.resolve(&rc, &fc, &index);
+    let where_id = id_map[&(
+        "ext:ts:kysely/index.d.ts".to_string(),
+        "kysely.SelectQueryBuilder.where_".to_string(),
+    )];
+    let misses = index.take_chain_misses();
+    assert_eq!(
+        resolution.map(|r| r.target_symbol_id),
+        Some(where_id),
+        "conn.selectFrom().where_() must bind where_ on the second-hop external return type; chain misses: {:?}",
+        misses
+            .iter()
+            .map(|m| (&m.current_type, &m.target_name))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn nim_reexported_external_helper_resolves_through_module_chain() {
     let api = nim_parsed_file(
         "beacon_chain/validator_client/api.nim",

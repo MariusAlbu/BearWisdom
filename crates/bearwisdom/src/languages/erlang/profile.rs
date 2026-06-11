@@ -8,7 +8,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, NameNormalization, NormSpec,
+    SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -59,7 +60,15 @@ pub const ERLANG_PROFILE: LanguageProfile = LanguageProfile {
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
     external_by_import: None,
-    name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
+    // A quoted atom `'P_basic'` is the same symbol as the bare `P_basic` the
+    // extractor stores — strip the surrounding single-quote pair before the
+    // bare-name comparison so the quoted reference binds.
+    name_normalization: NameNormalization::Spec(NormSpec {
+        case_insensitive: false,
+        strip_chars: &[],
+        strip_prefixes: &[],
+        strip_sigils: &[("'", "'")],
+    }),
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,

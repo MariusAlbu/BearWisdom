@@ -72,7 +72,7 @@ pub const HASKELL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: HASKELL_PRIMITIVES,
     kind_compatible_table: HASKELL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_haskell_prelude_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

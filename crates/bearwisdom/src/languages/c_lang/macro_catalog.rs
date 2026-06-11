@@ -210,11 +210,21 @@ fn collect_headers_recursive(dir: &Path, out: &mut Vec<PathBuf>, cap: usize) {
     }
 }
 
-/// Reset the cache. Used by tests to ensure a clean catalog per test.
+/// Reset all session state. Used by tests to ensure a clean catalog per test:
+/// clears the per-directory cache, the project-wide cache, and the active
+/// project root. Without clearing the root, an earlier indexer test that left a
+/// session open would route `catalog_for_file` to a stale `project_macro_catalog`
+/// instead of the per-directory walk the test fixture relies on.
 #[cfg(test)]
 pub(crate) fn _reset_cache_for_test() {
     if let Ok(mut write) = global_cache().write() {
         write.clear();
+    }
+    if let Ok(mut write) = project_cache().write() {
+        write.clear();
+    }
+    if let Ok(mut write) = project_root_lock().write() {
+        *write = None;
     }
 }
 

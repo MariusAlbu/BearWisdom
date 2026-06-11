@@ -569,3 +569,46 @@ func nums() -> some Collection<Int> { fatalError() }
         "keyword peeled, generic application preserved"
     );
 }
+
+#[test]
+fn closure_param_not_emitted_as_type_ref() {
+    // A closure parameter (`item`) is a value identifier, not a type. The
+    // grammar emits it as `simple_identifier`; it must never become a TypeRef.
+    let src = r#"
+func process(users: [User]) {
+    users.forEach { item in item.activate() }
+}
+"#;
+    let r = super::extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !type_refs.contains(&"item"),
+        "closure param `item` must not be a TypeRef; got {type_refs:?}"
+    );
+}
+
+#[test]
+fn real_type_annotation_still_emits_type_ref() {
+    // Guard: an explicit type annotation on a local still emits a TypeRef.
+    let src = r#"
+func build() {
+    let svc: AccountService = makeService()
+}
+"#;
+    let r = super::extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"AccountService"),
+        "real type annotation `AccountService` must still emit a TypeRef; got {type_refs:?}"
+    );
+}
