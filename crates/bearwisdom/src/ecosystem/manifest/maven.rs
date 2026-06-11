@@ -169,9 +169,27 @@ pub fn parse_pom_xml_coords(content: &str) -> Vec<MavenCoord> {
     coords
 }
 
+/// Collect the project-level `<artifactId>` of every `pom.xml` under
+/// `project_root` (bounded depth). These are the workspace's own modules in
+/// a Maven reactor build — a sibling module that depends on one by
+/// coordinate is referencing internal build output, never a cached artifact.
+pub fn collect_pom_module_artifact_ids(project_root: &Path) -> Vec<String> {
+    let mut pom_paths = Vec::new();
+    collect_pom_files(project_root, &mut pom_paths, 0);
+    let mut out = Vec::new();
+    for pom in &pom_paths {
+        if let Ok(content) = std::fs::read_to_string(pom) {
+            if let Some(id) = parse_pom_artifact_id(&content) {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
 /// Extract the project-level `<artifactId>` from a pom.xml — the one that is
 /// a direct child of `<project>`, not the ones inside `<dependency>` blocks.
-fn parse_pom_artifact_id(content: &str) -> Option<String> {
+pub fn parse_pom_artifact_id(content: &str) -> Option<String> {
     let mut in_dependency = false;
     let mut in_parent = false;
     for line in content.lines() {

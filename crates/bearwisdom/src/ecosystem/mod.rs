@@ -694,6 +694,7 @@ pub fn default_locator(
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
+        "maven-classes" => Some(Arc::new(MavenClassesEcosystem)),
         _ => None,
     }
 }

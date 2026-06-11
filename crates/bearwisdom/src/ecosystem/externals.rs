@@ -396,6 +396,43 @@ pub(crate) fn resolve_gradle_sources_jar(
     None
 }
 
+/// Resolve a `MavenCoord` to its bytecode `.jar` in the Gradle cache.
+/// Same `<group>/<artifact>/<version>/<hash>/` layout as
+/// `resolve_gradle_sources_jar`, but matches `<artifact>-<version>.jar`
+/// while excluding the `-sources`/`-javadoc`/`-tests` classifier variants.
+/// When `coord.version` is None, picks the largest cached version.
+pub(crate) fn resolve_gradle_bytecode_jar(
+    cache_root: &Path,
+    coord: &crate::ecosystem::manifest::maven::MavenCoord,
+) -> Option<PathBuf> {
+    let artifact_dir = cache_root.join(&coord.group_id).join(&coord.artifact_id);
+    if !artifact_dir.is_dir() {
+        return None;
+    }
+
+    let version = match &coord.version {
+        Some(v) => v.clone(),
+        None => pick_newest_version_from_dir(&artifact_dir)?,
+    };
+
+    let version_dir = artifact_dir.join(&version);
+    if !version_dir.is_dir() {
+        return None;
+    }
+    let target_name = format!("{}-{}.jar", coord.artifact_id, version);
+    for entry in std::fs::read_dir(&version_dir).ok()?.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let candidate = p.join(&target_name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Locate the Coursier cache root. SBT-driven Scala projects (and any
 /// Coursier-based JVM tool) populate this when the user runs
 /// `sbt updateClassifiers` or `cs fetch --classifier sources`. Layout
@@ -551,6 +588,66 @@ pub(crate) fn resolve_coursier_sources_jar(
     }
 
     search(cache_root, coord, group_first, &target_name, 0)
+}
+
+/// Resolve a `MavenCoord` to its bytecode `.jar` in the Coursier cache.
+/// Same scheme/host/repo-base descent as `resolve_coursier_sources_jar`,
+/// matching `<artifact>-<version>.jar` while excluding the
+/// `-sources`/`-javadoc`/`-tests` classifier variants. When `coord.version`
+/// is None, picks the largest cached version.
+pub(crate) fn resolve_coursier_bytecode_jar(
+    cache_root: &Path,
+    coord: &crate::ecosystem::manifest::maven::MavenCoord,
+) -> Option<PathBuf> {
+    let group_first = coord.group_id.split('.').next()?;
+
+    fn search(
+        dir: &Path,
+        coord: &crate::ecosystem::manifest::maven::MavenCoord,
+        group_first: &str,
+        depth: u32,
+    ) -> Option<PathBuf> {
+        if depth > 8 {
+            return None;
+        }
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name == group_first {
+                let mut group_path = path.clone();
+                for seg in coord.group_id.split('.').skip(1) {
+                    group_path.push(seg);
+                }
+                group_path.push(&coord.artifact_id);
+                if !group_path.is_dir() {
+                    continue;
+                }
+                let version = match &coord.version {
+                    Some(v) => v.clone(),
+                    None => pick_newest_version_from_dir(&group_path)?,
+                };
+                let jar = group_path
+                    .join(&version)
+                    .join(format!("{}-{}.jar", coord.artifact_id, version));
+                if jar.is_file() {
+                    return Some(jar);
+                }
+                continue;
+            }
+            if let Some(hit) = search(&path, coord, group_first, depth + 1) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    search(cache_root, coord, group_first, 0)
 }
 
 /// Scan a Coursier group directory for sub-module sources jars whose

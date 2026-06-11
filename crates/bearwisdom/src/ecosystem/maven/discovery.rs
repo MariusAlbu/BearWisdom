@@ -21,7 +21,9 @@ use crate::ecosystem::externals::{
     resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
     ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
-use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
+use crate::ecosystem::manifest::maven::{
+    collect_pom_module_artifact_ids, parse_pom_xml_coords, MavenCoord,
+};
 use crate::ecosystem::manifest::{
     clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
 };
@@ -59,26 +61,22 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
     // to just the handful of packages the project consumes.
     let user_imports: Vec<String> = collect_jvm_user_imports(project_root).into_iter().collect();
 
+    // The workspace's own module ids — coordinates that name one are internal
+    // build output, never cached. Skip them so they neither inflate the
+    // missing-sources diagnostic nor get probed as externals.
+    let own_modules = collect_workspace_artifact_ids(project_root);
+
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut missing_sources_jars: Vec<String> = Vec::new();
 
     // --- pom.xml coords (Java + Scala + Kotlin when Maven-built) --------
-    let mut pom_paths: Vec<PathBuf> = Vec::new();
-    collect_pom_files_bounded(project_root, &mut pom_paths, 0);
-    let mut pom_coords = Vec::new();
-    for pom in &pom_paths {
-        let Ok(content) = std::fs::read_to_string(pom) else {
-            continue;
-        };
-        pom_coords.extend(parse_pom_xml_coords(&content));
-    }
-    debug!(
-        "Maven: {} pom.xml coords across {} files",
-        pom_coords.len(),
-        pom_paths.len()
-    );
+    let pom_coords = collect_pom_coords(project_root);
+    debug!("Maven: {} pom.xml coords", pom_coords.len());
     for coord in &pom_coords {
+        if own_modules.contains(&coord.artifact_id) {
+            continue;
+        }
         resolve_and_push_jvm(
             m2.as_deref(),
             gradle_cache.as_deref(),
@@ -99,6 +97,9 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
         gradle_coords.len()
     );
     for coord in &gradle_coords {
+        if own_modules.contains(&coord.artifact_id) {
+            continue;
+        }
         resolve_and_push_jvm(
             m2.as_deref(),
             gradle_cache.as_deref(),
@@ -213,6 +214,52 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
         );
     }
     roots
+}
+
+/// Every declared JVM dependency coordinate for a project, from the
+/// `pom.xml` + `build.gradle[.kts]` + `gradle/*.versions.toml` manifests.
+/// Test scopes are included (pom `<scope>test</scope>` deps and Gradle
+/// `testImplementation`/`androidTestImplementation` configurations). The
+/// version-blind sbt/Clojure suffix-probe coords are deliberately excluded —
+/// callers that need cache-version resolution against a fixed jar name
+/// (coordinate-driven jar probing) work from the version-bearing manifest
+/// coords only.
+pub(crate) fn collect_declared_jvm_coords(project_root: &Path) -> Vec<MavenCoord> {
+    let mut coords = collect_pom_coords(project_root);
+    coords.extend(collect_gradle_coords(project_root));
+    coords
+}
+
+/// Artifact ids of the workspace's own modules, from `settings.gradle`
+/// `include`/rename directives and every `pom.xml`'s project `<artifactId>`.
+///
+/// A multi-module build declares dependencies on its own modules by
+/// published coordinate (`com.squareup.okhttp3:okhttp-tls:${version}`). Those
+/// coordinates resolve to project build output, never to a cached artifact,
+/// so they must be excluded from the externals probe and the missing-sources
+/// diagnostic — they're internal symbols indexed from project source.
+pub(crate) fn collect_workspace_artifact_ids(
+    project_root: &Path,
+) -> std::collections::HashSet<String> {
+    let mut ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    ids.extend(gradle_manifest::collect_settings_gradle_module_ids(project_root));
+    ids.extend(collect_pom_module_artifact_ids(project_root));
+    ids
+}
+
+/// Walk every `pom.xml` under the project (bounded depth) and parse each
+/// `<dependency>` block into a `MavenCoord`. Test-scoped deps are retained.
+fn collect_pom_coords(project_root: &Path) -> Vec<MavenCoord> {
+    let mut pom_paths: Vec<PathBuf> = Vec::new();
+    collect_pom_files_bounded(project_root, &mut pom_paths, 0);
+    let mut coords = Vec::new();
+    for pom in &pom_paths {
+        let Ok(content) = std::fs::read_to_string(pom) else {
+            continue;
+        };
+        coords.extend(parse_pom_xml_coords(&content));
+    }
+    coords
 }
 
 /// Parse every build.gradle[.kts] in the project and resolve catalog
@@ -361,6 +408,30 @@ fn strip_scala_version_suffix(artifact: &str) -> &str {
         }
     }
     artifact
+}
+
+/// True when any cache holds a `-sources.jar` for `coord` — meaning the
+/// source-jar extraction path already covers this dependency and the
+/// bytecode walker must not double-index it. Honors `coord.version`, then
+/// falls back to a version-blind probe, mirroring `resolve_and_push_jvm`.
+pub(crate) fn jvm_sources_jar_available(
+    m2: Option<&Path>,
+    gradle_cache: Option<&Path>,
+    coursier_cache: Option<&Path>,
+    coord: &MavenCoord,
+) -> bool {
+    if try_resolve_in_caches(m2, gradle_cache, coursier_cache, coord).is_some() {
+        return true;
+    }
+    if coord.version.is_some() {
+        let unpinned = MavenCoord {
+            group_id: coord.group_id.clone(),
+            artifact_id: coord.artifact_id.clone(),
+            version: None,
+        };
+        return try_resolve_in_caches(m2, gradle_cache, coursier_cache, &unpinned).is_some();
+    }
+    false
 }
 
 /// Probe each cache (Maven local, Gradle, Coursier) for a sources jar

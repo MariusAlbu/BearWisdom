@@ -3,8 +3,9 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::{
-    pick_newest_version, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
-    resolve_gradle_sources_jar, strip_scala_suffix,
+    pick_newest_version, resolve_coursier_bytecode_jar, resolve_coursier_sources_jar,
+    resolve_coursier_submodule_jars, resolve_gradle_bytecode_jar, resolve_gradle_sources_jar,
+    strip_scala_suffix,
 };
 use crate::ecosystem::manifest::maven::MavenCoord;
 
@@ -360,4 +361,89 @@ fn resolve_coursier_submodule_jars_empty_when_no_siblings() {
 
     let subs = resolve_coursier_submodule_jars(cache, "com.example", "mylib", Some("1.0.0"));
     assert!(subs.is_empty(), "no sub-modules should be found");
+}
+
+#[test]
+fn resolve_gradle_bytecode_jar_finds_jar_with_explicit_version() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    let expected =
+        make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    let coord = MavenCoord {
+        group_id: "org.example".to_string(),
+        artifact_id: "lib".to_string(),
+        version: Some("1.0.0".to_string()),
+    };
+    assert_eq!(resolve_gradle_bytecode_jar(cache, &coord), Some(expected));
+}
+
+#[test]
+fn resolve_gradle_bytecode_jar_excludes_classifier_jars() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    // Only the -sources.jar is present; the bytecode probe must not match it.
+    make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0-sources.jar");
+    let coord = MavenCoord {
+        group_id: "org.example".to_string(),
+        artifact_id: "lib".to_string(),
+        version: Some("1.0.0".to_string()),
+    };
+    assert!(resolve_gradle_bytecode_jar(cache, &coord).is_none());
+}
+
+#[test]
+fn resolve_gradle_bytecode_jar_falls_back_to_largest_version() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    let expected =
+        make_gradle_cache_entry(cache, "org.example", "lib", "2.0.0", "lib-2.0.0.jar");
+    let coord = MavenCoord {
+        group_id: "org.example".to_string(),
+        artifact_id: "lib".to_string(),
+        version: None,
+    };
+    assert_eq!(resolve_gradle_bytecode_jar(cache, &coord), Some(expected));
+}
+
+#[test]
+fn resolve_coursier_bytecode_jar_finds_central_layout() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    let expected = make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "co.fs2",
+        "fs2-core_3",
+        "3.12.0",
+        "fs2-core_3-3.12.0.jar",
+    );
+    let coord = MavenCoord {
+        group_id: "co.fs2".to_string(),
+        artifact_id: "fs2-core_3".to_string(),
+        version: Some("3.12.0".to_string()),
+    };
+    assert_eq!(resolve_coursier_bytecode_jar(cache, &coord), Some(expected));
+}
+
+#[test]
+fn resolve_coursier_bytecode_jar_excludes_sources_jar() {
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0-sources.jar",
+    );
+    let coord = MavenCoord {
+        group_id: "org.example".to_string(),
+        artifact_id: "lib".to_string(),
+        version: Some("1.0.0".to_string()),
+    };
+    assert!(resolve_coursier_bytecode_jar(cache, &coord).is_none());
 }

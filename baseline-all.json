@@ -3570,7 +3570,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 91
       },
       "code_chunks": 33996,
       "files": 1177,
@@ -3578,8 +3578,8 @@
         "http_call": 1
       },
       "flow_edges": 1,
-      "internal_edges": 13161,
-      "internal_unresolved": 1403,
+      "internal_edges": 13942,
+      "internal_unresolved": 1306,
       "languages": {
         "css": 3,
         "dockerfile": 2,
@@ -3595,28 +3595,34 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-codenarc",
       "perf": {
-        "end_ws_mb": 645,
-        "files_per_sec": 90,
-        "index_duration_ms": 13053
+        "end_ws_mb": 72,
+        "files_per_sec": 54,
+        "index_duration_ms": 21754
       },
       "project": "groovy-codenarc",
-      "resolution_rate": 90.37,
+      "rate_by_language": {
+        "dockerfile": 100.0,
+        "groovy": 88.28,
+        "java": 99.51,
+        "javascript": 90.24,
+        "markdown": 97.95
+      },
+      "resolution_rate": 91.43,
       "routes": 0,
       "symbols": 15516,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 1233,
-        "groovy.implements": 25,
-        "groovy.inherits": 17,
+        "groovy.calls": 1223,
+        "groovy.implements": 23,
+        "groovy.inherits": 16,
         "java.calls": 16,
-        "java.instantiates": 5,
-        "java.type_ref": 80,
+        "java.type_ref": 1,
         "javascript.calls": 8,
         "markdown.calls": 19
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 52
+        "min_resolution_rate": 60
       },
       "code_chunks": 2547,
       "files": 163,
@@ -3624,8 +3630,8 @@
         "rpc_call": 23
       },
       "flow_edges": 23,
-      "internal_edges": 872,
-      "internal_unresolved": 802,
+      "internal_edges": 1055,
+      "internal_unresolved": 675,
       "languages": {
         "groovy": 40,
         "java": 27,
@@ -3637,21 +3643,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-gradle-plugin",
       "perf": {
-        "end_ws_mb": 282,
-        "files_per_sec": 4,
-        "index_duration_ms": 45815
+        "end_ws_mb": 60,
+        "files_per_sec": 2,
+        "index_duration_ms": 92950
       },
       "project": "groovy-gradle-plugin",
-      "resolution_rate": 52.09,
+      "rate_by_language": {
+        "groovy": 51.79,
+        "java": 58.36,
+        "kotlin": 58.71,
+        "proto": 100.0
+      },
+      "resolution_rate": 60.98,
       "routes": 0,
       "symbols": 1184,
       "unresolved_by_lang_kind": {
         "groovy.calls": 269,
         "java.calls": 28,
-        "java.instantiates": 4,
-        "java.type_ref": 297,
-        "kotlin.calls": 149,
-        "kotlin.type_ref": 55
+        "java.instantiates": 1,
+        "java.type_ref": 230,
+        "kotlin.calls": 103,
+        "kotlin.type_ref": 44
       }
     },
     {
@@ -3714,7 +3726,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 85
+        "min_resolution_rate": 92
       },
       "code_chunks": 30778,
       "files": 1291,
@@ -3723,8 +3735,8 @@
         "http_call": 35
       },
       "flow_edges": 42,
-      "internal_edges": 30034,
-      "internal_unresolved": 4896,
+      "internal_edges": 36356,
+      "internal_unresolved": 2818,
       "languages": {
         "groovy": 606,
         "html": 1,
@@ -3737,23 +3749,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/groovy-spock",
       "perf": {
-        "end_ws_mb": 294,
-        "files_per_sec": 114,
-        "index_duration_ms": 11284
+        "end_ws_mb": 61,
+        "files_per_sec": 87,
+        "index_duration_ms": 14788
       },
       "project": "groovy-spock",
-      "resolution_rate": 85.98,
+      "rate_by_language": {
+        "groovy": 62.52,
+        "java": 97.55
+      },
+      "resolution_rate": 92.81,
       "routes": 2,
       "symbols": 13184,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 1956,
-        "groovy.implements": 36,
-        "groovy.inherits": 21,
-        "java.calls": 401,
-        "java.implements": 8,
-        "java.inherits": 14,
-        "java.instantiates": 43,
-        "java.type_ref": 2417
+        "groovy.calls": 1937,
+        "groovy.implements": 32,
+        "groovy.inherits": 20,
+        "java.calls": 612,
+        "java.implements": 1,
+        "java.inherits": 1,
+        "java.instantiates": 7,
+        "java.type_ref": 208
       }
     },
     {
@@ -4209,7 +4225,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 81
+        "min_resolution_rate": 92
       },
       "code_chunks": 50247,
       "files": 1301,
@@ -4218,8 +4234,8 @@
         "http_call": 754
       },
       "flow_edges": 798,
-      "internal_edges": 83177,
-      "internal_unresolved": 18472,
+      "internal_edges": 92434,
+      "internal_unresolved": 7083,
       "languages": {
         "css": 10,
         "groovy": 5,
@@ -4233,21 +4249,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-recaf",
       "perf": {
-        "end_ws_mb": 292,
-        "files_per_sec": 28,
-        "index_duration_ms": 45959
+        "end_ws_mb": 74,
+        "files_per_sec": 20,
+        "index_duration_ms": 64217
       },
       "project": "java-recaf",
-      "resolution_rate": 81.83,
+      "rate_by_language": {
+        "groovy": 14.63,
+        "java": 92.91,
+        "markdown": 100.0
+      },
+      "resolution_rate": 92.88,
       "routes": 0,
       "symbols": 27385,
       "unresolved_by_lang_kind": {
         "groovy.calls": 35,
-        "java.calls": 5222,
-        "java.implements": 23,
-        "java.inherits": 16,
-        "java.instantiates": 297,
-        "java.type_ref": 12879
+        "java.calls": 4834,
+        "java.implements": 1,
+        "java.instantiates": 29,
+        "java.type_ref": 2184
       }
     },
     {
@@ -4662,7 +4682,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 66
+        "min_resolution_rate": 79
       },
       "code_chunks": 91033,
       "files": 1753,
@@ -4670,8 +4690,8 @@
         "db_query": 5
       },
       "flow_edges": 5,
-      "internal_edges": 28707,
-      "internal_unresolved": 14643,
+      "internal_edges": 43135,
+      "internal_unresolved": 11306,
       "languages": {
         "css": 8,
         "groovy": 2,
@@ -4689,30 +4709,36 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-detekt",
       "perf": {
-        "end_ws_mb": 296,
-        "files_per_sec": 26,
-        "index_duration_ms": 66808
+        "end_ws_mb": 81,
+        "files_per_sec": 19,
+        "index_duration_ms": 93118
       },
       "project": "kotlin-detekt",
-      "resolution_rate": 66.22,
+      "rate_by_language": {
+        "html": 0.0,
+        "java": 100.0,
+        "javascript": 81.82,
+        "kotlin": 83.06,
+        "markdown": 35.82,
+        "mdx": 13.5
+      },
+      "resolution_rate": 79.23,
       "routes": 0,
       "symbols": 53049,
       "unresolved_by_lang_kind": {
-        "html.calls": 13,
-        "java.type_ref": 4,
+        "html.calls": 8,
         "javascript.type_ref": 4,
-        "kotlin.calls": 9886,
-        "kotlin.inherits": 17,
-        "kotlin.type_ref": 1891,
-        "markdown.calls": 1057,
+        "kotlin.calls": 8353,
+        "kotlin.type_ref": 268,
+        "markdown.calls": 944,
         "markdown.type_ref": 147,
-        "mdx.calls": 1526,
+        "mdx.calls": 1484,
         "mdx.type_ref": 98
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 73
+        "min_resolution_rate": 78
       },
       "code_chunks": 36368,
       "files": 958,
@@ -4722,8 +4748,8 @@
         "http_call": 3
       },
       "flow_edges": 26,
-      "internal_edges": 39473,
-      "internal_unresolved": 14202,
+      "internal_edges": 43237,
+      "internal_unresolved": 11653,
       "languages": {
         "css": 3,
         "gotemplate": 1,
@@ -4744,29 +4770,37 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-komga",
       "perf": {
-        "end_ws_mb": 291,
-        "files_per_sec": 11,
-        "index_duration_ms": 84298
+        "end_ws_mb": 82,
+        "files_per_sec": 8,
+        "index_duration_ms": 121086
       },
       "project": "kotlin-komga",
-      "resolution_rate": 73.54,
+      "rate_by_language": {
+        "html": 0.0,
+        "kotlin": 88.9,
+        "markdown": 100.0,
+        "sql": 87.94,
+        "typescript": 59.05,
+        "vue": 21.85
+      },
+      "resolution_rate": 78.77,
       "routes": 0,
       "symbols": 19866,
       "unresolved_by_lang_kind": {
-        "html.calls": 78,
-        "kotlin.calls": 5525,
-        "kotlin.inherits": 7,
-        "kotlin.type_ref": 1470,
-        "sql.type_ref": 34,
-        "typescript.calls": 3625,
+        "html.calls": 77,
+        "kotlin.calls": 3957,
+        "kotlin.inherits": 1,
+        "kotlin.type_ref": 513,
+        "sql.type_ref": 17,
+        "typescript.calls": 3626,
         "typescript.instantiates": 29,
-        "typescript.type_ref": 928,
-        "vue.calls": 2506
+        "typescript.type_ref": 929,
+        "vue.calls": 2504
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 69
+        "min_resolution_rate": 77
       },
       "code_chunks": 82863,
       "files": 2456,
@@ -4775,8 +4809,8 @@
         "http_call": 303
       },
       "flow_edges": 312,
-      "internal_edges": 113146,
-      "internal_unresolved": 49178,
+      "internal_edges": 143068,
+      "internal_unresolved": 40728,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -4797,22 +4831,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 300,
-        "files_per_sec": 12,
-        "index_duration_ms": 207455
+        "end_ws_mb": 107,
+        "files_per_sec": 9,
+        "index_duration_ms": 266675
       },
       "project": "kotlin-ktor",
-      "resolution_rate": 69.7,
+      "rate_by_language": {
+        "c": 96.36,
+        "cmake": 25.0,
+        "cpp": 62.52,
+        "kotlin": 77.8,
+        "markdown": 55.56,
+        "rust": 92.07,
+        "shell": 100.0
+      },
+      "resolution_rate": 77.84,
       "routes": 0,
       "symbols": 47141,
       "unresolved_by_lang_kind": {
-        "c.type_ref": 14,
+        "c.type_ref": 8,
         "cmake.type_ref": 21,
-        "cpp.type_ref": 209,
-        "kotlin.calls": 35027,
-        "kotlin.implements": 48,
-        "kotlin.inherits": 279,
-        "kotlin.type_ref": 13505,
+        "cpp.type_ref": 202,
+        "kotlin.calls": 32340,
+        "kotlin.implements": 46,
+        "kotlin.inherits": 158,
+        "kotlin.type_ref": 7878,
         "markdown.calls": 4,
         "rust.calls": 69,
         "rust.type_ref": 2
@@ -4820,7 +4863,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 89
+        "min_resolution_rate": 88
       },
       "code_chunks": 4747,
       "files": 331,
@@ -4829,7 +4872,7 @@
         "http_call": 8
       },
       "flow_edges": 12,
-      "internal_edges": 5446,
+      "internal_edges": 5315,
       "internal_unresolved": 662,
       "languages": {
         "dockerfile": 1,
@@ -4844,18 +4887,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-notykt",
       "perf": {
-        "end_ws_mb": 69,
+        "end_ws_mb": 65,
         "files_per_sec": 2,
-        "index_duration_ms": 168874
+        "index_duration_ms": 176544
       },
       "project": "kotlin-notykt",
       "rate_by_language": {
         "dockerfile": 100.0,
         "javascript": 0.0,
-        "kotlin": 89.25,
+        "kotlin": 89.02,
         "markdown": 50.0
       },
-      "resolution_rate": 89.16,
+      "resolution_rate": 88.92,
       "routes": 0,
       "symbols": 2487,
       "unresolved_by_lang_kind": {
@@ -4869,7 +4912,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 74
+        "min_resolution_rate": 83
       },
       "code_chunks": 41463,
       "files": 722,
@@ -4878,8 +4921,8 @@
         "http_call": 12
       },
       "flow_edges": 13,
-      "internal_edges": 45995,
-      "internal_unresolved": 15358,
+      "internal_edges": 59116,
+      "internal_unresolved": 11368,
       "languages": {
         "css": 1,
         "java": 71,
@@ -4894,22 +4937,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-okhttp",
       "perf": {
-        "end_ws_mb": 298,
-        "files_per_sec": 5,
-        "index_duration_ms": 146550
+        "end_ws_mb": 73,
+        "files_per_sec": 3,
+        "index_duration_ms": 217630
       },
       "project": "kotlin-okhttp",
-      "resolution_rate": 74.97,
+      "rate_by_language": {
+        "java": 92.31,
+        "kotlin": 83.46,
+        "markdown": 31.58
+      },
+      "resolution_rate": 83.87,
       "routes": 0,
       "symbols": 20340,
       "unresolved_by_lang_kind": {
-        "java.calls": 236,
-        "java.instantiates": 14,
-        "java.type_ref": 408,
-        "kotlin.calls": 11231,
+        "java.calls": 246,
+        "java.instantiates": 7,
+        "java.type_ref": 5,
+        "kotlin.calls": 9321,
         "kotlin.implements": 4,
-        "kotlin.inherits": 18,
-        "kotlin.type_ref": 3434,
+        "kotlin.inherits": 17,
+        "kotlin.type_ref": 1755,
         "markdown.calls": 13
       }
     },

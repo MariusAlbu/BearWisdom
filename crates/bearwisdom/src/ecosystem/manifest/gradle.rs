@@ -557,6 +557,108 @@ pub fn discover_gradle_catalog_names(project_root: &std::path::Path) -> GradleCa
 }
 
 // ---------------------------------------------------------------------------
+// settings.gradle module ids (workspace's own subprojects)
+// ---------------------------------------------------------------------------
+
+/// Locate the root `settings.gradle` / `settings.gradle.kts` and return the
+/// artifact ids of every subproject the workspace itself defines. These are
+/// internal modules — a sibling module that depends on one by published
+/// coordinate (`group:module:version`) is referencing the workspace's own
+/// build output, which is never in any dependency cache.
+pub fn collect_settings_gradle_module_ids(project_root: &Path) -> Vec<String> {
+    for name in &["settings.gradle.kts", "settings.gradle"] {
+        let path = project_root.join(name);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            return parse_settings_gradle_module_ids(&content);
+        }
+    }
+    Vec::new()
+}
+
+/// Parse subproject artifact ids from a `settings.gradle[.kts]` body.
+///
+/// Two forms contribute an id:
+///   * `include(":okhttp-tls")` / `include ':a:b'` — the **last** colon
+///     segment is Gradle's default project name (and the published
+///     `artifactId` absent a rename).
+///   * `project(":mockwebserver").name = "mockwebserver3"` — an explicit
+///     rename. Both the original path-derived name and the renamed name are
+///     returned, since either can appear as a declared coordinate.
+pub fn parse_settings_gradle_module_ids(content: &str) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        for path in extract_quoted_project_paths(trimmed, "include") {
+            if let Some(last) = path.rsplit(':').next() {
+                if !last.is_empty() {
+                    ids.push(last.to_string());
+                }
+            }
+        }
+        if let Some(renamed) = parse_project_name_rename(trimmed) {
+            ids.push(renamed);
+        }
+    }
+    ids
+}
+
+/// Collect every quoted `:project:path` argument to a `keyword(...)` call on
+/// one line — handles both `include(":a", ":b")` and the Groovy
+/// `include ':a', ':b'` form. Only arguments beginning with `:` are returned
+/// (project paths, not configuration strings).
+fn extract_quoted_project_paths(line: &str, keyword: &str) -> Vec<String> {
+    let Some(after_kw) = line.strip_prefix(keyword) else {
+        return Vec::new();
+    };
+    let next = after_kw.chars().next();
+    if !matches!(next, Some('(') | Some(' ') | Some('\t')) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for raw in extract_quoted_literals(after_kw) {
+        if let Some(path) = raw.strip_prefix(':') {
+            out.push(path.to_string());
+        }
+    }
+    out
+}
+
+/// Parse a `project(":path").name = "renamed"` assignment, returning the
+/// renamed artifact id.
+fn parse_project_name_rename(line: &str) -> Option<String> {
+    let after = line.strip_prefix("project")?;
+    if !after.trim_start().starts_with('(') {
+        return None;
+    }
+    let name_pos = after.find(".name")?;
+    let eq_pos = after[name_pos..].find('=')?;
+    let rhs = &after[name_pos + eq_pos + 1..];
+    extract_quoted_literals(rhs).into_iter().next()
+}
+
+/// Extract every single- or double-quoted literal from a fragment, in order.
+fn extract_quoted_literals(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let q = bytes[i];
+        if q == b'"' || q == b'\'' {
+            if let Some(end) = s[i + 1..].find(q as char) {
+                out.push(s[i + 1..i + 1 + end].to_string());
+                i = i + 1 + end + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

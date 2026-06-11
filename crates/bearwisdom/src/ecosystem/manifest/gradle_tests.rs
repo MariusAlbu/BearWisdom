@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     parse_gradle_coords, parse_gradle_dependencies, parse_gradle_direct_coords,
-    parse_version_catalog, GradleCatalog,
+    parse_settings_gradle_module_ids, parse_version_catalog, GradleCatalog,
 };
 
 #[test]
@@ -45,6 +45,55 @@ fn parse_gradle_direct_coords_skips_catalog_refs() {
     "#;
     // No string literal — direct parser yields nothing.
     assert!(parse_gradle_direct_coords(content).is_empty());
+}
+
+#[test]
+fn settings_module_ids_kts_include_last_segment() {
+    let content = r#"
+        rootProject.name = "okhttp-parent"
+        include(":okhttp")
+        include(":okhttp-tls")
+        include(":mockwebserver:junit5")
+    "#;
+    let ids = parse_settings_gradle_module_ids(content);
+    assert!(ids.contains(&"okhttp".to_string()));
+    assert!(ids.contains(&"okhttp-tls".to_string()));
+    // Nested path: the last colon segment is the project name.
+    assert!(ids.contains(&"junit5".to_string()));
+}
+
+#[test]
+fn settings_module_ids_groovy_multi_arg_include() {
+    let content = "include ':core', ':api', ':web'\n";
+    let ids = parse_settings_gradle_module_ids(content);
+    assert!(ids.contains(&"core".to_string()));
+    assert!(ids.contains(&"api".to_string()));
+    assert!(ids.contains(&"web".to_string()));
+}
+
+#[test]
+fn settings_module_ids_capture_project_name_rename() {
+    let content = r#"
+        include(":mockwebserver")
+        project(":mockwebserver").name = "mockwebserver3"
+    "#;
+    let ids = parse_settings_gradle_module_ids(content);
+    // Both the include-derived id and the renamed id are returned — either
+    // can surface as a declared coordinate.
+    assert!(ids.contains(&"mockwebserver".to_string()));
+    assert!(ids.contains(&"mockwebserver3".to_string()));
+}
+
+#[test]
+fn settings_module_ids_ignore_non_project_strings() {
+    // A `String by settings` binding and a commented include must not leak.
+    let content = r#"
+        val androidBuild: String by settings
+        // include(":disabled")
+        include(":active")
+    "#;
+    let ids = parse_settings_gradle_module_ids(content);
+    assert_eq!(ids, vec!["active".to_string()]);
 }
 
 #[test]
