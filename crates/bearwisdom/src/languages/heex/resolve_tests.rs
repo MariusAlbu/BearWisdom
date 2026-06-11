@@ -196,6 +196,48 @@ fn internal_component_not_grep_resolved() {
 }
 
 #[test]
+fn template_fn_binds_to_colocated_view_module() {
+    // A `<%= format_date(x) %>` helper call in a template binds to the
+    // same-named public function defined in the template's co-located Phoenix
+    // *View module. `templates/page/index.html.heex` is rendered in the scope
+    // of `MyAppWeb.PageView` (`views/page_view.ex`), so `format_date` resolves
+    // to `MyAppWeb.PageView.format_date` — a scope-directed bind, not a
+    // whole-program by-name grep.
+    let view_file = make_file(
+        "lib/my_app_web/views/page_view.ex",
+        "elixir",
+        vec![make_method_symbol(
+            "format_date",
+            "MyAppWeb.PageView.format_date",
+        )],
+        vec![],
+    );
+    let heex_file = make_file(
+        "lib/my_app_web/templates/page/index.html.heex",
+        "heex",
+        vec![make_class_symbol("index.html")],
+        vec![make_calls_ref("format_date")],
+    );
+    let (index, id_map) = build_env(&[&view_file, &heex_file]);
+    let file_ctx = HeexHooks.build_file_context(&heex_file, None).unwrap();
+    let ref_ctx = RefContext {
+        extracted_ref: &heex_file.refs[0],
+        source_symbol: &heex_file.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    let res = HeexHooks.resolve_ref(&file_ctx, &ref_ctx, &index);
+    let expected = *id_map
+        .get(&(view_file.path.clone(), "MyAppWeb.PageView.format_date".to_string()))
+        .expect("view function id");
+    assert_eq!(
+        res.map(|r| r.target_symbol_id),
+        Some(expected),
+        "template helper binds to its co-located view module function"
+    );
+}
+
+#[test]
 fn dotted_target_skipped_by_resolver() {
     let heex_file = make_file(
         "lib/web/templates/page/index.html.heex",

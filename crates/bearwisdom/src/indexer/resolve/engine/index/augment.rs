@@ -23,7 +23,8 @@ use rustc_hash::FxHashMap;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind, Visibility};
 
 use super::super::{
-    find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
+    find_matching_bracket, is_jvm_language, merge_where_bounds,
+    parse_declared_type_from_signature_for_lang, parse_generic_param_clause,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
 };
@@ -523,6 +524,108 @@ impl SymbolIndex {
         }
     }
 
+    /// Derive `return_type` / `field_type` for a DB-loaded symbol from its
+    /// persisted signature, into `self.type_info` keyed by qname.
+    ///
+    /// `augment_from_db*` loads external (and unchanged-file) symbols by
+    /// name/qname only — their signatures survive to the DB but their type
+    /// metadata does not. A chain rooted on such an external receiver then
+    /// reaches the member via `by_qualified_name` but stalls in
+    /// `yield_type_of`, whose string fallback reads `return_type_name` /
+    /// `field_type_name`. This rebuilds the same signature-derived shapes
+    /// `build_with_context` / `augment_from_parsed` populate for in-memory
+    /// files, so the returned type projects the next member.
+    ///
+    /// Signature-only: these symbols carry no TypeRef edges, so the TypeRef
+    /// fallback paths the in-memory passes use never apply here — only the
+    /// parseable signature head/return is read. Fills a slot only when it is
+    /// absent (a parsed-file pass already wrote the richer form).
+    fn derive_type_info_from_signature(
+        &mut self,
+        qname: &str,
+        kind: &str,
+        scope_path: Option<&str>,
+        signature: Option<&str>,
+        language: &str,
+    ) {
+        let Some(sig) = signature else { return };
+        match kind {
+            "method" | "function" | "constructor" => {
+                if self
+                    .type_info
+                    .get(qname)
+                    .and_then(|ti| ti.return_type.as_ref())
+                    .is_some()
+                {
+                    return;
+                }
+                let rt = parse_return_type_from_signature(sig)
+                    .or_else(|| {
+                        if kind == "constructor" {
+                            None
+                        } else {
+                            parse_return_type_positional(sig)
+                        }
+                    })
+                    .or_else(|| {
+                        if is_jvm_language(language) {
+                            parse_return_type_from_jvm_descriptor(sig)
+                        } else {
+                            None
+                        }
+                    });
+                let Some(rt) = rt else { return };
+                let (head, args) = parse_type_head_and_args(&rt);
+                let head_is_name = !head.is_empty()
+                    && head
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                // Resolve scope names against `by_qname` before touching
+                // `type_info` so the two field borrows never overlap.
+                let (resolved, ret_args) = if !args.is_empty() && head_is_name {
+                    (
+                        resolve_type_name_in_scope(head, scope_path, &self.by_qname),
+                        args.iter().map(|s| s.to_string()).collect(),
+                    )
+                } else {
+                    (
+                        resolve_type_name_in_scope(&rt, scope_path, &self.by_qname),
+                        Vec::new(),
+                    )
+                };
+                let ti = self.type_info.entry(qname.to_string()).or_default();
+                ti.return_type = Some(resolved);
+                ti.return_type_args = ret_args;
+            }
+            "property" | "field" | "variable" | "parameter" => {
+                if self
+                    .type_info
+                    .get(qname)
+                    .and_then(|ti| ti.field_type.as_ref())
+                    .is_some()
+                {
+                    return;
+                }
+                let ft = parse_declared_type_from_signature_for_lang(sig, language).or_else(|| {
+                    if is_jvm_language(language) {
+                        parse_return_type_from_jvm_descriptor(sig)
+                    } else {
+                        None
+                    }
+                });
+                let Some(ft) = ft else { return };
+                let (head, _args) = parse_type_head_and_args(&ft);
+                let head = if head.is_empty() { ft.as_str() } else { head };
+                let resolved = resolve_type_name_in_scope(head, scope_path, &self.by_qname);
+                self.type_info
+                    .entry(qname.to_string())
+                    .or_default()
+                    .field_type = Some(resolved);
+            }
+            _ => {}
+        }
+    }
+
     /// Drain the chain-walker miss accumulator.
     ///
     /// Called by `resolve_and_write` after the initial resolution pass to
@@ -592,7 +695,8 @@ impl SymbolIndex {
 
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                    s.scope_path, s.visibility, f.package_id, s.signature, s.containing_id
+                    s.scope_path, s.visibility, f.package_id, s.signature, s.containing_id,
+                    f.language
              FROM symbols s
              JOIN files f ON f.id = s.file_id",
         ) {
@@ -612,11 +716,18 @@ impl SymbolIndex {
                 row.get::<_, Option<i64>>(7)?,
                 row.get::<_, Option<String>>(8)?,
                 row.get::<_, Option<i64>>(9)?,
+                row.get::<_, String>(10)?,
             ))
         }) {
             Ok(r) => r,
             Err(_) => return id_map,
         };
+
+        // DB-loaded symbols whose signature-derived type_info must be filled
+        // after the basic-index pass (the derivation reads `self.by_qname` for
+        // scope resolution, so it runs once the index is fully populated).
+        let mut type_info_seeds: Vec<(String, String, Option<String>, Option<String>, String)> =
+            Vec::new();
 
         for row in rows {
             let Ok((
@@ -630,6 +741,7 @@ impl SymbolIndex {
                 package_id,
                 signature,
                 containing_id_col,
+                language,
             )) = row
             else {
                 continue;
@@ -644,6 +756,15 @@ impl SymbolIndex {
             if self.by_qname.contains_key(&qname) {
                 continue;
             }
+
+            // Defer signature-derived type_info to after the basic-index pass.
+            type_info_seeds.push((
+                qname.clone(),
+                kind.clone(),
+                scope_path.clone(),
+                signature.clone(),
+                language,
+            ));
 
             // Arc<str> for file_path: shared across all symbols in the same file
             // within this batch; BTreeMap insert gets one clone, by_file gets another.
@@ -696,6 +817,64 @@ impl SymbolIndex {
             // by_file key stays String (one allocation per file, not per symbol)
             self.by_file.entry(file_path).or_default().push(info);
         }
+
+        // Signature-derived type_info for the DB-loaded symbols. Runs after the
+        // basic-index pass so `resolve_type_name_in_scope` sees every qname.
+        // Mirrors the in-memory passes; intern + re-derive below keeps the
+        // string and TypeId views aligned for the chain walker's two paths.
+        if !type_info_seeds.is_empty() {
+            for (qname, kind, scope_path, signature, language) in &type_info_seeds {
+                self.derive_type_info_from_signature(
+                    qname,
+                    kind,
+                    scope_path.as_deref(),
+                    signature.as_deref(),
+                    language,
+                );
+            }
+            let arena = &self.type_arena;
+            for (qname, _, _, _, _) in &type_info_seeds {
+                let Some(ti) = self.type_info.get_mut(qname.as_str()) else {
+                    continue;
+                };
+                if ti.return_type_id.is_none() {
+                    if let Some(rt) = ti.return_type.as_deref().filter(|s| !s.is_empty()) {
+                        ti.return_type_id = Some(arena.intern_type_str(rt));
+                    }
+                }
+                if ti.field_type_id.is_none() {
+                    if let Some(ft) = ti.field_type.as_deref().filter(|s| !s.is_empty()) {
+                        ti.field_type_id = Some(arena.intern_type_str(ft));
+                    }
+                }
+                if ti.return_type_arg_ids.is_empty() && !ti.return_type_args.is_empty() {
+                    ti.return_type_arg_ids = ti
+                        .return_type_args
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| arena.intern_type_str(s))
+                        .collect();
+                }
+                if let Some(id) = ti.return_type_id {
+                    ti.return_type = Some(arena.format_type(id));
+                }
+                if let Some(id) = ti.field_type_id {
+                    ti.field_type = Some(arena.format_type(id));
+                }
+                if !ti.return_type_arg_ids.is_empty() {
+                    ti.return_type_args = ti
+                        .return_type_arg_ids
+                        .iter()
+                        .map(|id| arena.format_type(*id))
+                        .collect();
+                }
+            }
+        }
+
         id_map
     }
 }
+
+#[cfg(test)]
+#[path = "augment_tests.rs"]
+mod tests;

@@ -6,6 +6,10 @@ pub(crate) mod profile;
 
 pub use profile::JSP_PROFILE;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod mod_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -127,7 +131,7 @@ impl LanguagePlugin for JspPlugin {
                         regions.push(EmbeddedRegion {
                             language_id: "java".into(),
                             text: if is_expr {
-                                format!("class __Jsp {{ Object f() {{ return ({t}); }} }}\n")
+                                format!("class __Jsp {{ void f() {{ var v = ({t}); }} }}\n")
                             } else {
                                 format!("class __Jsp {{ void f() {{ {t} }} }}\n")
                             },

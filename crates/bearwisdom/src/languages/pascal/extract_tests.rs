@@ -647,6 +647,90 @@ fn castlefields_simplemult_classes_extracted() {
 }
 
 // ---------------------------------------------------------------------------
+// `{$include}` / `{$i}` directive → Imports ref keyed by the .inc file stem.
+//
+// An `.inc` fragment's symbols extract under the fragment's own file path, so
+// the including unit can reach them only when an import names that file. The
+// extractor turns each `{$include 'helpers.inc'}` directive into an Imports ref
+// whose target is the file stem (`helpers`); `build_file_context` promotes it
+// to a wildcard import, and the FileStem wildcard rung binds `helpers.inc`'s
+// symbols by basename-stem.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn include_directive_emits_import_ref_for_inc_stem() {
+    use crate::types::EdgeKind;
+    let source = r#"unit MyUnit;
+interface
+{$include 'helpers.inc'}
+implementation
+end.
+"#;
+    let result = extract(source);
+    assert!(
+        result.refs.iter().any(|r| r.kind == EdgeKind::Imports
+            && r.target_name.eq_ignore_ascii_case("helpers")),
+        "expected an Imports ref for the included file stem `helpers`; got: {:?}",
+        result
+            .refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn include_directive_short_form_and_unquoted_and_subdir() {
+    use crate::types::EdgeKind;
+    // `{$i name}` short form, no quotes, and a directory prefix all reduce to
+    // the bare file stem.
+    for (source, stem) in [
+        ("unit U;\ninterface\n{$i helpers.inc}\nimplementation\nend.\n", "helpers"),
+        ("unit U;\ninterface\n{$I helpers.inc}\nimplementation\nend.\n", "helpers"),
+        (
+            "unit U;\ninterface\n{$include 'inc/shared_defs.inc'}\nimplementation\nend.\n",
+            "shared_defs",
+        ),
+    ] {
+        let result = extract(source);
+        assert!(
+            result.refs.iter().any(|r| r.kind == EdgeKind::Imports
+                && r.target_name.eq_ignore_ascii_case(stem)),
+            "expected an Imports ref for stem `{stem}` from source `{source}`; got: {:?}",
+            result
+                .refs
+                .iter()
+                .map(|r| (r.kind, r.target_name.as_str()))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn include_compiler_switch_not_mistaken_for_include_file() {
+    use crate::types::EdgeKind;
+    // `{$I+}` / `{$I-}` are the I/O-checking compiler switch, not an include
+    // directive. They must not produce an Imports ref.
+    let source = r#"unit U;
+interface
+{$I+}
+{$I-}
+implementation
+end.
+"#;
+    let result = extract(source);
+    assert!(
+        !result.refs.iter().any(|r| r.kind == EdgeKind::Imports),
+        "I/O-check switch `{{$I+}}` must not emit an import ref; got: {:?}",
+        result
+            .refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Normalisation: FPC generic `{$ifdef FPC}specialize{$endif} Type<A,B,C>` forms
 // ---------------------------------------------------------------------------
 

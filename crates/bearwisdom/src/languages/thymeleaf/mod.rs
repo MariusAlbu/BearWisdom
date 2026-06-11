@@ -9,6 +9,10 @@ pub(crate) mod profile;
 
 pub use profile::THYMELEAF_PROFILE;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod mod_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -103,7 +107,7 @@ impl LanguagePlugin for ThymeleafPlugin {
                         let (line, col) = lc(bytes, val_start);
                         regions.push(EmbeddedRegion {
                             language_id: "java".into(),
-                            text: format!("class __Th {{ Object f() {{ return ({inner}); }} }}\n"),
+                            text: format!("class __Th {{ void f() {{ var v = ({inner}); }} }}\n"),
                             line_offset: line,
                             col_offset: col,
                             origin: EmbeddedOrigin::TemplateExpr,
