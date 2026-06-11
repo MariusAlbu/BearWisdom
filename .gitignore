@@ -2,6 +2,10 @@
 /target*
 web/dist/
 
+# Build-generated (build.rs regenerates these from the grammars on every build — do not track)
+/crates/bearwisdom/src/indexer/query_builtins.rs
+/crates/bearwisdom/src/indexer/query_builtins/
+
 # Data
 /models
 *.db
