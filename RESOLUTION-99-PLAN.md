@@ -10,6 +10,57 @@ to that doc's claims are in §1.
 
 ---
 
+## Status ledger — 2026-06-11 orchestrated execution
+
+Four commits: `8847b253` (wave 1) · `44aaa5ad` (wave 2) · `49c0fd20` (measure) · `adebc2d2` (wave 4
+JVM externals). Suite 6968 green. 23 single-project recaptures realized into `baseline-all.json`.
+
+**✅ DONE**
+- **§2 all five levers.** E1 admission (bounded type-edge closure; perf clean — ts-rallly 53s).
+  E2 implicit-self (kept-with-proof: binds Implements/structural edges the Inherits-only rung
+  can't). E3 host-hook fallback (+ heex Mix routing; elixir-changelog +2.9). E4 dart self-package
+  (+4.8 dart-frog; melos workspace-sibling lib/ binding scoped out). E5 Record<K,V> projection
+  (`infer`/template-literal declined by design — extract-side capture gap documented).
+  Smaller B: B1 build test ✅, union-fallback prefix ✅, shell source-graph ✅ (bash 57.6→96.95),
+  ada use-member ✅ (verified already-working, proof tests), OCaml open ✅ (+3.3).
+- **§3 C-sweep 13/14.** c_lang keywords (+9.0 c-redis), erlang norm, ocaml, elixir use-injection,
+  R/starlark/nim builtin_skip, nim EnumMember, vba Global, vbnet+sql case-fold, odin module_skip,
+  fortran Inherits row, dockerfile FROM, haskell builtin_skip wired (+8.4 hadolint).
+  **Ruby #6 SKIPPED** — its keywords file is stdlib methods, wiring it would violate the no-library-
+  lists rule; no closed reserved-word set exists worth the decline.
+- **§4 A-residue** all rows except two: kotlin string-interp **REFUTED** (active grammar has leaf
+  `string_content`; no bug — reverted), YAML skipped (low). C/C++ macro-qualifier suppression
+  landed as a single catalog-driven post-filter.
+- **§5 purge complete** + follow-up: scala/java purged, dart dead list deleted, heex rerouted
+  through Mix. No dips (kotlin-notykt +6.8, php-monica +1.5 at purge time).
+- **§6** installs done (gsp-openboxes npm fixed → +7.6; jupyter npm; robot venvs; melos/pub-get;
+  Qt 5.15.2 probe verified working). **gradle-classes walker DISSOLVED** — not a new walker:
+  maven-classes converted to coordinate-driven probing + three faults fixed (missing
+  default_locator arm, no version-blind bytecode fallback, self-module GAV pollution). JVM
+  realization on hydrated caches: detekt 66.2→79.2, recaf 81.8→92.9 (970 ext:jar files), okhttp
+  75.0→83.9, ktor 69.7→77.8, spock 86.0→92.8, komga 73.5→78.8, gradle-plugin 52.1→61.0.
+- **§7 stats row** — `internal_edges_by_lang` + `rate_by_language` wired (lib/CLI/MCP/recapture).
+
+**⬜ REMAINING**
+1. **§7 architect decisions** (unchanged): dart generated-code exclusion, jupyter locale de-dup,
+   framework-source (D2) separate reporting, vendored-no-manifest CodeMirror, r-shiny double
+   count, prolog xsb fixture accounting.
+2. **Robot DynamicCore** — the venv install realized nothing (Δ 0.00); root cause is 3-layer:
+   pypi demand-pull is Python-import-driven (Robot `Library` refs never trigger it),
+   `build_robot_library_map` runs before externals parse (full.rs:603 vs :657), SeleniumLibrary
+   keywords are DynamicCore package methods. ~1–2 sessions, touches indexer ordering. DECISION.
+3. **Lua stdlib** (§6.4 decision: luaL_Reg-table walker over Lua source vs documented borderline).
+4. **ocaml-stdlib / nim-stdlib walkers** (§6.2/6.3 — still discussion-gated).
+5. **php-livewire/smarty unreconciled** (§6 investigation — untouched).
+6. **C/C++ `#define`-alias callables `kind=variable`** (§4 row, ~6–10k — never assigned).
+7. **E5 extract-side `infer` capture** (documented gap; optional follow-up).
+8. **Ops**: gradle re-hydration with `--refresh-dependencies` for metadata-only coords;
+   keepassxc reindex now that Qt discovery is proven.
+9. **P5 — THE corpus recapture** (one-shot, at closeout). Watch item: kotlin-notykt −0.24
+   edge-shift after maven-classes conversion (noise-level).
+
+---
+
 ## 0. Ground truth
 
 **Corpus (2026-06-09 reindex CSV, by-project denominators): 86.24%** — 1,498,534 unresolved /
