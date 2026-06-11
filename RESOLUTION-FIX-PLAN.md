@@ -143,8 +143,35 @@ real symbols, never hardcode" rule, different artifact. All are install/disk-gat
   robotframework + the keyword libs (Browser/Selenium) per project.
 
 ### ⬜ Remaining
-- **B4 externals-walker emission** — externals whose return/field type has no parseable signature
-  stay unresolved (ext-ref filter survival per CLAUDE.md). The deep pipeline lever; larger build.
+- **B4 external member admission** — chain-walking through library APIs (Kysely→SelectQueryBuilder,
+  RxJS Observable→Subject, Mongoose Query). **Scoped 2026-06-11 — the framing was wrong.** It is NOT
+  a return_type-survival problem: `build.rs:258` (the SymbolIndex type-metadata pass) iterates ALL
+  parsed files with **no `ext:` skip**, so external `return_type`/`field_type` already land in the
+  maps; and the resolve-loop `ext:` filter (`loop_body.rs:368`) only stops external files' *own* refs
+  from becoming edges. The real blocker is **`type_checker/core/members.rs:104`**: the arena members
+  index skips external Class/Struct methods **wholesale** (admitting only external Trait/Interface
+  default-method bodies), to avoid an arena write-storm (~1M symbols for ts-nextjs). So a receiver
+  typed `Kysely` has no `selectFrom` member registered → `MembersIndex.lookup` misses → the chain
+  stops at hop 1. (`inherits_map` ✓ works via a different path, so external *inheritance* walks;
+  external *member calls* don't.)
+  - **Fix shape:** *reachability-bounded* external member admission. Widen the gate
+    (`members.rs:105-119`) beyond trait/interface defaults to admit members of external types that
+    project chains actually root on — external qnames that appear as a `declared_type`/`field_type`/
+    `return_type` of an INTERNAL symbol. The write-set is then bounded by project usage, not the full
+    1M. Requires the internal type maps to be available before the member pass (ordering dependency
+    in `build_with_context`).
+  - **Bound options + tradeoff:**
+    - *Depth-1, internal-rooted* (recommended start): admit only external types directly typed onto an
+      internal symbol. Resolves the first external hop (`db.selectFrom(...)`). Write-set ≈ |reached
+      external types| × avg methods — for a TS app touching ~50-200 external types × ~10-30 methods ≈
+      1k-6k member writes vs the ~1M wholesale (2-3 orders smaller). Cost: one pass over internal
+      symbols' type maps + the bounded writes — negligible vs the skip it replaces.
+    - *Fixpoint to fade depth*: also fold admitted external methods' return-types into the reachable
+      set until no new types, so full chains (`Kysely→SelectQueryBuilder→…`) resolve in one build.
+      Larger write-set + a fixpoint loop on the hot path; bounded by chain depth (typically <5 hops).
+  - **HOLD — architect review before coding.** This touches the perf-sensitive arena/members hot
+    path; the wholesale skip is a deliberate write-storm guard. Land depth-1 first, measure
+    (ts-rallly / an RxJS-heavy Angular project), then decide on the fixpoint.
 - **B5 Phoenix** — the connector is more broken than "partial nested context." **Root cause (2026-06-11):**
   `HeexHooks.resolve_ref` (the colocated-`*View` binding) only ever receives the host extractor's
   `<.component>` tag refs. The actual view-helper calls — `<%= downloads_link(ep) %>` etc. — are
