@@ -99,18 +99,47 @@ Measured on the OLD engine (single-project reindex):
 SQLite `SQLITE_BUSY` (a cached IndexService's watcher reindexing during melos-bootstrap file churn,
 contending with an explicit force-reindex). Mitigation only.
 
-### ⛔ Rule-blocked (predicate-stuffing rule) — re-bucketed to E / honest-unresolved
-R base / MATLAB / Robot / PHP-stdlib functions / Haskell library-type half are library API name
-lists, forbidden in `is_*_builtin`. Only the language keyword/construct/operator/primitive subset
-is rule-legal (PHP `isset`/`empty`, Elixir Kernel forms, Haskell Prelude+operators only).
+### ✅ "Rule-blocked" bucket — RESOLVED via existing walkers + provisioning (the label was stale)
+The "library API name lists, forbidden in `is_*_builtin`" framing was wrong for 4 of 5: the
+manifest/install walkers already exist and are registered. Reverified 2026-06-11.
+
+**Manifest- vs install-walking distinction.** "Manifest walking" only literally applies to the
+third-party half (Haskell library types via `.cabal`, R CRAN via `DESCRIPTION`). The stdlib half
+(R base, MATLAB builtins, PHP core fns) has *no project manifest* — it's discovered by walking the
+language *install* (`<R_HOME>/library`, `$MATLABROOT/toolbox`, a stubs checkout). Same "discover
+real symbols, never hardcode" rule, different artifact. All are install/disk-gated.
+
+- **R base** — `ecosystem/r_stdlib.rs` already walks `<R_HOME>/library/*/NAMESPACE` exports and
+  shells `Rscript -e getNamespaceExports("base")` for the no-NAMESPACE `base` pkg (sanctioned
+  `parse_metadata_only`, same lane as NuGet DLL metadata). R 4.6 present. **Already landed** in the
+  2026-06-09 reindex: r-dplyr 42.5→61.2, r-ggplot2 44.2→73.3, r-shiny 74.6→86.0. Reconfirmed flat
+  (r-dplyr 61.6). The "no Rscript" parking was a stale-machine artifact.
+- **Haskell library types** — `ecosystem/cabal.rs` reads `.cabal build-depends` + the GHC package
+  DB (`package.conf.d/*.conf`). GHC 9.12.1 + 226-pkg cabal store present. **Already landed**:
+  hadolint 40.5→61.3, pandoc 37.5→62.3, postgrest 51.3→79.7. Reconfirmed flat (79.8).
+- **PHP stdlib** — `ecosystem/php_stubs.rs` walks a JetBrains phpstorm-stubs checkout. Cloned to
+  `~/phpstorm-stubs` (auto-discovered). **php-livewire 55.41→62.8** (+7.4; stubs + R2/R3).
+- **MATLAB** — `matlab/keywords.rs` WAS the real violation: ~200 stdlib FUNCTION names
+  (`zeros`/`plot`/`sprintf`/`eig`/…) stuffed into the `keywords()` skip set. **Purged** to the
+  rule-legal subset (reserved words, classdef-block kw, fn-arg kw, boolean literals, primitive
+  class names, operator-method names). Resolution now routes through `matlab_runtime` (walks
+  `$MATLABROOT/toolbox`). No MATLAB install here → **honest regression: matlab-prmlt 51.8→16.4**
+  (−35.4; the list was masking 1,487 unresolved). The number is now honest, not fake; completing
+  the fix needs a MATLAB (or Octave-source) toolbox on disk.
+- **Robot** — `library_map.rs` already resolves `Library X`→project-internal `.py` (robot-framework
+  86.8% via vendored `src/robot`). **Extended** to also consult site-packages (`ext:`) `.py` with a
+  non-`ext:`-preferred tiebreak (vendored copy still wins). Unit-tested; **UNMEASURED on corpus** —
+  no robot project ships its Python keyword libs (no venv), so realization needs pip-installing
+  robotframework + the keyword libs (Browser/Selenium) per project.
 
 ### ⬜ Remaining
 - **B4 externals-walker emission** — externals whose return/field type has no parseable signature
   stay unresolved (ext-ref filter survival per CLAUDE.md). The deep pipeline lever; larger build.
 - **B5 Phoenix** — finish the partial HEEx→View connector.
-- **Bucket E not installable here** — R/CRAN (no Rscript + needs `DESCRIPTION` locator), Gradle JVM
-  (no gradle toolchain), Qt/STL (system lib), dart-appflowy/dart-frog (melos monorepos, unbootstrapped).
-  Toolchain/walker-gated, not code.
+- **Install-gated (walker complete, artifact absent)** — MATLAB toolbox (no free install; Octave-
+  source could proxy), Robot Python keyword libs (pip-install per project), Gradle JVM (no gradle
+  toolchain), Qt/STL (system lib), dart-appflowy/dart-frog (unbootstrapped melos). The walker
+  exists; the dep/toolchain just isn't on disk. (R/CRAN moved to ✅ above — R 4.6 + Rscript present.)
 - **MCP force-reindex exclusivity** — force-reindex of a cached+watched project should take exclusive
   DB access (evict the cached IndexService / pause the watcher), not lean on busy_timeout. Track-F follow-up.
 - **D2 framework-source repos** (Struts/Next.js/etc.) — corpus-composition accounting, not a fix.

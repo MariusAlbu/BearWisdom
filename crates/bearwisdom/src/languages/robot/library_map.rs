@@ -89,9 +89,14 @@ const AUTO_IMPORTED_LIBRARIES: &[&str] = &["BuiltIn"];
 ///     imports collecting Library entries from every visited resource.
 ///     A `visited` set guards against import cycles.
 pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
+    // Include externally-walked (`ext:`) Python files: a Robot suite's
+    // `Library  SeleniumLibrary` resolves to a pip-installed package under
+    // site-packages, not just a project-vendored `.py`. `pick_best_match`
+    // prefers a project-internal copy when both exist, so a vendored library
+    // (e.g. robot-framework's own `src/robot/.../BuiltIn.py`) still wins.
     let py_paths: Vec<&str> = parsed
         .iter()
-        .filter(|pf| !pf.path.starts_with("ext:") && pf.path.ends_with(".py"))
+        .filter(|pf| pf.path.ends_with(".py"))
         .map(|pf| pf.path.as_str())
         .collect();
     let robot_paths: Vec<&str> = parsed
@@ -385,5 +390,12 @@ fn pick_best_match(
         }
     }
     matches.sort();
+    // A project-internal copy is the authoritative target; the site-packages
+    // (`ext:`) copy is the fallback. `ext:`-prefixed paths sort before `src/`
+    // lexicographically, so an explicit non-`ext:` pass is needed to keep a
+    // vendored library winning over its externally-walked twin.
+    if let Some(internal) = matches.iter().find(|p| !p.starts_with("ext:")) {
+        return Some((*internal).to_string());
+    }
     matches.first().map(|s| (*s).to_string())
 }

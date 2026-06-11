@@ -112,6 +112,36 @@ fn dotted_library_name_resolves_via_last_segment() {
 }
 
 #[test]
+fn library_resolves_to_site_packages_ext_file() {
+    // No vendored copy in the source tree — the only match is the
+    // pip-installed package under site-packages, surfaced as an `ext:` file.
+    let parsed = vec![
+        pf("ext:python:site-packages/SeleniumLibrary.py", Vec::new()),
+        pf("tests/foo.robot", vec![import_ref("SeleniumLibrary")]),
+    ];
+    let map = build_robot_library_map(&parsed);
+    let entry = map.get("tests/foo.robot").expect("must resolve to ext: lib");
+    assert_eq!(
+        entry[0].py_file_path,
+        "ext:python:site-packages/SeleniumLibrary.py"
+    );
+}
+
+#[test]
+fn vendored_internal_lib_preferred_over_ext_twin() {
+    // Both a vendored copy and a site-packages copy exist. The vendored,
+    // project-internal file is the authoritative target.
+    let parsed = vec![
+        pf("ext:python:site-packages/MyLib.py", Vec::new()),
+        pf("src/libs/MyLib.py", Vec::new()),
+        pf("tests/foo.robot", vec![import_ref("MyLib")]),
+    ];
+    let map = build_robot_library_map(&parsed);
+    let entry = map.get("tests/foo.robot").expect("must resolve");
+    assert_eq!(entry[0].py_file_path, "src/libs/MyLib.py");
+}
+
+#[test]
 fn unknown_library_is_silently_dropped() {
     let parsed = vec![pf("tests/foo.robot", vec![import_ref("SeleniumLibrary")])];
     let map = build_robot_library_map(&parsed);
