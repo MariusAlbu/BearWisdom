@@ -229,6 +229,83 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
     result
 }
 
+/// Collect the package member modules for a resolved library entry point.
+///
+/// A flat module (`Foo.py`) has no members — returns empty. A package entry
+/// (`<pkg>/__init__.py`) returns every other indexed `.py` file under the
+/// same package directory, so the dynamic-keyword scan can reach keyword
+/// methods scattered across `<pkg>/keywords/*.py`. Member paths are matched
+/// by the directory prefix `<dir-of-init>/`, which keeps an unrelated
+/// sibling package (`OtherPkg/...`) out even when both live under the same
+/// site-packages root.
+pub fn package_member_modules<'a>(library_path: &str, parsed: &'a [ParsedFile]) -> Vec<&'a str> {
+    let normalized_lib = library_path.replace('\\', "/");
+    // The package directory is everything up to (and including) the trailing
+    // slash before `__init__.py`. String-sliced rather than via
+    // `std::path::Path` so the `ext:py:` colon head doesn't confuse Windows
+    // path parsing.
+    let Some(pkg_dir) = normalized_lib.strip_suffix("/__init__.py") else {
+        return Vec::new();
+    };
+    let prefix = format!("{pkg_dir}/");
+    parsed
+        .iter()
+        .filter_map(|pf| {
+            let p = pf.path.as_str();
+            if p == library_path || !p.ends_with(".py") {
+                return None;
+            }
+            pf.path.replace('\\', "/").starts_with(&prefix).then_some(p)
+        })
+        .collect()
+}
+
+/// Collect the distinct `Library  <name>` names declared across project
+/// `.robot`/`.resource` files, plus the auto-imported `BuiltIn`.
+///
+/// These names are the project-driven demand signal for the externals
+/// pull: a suite declaring `Library  SeleniumLibrary` needs SeleniumLibrary's
+/// site-packages modules walked even though no Python `import` references
+/// them. Resource imports (`.robot`/`.resource`) are excluded — those are
+/// resolved within the project, not against pip-installed packages.
+pub fn collect_declared_library_names(parsed: &[ParsedFile]) -> HashSet<String> {
+    let mut names: HashSet<String> = HashSet::new();
+    names.insert("BuiltIn".to_string());
+    for pf in parsed {
+        if pf.path.starts_with("ext:") {
+            continue;
+        }
+        if !pf.path.ends_with(".robot") && !pf.path.ends_with(".resource") {
+            continue;
+        }
+        for r in &pf.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let raw = r.target_name.as_str();
+            if raw.ends_with(".robot") || raw.ends_with(".resource") {
+                continue;
+            }
+            // The last dotted segment is the library/module the keywords
+            // come from (`libraryscope.Global` → `libraryscope` is the
+            // package; both the leaf and the head are recorded so either
+            // shape finds a matching site-packages root).
+            if let Some(head) = raw.split('.').next() {
+                if !head.is_empty() {
+                    names.insert(head.to_string());
+                }
+            }
+            if let Some(leaf) = raw.rsplit('.').next() {
+                let leaf = leaf.trim_end_matches(".py");
+                if !leaf.is_empty() {
+                    names.insert(leaf.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
 /// Walk parsed files and build a `basename → full_path` map for every
 /// indexed `.robot`/`.resource` file. Used by `RobotResolver` to rewrite
 /// `Resource    atest_resource.robot` (basename) into
@@ -294,12 +371,16 @@ pub fn pick_resource_for_importer<'a>(
 }
 
 /// Resolve a `Library  <name>` entry to a project `.py` file path.
-/// Supports the three forms Robot accepts:
+/// Supports the four forms Robot accepts:
 ///   * `Library  TestCheckerLibrary`        — bare module name
 ///   * `Library  KeywordDecorator.py`       — explicit .py file; the
 ///     name IS already the basename, just match it as-is
 ///   * `Library  pkg.subpkg.MyLib`          — dotted module path; the
 ///     leaf segment is the .py basename
+///   * `Library  SeleniumLibrary`           — a package whose keyword class
+///     lives in `<name>/__init__.py` (DynamicCore aggregators), not a flat
+///     `<name>.py`. Resolved to the package `__init__.py` when no flat
+///     module matches.
 fn resolve_library_to_py(
     library_name: &str,
     importer_path: &str,
@@ -333,7 +414,72 @@ fn resolve_library_to_py(
             return Some(p);
         }
     }
+    // Package form: `Library  SeleniumLibrary` with the keyword class on
+    // `SeleniumLibrary/__init__.py`. Match either segment as a package dir.
+    if let Some(p) = pick_package_init_match(last_seg, py_paths) {
+        return Some(p);
+    }
+    if first_seg != last_seg {
+        if let Some(p) = pick_package_init_match(first_seg, py_paths) {
+            return Some(p);
+        }
+    }
     None
+}
+
+/// Resolve a `Library  <name>` package to its `<name>/__init__.py`.
+///
+/// A DynamicCore library (`SeleniumLibrary`) is a package directory, not a
+/// flat module — the keyword class aggregating `keywords/*.py` is defined in
+/// the package `__init__.py`. The site-packages copy surfaces as
+/// `ext:py:<name>/<...>/__init__.py`; the directory segment immediately above
+/// the matching `__init__.py` must be exactly `<name>`. A project-internal
+/// copy wins over the `ext:` twin (same tie-break as `pick_best_match`).
+fn pick_package_init_match(package_name: &str, py_paths: &[&str]) -> Option<String> {
+    let mut matches: Vec<&str> = py_paths
+        .iter()
+        .copied()
+        .filter(|p| is_package_init_for(p, package_name))
+        .collect();
+    if matches.is_empty() {
+        return None;
+    }
+    matches.sort();
+    if let Some(internal) = matches.iter().find(|p| !p.starts_with("ext:")) {
+        return Some((*internal).to_string());
+    }
+    matches.first().map(|s| (*s).to_string())
+}
+
+/// True when `path` ends with `<package_name>/__init__.py` (case-insensitive
+/// — Robot/Python import names are case-insensitive on the platforms BW
+/// targets). Matched as a `/`-split string rather than via `std::path::Path`:
+/// the `ext:py:` virtual paths use `/` separators by construction and the
+/// colon-prefixed head confuses `Path::file_name` on Windows.
+fn is_package_init_for(path: &str, package_name: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let mut segs = normalized.rsplit('/');
+    if segs.next() != Some("__init__.py") {
+        return false;
+    }
+    segs.next()
+        .map(|dir| strip_virtual_head(dir).eq_ignore_ascii_case(package_name))
+        .unwrap_or(false)
+}
+
+/// Drop a leading externals virtual head (`ext:py:`, `ext:ts:`, …) from a
+/// path segment. The walker glues the head onto the first segment with no
+/// separator, so the top-level package directory of a walked dependency
+/// reads as `ext:py:SeleniumLibrary`; the bare directory name is everything
+/// after the second colon.
+fn strip_virtual_head(segment: &str) -> &str {
+    let Some(after_ext) = segment.strip_prefix("ext:") else {
+        return segment;
+    };
+    match after_ext.split_once(':') {
+        Some((_lang, rest)) => rest,
+        None => segment,
+    }
 }
 
 /// Resolve a Resource basename (`atest_resource.robot`) to its full

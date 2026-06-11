@@ -10,10 +10,17 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 const C_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
+        // Variable is callable in C through two real shapes: a function pointer
+        // invoked through its binding (`void (*fp)(void); fp();`, extracted as a
+        // Variable) and an object-like `#define` that aliases a callable
+        // (`#define ngx_free free`, emitted as a Variable by the preproc pusher).
+        // A non-callable `int x; x();` is a compile error, so admitting Variable
+        // here binds real call edges without inventing false ones.
         &[
             SymbolKind::Function,
             SymbolKind::Method,
             SymbolKind::Constructor,
+            SymbolKind::Variable,
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class, SymbolKind::Struct]),

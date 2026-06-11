@@ -784,6 +784,7 @@ fn dynamic_keyword_resolves_to_owning_class() {
             normalized_name: "asynckeyword".to_string(),
             class_name: Some("AsyncDynamicLibrary".to_string()),
             method_name: None,
+            source_file: None,
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
@@ -834,6 +835,7 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
             normalized_name: "onearg".to_string(),
             class_name: None, // module-level KEYWORDS dict
             method_name: None,
+            source_file: None,
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
@@ -889,6 +891,7 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
             ),
             class_name: Some("Lib".to_string()),
             method_name: Some("add_copies_to_cart".to_string()),
+            source_file: None,
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
@@ -908,6 +911,95 @@ fn keyword_decorator_alias_resolves_to_specific_method() {
     assert_eq!(
         res.target_symbol_id,
         sym_id(&id_map, "lib/cart_lib.py", "add_copies_to_cart")
+    );
+}
+
+#[test]
+fn dynamiccore_package_keyword_binds_to_member_module_method() {
+    // The DynamicCore case end-to-end: `Library  SeleniumLibrary` binds to the
+    // package entry `SeleniumLibrary/__init__.py`, but the `@keyword`-decorated
+    // `open_browser` method lives in a member module. The dynamic keyword's
+    // `source_file` points at the member module, so its synthesized import entry
+    // is file-scoped there. The call `Open Browser` normalizes to `openbrowser`,
+    // which equals the normalized Python method name `open_browser` — so the
+    // file-scoped name pass binds the member-module method directly, ahead of
+    // alias-decode (which only fires when the keyword name has no matching
+    // symbol name in the file).
+    let robot_file = make_file(
+        "tests/browser.robot",
+        "robot",
+        vec![make_sym("My Test", SymbolKind::Test)],
+        vec![
+            make_import(0, "SeleniumLibrary"),
+            make_ref_plain(0, "Open Browser"),
+        ],
+    );
+    // The aggregating __init__.py carries no keyword methods of its own.
+    let init_file = make_file(
+        "ext:py:SeleniumLibrary/__init__.py",
+        "python",
+        vec![make_sym("SeleniumLibrary", SymbolKind::Class)],
+        vec![],
+    );
+    let class_sym = make_sym("BrowserManagementKeywords", SymbolKind::Class);
+    let mut method_sym = make_sym("open_browser", SymbolKind::Function);
+    method_sym.scope_path = Some("BrowserManagementKeywords".to_string());
+    let member_file = make_file(
+        "ext:py:SeleniumLibrary/keywords/browsermanagement.py",
+        "python",
+        vec![class_sym, method_sym],
+        vec![],
+    );
+    // Library binds to the package entry; the keyword's defining file is the
+    // member module (this is what the member-aware scan produces).
+    let mut ctx = ProjectContext::default();
+    let mut library_map = super::library_map::RobotLibraryMap::default();
+    library_map.insert(
+        "tests/browser.robot".to_string(),
+        vec![super::library_map::RobotPythonLibrary {
+            library_name: "SeleniumLibrary".to_string(),
+            py_file_path: "ext:py:SeleniumLibrary/__init__.py".to_string(),
+        }],
+    );
+    let mut dynamic_keywords = super::dynamic_keywords::RobotDynamicKeywordMap::default();
+    dynamic_keywords.insert(
+        "ext:py:SeleniumLibrary/__init__.py".to_string(),
+        vec![super::dynamic_keywords::RobotDynamicKeyword {
+            normalized_name: "openbrowser".to_string(),
+            class_name: Some("BrowserManagementKeywords".to_string()),
+            method_name: Some("open_browser".to_string()),
+            source_file: Some(
+                "ext:py:SeleniumLibrary/keywords/browsermanagement.py".to_string(),
+            ),
+        }],
+    );
+    ctx.plugin_state.set(super::RobotProjectState {
+        library_map,
+        resource_basenames: Default::default(),
+        dynamic_keywords,
+    });
+
+    let (index, id_map) = build_index(&[&robot_file, &init_file, &member_file]);
+    let file_ctx = RobotHooks
+        .build_file_context(&robot_file, Some(&ctx))
+        .unwrap();
+    let r = &robot_file.refs[1];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &robot_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = resolve_via_profile(&file_ctx, &ref_ctx, &index)
+        .expect("package keyword should resolve to its member-module method");
+    assert_eq!(res.strategy, "default_file_scoped_import");
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(
+            &id_map,
+            "ext:py:SeleniumLibrary/keywords/browsermanagement.py",
+            "open_browser"
+        )
     );
 }
 
@@ -941,6 +1033,7 @@ fn dynamic_keyword_normalization_matches_call_site() {
             normalized_name: "getkeywordthatpasses".to_string(),
             class_name: Some("GetKeywordNamesLibrary".to_string()),
             method_name: None,
+            source_file: None,
         }],
     );
     let (index, _) = build_index(&[&robot_file, &py_file]);

@@ -189,7 +189,17 @@ impl LanguageEngineHooks for RobotHooks {
                             for kw in dyn_kws {
                                 imports.push(ImportEntry {
                                     imported_name: kw.normalized_name.clone(),
-                                    module_path: Some(lib.py_file_path.clone()),
+                                    // Scope the alias-decode lookup to the file
+                                    // that defines the keyword's symbol. For a
+                                    // DynamicCore package the method lives in a
+                                    // member module (`keywords/*.py`), not the
+                                    // aggregating `__init__.py` the library
+                                    // binds to.
+                                    module_path: Some(
+                                        kw.source_file
+                                            .clone()
+                                            .unwrap_or_else(|| lib.py_file_path.clone()),
+                                    ),
                                     alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
                                     // Wildcard so the alias-decode pass of the
                                     // file-scoped-import strategy (gated on

@@ -554,6 +554,7 @@ fn conditional_picks_true_branch_on_identity() {
             extends: "string".to_string(),
             true_branch: "TrueBranch".to_string(),
             false_branch: "FalseBranch".to_string(),
+            infer_binding: None,
         },
     );
     let mut env = TypeEnvironment::new();
@@ -572,6 +573,7 @@ fn conditional_picks_false_branch_on_disjoint_primitives() {
             extends: "number".to_string(),
             true_branch: "TrueBranch".to_string(),
             false_branch: "FalseBranch".to_string(),
+            infer_binding: None,
         },
     );
     let mut env = TypeEnvironment::new();
@@ -590,6 +592,7 @@ fn conditional_undecidable_returns_none() {
             extends: "Order".to_string(),
             true_branch: "TrueBranch".to_string(),
             false_branch: "FalseBranch".to_string(),
+            infer_binding: None,
         },
     );
     let mut env = TypeEnvironment::new();
@@ -608,6 +611,7 @@ fn conditional_chains_into_alias_target() {
                 extends: "string".to_string(),
                 true_branch: "Wrapper".to_string(),
                 false_branch: "Other".to_string(),
+                infer_binding: None,
             },
         )
         .with_alias(
@@ -624,22 +628,16 @@ fn conditional_chains_into_alias_target() {
 }
 
 // ---------------------------------------------------------------------------
-// infer / template-literal — declined by design (extract-side capture gap)
+// infer in conditional extends clauses
 // ---------------------------------------------------------------------------
 
 #[test]
-fn infer_conditional_declines_cleanly() {
-    // `type Elem<T> = T extends Array<infer U> ? U : never`.
-    //
-    // AliasTarget::Conditional stores only HEAD names: the extractor's
-    // `head_type_name` reduces `Array<infer U>` to "Array", dropping the
-    // `<infer U>` argument, and there is no field on the Conditional arm that
-    // records the `infer U` binding or which Apply slot it captures. So the
-    // expander cannot relate U to T's element type — it has nothing to bind U
-    // to. With T unbound the subtype check on `T extends Array` is undecidable,
-    // so the arm returns None: a clean miss against the alias, never a guess at
-    // a head named "U". Implementing this slice requires extract-side capture
-    // (an infer-binding field on Conditional, plus the captured Apply arg).
+fn infer_conditional_yields_element_type() {
+    // `type Elem<T> = T extends Array<infer U> ? U : never`, applied as
+    // `Elem<Array<User>>`. The infer binding `("U", 0)` plus the true branch
+    // being `U` and the bound check type being `Array<User>` (head matches the
+    // extends head "Array") yields the element `User` directly — never routed
+    // through the subtype check.
     let lookup = AliasFixture::new()
         .with_alias(
             "Elem",
@@ -648,11 +646,64 @@ fn infer_conditional_declines_cleanly() {
                 extends: "Array".to_string(),
                 true_branch: "U".to_string(),
                 false_branch: "never".to_string(),
+                infer_binding: Some(("U".to_string(), 0)),
             },
         )
         .with_generic("Elem", &["T"]);
     let mut env = TypeEnvironment::new();
-    assert_eq!(expand_alias("Elem", &s(&["User"]), &lookup, &mut env), None);
+    let (root, _) = expand_alias("Elem", &s(&["Array<User>"]), &lookup, &mut env)
+        .expect("infer binding yields element");
+    assert_eq!(root, "User");
+}
+
+#[test]
+fn infer_binding_in_non_true_branch_declines() {
+    // `type Elem<T> = T extends Array<infer U> ? Wrapped : U` — the infer var
+    // is the FALSE branch, not the true branch. The direct Apply-shape yield
+    // fires only when the true branch IS the var, so this falls through to the
+    // subtype check; with T → Array<User> the check `Array<User> extends Array`
+    // is undecidable, so the arm returns None rather than guessing.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Elem",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Array".to_string(),
+                true_branch: "Wrapped".to_string(),
+                false_branch: "U".to_string(),
+                infer_binding: Some(("U".to_string(), 0)),
+            },
+        )
+        .with_generic("Elem", &["T"]);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(
+        expand_alias("Elem", &s(&["Array<User>"]), &lookup, &mut env),
+        None
+    );
+}
+
+#[test]
+fn infer_binding_head_mismatch_declines() {
+    // The infer binding targets `Array`, but the bound check type is
+    // `Set<User>` — the extends head does not match, so the direct yield
+    // declines and the undecidable subtype check returns None.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Elem",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Array".to_string(),
+                true_branch: "U".to_string(),
+                false_branch: "never".to_string(),
+                infer_binding: Some(("U".to_string(), 0)),
+            },
+        )
+        .with_generic("Elem", &["T"]);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(
+        expand_alias("Elem", &s(&["Set<User>"]), &lookup, &mut env),
+        None
+    );
 }
 
 #[test]
@@ -1159,6 +1210,7 @@ fn typed_conditional_picks_true_branch_on_assignable() {
             extends: "User".to_string(),
             true_branch: "Yes".to_string(),
             false_branch: "No".to_string(),
+            infer_binding: None,
         },
     )];
     let aliases = build_alias_index(&pairs, &mut arena);
@@ -1188,6 +1240,7 @@ fn typed_conditional_returns_none_when_undecidable() {
             extends: "B".to_string(),
             true_branch: "Yes".to_string(),
             false_branch: "No".to_string(),
+            infer_binding: None,
         },
     )];
     let aliases = build_alias_index(&pairs, &mut arena);

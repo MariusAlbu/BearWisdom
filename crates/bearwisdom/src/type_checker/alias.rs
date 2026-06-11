@@ -16,7 +16,7 @@
 // applications.
 // =============================================================================
 
-use crate::indexer::resolve::engine::SymbolLookup;
+use crate::indexer::resolve::engine::{parse_type_head_and_args, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena, TypeId};
@@ -171,26 +171,43 @@ pub fn expand_alias(
                 }
             }
             // `type Foo<T> = T extends U ? X : Y` — pick a branch
-            // when the subtype check decides definitively. Resolve
-            // `check` and `extends` through env first so generic
-            // params bind to their concrete args before the check
-            // fires. Undecidable cases bail with None — chain
-            // walker correctly misses, never picks the wrong branch.
+            // when the subtype check decides definitively. Bind `check`
+            // to the alias's concrete arg first (so the generic param
+            // resolves to what the caller passed), then through env.
+            //
+            // `infer` capture (`type Elem<T> = T extends Array<infer U> ? U : never`):
+            // when the true branch IS the infer var and the bound check
+            // type is a known `Apply { extends-head, args }`, yield
+            // `args[slot]` — the direct Apply-shape match, never routed
+            // through `is_assignable_to`. Any other shape (head mismatch,
+            // out-of-range slot, true branch not the var) falls through
+            // to the subtype check below. Undecidable cases bail with
+            // None — chain walker correctly misses, never guesses.
             AliasTarget::Conditional {
                 check,
                 extends,
                 true_branch,
                 false_branch,
+                infer_binding,
             } => {
-                let resolved_check = env.resolve(check);
-                let resolved_extends = env.resolve(extends);
-                let next = match is_assignable_to(&resolved_check, &resolved_extends, lookup) {
-                    Some(true) => true_branch,
-                    Some(false) => false_branch,
-                    None => return None,
+                let resolved_check = bind_to_arg(check, &head, &args, lookup, env);
+                // Direct Apply-shape match for an `infer` capture takes
+                // priority; a declined or absent binding falls through to the
+                // nominal subtype check.
+                let yielded = infer_binding.as_ref().and_then(|(var, slot)| {
+                    infer_yield(&resolved_check, extends, true_branch, var, *slot)
+                });
+                let next = if let Some(yielded) = yielded {
+                    yielded
+                } else {
+                    let resolved_extends = env.resolve(extends);
+                    match is_assignable_to(&resolved_check, &resolved_extends, lookup) {
+                        Some(true) => true_branch.clone(),
+                        Some(false) => false_branch.clone(),
+                        None => return None,
+                    }
                 };
-                let resolved_next = env.resolve(next);
-                (resolved_next, Vec::new())
+                (env.resolve(&next), Vec::new())
             }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set
@@ -326,6 +343,56 @@ fn is_plain_type_head(s: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '_' || c == '$' || c == '.')
 }
 
+/// Bind `name` to the alias's concrete arg when it is one of the alias's own
+/// generic params, otherwise resolve it through `env`. Mirrors the target-arg
+/// substitution that runs after the match, applied here to a single name (the
+/// conditional's `check`) so the param resolves before the subtype / infer
+/// decision fires.
+fn bind_to_arg(
+    name: &str,
+    head: &str,
+    args: &[String],
+    lookup: &dyn SymbolLookup,
+    env: &TypeEnvironment,
+) -> String {
+    let params = lookup
+        .generic_params(head)
+        .map(|p| p.to_vec())
+        .unwrap_or_default();
+    if let Some(idx) = params.iter().position(|p| p == name) {
+        if idx < args.len() {
+            return args[idx].clone();
+        }
+    }
+    env.resolve(name)
+}
+
+/// Yield the type captured by an `infer` binding in a conditional's `extends`
+/// clause, or `None` when the direct Apply-shape match does not hold.
+///
+/// Fires only when: the resolved check type is `Apply { extends_head, args }`
+/// (its head equals `extends`), the true branch IS the infer `var`, and `slot`
+/// indexes a present arg. Returns `Some(args[slot])`. Every other shape — head
+/// mismatch, out-of-range slot, or true branch that is not the var — returns
+/// `None` so the caller falls back to the subtype check; the infer arm never
+/// routes through `is_assignable_to`.
+fn infer_yield(
+    resolved_check: &str,
+    extends: &str,
+    true_branch: &str,
+    var: &str,
+    slot: usize,
+) -> Option<String> {
+    if true_branch != var {
+        return None;
+    }
+    let (head, type_args) = parse_type_head_and_args(resolved_check);
+    if head != extends {
+        return None;
+    }
+    type_args.get(slot).map(|a| a.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // TypeId form — Phase 2 of the engine pivot.
 //
@@ -372,7 +439,9 @@ pub fn build_alias_index(pairs: &[(String, AliasTarget)], arena: &TypeArena) -> 
 ///   Record-shaped case (`{ [P in K]: V }` with a flat value head) returns
 ///   `arena.class(value)` so member access projects the value type.
 /// - `Conditional` → consults `is_assignable_to_typed`; picks the deciding
-///   branch and interns as Class.
+///   branch and interns as Class. An `infer` capture in the extends clause is
+///   not resolved here (no applied args reach this entry) — it declines to the
+///   subtype check; the string-form `expand_alias` resolves it instead.
 ///
 /// Returns `None` for `Keyof`, `Object`, `Other`, and any `Typeof` /
 /// `IndexedAccess` whose underlying lookup misses — the chain walker treats
@@ -437,11 +506,19 @@ pub fn expand_alias_typed(
             let value = record_value_type(&value_template, &[], &[])?;
             Some(arena.class(&value))
         }
+        // `infer_binding` is unused on this path: it is consumed only by the
+        // string-form `expand_alias`, where the caller's `current_args` carry
+        // the concrete checked type (`Array<User>`) so `var` can bind to its
+        // `Apply` arg. This entry receives the alias TypeId alone with no
+        // applied args, and `check` is stored head-reduced (`Array<User>` →
+        // `"Array"`), so the concrete arg is unreachable here — the infer
+        // conditional declines to the subtype check, which returns None.
         AliasTarget::Conditional {
             check,
             extends,
             true_branch,
             false_branch,
+            infer_binding: _,
         } => {
             let check_id = arena.class(&check);
             let extends_id = arena.class(&extends);

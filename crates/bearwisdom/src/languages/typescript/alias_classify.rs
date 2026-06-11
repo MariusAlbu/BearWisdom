@@ -199,11 +199,13 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         // Read the four sub-expressions in source order. tree-sitter
         // exposes them as positional named children of
         // `conditional_type` separated by `extends`/`?`/`:` tokens.
-        // Branch selection is deferred (no subtype checker yet) but
-        // the captured shape lets a future PR wire it without
-        // re-touching extract.
+        // The `extends` clause's raw node is kept alongside its head
+        // name so an `infer` capture (`Array<infer U>`) can be recorded
+        // as a `(var, slot)` binding the expander resolves; the four
+        // head names drive `is_assignable_to` branch selection.
         "conditional_type" => {
             let mut parts: Vec<String> = Vec::new();
+            let mut extends_node: Option<Node> = None;
             for i in 0..node.child_count() {
                 let Some(child) = node.child(i) else { continue };
                 if matches!(child.kind(), "extends" | "?" | ":" | "(" | ")") {
@@ -211,6 +213,10 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 }
                 if !child.is_named() {
                     continue;
+                }
+                // The `extends` clause is the second named child.
+                if parts.len() == 1 {
+                    extends_node = Some(child);
                 }
                 let name = head_type_name(&child, src);
                 if !name.is_empty() {
@@ -220,11 +226,15 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 }
             }
             if parts.len() >= 4 {
+                let infer_binding = extends_node
+                    .as_ref()
+                    .and_then(|n| infer_binding_from_extends(n, src));
                 return AliasTarget::Conditional {
                     check: parts[0].clone(),
                     extends: parts[1].clone(),
                     true_branch: parts[2].clone(),
                     false_branch: parts[3].clone(),
+                    infer_binding,
                 };
             }
             return AliasTarget::Other;
@@ -368,3 +378,68 @@ fn head_type_name(node: &Node, src: &[u8]) -> String {
         _ => String::new(),
     }
 }
+
+/// Record a single `infer` capture in a conditional's `extends` clause.
+///
+/// Recognizes `extends Head<infer Var>` (a `generic_type`) and returns
+/// `Some((Var, slot))` where `slot` is the 0-based position of the
+/// `infer_type` among the type arguments. Used so the expander can bind
+/// `Var` to the checked type's `Apply` arg at `slot`.
+///
+/// Declines (returns `None`) when the extends clause is not a generic
+/// application, carries no `infer`, or carries more than one `infer`
+/// (multi-capture needs unification the expander does not perform).
+fn infer_binding_from_extends(extends: &Node, src: &[u8]) -> Option<(String, usize)> {
+    if extends.kind() != "generic_type" {
+        return None;
+    }
+    let type_args = extends.child_by_field_name("type_arguments")?;
+    let mut binding: Option<(String, usize)> = None;
+    let mut slot = 0usize;
+    for i in 0..type_args.child_count() {
+        let Some(arg) = type_args.child(i) else {
+            continue;
+        };
+        if matches!(arg.kind(), "<" | ">" | ",") {
+            continue;
+        }
+        if arg.kind() == "infer_type" {
+            if binding.is_some() {
+                // More than one `infer` in the same clause — decline.
+                return None;
+            }
+            let var = infer_var_name(&arg, src)?;
+            binding = Some((var, slot));
+        }
+        slot += 1;
+    }
+    binding
+}
+
+/// Extract the variable name introduced by an `infer_type` node
+/// (`infer U` → `"U"`). Reads the `name` field, falling back to the
+/// first `type_identifier` / `identifier` child.
+fn infer_var_name(infer_node: &Node, src: &[u8]) -> Option<String> {
+    if let Some(name_node) = infer_node.child_by_field_name("name") {
+        let name = node_text(name_node, src);
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+    for i in 0..infer_node.child_count() {
+        let Some(child) = infer_node.child(i) else {
+            continue;
+        };
+        if matches!(child.kind(), "type_identifier" | "identifier") {
+            let name = node_text(child, src);
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+#[path = "alias_classify_tests.rs"]
+mod tests;

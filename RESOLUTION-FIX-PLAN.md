@@ -91,10 +91,15 @@ Legend: ✅ done (unit-green) · 🟡 partial · ⛔ rule-blocked · ⬜ remaini
 Installed deps for **11 projects** (7 php composer + 4 npm) so existing walkers hydrate them.
 Measured on the OLD engine (single-project reindex):
 - php-livewire 55.41%→**91.30%**, smarty-smarty 27.47%→**58.06%**, php-laravel 97.75%→**99.43%**.
-  ⚠️ **Unreconciled (2026-06-11):** the fresh reindex (new engine, `vendor/` present + stubs) got
-  php-livewire **62.8%** and smarty-smarty **29.1%** — far below these OLD-engine install figures,
-  which never entered the corpus CSV. Either the composer install effect didn't persist or R2/R3
-  changed PHP composer resolution. Treat the 91.30/58.06 figures as suspect pending investigation.
+  ✅ **Reconciled (2026-06-11):** real-but-different-denominator, NOT a regression. The OLD figures
+  counted `external_refs` as resolved; replaying that on the live DBs reproduces them (smarty
+  edges+ext/(edges+ext+unres) = 63.0% ≈ 58.1; livewire 86.3% ≈ 91.3). The current
+  `internal_resolution_rate` excludes `external_known_unhydrated`, so the same indexes read 22.9%/58.2%.
+  `vendor/` + phpstorm-stubs persisted and bind via `use` imports (97 stub edges in livewire). The
+  genuine gap is test-suite-dominated — 74% smarty / 48% livewire of unresolved are receiver-typed
+  `$this`/`$smarty` method calls (B4: chain-walk through external base classes) — plus a bare-global-
+  stdlib bucket (17%/14%) the engine declines (externals-by-name not admitted). See RESOLUTION-99-PLAN
+  ledger row 5 for the full verdict.
 - dart-serverpod (melos-bootstrapped + reindexed) recovered; edges up sharply, but app-internal
   unresolved ~unchanged → modest app-rate gain. **The Dart `package_config.json` walker already
   existed** (`pub_pkg/discovery.rs`) — the "no walker" claim was stale; it was an install, not code.

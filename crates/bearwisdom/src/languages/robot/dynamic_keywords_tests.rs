@@ -300,3 +300,68 @@ class Lib:
     // the scan doesn't crash on the other-object form.
     let _ = map;
 }
+
+#[test]
+fn package_member_keywords_attribute_to_library_entry_point() {
+    // DynamicCore shape: the library entry point is the package
+    // `__init__.py` (which has no keyword methods of its own), and the
+    // `@keyword`-decorated methods live in member modules. Every member's
+    // keyword must surface under the entry-point path so the resolver's
+    // `is_library_import` anchor (keyed on the entry path) finds them.
+    let init = "ext:py:SeleniumLibrary/__init__.py";
+    let browser = "ext:py:SeleniumLibrary/keywords/browsermanagement.py";
+    let element = "ext:py:SeleniumLibrary/keywords/element.py";
+    let init_src = "class SeleniumLibrary(DynamicCore):\n    pass\n";
+    let browser_src = r#"
+from robot.api.deco import keyword
+
+class BrowserManagementKeywords:
+    @keyword
+    def open_browser(self, url): pass
+"#;
+    let element_src = r#"
+class ElementKeywords:
+    @keyword
+    def click_element(self, locator): pass
+"#;
+    let map: HashMap<&str, &str> = [
+        (init, init_src),
+        (browser, browser_src),
+        (element, element_src),
+    ]
+    .into_iter()
+    .collect();
+    let entries: Vec<(&str, Vec<&str>)> = vec![(init, vec![browser, element])];
+    let kw_map = build_robot_dynamic_keyword_map_with_members(&entries, |p| {
+        map.get(p).map(|s| s.to_string())
+    });
+    let kws = kw_map
+        .get(init)
+        .expect("keywords attribute to the entry point, not member files");
+    let methods: Vec<&str> = kws
+        .iter()
+        .filter_map(|k| k.method_name.as_deref())
+        .collect();
+    assert!(methods.contains(&"open_browser"), "methods={methods:?}");
+    assert!(methods.contains(&"click_element"), "methods={methods:?}");
+    // Member files are not separate keys — only the entry point is.
+    assert!(kw_map.get(browser).is_none());
+}
+
+#[test]
+fn member_aware_map_handles_flat_module_with_no_members() {
+    // A flat module (empty member list) behaves exactly like the legacy
+    // single-path scan.
+    let src = r#"
+class Lib:
+    @keyword
+    def do_thing(self): pass
+"#;
+    let map: HashMap<&str, &str> = [("Lib.py", src)].into_iter().collect();
+    let entries: Vec<(&str, Vec<&str>)> = vec![("Lib.py", Vec::new())];
+    let kw_map = build_robot_dynamic_keyword_map_with_members(&entries, |p| {
+        map.get(p).map(|s| s.to_string())
+    });
+    let kws = kw_map.get("Lib.py").expect("flat module present");
+    assert!(kws.iter().any(|k| k.method_name.as_deref() == Some("do_thing")));
+}

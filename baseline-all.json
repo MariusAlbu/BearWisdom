@@ -3777,6 +3777,7 @@
         "min_resolution_rate": 68
       },
       "code_chunks": 175931,
+      "corpus_class": "framework-source",
       "files": 6956,
       "flow_edge_types": {
         "db_query": 1,
@@ -6308,6 +6309,7 @@
         "min_resolution_rate": 73
       },
       "code_chunks": 255497,
+      "corpus_class": "framework-source",
       "files": 1795,
       "flow_edge_types": {
         "db_query": 27
@@ -7217,6 +7219,7 @@
         "min_resolution_rate": 96
       },
       "code_chunks": 166328,
+      "corpus_class": "framework-source",
       "files": 5973,
       "flow_edge_types": {
         "config_lookup": 427,
@@ -7307,6 +7310,7 @@
         "min_resolution_rate": 80
       },
       "code_chunks": 99790,
+      "corpus_class": "fixture-heavy",
       "files": 1269,
       "flow_edge_types": {
         "db_query": 1
@@ -8148,6 +8152,7 @@
         "min_resolution_rate": 74
       },
       "code_chunks": 40766,
+      "corpus_class": "duplicate-of:r-shiny",
       "files": 710,
       "flow_edge_types": {
         "config_lookup": 3
@@ -10129,6 +10134,7 @@
         "min_resolution_rate": 91
       },
       "code_chunks": 656894,
+      "corpus_class": "framework-source",
       "files": 28996,
       "flow_edge_types": {
         "auth_guard": 22,

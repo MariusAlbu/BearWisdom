@@ -36,6 +36,41 @@ mod tests;
 pub(crate) const CODE_REF_FILTER: &str = "u.from_snippet = 0 \
      AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')";
 
+/// SQL WHERE-clause fragment that excludes refs/edges whose *source file* is
+/// Dart build_runner output. The same fragment binds on both the
+/// `unresolved_refs` and `edges` sides (it filters by source file, not by ref
+/// kind), so the rate stays symmetric — numerator and denominator drop the
+/// same files.
+///
+/// Callers MUST alias `files` as `f`. Composed via string concatenation; the
+/// predicate is over schema-fixed literals, not user input.
+///
+/// Dart-only by design — gated on `f.language = 'dart'` so the conventions
+/// below never affect another language's `.g`/`generated` paths. The closed
+/// build_runner output conventions:
+///
+/// 1. `*.g.dart` — `source_gen` / `json_serializable` part files.
+/// 2. `*.freezed.dart` — `freezed` part files.
+/// 3. a `generated/` path segment — convention dir for code-generator output,
+///    matched at any depth and as the leading segment.
+///
+/// Paths are stored project-root-relative with forward separators, so a
+/// forward-slash match covers both the nested and root-level `generated/` dir.
+pub(crate) const GENERATED_FILE_FILTER: &str = "NOT (f.language = 'dart' \
+     AND (f.path LIKE '%.g.dart' \
+          OR f.path LIKE '%.freezed.dart' \
+          OR f.path LIKE '%/generated/%' \
+          OR f.path LIKE 'generated/%'))";
+
+/// The positive form of [`GENERATED_FILE_FILTER`] — the rows it removes.
+/// Used to count the excluded refs so the exclusion is observable rather than
+/// silent (surfaced as `ResolutionBreakdown::generated_excluded`).
+pub(crate) const GENERATED_FILE_MATCH: &str = "f.language = 'dart' \
+     AND (f.path LIKE '%.g.dart' \
+          OR f.path LIKE '%.freezed.dart' \
+          OR f.path LIKE '%/generated/%' \
+          OR f.path LIKE 'generated/%')";
+
 /// Read index statistics from the database.
 ///
 /// This is the canonical way to get counts — consumers should not issue
@@ -52,7 +87,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
          FROM unresolved_refs u
          JOIN symbols s ON s.id = u.source_id
          JOIN files   f ON f.id = s.file_id
-         WHERE s.origin = 'internal' AND {CODE_REF_FILTER}"
+         WHERE s.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_FILTER}"
     );
     let combined_sql = format!(
         "SELECT
@@ -207,6 +242,13 @@ pub struct ResolutionBreakdown {
     /// never hydrated. Reported apart as a dependency-availability gap, not
     /// counted in the precision denominator.
     pub external_known_unhydrated: u32,
+    /// Refs (resolved + unresolved) excluded from the rate denominator by
+    /// `GENERATED_FILE_FILTER` — Dart build_runner output (`*.g.dart`,
+    /// `*.freezed.dart`, `generated/`). The files stay indexed; their refs
+    /// are machine-written and excluded symmetrically from both the
+    /// numerator and the denominator. Surfaced so the exclusion is
+    /// observable rather than silent.
+    pub generated_excluded: u32,
     /// Primary resolution gate metric, two decimals: internal_edges /
     /// (internal_edges + internal_unresolved) * 100. 100.0 when both
     /// sides are zero (empty project). `external_known_unhydrated` is not
@@ -274,15 +316,14 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     let _timer = db.timer("resolution_breakdown");
     let conn = db.conn();
 
+    let internal_edges_sql = format!(
+        "SELECT COUNT(*) FROM edges e
+         JOIN symbols s ON s.id = e.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal' AND {GENERATED_FILE_FILTER}"
+    );
     let internal_edges: u32 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM edges e
-             JOIN symbols s ON s.id = e.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row(&internal_edges_sql, [], |r| r.get(0))
         .unwrap_or(0);
 
     let internal_unresolved_sql = format!(
@@ -290,7 +331,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
          FROM unresolved_refs u
          JOIN symbols s ON s.id = u.source_id
          JOIN files   f ON f.id = s.file_id
-         WHERE f.origin = 'internal' AND {CODE_REF_FILTER}"
+         WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_FILTER}"
     );
     let internal_unresolved: u32 = conn
         .query_row(&internal_unresolved_sql, [], |r| r.get(0))
@@ -311,6 +352,27 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
             |r| r.get(0),
         )
         .unwrap_or(0);
+
+    // Refs (resolved edges + counted unresolved refs) excluded from the rate
+    // by `GENERATED_FILE_FILTER`. Counted positively from both sides so the
+    // exclusion is observable; mirrors the symmetric drop in the rate queries.
+    let generated_excluded: u32 = {
+        let edges_excluded_sql = format!(
+            "SELECT COUNT(*) FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {GENERATED_FILE_MATCH}"
+        );
+        let refs_excluded_sql = format!(
+            "SELECT COUNT(*) FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_MATCH}"
+        );
+        let edges_excluded: u32 = conn.query_row(&edges_excluded_sql, [], |r| r.get(0)).unwrap_or(0);
+        let refs_excluded: u32 = conn.query_row(&refs_excluded_sql, [], |r| r.get(0)).unwrap_or(0);
+        edges_excluded + refs_excluded
+    };
 
     let mut languages: BTreeMap<String, u32> = BTreeMap::new();
     {
@@ -340,7 +402,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_FILTER}
              GROUP BY lang, u.kind
              ORDER BY lang, u.kind"
         );
@@ -365,15 +427,16 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     // the per-language rate needs a single edge total, not a per-kind one.
     let mut internal_edges_by_lang: BTreeMap<String, u32> = BTreeMap::new();
     {
-        let mut stmt = conn.prepare(
+        let by_lang_edges_sql = format!(
             "SELECT COALESCE(s.origin_language, f.language) AS lang, COUNT(*)
              FROM edges e
              JOIN symbols s ON s.id = e.source_id
              JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal'
+             WHERE f.origin = 'internal' AND {GENERATED_FILE_FILTER}
              GROUP BY lang
-             ORDER BY lang",
-        )?;
+             ORDER BY lang"
+        );
+        let mut stmt = conn.prepare(&by_lang_edges_sql)?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
         for row in rows {
             let (lang, count) = row?;
@@ -393,7 +456,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_FILTER}
              GROUP BY lang
              ORDER BY lang"
         );
@@ -502,7 +565,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_FILTER}
              GROUP BY u.target_name, lang, u.kind
              ORDER BY c DESC, u.target_name ASC
              LIMIT {TOP_N_UNRESOLVED}"
@@ -551,6 +614,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         internal_edges,
         internal_unresolved,
         external_known_unhydrated,
+        generated_excluded,
         internal_resolution_rate: resolution_rate,
         precision: resolution_rate,
         resolution_rate,

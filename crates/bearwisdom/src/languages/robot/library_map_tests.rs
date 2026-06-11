@@ -1,5 +1,6 @@
 use super::library_map::{
-    build_robot_library_map, build_robot_resource_basename_map, RobotPythonLibrary,
+    build_robot_library_map, build_robot_resource_basename_map, collect_declared_library_names,
+    package_member_modules, RobotPythonLibrary,
 };
 use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
 
@@ -365,4 +366,97 @@ fn external_files_are_excluded_from_inputs() {
     ];
     let map = build_robot_library_map(&parsed);
     assert_eq!(map.get("foo.robot").unwrap()[0].py_file_path, "Lib.py");
+}
+
+#[test]
+fn dynamiccore_package_resolves_to_package_init() {
+    // `Library  SeleniumLibrary` where the keyword class lives in a package
+    // `__init__.py` (no flat `SeleniumLibrary.py`). Must bind to the
+    // package entry point.
+    let parsed = vec![
+        pf("ext:py:SeleniumLibrary/__init__.py", Vec::new()),
+        pf("ext:py:SeleniumLibrary/keywords/browsermanagement.py", Vec::new()),
+        pf("tests/foo.robot", vec![import_ref("SeleniumLibrary")]),
+    ];
+    let map = build_robot_library_map(&parsed);
+    let entry = map
+        .get("tests/foo.robot")
+        .expect("package library must resolve to its __init__.py");
+    assert_eq!(
+        entry[0].py_file_path,
+        "ext:py:SeleniumLibrary/__init__.py"
+    );
+}
+
+#[test]
+fn flat_module_preferred_over_package_init() {
+    // A flat `<name>.py` is the canonical module form; the package
+    // `__init__.py` fallback only fires when no flat module exists.
+    let parsed = vec![
+        pf("ext:py:Foo/__init__.py", Vec::new()),
+        pf("libs/Foo.py", Vec::new()),
+        pf("tests/foo.robot", vec![import_ref("Foo")]),
+    ];
+    let map = build_robot_library_map(&parsed);
+    let entry = map.get("tests/foo.robot").expect("must resolve");
+    assert_eq!(entry[0].py_file_path, "libs/Foo.py");
+}
+
+#[test]
+fn package_member_modules_lists_siblings_excluding_init() {
+    let parsed = vec![
+        pf("ext:py:SeleniumLibrary/__init__.py", Vec::new()),
+        pf("ext:py:SeleniumLibrary/keywords/browsermanagement.py", Vec::new()),
+        pf("ext:py:SeleniumLibrary/keywords/element.py", Vec::new()),
+        // A different package under the same site-packages root must not leak.
+        pf("ext:py:OtherLib/keywords/thing.py", Vec::new()),
+    ];
+    let members = package_member_modules("ext:py:SeleniumLibrary/__init__.py", &parsed);
+    assert!(members.contains(&"ext:py:SeleniumLibrary/keywords/browsermanagement.py"));
+    assert!(members.contains(&"ext:py:SeleniumLibrary/keywords/element.py"));
+    assert!(!members.iter().any(|m| m.contains("OtherLib")));
+    assert!(!members.iter().any(|m| m.ends_with("__init__.py")));
+}
+
+#[test]
+fn package_member_modules_empty_for_flat_module() {
+    let parsed = vec![pf("libs/Foo.py", Vec::new())];
+    assert!(package_member_modules("libs/Foo.py", &parsed).is_empty());
+}
+
+#[test]
+fn collect_declared_library_names_includes_builtin_and_declared() {
+    let parsed = vec![
+        pf(
+            "tests/foo.robot",
+            vec![import_ref("SeleniumLibrary"), import_ref("Collections")],
+        ),
+        // Resource imports are not pip-package demand signals.
+        pf("tests/bar.robot", vec![import_ref("helpers.robot")]),
+    ];
+    let names = collect_declared_library_names(&parsed);
+    assert!(names.contains("BuiltIn"), "BuiltIn always seeded");
+    assert!(names.contains("SeleniumLibrary"));
+    assert!(names.contains("Collections"));
+    assert!(!names.contains("helpers"), "resource import excluded");
+}
+
+#[test]
+fn collect_declared_library_names_records_dotted_head_and_leaf() {
+    let parsed = vec![pf(
+        "tests/foo.robot",
+        vec![import_ref("libraryscope.Global")],
+    )];
+    let names = collect_declared_library_names(&parsed);
+    assert!(names.contains("libraryscope"), "dotted head recorded");
+    assert!(names.contains("Global"), "dotted leaf recorded");
+}
+
+#[test]
+fn collect_declared_library_names_ignores_external_files() {
+    let parsed = vec![pf("ext:py:Selenium/__init__.py", vec![import_ref("X")])];
+    let names = collect_declared_library_names(&parsed);
+    // Only the seeded BuiltIn; the ext: file's refs aren't project demand.
+    assert_eq!(names.len(), 1);
+    assert!(names.contains("BuiltIn"));
 }

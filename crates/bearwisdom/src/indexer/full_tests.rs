@@ -281,3 +281,61 @@ fn vendor_scan_on_short_content_does_not_panic() {
     let _ = super::is_c_vendored_file("c", "src/x.c", "int main() { return 0; }");
     let _ = super::is_generated_platform_header("c", "int main() { return 0; }");
 }
+
+fn mk_pypi_root(module_path: &str) -> crate::ecosystem::externals::ExternalDepRoot {
+    crate::ecosystem::externals::ExternalDepRoot {
+        module_path: module_path.to_string(),
+        version: "unknown".to_string(),
+        root: std::path::PathBuf::from(format!("/site-packages/{module_path}")),
+        ecosystem: "python",
+        package_id: None,
+        requested_imports: Vec::new(),
+    }
+}
+
+#[test]
+fn robot_root_selection_matches_declared_and_framework() {
+    use std::collections::HashSet;
+    let declared: HashSet<String> = ["BuiltIn", "SeleniumLibrary"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let roots = vec![
+        mk_pypi_root("SeleniumLibrary"),
+        mk_pypi_root("robot"), // framework package — always included
+        mk_pypi_root("requests"), // undeclared — must NOT be selected
+    ];
+    let selected = super::select_robot_library_roots(&declared, &roots);
+    let modules: Vec<&str> = selected.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(modules.contains(&"SeleniumLibrary"), "declared lib pulled");
+    assert!(modules.contains(&"robot"), "framework package pulled");
+    assert!(
+        !modules.contains(&"requests"),
+        "undeclared package must not be pulled: {modules:?}"
+    );
+}
+
+#[test]
+fn robot_root_selection_is_case_insensitive() {
+    use std::collections::HashSet;
+    let declared: HashSet<String> =
+        ["seleniumlibrary"].iter().map(|s| s.to_string()).collect();
+    let roots = vec![mk_pypi_root("SeleniumLibrary")];
+    let selected = super::select_robot_library_roots(&declared, &roots);
+    assert_eq!(selected.len(), 1, "case-insensitive name match");
+}
+
+#[test]
+fn robot_root_selection_ignores_non_python_ecosystems() {
+    use std::collections::HashSet;
+    let declared: HashSet<String> =
+        ["SeleniumLibrary"].iter().map(|s| s.to_string()).collect();
+    let mut npm_root = mk_pypi_root("SeleniumLibrary");
+    npm_root.ecosystem = "npm";
+    let roots = [npm_root];
+    let selected = super::select_robot_library_roots(&declared, &roots);
+    assert!(
+        selected.is_empty(),
+        "only python-tagged roots are robot library targets"
+    );
+}

@@ -70,6 +70,14 @@ pub struct RobotDynamicKeyword {
     /// entries that route through `run_keyword` at runtime instead of
     /// pointing at a specific def.
     pub method_name: Option<String>,
+    /// Indexed file path where this keyword's class/method symbol lives.
+    /// `None` when the keyword was found in the library entry point itself;
+    /// `Some(member_path)` when it came from a package member module (a
+    /// DynamicCore library scatters `@keyword` methods across
+    /// `keywords/*.py`). The resolver scopes its symbol lookup to this file,
+    /// so it must point at the file that actually defines the symbol, not the
+    /// aggregating `__init__.py`.
+    pub source_file: Option<String>,
 }
 
 /// `python_file_path → keywords_in_that_file`. Empty for files we couldn't
@@ -87,8 +95,27 @@ pub fn build_robot_dynamic_keyword_map(
     library_paths: &[&str],
     reader: impl Fn(&str) -> Option<String>,
 ) -> RobotDynamicKeywordMap {
+    let entries: Vec<(&str, Vec<&str>)> =
+        library_paths.iter().map(|p| (*p, Vec::new())).collect();
+    build_robot_dynamic_keyword_map_with_members(&entries, reader)
+}
+
+/// Build the dynamic-keyword map for libraries that may be packages.
+///
+/// Each entry is `(library_path, member_paths)`: `library_path` is the
+/// resolved entry point (`SeleniumLibrary/__init__.py` for a DynamicCore
+/// package, or a flat `Foo.py`), and `member_paths` lists the package's
+/// other indexed modules (`SeleniumLibrary/keywords/browsermanagement.py`,
+/// ...) — empty for a flat module. A DynamicCore aggregator declares its
+/// keyword methods across those member modules via `@keyword`, so every
+/// member is scanned and the discovered keywords are keyed against the
+/// `library_path` the resolver anchors `is_library_import` on.
+pub fn build_robot_dynamic_keyword_map_with_members(
+    entries: &[(&str, Vec<&str>)],
+    reader: impl Fn(&str) -> Option<String>,
+) -> RobotDynamicKeywordMap {
     let mut map = RobotDynamicKeywordMap::new();
-    if library_paths.is_empty() {
+    if entries.is_empty() {
         return map;
     }
 
@@ -98,25 +125,40 @@ pub fn build_robot_dynamic_keyword_map(
         return map;
     }
 
-    for path in library_paths {
-        let Some(source) = reader(path) else { continue };
-        let Some(tree) = parser.parse(&source, None) else {
-            continue;
-        };
+    for (library_path, member_paths) in entries {
         let mut keywords: Vec<RobotDynamicKeyword> = Vec::new();
-        scan_module(tree.root_node(), source.as_bytes(), &mut keywords);
+        for path in std::iter::once(*library_path).chain(member_paths.iter().copied()) {
+            let Some(source) = reader(path) else { continue };
+            let Some(tree) = parser.parse(&source, None) else {
+                continue;
+            };
+            let before = keywords.len();
+            scan_module(tree.root_node(), source.as_bytes(), &mut keywords);
+            // Stamp the defining file on keywords found in a member module so
+            // the resolver scopes its symbol lookup to where the method lives,
+            // not the aggregating entry `__init__.py`. Keywords from the
+            // library entry path keep `source_file: None` — the resolver
+            // already scopes those to the library path.
+            if path != *library_path {
+                for kw in &mut keywords[before..] {
+                    kw.source_file = Some(path.to_string());
+                }
+            }
+        }
         if !keywords.is_empty() {
             // Deduplicate — the same keyword can be listed in both a
             // KEYWORDS dict AND a `get_keyword_names` literal in pathological
-            // hand-rolled libraries. The resolver only needs one entry.
+            // hand-rolled libraries, or surface from two member modules. The
+            // resolver only needs one entry.
             keywords.sort_by(|a, b| {
                 a.normalized_name
                     .cmp(&b.normalized_name)
                     .then(a.class_name.cmp(&b.class_name))
                     .then(a.method_name.cmp(&b.method_name))
+                    .then(a.source_file.cmp(&b.source_file))
             });
             keywords.dedup();
-            map.insert((*path).to_string(), keywords);
+            map.insert((*library_path).to_string(), keywords);
         }
     }
     map
@@ -392,6 +434,7 @@ fn push_decorator_alias(
         normalized_name: normalize_robot_name(keyword_name),
         class_name: class_name.map(|s| s.to_string()),
         method_name: Some(method_name.to_string()),
+        source_file: None,
     });
 }
 
@@ -488,6 +531,7 @@ fn emit_prefix_methods(
             normalized_name: normalize_robot_name(method),
             class_name: class_name.map(|s| s.to_string()),
             method_name: Some(method.clone()),
+            source_file: None,
         });
     }
 }
@@ -511,6 +555,7 @@ fn collect_dict_string_keys(
                 normalized_name: normalize_robot_name(&s),
                 class_name: class_name.map(|s| s.to_string()),
                 method_name: None,
+                source_file: None,
             });
         }
     }
@@ -529,6 +574,7 @@ fn collect_list_strings(
                 normalized_name: normalize_robot_name(&s),
                 class_name: class_name.map(|s| s.to_string()),
                 method_name: None,
+                source_file: None,
             });
         }
     }

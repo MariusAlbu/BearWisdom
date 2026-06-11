@@ -276,6 +276,26 @@ pub fn full_index(
         );
     }
 
+    // A vendored third-party package may ship its OWN `package.json` /
+    // `bower.json` inside the host tree (a foreign library declaring itself,
+    // not a workspace member). Conservative gate: only when the host project
+    // declares none of the npm ecosystem itself. Classify such subtrees
+    // `origin='external'` so the host's resolution rate isn't measured against
+    // vendored library internals. Read once; per-file test runs in the
+    // streaming loop beside the submodule check.
+    let self_declared_vendor_prefixes =
+        crate::ecosystem::vendored_self_declared::self_declared_vendor_prefixes(
+            project_root,
+            &packages,
+            workspace_kind.as_deref(),
+        );
+    if !self_declared_vendor_prefixes.is_empty() {
+        info!(
+            "Detected self-declaring vendored package(s) ({}) — classifying their files as externals",
+            self_declared_vendor_prefixes.join(", ")
+        );
+    }
+
     // --- Steps 3c + 4 + 4a: Streaming parse → write → FTS + chunks + slim ---
     //
     // Bounded-channel pipeline: parser workers on the capped rayon pool
@@ -432,12 +452,29 @@ pub fn full_index(
                 debug!("toolchain-payload external: {original}");
             }
 
+            // Subtrees declaring their own foreign `package.json` / `bower.json`
+            // are vendored third-party packages — external, same as a vendored
+            // submodule.
+            let is_self_declared_vendor = !is_vendored_c
+                && !is_vendored_submodule
+                && !is_toolchain_payload
+                && crate::ecosystem::vendored_self_declared::is_under_self_declared_vendor(
+                    &pf.path,
+                    &self_declared_vendor_prefixes,
+                );
+            if is_self_declared_vendor {
+                let original = pf.path.clone();
+                pf.path = format!("ext:vendored:{original}");
+                debug!("self-declared vendored external: {original}");
+            }
+
             // Per-locale Jupyter notebook copies under `translations/<locale>/`
             // are duplicates of the canonical notebook — classify as external so
             // only the canonical copy counts toward the resolution rate.
             let is_translated_notebook = !is_vendored_c
                 && !is_vendored_submodule
                 && !is_toolchain_payload
+                && !is_self_declared_vendor
                 && crate::ecosystem::jupyter_dedup::is_translated_notebook_copy(&pf.path);
             if is_translated_notebook {
                 let original = pf.path.clone();
@@ -448,6 +485,7 @@ pub fn full_index(
             let is_vendored = is_vendored_c
                 || is_vendored_submodule
                 || is_toolchain_payload
+                || is_self_declared_vendor
                 || is_translated_notebook;
             let origin = if is_vendored { "external" } else { "internal" };
             let file_id = write::write_one_parsed_file(
@@ -687,6 +725,71 @@ pub fn full_index(
         }
     }
 
+    // --- Step 4d.0.1: Robot-declared library externals pull ---
+    //
+    // A Robot suite reaches a pip-installed keyword library through
+    // `Library  SeleniumLibrary`, not a Python `import`, so the PyPI demand
+    // loop never surfaces it. Worse, DynamicCore packages spread their
+    // `@keyword` methods across `keywords/*.py` member modules reached by
+    // ABSOLUTE re-exports (`from SeleniumLibrary.keywords import ...`), which
+    // the relative-only reexport walker skips — `resolve_import` alone can't
+    // reach them. So when a robot suite declares a library whose package was
+    // discovered as a PyPI dep root, eagerly walk that whole root here. The
+    // declared library names are the project-driven demand signal; an
+    // undeclared package is never pulled.
+    let mut robot_external_parsed: Vec<ParsedFile> = Vec::new();
+    let mut robot_external_sources =
+        crate::languages::robot::RobotExternalSources::default();
+    {
+        let declared_libs =
+            crate::languages::robot::library_map::collect_declared_library_names(&parsed);
+        // `{"BuiltIn"}` is the no-robot-files floor (always seeded); only pull
+        // when a project robot file declared something beyond it.
+        if declared_libs.len() > 1 {
+            let robot_roots = select_robot_library_roots(&declared_libs, &demand_driven_roots);
+            if !robot_roots.is_empty() {
+                let walked: Vec<crate::walker::WalkedFile> = robot_roots
+                    .iter()
+                    .copied()
+                    .flat_map(crate::ecosystem::pypi::walk_python_external_root)
+                    .collect();
+                for w in &walked {
+                    robot_external_sources
+                        .abs_by_virtual
+                        .insert(w.relative_path.clone(), w.absolute_path.clone());
+                }
+                for w in &walked {
+                    if let Ok(pf) = parse_file_with_arena_and_demand(
+                        w,
+                        registry,
+                        None,
+                        workspace_arena.as_ref(),
+                    ) {
+                        robot_external_parsed.push(pf);
+                    }
+                }
+                if !robot_external_parsed.is_empty() {
+                    info!(
+                        "Pulled {} Robot library external files across {} declared-library roots",
+                        robot_external_parsed.len(),
+                        robot_roots.len()
+                    );
+                    let (_rb_file_map, rb_symbol_map) = write::write_parsed_files_with_origin(
+                        db,
+                        &robot_external_parsed,
+                        "external",
+                        Some(workspace_arena.as_ref()),
+                    )
+                    .context("Failed to write Robot library external index")?;
+                    symbol_id_map.extend(rb_symbol_map);
+                    for pf in robot_external_parsed.iter_mut() {
+                        pf.slim_for_resolve();
+                    }
+                }
+            }
+        }
+    }
+
     // --- Step 4d.1: Demand-driven script-tag dep parse ---
     //
     // Host-language extractors (HTML, Razor, cshtml, Vue, Svelte, Astro)
@@ -732,16 +835,53 @@ pub fn full_index(
     // Combined slice the resolver sees. External files are skipped by the
     // ref-iteration loop in resolve_and_write but their symbols are still
     // indexed as lookup targets.
-    let total_cap =
-        parsed.len() + external_parsed.len() + script_tag_parsed.len() + vendored_parsed.len();
+    let total_cap = parsed.len()
+        + external_parsed.len()
+        + robot_external_parsed.len()
+        + script_tag_parsed.len()
+        + vendored_parsed.len();
     let mut combined_parsed: Vec<ParsedFile> = Vec::with_capacity(total_cap);
     combined_parsed.extend(parsed);
     combined_parsed.extend(external_parsed);
+    combined_parsed.extend(robot_external_parsed);
     combined_parsed.extend(script_tag_parsed);
     combined_parsed.extend(vendored_parsed);
     let mut parsed = combined_parsed;
     let mut symbol_id_map = symbol_id_map;
     mem_probe::probe("08_externals_written");
+
+    // --- Step 4d.2: Plugin-owned state rebuild over the full slice ---
+    // `populate_project_state` ran on project files only (before externals).
+    // Plugins whose binding maps must see externally-walked symbols override
+    // `populate_project_state_post_externals` to rebuild against the merged
+    // slice; the rest keep their pre-externals entry untouched. Robot is the
+    // first user: it re-resolves `Library  SeleniumLibrary` to the
+    // site-packages package + its DynamicCore keyword methods now that those
+    // files are in `parsed`.
+    {
+        // Stash robot's externals abs-path map in the bag so the rebuild can
+        // read the `ext:` library files' on-disk source for the keyword-method
+        // scan — the hook reads it back from the same bag it writes into.
+        project_ctx
+            .plugin_state
+            .set::<crate::languages::robot::RobotExternalSources>(robot_external_sources);
+        // Take the bag out so a hook can hold `&mut bag` while `project_ctx`
+        // is still borrowed immutably for the same call.
+        let mut bag = std::mem::take(&mut project_ctx.plugin_state);
+        for plugin in registry.all() {
+            if !project_ctx.language_presence.contains(plugin.id()) {
+                continue;
+            }
+            plugin.populate_project_state_post_externals(
+                &mut bag,
+                &parsed,
+                project_root,
+                &project_ctx,
+            );
+        }
+        project_ctx.plugin_state = bag;
+    }
+
     // `_` binds so compiler doesn't flag unused — these feed the Stage 2
     // loop below.
     let _ = &demand_driven_roots;
@@ -1153,6 +1293,36 @@ use super::parse_file::panic_message;
 pub(crate) use super::stage_link::{
     make_walked_file, parse_external_sources, ExternalParsingResult,
 };
+
+/// Select the PyPI dep roots a Robot suite reaches through `Library  <name>`.
+///
+/// A declared library binds to a root when its name case-insensitively
+/// matches the root's `module_path` (`Library  SeleniumLibrary` →
+/// `SeleniumLibrary`). The `robot` framework package is additionally
+/// included whenever any library is declared: Robot's standard libraries
+/// (`BuiltIn`, `Collections`, `String`, ...) and the auto-imported `BuiltIn`
+/// all live under `robot/libraries/`, referenced by bare name, so the
+/// framework root must be walked for the suite to resolve them.
+///
+/// Only `"python"`-tagged (PyPI) roots are considered; an undeclared
+/// package never matches and is never pulled.
+fn select_robot_library_roots<'a>(
+    declared_libs: &std::collections::HashSet<String>,
+    demand_driven_roots: &'a [crate::ecosystem::externals::ExternalDepRoot],
+) -> Vec<&'a crate::ecosystem::externals::ExternalDepRoot> {
+    let declared_lower: std::collections::HashSet<String> =
+        declared_libs.iter().map(|n| n.to_lowercase()).collect();
+    demand_driven_roots
+        .iter()
+        .filter(|root| {
+            if root.ecosystem != "python" {
+                return false;
+            }
+            let module_lower = root.module_path.to_lowercase();
+            module_lower == "robot" || declared_lower.contains(&module_lower)
+        })
+        .collect()
+}
 
 // ---------------------------------------------------------------------------
 // Statistics

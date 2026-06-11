@@ -347,6 +347,28 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _project_ctx: &crate::indexer::project_context::ProjectContext,
     ) {
     }
+
+    /// Re-populate cross-file plugin state after external sources have been
+    /// merged into the parsed slice.
+    ///
+    /// `populate_project_state` runs before external dependencies are walked,
+    /// so its `parsed` slice carries no `ext:` files. A plugin whose state
+    /// must see externally-walked symbols — e.g. a Robot suite binding
+    /// `Library SeleniumLibrary` to a site-packages `.py` file — overrides
+    /// this to rebuild against the full slice. The `state` bag still holds
+    /// the pre-externals result; an override replaces its own entry.
+    ///
+    /// Default: no-op. Plugins whose state is fully derived from project
+    /// files (the common case) leave this unimplemented and keep the
+    /// pre-externals result.
+    fn populate_project_state_post_externals(
+        &self,
+        _state: &mut crate::indexer::plugin_state::PluginStateBag,
+        _parsed: &[crate::types::ParsedFile],
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -42,16 +42,31 @@ JVM externals). Suite 6968 green. 23 single-project recaptures realized into `ba
 - **§7 stats row** — `internal_edges_by_lang` + `rate_by_language` wired (lib/CLI/MCP/recapture).
 
 **⬜ REMAINING**
-1. **§7 architect decisions** (unchanged): dart generated-code exclusion, jupyter locale de-dup,
-   framework-source (D2) separate reporting, vendored-no-manifest CodeMirror, r-shiny double
-   count, prolog xsb fixture accounting.
+1. **§7 D-class accounting — ✅ DONE** (this session): dart generated-code exclusion
+   (`GENERATED_FILE_FILTER` in stats.rs, symmetric, `generated_excluded` observable), jupyter
+   locale de-dup (already covered by `jupyter_dedup::is_translated_notebook_copy` → `origin=external`;
+   stats-layer symmetric-exclusion contract proven by test), framework-source (D2) + r-shiny
+   duplicate + prolog fixture accounting (`corpus_class` baseline field + per-class pooled-rate
+   grouping in `bw quality-check`). Vendored-no-manifest CodeMirror — see §7 row: §7 premise
+   REFUTED (manifest exists); fix belongs to vendored-detection layer (cross-agent), not D-accounting.
 2. **Robot DynamicCore** — the venv install realized nothing (Δ 0.00); root cause is 3-layer:
    pypi demand-pull is Python-import-driven (Robot `Library` refs never trigger it),
    `build_robot_library_map` runs before externals parse (full.rs:603 vs :657), SeleniumLibrary
    keywords are DynamicCore package methods. ~1–2 sessions, touches indexer ordering. DECISION.
 3. **Lua stdlib** (§6.4 decision: luaL_Reg-table walker over Lua source vs documented borderline).
 4. **ocaml-stdlib / nim-stdlib walkers** (§6.2/6.3 — still discussion-gated).
-5. **php-livewire/smarty unreconciled** (§6 investigation — untouched).
+5. **php-livewire/smarty unreconciled** — RESOLVED (investigation 2026-06-11). The 91.3/58.1 install-era
+   figures counted `external_refs` as resolved (old two-state denominator): replaying that math on the
+   live DBs reproduces them (smarty edges+ext/(edges+ext+unres) = 63.0% ≈ 58.1; livewire = 86.3% ≈ 91.3).
+   The current `internal_resolution_rate` excludes `external_known_unhydrated`, so the same indexes read
+   22.9%/58.2% — real-but-different-denominator, NOT a regression. vendor/ + phpstorm-stubs persisted and
+   bind via `use` imports. The genuine gap is test-suite-dominated (74% smarty / 48% livewire of unresolved
+   are receiver-typed `$this`/`$smarty` method calls needing chain-walk through external base classes =
+   B4) + a bare-global-stdlib-fn bucket (17%/14%): `str_replace`/`file_exists` have phpstorm-stub `function`
+   symbols but `resolve_via_namespaceless_global` and `resolve_via_external_by_import` both decline them —
+   the former skips `is_external_file`, the latter needs an import PHP global fns never have. No clean
+   ≤30-line fix: admitting unshadowed external global functions is an externals-admission semantics change
+   that must be designed inside B4, not bolted on; it caps at +14–17pt and leaves the test-DSL ceiling.
 6. **C/C++ `#define`-alias callables `kind=variable`** (§4 row, ~6–10k — never assigned).
 7. **E5 extract-side `infer` capture** (documented gap; optional follow-up).
 8. **Ops**: gradle re-hydration with `--refresh-dependencies` for metadata-only coords;
@@ -274,14 +289,14 @@ No resolver change moves these. Each needs a decision + small accounting/locator
 
 | decision | refs | proposed treatment |
 |---|---|---|
-| **Dart generated code** (`*.g.dart`, `*.freezed.dart`, `generated/`) | ~31k (immich 64%) | exclude from app-rate denominator (build_runner output is machine-written); keep indexed |
-| **Jupyter locale duplication** (16 notebooks × 50 `translations/*`) | ~39k → real ~0.8k | de-dup in metric (4b extension) |
+| **Dart generated code** (`*.g.dart`, `*.freezed.dart`, `generated/`) | ~31k (immich 64%) | ✅ DONE — `GENERATED_FILE_FILTER` (stats.rs) excludes these from both rate sides, Dart-only, files stay indexed; `ResolutionBreakdown::generated_excluded` surfaces the count (immich: ~30k unresolved + ~61k edges excluded) |
+| **Jupyter locale duplication** (16 notebooks × 50 `translations/*`) | ~39k → real ~0.8k | ✅ DONE (already covered) — `jupyter_dedup::is_translated_notebook_copy` reclassifies locale copies to `origin='external'` (full.rs:438); the breakdown filters `origin='internal'`, so both rate sides drop them symmetrically. Stats-layer contract proven by `external_origin_file_excluded_from_both_rate_sides` |
 | **C-codebase relabeling** — perl-perl5, make-curl/tmux, nginx, cobol-gnucobol report under C | ~100k visibility | NOT a decision — a stats-layer task: add `internal_edges_by_lang` to `ResolutionBreakdown` (symmetric SQL to `unresolved_by_lang_kind`, stats.rs:325, same `COALESCE(s.origin_language, f.language)`), derive `rate_by_language`, wire CLI/MCP/quality-check (wire-up-everywhere), emit in the corpus CSV; per-language tables then come from the DB, not project-name prefixes. Their engine fixes are §3#1 + §4 C items |
-| **Framework-source repos (D2)** — gsp-grails-core, prisma-prisma, odin-compiler, ts-nextjs, zig | large | report separately from "application rate"; their refs still benefit from engine fixes |
-| **Vendored-no-manifest** — thymeleaf-myblog CodeMirror copies | ~7k | extend vendored detection or accept; no manifest exists (not D1a-able) |
-| **prolog-swipl `tests/xsb`** quadratic fixtures + stale-detection DBs | ~28k | reindex (detection fix landed) + fixture-noise accounting |
+| **Framework-source repos (D2)** — gsp-grails-core, prisma-prisma, odin-compiler, ts-nextjs | large | ✅ DONE — `corpus_class:"framework-source"` set on all four verified framework-source repos in baseline-all.json; `bw quality-check` pools rates per `corpus_class`, reporting framework-source apart from the application rate. (`zig` is not a corpus project name — corpus has `zig-tigerbeetle`/`zig-ly`/… which are applications, not the Zig compiler; none tagged) |
+| **Vendored-no-manifest** — thymeleaf-myblog CodeMirror copies | ~7k (actual: 15.5k editormd / 12.4k codemirror, 95.5% of project's unresolved) | ⚠️ §7 PREMISE REFUTED — a manifest DOES exist: `static/admin/plugins/editormd/lib/codemirror/{package.json,bower.json}` (self-declaring vendored package, no project-level JS manifest). Not ACCEPT. The fix (recognize a vendored dir carrying its own JS manifest → `origin='external'`) belongs to the vendored-detection layer (full.rs / ecosystem), not D-accounting — route to the indexer-owning agent |
+| **prolog-swipl `tests/xsb`** quadratic fixtures + stale-detection DBs | ~28k | ✅ DONE (accounting) — `corpus_class:"fixture-heavy"` set; reported apart from the application rate. Reindex (detection fix landed) remains an ops step |
 | **keepassxc Qt/STL** | ~25k | E-install (Qt on disk → qt_runtime walker exists) — choose install over scope-out |
-| **r-shiny == rmarkdown-shiny double count** | ~7k | drop one from corpus |
+| **r-shiny == rmarkdown-shiny double count** | ~7k | ✅ DONE — `corpus_class:"duplicate-of:r-shiny"` on rmarkdown-shiny; `corpus_group_key` routes it to no group, so it contributes to no corpus total (excluded from every pooled rate). r-shiny stays as the canonical application entry |
 
 ~1 decision session (architect) + ~1 implementation session.
 

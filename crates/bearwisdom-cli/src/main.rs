@@ -26,6 +26,10 @@ use anyhow::{Context, Result};
 use bearwisdom::db::Database;
 use clap::{Parser, Subcommand};
 
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;
+
 // ---------------------------------------------------------------------------
 // CLI definition
 // ---------------------------------------------------------------------------
@@ -1582,6 +1586,13 @@ fn cmd_quality_check(
     let mut improvements = 0u32;
     let mut project_results: Vec<serde_json::Value> = Vec::new();
 
+    // Pooled (edges, unresolved) accumulators per corpus class, so the
+    // application rate is reported apart from framework-source and
+    // fixture-heavy repos. Duplicates (`duplicate-of:<project>`) accumulate
+    // into no group — they are excluded from every corpus total.
+    let mut corpus_groups: std::collections::BTreeMap<String, (i64, i64)> =
+        std::collections::BTreeMap::new();
+
     let project_filter: std::collections::HashSet<&str> =
         only_projects.iter().map(String::as_str).collect();
 
@@ -1642,6 +1653,16 @@ fn cmd_quality_check(
         let resolution_rate = rb.resolution_rate;
         let _ = internal_unresolved; // shadowed by rb.internal_unresolved below
         let internal_unresolved = rb.internal_unresolved as i64;
+
+        // Group this project's pooled counts by its corpus class. Absent
+        // `corpus_class` => "application". A `duplicate-of:<project>` class
+        // contributes to no group (excluded from every corpus total).
+        let corpus_class = corpus_class_of(proj);
+        if let Some(group) = corpus_group_key(corpus_class) {
+            let entry = corpus_groups.entry(group.to_string()).or_insert((0, 0));
+            entry.0 += internal_edges;
+            entry.1 += internal_unresolved;
+        }
 
         // Per-type flow edge counts.
         let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
@@ -1747,12 +1768,14 @@ fn cmd_quality_check(
         project_results.push(serde_json::json!({
             "project": name,
             "status": status,
+            "corpus_class": corpus_class.unwrap_or("application"),
             "current": {
                 "files": files,
                 "symbols": symbols,
                 "internal_edges": internal_edges,
                 "internal_unresolved": internal_unresolved,
                 "resolution_rate": resolution_rate,
+                "generated_excluded": rb.generated_excluded,
                 "routes": routes,
                 "flow_edges": flow_edges,
                 "unresolved_external": unresolved_external,
@@ -1765,18 +1788,86 @@ fn cmd_quality_check(
     }
 
     let passed = regressions == 0;
+
+    // Per-corpus-class pooled rates. The application rate is the headline;
+    // framework-source and fixture-heavy repos are reported apart so their
+    // engine-bound-source noise doesn't drag the application figure.
+    // Duplicates contributed to no group and so appear in none of these.
+    let corpus_class_rates = corpus_class_report(&corpus_groups);
+
     eprintln!(
-        "\n=== SUMMARY: {regressions} regressions, {improvements} improvements ===\n\
-         QUALITY CHECK {}",
-        if passed { "PASSED" } else { "FAILED" }
+        "\n=== SUMMARY: {regressions} regressions, {improvements} improvements ===",
     );
+    for (class, edges, unresolved, rate) in &corpus_class_rates {
+        eprintln!(
+            "  corpus[{class}]: {rate:.2}% ({edges} edges / {unresolved} unresolved)",
+        );
+    }
+    eprintln!("QUALITY CHECK {}", if passed { "PASSED" } else { "FAILED" });
+
+    let corpus_class_json: serde_json::Map<String, serde_json::Value> = corpus_class_rates
+        .into_iter()
+        .map(|(class, edges, unresolved, rate)| {
+            (
+                class,
+                serde_json::json!({
+                    "internal_edges": edges,
+                    "internal_unresolved": unresolved,
+                    "resolution_rate": rate,
+                }),
+            )
+        })
+        .collect();
 
     ok_json(serde_json::json!({
         "passed": passed,
         "regressions": regressions,
         "improvements": improvements,
+        "corpus_class_rates": corpus_class_json,
         "projects": project_results,
     }))
+}
+
+/// Read a project entry's `corpus_class`. Absent => `None`, which the caller
+/// treats as the default `"application"` class. A present empty string is
+/// also `None` so a blank value can't create a phantom group.
+fn corpus_class_of(proj: &serde_json::Value) -> Option<&str> {
+    proj["corpus_class"].as_str().filter(|s| !s.is_empty())
+}
+
+/// Map a project's `corpus_class` to the pooled-rate group it contributes to.
+/// `None` (absent) => the `"application"` group. A `duplicate-of:<project>`
+/// class returns `None` here too — but is distinguished by `corpus_class_of`
+/// reporting the raw class — so duplicates land in no corpus total. Any other
+/// value (e.g. `"framework-source"`, `"fixture-heavy"`) is its own group.
+fn corpus_group_key(corpus_class: Option<&str>) -> Option<&str> {
+    match corpus_class {
+        None => Some("application"),
+        Some(c) if c.starts_with("duplicate-of:") => None,
+        Some(c) => Some(c),
+    }
+}
+
+/// Build the sorted per-class pooled rate report:
+/// `(class, edges, unresolved, rate)`. Rate is
+/// `edges / (edges + unresolved) * 100`, two decimals, 100.0 for an empty
+/// group.
+fn corpus_class_report(
+    groups: &std::collections::BTreeMap<String, (i64, i64)>,
+) -> Vec<(String, i64, i64, f64)> {
+    groups
+        .iter()
+        .map(|(class, (edges, unresolved))| {
+            let denom = edges + unresolved;
+            let rate = if denom == 0 {
+                100.0
+            } else {
+                (*edges as f64) * 100.0 / (denom as f64)
+            };
+            let rate = (rate * 100.0).round() / 100.0;
+            (class.clone(), *edges, *unresolved, rate)
+        })
+        .collect()
 }
 
 /// Recapture the quality baseline: re-index every project that still has
@@ -1898,6 +1989,11 @@ fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Resul
         updated["internal_edges"] = serde_json::json!(rb.internal_edges);
         updated["internal_unresolved"] = serde_json::json!(rb.internal_unresolved);
         updated["resolution_rate"] = serde_json::json!(rb.resolution_rate);
+        // Refs excluded from the rate by the Dart generated-code filter.
+        // Zero (and omitted on read) for projects with no build_runner output.
+        if rb.generated_excluded > 0 {
+            updated["generated_excluded"] = serde_json::json!(rb.generated_excluded);
+        }
         updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
         updated["rate_by_language"] = serde_json::json!(rb.rate_by_language);
         updated["flow_edges"] = serde_json::json!(stats.flow_edge_count);

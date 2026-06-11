@@ -356,6 +356,154 @@ fn index_stats_internal_unresolved_excludes_doc_links() {
 }
 
 // ---------------------------------------------------------------------------
+// Dart generated-code exclusion (GENERATED_FILE_FILTER)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn generated_dart_excluded_symmetrically_from_rate() {
+    // A `.g.dart` build_runner file's refs are excluded from BOTH the
+    // numerator (edges) and the denominator (unresolved), so the rate is
+    // computed only over hand-written Dart. The excluded counts surface in
+    // `generated_excluded`.
+    let db = open();
+    let f_app = seed_file(&db, "lib/user.dart", "dart", "internal");
+    let f_gen = seed_file(&db, "lib/user.g.dart", "dart", "internal");
+    let app_caller = seed_symbol(&db, f_app, "appCaller", "internal");
+    let app_callee = seed_symbol(&db, f_app, "appCallee", "internal");
+    let gen_sym = seed_symbol(&db, f_gen, "genSym", "internal");
+
+    // Hand-written: 1 edge, 1 unresolved → 50% on its own.
+    seed_edge(&db, app_caller, app_callee);
+    seed_unresolved(&db, app_caller, "appMissing", "calls", 0);
+    // Generated: 2 edges + 3 unresolved that must NOT touch the rate.
+    seed_edge(&db, gen_sym, app_callee);
+    seed_edge(&db, gen_sym, app_callee);
+    seed_unresolved(&db, gen_sym, "g1", "calls", 0);
+    seed_unresolved(&db, gen_sym, "g2", "calls", 0);
+    seed_unresolved(&db, gen_sym, "g3", "type_ref", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Rate is over hand-written only: 1 / (1 + 1) = 50%, not 3/(3+4).
+    assert_eq!(rb.internal_edges, 1);
+    assert_eq!(rb.internal_unresolved, 1);
+    assert_eq!(rb.resolution_rate, 50.0);
+    assert_eq!(rb.rate_by_language.get("dart").copied(), Some(50.0));
+    assert_eq!(rb.internal_edges_by_lang.get("dart").copied(), Some(1));
+
+    // 2 excluded edges + 3 excluded unresolved = 5 observable exclusions.
+    assert_eq!(rb.generated_excluded, 5);
+}
+
+#[test]
+fn generated_dart_filter_matches_freezed_and_generated_dir() {
+    // All three closed build_runner conventions are recognized: `.freezed.dart`,
+    // a nested `generated/` segment, and a root-level `generated/` dir.
+    let db = open();
+    let f_app = seed_file(&db, "lib/model.dart", "dart", "internal");
+    let f_freezed = seed_file(&db, "lib/model.freezed.dart", "dart", "internal");
+    let f_nested = seed_file(&db, "lib/api/generated/client.dart", "dart", "internal");
+    let f_root = seed_file(&db, "generated/schema.dart", "dart", "internal");
+    let app = seed_symbol(&db, f_app, "app", "internal");
+    let fr = seed_symbol(&db, f_freezed, "fr", "internal");
+    let ne = seed_symbol(&db, f_nested, "ne", "internal");
+    let ro = seed_symbol(&db, f_root, "ro", "internal");
+
+    seed_unresolved(&db, app, "appMiss", "calls", 0);
+    seed_unresolved(&db, fr, "frMiss", "calls", 0);
+    seed_unresolved(&db, ne, "neMiss", "calls", 0);
+    seed_unresolved(&db, ro, "roMiss", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Only the hand-written `model.dart` miss counts; the three generated
+    // files' misses are excluded.
+    assert_eq!(rb.internal_unresolved, 1);
+    assert_eq!(rb.generated_excluded, 3);
+}
+
+#[test]
+fn generated_filter_is_dart_only() {
+    // The conventions are Dart-only: a `.g.dart`-named file in another
+    // language, or a `generated/` dir in a non-Dart project, is NOT excluded.
+    let db = open();
+    // A TS file that happens to end ".g.dart" textually but is language=ts.
+    let f_ts = seed_file(&db, "src/weird.g.dart", "typescript", "internal");
+    // A Go file under a `generated/` dir — Go has its own codegen handling,
+    // not this Dart-only filter.
+    let f_go = seed_file(&db, "pkg/generated/api.go", "go", "internal");
+    let ts = seed_symbol(&db, f_ts, "ts", "internal");
+    let go = seed_symbol(&db, f_go, "go", "internal");
+
+    seed_unresolved(&db, ts, "tsMiss", "calls", 0);
+    seed_unresolved(&db, go, "goMiss", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Neither is Dart, so both still count and nothing is excluded.
+    assert_eq!(rb.internal_unresolved, 2);
+    assert_eq!(rb.generated_excluded, 0);
+    assert_eq!(rb.unresolved_by_lang_kind.get("typescript.calls").copied(), Some(1));
+    assert_eq!(rb.unresolved_by_lang_kind.get("go.calls").copied(), Some(1));
+}
+
+#[test]
+fn index_stats_excludes_generated_dart() {
+    // The standalone `index_stats` unresolved count honors the same Dart
+    // generated-code filter as the breakdown, so the two stay consistent.
+    let db = open();
+    let f_app = seed_file(&db, "lib/a.dart", "dart", "internal");
+    let f_gen = seed_file(&db, "lib/a.g.dart", "dart", "internal");
+    let app = seed_symbol(&db, f_app, "app", "internal");
+    let gen = seed_symbol(&db, f_gen, "gen", "internal");
+    seed_unresolved(&db, app, "real", "calls", 0);
+    seed_unresolved(&db, gen, "generated", "calls", 0);
+
+    let stats = index_stats(&db).unwrap();
+    assert_eq!(stats.unresolved_ref_count, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Origin-external symmetric exclusion (the jupyter locale-dedup contract)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn external_origin_file_excluded_from_both_rate_sides() {
+    // Per-locale Jupyter notebook copies are reclassified `origin='external'`
+    // at index time, so the rate is computed only over the canonical copy.
+    // This proves the stats-layer contract the dedup relies on: an
+    // external-origin file contributes to NEITHER the numerator (edges) NOR
+    // the denominator (unresolved) of the rate.
+    let db = open();
+    let f_canonical = seed_file(&db, "2-Regression/notebook.ipynb", "jupyter", "internal");
+    let f_locale = seed_file(
+        &db,
+        "ext:nb-translation:translations/ar/2-Regression/notebook.ipynb",
+        "jupyter",
+        "external",
+    );
+    let canon = seed_symbol(&db, f_canonical, "canon", "internal");
+    let canon2 = seed_symbol(&db, f_canonical, "canon2", "internal");
+    let dup = seed_symbol(&db, f_locale, "dup", "external");
+
+    // Canonical: 1 edge, 1 unresolved → 50%.
+    seed_edge(&db, canon, canon2);
+    seed_unresolved(&db, canon, "canonMiss", "calls", 0);
+    // Locale copy: edges + unresolved that must not move the rate.
+    seed_edge(&db, dup, canon2);
+    seed_unresolved(&db, dup, "dupMiss1", "calls", 0);
+    seed_unresolved(&db, dup, "dupMiss2", "calls", 0);
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Only the canonical copy's refs are counted on either side.
+    assert_eq!(rb.internal_edges, 1, "locale-copy edge excluded");
+    assert_eq!(rb.internal_unresolved, 1, "locale-copy unresolved excluded");
+    assert_eq!(rb.resolution_rate, 50.0);
+    assert_eq!(rb.rate_by_language.get("jupyter").copied(), Some(50.0));
+}
+
+// ---------------------------------------------------------------------------
 // flow_diagnostics tests
 // ---------------------------------------------------------------------------
 

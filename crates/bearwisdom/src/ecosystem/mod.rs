@@ -68,16 +68,19 @@ pub mod jdk_src;
 pub mod jinja_ansible_runtime;
 pub mod jupyter_dedup;
 pub mod kotlin_stdlib;
+pub mod lua_stdlib;
 pub mod luarocks;
 pub mod matlab_runtime;
 pub mod maven;
 pub mod maven_classes;
 pub mod msvc_sdk;
+pub mod nim_stdlib;
 pub mod nimble;
 pub mod npm;
 pub mod nuget;
 pub mod nuxt_runtime;
 pub mod nvim_runtime;
+pub mod ocaml_stdlib;
 pub mod opam;
 pub mod openapi_generated;
 pub mod perl_stdlib;
@@ -107,6 +110,7 @@ pub mod tf_registry;
 pub mod toolchain_payload;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
+pub mod vendored_self_declared;
 pub mod vendored_submodules;
 pub mod zig_pkg;
 pub mod zig_std;
@@ -141,16 +145,19 @@ pub use hexo_runtime::HexoRuntimeEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
 pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
+pub use lua_stdlib::LuaStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
 pub use maven::MavenEcosystem;
 pub use maven_classes::MavenClassesEcosystem;
 pub use msvc_sdk::MsvcSdkEcosystem;
+pub use nim_stdlib::NimStdlibEcosystem;
 pub use nimble::NimbleEcosystem;
 pub use npm::NpmEcosystem;
 pub use nuget::NugetEcosystem;
 pub use nuxt_runtime::NuxtRuntimeEcosystem;
 pub use nvim_runtime::NvimRuntimeEcosystem;
+pub use ocaml_stdlib::OcamlStdlibEcosystem;
 pub use opam::OpamEcosystem;
 pub use openapi_generated::OpenApiGeneratedEcosystem;
 pub use perl_stdlib::PerlStdlibEcosystem;
@@ -660,6 +667,9 @@ pub fn default_locator(
         "ts-lib-dom" => Some(Arc::new(TsLibDomEcosystem)),
         "ruby-stdlib" => Some(Arc::new(RubyStdlibEcosystem)),
         "r-stdlib" => Some(Arc::new(RStdlibEcosystem)),
+        "lua-stdlib" => Some(Arc::new(LuaStdlibEcosystem)),
+        "ocaml-stdlib" => Some(Arc::new(OcamlStdlibEcosystem)),
+        "nim-stdlib" => Some(Arc::new(NimStdlibEcosystem)),
         "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
         "msvc-sdk" => Some(Arc::new(MsvcSdkEcosystem)),
         "qt-runtime" => Some(Arc::new(QtRuntimeEcosystem)),
@@ -772,6 +782,9 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(TsLibDomEcosystem);
         reg_eco!(RubyStdlibEcosystem);
         reg_eco!(RStdlibEcosystem);
+        reg_eco!(LuaStdlibEcosystem);
+        reg_eco!(OcamlStdlibEcosystem);
+        reg_eco!(NimStdlibEcosystem);
         reg_eco!(PosixHeadersEcosystem);
         reg_eco!(MsvcSdkEcosystem);
         reg_eco!(QtRuntimeEcosystem);
