@@ -114,6 +114,45 @@ fn qt_resolve_header_finds_by_relative_or_basename() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
+fn qt_windows_probe_finds_standard_install_root() {
+    // The official Qt online installer lays the SDK out as
+    // `C:/Qt/<version>/<kit>/include`. When such an install exists on the
+    // host, the Windows autodetect probe must surface its `include/` dir —
+    // no QTDIR / env override required.
+    let std_root = std::path::Path::new("C:/Qt");
+    if !std_root.is_dir() {
+        return; // no Qt install on this host — nothing to assert
+    }
+    // Find at least one `C:/Qt/<ver>/<kit>/include` on disk to compare against.
+    let mut expected: Option<std::path::PathBuf> = None;
+    if let Ok(vers) = fs::read_dir(std_root) {
+        for ver in vers.flatten().filter(|e| e.path().is_dir()) {
+            if let Ok(kits) = fs::read_dir(ver.path()) {
+                for kit in kits.flatten().filter(|e| e.path().is_dir()) {
+                    let inc = kit.path().join("include");
+                    if inc.is_dir() {
+                        expected = Some(inc);
+                        break;
+                    }
+                }
+            }
+            if expected.is_some() {
+                break;
+            }
+        }
+    }
+    let Some(expected) = expected else {
+        return; // C:/Qt exists but holds no `<ver>/<kit>/include` — skip
+    };
+    let found = autodetect_qt_include_dirs();
+    assert!(
+        found.iter().any(|p| p == &expected),
+        "Windows probe missed standard install root {expected:?}; got {found:?}"
+    );
+}
+
+#[test]
 fn qt_locator_returns_empty_when_no_install_present() {
     // Make sure NO env override is set and probe — fixture-free scenario.
     let prior = std::env::var_os("BEARWISDOM_QT_DIR");
