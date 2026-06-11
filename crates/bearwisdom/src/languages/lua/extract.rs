@@ -20,7 +20,10 @@
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::ExtractionResult;
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -726,7 +729,46 @@ fn extract_function_call(
         }
         "method_index_expression" => {
             let method = get_method_name(&callee, src);
-            if !method.is_empty() {
+            let receiver = get_method_table(&callee, src);
+            // `s:gsub(...)` — the receiver (`value` field) is the dispatch root;
+            // a chainless bare `gsub` would drop it. Emit a 2-segment receiver
+            // chain so a string-typed receiver roots to the `string` library.
+            // The receiver-less form (parser gave no `value`) keeps the bare
+            // call so the name still resolves through the function ladder.
+            if !method.is_empty() && !receiver.is_empty() {
+                let receiver_offset = callee
+                    .child_by_field_name("table")
+                    .map(|n| n.start_byte() as u32)
+                    .unwrap_or(call_byte_offset);
+                let method_offset = callee
+                    .child_by_field_name("method")
+                    .map(|n| n.start_byte() as u32)
+                    .unwrap_or(call_byte_offset);
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index: source_idx,
+                    target_name: method.clone(),
+                    kind: EdgeKind::Calls,
+                    line,
+                    module: None,
+                    chain: Some(MemberChain {
+                        segments: vec![
+                            lua_segment(
+                                receiver,
+                                "identifier",
+                                SegmentKind::Identifier,
+                                receiver_offset,
+                            ),
+                            lua_segment(method, "method", SegmentKind::Property, method_offset),
+                        ],
+                    }),
+                    byte_offset: call_byte_offset,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                    col: 0,
+                });
+            } else if !method.is_empty() {
                 refs.push(ExtractedRef {
                     is_import_binding: false,
                     is_reexport: false,
@@ -826,6 +868,22 @@ fn get_index_table_name(node: &Node, src: &[u8]) -> String {
         .unwrap_or_default()
 }
 
+fn lua_segment(name: String, node_kind: &str, kind: SegmentKind, byte_offset: u32) -> ChainSegment {
+    ChainSegment {
+        name,
+        node_kind: node_kind.to_string(),
+        kind,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset,
+        declared_type_id: None,
+        type_arg_ids: Vec::new(),
+        is_call: false,
+        call_args: Vec::new(),
+    }
+}
+
 fn get_method_name(node: &Node, src: &[u8]) -> String {
     node.child_by_field_name("method")
         .map(|n| node_text(n, src))
@@ -833,7 +891,7 @@ fn get_method_name(node: &Node, src: &[u8]) -> String {
 }
 
 fn get_method_table(node: &Node, src: &[u8]) -> String {
-    node.child_by_field_name("value")
+    node.child_by_field_name("table")
         .map(|n| node_text(n, src))
         .unwrap_or_default()
 }

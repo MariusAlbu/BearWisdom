@@ -25,6 +25,13 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// PHP language constructs that are never project symbols. Declined before the
+/// ladder so a same-named project function can't bind them. Delegates to the
+/// closed `CONSTRUCTS` table in `php/keywords.rs` — single source of truth.
+pub(super) fn is_php_builtin(name: &str) -> bool {
+    super::keywords::CONSTRUCTS.contains(&name)
+}
+
 /// Normalize PHP namespace separator `\` to `.` for index consistency.
 /// "App\\Models\\User" → "App.Models.User"
 pub(crate) fn normalize_php_ns(ns: &str) -> String {

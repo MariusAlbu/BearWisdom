@@ -53,9 +53,10 @@ use super::method_bodies::{
 };
 use super::reitit::scan_reitit_routes;
 use super::scope::{
-    collect_binding_form_locals, collect_defn_params, collect_fn_params, collect_letfn_locals,
-    collect_params_from_vec, extend_scope, is_clojure_skippable_symbol, is_local,
-    list_head_with_line, list_second_name_with_line, sym_lit_name, sym_lit_ns, sym_name_line,
+    collect_binding_form_locals, collect_catch_local, collect_defn_params, collect_fn_params,
+    collect_letfn_locals, collect_params_from_vec, extend_scope, is_clojure_skippable_symbol,
+    is_local, list_head_with_line, list_second_name_with_line, sym_lit_name, sym_lit_ns,
+    sym_name_line,
 };
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -476,10 +477,17 @@ fn process_list(
         // `[name expr]` pair, which the let-style collector handles
         // correctly because position 0 is still the binding name.
         "let" | "let*" | "loop" | "binding" | "with-redefs" | "with-bindings"
-        | "with-local-vars" | "if-let" | "when-let" | "if-some" | "when-some" | "when-first"
-        | "dotimes" => {
+        | "with-local-vars" | "with-open" | "if-let" | "when-let" | "if-some" | "when-some"
+        | "when-first" | "dotimes" => {
             let binding_locals = collect_binding_form_locals(node, src, locals);
             walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
+        }
+        // `(catch Class e body...)` — `Class` is a real type reference, `e`
+        // is the exception var bound for the body. Scope `e` as a local so
+        // its body uses don't leak as Calls refs, then walk the body.
+        "catch" => {
+            let exc_local = collect_catch_local(node, src, locals);
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &exc_local, 1);
         }
         // `are` from clojure.test — `(are [a b c] expr & values)`. Every
         // name in the first vec is a binding; values that follow are

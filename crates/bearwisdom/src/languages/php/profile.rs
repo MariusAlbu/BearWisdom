@@ -74,7 +74,7 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     // Same-namespace + `use`-statement qualification of a bare receiver type
     // via the structured walker's `qualify_current_ty`.
     chain_qualification: ChainQualification::SamePackageAndImports,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_php_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -103,7 +103,8 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
     constructor_patterns: &[ConstructorPattern::New],
     class_builder_specs: &[],

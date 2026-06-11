@@ -78,7 +78,8 @@ pub const GDSCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     // `class_name`-registered scripts form one flat global namespace; the
     // terminal flat-global rung binds cross-file `extends`/bare-call refs.
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

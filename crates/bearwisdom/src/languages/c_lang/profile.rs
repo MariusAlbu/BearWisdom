@@ -111,7 +111,8 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // C/C++ functions are project-global (a cross-file call to a `static` is a
     // compile error, so the dead-last rung only ever binds unique externs).
     // Recovers cross-translation-unit calls (redis `sdsfree`, nginx `ngx_*`).
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

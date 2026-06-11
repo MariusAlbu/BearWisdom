@@ -22,6 +22,57 @@ pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// A reserved Elixir language form: a `Kernel.SpecialForms` compiler form or a
+/// `Kernel` def-family / control-flow macro. These look like bare calls in the
+/// AST but are syntax, not project functions — so they decline before the
+/// resolution ladder (via `builtin_skip`) and never bind to a same-named
+/// project symbol. This is the closed set of language constructs only; library
+/// Kernel functions (`is_nil`, `elem`, `hd`, `tap`, …) are NOT here.
+pub(crate) fn is_elixir_special_form(name: &str) -> bool {
+    matches!(
+        name,
+        // Kernel.SpecialForms — compiler special forms.
+        "__CALLER__"
+            | "__DIR__"
+            | "__ENV__"
+            | "__MODULE__"
+            | "__STACKTRACE__"
+            | "__aliases__"
+            | "__block__"
+            | "alias"
+            | "case"
+            | "cond"
+            | "fn"
+            | "for"
+            | "import"
+            | "quote"
+            | "receive"
+            | "require"
+            | "super"
+            | "try"
+            | "unquote"
+            | "unquote_splicing"
+            | "with"
+            // Kernel — def-family declaration macros.
+            | "def"
+            | "defp"
+            | "defmodule"
+            | "defmacro"
+            | "defmacrop"
+            | "defstruct"
+            | "defexception"
+            | "defprotocol"
+            | "defimpl"
+            | "defguard"
+            | "defguardp"
+            | "defdelegate"
+            | "defoverridable"
+            // Kernel — control-flow macros.
+            | "if"
+            | "unless"
+    )
+}
+
 /// Always-external Elixir/Erlang/OTP module roots.
 ///
 /// Elixir module names are dot-separated CamelCase atoms starting with a

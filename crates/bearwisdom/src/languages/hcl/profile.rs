@@ -67,7 +67,8 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     // Terraform `var`/`local`/resource names are module-flat — every `.tf`
     // in a directory shares one namespace, so a `var.X` ref binds cross-file.
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

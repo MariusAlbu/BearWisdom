@@ -108,7 +108,8 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
     constructor_patterns: &[
         crate::type_checker::profile::language_profile::ConstructorPattern::New,

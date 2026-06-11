@@ -1093,6 +1093,22 @@ fn scan_all_type_positions(
                 }
             }
 
+            // String-literal text is opaque — do not descend. Tag/markup text
+            // inside a verbatim or raw string would otherwise leak as TypeRef.
+            "string_literal" | "verbatim_string_literal" | "raw_string_literal" => {}
+
+            // `$"...{expr}..."` — only the `interpolation` holes are code
+            // positions; the surrounding literal text is opaque. Descend
+            // solely into interpolation children.
+            "interpolated_string_expression" => {
+                let mut ic = child.walk();
+                for inner in child.children(&mut ic) {
+                    if inner.kind() == "interpolation" {
+                        scan_all_type_positions(inner, src, sym_idx, refs);
+                    }
+                }
+            }
+
             _ => {
                 scan_all_type_positions(child, src, sym_idx, refs);
             }

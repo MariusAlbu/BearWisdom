@@ -74,7 +74,7 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: ELIXIR_PRIMITIVES,
     kind_compatible_table: ELIXIR_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_elixir_special_form),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -103,7 +103,8 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

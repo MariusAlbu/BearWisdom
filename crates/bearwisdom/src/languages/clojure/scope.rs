@@ -130,8 +130,24 @@ pub(super) fn sym_lit_ns(node: Node, src: &[u8]) -> Option<String> {
 ///   * `&`        — rest-args separator in `[a b & rest]`. Should be
 ///                  filtered by the param-vec walk but residual
 ///                  appearances slip through as call args.
+///   * `try` / `catch` / `finally` / `with-open` — exception and
+///                  resource special-form keywords. The `catch` arm scopes
+///                  the bound exception var and the binding-form arm scopes
+///                  `with-open` resource names; these heads themselves are
+///                  never callable.
 pub(super) fn is_clojure_non_callable_token(name: &str) -> bool {
-    matches!(name, "." | "=>" | "else" | "return" | "this" | "&")
+    matches!(
+        name,
+        "." | "=>"
+            | "else"
+            | "return"
+            | "this"
+            | "&"
+            | "try"
+            | "catch"
+            | "finally"
+            | "with-open"
+    )
 }
 
 /// Combined skip rule for sym_lit nodes that should NOT produce Calls refs.
@@ -424,4 +440,32 @@ pub(super) fn collect_letfn_locals(
         }
     }
     extend_scope(parent_locals, names)
+}
+
+/// Collect the exception var bound by a `catch` clause:
+/// `(catch Class e body...)` binds `e` for the body. The first sym_lit is
+/// the `catch` head, the second is the exception class (a real type ref),
+/// the third is the bound var. Returns the parent scope extended with the
+/// bound var name.
+pub(super) fn collect_catch_local(
+    node: Node,
+    src: &[u8],
+    parent_locals: &HashSet<String>,
+) -> HashSet<String> {
+    let mut cursor = node.walk();
+    let mut sym_count = 0usize;
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            sym_count += 1;
+            // 1 = `catch` head, 2 = exception class, 3 = bound var.
+            if sym_count == 3 {
+                let name = sym_lit_name(child, src);
+                if !name.is_empty() && name != "_" {
+                    return extend_scope(parent_locals, HashSet::from([name]));
+                }
+                break;
+            }
+        }
+    }
+    parent_locals.clone()
 }

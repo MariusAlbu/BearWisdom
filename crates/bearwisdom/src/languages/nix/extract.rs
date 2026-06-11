@@ -397,6 +397,27 @@ pub(super) fn extract_value_refs(
                 extract_value_refs(body, src, source_symbol_index, symbols, refs);
             }
         }
+        "variable_expression" => {
+            // A binding whose RHS is a bare variable (`l = lib`) is an alias.
+            // Emit a Reads ref to the aliased name so the head-alias rung can
+            // bind a dotted target whose head is this binding (`l.mkOption`).
+            if let Some(name) = resolve_call_name(node, src) {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::Reads,
+                    line: node.start_position().row as u32,
+                    col: 0,
+                    module: None,
+                    chain: None,
+                    byte_offset: node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+            }
+        }
         _ => {
             // Recurse looking for apply_expression, select_expression, and with_expression
             let mut cursor = node.walk();

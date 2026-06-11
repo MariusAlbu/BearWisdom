@@ -49,7 +49,8 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     associated_type_projection: false,
     blanket_impl_resolution: false,
     ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,

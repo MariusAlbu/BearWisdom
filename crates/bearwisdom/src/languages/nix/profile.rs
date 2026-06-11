@@ -39,7 +39,9 @@ pub const NIX_PROFILE: LanguageProfile = LanguageProfile {
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::OnSameFile {
+        require_kind: None,
+    },
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
     alias_module_qname: false,
     module_prefix_rewrites:
@@ -53,7 +55,8 @@ pub const NIX_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

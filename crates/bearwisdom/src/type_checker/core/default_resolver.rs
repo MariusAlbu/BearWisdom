@@ -28,7 +28,8 @@ use crate::type_checker::profile::language_profile::{
     AliasDecode, AmbientGlobals, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport,
     FileScopedImports, HeadAliasBind, ImportResolution, KindCompatibility, KindTable, ModuleAnchor,
     ModuleAnchorBind, ModulePrefixRewrites, ModuleScope, NameNormalization, NameTransform,
-    NormSpec, RelativeMarker, SelectorResolution, StemMatch, StemSource, WildcardMatch,
+    NamespaceScope, NormSpec, RelativeMarker, SelectorResolution, StemMatch, StemSource,
+    WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -77,7 +78,7 @@ struct LadderProfileData<'p> {
     workspace_packages: bool,
     overload_pick_all: bool,
     ambient_globals: AmbientGlobals,
-    namespaceless_global_type_lookup: bool,
+    namespaceless_global_type_lookup: NamespaceScope,
     explicit_member_import: bool,
     selector_resolution: Option<&'p SelectorResolution>,
     qname_separator: &'p str,
@@ -106,7 +107,7 @@ impl LadderProfileData<'static> {
         workspace_packages: false,
         overload_pick_all: false,
         ambient_globals: AmbientGlobals::Off,
-        namespaceless_global_type_lookup: false,
+        namespaceless_global_type_lookup: NamespaceScope::Off,
         explicit_member_import: false,
         selector_resolution: None,
         qname_separator: ".",
@@ -2027,33 +2028,58 @@ impl<'a> DefaultResolver<'a> {
     /// candidate, this first-match-binds: duplicate names across files are
     /// common and there is no structure to disambiguate. External candidates are
     /// excluded so a project symbol always wins over a same-named external.
-    /// Gated by `namespaceless_global_type_lookup`; off (every other language)
-    /// returns immediately. Runs LAST in the ladder so any structural evidence
-    /// wins first.
+    ///
+    /// `scope` gates and shapes the rung: `Off` returns immediately (every
+    /// non-flat language); `Global` first-match-binds across the whole project;
+    /// `DirectoryScoped` binds only a candidate that lives in the same directory
+    /// as the referencing file, so a same-named symbol in another directory does
+    /// not bind.
+    ///
+    /// Name candidates are tried in order: the raw target, then the
+    /// self-keyword-stripped leaf (flat-namespace sigil languages keep the sigil
+    /// in the ref — `var.X`, `local.X` — but declare the symbol bare), then, for
+    /// a dotted target that missed both, its last `.`-segment (`schema.table` →
+    /// `table`). The `.`-leaf retry is generic: any dotted miss retries its leaf.
+    ///
+    /// Runs LAST in the ladder so any structural evidence wins first.
     pub fn resolve_via_namespaceless_global(
         &self,
+        scope: NamespaceScope,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
         self_keywords: &[&str],
     ) -> Option<Resolution> {
+        if scope == NamespaceScope::Off {
+            return None;
+        }
         let target = self.ref_ctx.extracted_ref.target_name.as_str();
         if target.is_empty() {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
-        // Try the raw target, then the self-keyword-stripped leaf: flat-namespace
-        // sigil languages keep the sigil in the ref (`var.X`, `local.X`) but
-        // declare the symbol bare (`X`). `strip_self_keyword` is a no-op when the
-        // language declares no self keyword or the target carries no sigil.
+        // `strip_self_keyword` is a no-op when the language declares no self
+        // keyword or the target carries no sigil.
         let stripped = strip_self_keyword(target, self_keywords);
-        let raw_then_stripped = [target, stripped];
-        let candidates: &[&str] = if stripped == target {
-            &raw_then_stripped[..1]
-        } else {
-            &raw_then_stripped[..]
-        };
-        for &cand in candidates {
+        let mut candidates: Vec<&str> = vec![target];
+        if stripped != target {
+            candidates.push(stripped);
+        }
+        // Dotted-target leaf fallback (`schema.table` → `table`): only the last
+        // `.`-segment, only when distinct from what's already queued.
+        if let Some(leaf) = target.rsplit('.').next() {
+            if leaf != target && !candidates.contains(&leaf) {
+                candidates.push(leaf);
+            }
+        }
+        let dir_scoped = scope == NamespaceScope::DirectoryScoped;
+        let src_dir = parent_dir(&self.file_ctx.file_path);
+        for cand in candidates {
             for sym in self.lookup.by_name(cand) {
                 if self.lookup.is_external_file(&sym.file_path) {
+                    continue;
+                }
+                // DirectoryScoped: bind only a candidate in the same directory as
+                // the referencing file (both `None` — repo-root files — match).
+                if dir_scoped && parent_dir(&sym.file_path) != src_dir {
                     continue;
                 }
                 if kind(edge_kind, &sym.kind) {
@@ -2406,9 +2432,11 @@ impl<'a> DefaultResolver<'a> {
             // namespaceless DDL/config). Dead last so every structural rung
             // above wins first; gated on `namespaceless_global_type_lookup`.
             .or_else(|| {
-                pd.namespaceless_global_type_lookup
-                    .then(|| self.resolve_via_namespaceless_global(kind, pd.self_keywords))
-                    .flatten()
+                self.resolve_via_namespaceless_global(
+                    pd.namespaceless_global_type_lookup,
+                    kind,
+                    pd.self_keywords,
+                )
             });
         if result.is_none() {
             self.record_bare_name_chain_miss();
@@ -2952,6 +2980,16 @@ fn parent_dir_basename(file_path: &str) -> Option<String> {
     let normalized = file_path.replace('\\', "/");
     let (dir, _file) = normalized.rsplit_once('/')?;
     Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
+}
+
+/// The full directory portion of a file path (everything before the final
+/// segment). Path separators are normalized to `/`. Returns `None` for a bare
+/// filename. For `schema/users/model.prisma` returns `Some("schema/users")` —
+/// the full path, not just the basename, so two distinct directories sharing a
+/// trailing segment do not collide.
+fn parent_dir(file_path: &str) -> Option<String> {
+    let normalized = file_path.replace('\\', "/");
+    normalized.rsplit_once('/').map(|(dir, _)| dir.to_string())
 }
 
 /// The SwiftPM module-subtree prefix of a file path: the substring up to and

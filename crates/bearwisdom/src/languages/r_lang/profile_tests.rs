@@ -31,7 +31,10 @@ fn r_dispatch_axis_is_multi_arg_for_s4() {
 fn r_namespaceless_global_is_on() {
     // R's flat function namespace binds bare calls to the project's own
     // exported functions via the dead-last first-match-by-name rung.
-    assert!(R_PROFILE.namespaceless_global_type_lookup);
+    assert_eq!(
+        R_PROFILE.namespaceless_global_type_lookup,
+        crate::type_checker::profile::language_profile::NamespaceScope::Global
+    );
 }
 
 // ---------------------------------------------------------------------------

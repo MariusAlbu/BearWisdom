@@ -6,6 +6,10 @@ pub(crate) mod profile;
 
 pub use profile::VELOCITY_PROFILE;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod mod_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -158,7 +162,7 @@ impl LanguagePlugin for VelocityPlugin {
                             let (line, col) = lc(bytes, start);
                             regions.push(EmbeddedRegion {
                                 language_id: "java".into(),
-                                text: format!("class __Vm {{ Object f() {{ return ({t}); }} }}\n"),
+                                text: format!("class __Vm {{ void f() {{ var v = ({t}); }} }}\n"),
                                 line_offset: line,
                                 col_offset: col,
                                 origin: EmbeddedOrigin::TemplateExpr,

@@ -74,7 +74,8 @@ pub const JINJA_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     // Template variables resolve against sibling var sources (Ansible
     // `defaults`/`vars` YAML) in one flat namespace, not a per-file scope.
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

@@ -7,6 +7,11 @@
 pub mod extract;
 pub(crate) mod hooks;
 pub mod keywords;
+
+#[cfg(test)]
+#[path = "keywords_tests.rs"]
+mod keywords_tests;
+
 mod predicates;
 pub(crate) mod profile;
 
@@ -78,11 +83,7 @@ impl LanguagePlugin for HaskellPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "Int", "Integer", "Float", "Double", "Bool", "Char", "String", "IO", "Maybe", "Either",
-            "List", "Ordering", "Word", "Int8", "Int16", "Int32", "Int64", "Word8", "Word16",
-            "Word32", "Word64", "Natural", "Rational", "Complex",
-        ]
+        keywords::KEYWORDS
     }
 
     fn profile(

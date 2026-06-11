@@ -5,6 +5,10 @@ pub(crate) mod profile;
 
 pub use profile::FREEMARKER_PROFILE;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod mod_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{
@@ -91,7 +95,7 @@ impl LanguagePlugin for FreemarkerPlugin {
                             let (line, col) = lc(bytes, start);
                             regions.push(EmbeddedRegion {
                                 language_id: "java".into(),
-                                text: format!("class __Ft {{ Object f() {{ return ({t}); }} }}\n"),
+                                text: format!("class __Ft {{ void f() {{ var v = ({t}); }} }}\n"),
                                 line_offset: line,
                                 col_offset: col,
                                 origin: EmbeddedOrigin::TemplateExpr,

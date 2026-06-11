@@ -6,7 +6,9 @@ use super::*;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
-use crate::type_checker::profile::language_profile::{AliasDecode, NameNormalization, NormSpec};
+use crate::type_checker::profile::language_profile::{
+    AliasDecode, NameNormalization, NamespaceScope, NormSpec,
+};
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
     Visibility,
@@ -4839,7 +4841,14 @@ fn alias_module_qname_declines_kind_incompatible() {
 
 /// Profile mirroring DEFAULT but opting into the namespaceless-global rung.
 static NAMESPACELESS_PROFILE: LanguageProfile = LanguageProfile {
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup: NamespaceScope::Global,
+    explicit_member_import: false,
+    ..DEFAULT_PROFILE
+};
+
+/// Profile opting into the directory-scoped variant (Prisma).
+static NAMESPACELESS_DIR_PROFILE: LanguageProfile = LanguageProfile {
+    namespaceless_global_type_lookup: NamespaceScope::DirectoryScoped,
     explicit_member_import: false,
     ..DEFAULT_PROFILE
 };
@@ -4876,7 +4885,7 @@ fn namespaceless_global_binds_first_match_by_name() {
         "two candidates — the unique rung must decline"
     );
     let resolved = d
-        .resolve_via_namespaceless_global(&accept_any, &[])
+        .resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &[])
         .expect("first-match binds among duplicate names");
     assert_eq!(resolved.target_symbol_id, 1, "binds the first candidate");
     assert_eq!(resolved.confidence, 1.0);
@@ -4901,7 +4910,7 @@ fn namespaceless_global_skips_external_only_name() {
         kind_compatible: accept_any,
     };
     assert!(
-        d.resolve_via_namespaceless_global(&accept_any, &[])
+        d.resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &[])
             .is_none(),
         "external-only candidate must not bind"
     );
@@ -4924,15 +4933,16 @@ fn namespaceless_global_strips_self_keyword_sigil() {
         kind_compatible: accept_any,
     };
     let resolved = d
-        .resolve_via_namespaceless_global(&accept_any, &["var", "local"])
+        .resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &["var", "local"])
         .expect("`var.defaults` binds to bare `defaults` after sigil strip");
     assert_eq!(resolved.target_symbol_id, 7);
-    // Without the self keyword, the sigil'd target must NOT bind.
-    assert!(
-        d.resolve_via_namespaceless_global(&accept_any, &[])
-            .is_none(),
-        "no self keyword — sigil'd target stays unresolved"
-    );
+    // Without the self keyword, the sigil'd target must NOT bind: `var.defaults`
+    // has a `.`, but the leaf retry yields `defaults` — which DOES bind. So a
+    // sigil-less probe binds via the generic leaf fallback, not the sigil strip.
+    let leaf_bound = d
+        .resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &[])
+        .expect("`var.defaults` leaf `defaults` binds via the dotted-leaf retry");
+    assert_eq!(leaf_bound.target_symbol_id, 7);
 }
 
 #[test]
@@ -4962,6 +4972,132 @@ fn namespaceless_global_gate_default_inert() {
         .resolve_all_with_profile(&NAMESPACELESS_PROFILE)
         .expect("the gated rung binds through the full ladder");
     assert_eq!(bound.target_symbol_id, 1);
+    assert_eq!(bound.strategy, "default_namespaceless_global");
+}
+
+// ---------------------------------------------------------------------------
+// DirectoryScoped variant — a candidate binds only when it lives in the same
+// directory as the referencing file (Prisma split-schema layout).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dir_scoped_cross_directory_ref_does_not_bind() {
+    // A Prisma model referenced from a sibling directory must NOT bind under
+    // DirectoryScoped — guards the cross-schema-file regression. The only
+    // candidate lives in `db/orders/`, the ref sits in `db/users/`.
+    let lookup =
+        Lookup::new().with(sym(1, "Account", "Account", "class", "db/orders/account.prisma"));
+    let r = extracted_typeref("Account");
+    let s = source_symbol("UsersModel");
+    let fc = file_ctx_at("db/users/schema.prisma");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_via_namespaceless_global(NamespaceScope::DirectoryScoped, &accept_any, &[])
+            .is_none(),
+        "cross-directory model ref must not first-match-bind under DirectoryScoped"
+    );
+    // The Global variant DOES bind it — proving the directory filter is what
+    // declines, not a missing candidate.
+    let global = d
+        .resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &[])
+        .expect("Global binds the cross-directory candidate");
+    assert_eq!(global.target_symbol_id, 1);
+}
+
+#[test]
+fn dir_scoped_same_directory_ref_binds() {
+    // A model in the SAME directory as the referencing file binds under
+    // DirectoryScoped.
+    let lookup =
+        Lookup::new().with(sym(2, "Profile", "Profile", "class", "db/users/profile.prisma"));
+    let r = extracted_typeref("Profile");
+    let s = source_symbol("UsersModel");
+    let fc = file_ctx_at("db/users/schema.prisma");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let bound = d
+        .resolve_via_namespaceless_global(NamespaceScope::DirectoryScoped, &accept_any, &[])
+        .expect("same-directory model ref binds under DirectoryScoped");
+    assert_eq!(bound.target_symbol_id, 2);
+    assert_eq!(bound.strategy, "default_namespaceless_global");
+}
+
+#[test]
+fn dir_scoped_binds_through_full_ladder() {
+    // Same fixture, but exercised through the full ladder with the
+    // DirectoryScoped profile — same-dir binds, cross-dir declines.
+    let same_dir =
+        Lookup::new().with(sym(2, "Profile", "Profile", "class", "db/users/profile.prisma"));
+    let cross_dir =
+        Lookup::new().with(sym(1, "Account", "Account", "class", "db/orders/account.prisma"));
+    let s = source_symbol("UsersModel");
+    let fc = file_ctx_at("db/users/schema.prisma");
+
+    let r_same = extracted_typeref("Profile");
+    let rc_same = ref_ctx(&r_same, &s, vec![]);
+    let d_same = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc_same,
+        lookup: &same_dir,
+        kind_compatible: accept_any,
+    };
+    let bound = d_same
+        .resolve_all_with_profile(&NAMESPACELESS_DIR_PROFILE)
+        .expect("same-dir ref binds through the full ladder");
+    assert_eq!(bound.target_symbol_id, 2);
+
+    let r_cross = extracted_typeref("Account");
+    let rc_cross = ref_ctx(&r_cross, &s, vec![]);
+    let d_cross = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc_cross,
+        lookup: &cross_dir,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d_cross
+            .resolve_all_with_profile(&NAMESPACELESS_DIR_PROFILE)
+            .is_none(),
+        "cross-dir ref declines through the full ladder under DirectoryScoped"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Dotted-target leaf retry — a dotted miss retries its last `.`-segment, so a
+// `schema.table` ref binds to a bare `table` symbol. Generic, not SQL-special.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn namespaceless_global_dotted_target_retries_leaf() {
+    // A SQL `REFERENCES public.users` ref (dotted) resolves to a bare
+    // `CREATE TABLE users` symbol via the generic last-segment retry — the
+    // full `public.users` qname matches nothing.
+    let lookup = Lookup::new().with(sym(3, "users", "users", "struct", "db/schema.sql"));
+    let r = extracted_typeref("public.users");
+    let s = source_symbol("orders");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let bound = d
+        .resolve_via_namespaceless_global(NamespaceScope::Global, &accept_any, &[])
+        .expect("dotted `public.users` retries leaf `users` and binds");
+    assert_eq!(bound.target_symbol_id, 3);
     assert_eq!(bound.strategy, "default_namespaceless_global");
 }
 
@@ -5210,4 +5346,36 @@ fn implicit_prelude_declines_two_distinct_member_qnames() {
         run_implicit_prelude(&lookup, "Map", &["kotlin.collections", "kotlin.io"], ".").is_none(),
         "two distinct implicit-member qnames must decline"
     );
+}
+
+#[test]
+fn nix_profile_resolves_let_aliased_head_to_in_file_binding() {
+    // `let l = lib; in l.mkOption` — the dotted target's head `l` names the
+    // same-file `let` binding that aliases `lib`. The head-alias rung truncates
+    // at the first `.` and binds the head to the in-file `l` declaration, so
+    // `l.mkOption` reads against `lib`.
+    let lookup = Lookup::new().with_in_file(
+        "default.nix",
+        sym(90, "l", "l", "variable", "default.nix"),
+    );
+    let r = extracted_call("l.mkOption");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "default.nix".to_string(),
+        language: "nix".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::nix::NIX_PROFILE)
+        .expect("nix let-alias head binds through the ladder");
+    assert_eq!(resolved.target_symbol_id, 90);
+    assert_eq!(resolved.strategy, "default_head_alias");
 }

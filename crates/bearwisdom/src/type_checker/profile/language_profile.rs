@@ -302,15 +302,18 @@ pub struct LanguageProfile {
     /// is reserved for frameworks whose `this` has an implicit declared type.
     /// See `SelfReceiverDiscovery`.
     pub self_receiver_discovery: SelfReceiverDiscovery,
-    /// Flat-global first-match by-name binding. `false` (the default) leaves the
-    /// strategy inert. `true` opts in a language with NO imports, namespace, or
-    /// scope structure (SQL and other namespaceless DDL/config languages): a bare
-    /// target binds to the FIRST kind-compatible, project-internal symbol of the
-    /// same name. Unlike `resolve_via_unique_internal_name`, which declines on
-    /// more than one candidate, this first-match-binds — duplicate names across
-    /// files are common and there is no structure to disambiguate. Runs LAST in
-    /// the ladder, after every structural rung, so any structural evidence wins.
-    pub namespaceless_global_type_lookup: bool,
+    /// Flat-global by-name binding for a language with NO imports, namespace, or
+    /// scope structure. `Off` (the default) leaves the strategy inert. `Global`
+    /// binds a bare target to the FIRST kind-compatible, project-internal symbol
+    /// of the same name across the whole project. `DirectoryScoped` adds a
+    /// sibling-directory filter: the candidate binds only when it lives in the
+    /// same directory as the referencing file. Unlike
+    /// `resolve_via_unique_internal_name`, which declines on more than one
+    /// candidate, both variants first-match-bind — duplicate names are common and
+    /// there is no structure to disambiguate. Runs LAST in the ladder, after
+    /// every structural rung, so any structural evidence wins. See
+    /// `NamespaceScope`.
+    pub namespaceless_global_type_lookup: NamespaceScope,
     /// Explicit-member submodule import binding. `false` (the default) leaves
     /// the strategy inert. `true` opts in a language whose import statement can
     /// name a symbol AND its enclosing module together (Swift
@@ -654,6 +657,21 @@ pub enum AmbientGlobals {
         /// Y }` — recorded as a `variable` but constructible via `new X()`.
         instantiate_accepts_variable: bool,
     },
+}
+
+/// Flat-global by-name binding mode for the namespaceless-global rung.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NamespaceScope {
+    /// No flat-global probe. The default.
+    #[default]
+    Off,
+    /// First-match-bind against the FIRST kind-compatible, project-internal
+    /// symbol of the same name anywhere in the project.
+    Global,
+    /// First-match-bind, but only among candidates that live in the same
+    /// directory as the referencing file. A same-named symbol in another
+    /// directory does not bind.
+    DirectoryScoped,
 }
 
 /// How the chain walker's root resolver types a bare `self`/`this` receiver.
@@ -1044,7 +1062,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     associated_type_projection: false,
     blanket_impl_resolution: false,
     ambient_globals: AmbientGlobals::Off,
-    namespaceless_global_type_lookup: false,
+    namespaceless_global_type_lookup: NamespaceScope::Off,
     explicit_member_import: false,
     self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,

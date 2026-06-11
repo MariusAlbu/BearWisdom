@@ -65,7 +65,8 @@ pub const GRAPHQL_PROFILE: LanguageProfile = LanguageProfile {
     selector_resolution: None,
     // SDL types share one flat schema namespace across `.graphql` files, so a
     // bare type/custom-scalar ref binds to its sibling-file declaration.
-    namespaceless_global_type_lookup: true,
+    namespaceless_global_type_lookup:
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     constructor_patterns: &[],
     class_builder_specs: &[],

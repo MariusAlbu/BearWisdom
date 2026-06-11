@@ -586,3 +586,88 @@ fn gensym_suffix_never_emits_calls_refs() {
         leaked
     );
 }
+
+// ---------------------------------------------------------------------------
+// try / catch / finally / with-open special forms
+// ---------------------------------------------------------------------------
+
+/// `catch` heads a binding form `(catch Class e body)`: `catch` itself is a
+/// special-form keyword (no Calls ref) and `e` is the bound exception var
+/// (a local, never a call). Only the exception class and body calls remain.
+#[test]
+fn catch_head_and_bound_var_emit_no_calls_refs() {
+    let r = extract("(defn f [] (try (g) (catch Exception e (e))))");
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.module.is_none())
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| matches!(*n, "catch" | "e"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "'catch' head or bound exception var 'e' leaked as Calls refs: {:?}",
+        leaked
+    );
+}
+
+/// `try` and `finally` are special-form keywords, not callables — neither
+/// heads a Calls ref.
+#[test]
+fn try_and_finally_heads_emit_no_calls_refs() {
+    let r = extract("(defn f [] (try (g) (finally (cleanup))))");
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.module.is_none())
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| matches!(*n, "try" | "finally"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "'try' or 'finally' head leaked as Calls refs: {:?}",
+        leaked
+    );
+}
+
+/// The exception class in a `catch` clause is a real reference and must
+/// still be emitted, while the body call is preserved too.
+#[test]
+fn catch_exception_class_and_body_calls_preserved() {
+    let r = extract("(defn f [] (try (g) (catch Exception e (handle e))))");
+    let names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        names.contains(&"Exception"),
+        "expected Calls ref to exception class 'Exception'; got {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"handle"),
+        "expected Calls ref to body call 'handle'; got {:?}",
+        names
+    );
+}
+
+/// `with-open` is a let-style binding form: `with-open` heads no Calls ref
+/// and the bound resource names are locals, not calls.
+#[test]
+fn with_open_bindings_emit_no_calls_refs() {
+    let r = extract("(defn f [path] (with-open [rdr (reader path)] (line-seq rdr)))");
+    let leaked: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.module.is_none())
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| matches!(*n, "with-open" | "rdr"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "'with-open' head or bound resource 'rdr' leaked as Calls refs: {:?}",
+        leaked
+    );
+}

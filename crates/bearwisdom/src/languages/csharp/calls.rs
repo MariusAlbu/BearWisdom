@@ -503,6 +503,20 @@ pub(super) fn extract_calls_from_body(
             | "null_conditional_invocation_expression" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // String-literal text is opaque — do not descend. Tag/markup text
+            // inside a verbatim or raw string would otherwise leak as Calls.
+            "string_literal" | "verbatim_string_literal" | "raw_string_literal" => {}
+            // `$"...{expr}..."` — only the `interpolation` holes are code;
+            // the surrounding literal text is opaque. Descend solely into
+            // interpolation children.
+            "interpolated_string_expression" => {
+                let mut ic = child.walk();
+                for inner in child.children(&mut ic) {
+                    if inner.kind() == "interpolation" {
+                        extract_calls_from_body(&inner, src, source_symbol_index, refs);
+                    }
+                }
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }

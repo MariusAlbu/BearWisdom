@@ -74,3 +74,24 @@ fn php_instantiates_accepts_class_only() {
         SymbolKind::Interface
     ));
 }
+
+#[test]
+fn php_builtin_skip_declines_language_constructs_not_user_functions() {
+    // PHP language constructs (isset/empty/unset/echo/print/list/eval/exit/die)
+    // are reserved keywords, not callable functions — decline them before the
+    // ladder so a same-named project symbol can never bind. A user-defined
+    // function is NOT in the construct set, so it resolves through the ladder.
+    let skip = PHP_PROFILE
+        .builtin_skip
+        .expect("php builtin_skip set for language constructs");
+    assert!(skip("isset"));
+    assert!(skip("empty"));
+    assert!(skip("unset"));
+    assert!(skip("echo"));
+    assert!(skip("print"));
+    assert!(skip("list"));
+    assert!(skip("eval"));
+    assert!(skip("exit"));
+    assert!(skip("die"));
+    assert!(!skip("my_user_function"));
+}

@@ -1046,6 +1046,33 @@ class S {
 }
 
 #[test]
+fn verbatim_string_xml_emits_no_call_or_typeref_leak() {
+    // A verbatim string holding XML tag text must be opaque: neither the
+    // call walk nor the type-position walk may descend into its content and
+    // mistake tag names (`Configuration`, `Item`) for Calls or TypeRefs.
+    let src = r#"
+class S {
+    string Build() {
+        return @"<Configuration><Item>x</Item></Configuration>";
+    }
+}
+"#;
+    let r = refs(src);
+    let leaked: Vec<_> = r
+        .iter()
+        .filter(|r| {
+            matches!(r.kind, EdgeKind::Calls | EdgeKind::TypeRef)
+                && matches!(r.target_name.as_str(), "Configuration" | "Item")
+        })
+        .map(|r| (&r.target_name, r.kind))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "verbatim-string XML tag text leaked as Calls/TypeRef: {leaked:?}"
+    );
+}
+
+#[test]
 fn with_expression_calls_extracted() {
     let src = r#"
 class S {

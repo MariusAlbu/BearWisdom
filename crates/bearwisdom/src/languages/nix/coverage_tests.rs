@@ -321,3 +321,22 @@ fn cov_mkderivation_binding_produces_variable() {
             .collect::<Vec<_>>()
     );
 }
+
+/// `let l = lib; in ...` — a binding whose RHS is a bare variable is an alias.
+/// The binding must emit a Reads ref to the aliased name so the head-alias
+/// rung can read `l.mkOption` against `lib`.
+#[test]
+fn cov_let_bare_variable_rhs_emits_reads_ref() {
+    let src = "let l = lib; in l.mkOption { }";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Reads && rf.target_name == "lib"),
+        "let alias `l = lib` should emit Reads(lib); got: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (rf.kind, &rf.target_name))
+            .collect::<Vec<_>>()
+    );
+}

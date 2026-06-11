@@ -261,6 +261,21 @@ pub fn full_index(
         );
     }
 
+    // Manifest-less toolchain checkouts (a Zig/Odin compiler or install tree)
+    // ship their stdlib / vendored system-library subtrees as first-party
+    // payload. Classify those subtrees `origin='external'` by the known folder
+    // layout for each toolchain so the checkout's own resolution rate isn't
+    // measured against toolchain internals. Read once; per-file test runs in
+    // the streaming loop beside the submodule check.
+    let toolchain_payload_prefixes =
+        crate::ecosystem::toolchain_payload::toolchain_payload_prefixes(project_root);
+    if !toolchain_payload_prefixes.is_empty() {
+        info!(
+            "Detected toolchain payload subtree(s) ({}) — classifying their files as externals",
+            toolchain_payload_prefixes.join(", ")
+        );
+    }
+
     // --- Steps 3c + 4 + 4a: Streaming parse → write → FTS + chunks + slim ---
     //
     // Bounded-channel pipeline: parser workers on the capped rayon pool
@@ -403,7 +418,37 @@ pub fn full_index(
                 debug!("git-submodule vendored external: {original}");
             }
 
-            let is_vendored = is_vendored_c || is_vendored_submodule;
+            // Toolchain-payload subtrees (Zig/Odin shipped stdlib + vendored
+            // system libraries) are external, same as a vendored submodule.
+            let is_toolchain_payload = !is_vendored_c
+                && !is_vendored_submodule
+                && crate::ecosystem::toolchain_payload::is_under_toolchain_payload(
+                    &pf.path,
+                    &toolchain_payload_prefixes,
+                );
+            if is_toolchain_payload {
+                let original = pf.path.clone();
+                pf.path = format!("ext:toolchain:{original}");
+                debug!("toolchain-payload external: {original}");
+            }
+
+            // Per-locale Jupyter notebook copies under `translations/<locale>/`
+            // are duplicates of the canonical notebook — classify as external so
+            // only the canonical copy counts toward the resolution rate.
+            let is_translated_notebook = !is_vendored_c
+                && !is_vendored_submodule
+                && !is_toolchain_payload
+                && crate::ecosystem::jupyter_dedup::is_translated_notebook_copy(&pf.path);
+            if is_translated_notebook {
+                let original = pf.path.clone();
+                pf.path = format!("ext:nb-translation:{original}");
+                debug!("translated-notebook duplicate external: {original}");
+            }
+
+            let is_vendored = is_vendored_c
+                || is_vendored_submodule
+                || is_toolchain_payload
+                || is_translated_notebook;
             let origin = if is_vendored { "external" } else { "internal" };
             let file_id = write::write_one_parsed_file(
                 &tx,

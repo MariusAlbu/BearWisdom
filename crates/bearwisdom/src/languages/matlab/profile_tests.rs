@@ -35,7 +35,10 @@ fn matlab_module_scope_is_same_dir() {
 fn matlab_namespaceless_global_is_on() {
     // A bare call to a cross-dir project function with no same-dir sibling
     // falls through to the dead-last first-match-by-name rung.
-    assert!(MATLAB_PROFILE.namespaceless_global_type_lookup);
+    assert_eq!(
+        MATLAB_PROFILE.namespaceless_global_type_lookup,
+        crate::type_checker::profile::language_profile::NamespaceScope::Global
+    );
 }
 
 // ---------------------------------------------------------------------------

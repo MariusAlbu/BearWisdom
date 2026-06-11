@@ -28,7 +28,10 @@ fn prolog_profile_identity_and_shadow_mode() {
 fn prolog_namespaceless_global_is_on() {
     // Prolog's flat predicate namespace binds bare functor calls to the
     // project's own predicate definitions via the dead-last by-name rung.
-    assert!(PROLOG_PROFILE.namespaceless_global_type_lookup);
+    assert_eq!(
+        PROLOG_PROFILE.namespaceless_global_type_lookup,
+        crate::type_checker::profile::language_profile::NamespaceScope::Global
+    );
 }
 
 // ---------------------------------------------------------------------------
