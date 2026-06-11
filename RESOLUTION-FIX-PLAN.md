@@ -38,12 +38,13 @@ lock-contention fix (`605010ed`).
 
 Legend: ✅ done (unit-green) · 🟡 partial · ⛔ rule-blocked · ⬜ remaining · 📏 rate-unmeasured
 
-> **⚠️ MEASUREMENT CAVEAT — read first.** Every ✅ below is **unit-green, NOT rate-verified**. The
-> corpus resolution rate has not been re-measured since the 2026-06-09 baseline
-> (`unresolved-reindexed-projects.csv`). Both release binaries are stale (pre-R2/R3), so even the
-> install numbers below were measured on the OLD engine. Turning all of this into a measured rate
-> needs a **release rebuild (R2/R3 + busy_timeout) + ONE corpus recapture** — the single closeout
-> recapture. Until then the realized rate is unknown.
+> **⚠️ MEASUREMENT CAVEAT — read first.** Every ✅ below is **unit-green**; corpus rate is NOT fully
+> re-measured. The release binaries were **rebuilt 2026-06-11** (R2/R3 + busy_timeout + MATLAB/Robot
+> changes) — the "release rebuild" half of the closeout is done, and the 9 touched projects
+> (matlab×3, robot×3, php×3) were reindexed on the new engine (numbers inline below). The **full
+> corpus has NOT been recaptured** since the 2026-06-09 baseline (`unresolved-reindexed-projects.csv`);
+> that single closeout recapture is still gated on the remaining engine items (B4, B5). Until it
+> runs, the corpus-wide rate is unknown and per-project numbers are point-in-time on the stated engine.
 
 > **META: the catalogue was STALE.** Confirmed by the R1 audit — built from pre-existing DBs, it
 > systematically OVERSTATED remaining work. The two headline "levers" (B1 ~90k, B3 ~108k) were
@@ -82,13 +83,18 @@ Legend: ✅ done (unit-green) · 🟡 partial · ⛔ rule-blocked · ⬜ remaini
 - **B5 Pascal** `{$include}`/`{$i}` → attribute `.inc` fragments to the including unit.
 - **B4** external return_type/field_type on the **DB-augment path** (signature-derived).
 - **B2** profile_tests coverage — cmake/graphql/proto + gdscript/jinja/hcl.
-- 🟡 **B5 Phoenix** HEEx→`*View` connector — **partial** (core path landed; rest noted in R3 result).
+- 🟡 **B5 Phoenix** HEEx→`*View` connector — **partial** (`<.component>` tag path landed; embedded
+  `<%= view_fn() %>` binding does not fire — see ⬜ Remaining for the root cause found 2026-06-11).
 - Verified: `cargo test -p bearwisdom --lib` 6805/0.
 
 ### ✅ Bucket E — disk-absent externals INSTALL (operational)
 Installed deps for **11 projects** (7 php composer + 4 npm) so existing walkers hydrate them.
 Measured on the OLD engine (single-project reindex):
 - php-livewire 55.41%→**91.30%**, smarty-smarty 27.47%→**58.06%**, php-laravel 97.75%→**99.43%**.
+  ⚠️ **Unreconciled (2026-06-11):** the fresh reindex (new engine, `vendor/` present + stubs) got
+  php-livewire **62.8%** and smarty-smarty **29.1%** — far below these OLD-engine install figures,
+  which never entered the corpus CSV. Either the composer install effect didn't persist or R2/R3
+  changed PHP composer resolution. Treat the 91.30/58.06 figures as suspect pending investigation.
 - dart-serverpod (melos-bootstrapped + reindexed) recovered; edges up sharply, but app-internal
   unresolved ~unchanged → modest app-rate gain. **The Dart `package_config.json` walker already
   existed** (`pub_pkg/discovery.rs`) — the "no walker" claim was stale; it was an install, not code.
@@ -118,24 +124,42 @@ real symbols, never hardcode" rule, different artifact. All are install/disk-gat
   DB (`package.conf.d/*.conf`). GHC 9.12.1 + 226-pkg cabal store present. **Already landed**:
   hadolint 40.5→61.3, pandoc 37.5→62.3, postgrest 51.3→79.7. Reconfirmed flat (79.8).
 - **PHP stdlib** — `ecosystem/php_stubs.rs` walks a JetBrains phpstorm-stubs checkout. Cloned to
-  `~/phpstorm-stubs` (auto-discovered). **php-livewire 55.41→62.8** (+7.4; stubs + R2/R3).
+  `~/phpstorm-stubs` (auto-discovered). Fresh reindex (new engine, stubs + R2/R3): php-livewire
+  55.4→62.8 (+7.4), smarty-smarty 27.5→29.1 (+1.6), php-monica 95.7→95.8 (already saturated). Stdlib
+  stubs move low-rate stdlib-heavy PHP modestly; high-rate apps are near their ceiling.
 - **MATLAB** — `matlab/keywords.rs` WAS the real violation: ~200 stdlib FUNCTION names
   (`zeros`/`plot`/`sprintf`/`eig`/…) stuffed into the `keywords()` skip set. **Purged** to the
   rule-legal subset (reserved words, classdef-block kw, fn-arg kw, boolean literals, primitive
   class names, operator-method names). Resolution now routes through `matlab_runtime` (walks
-  `$MATLABROOT/toolbox`). No MATLAB install here → **honest regression: matlab-prmlt 51.8→16.4**
-  (−35.4; the list was masking 1,487 unresolved). The number is now honest, not fake; completing
-  the fix needs a MATLAB (or Octave-source) toolbox on disk.
+  `$MATLABROOT/toolbox`). No MATLAB install here → **honest regression** (fresh reindex, new engine):
+  exportfig 44.7→13.7, platemo 64.9→14.7, prmlt 51.8→16.4. The list was masking ~58k unresolved
+  builtin-call refs across the three (platemo alone 5,153→55,379). The numbers are now honest, not
+  fake; real resolution needs a MATLAB (or Octave-source) toolbox on disk.
 - **Robot** — `library_map.rs` already resolves `Library X`→project-internal `.py` (robot-framework
   86.8% via vendored `src/robot`). **Extended** to also consult site-packages (`ext:`) `.py` with a
-  non-`ext:`-preferred tiebreak (vendored copy still wins). Unit-tested; **UNMEASURED on corpus** —
-  no robot project ships its Python keyword libs (no venv), so realization needs pip-installing
+  non-`ext:`-preferred tiebreak (vendored copy still wins). Unit-tested; fresh reindex confirms
+  **no regression** (browser 60.5, cookbook 42.3, framework 86.8 — all flat). **UNMEASURED upside** —
+  no robot project ships its Python keyword libs (no venv), so realizing edges needs pip-installing
   robotframework + the keyword libs (Browser/Selenium) per project.
 
 ### ⬜ Remaining
 - **B4 externals-walker emission** — externals whose return/field type has no parseable signature
   stay unresolved (ext-ref filter survival per CLAUDE.md). The deep pipeline lever; larger build.
-- **B5 Phoenix** — finish the partial HEEx→View connector.
+- **B5 Phoenix** — the connector is more broken than "partial nested context." **Root cause (2026-06-11):**
+  `HeexHooks.resolve_ref` (the colocated-`*View` binding) only ever receives the host extractor's
+  `<.component>` tag refs. The actual view-helper calls — `<%= downloads_link(ep) %>` etc. — are
+  emitted by the *embedded-region* pipeline with `ref_origin_language="elixir"`, so the resolver
+  dispatches them to the Elixir resolver and the heex hook never sees them. Confirmed: `downloads_link`
+  (view-own fn, 11 template calls in elixir-changelog) has **0 incoming edges** even on a fixed binary.
+  - ✅ **Landed:** nested-context view-path mapping (`templates/a/b/x.html.heex → views/a/b_view.ex`;
+    was single-level only). Correct + unit-tested, but a no-op until the routing below is fixed.
+  - ⬜ **Needs an architectural call (high blast radius):** route embedded view-helper calls through the
+    colocated-view binding. Options: (a) embedded refs fall back to host-language hooks when origin-language
+    resolution misses — generic, touches ALL embedded hosts (vue/svelte/markdown/jsp/…); (b) the Elixir
+    resolver consults `colocated_view_file` when the host file is a `.heex` under `templates/` — narrow but
+    leaks Phoenix logic into the Elixir layer; (c) heex extractor emits the embedded calls as heex-origin
+    refs — duplicates embedded-Elixir extraction. Only 2 corpus projects (elixir-changelog 75.4,
+    elixir-plausible 83.6); the ~3k estimate assumed the binding fired.
 - **Install-gated (walker complete, artifact absent)** — MATLAB toolbox (no free install; Octave-
   source could proxy), Robot Python keyword libs (pip-install per project), Gradle JVM (no gradle
   toolchain), Qt/STL (system lib), dart-appflowy/dart-frog (unbootstrapped melos). The walker

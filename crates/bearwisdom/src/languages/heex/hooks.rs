@@ -10,24 +10,30 @@ use crate::types::ParsedFile;
 
 /// Map a Phoenix template path to its co-located `*View` module file.
 ///
-/// A template under `…/templates/<context>/<name>.html.{heex,eex}` is rendered
-/// in the scope of `…/views/<context>_view.ex`. Returns the view-module file
-/// path when the template sits beneath a `templates/<context>/` directory.
+/// A template under `…/templates/<context…>/<name>.html.{heex,eex}` is rendered
+/// in the scope of `…/views/<context…>_view.ex`, where the view module is named
+/// after the **deepest** template directory and any intervening path is mirrored
+/// under `views/`:
+///   `templates/sso/login.html.heex`          → `views/sso_view.ex`
+///   `templates/admin/episode/edit.html.heex` → `views/admin/episode_view.ex`
+/// Returns `None` when the template sits directly under `templates/` (no context
+/// directory to name a view after).
 fn colocated_view_file(template_path: &str) -> Option<String> {
     let norm = template_path.replace('\\', "/");
     let segments: Vec<&str> = norm.split('/').collect();
-    // Locate `templates/<context>/<file>`: `templates` followed by a context
-    // directory and at least the template file.
     let templates_idx = segments.iter().position(|s| *s == "templates")?;
-    let context = segments.get(templates_idx + 1)?;
-    // The template file must come after the context directory.
-    if templates_idx + 2 >= segments.len() {
+    // The directory chain between `templates/` and the template file is the
+    // context. The last segment is the file; require at least one context dir.
+    let file_idx = segments.len().checked_sub(1)?;
+    if file_idx <= templates_idx + 1 {
         return None;
     }
+    let (last, parents) = segments[templates_idx + 1..file_idx].split_last()?;
     let mut view_segments: Vec<String> =
         segments[..templates_idx].iter().map(|s| s.to_string()).collect();
     view_segments.push("views".to_string());
-    view_segments.push(format!("{context}_view.ex"));
+    view_segments.extend(parents.iter().map(|s| s.to_string()));
+    view_segments.push(format!("{last}_view.ex"));
     Some(view_segments.join("/"))
 }
 
@@ -93,3 +99,12 @@ impl LanguageEngineHooks for HeexHooks {
 }
 
 pub static HEEX_HOOKS: HeexHooks = HeexHooks;
+
+#[cfg(test)]
+pub(super) fn _test_colocated_view_file(path: &str) -> Option<String> {
+    colocated_view_file(path)
+}
+
+#[cfg(test)]
+#[path = "hooks_tests.rs"]
+mod tests;
