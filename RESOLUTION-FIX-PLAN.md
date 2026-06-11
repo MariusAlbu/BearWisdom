@@ -30,52 +30,92 @@ internal — the single biggest number remains measurement noise.
 
 ---
 
-## Implementation status (this campaign)
+## Implementation status
 
-Legend: ✅ done+verified · 🔧 landed, verify pending · ⛔ rule-blocked (re-bucketed) · ⬜ not started
+Three waves landed on `feat/resolution-engine`: **R1** (read-only audit of what was genuinely
+undone), **R2** (`45bbfe88`), **R3** (`b31b81ab`) — plus a Bucket-E externals install and a DB
+lock-contention fix (`605010ed`).
 
-**Landed + verified (reindex):**
-- ✅ **D1a** `.gitmodules` vendored-submodule → `origin='external'` — lua-luals 140,123→8,675
-  (−131,448), lua-koreader 99,764→32,265 (−67,499).
-- ✅ **B2 gdscript** namespaceless flip — gdscript-beehave 1,700→293 (−1,407; `class_name`/`extends`).
-- ✅ **B2 jinja** namespaceless flip — jinja-matrix-ansible 4,064→97 (−3,967; sibling-YAML vars).
-- ✅ **C kind-table Pascal Calls→Interface** — pascal-doublecmd 13,942→12,980 (−962; `IFileSource`).
-- ✅ **C kind-table Go/Odin Calls→Variable** (closure-valued locals) — unit-tested (full lib green).
-- ✅ **B2 hcl + B5 namespaceless sigil-strip** — `resolve_via_namespaceless_global` retries the
-  `self_keyword`-stripped leaf (`var.X`/`local.X`→`X`); hcl-aws-vpc 538→2 (hcl 536→0, +536 edges);
-  test added.
-- ✅ **B3 implicit-prelude qualify** — ALREADY CODED (`implicit_prelude_namespaces()` maps
-  java→`java.lang`, kotlin→`kotlin.*`, elixir→`Kernel`, r→`base`; rung in the ladder). The
-  catalogue's java=153k was from **pre-B3 DBs**. Verified by reindex: sql-flyway java 9,963→2,343
-  (−7,620); `String`/`Object`/`Exception`→0. Realized per-project on reindex.
+Legend: ✅ done (unit-green) · 🟡 partial · ⛔ rule-blocked · ⬜ remaining · 📏 rate-unmeasured
 
-> **META: the catalogue reflects STALE DBs.** It was built from the pre-existing indexes; the
-> current binary has had substantial engine work. So the catalogue systematically OVERSTATES
-> remaining work — B3 was already coded and just needed reindex. For every "remaining" item below,
-> the honest step is **check current code + single-project reindex BEFORE implementing** — implement
-> only what's genuinely missing; a corpus reindex at closeout realizes the already-coded fixes.
+> **⚠️ MEASUREMENT CAVEAT — read first.** Every ✅ below is **unit-green, NOT rate-verified**. The
+> corpus resolution rate has not been re-measured since the 2026-06-09 baseline
+> (`unresolved-reindexed-projects.csv`). Both release binaries are stale (pre-R2/R3), so even the
+> install numbers below were measured on the OLD engine. Turning all of this into a measured rate
+> needs a **release rebuild (R2/R3 + busy_timeout) + ONE corpus recapture** — the single closeout
+> recapture. Until then the realized rate is unknown.
 
-**Landed, verify pending:**
-- 🔧 **B2 cmake / graphql / proto** flips — applied (cmake also rides the sigil-strip); low-volume,
-  spot-verify opportunistically.
+> **META: the catalogue was STALE.** Confirmed by the R1 audit — built from pre-existing DBs, it
+> systematically OVERSTATED remaining work. The two headline "levers" (B1 ~90k, B3 ~108k) were
+> ALREADY CODED, as were 6/7 B2 flips, 5/8 Bucket-A classes, B5 Dart/PHP, and the C kind-tables.
+> None needed reimplementing — only a reindex to realize. Always check current code + single-project
+> reindex before implementing.
 
-**⛔ Rule-blocked — NOT implementing as the diags suggested (predicate-stuffing rule):**
-- The Bucket C `builtin_skip` recommendations for **R base / MATLAB / Robot / PHP-stdlib functions /
-  the Haskell library-type half** are **library/runtime API name lists** — forbidden in `is_*_builtin`
-  (`feedback_predicates_are_smell`, `lesson_predicate_stuffing_again`). Verified: `haskell/keywords.rs`
-  mixes Prelude (`Just`/`map`/`$`) with library types (`Text`/`Map`/`ToJSON`/`ask` from
-  text/containers/aeson/mtl). These re-bucket to **E** (disk externals) or honest-unresolved. Only the
-  language keyword/construct/operator/primitive subset is rule-legal in `builtin_skip` (PHP
-  `isset`/`empty`, Elixir Kernel forms, the Haskell **Prelude+operators only** split).
+### ✅ Already coded (R1 audit found done — NOT reimplemented), 📏 unrealized
+- **B1** import/alias rebind (~90k) — TS path-alias monorepo keying (keyed by `file_package_id`,
+  `build.rs`/`lookup_impl.rs`) + component-tag rebind (`resolve_via_component_import`, net-new in
+  the checkpoint). Both unit-tested.
+- **B3** implicit-prelude qualify (~108k JVM) — `implicit_prelude_namespaces()` java/kotlin/elixir/r.
+  (sql-flyway java 9,963→2,343 when reindexed.)
+- **B2** flips — gdscript (beehave 1,700→293), jinja (4,064→97), hcl (aws-vpc 538→2), cmake, graphql, proto.
+- **Bucket A** (5/8) — go composite-literal, fortran dummy-args, zig nested-decl, clojure `:refer`, markdown fence.
+- **B5** Dart `package:self/`→`lib/`, PHP `\`-FQ normalization.
+- **C** kind-tables — Pascal Calls→Interface (doublecmd 13,942→12,980), Go/Odin Calls→Variable.
+- **D1a** `.gitmodules` vendored submodules → `origin='external'` (lua-luals 140,123→8,675, koreader 99,764→32,265).
 
-**⬜ Remaining engine work (each: verify against CURRENT code + reindex before implementing):**
-- **B1** import/alias rebind (TS aliases + template tags, ~90k) — `resolve_via_aliased_import`
-  exists; check whether the `file_package_id` mis-key is already fixed before changing it.
-- **B4** implicit-self + external-member projection (~95k) — hardest; check chainless `SelfRef`.
-- **B5 remainder** — nix let-alias, pascal `.inc`, dart `package:`, sql leaf-retry, php `\`-norm, phoenix.
-- **Bucket A** extractor fixes — go false-Calls, clojure `:refer`/locals, swift residual, csharp,
-  fortran, zig, freemarker/velocity, markdown fence-tag (swift already partly fixed: 5.1k→0.75k).
-- **C legal subset** — PHP constructs, Elixir Kernel forms, Haskell Prelude/operators split.
+### ✅ R2 — `45bbfe88`
+- **B2 prisma** directory-scoped mode — `namespaceless_global_type_lookup` bool → enum
+  `NamespaceScope{Off,Global,DirectoryScoped}` across all profiles (13 flat-namespace → Global,
+  prisma → DirectoryScoped + sibling-dir bind filter, rest → Off); failing-test-first.
+- **B5 SQL** schema-prefix leaf-retry — generic dotted-miss → `by_name(leaf)`.
+- **4b corpus-scope** — zig `lib/libc*`/`libcxx*` + odin `core/`+`vendor/` reclassified
+  `origin='external'` via per-language ecosystem locators (`ecosystem/toolchain_payload.rs`); jupyter
+  dedup. (Architect-approved mechanism: manifest-less toolchain payload marked external.)
+- **C** Haskell Prelude+operators split (library types stay external), PHP constructs, Elixir Kernel forms.
+- **B4** Lua chain-None receiver (`s:gsub()` → `[recv, method]`; fixed `get_method_table` field).
+- **B5** Nix let-alias RHS capture + head-alias enable.
+- **A** Clojure catch/with-open scope, C# string-literal descent guard, Freemarker/Velocity `Object` suppression.
+- Verified: `cargo test -p bearwisdom --lib` 6779/0.
+
+### ✅ R3 — `b31b81ab`
+- **A** JSP + Thymeleaf synthetic-`Object` leak (same fix as Freemarker/Velocity).
+- **B5 Pascal** `{$include}`/`{$i}` → attribute `.inc` fragments to the including unit.
+- **B4** external return_type/field_type on the **DB-augment path** (signature-derived).
+- **B2** profile_tests coverage — cmake/graphql/proto + gdscript/jinja/hcl.
+- 🟡 **B5 Phoenix** HEEx→`*View` connector — **partial** (core path landed; rest noted in R3 result).
+- Verified: `cargo test -p bearwisdom --lib` 6805/0.
+
+### ✅ Bucket E — disk-absent externals INSTALL (operational)
+Installed deps for **11 projects** (7 php composer + 4 npm) so existing walkers hydrate them.
+Measured on the OLD engine (single-project reindex):
+- php-livewire 55.41%→**91.30%**, smarty-smarty 27.47%→**58.06%**, php-laravel 97.75%→**99.43%**.
+- dart-serverpod (melos-bootstrapped + reindexed) recovered; edges up sharply, but app-internal
+  unresolved ~unchanged → modest app-rate gain. **The Dart `package_config.json` walker already
+  existed** (`pub_pkg/discovery.rs`) — the "no walker" claim was stale; it was an install, not code.
+- 2 npm failed on broken manifests (gsp-openboxes, jupyter-ml-for-beginners).
+
+### ✅ DB hardening — `605010ed`
+`busy_timeout` 5s→30s. dart-serverpod's "Failed to write packages" was **not** a logic bug — it was
+SQLite `SQLITE_BUSY` (a cached IndexService's watcher reindexing during melos-bootstrap file churn,
+contending with an explicit force-reindex). Mitigation only.
+
+### ⛔ Rule-blocked (predicate-stuffing rule) — re-bucketed to E / honest-unresolved
+R base / MATLAB / Robot / PHP-stdlib functions / Haskell library-type half are library API name
+lists, forbidden in `is_*_builtin`. Only the language keyword/construct/operator/primitive subset
+is rule-legal (PHP `isset`/`empty`, Elixir Kernel forms, Haskell Prelude+operators only).
+
+### ⬜ Remaining
+- **B4 externals-walker emission** — externals whose return/field type has no parseable signature
+  stay unresolved (ext-ref filter survival per CLAUDE.md). The deep pipeline lever; larger build.
+- **B5 Phoenix** — finish the partial HEEx→View connector.
+- **Bucket E not installable here** — R/CRAN (no Rscript + needs `DESCRIPTION` locator), Gradle JVM
+  (no gradle toolchain), Qt/STL (system lib), dart-appflowy/dart-frog (melos monorepos, unbootstrapped).
+  Toolchain/walker-gated, not code.
+- **MCP force-reindex exclusivity** — force-reindex of a cached+watched project should take exclusive
+  DB access (evict the cached IndexService / pause the watcher), not lean on busy_timeout. Track-F follow-up.
+- **D2 framework-source repos** (Struts/Next.js/etc.) — corpus-composition accounting, not a fix.
+- **THE CORPUS RECAPTURE** — the measurement step above; converts every ✅ into a real rate and
+  restores the dogfood MCP tools (down since the server was stopped to diagnose the dart lock).
 
 ---
 
