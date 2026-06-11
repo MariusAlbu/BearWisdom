@@ -39,8 +39,11 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
     // NORMAL: fsync only at checkpoints (safe enough for an index that can be rebuilt).
     pragma(conn, "PRAGMA synchronous = NORMAL")?;
 
-    // Wait up to 5 s before returning SQLITE_BUSY.
-    pragma(conn, "PRAGMA busy_timeout = 5000")?;
+    // Wait up to 30 s before returning SQLITE_BUSY. A full index of a large
+    // monorepo holds the write lock far longer than a few seconds; with a
+    // short timeout, concurrent access (e.g. a file-watcher-driven reindex on
+    // the same DB) fails spuriously with "database is locked".
+    pragma(conn, "PRAGMA busy_timeout = 30000")?;
 
     // 16 MB cache (negative value = kibibytes).
     pragma(conn, "PRAGMA cache_size = -16000")?;
