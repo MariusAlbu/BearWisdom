@@ -193,8 +193,14 @@ impl MembersIndex {
         arena: &TypeArena,
         supertypes: &SupertypeGraph,
     ) {
-        let reachable = reachable_external_types(parsed, arena, supertypes);
-        self.ingest_external_reachable(parsed, sym_id_map, arena, &reachable);
+        let reachable = {
+            let _t = crate::indexer::phase_timer::scope("admit.reachable_set_construction");
+            reachable_external_types(parsed, arena, supertypes)
+        };
+        {
+            let _t = crate::indexer::phase_timer::scope("admit.member_writes");
+            self.ingest_external_reachable(parsed, sym_id_map, arena, &reachable);
+        }
     }
 
     /// Admit the direct members of every external type named in

@@ -267,6 +267,70 @@ fn resolve_coursier_sources_jar_returns_none_for_missing_artifact() {
 }
 
 #[test]
+fn resolve_coursier_sources_jar_resolves_by_group_not_just_artifact() {
+    // Two artifacts share the leaf name `lib` under different groups. The
+    // resolver must direct-join the full group path (`org.example/lib`) and
+    // never match the same-named `com.decoy/lib` artifact — a coordinate
+    // resolves to its declared group, not to whatever shares its artifact id.
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    let expected = make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0-sources.jar",
+    );
+    // Decoy under a different group, same artifact + version + file name.
+    let decoy = make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "com.decoy",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0-sources.jar",
+    );
+
+    let coord = MavenCoord {
+        group_id: "org.example".to_string(),
+        artifact_id: "lib".to_string(),
+        version: Some("1.0.0".to_string()),
+    };
+    let (_v, jar) = resolve_coursier_sources_jar(cache, &coord).unwrap();
+    assert_eq!(jar, expected);
+    assert_ne!(jar, decoy, "must not resolve to the wrong-group artifact");
+}
+
+#[test]
+fn resolve_coursier_sources_jar_ignores_unrelated_groups() {
+    // A coordinate whose group is absent must return None even when an
+    // artifact of the same leaf name exists under an unrelated group — the
+    // direct-join probes only the declared group path, so unrelated groups
+    // are never visited as fallbacks.
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path();
+    make_coursier_cache_entry(
+        cache,
+        "repo1.maven.org",
+        &["maven2"],
+        "com.other",
+        "widget",
+        "2.0.0",
+        "widget-2.0.0-sources.jar",
+    );
+
+    let coord = MavenCoord {
+        group_id: "io.absent".to_string(),
+        artifact_id: "widget".to_string(),
+        version: Some("2.0.0".to_string()),
+    };
+    assert!(resolve_coursier_sources_jar(cache, &coord).is_none());
+}
+
+#[test]
 fn strip_scala_suffix_removes_version_suffixes() {
     assert_eq!(strip_scala_suffix("scalatest_2.13"), "scalatest");
     assert_eq!(strip_scala_suffix("cats-core_3"), "cats-core");

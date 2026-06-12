@@ -15,6 +15,7 @@ use crate::db::Database;
 use crate::indexer::changeset;
 use crate::indexer::expand;
 use crate::indexer::mem_probe;
+use crate::indexer::phase_timer;
 use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
@@ -283,12 +284,14 @@ pub fn full_index(
     // `origin='external'` so the host's resolution rate isn't measured against
     // vendored library internals. Read once; per-file test runs in the
     // streaming loop beside the submodule check.
-    let self_declared_vendor_prefixes =
+    let self_declared_vendor_prefixes = {
+        let _t = phase_timer::scope("vendored.self_declared_prefixes");
         crate::ecosystem::vendored_self_declared::self_declared_vendor_prefixes(
             project_root,
             &packages,
             workspace_kind.as_deref(),
-        );
+        )
+    };
     if !self_declared_vendor_prefixes.is_empty() {
         info!(
             "Detected self-declaring vendored package(s) ({}) — classifying their files as externals",
@@ -697,27 +700,33 @@ pub fn full_index(
         symbol_index,
         demand_driven_roots,
         demand_driven_ecosystems,
-    } = parse_external_sources(
-        project_root,
-        registry,
-        &project_ctx,
-        &written_packages,
-        &demand,
-        workspace_arena.as_ref(),
-    );
+    } = {
+        let _t = phase_timer::scope("externals.parse_sources");
+        parse_external_sources(
+            project_root,
+            registry,
+            &project_ctx,
+            &written_packages,
+            &demand,
+            workspace_arena.as_ref(),
+        )
+    };
     mem_probe::probe("07_external_parsed");
     if !external_parsed.is_empty() {
         info!(
             "Parsed {} external files from dependency sources",
             external_parsed.len()
         );
-        let (_ext_file_map, ext_symbol_map) = write::write_parsed_files_with_origin(
-            db,
-            &external_parsed,
-            "external",
-            Some(workspace_arena.as_ref()),
-        )
-        .context("Failed to write external index")?;
+        let (_ext_file_map, ext_symbol_map) = {
+            let _t = phase_timer::scope("externals.write_symbols");
+            write::write_parsed_files_with_origin(
+                db,
+                &external_parsed,
+                "external",
+                Some(workspace_arena.as_ref()),
+            )
+            .context("Failed to write external index")?
+        };
         info!("Wrote {} external symbols", ext_symbol_map.len());
         symbol_id_map.extend(ext_symbol_map);
         for pf in external_parsed.iter_mut() {
@@ -925,21 +934,24 @@ pub fn full_index(
     // complete set; the final (converged) pass is authoritative.
     let mut deferred_spec = resolve::DeferredSpeculative::default();
     let parsed_len_at_iter_start = parsed.len();
-    let mut rstats = resolve::resolve_iteration_with_cached_index_and_arena(
-        db,
-        &parsed,
-        &symbol_id_map,
-        Some(&project_ctx),
-        &mut cached_index,
-        &mut cached_engine,
-        &mut cached_side_tables,
-        // Iteration 0: caches are None so the function builds full;
-        // empty new_files_slice is moot (the build path doesn't read it).
-        &[],
-        std::sync::Arc::clone(&workspace_arena),
-        Some(&mut deferred_spec),
-    )
-    .context("Failed to resolve references")?;
+    let mut rstats = {
+        let _t = phase_timer::scope("resolve.iteration_0");
+        resolve::resolve_iteration_with_cached_index_and_arena(
+            db,
+            &parsed,
+            &symbol_id_map,
+            Some(&project_ctx),
+            &mut cached_index,
+            &mut cached_engine,
+            &mut cached_side_tables,
+            // Iteration 0: caches are None so the function builds full;
+            // empty new_files_slice is moot (the build path doesn't read it).
+            &[],
+            std::sync::Arc::clone(&workspace_arena),
+            Some(&mut deferred_spec),
+        )
+        .context("Failed to resolve references")?
+    };
     let _ = parsed_len_at_iter_start;
     info!(
         "Wrote {} edges, {} external, {} unresolved references",
@@ -950,20 +962,23 @@ pub fn full_index(
     let mut iteration = 1;
     while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
         let parsed_len_before = parsed.len();
-        let estats = expand::expand_chain_reachability_with_index_and_arena(
-            db,
-            &mut parsed,
-            &mut symbol_id_map,
-            &rstats.chain_misses,
-            registry,
-            if symbol_index.is_empty() {
-                None
-            } else {
-                Some(&symbol_index)
-            },
-            workspace_arena.as_ref(),
-        )
-        .context("Failed to expand chain reachability")?;
+        let estats = {
+            let _t = phase_timer::scope("resolve.expand_chain_reachability");
+            expand::expand_chain_reachability_with_index_and_arena(
+                db,
+                &mut parsed,
+                &mut symbol_id_map,
+                &rstats.chain_misses,
+                registry,
+                if symbol_index.is_empty() {
+                    None
+                } else {
+                    Some(&symbol_index)
+                },
+                workspace_arena.as_ref(),
+            )
+            .context("Failed to expand chain reachability")?
+        };
         if estats.new_files == 0 {
             // No file pull answered any demand — fixpoint under the lens of
             // the current ecosystems. Remaining chain misses stay as
@@ -975,19 +990,22 @@ pub fn full_index(
         // Augment the cached SymbolIndex with just the new files added
         // by expand instead of rebuilding from scratch.
         let new_slice = &parsed[parsed_len_before..];
-        let rstats2 = resolve::resolve_iteration_with_cached_index_and_arena(
-            db,
-            &parsed,
-            &symbol_id_map,
-            Some(&project_ctx),
-            &mut cached_index,
-            &mut cached_engine,
-            &mut cached_side_tables,
-            new_slice,
-            std::sync::Arc::clone(&workspace_arena),
-            Some(&mut deferred_spec),
-        )
-        .context("Failed to re-resolve after chain reachability expansion")?;
+        let rstats2 = {
+            let _t = phase_timer::scope("resolve.iteration_n");
+            resolve::resolve_iteration_with_cached_index_and_arena(
+                db,
+                &parsed,
+                &symbol_id_map,
+                Some(&project_ctx),
+                &mut cached_index,
+                &mut cached_engine,
+                &mut cached_side_tables,
+                new_slice,
+                std::sync::Arc::clone(&workspace_arena),
+                Some(&mut deferred_spec),
+            )
+            .context("Failed to re-resolve after chain reachability expansion")?
+        };
         info!(
             "Chain expansion iteration {}: {} edges ({:+}), {} external, {} unresolved, {} new files",
             iteration,
@@ -1263,6 +1281,10 @@ pub fn full_index(
 
     // RefCache was populated earlier (Step 5b) while `symbols` and `refs`
     // were still live on each ParsedFile. Nothing to do here anymore.
+
+    // Emit and reset per-phase timings so a batch run reports each project
+    // independently rather than a running sum across the whole batch.
+    phase_timer::dump_and_reset();
 
     Ok(stats)
 }

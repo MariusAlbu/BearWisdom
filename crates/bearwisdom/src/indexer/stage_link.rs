@@ -118,6 +118,7 @@ pub(crate) fn parse_external_sources(
     // (locator, package) pair, with locator selection narrowed to that
     // package's per-package active set when available).
     let mut all_roots: Vec<ExternalDepRoot> = Vec::new();
+    let _t_discover = Some(crate::indexer::phase_timer::scope("externals.locate_roots"));
     if packages.is_empty() {
         for (id, locator) in &locators {
             let roots = locator.locate_roots(project_root);
@@ -160,6 +161,8 @@ pub(crate) fn parse_external_sources(
             }
         }
     }
+
+    drop(_t_discover);
 
     // Step 2 — deduplicate by (ecosystem, module_path, version, root_path).
     // Root path is included so a package with BOTH a primary directory
@@ -211,14 +214,17 @@ pub(crate) fn parse_external_sources(
     // Metadata-only path runs once per locator regardless of package layout.
     // .NET reads `{project}/obj/*.deps.json` which is already per-csproj
     // aware internally.
-    for (id, locator) in &locators {
-        if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
-            info!(
-                "Parsed {} external {} entries via metadata",
-                pre_parsed.len(),
-                id
-            );
-            metadata_parsed.extend(pre_parsed);
+    {
+        let _t = crate::indexer::phase_timer::scope("externals.parse_metadata_only");
+        for (id, locator) in &locators {
+            if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
+                info!(
+                    "Parsed {} external {} entries via metadata",
+                    pre_parsed.len(),
+                    id
+                );
+                metadata_parsed.extend(pre_parsed);
+            }
         }
     }
 
@@ -241,6 +247,7 @@ pub(crate) fn parse_external_sources(
     let mut demand_driven_by_eco: HashMap<&'static str, Vec<ExternalDepRoot>> = HashMap::new();
     let mut demand_driven_ecosystems: HashMap<&'static str, Arc<dyn Ecosystem>> = HashMap::new();
 
+    let _t_walk = Some(crate::indexer::phase_timer::scope("externals.eager_walk_roots"));
     for (root, _declaring_pkgs) in &deduped {
         let Some(locator) = locator_by_ecosystem.get(root.ecosystem) else {
             continue;
@@ -269,13 +276,19 @@ pub(crate) fn parse_external_sources(
         walked.extend(files);
     }
 
+    drop(_t_walk);
+
     // Build the symbol index for every demand-driven ecosystem. One call
     // per ecosystem with the full set of that ecosystem's dep roots, merged
     // into a process-wide master index.
     let mut symbol_index = SymbolLocationIndex::new();
+    let _t_symidx = Some(crate::indexer::phase_timer::scope("externals.build_symbol_index"));
     for (tag, roots) in &demand_driven_by_eco {
         if let Some(eco) = demand_driven_ecosystems.get(tag) {
-            let idx = eco.build_symbol_index(roots);
+            let idx = {
+                let _t = crate::indexer::phase_timer::scope("externals.build_symbol_index.per_eco");
+                eco.build_symbol_index(roots)
+            };
             if !idx.is_empty() {
                 info!(
                     "Built demand-driven symbol index for {}: {} entries across {} roots",
@@ -302,6 +315,7 @@ pub(crate) fn parse_external_sources(
             }
         }
     }
+    drop(_t_symidx);
 
     if walked.is_empty() && symbol_index.is_empty() && metadata_parsed.is_empty() {
         return ExternalParsingResult {
@@ -335,14 +349,22 @@ pub(crate) fn parse_external_sources(
     // the virtual file path (`ext:ts:react/index.d.ts` → `react`). Other
     // ecosystems haven't wired a demand mapping yet — they pass None and
     // keep the permissive extract path.
-    let results: Vec<Result<ParsedFile>> = walked
-        .par_iter()
-        .map(|w| {
-            let per_file_demand =
-                lookup_demand_for_walked(&w.relative_path, demand, &ambient_globals_packages);
-            super::full::parse_file_with_arena_and_demand(w, registry, per_file_demand, type_arena)
-        })
-        .collect();
+    let results: Vec<Result<ParsedFile>> = {
+        let _t = crate::indexer::phase_timer::scope("externals.parse_walked_files");
+        walked
+            .par_iter()
+            .map(|w| {
+                let per_file_demand =
+                    lookup_demand_for_walked(&w.relative_path, demand, &ambient_globals_packages);
+                super::full::parse_file_with_arena_and_demand(
+                    w,
+                    registry,
+                    per_file_demand,
+                    type_arena,
+                )
+            })
+            .collect()
+    };
 
     let mut parsed = Vec::with_capacity(results.len() + metadata_parsed.len());
     let mut errors = 0usize;

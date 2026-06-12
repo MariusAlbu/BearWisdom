@@ -123,33 +123,44 @@ impl<'a> Engine<'a> {
         lookup: &dyn SymbolLookup,
         arena: std::sync::Arc<TypeArena>,
     ) -> Self {
-        let mut members = MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena);
-        let symbol_types = SymbolTypeMap::build_from_parsed_files(
-            parsed,
-            sym_id_map,
-            &arena,
-            // Use the first registered profile as the build profile. The
-            // self-yield rule is language-agnostic so any profile suffices
-            // here; per-language behavior switches at resolve time.
-            profiles
-                .values()
-                .next()
-                .copied()
-                .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE),
-        );
+        let mut members = {
+            let _t = crate::indexer::phase_timer::scope("engine.members.build");
+            MembersIndex::build_from_parsed_files(parsed, sym_id_map, &arena)
+        };
+        let symbol_types = {
+            let _t = crate::indexer::phase_timer::scope("engine.symbol_types.build");
+            SymbolTypeMap::build_from_parsed_files(
+                parsed,
+                sym_id_map,
+                &arena,
+                // Use the first registered profile as the build profile. The
+                // self-yield rule is language-agnostic so any profile suffices
+                // here; per-language behavior switches at resolve time.
+                profiles
+                    .values()
+                    .next()
+                    .copied()
+                    .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE),
+            )
+        };
 
         // Per-file-profile supertype build: each file's discovery rule comes
         // from its own language's profile, and the structural pass runs only
         // over types declared in Structural/Both-profile files.
-        let supertypes =
-            SupertypeGraph::build_multi(parsed, &arena, &profiles, &members, &symbol_types, lookup);
+        let supertypes = {
+            let _t = crate::indexer::phase_timer::scope("engine.supertypes.build_multi");
+            SupertypeGraph::build_multi(parsed, &arena, &profiles, &members, &symbol_types, lookup)
+        };
 
         // Second external-admission pass, now that the supertype graph exists:
         // admit the members of the external types an internal symbol reaches
         // (inheritance parents + referenced field/return/param types), so a
         // chain rooted on an external receiver walks past its first hop. The
         // trait/interface default-method admission from the first pass stands.
-        members.admit_reachable_externals(parsed, sym_id_map, &arena, &supertypes);
+        {
+            let _t = crate::indexer::phase_timer::scope("engine.admit_reachable_externals");
+            members.admit_reachable_externals(parsed, sym_id_map, &arena, &supertypes);
+        }
 
         // Aliases: aggregate every per-file `(qname, AliasTarget)` pair.
         // Externals contribute alias entries that the chain walker resolves
@@ -199,6 +210,7 @@ impl<'a> Engine<'a> {
         if new_files.is_empty() {
             return;
         }
+        let _t_augment = crate::indexer::phase_timer::scope("engine.augment");
         let default_profile = self
             .profiles
             .values()
@@ -206,26 +218,38 @@ impl<'a> Engine<'a> {
             .copied()
             .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
 
-        self.members
-            .ingest_files(new_files, sym_id_map, &self.arena);
-        self.symbol_types
-            .ingest_files(new_files, sym_id_map, &self.arena, default_profile);
+        {
+            let _t = crate::indexer::phase_timer::scope("engine.augment.members.ingest");
+            self.members
+                .ingest_files(new_files, sym_id_map, &self.arena);
+        }
+        {
+            let _t = crate::indexer::phase_timer::scope("engine.augment.symbol_types.ingest");
+            self.symbol_types
+                .ingest_files(new_files, sym_id_map, &self.arena, default_profile);
+        }
 
-        self.supertypes = SupertypeGraph::build_multi(
-            parsed,
-            &self.arena,
-            &self.profiles,
-            &self.members,
-            &self.symbol_types,
-            lookup,
-        );
+        {
+            let _t = crate::indexer::phase_timer::scope("engine.augment.supertypes.build_multi");
+            self.supertypes = SupertypeGraph::build_multi(
+                parsed,
+                &self.arena,
+                &self.profiles,
+                &self.members,
+                &self.symbol_types,
+                lookup,
+            );
+        }
 
         // Re-run the reachability-bounded external admission over the full set:
         // appended files may reference new external types, and the rebuilt
         // graph may add internal → external inheritance edges. The pass skips
         // owners already keyed, so it only admits the newly-reached types.
-        self.members
-            .admit_reachable_externals(parsed, sym_id_map, &self.arena, &self.supertypes);
+        {
+            let _t = crate::indexer::phase_timer::scope("engine.augment.admit_reachable_externals");
+            self.members
+                .admit_reachable_externals(parsed, sym_id_map, &self.arena, &self.supertypes);
+        }
 
         let mut alias_pairs: Vec<(String, crate::types::AliasTarget)> = Vec::new();
         for pf in parsed {

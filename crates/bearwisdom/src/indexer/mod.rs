@@ -18,6 +18,7 @@ pub mod local_refs;
 pub mod mem_probe;
 pub mod module_resolution;
 pub mod parse_file;
+pub mod phase_timer;
 pub mod plugin_state;
 pub mod post_index;
 pub mod query_builtins;
