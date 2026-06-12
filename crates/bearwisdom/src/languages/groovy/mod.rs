@@ -86,7 +86,11 @@ impl LanguagePlugin for GroovyPlugin {
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &["method_invocation", "import_declaration"]
+        &[
+            "method_invocation",
+            "import_declaration",
+            "object_creation_expression",
+        ]
     }
 
     fn keywords(&self) -> &'static [&'static str] {

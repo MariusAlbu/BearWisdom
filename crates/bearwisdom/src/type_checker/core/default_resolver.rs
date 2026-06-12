@@ -2891,23 +2891,31 @@ fn candidate_namespace_prefixes(
     prefixes.into_iter()
 }
 
-/// File path's basename stem or any path segment matches the module
-/// (case-insensitive on both inputs). External `ext:<lang>:<pkg>` paths
-/// match on the trailing colon-delimited component.
-fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
+/// The file's basename-stem equals the module (case-insensitive on both
+/// inputs). A basename with no extension matches whole. Does NOT consider
+/// directory segments — `components/synedit/Foo.pas` does not match `synedit`.
+fn basename_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
     if module_lower.is_empty() {
         return false;
     }
     let normalized = file_path_lower.replace('\\', "/");
-    if let Some(basename) = normalized.rsplit('/').next() {
-        if let Some((stem, _ext)) = basename.rsplit_once('.') {
-            if stem == module_lower {
-                return true;
-            }
-        } else if basename == module_lower {
-            return true;
-        }
+    let Some(basename) = normalized.rsplit('/').next() else {
+        return false;
+    };
+    match basename.rsplit_once('.') {
+        Some((stem, _ext)) => stem == module_lower,
+        None => basename == module_lower,
     }
+}
+
+/// File path's basename stem or any path segment matches the module
+/// (case-insensitive on both inputs). External `ext:<lang>:<pkg>` paths
+/// match on the trailing colon-delimited component.
+fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
+    if basename_stem_matches(file_path_lower, module_lower) {
+        return true;
+    }
+    let normalized = file_path_lower.replace('\\', "/");
     normalized.split('/').any(|seg| {
         seg == module_lower
             || seg
@@ -2948,17 +2956,19 @@ fn module_leaf<'a>(module: &'a str, sep: &str) -> &'a str {
     after_profile.rsplit('.').next().unwrap_or(after_profile)
 }
 
-/// `path_stem_matches` extended with the include-file underscore-prefix probe.
-/// True when the file's basename-stem / a dir-segment equals `module_lower`
-/// (the shared `path_stem_matches` rule) OR, when `underscore_prefix`, the
-/// basename-stem is `{module_lower}_…` — a unit's symbols split across
-/// `{unit}_part.inc` siblings. Both inputs are already lowercased.
+/// True when the file's basename-stem equals `module_lower`
+/// (`basename_stem_matches`) OR, when `underscore_prefix`, the basename-stem is
+/// `{module_lower}_…` — a unit's symbols split across `{unit}_part.inc`
+/// siblings. Both inputs are already lowercased. Directory segments are NOT
+/// consulted: a `FileStem`-mode wildcard names a single FILE unit (Pascal
+/// `uses SynEdit` ↔ `SynEdit.pas`), so an umbrella import must not match every
+/// file under a like-named directory.
 fn wildcard_file_stem_matches(
     file_path_lower: &str,
     module_lower: &str,
     underscore_prefix: bool,
 ) -> bool {
-    if path_stem_matches(file_path_lower, module_lower) {
+    if basename_stem_matches(file_path_lower, module_lower) {
         return true;
     }
     if !underscore_prefix || module_lower.is_empty() {

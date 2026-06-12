@@ -368,11 +368,25 @@ fn run_assignment_query(
         if let Some(rhs) = rhs {
             let r_start = rhs.start_byte() as u32;
             let r_end = rhs.end_byte() as u32;
+            // A chain-bearing ref carries the whole receiver chain, so its
+            // trailing-call byte_offset is the furthest-right in the RHS — bind
+            // a `let x = a.b().c()` initializer to its outer call by preferring
+            // a chain ref and, among chain refs, the rightmost. With no chain
+            // ref the candidates are bare calls / constructions whose OUTERMOST
+            // is the LEFTMOST start (`new Outer(new Inner())` anchors `Outer`
+            // before `Inner`), so the smallest byte_offset wins there.
             let ref_idx = refs
                 .iter()
                 .enumerate()
                 .filter(|(_, r)| r.byte_offset >= r_start && r.byte_offset < r_end)
-                .max_by_key(|(_, r)| r.byte_offset)
+                .max_by_key(|(_, r)| {
+                    let signed = if r.chain.is_some() {
+                        r.byte_offset as i64
+                    } else {
+                        -(r.byte_offset as i64)
+                    };
+                    (r.chain.is_some(), signed)
+                })
                 .map(|(i, _)| i);
             if let Some(ref_idx) = ref_idx {
                 meta.flow_binding_lhs.insert(ref_idx, lhs_idx);

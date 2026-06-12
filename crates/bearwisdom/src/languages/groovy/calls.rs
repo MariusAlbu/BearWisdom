@@ -8,7 +8,7 @@
 
 use super::node_helpers::{named_field_text, node_text};
 use super::predicates;
-use crate::types::{CallArg, ChainSegment, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -383,6 +383,46 @@ fn collect_local_types(node: &Node, src: &str, map: &mut HashMap<String, String>
     }
 }
 
+/// Emit an `Instantiates` ref for a `new Type(args)` node.
+///
+/// The `type` field holds a `_simple_type` whose text may be qualified
+/// (`pkg.Type`) and may carry generic args (`List<String>`); the ref's
+/// `target_name` is the bare simple name so it matches the indexed class
+/// symbol. The ref is anchored at the type node's start byte (the invariant
+/// `byte_offset == (line, col)` position) so the flow correlator can bind a
+/// `def x = new Type(...)` initializer to this construction.
+fn emit_instantiates(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
+    let Some(type_node) = node.child_by_field_name("type") else {
+        return;
+    };
+    let raw = node_text(&type_node, src);
+    let simple = raw
+        .split('<')
+        .next()
+        .unwrap_or(raw)
+        .rsplit('.')
+        .next()
+        .unwrap_or(raw)
+        .trim();
+    if simple.is_empty() {
+        return;
+    }
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: source_idx,
+        target_name: simple.to_string(),
+        kind: EdgeKind::Instantiates,
+        line: type_node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: type_node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+}
+
 /// Walk subtree collecting `method_invocation` nodes and emit Calls refs.
 pub(super) fn visit_for_calls(
     node: &Node,
@@ -396,6 +436,14 @@ pub(super) fn visit_for_calls(
         match child.kind() {
             "method_invocation" => {
                 super::ast_visit::extract_call(&child, src, source_idx, refs, local_types);
+                visit_for_calls(&child, src, source_idx, refs, local_types);
+            }
+            "object_creation_expression" => {
+                // `new Type(args)` — emit an Instantiates ref at the type node so
+                // the constructed type both produces an edge and roots forward
+                // flow inference for `def x = new Type(...)`. Recurse to capture
+                // nested constructors and calls inside the argument list.
+                emit_instantiates(&child, src, source_idx, refs);
                 visit_for_calls(&child, src, source_idx, refs, local_types);
             }
             "enhanced_for_statement" | "local_variable_declaration" => {

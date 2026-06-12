@@ -647,6 +647,19 @@ fn resolve_iteration_body(
                                                 .return_type_str(&s.qualified_name)
                                                 .or_else(|| index.field_type_str(&s.qualified_name))
                                         })
+                                })
+                                // Construction initializer (`def x = new C(...)`):
+                                // a resolved Instantiates ref yields no return /
+                                // field type (the target is a class), so derive
+                                // the local's type from the constructed name. The
+                                // engine's expression-type inference maps an
+                                // Instantiates ref to its class TypeId.
+                                .or_else(|| {
+                                    type_engine
+                                        .infer_yield(r, Some(&resolution), effective_lang)
+                                        .and_then(|id| {
+                                            index.type_arena().map(|arena| arena.format_type(id))
+                                        })
                                 });
                             if let Some(yield_str) = yield_str {
                                 // A `?`-unwrapped binding (`let x = expr()?`) yields

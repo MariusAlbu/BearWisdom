@@ -102,6 +102,13 @@ fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     }
 }
 
+fn mk_instantiates_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
+    ExtractedRef {
+        kind: EdgeKind::Instantiates,
+        ..mk_call_ref(target, line, byte_offset)
+    }
+}
+
 #[test]
 fn flow_assignment_binds_lhs_to_rhs_ref() {
     let source = "const x = foo();\n";
@@ -119,6 +126,33 @@ fn flow_assignment_binds_lhs_to_rhs_ref() {
         meta.flow_binding_lhs.get(&0),
         Some(&0),
         "flow runner should bind ref 0 (foo call) to symbol 0 (x)"
+    );
+}
+
+#[test]
+fn flow_nested_construction_binds_outer_constructor() {
+    // `const x = new Outer(new Inner());` — two chain-less Instantiates refs.
+    // The outer constructor is the initializer's type, so the lhs must bind to
+    // the leftmost (outermost) ref, not the furthest-right nested one.
+    let source = "const x = new Outer(new Inner());\n";
+    //   'const x = ' = 0..10, 'new ' = 10..14, 'Outer' = 14..19,
+    //   '(new ' = 19..24, 'Inner' = 24..29
+    let symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut refs = vec![
+        mk_instantiates_ref("Outer", 0, 14),
+        mk_instantiates_ref("Inner", 0, 24),
+    ];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_lhs.get(&0),
+        Some(&0),
+        "lhs `x` must bind to ref 0 (outer `new Outer`), not the nested `new Inner`"
+    );
+    assert!(
+        !meta.flow_binding_lhs.contains_key(&1),
+        "the nested `new Inner` ref must not be the binding initializer"
     );
 }
 

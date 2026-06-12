@@ -118,3 +118,49 @@ class Caller {
         "expected Binary variant with op \"+\" for addition arg, got: {args:?}"
     );
 }
+
+#[test]
+fn object_creation_emits_instantiates_ref() {
+    let src = r#"
+class Caller {
+    void run() {
+        def analyzer = new Analyzer(new Source("text"))
+    }
+}
+"#;
+    let refs = extract::extract(src).refs;
+    let names: Vec<&str> = refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Instantiates)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        names.contains(&"Analyzer"),
+        "expected Instantiates for outer `new Analyzer`, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"Source"),
+        "expected Instantiates for nested `new Source`, got: {names:?}"
+    );
+}
+
+#[test]
+fn object_creation_strips_qualifier_and_generics() {
+    let src = r#"
+class Caller {
+    void run() {
+        def list = new java.util.ArrayList<String>()
+    }
+}
+"#;
+    let refs = extract::extract(src).refs;
+    assert!(
+        refs.iter()
+            .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "ArrayList"),
+        "expected Instantiates target `ArrayList` (qualifier + generics stripped), got: {:?}",
+        refs.iter()
+            .filter(|r| r.kind == EdgeKind::Instantiates)
+            .map(|r| &r.target_name)
+            .collect::<Vec<_>>()
+    );
+}

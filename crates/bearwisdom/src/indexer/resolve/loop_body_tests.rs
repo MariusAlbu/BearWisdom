@@ -230,3 +230,109 @@ fn native_elixir_miss_does_not_consult_heex_host_hook() {
         "a native Elixir miss must not bind via the HEEx host hook, got {edges:?}"
     );
 }
+
+#[test]
+fn construction_initializer_types_local_for_member_chain() {
+    // `def analyzer = new C(); analyzer.m()` — the constructor RHS has no
+    // return/field type, so the local's type is derived from the Instantiates
+    // ref via the engine's expression-type inference. The chain `analyzer.m`
+    // then resolves `m` on `C`. Mirrors the groovy-codenarc shape where
+    // `def analyzer = new SuppressionAnalyzer(...)` left `isViolationSuppressed`
+    // unresolved.
+    let class_c = class_symbol("C"); // idx 0 in the file
+    let method_m = {
+        let mut s = method_symbol("m", "C.m");
+        s.scope_path = Some("C".to_string());
+        s
+    }; // idx 1
+    let caller = {
+        let mut s = method_symbol("run", "Caller.run");
+        s.scope_path = Some("Caller".to_string());
+        s
+    }; // idx 2
+    let local = {
+        let mut s = class_symbol("analyzer");
+        s.kind = SymbolKind::Variable;
+        s
+    }; // idx 3
+
+    // Instantiates ref for `new C()`, source = caller (idx 2).
+    let inst_ref = ExtractedRef {
+        kind: EdgeKind::Instantiates,
+        source_symbol_index: 2,
+        byte_offset: 20,
+        ..calls_ref("C")
+    };
+    // Chain ref `analyzer.m()`, source = caller (idx 2).
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 2,
+        byte_offset: 40,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "analyzer".to_string(),
+                    node_kind: "identifier".to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 40,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
+                ChainSegment {
+                    name: "m".to_string(),
+                    node_kind: "method_invocation".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 49,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
+            ],
+        }),
+        ..calls_ref("m")
+    };
+
+    let mut flow = FlowMeta::default();
+    // The Instantiates ref (index 0 in refs) initializes the `analyzer` local
+    // (symbol idx 3).
+    flow.flow_binding_lhs.insert(0, 3);
+    flow.ref_byte_offsets = vec![20, 40];
+
+    let file = ParsedFile {
+        path: "C.groovy".to_string(),
+        language: "groovy".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![class_c, method_m, caller, local],
+        refs: vec![inst_ref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![],
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let edges = resolve_edges(&[file]);
+    assert!(
+        edges.iter().any(|(_, _, kind, _)| kind == "calls"),
+        "expected a `calls` edge for analyzer.m() bound to C.m, got {edges:?}"
+    );
+}

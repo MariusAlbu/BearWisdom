@@ -3994,6 +3994,127 @@ fn wildcard_file_stem_declines_unrelated_unit() {
     );
 }
 
+/// An umbrella unit import (`uses SynEdit`) names the single file `SynEdit.pas`,
+/// not the `synedit/` directory. With same-named defs spread across files under
+/// that directory, FileStem mode binds only the candidate whose basename-stem
+/// matches a wildcard (`SynEditHighlighter`) — the umbrella import must NOT
+/// match every file under the like-named directory and force a decline. The
+/// four candidates and their paths mirror the real `IsCurrentToken` set.
+#[test]
+fn wildcard_file_stem_ignores_directory_segment() {
+    let lookup = Lookup::new()
+        .with(sym(
+            1,
+            "IsCurrentToken",
+            "IsCurrentToken",
+            "function",
+            "components/synedit/Source/SynEditHighlighter.pas",
+        ))
+        .with(sym(
+            2,
+            "IsCurrentToken",
+            "IsCurrentToken",
+            "function",
+            "components/synedit/Source/SynHighlighterURI.pas",
+        ))
+        .with(sym(
+            3,
+            "IsCurrentToken",
+            "IsCurrentToken",
+            "function",
+            "components/synedit/Source/SynHighlighterDWS.pas",
+        ))
+        .with(sym(
+            4,
+            "IsCurrentToken",
+            "IsCurrentToken",
+            "function",
+            "components/synedit/Source/SynHighlighterInno.pas",
+        ));
+    let r = extracted_call("IsCurrentToken");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(
+        vec![
+            wildcard_import("SynEdit"),
+            wildcard_import("SynEditHighlighter"),
+        ],
+        None,
+    );
+    fc.language = "pascal".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+    .expect("only the SynEditHighlighter.pas basename-stem hit binds; dir-segment is ignored");
+    assert_eq!(resolved.target_symbol_id, 1);
+    assert_eq!(resolved.strategy, "default_wildcard_import");
+}
+
+/// The umbrella unit import (`uses SynEdit`) must not bind a lone candidate
+/// whose only relation to the import is the `…/synedit/…` directory segment —
+/// the candidate's file basename-stem (`SynHighlighterURI`) names no wildcard,
+/// so it stays unresolved. The directory segment is no longer a match surface
+/// in FileStem mode; the bind it used to force is gone.
+#[test]
+fn wildcard_file_stem_declines_directory_name_import() {
+    let lookup = Lookup::new().with(sym(
+        7,
+        "IsCurrentToken",
+        "IsCurrentToken",
+        "function",
+        "components/synedit/Source/SynHighlighterURI.pas",
+    ));
+    let r = extracted_call("IsCurrentToken");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("SynEdit")], None);
+    fc.language = "pascal".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+        .is_none(),
+        "an umbrella import must not match a file by its directory segment in FileStem mode"
+    );
+}
+
+/// OCaml is also FileStem mode (`open Mylib` ↔ `mylib.ml`, basename matching).
+/// Dropping the dir-segment fallback leaves the basename bind intact — guards
+/// the other FileStem language against regression from this change.
+#[test]
+fn wildcard_file_stem_ocaml_basename_unaffected() {
+    let lookup = Lookup::new().with(sym(
+        5,
+        "create",
+        "create",
+        "function",
+        "lib/mylib/mylib.ml",
+    ));
+    let r = extracted_call("create");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("Mylib")], None);
+    fc.language = "ocaml".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::ocaml::OCAML_PROFILE)
+    .expect("OCaml FileStem wildcard binds via mylib.ml basename stem");
+    assert_eq!(resolved.target_symbol_id, 5);
+    assert_eq!(resolved.strategy, "default_wildcard_import");
+}
+
 // ---------------------------------------------------------------------------
 // JVM static-wildcard test-framework globals (junit/scalatest/mockk) — a bare
 // `assertTrue` brought into scope by `import static …Assertions.*` binds to the
