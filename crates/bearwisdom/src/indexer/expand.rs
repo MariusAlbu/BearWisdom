@@ -66,15 +66,7 @@ pub fn expand_chain_reachability(
     _packages: &[PackageInfo],
     registry: &LanguageRegistry,
 ) -> Result<ExpansionStats> {
-    expand_chain_reachability_with_index(
-        db,
-        parsed,
-        symbol_id_map,
-        chain_misses,
-        registry,
-        None,
-        &std::collections::HashSet::new(),
-    )
+    expand_chain_reachability_with_index(db, parsed, symbol_id_map, chain_misses, registry, None)
 }
 
 /// Same as `expand_chain_reachability_with_index` but threads a workspace
@@ -89,7 +81,6 @@ pub fn expand_chain_reachability_with_index_and_arena(
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
     type_arena: &crate::type_checker::core::types::TypeArena,
-    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     expand_chain_reachability_inner(
         db,
@@ -99,7 +90,6 @@ pub fn expand_chain_reachability_with_index_and_arena(
         registry,
         symbol_index,
         Some(type_arena),
-        unresolved_targets,
     )
 }
 
@@ -116,7 +106,6 @@ pub fn expand_chain_reachability_with_index(
     chain_misses: &[ChainMiss],
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
-    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     expand_chain_reachability_inner(
         db,
@@ -126,7 +115,6 @@ pub fn expand_chain_reachability_with_index(
         registry,
         symbol_index,
         None,
-        unresolved_targets,
     )
 }
 
@@ -138,7 +126,6 @@ fn expand_chain_reachability_inner(
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
     type_arena: Option<&crate::type_checker::core::types::TypeArena>,
-    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     let mut stats = ExpansionStats {
         misses: chain_misses.len(),
@@ -154,18 +141,15 @@ fn expand_chain_reachability_inner(
 
     // Build the dedupe sets — ext: paths already parsed this run and a set of
     // absolute paths already queued for this pass so multiple misses for the
-    // same file don't parse it twice. `per_file_demand` accumulates, per
-    // walked file, the set of symbol names the chain walker actually wants
-    // — every miss's `target_name` plus the last segment of `current_type`
-    // (the name the walker already resolved to and whose members we need).
-    // Passed to `extract_with_demand` so a located .d.ts is extracted only
-    // for the handful of names we asked about.
+    // same file don't parse it twice. Each located file is pulled whole: the
+    // full extractor runs over it so every symbol it defines becomes a lookup
+    // target, regardless of which miss located it. Internal code may reference
+    // any of those symbols by bare name, so slimming the pull to the miss's
+    // demand drops symbols and leaves those refs permanently unresolved.
     let mut new_walked: Vec<WalkedFile> = Vec::new();
     let mut seen_paths: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
     let mut already_walked: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut per_file_demand: HashMap<std::path::PathBuf, std::collections::HashSet<String>> =
-        HashMap::new();
     for pf in parsed.iter() {
         if pf.path.starts_with("ext:") {
             already_walked.insert(pf.path.clone());
@@ -178,18 +162,7 @@ fn expand_chain_reachability_inner(
             continue;
         }
         stats.mapped += 1;
-        let current_leaf = miss
-            .current_type
-            .rsplit(['.', '\\', '/', ':'])
-            .next()
-            .unwrap_or("")
-            .to_string();
         for path in hits {
-            let demand_entry = per_file_demand.entry(path.clone()).or_default();
-            demand_entry.insert(miss.target_name.clone());
-            if !current_leaf.is_empty() {
-                demand_entry.insert(current_leaf.clone());
-            }
             if !seen_paths.insert(path.clone()) {
                 continue;
             }
@@ -218,20 +191,6 @@ fn expand_chain_reachability_inner(
         return Ok(stats);
     }
 
-    // Widen every pulled file's demand set with the names that internal code
-    // left unresolved (bare type_refs, simple calls — anything that didn't
-    // produce a chain miss). A file located by a chain miss for symbol X may
-    // also define Y, which internal code references only by bare name. Without
-    // this union the demand filter keeps X and drops Y, leaving Y permanently
-    // unresolved because the file is already_walked on future iterations.
-    if !unresolved_targets.is_empty() {
-        for w in &new_walked {
-            per_file_demand
-                .entry(w.absolute_path.clone())
-                .or_default()
-                .extend(unresolved_targets.iter().cloned());
-        }
-    }
     debug!("expand: {} new files to parse", new_walked.len());
 
     // Parse new files in parallel. Errors are logged but not fatal.
@@ -249,10 +208,10 @@ fn expand_chain_reachability_inner(
         new_walked
             .par_iter()
             .filter_map(|w| {
-                let demand = per_file_demand.get(&w.absolute_path);
+                // Whole-file pull: `None` demand extracts every symbol.
                 let result = match type_arena {
-                    Some(a) => parse_file_with_arena_and_demand(w, registry, demand, a),
-                    None => parse_file_with_demand(w, registry, demand),
+                    Some(a) => parse_file_with_arena_and_demand(w, registry, None, a),
+                    None => parse_file_with_demand(w, registry, None),
                 };
                 match result {
                     Ok(mut pf) => {

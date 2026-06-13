@@ -86,14 +86,6 @@ pub struct ResolutionStats {
     /// the full-index fixpoint feeds this back as the next pass's worklist so
     /// already-resolved files are skipped.
     pub frontier_files: Vec<String>,
-    /// Leaf target names of every ref that remained unresolved after this pass
-    /// (no chain miss, no external namespace — the ref simply had no match).
-    /// Passed to `expand_chain_reachability` so any file the demand-driven
-    /// pull locates for a chain miss also carries these names in its demand
-    /// set. Without this, an external symbol referenced only by a bare
-    /// `type_ref` (no chain) is filtered out by the demand filter even though
-    /// internal code genuinely references it.
-    pub unresolved_targets: std::collections::HashSet<String>,
 }
 
 impl ResolutionStats {

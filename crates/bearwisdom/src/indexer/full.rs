@@ -993,7 +993,6 @@ pub fn full_index(
                     Some(&symbol_index)
                 },
                 workspace_arena.as_ref(),
-                &rstats.unresolved_targets,
             )
             .context("Failed to expand chain reachability")?
         };

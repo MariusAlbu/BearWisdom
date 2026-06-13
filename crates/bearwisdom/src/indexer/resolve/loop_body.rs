@@ -1063,16 +1063,6 @@ fn resolve_iteration_body(
     stats.unresolved += local_stats_total.unresolved;
     stats.external += local_stats_total.external;
 
-    // Collect the leaf target name of every unresolved ref so the demand
-    // filter receives a complete seed set. `combined_buf.unresolved` was
-    // already reduced from all rayon workers; field .1 is the target_name
-    // string emitted at each unresolved site.
-    stats.unresolved_targets = combined_buf
-        .unresolved
-        .iter()
-        .map(|(_, target_name, _, _, _, _, _)| target_name.clone())
-        .collect();
-
     // INFER-3: join return-type candidates per function (see
     // `join_inferred_returns`). Skip any qname still carrying a known return.
     if !combined_buf.inferred_returns.is_empty() {
