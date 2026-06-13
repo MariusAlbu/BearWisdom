@@ -9,7 +9,7 @@
 
 use super::profile::HTML_PROFILE;
 use crate::indexer::resolve::engine::{
-    FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup, SymbolSet,
 };
 
 /// Drive an HTML template ref through the generic engine ladder gated on
@@ -66,19 +66,19 @@ impl SelectorMapLookup {
 }
 
 impl SymbolLookup for SelectorMapLookup {
-    fn by_name(&self, _name: &str) -> &[SymbolInfo] {
-        &self.symbols
+    fn by_name(&self, _name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.symbols)
     }
 
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.symbols.iter().find(|s| s.qualified_name == qname)
     }
 
-    fn members_of(&self, _p: &str) -> &[SymbolInfo] {
-        &[]
+    fn members_of(&self, _p: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
-    fn types_by_name(&self, _n: &str) -> &[SymbolInfo] {
-        &[]
+    fn types_by_name(&self, _n: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
     fn in_namespace(&self, _n: &str) -> Vec<&SymbolInfo> {
         vec![]
@@ -86,8 +86,8 @@ impl SymbolLookup for SelectorMapLookup {
     fn has_in_namespace(&self, _n: &str) -> bool {
         false
     }
-    fn in_file(&self, _f: &str) -> &[SymbolInfo] {
-        &[]
+    fn in_file(&self, _f: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
     fn field_type_name(&self, _q: &str) -> Option<&str> {
         None

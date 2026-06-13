@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolSet};
 use crate::type_checker::alias::AliasIndex;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -223,17 +223,17 @@ impl EmptyLookup {
 }
 
 impl SymbolLookup for EmptyLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.get(qname)
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.locals.get(name).cloned()
@@ -253,8 +253,8 @@ impl SymbolLookup for EmptyLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())

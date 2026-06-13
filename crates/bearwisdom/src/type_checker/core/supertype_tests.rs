@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::SymbolInfo;
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolSet};
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
@@ -70,17 +70,17 @@ impl TypeLookup {
 }
 
 impl SymbolLookup for TypeLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -88,8 +88,8 @@ impl SymbolLookup for TypeLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None

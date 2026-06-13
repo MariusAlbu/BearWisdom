@@ -266,7 +266,7 @@ impl<'a> DefaultResolver<'a> {
         let mut compatible: Vec<&SymbolInfo> = self
             .lookup
             .by_name(target)
-            .iter()
+            .into_iter()
             .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
             .filter(|sym| kind(edge_kind, &sym.kind))
             .collect();
@@ -394,7 +394,7 @@ impl<'a> DefaultResolver<'a> {
         let mut compatible = self
             .lookup
             .in_module_from(&self.file_ctx.file_path, module_path)
-            .iter()
+            .into_iter()
             .filter(|sym| {
                 is_component_file(&sym.file_path)
                     && is_component_symbol_kind(&sym.kind)
@@ -662,7 +662,7 @@ impl<'a> DefaultResolver<'a> {
 
         let candidates = self.lookup.by_name(target);
 
-        for sym in candidates {
+        for sym in &candidates {
             if !kind(edge_kind, &sym.kind) {
                 continue;
             }
@@ -671,7 +671,7 @@ impl<'a> DefaultResolver<'a> {
             }
         }
 
-        for sym in candidates {
+        for sym in &candidates {
             if !kind(edge_kind, &sym.kind) {
                 continue;
             }
@@ -864,7 +864,7 @@ impl<'a> DefaultResolver<'a> {
         edge_kind: EdgeKind,
         kind: &dyn Fn(EdgeKind, &str) -> bool,
     ) -> Option<i64> {
-        let candidate = self.lookup.by_name(name).iter().find(|sym| sym.id == id)?;
+        let candidate = self.lookup.by_name(name).into_iter().find(|sym| sym.id == id)?;
         if kind(edge_kind, &candidate.kind) {
             Some(id)
         } else {
@@ -1639,7 +1639,7 @@ impl<'a> DefaultResolver<'a> {
         let mut compatible: Vec<&SymbolInfo> = self
             .lookup
             .by_name(target)
-            .iter()
+            .into_iter()
             .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
             .filter(|sym| kind(edge_kind, &sym.kind))
             .filter(|sym| {
@@ -1679,7 +1679,7 @@ impl<'a> DefaultResolver<'a> {
         let mut compatible: Vec<&SymbolInfo> = self
             .lookup
             .by_name(target)
-            .iter()
+            .into_iter()
             .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
             .filter(|sym| kind(edge_kind, &sym.kind))
             .filter(|sym| {
@@ -2793,7 +2793,7 @@ impl<'a> DefaultResolver<'a> {
         let candidates: Vec<&SymbolInfo> = self
             .lookup
             .by_name(target)
-            .iter()
+            .into_iter()
             .filter(|sym| kind(edge_kind, &sym.kind))
             .collect();
         if candidates.len() < 2 {

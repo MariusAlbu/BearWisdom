@@ -3,7 +3,7 @@
 
 use super::hooks::paired_ts_for_template;
 use super::profile::ANGULAR_PROFILE;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup, SymbolSet};
 
 /// Drive an Angular template ref through the generic engine ladder gated on
 /// `ANGULAR_PROFILE` — `selector_resolution` binds a component-tag / directive
@@ -107,9 +107,9 @@ impl SelectorMapLookup {
 }
 
 impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
-    fn by_name(&self, name: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
         let _ = name;
-        &self.symbols
+        SymbolSet::Borrowed(&self.symbols)
     }
 
     fn by_qualified_name(
@@ -119,11 +119,11 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
         self.symbols.iter().find(|s| s.qualified_name == qname)
     }
 
-    fn members_of(&self, _p: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
-        &[]
+    fn members_of(&self, _p: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
-    fn types_by_name(&self, _n: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
-        &[]
+    fn types_by_name(&self, _n: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
     fn in_namespace(&self, _n: &str) -> Vec<&crate::indexer::resolve::engine::SymbolInfo> {
         vec![]
@@ -131,8 +131,8 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
     fn has_in_namespace(&self, _n: &str) -> bool {
         false
     }
-    fn in_file(&self, _f: &str) -> &[crate::indexer::resolve::engine::SymbolInfo] {
-        &[]
+    fn in_file(&self, _f: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&[])
     }
     fn field_type_name(&self, _q: &str) -> Option<&str> {
         None

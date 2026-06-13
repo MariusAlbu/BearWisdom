@@ -836,7 +836,7 @@ impl<'a> Engine<'a> {
         let target_id = r.target_symbol_id;
         let Some(sym) = lookup
             .by_name(&ref_ctx.extracted_ref.target_name)
-            .iter()
+            .into_iter()
             .find(|s| s.id == target_id)
         else {
             return;

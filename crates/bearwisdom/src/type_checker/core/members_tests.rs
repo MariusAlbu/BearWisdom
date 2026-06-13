@@ -8,6 +8,7 @@ use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{AliasTarget, EdgeKind};
+use crate::indexer::resolve::engine::SymbolSet;
 use std::sync::Arc;
 
 fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
@@ -148,17 +149,17 @@ impl NullLookup {
 }
 
 impl SymbolLookup for NullLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -166,8 +167,8 @@ impl SymbolLookup for NullLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -1674,20 +1675,22 @@ impl TypePoolLookup {
 }
 
 impl SymbolLookup for TypePoolLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_short
-            .get(name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.by_short
+                .get(name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -1695,8 +1698,8 @@ impl SymbolLookup for TypePoolLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None

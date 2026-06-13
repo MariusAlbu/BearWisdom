@@ -11,7 +11,7 @@
 
 use super::{identity_normalize, resolve_via_chain, ChainConfig, ChainExtensions, NamespaceLookup};
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::languages::c_lang::hooks::C_LANG_CHAIN_CONFIG;
 use crate::languages::python::hooks::PYTHON_CHAIN_CONFIG;
@@ -149,26 +149,30 @@ impl FakeLookup {
 }
 
 impl SymbolLookup for FakeLookup {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
         // Backed by `by_name_store` for the C# extension-method probe; the TS
         // delta tests don't register entries and fall through to empty.
-        self.by_name_store
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v.as_slice())
-            .unwrap_or(&self.empty_syms)
+        SymbolSet::Borrowed(
+            self.by_name_store
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_slice())
+                .unwrap_or(&self.empty_syms),
+        )
     }
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.iter().find(|s| s.qualified_name == qname)
     }
-    fn members_of(&self, parent_qname: &str) -> &[SymbolInfo] {
-        self.members_store
-            .iter()
-            .find(|(p, _)| p == parent_qname)
-            .map(|(_, v)| v.as_slice())
-            .unwrap_or(&self.empty_syms)
+    fn members_of(&self, parent_qname: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.members_store
+                .iter()
+                .find(|(p, _)| p == parent_qname)
+                .map(|(_, v)| v.as_slice())
+                .unwrap_or(&self.empty_syms),
+        )
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         // Return the first type-kind match wrapped in a 1-slice via a cached
         // position. Simpler: scan and return a sub-slice when the unique match
         // sits at a stable index. For the tests we only need the is_type check
@@ -181,9 +185,9 @@ impl SymbolLookup for FakeLookup {
                     "class" | "struct" | "interface" | "enum" | "type_alias"
                 )
         }) {
-            std::slice::from_ref(&self.by_qname[pos])
+            SymbolSet::Borrowed(std::slice::from_ref(&self.by_qname[pos]))
         } else {
-            &self.empty_syms
+            SymbolSet::Borrowed(&self.empty_syms)
         }
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
@@ -192,8 +196,8 @@ impl SymbolLookup for FakeLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty_syms
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty_syms)
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types

@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::SymbolInfo;
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolSet};
 use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{
@@ -63,17 +63,17 @@ impl EmptyLookup {
 }
 
 impl SymbolLookup for EmptyLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -81,8 +81,8 @@ impl SymbolLookup for EmptyLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())

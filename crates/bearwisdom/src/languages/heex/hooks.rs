@@ -89,7 +89,7 @@ impl LanguageEngineHooks for HeexHooks {
             return None;
         }
         let view_file = colocated_view_file(&file_ctx.file_path)?;
-        let func = lookup.in_file(&view_file).iter().find(|s| {
+        let func = lookup.in_file(&view_file).into_iter().find(|s| {
             s.name == *target && matches!(s.kind.as_str(), "method" | "function")
         })?;
         Some(Resolution {

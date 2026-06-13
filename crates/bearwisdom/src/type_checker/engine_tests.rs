@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
 use crate::languages::typescript::extract;
 use crate::languages::typescript::TYPESCRIPT_PROFILE;
 use crate::type_checker::core::{SymbolIdMap, TypeArena};
@@ -184,17 +184,17 @@ impl EmptyLookup {
 }
 
 impl SymbolLookup for EmptyLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -202,8 +202,8 @@ impl SymbolLookup for EmptyLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -565,21 +565,21 @@ impl OverloadLookup {
 }
 
 impl SymbolLookup for OverloadLookup {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
         if name == "foo" {
-            &self.foos
+            SymbolSet::Borrowed(&self.foos)
         } else {
-            &self.empty
+            SymbolSet::Borrowed(&self.empty)
         }
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -587,8 +587,8 @@ impl SymbolLookup for OverloadLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.foos
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.foos)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -845,21 +845,21 @@ impl CrossFileOverloadLookup {
 }
 
 impl SymbolLookup for CrossFileOverloadLookup {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
         if name == "foo" {
-            &self.foos
+            SymbolSet::Borrowed(&self.foos)
         } else {
-            &self.empty
+            SymbolSet::Borrowed(&self.empty)
         }
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -867,12 +867,12 @@ impl SymbolLookup for CrossFileOverloadLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
+    fn in_file(&self, file_path: &str) -> SymbolSet<'_> {
         // Only a foo's OWN file lists it — never the caller's file.
         if self.foos.iter().any(|f| &*f.file_path == file_path) {
-            &self.foos
+            SymbolSet::Borrowed(&self.foos)
         } else {
-            &self.empty
+            SymbolSet::Borrowed(&self.empty)
         }
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
@@ -1149,21 +1149,21 @@ struct SiblingLookup {
 }
 
 impl SymbolLookup for SiblingLookup {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
         if self.sib.first().map(|s| s.name.as_str()) == Some(name) {
-            &self.sib
+            SymbolSet::Borrowed(&self.sib)
         } else {
-            &self.empty
+            SymbolSet::Borrowed(&self.empty)
         }
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -1171,8 +1171,8 @@ impl SymbolLookup for SiblingLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.sib
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.sib)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -1478,8 +1478,8 @@ impl AdlLookup {
 impl SymbolLookup for AdlLookup {
     // `swap` is NOT in bare-name scope — the regular ladder finds nothing and
     // declines, so ADL is strictly the fallback.
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     // The argument's declaring namespace supplies the candidate by qname.
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
@@ -1489,11 +1489,11 @@ impl SymbolLookup for AdlLookup {
             None
         }
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -1501,8 +1501,8 @@ impl SymbolLookup for AdlLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None

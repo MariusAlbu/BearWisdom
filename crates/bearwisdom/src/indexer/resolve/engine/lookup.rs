@@ -10,7 +10,7 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{ChainMiss, SymbolInfo};
+use super::{ChainMiss, SymbolInfo, SymbolSet};
 
 // ---------------------------------------------------------------------------
 // SymbolLookup trait — decouples resolvers from index internals
@@ -19,7 +19,7 @@ use super::{ChainMiss, SymbolInfo};
 /// Read-only access to the global symbol index.
 pub trait SymbolLookup {
     /// Find all symbols with the given simple name.
-    fn by_name(&self, name: &str) -> &[SymbolInfo];
+    fn by_name(&self, name: &str) -> SymbolSet<'_>;
 
     /// Find a symbol by exact qualified name.
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo>;
@@ -34,11 +34,11 @@ pub trait SymbolLookup {
     /// kind (e.g. a `Calls` ref against a `variable`/`function`/`class`),
     /// the interface overload is useless. This lookup exposes all
     /// overloads so the caller can scan for a kind-compatible target.
-    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
-        std::slice::from_ref(match self.by_qualified_name(qname) {
-            Some(s) => s,
-            None => return &[],
-        })
+    fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
+        match self.by_qualified_name(qname) {
+            Some(s) => SymbolSet::Borrowed(std::slice::from_ref(s)),
+            None => SymbolSet::empty(),
+        }
     }
 
     /// Find the direct children of a type/namespace by exact parent qualified name.
@@ -48,7 +48,7 @@ pub trait SymbolLookup {
     /// fields, nested types. Chain walkers use this to locate the next
     /// segment of a member chain without scanning every candidate that
     /// shares a simple name across the project + externals.
-    fn members_of(&self, parent_qname: &str) -> &[SymbolInfo];
+    fn members_of(&self, parent_qname: &str) -> SymbolSet<'_>;
 
     /// Find all type-kind symbols (class, struct, interface, enum, ...) with
     /// the given simple name.
@@ -57,7 +57,7 @@ pub trait SymbolLookup {
     /// every non-type symbol that happens to share the name (common words
     /// like `String`, `Error`, `Context` collect thousands of non-type
     /// candidates across an indexed stdlib/externals set).
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo];
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_>;
 
     /// Find all symbols whose qualified name starts with the given prefix + ".".
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo>;
@@ -67,7 +67,7 @@ pub trait SymbolLookup {
     fn has_in_namespace(&self, namespace: &str) -> bool;
 
     /// Find all symbols defined in a specific file.
-    fn in_file(&self, file_path: &str) -> &[SymbolInfo];
+    fn in_file(&self, file_path: &str) -> SymbolSet<'_>;
 
     /// Resolve a module specifier in the context of a specific source file
     /// and return the symbols of the target module.
@@ -77,7 +77,7 @@ pub trait SymbolLookup {
     /// `apps/web/foo.ts` and `apps/web/bar/baz.ts` are different files.
     /// Default impl falls back to `in_file(spec)` for callers (and indexes)
     /// that don't carry per-source resolution data.
-    fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
+    fn in_module_from(&self, _source_file: &str, spec: &str) -> SymbolSet<'_> {
         self.in_file(spec)
     }
 
@@ -284,8 +284,8 @@ pub trait SymbolLookup {
     /// Used by language resolvers to scope lookups when an import specifier
     /// matches a sibling package's `declared_name`. Returns an empty slice
     /// when the package isn't known (e.g. single-project layouts).
-    fn symbols_in_package(&self, _package_id: i64) -> &[SymbolInfo] {
-        &[]
+    fn symbols_in_package(&self, _package_id: i64) -> SymbolSet<'_> {
+        SymbolSet::empty()
     }
 
     /// Resolve a module specifier to a workspace `package_id`, honoring deep

@@ -10,7 +10,7 @@ use crate::indexer::resolve::engine::chain_walker::{
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{
     build_scope_chain, is_ambient_global_lib_path, is_ts_ambient_global_lib_path, ChainMiss,
-    LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
+    LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::types::Type;
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
@@ -1342,17 +1342,17 @@ fn default_symbol_lookup_returns_no_typeid_surface() {
     // are the opt-out path.
     struct EmptyLookup;
     impl SymbolLookup for EmptyLookup {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
             None
         }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn members_of(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
             Vec::new()
@@ -1360,8 +1360,8 @@ fn default_symbol_lookup_returns_no_typeid_surface() {
         fn has_in_namespace(&self, _: &str) -> bool {
             false
         }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn in_file(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn field_type_name(&self, _: &str) -> Option<&str> {
             None
@@ -1637,17 +1637,17 @@ fn local_cache_default_impls_noop_for_non_symbol_index() {
     // or change behavior when the resolver calls flow-cache methods.
     struct Empty;
     impl SymbolLookup for Empty {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
             None
         }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn members_of(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
             Vec::new()
@@ -1655,8 +1655,8 @@ fn local_cache_default_impls_noop_for_non_symbol_index() {
         fn has_in_namespace(&self, _: &str) -> bool {
             false
         }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn in_file(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn field_type_name(&self, _: &str) -> Option<&str> {
             None

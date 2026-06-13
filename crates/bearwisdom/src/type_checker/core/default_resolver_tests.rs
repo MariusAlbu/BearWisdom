@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::profile::language_profile::{
     AliasDecode, NameNormalization, NamespaceScope, NormSpec,
@@ -152,20 +152,22 @@ impl Lookup {
 }
 
 impl SymbolLookup for Lookup {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.get(qname)
     }
-    fn members_of(&self, parent: &str) -> &[SymbolInfo] {
-        self.members
-            .get(parent)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn members_of(&self, parent: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.members
+                .get(parent)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo> {
         let prefix = format!("{namespace}.");
@@ -177,11 +179,13 @@ impl SymbolLookup for Lookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, path: &str) -> &[SymbolInfo] {
-        self.in_file
-            .get(path)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn in_file(&self, path: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.in_file
+                .get(path)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -204,10 +208,10 @@ impl SymbolLookup for Lookup {
     fn resolve_module_from(&self, _source_file: &str, spec: &str) -> Option<&str> {
         self.module_files.get(spec).map(|s| s.as_str())
     }
-    fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
+    fn in_module_from(&self, _source_file: &str, spec: &str) -> SymbolSet<'_> {
         match self.module_files.get(spec) {
             Some(file) => self.in_file(file),
-            None => &self.empty,
+            None => SymbolSet::Borrowed(&self.empty),
         }
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
@@ -236,14 +240,14 @@ impl SymbolLookup for Lookup {
     fn resolve_path_alias(&self, _: Option<i64>, specifier: &str) -> Option<String> {
         self.path_aliases.get(specifier).cloned()
     }
-    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
+    fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
         if let Some(all) = self.by_qname_all.get(qname) {
-            return all.as_slice();
+            return SymbolSet::Borrowed(all.as_slice());
         }
-        std::slice::from_ref(match self.by_qname.get(qname) {
+        SymbolSet::Borrowed(std::slice::from_ref(match self.by_qname.get(qname) {
             Some(s) => s,
-            None => return &self.empty,
-        })
+            None => return SymbolSet::Borrowed(&self.empty),
+        }))
     }
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.selectors.get(raw_selector).map(|s| s.as_str())
@@ -265,11 +269,13 @@ impl SymbolLookup for Lookup {
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.workspace_pkgs.contains_key(name)
     }
-    fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
-        self.pkg_symbols
-            .get(&package_id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.pkg_symbols
+                .get(&package_id)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
 }
 
@@ -1821,16 +1827,16 @@ impl WorkspaceLookup {
 }
 
 impl SymbolLookup for WorkspaceLookup {
-    fn by_name(&self, n: &str) -> &[SymbolInfo] {
+    fn by_name(&self, n: &str) -> SymbolSet<'_> {
         self.inner.by_name(n)
     }
     fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> {
         self.inner.by_qualified_name(q)
     }
-    fn members_of(&self, p: &str) -> &[SymbolInfo] {
+    fn members_of(&self, p: &str) -> SymbolSet<'_> {
         self.inner.members_of(p)
     }
-    fn types_by_name(&self, n: &str) -> &[SymbolInfo] {
+    fn types_by_name(&self, n: &str) -> SymbolSet<'_> {
         self.inner.types_by_name(n)
     }
     fn in_namespace(&self, n: &str) -> Vec<&SymbolInfo> {
@@ -1839,7 +1845,7 @@ impl SymbolLookup for WorkspaceLookup {
     fn has_in_namespace(&self, n: &str) -> bool {
         self.inner.has_in_namespace(n)
     }
-    fn in_file(&self, p: &str) -> &[SymbolInfo] {
+    fn in_file(&self, p: &str) -> SymbolSet<'_> {
         self.inner.in_file(p)
     }
     fn field_type_name(&self, q: &str) -> Option<&str> {

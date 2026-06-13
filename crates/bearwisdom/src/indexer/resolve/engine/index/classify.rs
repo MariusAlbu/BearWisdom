@@ -131,7 +131,7 @@ impl SymbolIndex {
         visited.insert(importing_pkg);
         for _depth in 0..4 {
             for pkg in &frontier {
-                for sym in candidates {
+                for sym in &candidates {
                     if file_belongs_to_npm_package(&sym.file_path, pkg) {
                         return Some(sym.id);
                     }

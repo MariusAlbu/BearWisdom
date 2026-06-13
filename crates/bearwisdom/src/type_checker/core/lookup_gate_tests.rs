@@ -6,7 +6,7 @@
 //! build the index from the resulting symbols, then exercise the public
 //! lookup API on the resulting TypeIds.
 
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{
     infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap, Type,
@@ -95,16 +95,16 @@ impl ParsedFileLookup {
 }
 
 impl SymbolLookup for ParsedFileLookup {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         // Linear scan — fine for unit-test fixture sizes; not used in prod.
         let matches: Vec<&SymbolInfo> = self
             .types
@@ -118,9 +118,9 @@ impl SymbolLookup for ParsedFileLookup {
             })
             .collect();
         if matches.len() == 1 {
-            std::slice::from_ref(matches[0])
+            SymbolSet::Owned(matches)
         } else {
-            &self.empty
+            SymbolSet::Borrowed(&self.empty)
         }
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
@@ -129,8 +129,8 @@ impl SymbolLookup for ParsedFileLookup {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None

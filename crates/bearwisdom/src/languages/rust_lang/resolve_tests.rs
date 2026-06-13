@@ -697,23 +697,23 @@ fn test_rust_tonic_direct_detector_still_rejects_bare_variable() {
 
 #[test]
 fn test_rust_tonic_let_bound_client_emits_via_lookup() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
+    use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use crate::types::{ChainSegment, ExtractedRef, ExtractedSymbol, MemberChain};
 
     struct VarLookup;
     impl SymbolLookup for VarLookup {
-        fn by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
             None
         }
-        fn members_of(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn members_of(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
-        fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
             Vec::new()
@@ -721,8 +721,8 @@ fn test_rust_tonic_let_bound_client_emits_via_lookup() {
         fn has_in_namespace(&self, _: &str) -> bool {
             false
         }
-        fn in_file(&self, _: &str) -> &[SymbolInfo] {
-            &[]
+        fn in_file(&self, _: &str) -> SymbolSet<'_> {
+            SymbolSet::Borrowed(&[])
         }
         fn field_type_name(&self, qname: &str) -> Option<&str> {
             if qname == "main.c" {

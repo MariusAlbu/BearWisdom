@@ -23,6 +23,7 @@ pub mod chain_walker;
 pub mod common;
 pub mod index;
 pub mod lookup;
+pub mod symbol_set;
 pub mod types;
 pub mod util;
 
@@ -30,6 +31,7 @@ pub use chain_walker::{find_member_via_inheritance, infer_external_from_chain};
 pub use common::infer_external_common;
 pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
+pub use symbol_set::SymbolSet;
 pub use types::{
     intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
     TypeInfo, RESOLVED_CONFIDENCE,

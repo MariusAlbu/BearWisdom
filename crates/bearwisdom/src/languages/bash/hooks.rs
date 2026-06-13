@@ -61,7 +61,7 @@ fn resolve_via_shell_source(
         if suffix.is_empty() {
             continue;
         }
-        for sym in candidates {
+        for sym in &candidates {
             if ends_with_path_suffix(&sym.file_path, suffix) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,

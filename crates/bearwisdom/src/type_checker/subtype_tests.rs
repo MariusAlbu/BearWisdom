@@ -4,7 +4,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
@@ -39,17 +39,17 @@ impl SubtypeFixture {
 }
 
 impl SymbolLookup for SubtypeFixture {
-    fn by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -57,8 +57,8 @@ impl SymbolLookup for SubtypeFixture {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None

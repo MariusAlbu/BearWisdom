@@ -211,7 +211,7 @@ fn resolve_reexport_by_matching_file(
     kind_compatible: fn(EdgeKind, &str) -> bool,
     strategy: &'static str,
 ) -> Option<Resolution> {
-    let mut matches = lookup.by_name(target_name).iter().filter(|sym| {
+    let mut matches = lookup.by_name(target_name).into_iter().filter(|sym| {
         sym.name == target_name
             && kind_compatible(edge_kind, &sym.kind)
             && file_path_matches_module(&sym.file_path, source_module)

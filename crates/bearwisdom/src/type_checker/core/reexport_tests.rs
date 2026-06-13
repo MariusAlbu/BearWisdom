@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::follow_reexports;
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::types::EdgeKind;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -50,20 +50,22 @@ impl Mock {
 }
 
 impl SymbolLookup for Mock {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_name
-            .get(name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.by_name
+                .get(name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -71,13 +73,15 @@ impl SymbolLookup for Mock {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, path: &str) -> &[SymbolInfo] {
-        self.in_file
-            .get(path)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn in_file(&self, path: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.in_file
+                .get(path)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
-    fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
+    fn in_module_from(&self, _source_file: &str, spec: &str) -> SymbolSet<'_> {
         // Mirror the real index: resolve the spec to a file, else fall back to
         // an exact-path `in_file` lookup (relative specs whose file path equals
         // the spec string, the shape the synthetic barrel tests rely on).

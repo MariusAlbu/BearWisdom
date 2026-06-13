@@ -11,18 +11,18 @@ use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
 use super::{strip_generic_args, SymbolIndex, CURRENT_SOURCE_FILE, LOCAL_TYPE_CACHE};
-use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup, SymbolSet};
 
 impl SymbolLookup for SymbolIndex {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
 
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.get(qname)
     }
 
-    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
+    fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
         // Fast path: the common case is one symbol per qname. Return the
         // single-winner slice backed by `by_qname` without allocating.
         // When a duplicate exists we fall through to the combined vec built
@@ -31,26 +31,30 @@ impl SymbolLookup for SymbolIndex {
         // build time we stash the full set (winner + duplicates) under the
         // qname in `qname_duplicates` whenever it grows past one entry.
         if let Some(all) = self.qname_duplicates.get(qname) {
-            return all.as_slice();
+            return SymbolSet::Borrowed(all.as_slice());
         }
         match self.by_qname.get(qname) {
-            Some(s) => std::slice::from_ref(s),
-            None => &[],
+            Some(s) => SymbolSet::Borrowed(std::slice::from_ref(s)),
+            None => SymbolSet::empty(),
         }
     }
 
-    fn members_of(&self, parent_qname: &str) -> &[SymbolInfo] {
-        self.members_by_parent
-            .get(parent_qname)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+    fn members_of(&self, parent_qname: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.members_by_parent
+                .get(parent_qname)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+        )
     }
 
-    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.types_by_name
-            .get(name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+    fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.types_by_name
+                .get(name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
+        )
     }
 
     /// O(log N) prefix search via BTreeMap::range — no extra Vec needed.
@@ -83,21 +87,21 @@ impl SymbolLookup for SymbolIndex {
             .any(|(_, info)| !info.file_path.starts_with("ext:"))
     }
 
-    fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
+    fn in_file(&self, file_path: &str) -> SymbolSet<'_> {
         // Exact match
         if let Some(syms) = self.by_file.get(file_path) {
-            return syms.as_slice();
+            return SymbolSet::Borrowed(syms.as_slice());
         }
         // Module specifier → resolved file path
         if let Some(resolved) = self.module_to_file.get(file_path) {
             if let Some(syms) = self.by_file.get(resolved) {
-                return syms.as_slice();
+                return SymbolSet::Borrowed(syms.as_slice());
             }
         }
-        &self.empty
+        SymbolSet::Borrowed(&self.empty)
     }
 
-    fn in_module_from(&self, source_file: &str, spec: &str) -> &[SymbolInfo] {
+    fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {
         // Per-source resolution wins. Relative specifiers require this, and
         // some ecosystems also have bare specifiers whose nearest-file meaning
         // depends on the importing directory.
@@ -106,7 +110,7 @@ impl SymbolLookup for SymbolIndex {
             .get(&(source_file.to_string(), spec.to_string()))
         {
             if let Some(syms) = self.by_file.get(resolved) {
-                return syms.as_slice();
+                return SymbolSet::Borrowed(syms.as_slice());
             }
         }
         if spec.starts_with('.') {
@@ -263,11 +267,13 @@ impl SymbolLookup for SymbolIndex {
         )
     }
 
-    fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
-        self.by_package
-            .get(&package_id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.by_package
+                .get(&package_id)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {

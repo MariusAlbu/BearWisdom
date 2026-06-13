@@ -590,7 +590,7 @@ pub fn resolve_via_chain(
     let type_prefix = format!("{effective_type}.");
     let matches: Vec<&SymbolInfo> = lookup
         .by_name(&last.name)
-        .iter()
+        .into_iter()
         .filter(|sym| {
             (sym.qualified_name == effective_type || sym.qualified_name.starts_with(&type_prefix))
                 && (config.kind_compatible)(edge_kind, &sym.kind)

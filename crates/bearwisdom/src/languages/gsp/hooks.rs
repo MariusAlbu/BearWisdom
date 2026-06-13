@@ -46,7 +46,7 @@ impl LanguageEngineHooks for GspHooks {
         }
         let candidates: Vec<_> = lookup
             .by_name(&r.target_name)
-            .iter()
+            .into_iter()
             .filter(|s| s.kind == "method")
             .collect();
         if candidates.len() == 1 {

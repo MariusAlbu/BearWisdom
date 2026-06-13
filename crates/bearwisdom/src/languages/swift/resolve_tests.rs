@@ -5,7 +5,7 @@ use super::hooks::{
 use crate::types::*;
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup,
+    FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::DefaultResolver;
 use std::collections::HashMap;
@@ -184,20 +184,22 @@ fn swift_same_module_declines_outside_sources_layout() {
 }
 
 impl SymbolLookup for ByNameFixture {
-    fn by_name(&self, name: &str) -> &[SymbolInfo] {
-        self.by_name_map
-            .get(name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.by_name_map
+                .get(name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
     fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
         None
     }
-    fn members_of(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
-    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
         Vec::new()
@@ -205,8 +207,8 @@ impl SymbolLookup for ByNameFixture {
     fn has_in_namespace(&self, _: &str) -> bool {
         false
     }
-    fn in_file(&self, _: &str) -> &[SymbolInfo] {
-        &self.empty
+    fn in_file(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
     }
     fn field_type_name(&self, _: &str) -> Option<&str> {
         None
