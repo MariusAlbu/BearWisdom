@@ -227,6 +227,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bearwisdom-profile",
+ "boxcar",
+ "dashmap",
  "dirs",
  "dotscope",
  "flate2",
@@ -237,6 +239,7 @@ dependencies = [
  "lru",
  "notify",
  "nucleo",
+ "once_cell",
  "ort",
  "prost",
  "rayon",

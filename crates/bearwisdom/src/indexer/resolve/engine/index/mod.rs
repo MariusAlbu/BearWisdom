@@ -37,6 +37,9 @@ mod augment;
 mod build;
 mod classify;
 mod lookup_impl;
+mod materialized;
+
+pub use materialized::{MaterializedStore, SymbolRef};
 
 // ---------------------------------------------------------------------------
 // SymbolIndex — concrete implementation of SymbolLookup
@@ -196,6 +199,11 @@ pub struct SymbolIndex {
     /// `Arc` so the same arena flows from the indexer entry point through
     /// extractors and into `SymbolIndex` without per-stage rebuilds.
     pub(crate) type_arena: Arc<TypeArena>,
+    /// Append-only store of lazily-materialized external symbols. Empty for an
+    /// internal-only project; a lookup that misses the eager maps materializes
+    /// the defining external file into this store and answers from it. Shared
+    /// by `&self` across the resolve pass — see `materialized.rs`.
+    materialized: MaterializedStore,
 }
 
 impl SymbolIndex {

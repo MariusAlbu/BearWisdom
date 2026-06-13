@@ -107,6 +107,11 @@ tracing               = "0.1"
 tracing-subscriber    = { version = "0.3", features = ["env-filter"] }
 rayon                 = "1.10"
 rustc-hash            = "2"
+# Lazy external materialization: lock-free append-only store (stable refs under
+# &self), concurrent name/qname maps, per-file single-materialize guard.
+boxcar                = "0.2"
+dashmap               = "6"
+once_cell             = "1"
 tokio                 = { version = "1", features = ["full"] }
 # --- Search engine (Phase 1: grep) ---
 grep-matcher          = "0.1"

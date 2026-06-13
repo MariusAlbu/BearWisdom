@@ -13,13 +13,38 @@ use crate::types::AliasTarget;
 use super::{strip_generic_args, SymbolIndex, CURRENT_SOURCE_FILE, LOCAL_TYPE_CACHE};
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup, SymbolSet};
 
+impl SymbolIndex {
+    /// Merge an eager-internal slice with materialized-external hits into one
+    /// `SymbolSet`. The common internal-only case (no materialized hits)
+    /// borrows the eager slice with zero allocation; otherwise the stores are
+    /// concatenated eager-first, so an internal symbol precedes an external one
+    /// on a simple-name tie (preserving "local beats imported").
+    fn span_eager_materialized<'a>(
+        &'a self,
+        eager: &'a [SymbolInfo],
+        materialized: Vec<&'a SymbolInfo>,
+    ) -> SymbolSet<'a> {
+        if materialized.is_empty() {
+            SymbolSet::Borrowed(eager)
+        } else {
+            let mut all: Vec<&SymbolInfo> = eager.iter().collect();
+            all.extend(materialized);
+            SymbolSet::Owned(all)
+        }
+    }
+}
+
 impl SymbolLookup for SymbolIndex {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
-        SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
+        let eager = self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
+        self.span_eager_materialized(eager, self.materialized.by_name(name))
     }
 
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
-        self.by_qname.get(qname)
+        // Eager-internal wins on a qname tie, preserving "local beats imported".
+        self.by_qname
+            .get(qname)
+            .or_else(|| self.materialized.by_qualified_name(qname))
     }
 
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
@@ -40,12 +65,12 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn members_of(&self, parent_qname: &str) -> SymbolSet<'_> {
-        SymbolSet::Borrowed(
-            self.members_by_parent
-                .get(parent_qname)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]),
-        )
+        let eager = self
+            .members_by_parent
+            .get(parent_qname)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        self.span_eager_materialized(eager, self.materialized.members_of(parent_qname))
     }
 
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {

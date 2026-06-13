@@ -1205,6 +1205,7 @@ impl SymbolIndex {
             empty_reexports: Vec::new(),
             chain_misses: std::sync::Mutex::new(Vec::new()),
             type_arena,
+            materialized: super::MaterializedStore::new(),
         }
     }
 }
