@@ -40,6 +40,33 @@ pub(crate) fn detect_groovy_gorm_emission(
     })
 }
 
+/// A bare Groovy `Calls` ref hosted in a GSP file that names a standard Grails
+/// core tag. GSP `${...}` expressions are sub-parsed as Groovy, so a tag called
+/// in expression scope (`${message(code:'x')}`) surfaces as a receiver-less
+/// Groovy call whose target is the tag name. When the Grails framework sources
+/// are not materialized on disk these names have no in-index target; the finite
+/// standard-tag contract brands them as a framework builtin. Gated three ways so
+/// a same-named project method in a plain `.groovy` file is never declined:
+/// the host must be a GSP file, the call must be receiver-less, and the target
+/// must be in the standard contract.
+pub(crate) fn gsp_standard_tag(
+    ref_ctx: &RefContext<'_>,
+    file_ctx: &FileContext,
+) -> Option<String> {
+    if !file_ctx.file_path.ends_with(".gsp") {
+        return None;
+    }
+    let r = ref_ctx.extracted_ref;
+    if r.kind != crate::types::EdgeKind::Calls || r.chain.is_some() {
+        return None;
+    }
+    if crate::languages::gsp::taglib::is_standard_grails_tag(&r.target_name) {
+        Some("grails-taglib".to_string())
+    } else {
+        None
+    }
+}
+
 impl LanguageEngineHooks for GroovyHooks {
     fn classify_external(
         &self,
@@ -48,6 +75,9 @@ impl LanguageEngineHooks for GroovyHooks {
         project_ctx: Option<&ProjectContext>,
         lookup: &dyn SymbolLookup,
     ) -> Option<String> {
+        if let Some(ns) = gsp_standard_tag(ref_ctx, file_ctx) {
+            return Some(ns);
+        }
         java_infer(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
 

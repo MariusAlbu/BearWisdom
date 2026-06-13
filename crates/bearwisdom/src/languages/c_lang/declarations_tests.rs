@@ -71,3 +71,85 @@ typedef struct IUnknownVtbl {
             .collect::<Vec<_>>()
     );
 }
+
+/// Look up a symbol by name and assert it exists with the given kind.
+fn assert_symbol_kind(r: &crate::types::ExtractionResult, name: &str, kind: SymbolKind) {
+    let found = r.symbols.iter().find(|s| s.name == name);
+    assert!(
+        matches!(found, Some(s) if s.kind == kind),
+        "expected `{name}` as {kind:?}, got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, &s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A GCC vector-attribute typedef (`typedef __attribute__((...)) T Alias;`)
+/// splits into a `type_definition` that strands the `typedef` keyword plus a
+/// sibling `declaration` holding the real `T Alias;`. The alias must surface as
+/// a TypeAlias, not the Variable the sibling declaration would otherwise emit.
+#[test]
+fn typedef_with_leading_attribute_emits_type_alias() {
+    let src = "typedef __attribute__((neon_vector_type(4))) int32_t int32x4_t;\n";
+    let r = extract::extract(src, "c");
+    assert_symbol_kind(&r, "int32x4_t", SymbolKind::TypeAlias);
+    assert!(
+        !r.symbols
+            .iter()
+            .any(|s| s.name == "int32x4_t" && s.kind == SymbolKind::Variable),
+        "alias must not also surface as a Variable"
+    );
+}
+
+/// `__attribute__((aligned(N)))` before a `struct foo` source type — the alias
+/// (`bar`) is still a TypeAlias; the referenced `struct foo` is a separate
+/// symbol the visitor emits independently.
+#[test]
+fn typedef_with_attribute_before_struct_source_emits_type_alias() {
+    let src = "typedef __attribute__((aligned(16))) struct foo bar;\n";
+    let r = extract::extract(src, "c");
+    assert_symbol_kind(&r, "bar", SymbolKind::TypeAlias);
+}
+
+/// `__declspec`-prefixed typedef (MSVC form) routes through the same
+/// split-sibling path under the C++ grammar.
+#[test]
+fn typedef_with_declspec_emits_type_alias() {
+    let src = "typedef __declspec(align(16)) int aligned_int;\n";
+    let r = extract::extract(src, "cpp");
+    assert_symbol_kind(&r, "aligned_int", SymbolKind::TypeAlias);
+}
+
+/// Trailing-attribute (GCC postfix) form stays on the `type_definition` path:
+/// the alias is a direct `type_identifier` child and the attribute trails as an
+/// `attribute_specifier` sibling, so the existing typedef handler emits it.
+#[test]
+fn typedef_with_trailing_attribute_emits_type_alias() {
+    let src = "typedef int my_aligned __attribute__((aligned(16)));\n";
+    let r = extract::extract(src, "c");
+    assert_symbol_kind(&r, "my_aligned", SymbolKind::TypeAlias);
+}
+
+/// A plain attribute-free typedef still resolves to a TypeAlias (regression).
+#[test]
+fn plain_typedef_still_emits_type_alias() {
+    let src = "typedef int32_t myint;\n";
+    let r = extract::extract(src, "c");
+    assert_symbol_kind(&r, "myint", SymbolKind::TypeAlias);
+}
+
+/// A non-typedef declaration is unaffected by the attribute-typedef handling —
+/// `x` is a Variable, never a TypeAlias.
+#[test]
+fn plain_declaration_still_emits_variable() {
+    let src = "int32_t x;\n";
+    let r = extract::extract(src, "c");
+    assert_symbol_kind(&r, "x", SymbolKind::Variable);
+    assert!(
+        !r.symbols
+            .iter()
+            .any(|s| s.name == "x" && s.kind == SymbolKind::TypeAlias),
+        "plain declaration must not become a TypeAlias"
+    );
+}

@@ -193,6 +193,31 @@ name = "public-lib"
 }
 
 // ---------------------------------------------------------------------------
+// Dart
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pubspec_name_is_declared_name() {
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "pubspec.yaml",
+        "name: ui_kit\ndescription: a widget library\ndependencies:\n  flutter:\n    sdk: flutter\n",
+    );
+    let (name, publishable) = read_package_manifest(tmp.path(), "dart");
+    assert_eq!(name.as_deref(), Some("ui_kit"));
+    assert!(publishable);
+}
+
+#[test]
+fn pubspec_missing_name_is_none() {
+    let tmp = TempDir::new().unwrap();
+    write(tmp.path(), "pubspec.yaml", "description: no name here\n");
+    let (name, _) = read_package_manifest(tmp.path(), "dart");
+    assert!(name.is_none());
+}
+
+// ---------------------------------------------------------------------------
 // Cross-cutting
 // ---------------------------------------------------------------------------
 

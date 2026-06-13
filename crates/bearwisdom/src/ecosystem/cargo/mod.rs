@@ -136,11 +136,13 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 }
 
 mod discovery;
+mod features;
 mod manifest;
 mod reachability;
 mod symbol_index;
 
 pub use manifest::{parse_cargo_dependencies, parse_cargo_path_dependencies, CargoManifest};
+pub(crate) use discovery::split_crate_dir_name;
 pub(crate) use symbol_index::build_cargo_symbol_index;
 
 use discovery::discover_cargo_roots;
@@ -151,6 +153,16 @@ use reachability::{lib_entry_from_manifest, resolve_crate_entry};
 // ---------------------------------------------------------------------------
 
 pub(crate) fn walk_cargo_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    // Feature-gated crates (the `windows` crate packs its whole generated API
+    // behind `#[cfg(feature = "X")] pub mod X;` — ~692 modules, one 4 MB) are
+    // walked through the cfg-gated module graph so only the project's enabled
+    // feature subtrees are indexed. Crates with no declared feature set keep
+    // the full filesystem walk below — byte-identical to the pre-gate path —
+    // so this never drops a reachable module from an unfeatured dependency.
+    if !features::enabled_features_for_root(&dep.root).is_empty() {
+        return resolve_crate_entry(dep);
+    }
+
     let mut out = Vec::new();
     // Honor `[lib] path = "..."` first — `tree-sitter` and similar
     // C-with-Rust-bindings crates put their entry under

@@ -79,7 +79,7 @@ const CPP_KEYWORD_BLOCKLIST: &[&str] = &[
     "Args",
 ];
 
-fn is_cpp_keyword(name: &str) -> bool {
+pub(super) fn is_cpp_keyword(name: &str) -> bool {
     CPP_KEYWORD_BLOCKLIST.contains(&name)
 }
 

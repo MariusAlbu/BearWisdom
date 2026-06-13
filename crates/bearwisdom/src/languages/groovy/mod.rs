@@ -38,6 +38,10 @@ mod coverage_tests;
 mod flow_tests;
 
 #[cfg(test)]
+#[path = "hooks_tests.rs"]
+mod hooks_tests;
+
+#[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 

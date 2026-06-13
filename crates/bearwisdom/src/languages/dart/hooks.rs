@@ -3,7 +3,9 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, RefContext, Resolution, SymbolLookup, RESOLVED_CONFIDENCE,
+};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -222,7 +224,83 @@ fn is_own_package(
         .is_some_and(|manifest| manifest.package_names.iter().any(|n| n == pkg_name))
 }
 
+/// The bare package name a Dart `package:<pkg>/<rest>` URI imports from, or
+/// `None` for relative / `dart:` / unparseable URIs. `package:foo/bar/baz.dart`
+/// → `foo`.
+fn package_uri_root(uri: &str) -> Option<&str> {
+    let rest = uri.strip_prefix("package:")?;
+    let root = rest.split('/').next().unwrap_or(rest);
+    (!root.is_empty()).then_some(root)
+}
+
+/// Bind a bare type/instantiate/inherit/call ref to a symbol declared in a
+/// sibling workspace package the file imports via `package:`.
+///
+/// Dart imports whole libraries — a `package:<pkg>/...` directive brings every
+/// public name of `<pkg>` into scope with no per-symbol binding, so a bare type
+/// name carries no module and the generic import-anchored strategies have
+/// nothing to key on. This scans the file's `package:` imports, maps each to a
+/// workspace member by its pubspec-declared name, and looks up the target name
+/// (kind-compatible) among that member's symbols. Scoping the search to the
+/// imported member resolves the same-name-different-kind case: a class in the
+/// imported package wins over a same-named property declared elsewhere.
+///
+/// Imports that resolve to the file's own package are skipped — intra-package
+/// references resolve on the generic path before this runs, and a same-package
+/// `package:<self>/...` import must not shadow that.
+fn resolve_via_dart_package_import(
+    ref_ctx: &RefContext<'_>,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let target = ref_ctx.extracted_ref.target_name.as_str();
+    if target.is_empty() || target.contains('.') {
+        return None;
+    }
+    let edge_kind = ref_ctx.extracted_ref.kind;
+    if !matches!(
+        edge_kind,
+        EdgeKind::TypeRef | EdgeKind::Instantiates | EdgeKind::Inherits | EdgeKind::Implements
+    ) {
+        return None;
+    }
+    let own_pkg = ref_ctx.file_package_id;
+    for import in &file_ctx.imports {
+        let uri = import.module_path.as_deref().unwrap_or("");
+        let Some(pkg_name) = package_uri_root(uri) else {
+            continue;
+        };
+        let Some(pkg_id) = lookup.workspace_package_id(pkg_name) else {
+            continue;
+        };
+        if own_pkg == Some(pkg_id) {
+            continue;
+        }
+        for sym in lookup.symbols_in_package(pkg_id) {
+            if sym.name == target && predicates::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: RESOLVED_CONFIDENCE,
+                    strategy: "dart_workspace_package_import",
+                    resolved_yield_type: None,
+                    flow_emit: None,
+                });
+            }
+        }
+    }
+    None
+}
+
 impl LanguageEngineHooks for DartHooks {
+    fn resolve_bare_post(
+        &self,
+        ref_ctx: &RefContext<'_>,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        resolve_via_dart_package_import(ref_ctx, file_ctx, lookup)
+    }
+
     fn classify_external(
         &self,
         ref_ctx: &RefContext<'_>,

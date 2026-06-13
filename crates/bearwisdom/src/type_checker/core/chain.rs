@@ -43,7 +43,7 @@ use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile,
+    ChainQualification, DispatchAxis, LanguageProfile, ScopeYield,
 };
 use crate::types::{CallArg, ChainSegment, EdgeKind, MemberChain, SegmentKind};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -99,7 +99,16 @@ impl RootResolver for DefaultRootResolver {
         match seg.kind {
             SegmentKind::SelfRef => {
                 if let Some(scope) = ref_ctx.source_symbol.scope_path.as_ref() {
-                    return Some(arena.class(scope));
+                    // Decompose a generic enclosing scope (`Foo<T>`, `Lexer<'a>`)
+                    // into `Apply { base, args }` so the self receiver carries the
+                    // impl's type params and `bind_apply_args` can bind them — a
+                    // `self.method()` whose return is one of those params then
+                    // yields the bound type for the next segment. Members are keyed
+                    // under BOTH the raw `Foo<T>` qname and its bare base, so the
+                    // decomposed receiver still finds them. A non-generic scope
+                    // (`Foo`) interns identically to `arena.class`, so a profile
+                    // without generics is unchanged.
+                    return Some(arena.intern_type_str(scope));
                 }
                 // Fallback when the source symbol carries no scope_path.
                 // Common in extractors that emit a per-file class symbol
@@ -464,7 +473,16 @@ impl<'a> ChainWalker<'a> {
         // file's own package.
         let mut prev_owner_qname: Option<String> = None;
 
-        for (i, seg) in chain.segments.iter().enumerate().skip(1) {
+        // Namespace prefix of the last resolved external member's owner
+        // (`Ns.Client.delegate` → `Ns`). An external member's yield is often a
+        // bare delegate type that carries no namespace and is not a registered
+        // type symbol, so the next segment's member is keyed under
+        // `{ns}.{bare}.{member}`. Carrying the namespace forward lets the bare
+        // receiver re-qualify within it. `None` until an external member with a
+        // namespaced owner resolves; pure-lookup, never widens an internal hop.
+        let mut prev_member_ns: Option<String> = None;
+
+        'segments: for (i, seg) in chain.segments.iter().enumerate().skip(1) {
             // Re-expand aliases in case the previous yield landed on one.
             current_ty = self.expand_aliases(current_ty);
 
@@ -597,9 +615,35 @@ impl<'a> ChainWalker<'a> {
                     }
                     m
                 }
-                None => match self.qualified_member_lookup(current_ty, &seg.name, file_ctx) {
+                None => match self.qualified_member_lookup(
+                    current_ty,
+                    &seg.name,
+                    file_ctx,
+                    prev_member_ns.as_deref(),
+                ) {
                     Some(m) => m,
                     None => {
+                        // Scope-function fallback. A non-terminal call segment
+                        // naming a profile scope function (`x.apply { … }.tail`)
+                        // is an unindexed stdlib extension, so member lookup
+                        // missed. A `Receiver`-yielding one threads the receiver
+                        // forward unchanged so `tail` resolves against `x`; a
+                        // `LambdaBody`-yielding one has no generically-inferable
+                        // yield, so the chain declines here WITHOUT recording a
+                        // miss (it is not an external symbol to demand-pull).
+                        if seg.is_call && i != last_idx {
+                            if let Some((_, yield_)) = self
+                                .profile
+                                .scope_functions
+                                .iter()
+                                .find(|(name, _)| *name == seg.name)
+                            {
+                                match yield_ {
+                                    ScopeYield::Receiver => continue 'segments,
+                                    ScopeYield::LambdaBody => return None,
+                                }
+                            }
+                        }
                         // Lost the chain — resolved up to `current_ty` but its
                         // `seg.name` member is unknown. Record the miss so the
                         // expand stage can demand-pull the owning external dep
@@ -609,6 +653,16 @@ impl<'a> ChainWalker<'a> {
                     }
                 },
             };
+
+            // Carry the namespace of an external member's owner forward. The
+            // member's owner qname is its qname minus the member segment; the
+            // namespace is that owner's own parent prefix (`Ns.Client.delegate`
+            // → owner `Ns.Client` → namespace `Ns`). Only recorded for
+            // external-origin members whose owner is namespaced, so the next
+            // bare yield can re-qualify within the same package; an internal or
+            // top-level member clears it (a real type symbol drives the next
+            // hop instead).
+            prev_member_ns = external_member_namespace(&member);
 
             // G1: explicit call-site type arguments (turbofish `m<User>()`) bind
             // the called method's own generic parameters, so a method returning
@@ -1003,6 +1057,7 @@ impl<'a> ChainWalker<'a> {
                 current_type,
                 target_name: target_name.to_string(),
                 module: None,
+                source_path: String::new(),
             });
     }
 
@@ -1189,6 +1244,7 @@ impl<'a> ChainWalker<'a> {
         current_ty: TypeId,
         seg_name: &str,
         file_ctx: &FileContext,
+        prev_member_ns: Option<&str>,
     ) -> Option<SymbolInfo> {
         let qname = match self.arena.get(current_ty) {
             Type::Class(q) => q,
@@ -1201,6 +1257,24 @@ impl<'a> ChainWalker<'a> {
         let candidate = format!("{qname}.{seg_name}");
         if let Some(hit) = self.lookup.by_qualified_name(&candidate) {
             return Some(hit.clone());
+        }
+        // Carried-namespace re-qualification. The previous external member's
+        // yield was a bare delegate type that carries no namespace and is not a
+        // registered type symbol, so neither the direct probe above nor the
+        // external-type-symbol promotion below can key it. The member
+        // nonetheless lives under the previous member's package namespace
+        // (`{ns}.{bare}.{member}` — a generated-client keeps every delegate in
+        // one namespace). Probe that one key directly; a hit continues the
+        // external→external hop. Only the bare base re-qualifies (an
+        // already-dotted receiver was resolved on its own terms), so this never
+        // perturbs an internal or fully-qualified hop.
+        if let Some(ns) = prev_member_ns {
+            if !qname.contains('.') {
+                let ns_candidate = format!("{ns}.{qname}.{seg_name}");
+                if let Some(hit) = self.lookup.by_qualified_name(&ns_candidate) {
+                    return Some(hit.clone());
+                }
+            }
         }
         // External-type qname promotion. When current_ty's qname is a short
         // name shadowed by an external library type ("Assertion" lives as
@@ -1816,6 +1890,27 @@ fn is_identifier_like(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// The package namespace of an external member's owner, or `None`.
+///
+/// An external member keyed `Ns.Client.delegate` has owner `Ns.Client` and
+/// namespace `Ns` — the prefix the walker carries forward so a bare delegate
+/// yield (no namespace, no type symbol) re-qualifies to `Ns.{bare}` for the
+/// next hop.
+///
+/// Returns `None` for an internal-origin member (a real type symbol drives the
+/// next hop) and for a member whose owner is not itself namespaced (a
+/// top-level external owner `Type.member` has no namespace to project) — so it
+/// only ever supplies a prefix the generated-client delegate shape needs.
+fn external_member_namespace(member: &SymbolInfo) -> Option<String> {
+    if !member.file_path.starts_with("ext:") {
+        return None;
+    }
+    // owner = member qname minus the member segment; namespace = owner minus
+    // its own last segment. Both splits must succeed (owner is namespaced).
+    let owner = member.qualified_name.rsplit_once('.')?.0;
+    owner.rsplit_once('.').map(|(ns, _)| ns.to_string())
 }
 
 /// File stem (basename without extension) of `file_path`. Returns `None`

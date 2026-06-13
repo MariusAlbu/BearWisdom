@@ -12,6 +12,28 @@ use tree_sitter::Node;
 
 use super::extract::node_text;
 
+/// Remove exactly one matched pair of surrounding single quotes from a
+/// quoted-atom name (`'queue.declare'` → `queue.declare`). Leaves the text
+/// untouched when the quotes are unbalanced (`'a`), when only one quote is
+/// present, or when there are no surrounding quotes. Interior quotes are
+/// preserved — only the outermost matched pair is dropped.
+///
+/// Record/atom definitions store the name unquoted (`-record(...)` runs the
+/// name through `extract_attr_value`, which strips quotes), so a record-name
+/// ref must strip its surrounding quotes to match the stored Struct symbol.
+fn strip_quoted_atom(name: &str) -> &str {
+    if name.len() >= 2 && name.starts_with('\'') && name.ends_with('\'') {
+        &name[1..name.len() - 1]
+    } else {
+        name
+    }
+}
+
+#[cfg(test)]
+pub(super) fn _test_strip_quoted_atom(name: &str) -> &str {
+    strip_quoted_atom(name)
+}
+
 pub(super) fn extract_function(
     node: &Node,
     src: &str,
@@ -330,11 +352,15 @@ pub(super) fn collect_calls(
                 let line = child.start_position().row as u32;
                 if let Some(name_node) = child.child_by_field_name("name") {
                     // record_name has a `name` field itself
-                    let record_name = if let Some(inner) = name_node.child_by_field_name("name") {
-                        node_text(&inner, src).to_string()
+                    let raw_name = if let Some(inner) = name_node.child_by_field_name("name") {
+                        node_text(&inner, src)
                     } else {
-                        node_text(&name_node, src).to_string()
+                        node_text(&name_node, src)
                     };
+                    // A quoted record name (`#'queue.declare'{}`) carries the
+                    // surrounding single quotes in its node text; the stored
+                    // Struct symbol does not. Strip them so the targets match.
+                    let record_name = strip_quoted_atom(raw_name).to_string();
                     if !record_name.is_empty() {
                         refs.push(ExtractedRef {
                             is_import_binding: false,

@@ -1233,6 +1233,31 @@ fn coverage_use_declaration_wildcard_emits_imports_edge() {
     );
 }
 
+#[test]
+fn coverage_use_wildcard_captures_relative_module_path() {
+    // `use super::*` / `use crate::cfg::*` — the wildcard's own path child carries
+    // the relative module keyword; it must land on the ref's `module`, not NULL.
+    let cases = [
+        ("use super::*;", "super"),
+        ("use crate::*;", "crate"),
+        ("use crate::cfg::*;", "crate::cfg"),
+        ("use super::sib::*;", "super::sib"),
+    ];
+    for (src, expected) in cases {
+        let r = extract::extract(src);
+        let module = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Imports && r.target_name == "*")
+            .and_then(|r| r.module.as_deref());
+        assert_eq!(
+            module,
+            Some(expected),
+            "expected wildcard module={expected:?} for {src:?}, got {module:?}"
+        );
+    }
+}
+
 // ---- struct_expression with scoped path (Foo::Bar { ... }) ------------------
 
 #[test]

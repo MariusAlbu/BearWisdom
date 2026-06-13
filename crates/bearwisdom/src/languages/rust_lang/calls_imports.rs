@@ -237,10 +237,22 @@ fn walk_use_tree(
         }
 
         "use_wildcard" => {
-            let module = if prefix.is_empty() {
+            // tree-sitter-rust shape: `(_path "::")? "*"`. The path before the
+            // `*` is the node's first NAMED child (`crate` / `super` / `self` /
+            // `identifier` / `scoped_identifier`); the `::` and `*` are anonymous
+            // tokens. The inherited `prefix` is empty for a top-level
+            // `use super::*` and carries the scoped-list prefix for a
+            // `use a::{b::*}`, so combine the two. Reading the own path child is
+            // what keeps `super` / `crate` / `crate::x` off NULL.
+            let own_path = node
+                .named_child(0)
+                .map(|n| node_text(&n, source))
+                .unwrap_or_default();
+            let module = build_module_path(prefix, &own_path);
+            let module = if module.is_empty() {
                 None
             } else {
-                Some(prefix.to_string())
+                Some(module)
             };
             refs.push(ExtractedRef {
                 is_import_binding: false,

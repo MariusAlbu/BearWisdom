@@ -103,6 +103,7 @@ fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
         kind_compatible: |_, _| true,
     }
     .resolve_all_with_profile(&GSP_PROFILE)
+    .or_else(|| GspHooks.resolve_bare_post(&ref_ctx, &file_ctx, index))
 }
 
 #[test]
@@ -222,4 +223,131 @@ fn unmatched_template_stays_unresolved() {
     );
     let (index, _id_map) = build_env(&[&source]);
     assert!(resolve(&source, &index).is_none());
+}
+
+fn make_method_symbol(name: &str, scope: &str) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: format!("{scope}.{name}"),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: Some(scope.to_string()),
+        parent_index: None,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn classify_external(source: &ParsedFile, index: &SymbolIndex) -> Option<String> {
+    let file_ctx = GspHooks.build_file_context(source, None).unwrap();
+    let ref_ctx = RefContext {
+        extracted_ref: &source.refs[0],
+        source_symbol: &source.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    GspHooks.classify_external(&ref_ctx, &file_ctx, None, index)
+}
+
+#[test]
+fn custom_markup_tag_binds_to_indexed_closure() {
+    // `<warehouse:message ...>` markup → a `Calls` ref to `message` that binds
+    // to the taglib closure recovered into the index, not a framework brand.
+    let taglib = make_file(
+        "grails-app/taglib/org/pih/warehouse/MessageTagLib.groovy",
+        vec![
+            make_class_symbol("org.pih.warehouse.MessageTagLib"),
+            make_method_symbol("message", "org.pih.warehouse.MessageTagLib"),
+        ],
+        vec![],
+    );
+    let source = make_file(
+        "grails-app/views/admin/cache.gsp",
+        vec![make_class_symbol("cache")],
+        vec![make_render_ref("message", EdgeKind::Calls)],
+    );
+    let (index, id_map) = build_env(&[&source, &taglib]);
+    let res = resolve(&source, &index).expect("custom markup tag should bind to closure");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "grails-app/taglib/org/pih/warehouse/MessageTagLib.groovy".to_string(),
+                "org.pih.warehouse.MessageTagLib.message".to_string()
+            ))
+            .unwrap()
+    );
+}
+
+#[test]
+fn standard_markup_tag_is_branded_taglib_external() {
+    // `<g:link ...>` markup → a `Calls` ref to `link` with no in-index target;
+    // the GSP external classifier brands it a framework builtin.
+    let source = make_file(
+        "grails-app/views/admin/cache.gsp",
+        vec![make_class_symbol("cache")],
+        vec![make_render_ref("link", EdgeKind::Calls)],
+    );
+    let (index, _id_map) = build_env(&[&source]);
+    assert_eq!(
+        classify_external(&source, &index).as_deref(),
+        Some("grails-taglib")
+    );
+}
+
+#[test]
+fn logical_markup_tag_is_branded_taglib_external() {
+    // `<g:if ...>` markup → a `Calls` ref to `if`; a logical tag is a framework
+    // builtin even though it is excluded from the bare-expression contract.
+    let source = make_file(
+        "grails-app/views/admin/cache.gsp",
+        vec![make_class_symbol("cache")],
+        vec![make_render_ref("if", EdgeKind::Calls)],
+    );
+    let (index, _id_map) = build_env(&[&source]);
+    assert_eq!(
+        classify_external(&source, &index).as_deref(),
+        Some("grails-taglib")
+    );
+}
+
+#[test]
+fn ambiguous_method_name_declines() {
+    // Two taglib files both define a `render` Method: the hook must decline
+    // rather than arbitrarily pick one of the two candidates.
+    let taglib_a = make_file(
+        "grails-app/taglib/org/foo/ATagLib.groovy",
+        vec![
+            make_class_symbol("org.foo.ATagLib"),
+            make_method_symbol("render", "org.foo.ATagLib"),
+        ],
+        vec![],
+    );
+    let taglib_b = make_file(
+        "grails-app/taglib/org/bar/BTagLib.groovy",
+        vec![
+            make_class_symbol("org.bar.BTagLib"),
+            make_method_symbol("render", "org.bar.BTagLib"),
+        ],
+        vec![],
+    );
+    let source = make_file(
+        "grails-app/views/admin/cache.gsp",
+        vec![make_class_symbol("cache")],
+        vec![make_render_ref("render", EdgeKind::Calls)],
+    );
+    let (index, _id_map) = build_env(&[&source, &taglib_a, &taglib_b]);
+    assert!(
+        resolve(&source, &index).is_none(),
+        "two same-named Methods must decline — ambiguous bind"
+    );
 }

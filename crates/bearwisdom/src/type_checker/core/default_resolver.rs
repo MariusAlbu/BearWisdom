@@ -29,7 +29,7 @@ use crate::type_checker::profile::language_profile::{
     FileScopedImports, HeadAliasBind, ImportResolution, KindCompatibility, KindTable, ModuleAnchor,
     ModuleAnchorBind, ModulePrefixRewrites, ModuleScope, NameNormalization, NameTransform,
     NamespaceScope, NormSpec, RelativeMarker, SelectorResolution, StemMatch, StemSource,
-    WildcardMatch,
+    WildcardBuiltin, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -68,6 +68,7 @@ struct LadderProfileData<'p> {
     ext_match: ExtMatch,
     self_keywords: &'p [&'p str],
     ambient_namespace_prefixes: &'p [&'p str],
+    wildcard_builtins: &'p [WildcardBuiltin],
     name_normalization: NameNormalization,
     module_scope: ModuleScope,
     wildcard_match: WildcardMatch,
@@ -83,6 +84,7 @@ struct LadderProfileData<'p> {
     selector_resolution: Option<&'p SelectorResolution>,
     qname_separator: &'p str,
     implicit_prelude_namespaces: &'static [&'static str],
+    multi_candidate_ranking: bool,
 }
 
 impl LadderProfileData<'static> {
@@ -97,6 +99,7 @@ impl LadderProfileData<'static> {
         ext_match: ExtMatch::PkgSegment,
         self_keywords: &[],
         ambient_namespace_prefixes: &[],
+        wildcard_builtins: &[],
         name_normalization: NameNormalization::None,
         module_scope: ModuleScope::Off,
         wildcard_match: WildcardMatch::QnameUnder,
@@ -112,6 +115,7 @@ impl LadderProfileData<'static> {
         selector_resolution: None,
         qname_separator: ".",
         implicit_prelude_namespaces: &[],
+        multi_candidate_ranking: false,
     };
 }
 
@@ -1579,7 +1583,12 @@ impl<'a> DefaultResolver<'a> {
     /// The module boundary is parameterized by `ModuleScope`:
     /// - `Off` — inert, the rung never fires.
     /// - `SameDir` — delegates to `resolve_via_same_dir` (the parent dir IS the
-    ///   module: Odin/MATLAB same-package references), strategy `default_same_dir`.
+    ///   module: Odin/MATLAB same-package references), strategy `default_same_dir`,
+    ///   first-match.
+    /// - `SameDirUnique` — same dir boundary as `SameDir`, but binds only when
+    ///   EXACTLY ONE kind-compatible internal candidate is in-dir (after the
+    ///   unique-internal-name dedup), strategy `default_module_scope`. An in-dir
+    ///   overload set declines here and falls to argument-driven disambiguation.
     /// - `SourcesTargetSubtree` — the SwiftPM whole-module case: every file under
     ///   one `Sources/<Target>/` (or `Tests/<Target>/`) subtree compiles into one
     ///   module and sees the others without import. A candidate is in-module iff
@@ -1601,8 +1610,55 @@ impl<'a> DefaultResolver<'a> {
         match scope {
             ModuleScope::Off => None,
             ModuleScope::SameDir => self.resolve_via_same_dir(kind),
+            ModuleScope::SameDirUnique => self.resolve_via_same_dir_unique(kind),
             ModuleScope::SourcesTargetSubtree => self.resolve_via_sources_target_subtree(kind),
         }
+    }
+
+    /// The `SameDirUnique` arm of `resolve_via_module_scope`: the same
+    /// immediate-parent-dir boundary as `resolve_via_same_dir`, but binds iff
+    /// EXACTLY ONE distinct in-dir + internal + kind-compatible declaration
+    /// survives. Same-qname rows are duplicates only within one file
+    /// (declaration merging); across files they are an overload set, which
+    /// declines here and falls to argument-driven disambiguation rather than
+    /// an arbitrary first match.
+    fn resolve_via_same_dir_unique(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty()
+            || target.contains('.')
+            || target.contains("::")
+            || target.contains('/')
+        {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        let src_parent = parent_dir_basename(&self.file_ctx.file_path)?;
+        let mut compatible: Vec<&SymbolInfo> = self
+            .lookup
+            .by_name(target)
+            .iter()
+            .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
+            .filter(|sym| kind(edge_kind, &sym.kind))
+            .filter(|sym| {
+                parent_dir_basename(&sym.file_path).as_deref() == Some(src_parent.as_str())
+            })
+            .collect();
+        compatible.sort_by(|a, b| {
+            a.qualified_name
+                .cmp(&b.qualified_name)
+                .then(a.kind.cmp(&b.kind))
+                .then(a.file_path.cmp(&b.file_path))
+        });
+        compatible.dedup_by(|a, b| {
+            a.qualified_name == b.qualified_name && a.kind == b.kind && a.file_path == b.file_path
+        });
+        if compatible.len() != 1 {
+            return None;
+        }
+        Some(self.resolution(compatible[0].id, "default_module_scope"))
     }
 
     /// The `SourcesTargetSubtree` arm of `resolve_via_module_scope`.
@@ -2261,6 +2317,7 @@ impl<'a> DefaultResolver<'a> {
                 ext_match: profile.ext_match,
                 self_keywords: profile.self_keywords,
                 ambient_namespace_prefixes: profile.ambient_namespace_prefixes,
+                wildcard_builtins: profile.wildcard_builtins,
                 name_normalization: profile.name_normalization,
                 module_scope: profile.module_scope,
                 wildcard_match: profile.wildcard_match,
@@ -2276,6 +2333,7 @@ impl<'a> DefaultResolver<'a> {
                 selector_resolution: profile.selector_resolution.as_ref(),
                 qname_separator: profile.qname_separator,
                 implicit_prelude_namespaces: implicit_prelude_namespaces(profile.id),
+                multi_candidate_ranking: profile.multi_candidate_ranking,
             },
         )
     }
@@ -2409,6 +2467,18 @@ impl<'a> DefaultResolver<'a> {
                 .and_then(|leaf| self.resolve_via_ambient_package_named(leaf, kind))
             })
             .or_else(|| {
+                // A target matching a wildcard-builtin family (`listConnectionStrings`,
+                // anchored `list` + uppercase) folds to the single ambient symbol
+                // that stands for the family (`list`) and retries the ambient probe.
+                // Below the concrete ambient rungs, so an enumerated same-named
+                // builtin binds first.
+                let target = self.ref_ctx.extracted_ref.target_name.as_str();
+                pd.wildcard_builtins
+                    .iter()
+                    .find_map(|wb| wb.fold(target))
+                    .and_then(|leaf| self.resolve_via_ambient_package_named(leaf, kind))
+            })
+            .or_else(|| {
                 pd.external_by_import
                     .and_then(|cfg| self.resolve_via_external_by_import(cfg, pd.ext_match, kind))
             })
@@ -2416,6 +2486,7 @@ impl<'a> DefaultResolver<'a> {
             .or_else(|| {
                 self.resolve_via_wildcard_import(kind, pd.wildcard_match, pd.name_normalization)
             })
+            .or_else(|| self.resolve_via_relative_module_wildcard(kind))
             .or_else(|| {
                 self.resolve_via_implicit_prelude(
                     pd.implicit_prelude_namespaces,
@@ -2437,6 +2508,16 @@ impl<'a> DefaultResolver<'a> {
                     kind,
                     pd.self_keywords,
                 )
+            })
+            // Below every structural rung and the namespaceless first-match:
+            // multi-candidate disambiguation by ranking. Scores the surviving
+            // same-name candidate set and binds the top only when it dominates
+            // the runner-up by `RANK_MARGIN`, else declines on a tie. Gated on
+            // `multi_candidate_ranking`; off (every non-opted language) is inert.
+            .or_else(|| {
+                pd.multi_candidate_ranking
+                    .then(|| self.resolve_via_ranked_candidates(kind))
+                    .flatten()
             });
         if result.is_none() {
             self.record_bare_name_chain_miss();
@@ -2475,6 +2556,7 @@ impl<'a> DefaultResolver<'a> {
                 current_type: String::new(),
                 target_name: target.to_string(),
                 module: None,
+                source_path: String::new(),
             });
     }
 
@@ -2555,6 +2637,72 @@ impl<'a> DefaultResolver<'a> {
             return Some(self.resolution(hits[0].id, "default_wildcard_import"));
         }
         None
+    }
+
+    /// Strategy — a Rust relative-module glob (`use super::*`, `use crate::*`,
+    /// `use crate::x::y::*`) brings the named module's bare-scoped items into the
+    /// importing file. Unlike `QnameUnder`, the candidate's qname carries no
+    /// module prefix (Rust top-level symbols are bare-qnamed: `find_position_of`,
+    /// not `tests::find_position_of`), and `super`/`crate` are relative keywords
+    /// that name a FILE location rather than a qname namespace or a file stem. So
+    /// the bind is by (file, bare name): map the keyword to the module's
+    /// candidate file paths relative to the importing file, then match the bare
+    /// target against the symbols DEFINED in one of those files.
+    ///
+    /// Fires only when a wildcard import's `module_path` is a Rust relative
+    /// keyword (`super` / `crate` / a `super::`- or `crate::`-rooted path) — those
+    /// are reserved in Rust and never appear as another language's wildcard
+    /// module, so the strategy is inert everywhere else. Declines on a bare
+    /// target with `.`/`::` (a qualified ref is handled upstream), on zero hits,
+    /// and on two distinct file/id hits (ambiguous glob — let ranking decide).
+    pub fn resolve_via_relative_module_wildcard(
+        &self,
+        kind: &dyn Fn(EdgeKind, &str) -> bool,
+    ) -> Option<Resolution> {
+        let target = self.ref_ctx.extracted_ref.target_name.as_str();
+        if target.is_empty() || target.contains('.') || target.contains("::") {
+            return None;
+        }
+        let edge_kind = self.ref_ctx.extracted_ref.kind;
+        // Candidate files contributed by every relative-module glob in the file.
+        // A `super::*` and a `crate::x::*` in the same file each widen the set;
+        // a name defined in any one of those modules binds.
+        let mut module_files: Vec<String> = Vec::new();
+        for imp in self.file_ctx.imports.iter().filter(|i| i.is_wildcard) {
+            let Some(module) = imp.module_path.as_deref() else {
+                continue;
+            };
+            for f in relative_module_files(&self.file_ctx.file_path, module) {
+                if !module_files.contains(&f) {
+                    module_files.push(f);
+                }
+            }
+        }
+        if module_files.is_empty() {
+            return None;
+        }
+        // Match the bare target against the same-named symbols DEFINED in one of
+        // those files. The candidate's FILE must equal a computed module file —
+        // the bind is by (file, bare name), since Rust top-level symbols carry no
+        // module-prefixed qname. A name local to the importing file is resolved
+        // by the same-file / scope rungs upstream and never reaches here, so a
+        // glob import cannot shadow a local definition.
+        let mut hit: Option<&SymbolInfo> = None;
+        for sym in self.lookup.by_name(target) {
+            if !kind(edge_kind, &sym.kind) {
+                continue;
+            }
+            let sym_file = sym.file_path.replace('\\', "/");
+            if !module_files.iter().any(|f| *f == sym_file) {
+                continue;
+            }
+            match hit {
+                None => hit = Some(sym),
+                Some(h) if h.id == sym.id => {}
+                Some(_) => return None,
+            }
+        }
+        hit.map(|s| self.resolution(s.id, "default_relative_module_wildcard"))
     }
 
     /// Strategy — a bare name brought into scope by the language's implicit
@@ -3002,6 +3150,104 @@ fn parent_dir(file_path: &str) -> Option<String> {
     normalized.rsplit_once('/').map(|(dir, _)| dir.to_string())
 }
 
+/// The candidate file paths a Rust relative-module glob (`use super::*` /
+/// `use crate::*` / `use crate::x::y::*`) names, computed from the importing
+/// file's path. Returns an empty vec for a non-relative module (`std`, an
+/// external crate) so the strategy stays inert. Path separators are normalized
+/// to `/`.
+///
+/// `super` resolves to the parent module's roots: the directory sibling
+/// `<dir>.rs` and `<dir>/mod.rs`, where `<dir>` is the module directory of the
+/// importing file. A `mod.rs` / `lib.rs` / `main.rs` file already IS its
+/// directory's module, so its parent is one directory higher.
+///
+/// `crate` resolves to the crate root (`<crate_src>/lib.rs`, `…/main.rs`) and
+/// `crate::x::y` to that module's roots under the crate src dir (`x/y.rs`,
+/// `x/y/mod.rs`). The crate src dir is the path up to and including the last
+/// `src/` segment; without one, the importing file's own directory anchors the
+/// crate-relative path.
+fn relative_module_files(importing_file: &str, module: &str) -> Vec<String> {
+    let file = importing_file.replace('\\', "/");
+    let head = module.split("::").next().unwrap_or(module);
+    match head {
+        "super" => {
+            // `super::x::*` walks down from the parent module dir; the leading
+            // `super` itself selects the parent. Extra trailing segments
+            // (`super::sib::*`) descend from there.
+            let Some(parent) = module_parent_dir(&file) else {
+                return Vec::new();
+            };
+            let rest: Vec<&str> = module.split("::").skip(1).collect();
+            module_roots(&parent, &rest)
+        }
+        "crate" => {
+            let src_dir = crate_src_dir(&file);
+            let rest: Vec<&str> = module.split("::").skip(1).collect();
+            if rest.is_empty() {
+                // The crate root file itself.
+                vec![format!("{src_dir}/lib.rs"), format!("{src_dir}/main.rs")]
+            } else {
+                module_roots(&src_dir, &rest)
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The directory of the importing file's PARENT module. For a regular
+/// `D/foo.rs` the file is module `foo` under `D`, so the parent module's
+/// directory is `D` itself. For a `D/mod.rs` (or `lib.rs` / `main.rs`) the file
+/// IS module `D`, so the parent module's directory is `parent(D)`. `None` when
+/// there is no parent directory to climb to.
+fn module_parent_dir(file: &str) -> Option<String> {
+    let dir = parent_dir(file)?;
+    let basename = file.rsplit('/').next().unwrap_or(file);
+    let stem = basename.rsplit_once('.').map_or(basename, |(s, _)| s);
+    if matches!(stem, "mod" | "lib" | "main") {
+        parent_dir(&dir)
+    } else {
+        Some(dir)
+    }
+}
+
+/// The crate's source-root directory: the prefix up to and including the last
+/// `src/` segment of `file`. Falls back to the importing file's own directory
+/// when the path has no `src/` segment, so a crate-relative glob still anchors
+/// somewhere deterministic.
+fn crate_src_dir(file: &str) -> String {
+    let mut acc: Vec<&str> = Vec::new();
+    let mut last_src: Option<usize> = None;
+    for (i, seg) in file.split('/').enumerate() {
+        acc.push(seg);
+        if seg == "src" {
+            last_src = Some(i);
+        }
+    }
+    match last_src {
+        Some(i) => acc[..=i].join("/"),
+        None => parent_dir(file).unwrap_or_default(),
+    }
+}
+
+/// The candidate root files for a module reached by descending `segments` from
+/// `base_dir`. With no segments, the module IS `base_dir`, rooted at
+/// `<base_dir>/mod.rs` and the sibling `<base_dir>.rs`. With segments, the last
+/// is the module file (`a/b.rs`) and the directory form (`a/b/mod.rs`).
+fn module_roots(base_dir: &str, segments: &[&str]) -> Vec<String> {
+    if segments.is_empty() {
+        let leaf = base_dir.rsplit('/').next().unwrap_or(base_dir);
+        let sibling = parent_dir(base_dir)
+            .map(|p| format!("{p}/{leaf}.rs"))
+            .unwrap_or_else(|| format!("{base_dir}.rs"));
+        return vec![format!("{base_dir}/mod.rs"), sibling];
+    }
+    let nested = segments.join("/");
+    vec![
+        format!("{base_dir}/{nested}.rs"),
+        format!("{base_dir}/{nested}/mod.rs"),
+    ]
+}
+
 /// The SwiftPM module-subtree prefix of a file path: the substring up to and
 /// including `Sources/<seg>/` (or `Tests/<seg>/`). Every file under one such
 /// subtree compiles into module `<seg>`, so two files share a module iff their
@@ -3400,6 +3646,11 @@ fn trim_source_extension(path: &str) -> &str {
         .trim_end_matches(".ts")
         .trim_end_matches(".js")
         .trim_end_matches(".cs")
+        .trim_end_matches(".cljc")
+        .trim_end_matches(".cljs")
+        .trim_end_matches(".clj")
+        .trim_end_matches(".astro")
+        .trim_end_matches(".mdx")
 }
 
 fn component_tag_head(target: &str) -> Option<&str> {

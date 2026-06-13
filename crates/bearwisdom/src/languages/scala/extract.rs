@@ -647,6 +647,29 @@ fn extract_type_refs_from_type_node(
                 // Function types may have parameter and return type nodes.
                 extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
             }
+            "stable_type_identifier" => {
+                // A fully-qualified type (`org.apache.X`). Emit the trailing
+                // simple name only; recursing would surface the dotted package
+                // prefix segments as bare TypeRef targets.
+                let full = helpers::node_text(child, src);
+                let simple = full.rsplit('.').next().unwrap_or(&full);
+                if !simple.is_empty() {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index,
+                        target_name: simple.to_string(),
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module: None,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+            }
             _ => {
                 // Recurse into other node types to find nested type_identifier nodes.
                 extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);

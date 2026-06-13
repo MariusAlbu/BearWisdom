@@ -8,13 +8,12 @@
 // (`qobject.h`, `qstring.h`). Both forms are valid `#include` targets and we
 // register both.
 //
-// Discovery probes (in order):
-//   1. `BEARWISDOM_QT_DIR` env override
-//   2. `QTDIR`, `Qt5_DIR`, `Qt6_DIR` env vars
-//   3. Standard Qt online installer paths
+// Discovery probes (in order; each is a candidate, none is required):
+//   1. `QTDIR`, `Qt5_DIR`, `Qt6_DIR` env vars set by the Qt toolchain/qmake
+//   2. Standard Qt online installer paths
 //      (`C:/Qt/<ver>/<kit>/include`, `/Applications/Qt/<ver>/<kit>/include`)
-//   4. aqtinstall paths (`~/Qt/<ver>/<kit>/include`)
-//   5. System package manager paths (`/usr/include/qt5`,
+//   3. aqtinstall paths (`~/Qt/<ver>/<kit>/include`)
+//   4. System package manager paths (`/usr/include/qt5`,
 //      `/usr/include/x86_64-linux-gnu/qt5`, MSYS2 `mingw64/include/qt5`,
 //      Homebrew `/usr/local/opt/qt@5/include`)
 //
@@ -189,18 +188,8 @@ fn discover_qt_include() -> Vec<ExternalDepRoot> {
         }
     };
 
-    // Explicit override.
-    if let Some(explicit) = std::env::var_os("BEARWISDOM_QT_DIR") {
-        let p = PathBuf::from(explicit);
-        // Either include/ or its parent.
-        if p.join("include").is_dir() {
-            push_root(p.join("include"), &mut out);
-        } else if p.is_dir() {
-            push_root(p, &mut out);
-        }
-    }
-
-    // Standard Qt env vars.
+    // Standard Qt env vars set by the toolchain / qmake. Each names an
+    // install root or its `include/` dir; either form is accepted.
     for var in ["QTDIR", "Qt6_DIR", "Qt5_DIR"] {
         if let Some(val) = std::env::var_os(var) {
             let p = PathBuf::from(val);

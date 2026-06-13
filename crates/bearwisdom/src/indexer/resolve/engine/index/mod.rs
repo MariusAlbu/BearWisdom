@@ -28,8 +28,9 @@ use super::{ChainMiss, SymbolInfo, TypeInfo};
 // visibility rules; this `pub(super) use` makes the imports in each submodule
 // one `super::` hop instead of two.
 pub(super) use super::{
-    common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
-    merge_where_bounds, parse_generic_param_clause, strip_generic_args,
+    common_prefix_len, find_matching_bracket, is_ambient_global_lib_path,
+    is_ts_ambient_global_lib_path, is_type_like_kind, merge_where_bounds,
+    parse_generic_param_clause, strip_generic_args,
 };
 
 mod augment;
@@ -214,6 +215,20 @@ impl SymbolIndex {
 // (rayon worker threads are persistent) is safe because of that reset.
 thread_local! {
     pub(crate) static LOCAL_TYPE_CACHE: RefCell<LocalTypeCache> = RefCell::new(LocalTypeCache::default());
+    /// The project-relative path of the file currently being resolved on this
+    /// worker thread. Set once per file before its ref loop begins, read by
+    /// `record_chain_miss` to tag each miss with its originating file.
+    pub(crate) static CURRENT_SOURCE_FILE: RefCell<String> = RefCell::new(String::new());
+}
+
+impl SymbolIndex {
+    /// Record the project-relative path of the file whose refs are about to be
+    /// resolved on the calling rayon worker. Must be called once per file before
+    /// the ref loop so that every `record_chain_miss` within that loop reads the
+    /// correct source path from the thread-local.
+    pub fn set_current_source_file(&self, path: &str) {
+        CURRENT_SOURCE_FILE.with(|c| *c.borrow_mut() = path.to_string());
+    }
 }
 
 // ---------------------------------------------------------------------------

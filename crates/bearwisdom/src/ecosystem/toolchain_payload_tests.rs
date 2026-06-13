@@ -54,6 +54,44 @@ fn zig_toolchain_marks_libc_and_libcxx_subtrees() {
 }
 
 #[test]
+fn zig_toolchain_marks_bundled_clang_headers_and_tsan_runtime() {
+    let tmp = std::env::temp_dir().join("bw-test-toolchain-zig-clang");
+    let _ = std::fs::remove_dir_all(&tmp);
+    // lib/include (bundled clang headers) and lib/libtsan (the compiler-rt
+    // ThreadSanitizer runtime) are vendored LLVM/clang payload, not Zig code.
+    make_dirs(
+        &tmp,
+        &["lib/std", "lib/include", "lib/libtsan", "lib/compiler", "src"],
+    );
+
+    let prefixes = toolchain_payload_prefixes(&tmp);
+    assert!(
+        prefixes.contains(&"lib/include".to_string()),
+        "lib/include (clang headers) payload missing; got: {prefixes:?}"
+    );
+    assert!(
+        prefixes.contains(&"lib/libtsan".to_string()),
+        "lib/libtsan (compiler-rt) payload missing; got: {prefixes:?}"
+    );
+
+    assert!(is_under_toolchain_payload(
+        "lib/include/stddef.h",
+        &prefixes
+    ));
+    assert!(is_under_toolchain_payload(
+        "lib/libtsan/tsan_rtl.cpp",
+        &prefixes
+    ));
+    // Zig's own compiler implementation under lib/ stays internal.
+    assert!(!is_under_toolchain_payload(
+        "lib/compiler/aro/aro.zig",
+        &prefixes
+    ));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn non_zig_project_with_lib_dir_is_not_a_toolchain() {
     let tmp = std::env::temp_dir().join("bw-test-toolchain-not-zig");
     let _ = std::fs::remove_dir_all(&tmp);

@@ -650,6 +650,15 @@ pub(super) fn extract_call(
         return;
     }
 
+    // Skip `$`-named calls: a bare `$` identifier as the callee never resolves
+    // to an indexed symbol. The two sources are (1) GString `"...${expr}..."`
+    // parsed as `$` applied to a trailing closure `{ expr }` and (2) direct
+    // `$("selector")` DSL calls. Traversal still recurses into the node's
+    // children so any calls nested inside a `$` closure body are preserved.
+    if predicates::is_interpolation_marker(&name) {
+        return;
+    }
+
     // Build a MemberChain when the call has a receiver (`object` field).
     // This enables the chain walker and the external classifier to determine
     // the receiver type and classify the call correctly (e.g. `file.path.endsWith`

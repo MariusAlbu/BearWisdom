@@ -285,6 +285,29 @@ fn extract_type_refs_from_type_arguments(
                     });
                 }
             }
+            "stable_type_identifier" => {
+                // A fully-qualified type argument (`org.apache.X`). Emit the
+                // trailing simple name only; recursing would surface the dotted
+                // package prefix segments as bare TypeRef targets.
+                let full = node_text(child, src);
+                let simple = full.rsplit('.').next().unwrap_or(&full);
+                if !simple.is_empty() {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index,
+                        target_name: simple.to_string(),
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module: None,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+            }
             "generic_type" | "compound_type" | "function_type" | "type_arguments" => {
                 // Recurse into nested types.
                 extract_type_refs_from_type_arguments(&child, src, source_symbol_index, refs);

@@ -381,13 +381,14 @@ fn project_has_compile_commands_json_returns_false_when_absent() {
 fn precedence_qt_walker_suppressed_when_compile_commands_present() {
     use crate::ecosystem::{Ecosystem, EcosystemId, QtRuntimeEcosystem};
     use std::collections::HashMap;
-    // Point QT_DIR at a real fixture so the walker WOULD return a root
+    // Point QTDIR at a real fixture so the walker WOULD return a root
     // if the precedence rule weren't gating it.
     let qt_tmp = TempDir::new().unwrap();
     let qt_include = qt_tmp.path().join("include");
     fs::create_dir_all(qt_include.join("QtCore")).unwrap();
     fs::write(qt_include.join("QtCore/qobject.h"), "class QObject {};\n").unwrap();
-    std::env::set_var("BEARWISDOM_QT_DIR", qt_tmp.path());
+    let prior_qtdir = std::env::var_os("QTDIR");
+    std::env::set_var("QTDIR", qt_tmp.path());
 
     let project_tmp = TempDir::new().unwrap();
     fs::write(project_tmp.path().join("compile_commands.json"), "[]").unwrap();
@@ -400,7 +401,10 @@ fn precedence_qt_walker_suppressed_when_compile_commands_present() {
         active_ecosystems: &active,
     };
     let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(&QtRuntimeEcosystem, &ctx);
-    std::env::remove_var("BEARWISDOM_QT_DIR");
+    match prior_qtdir {
+        Some(p) => std::env::set_var("QTDIR", p),
+        None => std::env::remove_var("QTDIR"),
+    }
     assert!(
         roots.is_empty(),
         "Qt walker must suppress when compile_commands.json is present; got {roots:?}"
@@ -416,7 +420,8 @@ fn precedence_qt_walker_active_without_compile_commands() {
     let qt_include = qt_tmp.path().join("include");
     fs::create_dir_all(qt_include.join("QtCore")).unwrap();
     fs::write(qt_include.join("QtCore/qobject.h"), "class QObject {};\n").unwrap();
-    std::env::set_var("BEARWISDOM_QT_DIR", qt_tmp.path());
+    let prior_qtdir = std::env::var_os("QTDIR");
+    std::env::set_var("QTDIR", qt_tmp.path());
 
     let project_tmp = TempDir::new().unwrap();
 
@@ -428,7 +433,10 @@ fn precedence_qt_walker_active_without_compile_commands() {
         active_ecosystems: &active,
     };
     let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(&QtRuntimeEcosystem, &ctx);
-    std::env::remove_var("BEARWISDOM_QT_DIR");
+    match prior_qtdir {
+        Some(p) => std::env::set_var("QTDIR", p),
+        None => std::env::remove_var("QTDIR"),
+    }
     assert!(
         !roots.is_empty(),
         "Qt walker must activate when no compile_commands.json — fallback case"

@@ -328,6 +328,16 @@ fn extract_variable_declaration(
                 extract_function_call(&rhs_node, src, symbols, refs, parent_index);
                 (SymbolKind::Variable, None)
             }
+            "dot_index_expression" => {
+                // `local floor = math.floor` — a value alias: the local binds a
+                // qualified member. Record the dotted RHS qname in the signature
+                // so the resolver can bind a bare `floor()` call to `math.floor`.
+                let table = get_index_table_name(&rhs_node, src);
+                let field = get_index_field_name(&rhs_node, src);
+                let sig = (!table.is_empty() && !field.is_empty())
+                    .then(|| format!("{} = {}.{}", name, table, field));
+                (SymbolKind::Variable, sig)
+            }
             _ => (SymbolKind::Variable, None),
         }
     } else {

@@ -43,6 +43,18 @@ pub(super) fn extract_function(
                         .to_string();
                     break;
                 }
+                "infix" => {
+                    // Infix-form operator definition: `a $$ b = ...`. The
+                    // function name is the `operator` field of the infix node,
+                    // not a variable child. Take the bare operator surface form
+                    // so it matches the `$$` a call ref emits.
+                    if let Some(op) = child.child_by_field_name("operator") {
+                        found = node_text(op, src).trim_matches('`').to_string();
+                        if !found.is_empty() {
+                            break;
+                        }
+                    }
+                }
                 "match" => {
                     // match node contains the function name as first child
                     let mut mc = child.walk();
@@ -97,6 +109,51 @@ pub(super) fn extract_function(
     let idx = symbols.len();
     symbols.push(make_symbol(name, qname, kind, node, None, parent_index));
     // Attach scope_path
+    if let Some(ref s) = scope {
+        symbols[idx].scope_path = Some(s.clone());
+    }
+    Some(idx)
+}
+
+// ---------------------------------------------------------------------------
+// bind  →  Variable (top-level / where-bound) or Method (in class / instance)
+// ---------------------------------------------------------------------------
+//
+// A nullary binding (`answer = 42`, `($$) = ...`, a no-parameter where-local
+// `g = ...`) parses as a `bind` node, distinct from the `function` node that
+// carries parameter patterns. Its `name` field is a `variable` or — for an
+// operator binding — a parenthesized `prefix_id`. Surface it as a callable
+// symbol so refs to the bound identifier resolve; operator names are stripped
+// to their bare surface form so they match the call refs an `infix` emits.
+
+pub(super) fn extract_bind(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    kind: SymbolKind,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name_node = node
+        .child_by_field_name("name")
+        .or_else(|| node.named_child(0))?;
+    let name = node_text(name_node, src)
+        .trim_matches(|c: char| c == '(' || c == ')' || c == '`')
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte())
+        .map(|s| s.qualified_name.clone());
+    let qname = if let Some(p) = &scope {
+        format!("{}.{}", p, name)
+    } else {
+        name.clone()
+    };
+
+    let idx = symbols.len();
+    symbols.push(make_symbol(name, qname, kind, node, None, parent_index));
     if let Some(ref s) = scope {
         symbols[idx].scope_path = Some(s.clone());
     }

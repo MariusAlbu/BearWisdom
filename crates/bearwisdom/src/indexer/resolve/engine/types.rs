@@ -44,6 +44,11 @@ pub struct ChainMiss {
     /// `find_by_name` fallback. `None` for chain-walker bail-outs and bare
     /// ambient names, which keep the type-scoped / `find_by_name` probes.
     pub module: Option<String>,
+    /// The project-relative path of the source file in which this miss was
+    /// recorded. Set from the per-worker thread-local installed before each
+    /// file's ref loop. Empty string when the recorder couldn't determine
+    /// the current file (should not occur in the normal resolve path).
+    pub source_path: String,
 }
 
 // ---------------------------------------------------------------------------

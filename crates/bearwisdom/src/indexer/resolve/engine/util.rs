@@ -8,18 +8,34 @@
 // import specifiers.
 // =============================================================================
 
-/// Detect an ambient-global TypeScript declaration file — `lib.*.d.ts` shipped
+/// Detect an ambient-global declaration file — a runtime surface a project
+/// can name without an explicit import. Two shapes qualify:
+///
+/// - TypeScript's `lib.*.d.ts` / `@types/node` (`is_ts_ambient_global_lib_path`).
+/// - A language stdlib whose symbols carry a `<lang>-stdlib`-tagged external
+///   path. These libraries are language substrate — every project in the
+///   language reaches their names unqualified-by-import (Lua's `string`,
+///   `table`, `math`, `os`, …).
+///
+/// Used by the ambient-globals bind rung, which is per-language gated, so the
+/// broader stdlib admission only takes effect for a language that opted in.
+pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    is_ts_ambient_global_lib_path(&normalized) || is_stdlib_external_path(&normalized)
+}
+
+/// Detect a TypeScript ambient-global declaration file — `lib.*.d.ts` shipped
 /// with the TypeScript compiler, or any file under `@types/node/`. Methods
 /// declared in these files are the JS/DOM/ES runtime surface and need no
 /// explicit import to call.
 ///
 /// Recognises both the historical absolute-path form
-/// (`.../typescript/lib/lib.dom.d.ts`) and the synthetic-module form
-/// emitted post-Pass-A (`ext:ts:__ts_lib__/lib.dom.d.ts`,
-/// `ext:ts:@types/node/process.d.ts`). The substring matchers stay so
-/// older indexes built before the path rewrite still classify correctly.
-pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
-    let normalized = path.replace('\\', "/");
+/// (`.../typescript/lib/lib.dom.d.ts`) and the synthetic-module form emitted
+/// post-Pass-A (`ext:ts:__ts_lib__/lib.dom.d.ts`,
+/// `ext:ts:@types/node/process.d.ts`). The substring matchers stay so older
+/// indexes built before the path rewrite still classify correctly. The input
+/// is already forward-slash normalised.
+pub(crate) fn is_ts_ambient_global_lib_path(normalized: &str) -> bool {
     let synthetic_prefix = format!(
         "ext:ts:{}/",
         crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
@@ -28,6 +44,20 @@ pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
         || normalized.starts_with("ext:ts:@types/node/")
         || normalized.contains("/typescript/lib/lib.")
         || normalized.contains("/@types/node/")
+}
+
+/// True for a language-stdlib external path — `ext:<lang>-stdlib:...`. The
+/// stdlib ecosystems tag their synthetic file path with the `<lang>-stdlib`
+/// ecosystem id, so an `ext:` external whose ecosystem segment ends in
+/// `-stdlib` is the language's runtime substrate.
+fn is_stdlib_external_path(normalized: &str) -> bool {
+    let Some(rest) = normalized.strip_prefix("ext:") else {
+        return false;
+    };
+    let Some((ecosystem, _)) = rest.split_once(':') else {
+        return false;
+    };
+    ecosystem.ends_with("-stdlib")
 }
 
 pub(crate) fn is_type_like_kind(kind: &str) -> bool {

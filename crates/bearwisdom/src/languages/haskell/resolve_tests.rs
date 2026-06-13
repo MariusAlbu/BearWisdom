@@ -60,6 +60,27 @@ fn resolve_ref(
     target: &str,
     kind: EdgeKind,
 ) -> Option<crate::indexer::resolve::engine::Resolution> {
+    resolve_ref_impl(pf, target, kind, None)
+}
+
+/// Same as `resolve_ref` but selects the ref whose source symbol has the given
+/// simple name — used to drive a call issued from a specific enclosing scope
+/// when several refs share a target name.
+fn resolve_ref_from(
+    pf: &ParsedFile,
+    source_name: &str,
+    target: &str,
+    kind: EdgeKind,
+) -> Option<crate::indexer::resolve::engine::Resolution> {
+    resolve_ref_impl(pf, target, kind, Some(source_name))
+}
+
+fn resolve_ref_impl(
+    pf: &ParsedFile,
+    target: &str,
+    kind: EdgeKind,
+    source_name: Option<&str>,
+) -> Option<crate::indexer::resolve::engine::Resolution> {
     use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
     use crate::type_checker::core::DefaultResolver;
     use crate::type_checker::profile::hooks::LanguageEngineHooks;
@@ -67,7 +88,12 @@ fn resolve_ref(
     let ref_idx = pf
         .refs
         .iter()
-        .position(|r| r.target_name == target && r.kind == kind)
+        .position(|r| {
+            r.target_name == target
+                && r.kind == kind
+                && source_name
+                    .is_none_or(|sn| pf.symbols[r.source_symbol_index].name == sn)
+        })
         .expect("ref present");
     let er = &pf.refs[ref_idx];
     let source = &pf.symbols[er.source_symbol_index];
@@ -197,4 +223,100 @@ fn test_haskell_persistent_insert_emits_db_insert() {
         FlowEmission::DbQuery { operation, .. } => assert_eq!(operation, DbQueryOp::Insert),
         _ => panic!("expected DbQuery"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// M5 — where-bound locals & operator definitions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn where_bound_local_call_resolves_to_the_local() {
+    // `f x = g x where g y = y + 1` — the body call `g x` must bind to the
+    // where-bound helper `g`, the only `g` in the file.
+    let pf = parsed_haskell("src/M.hs", "f x = g x\n  where g y = y + 1\n");
+    let res =
+        resolve_ref(&pf, "g", EdgeKind::Calls).expect("call to where-bound `g` must resolve");
+
+    let g_id = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "g")
+        .map(|i| (i + 1) as i64)
+        .expect("where-bound `g` symbol present");
+    assert_eq!(
+        res.target_symbol_id, g_id,
+        "call `g x` must bind to the where-bound `g`; got id {} (strategy {})",
+        res.target_symbol_id, res.strategy
+    );
+}
+
+#[test]
+fn operator_definition_call_resolves() {
+    // `($$) a b = a` defines the `$$` operator; `h = x $$ y` calls it infix.
+    // The call ref carries the bare surface form `$$` and must bind to the
+    // operator definition symbol.
+    let pf = parsed_haskell(
+        "src/M.hs",
+        "($$) :: Doc -> Doc -> Doc\n($$) a b = a\nh = x $$ y\n",
+    );
+    let res = resolve_ref_from(&pf, "h", "$$", EdgeKind::Calls)
+        .expect("infix call to `$$` must resolve to the operator definition");
+
+    let op_ids: Vec<i64> = pf
+        .symbols
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.name == "$$")
+        .map(|(i, _)| (i + 1) as i64)
+        .collect();
+    assert!(
+        op_ids.contains(&res.target_symbol_id),
+        "call `x $$ y` must bind to a `$$` symbol; resolved id {} not in {:?}",
+        res.target_symbol_id,
+        op_ids
+    );
+}
+
+#[test]
+fn where_bound_local_shadows_top_level_for_inner_call() {
+    // Scope-proximity pin. A where-bound `g` (under `f`) must win over a
+    // top-level `g` for a call issued from a sibling where-bound scope; a call
+    // from an unrelated top-level function still binds the top-level `g`.
+    let src = "g x = x\n\
+               f a = caller a\n\
+               \x20 where\n\
+               \x20   g y = y\n\
+               \x20   caller z = g z\n\
+               other z = g z\n";
+    let pf = parsed_haskell("src/M.hs", src);
+
+    // Inner call from `caller` (scope_path `f`) — binds the where-bound `f.g`.
+    let inner = resolve_ref_from(&pf, "caller", "g", EdgeKind::Calls)
+        .expect("inner call to `g` must resolve");
+    let where_g_id = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "g" && s.qualified_name == "f.g")
+        .map(|i| (i + 1) as i64)
+        .expect("where-bound `f.g` present");
+    assert_eq!(
+        inner.target_symbol_id, where_g_id,
+        "inner call must bind the where-bound `f.g`; got id {} (strategy {})",
+        inner.target_symbol_id, inner.strategy
+    );
+
+    // Outer call from `other` (top-level, no scope) — binds the top-level `g`.
+    let outer = resolve_ref_from(&pf, "other", "g", EdgeKind::Calls)
+        .expect("outer call to `g` must resolve");
+    let top_g_id = pf
+        .symbols
+        .iter()
+        .position(|s| s.name == "g" && s.qualified_name == "g")
+        .map(|i| (i + 1) as i64)
+        .expect("top-level `g` present");
+    assert_eq!(
+        outer.target_symbol_id, top_g_id,
+        "outer call must bind the top-level `g`; got id {} (strategy {})",
+        outer.target_symbol_id, outer.strategy
+    );
 }

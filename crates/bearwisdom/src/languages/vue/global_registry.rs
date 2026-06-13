@@ -63,6 +63,14 @@ pub enum VueComponentSource {
     /// to a by-name symbol search for any PascalCase component that didn't
     /// resolve through imports.
     UnpluginAutoImport,
+
+    /// The name was pinned to a source module by a generated unplugin
+    /// declaration file (`components.d.ts` / `auto-imports.d.ts`). `module` is
+    /// the verbatim specifier from the `typeof import('...')` clause — a
+    /// project-relative path (in-index file) or a bare package (external
+    /// index). The resolver injects `ImportEntry { module_path: Some(module) }`
+    /// so the existing import-driven strategies bind it.
+    AutoImportModule { module: String },
 }
 
 /// A project-wide Vue global component map.  Keys are PascalCase component
@@ -171,6 +179,12 @@ pub fn scan_global_registrations(
         debug!("vue: unplugin-vue-components detected");
     }
 
+    // Ingest the generated unplugin declaration files the project committed
+    // (`components.d.ts` from unplugin-vue-components, `auto-imports.d.ts` from
+    // unplugin-auto-import). Each pins a tag/composable to its source module —
+    // pure project config, the authoritative tag→module map.
+    ingest_unplugin_dts(project_root, parsed_paths, &mut registry);
+
     // Vue Router exposes `RouterLink` / `RouterView` as ambient global
     // components — every Vue app that calls `app.use(router)` gets them
     // registered without an explicit `app.component(...)` line, and
@@ -261,6 +275,21 @@ pub fn scan_global_registrations(
     }
 
     registry
+}
+
+/// Look up the exact source module a generated unplugin declaration file
+/// pinned `name` to, if any. Unlike `library_for_name`, this is an exact-name
+/// (not prefix) lookup and the module may be a project-relative path as well as
+/// a bare package — both resolve through the import-driven engine strategies.
+///
+/// Matched case-sensitively against the verbatim `components.d.ts` /
+/// `auto-imports.d.ts` keys, so composables (`useThing`) and PascalCase tags
+/// (`FooBar`) both resolve.
+pub fn module_path_for<'r>(registry: &'r VueGlobalRegistry, name: &str) -> Option<&'r str> {
+    match registry.components.get(name) {
+        Some(VueComponentSource::AutoImportModule { module }) => Some(module.as_str()),
+        _ => None,
+    }
 }
 
 /// Look up which package (if any) covers a given PascalCase component name by
@@ -357,6 +386,89 @@ fn file_contains_unplugin(path: &Path) -> bool {
         return false;
     };
     content.contains("unplugin-vue-components")
+}
+
+// ---------------------------------------------------------------------------
+// Generated declaration-file ingestion
+// ---------------------------------------------------------------------------
+
+/// File-name stems of the generated unplugin declaration files. A monorepo can
+/// ship one per package (each in that package's `src/`), so all matching paths
+/// are ingested, not just the first.
+const UNPLUGIN_DTS_NAMES: &[&str] = &["components.d.ts", "auto-imports.d.ts"];
+
+/// Locate the generated unplugin declaration files among `parsed_paths`, parse
+/// each, and register every `(name, module)` binding as an
+/// `AutoImportModule` source. A later file does not override an earlier exact
+/// match — first registration wins, mirroring `app.component` handling.
+fn ingest_unplugin_dts(
+    project_root: &Path,
+    parsed_paths: &[String],
+    registry: &mut VueGlobalRegistry,
+) {
+    for rel_path in parsed_paths {
+        let normalized = rel_path.replace('\\', "/");
+        if normalized.contains("node_modules") {
+            continue;
+        }
+        let is_dts = UNPLUGIN_DTS_NAMES
+            .iter()
+            .any(|stem| normalized.ends_with(stem));
+        if !is_dts {
+            continue;
+        }
+        let abs = project_root.join(normalized.trim_start_matches('/'));
+        let Ok(source) = std::fs::read_to_string(&abs) else {
+            continue;
+        };
+        for entry in super::auto_import_dts::parse_dts(&source) {
+            // A relative spec is anchored to the d.ts directory, not the file
+            // that uses the tag. Fold it to a project-relative path so the
+            // import-driven strategies can match the in-index `.vue` file
+            // exactly. Bare package specs pass through unchanged.
+            let module = resolve_dts_module(&normalized, &entry.module);
+            registry
+                .components
+                .entry(entry.name)
+                .or_insert(VueComponentSource::AutoImportModule {
+                    module,
+                });
+        }
+    }
+    debug!(
+        "vue: ingested {} unplugin declaration bindings",
+        registry
+            .components
+            .values()
+            .filter(|s| matches!(s, VueComponentSource::AutoImportModule { .. }))
+            .count()
+    );
+}
+
+/// Anchor a `components.d.ts` / `auto-imports.d.ts` import spec to the project.
+///
+/// A relative spec (`./x`, `../x`) is folded against the declaration file's
+/// directory into a project-relative path that matches the in-index file path.
+/// A bare package spec (`@scope/ui`, `vue-tippy`) is returned unchanged so the
+/// external-index strategies resolve it.
+fn resolve_dts_module(dts_rel_path: &str, spec: &str) -> String {
+    if !spec.starts_with("./") && !spec.starts_with("../") {
+        return spec.to_string();
+    }
+    let mut segs: Vec<&str> = match dts_rel_path.rsplit_once('/') {
+        Some((dir, _)) => dir.split('/').filter(|s| !s.is_empty()).collect(),
+        None => Vec::new(),
+    };
+    for part in spec.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                segs.pop();
+            }
+            other => segs.push(other),
+        }
+    }
+    segs.join("/")
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +789,11 @@ pub(crate) fn _test_detect_app_use(
 #[cfg(test)]
 pub(crate) fn _test_detect_component_registrations(source: &str) -> Vec<String> {
     detect_component_registrations(source)
+}
+
+#[cfg(test)]
+pub(crate) fn _test_resolve_dts_module(dts_rel_path: &str, spec: &str) -> String {
+    resolve_dts_module(dts_rel_path, spec)
 }
 
 #[cfg(test)]

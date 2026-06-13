@@ -13,6 +13,7 @@
 //! The <script> block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
+pub mod auto_import_dts;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;

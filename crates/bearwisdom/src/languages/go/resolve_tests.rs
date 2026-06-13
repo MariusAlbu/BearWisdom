@@ -1203,3 +1203,183 @@ type Alias = Bar
         other => panic!("expected Application{{root: Bar}}, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Table-driven anonymous-struct range-element resolution, end-to-end.
+// ---------------------------------------------------------------------------
+
+/// Build a `ParsedFile` from the real Go extractor with the flow pass applied,
+/// exactly as the indexer wires them, so the resolve loop sees the same
+/// `FlowMeta` (narrowings included) the production pipeline produces.
+fn go_parsed_file_with_flow(path: &str, src: &str) -> ParsedFile {
+    use crate::indexer::flow::run_flow_queries;
+    use crate::languages::go::GoPlugin;
+    use crate::languages::LanguagePlugin;
+
+    let ex = super::extract::extract(src);
+    let lang = GoPlugin.grammar("go").unwrap();
+    let cfg = GoPlugin.flow_config().unwrap();
+    let mut refs = ex.refs;
+    let flow = run_flow_queries(src, &lang, cfg, &ex.symbols, &mut refs);
+    ParsedFile {
+        path: path.to_string(),
+        language: "go".to_string(),
+        content_hash: String::new(),
+        size: src.len() as u64,
+        line_count: src.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        content: Some(src.to_string()),
+        has_errors: ex.has_errors,
+        symbols: ex.symbols,
+        refs,
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![],
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+/// Resolve `parsed` into a fresh in-memory DB and return `(qname, kind)` for
+/// every edge, where `qname` is the target symbol's qualified name.
+fn resolve_edge_targets(parsed: &[ParsedFile]) -> Vec<(String, String)> {
+    use crate::db::Database;
+    use crate::indexer::resolve::resolve_and_write;
+    use crate::indexer::write::write_parsed_files_with_origin;
+
+    let mut db = Database::open_in_memory().expect("in-memory db");
+    let (_files, symbol_id_map) =
+        write_parsed_files_with_origin(&db, parsed, "internal", None).expect("write parsed files");
+    resolve_and_write(&mut db, parsed, &symbol_id_map, None).expect("resolve");
+    let conn = db.conn();
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.qualified_name, e.kind \
+             FROM edges e JOIN symbols s ON e.target_id = s.id",
+        )
+        .expect("prepare edge select");
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .expect("query edges");
+    rows.map(|r| r.expect("edge row")).collect()
+}
+
+#[test]
+fn table_test_anon_struct_field_read_resolves() {
+    // `tests := []struct{ expected int }{...}; for _, tc := range tests { tc.expected }`
+    // The `tc.expected` read must bind to the synthesized field symbol filed
+    // under the enclosing function `core.TestFind`.
+    let src = r#"package core
+
+func TestFind(t *T) {
+	tests := []struct {
+		name     string
+		expected int
+	}{
+		{name: "a", expected: 1},
+	}
+	for _, tc := range tests {
+		_ = tc.expected
+	}
+}
+"#;
+    let pf = go_parsed_file_with_flow("core/find_test.go", src);
+    let edges = resolve_edge_targets(&[pf]);
+    assert!(
+        edges
+            .iter()
+            .any(|(qname, kind)| kind == "reads" && qname == "core.TestFind.expected"),
+        "tc.expected must resolve to the anon-struct field core.TestFind.expected, got {edges:?}"
+    );
+}
+
+#[test]
+fn table_test_field_collision_binds_per_function() {
+    // Two functions each declare a table with a field named `expected` of a
+    // different type. Each `tc.expected` must bind to ITS function's field
+    // symbol — never the other's — because the range value var carries the
+    // enclosing-function qname as its type identity.
+    let src = r#"package core
+
+func TestA(t *T) {
+	tests := []struct {
+		expected int
+	}{
+		{expected: 1},
+	}
+	for _, tc := range tests {
+		_ = tc.expected
+	}
+}
+
+func TestB(t *T) {
+	cases := []struct {
+		expected string
+	}{
+		{expected: "x"},
+	}
+	for _, tc := range cases {
+		_ = tc.expected
+	}
+}
+"#;
+    let pf = go_parsed_file_with_flow("core/collide_test.go", src);
+    let edges = resolve_edge_targets(&[pf]);
+    let reads: Vec<&String> = edges
+        .iter()
+        .filter(|(_, kind)| kind == "reads")
+        .map(|(q, _)| q)
+        .collect();
+    assert!(
+        reads.iter().any(|q| q.as_str() == "core.TestA.expected"),
+        "TestA's tc.expected must bind to core.TestA.expected, got {reads:?}"
+    );
+    assert!(
+        reads.iter().any(|q| q.as_str() == "core.TestB.expected"),
+        "TestB's tc.expected must bind to core.TestB.expected, got {reads:?}"
+    );
+}
+
+#[test]
+fn named_struct_range_field_read_unaffected() {
+    // Regression: a NAMED-struct slice range still resolves its field read
+    // through the ordinary element machinery — the anon-struct pass must neither
+    // break it nor reroute it to a function-qname field.
+    let src = r#"package core
+
+type Case struct {
+	expected int
+}
+
+func TestNamed(t *T) {
+	tests := []Case{
+		{expected: 1},
+	}
+	for _, tc := range tests {
+		_ = tc.expected
+	}
+}
+"#;
+    let pf = go_parsed_file_with_flow("core/named_test.go", src);
+    let edges = resolve_edge_targets(&[pf]);
+    assert!(
+        edges
+            .iter()
+            .any(|(qname, kind)| kind == "reads" && qname == "core.Case.expected"),
+        "named-struct field read must bind to core.Case.expected, got {edges:?}"
+    );
+    assert!(
+        !edges
+            .iter()
+            .any(|(qname, _)| qname == "core.TestNamed.expected"),
+        "named-struct field must not be filed under the function qname, got {edges:?}"
+    );
+}

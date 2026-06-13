@@ -602,6 +602,11 @@ fn extract_nested_classes_from_body(
 /// This is the "nuclear option" post-traversal pass that ensures no type
 /// reference is missed regardless of nesting depth (e.g.
 /// `List<Map<String, UserDto>>` — finds `UserDto`).
+///
+/// A `scoped_type_identifier` (`java.util.List`) nests its package-prefix
+/// segments as inner `type_identifier` nodes (`java`, `util`). Emit only the
+/// trailing simple name and do NOT descend into the prefix segments — they are
+/// namespace path components, not type references.
 fn scan_all_type_identifiers(
     node: tree_sitter::Node,
     src: &[u8],
@@ -612,27 +617,53 @@ fn scan_all_type_identifiers(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "type_identifier" && child.is_named() {
-            let name = helpers::node_text(child, src);
-            if !name.is_empty() && !is_java_primitive_type(&name) {
-                refs.push(ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index: sym_idx,
-                    target_name: name,
-                    kind: crate::types::EdgeKind::TypeRef,
-                    line: child.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: child.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
+        match child.kind() {
+            "type_identifier" if child.is_named() => {
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() && !is_java_primitive_type(&name) {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module: None,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+                scan_all_type_identifiers(child, src, sym_idx, refs);
+            }
+            "scoped_type_identifier" => {
+                let name = helpers::type_node_simple_name(child, src);
+                if !name.is_empty() && !is_java_primitive_type(&name) {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module: None,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
+                // Do not recurse: the prefix segments are namespace path
+                // components, not type references. Any embedded type arguments
+                // are reached through the enclosing `generic_type` instead.
+            }
+            _ => {
+                scan_all_type_identifiers(child, src, sym_idx, refs);
             }
         }
-        // Recurse into ALL children regardless.
-        scan_all_type_identifiers(child, src, sym_idx, refs);
     }
 }
 

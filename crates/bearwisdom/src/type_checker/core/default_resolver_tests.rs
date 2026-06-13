@@ -572,6 +572,88 @@ fn component_import_binds_default_renamed_vue_component() {
 }
 
 #[test]
+fn auto_import_dts_tag_binds_to_local_vue_component() {
+    // A `components.d.ts`-pinned tag → local `.vue` module: the Vue hook injects
+    // `ImportEntry { imported_name: tag, module_path: Some(project_rel_vue_path) }`
+    // (ingestion folds the d.ts-relative spec to a project-relative path), and
+    // the component-import strategy binds the tag to the in-index component
+    // symbol in that exact file — the tag name need not equal the symbol name.
+    // The injected module is the project-relative `.vue` path. `in_module_from`
+    // resolves it to the same file (real impl exact-matches indexed paths; the
+    // test double models that via the module→file map), and the strategy picks
+    // the component-kind symbol there.
+    let lookup = Lookup::new()
+        .with_module_file(
+            "src/components/style/Button.vue",
+            "src/components/style/Button.vue",
+        )
+        .with_in_file(
+            "src/components/style/Button.vue",
+            sym(
+                41,
+                "Button",
+                "Button",
+                "class",
+                "src/components/style/Button.vue",
+            ),
+        );
+    let r = extracted_call("HoppStyleButton");
+    let s = source_symbol("caller");
+    let fc = file_ctx(
+        vec![import(
+            "HoppStyleButton",
+            Some("src/components/style/Button.vue"),
+        )],
+        None,
+    );
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_via_component_import(&accept_any)
+        .expect("d.ts-pinned tag resolves through the local .vue module file");
+    assert_eq!(resolved.target_symbol_id, 41);
+    assert_eq!(resolved.strategy, "default_component_import");
+}
+
+#[test]
+fn unregistered_tag_without_injected_import_declines() {
+    // No generated config → no injected ImportEntry → the component-import
+    // strategy has nothing to match and declines. The tag stays unresolved
+    // rather than binding to a coincidental same-name symbol.
+    let lookup = Lookup::new()
+        .with_module_file(
+            "./components/style/Button.vue",
+            "src/components/style/Button.vue",
+        )
+        .with_in_file(
+            "src/components/style/Button.vue",
+            sym(
+                42,
+                "Button",
+                "Button",
+                "class",
+                "src/components/style/Button.vue",
+            ),
+        );
+    let r = extracted_call("HoppStyleButton");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(d.resolve_via_component_import(&accept_any).is_none());
+}
+
+#[test]
 fn component_import_binds_dotted_namespace_head() {
     let lookup = Lookup::new().with(sym(24, "Card", "Card", "class", "src/card.ts"));
     let r = extracted_call("Card.Root");
@@ -1367,6 +1449,137 @@ fn ambient_package_returns_none_without_declared_ambient_paths() {
         kind_compatible: accept_any,
     };
     assert!(d.resolve_via_ambient_package(&accept_any).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// wildcard_builtins — bicep `list*` family folds to the ambient `list` symbol
+// ---------------------------------------------------------------------------
+
+/// A `Lookup` carrying only the vendored bicep `list` builtin as an ambient
+/// symbol — the family base the `list*` wildcard folds onto.
+fn bicep_list_lookup(id: i64) -> Lookup {
+    Lookup::new()
+        .with(sym(
+            id,
+            "list",
+            "bicep.builtins.list",
+            "function",
+            "ext:bicep-runtime:namespace.bicep",
+        ))
+        .with_ambient("ext:bicep-runtime:namespace.bicep")
+}
+
+fn bicep_file_ctx() -> FileContext {
+    FileContext {
+        file_path: "main.bicep".to_string(),
+        language: "bicep".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    }
+}
+
+#[test]
+fn bicep_wildcard_list_call_folds_to_ambient_list() {
+    // `listConnectionStrings()` has no concrete ambient symbol (the `az`
+    // namespace registers `list*` as a regex overload upstream); the wildcard
+    // rung folds the anchored target to the vendored `list` builtin.
+    let lookup = bicep_list_lookup(300);
+    let r = extracted_call("listConnectionStrings");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = bicep_file_ctx();
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::bicep::BICEP_PROFILE)
+        .expect("`listConnectionStrings` folds to the ambient `list` builtin");
+    assert_eq!(resolved.target_symbol_id, 300);
+    assert_eq!(resolved.strategy, "default_ambient_package");
+}
+
+#[test]
+fn bicep_wildcard_list_call_folds_arbitrary_suffix() {
+    // Any anchored `list[A-Z]…` suffix folds — the family is open-ended.
+    let lookup = bicep_list_lookup(301);
+    let r = extracted_call("listFoo");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = bicep_file_ctx();
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    let resolved = d
+        .resolve_all_with_profile(&crate::languages::bicep::BICEP_PROFILE)
+        .expect("`listFoo` folds to the ambient `list` builtin");
+    assert_eq!(resolved.target_symbol_id, 301);
+}
+
+#[test]
+fn bicep_wildcard_rung_does_not_match_lowercase_or_bare() {
+    // `list`, `listener`, `listing` are NOT `list` + uppercase, so the wildcard
+    // never folds them onto the family base.
+    let fc = bicep_file_ctx();
+    for target in ["listener", "listing"] {
+        // The base `list` is NOT in the index here — only a same-named decoy
+        // under a non-ambient path — so a spurious fold would mis-bind it.
+        let lookup = Lookup::new().with(sym(
+            310,
+            "list",
+            "bicep.builtins.list",
+            "function",
+            "ext:bicep-runtime:namespace.bicep",
+        ));
+        let r = extracted_call(target);
+        let s = source_symbol("caller");
+        let rc = ref_ctx(&r, &s, vec![]);
+        let d = DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        };
+        // No ambient path declared, and `listener`/`listing` don't fold — the
+        // ladder must decline rather than bind the `list` decoy.
+        assert!(
+            d.resolve_all_with_profile(&crate::languages::bicep::BICEP_PROFILE)
+                .is_none(),
+            "`{target}` must not fold to the `list` family base"
+        );
+    }
+}
+
+#[test]
+fn wildcard_rung_inert_for_non_bicep_language() {
+    // TS declares no `wildcard_builtins`; a `listFoo` call with an ambient
+    // `list` symbol present must NOT fold — the rung is bicep-gated data.
+    let lookup = bicep_list_lookup(320);
+    let r = extracted_call("listFoo");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "main.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let d = DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    };
+    assert!(
+        d.resolve_all_with_profile(&crate::languages::typescript::TYPESCRIPT_PROFILE)
+            .is_none(),
+        "a non-bicep language must not fold `listFoo` onto an ambient `list`"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -4113,6 +4326,383 @@ fn wildcard_file_stem_ocaml_basename_unaffected() {
     .expect("OCaml FileStem wildcard binds via mylib.ml basename stem");
     assert_eq!(resolved.target_symbol_id, 5);
     assert_eq!(resolved.strategy, "default_wildcard_import");
+}
+
+/// A Rust `use super::*` brings the parent module's items into the child
+/// module's bare-name scope, so a bare call binds the parent's `pub fn`. Both
+/// existing wildcard modes miss it: `QnameUnder` cannot match because Rust
+/// top-level symbols carry bare qnames (the candidate's qname is
+/// `find_position_of`, not `tests::find_position_of`), and `super`/`crate` are
+/// relative module keywords that map to a FILE location, not a qname namespace
+/// or a file stem (the parent file is `tests.rs`, stem `tests`, not `super`).
+/// Closing this needs a relative-module wildcard path that maps `super`/`crate`/
+/// `crate::x` to the files of that module, then matches the bare target against
+/// symbols defined there.
+#[test]
+fn wildcard_rust_super_glob_binds_parent_module_fn() {
+    let lookup = Lookup::new().with(sym(
+        7,
+        "find_position_of",
+        "find_position_of",
+        "function",
+        "language-server/src/tests.rs",
+    ));
+    let r = extracted_call("find_position_of");
+    let s = source_symbol("a_test");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("super")], None);
+    fc.file_path = "language-server/src/tests/action.rs".to_string();
+    fc.language = "rust".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::rust_lang::RUST_PROFILE)
+    .expect("`use super::*` binds the parent module's pub fn");
+    assert_eq!(resolved.target_symbol_id, 7);
+}
+
+/// Precision: a `use super::*` must NOT reach a same-named symbol that lives in
+/// some OTHER file of the crate — only the parent module's roots (`tests.rs` /
+/// `tests/mod.rs`) are in glob scope. The candidate here sits in an unrelated
+/// file, so the relative-module wildcard declines and the resolver returns None.
+#[test]
+fn wildcard_rust_super_glob_declines_name_outside_parent_module() {
+    let lookup = Lookup::new().with(sym(
+        9,
+        "find_position_of",
+        "find_position_of",
+        "function",
+        "language-server/src/unrelated.rs",
+    ));
+    let r = extracted_call("find_position_of");
+    let s = source_symbol("a_test");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("super")], None);
+    fc.file_path = "language-server/src/tests/action.rs".to_string();
+    fc.language = "rust".to_string();
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::rust_lang::RUST_PROFILE)
+        .is_none(),
+        "`use super::*` must not bind a name defined outside the parent module"
+    );
+}
+
+/// Precision: `use crate::config::*` resolves to module `config`'s files only
+/// (`<src>/config.rs` or `<src>/config/mod.rs`), not the whole crate. A same-
+/// named symbol in a sibling crate-root module (`other.rs`) is out of glob scope
+/// and must not bind. The `Calls` ref binds the `function` in `config.rs` — both
+/// candidates are kind-compatible, so only module scope can break the tie.
+#[test]
+fn wildcard_rust_crate_module_glob_scopes_to_named_module_files() {
+    let lookup = Lookup::new()
+        .with(sym(
+            11,
+            "build_settings",
+            "build_settings",
+            "function",
+            "app/src/config.rs",
+        ))
+        .with(sym(
+            12,
+            "build_settings",
+            "build_settings",
+            "function",
+            "app/src/other.rs",
+        ));
+    let r = extracted_call("build_settings");
+    let s = source_symbol("run");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("crate::config")], None);
+    fc.file_path = "app/src/main.rs".to_string();
+    fc.language = "rust".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::rust_lang::RUST_PROFILE)
+    .expect("`use crate::config::*` binds the fn in config.rs");
+    assert_eq!(
+        resolved.target_symbol_id, 11,
+        "must bind config.rs's build_settings, not the sibling module's"
+    );
+}
+
+/// Precision: a name DEFINED in the importing file wins over a glob-imported one
+/// of the same name. The same-file rung runs ahead of the relative-module
+/// wildcard, so a local `helper` binds even with `use super::*` in scope and a
+/// parent-module `helper` present.
+#[test]
+fn wildcard_rust_super_glob_local_definition_wins() {
+    let lookup = Lookup::new()
+        .with(sym(
+            20,
+            "helper",
+            "helper",
+            "function",
+            "language-server/src/tests.rs",
+        ))
+        .with_in_file(
+            "language-server/src/tests/action.rs",
+            sym(
+                21,
+                "helper",
+                "tests::action::helper",
+                "function",
+                "language-server/src/tests/action.rs",
+            ),
+        );
+    let r = extracted_call("helper");
+    let s = source_symbol("a_test");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let mut fc = file_ctx(vec![wildcard_import("super")], None);
+    fc.file_path = "language-server/src/tests/action.rs".to_string();
+    fc.language = "rust".to_string();
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::rust_lang::RUST_PROFILE)
+    .expect("a local definition binds even with a glob import in scope");
+    assert_eq!(
+        resolved.target_symbol_id, 21,
+        "the local `helper` must win over the glob-imported parent one"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Pascal unit include-scope (SameDirUnique) + overload/type-as-call ranking
+// ---------------------------------------------------------------------------
+
+/// A Pascal source file context rooted at `path` (an `.inc` or `.pas` of one
+/// unit), with no imports — the include-scope case has no `uses` between the
+/// call site and the declaration.
+fn pascal_file_ctx(path: &str) -> FileContext {
+    FileContext {
+        file_path: path.to_string(),
+        language: "pascal".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    }
+}
+
+/// A type alias declared in a sibling `.inc` of the same unit directory binds a
+/// `Calls`-shaped reference (a Pascal type-cast / record-constructor call) from
+/// another `.inc` of that directory — there is no `uses` import, so only the
+/// same-dir module scope can root it. Exactly one same-dir candidate exists, so
+/// `SameDirUnique` binds it.
+#[test]
+fn pascal_include_scope_binds_single_same_dir_type_alias() {
+    let lookup = Lookup::new().with(sym(
+        50,
+        "TCastleColor",
+        "TCastleColor",
+        "type_alias",
+        "src/base/u_a.inc",
+    ));
+    let r = extracted_call("TCastleColor");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = pascal_file_ctx("src/base/u_b.inc");
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+    .expect("the lone same-dir type alias binds through SameDirUnique");
+    assert_eq!(resolved.target_symbol_id, 50);
+    assert_eq!(resolved.strategy, "default_module_scope");
+}
+
+/// The same single-candidate type alias in a DIFFERENT directory is a different
+/// unit — the same-dir module scope must not reach across directories.
+#[test]
+fn pascal_include_scope_declines_cross_dir_type_alias() {
+    let lookup = Lookup::new().with(sym(
+        51,
+        "TCastleColor",
+        "TCastleColor",
+        "type_alias",
+        "src/deprecated/u_a.inc",
+    ));
+    let r = extracted_call("TCastleColor");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = pascal_file_ctx("src/base/u_b.inc");
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+        .is_none(),
+        "a candidate in another directory is a different unit — no same-dir bind"
+    );
+}
+
+/// An overload SET in the same directory must NOT first-match-bind through the
+/// module scope — `SameDirUnique` declines on more than one candidate, leaving
+/// the ref for argument-driven disambiguation. (Without args here, the whole
+/// ladder declines.)
+#[test]
+fn pascal_include_scope_declines_same_dir_overload_set() {
+    let lookup = Lookup::new()
+        .with(sym(
+            60,
+            "Vector3",
+            "Vector3",
+            "function",
+            "src/base/castlevectors_float.inc",
+        ))
+        .with(sym(
+            61,
+            "Vector3",
+            "Vector3",
+            "function",
+            "src/base/castlevectors_integer.inc",
+        ));
+    let r = extracted_call("Vector3");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = pascal_file_ctx("src/base/castlevectors.pas");
+    let res = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE);
+    assert!(
+        res.is_none(),
+        "a same-dir overload set must decline at module scope, not first-match; got {res:?}"
+    );
+}
+
+/// A type used function-style with several same-name candidates (one class plus
+/// type aliases of the same simple name) binds the ranked top when one
+/// candidate dominates by a margin-clearing signal. Here the class shares the
+/// caller's package; the type aliases sit in an unrelated package. None is the
+/// unique same-dir candidate (all three live outside the caller's dir), so the
+/// module scope declines and the ranked SCORING rung decides. The rung is gated
+/// on `multi_candidate_ranking`, which Pascal enables; no call arguments, so the
+/// scoring path (not the arity path) runs.
+#[test]
+fn pascal_type_as_call_binds_ranked_candidate() {
+    let lookup = Lookup::new()
+        .with(sym_full(
+            70,
+            "TVector3",
+            "Vectors.TVector3",
+            "class",
+            "src/base/internalsingle.inc",
+            Some("public"),
+            Some(7),
+        ))
+        .with(sym_full(
+            71,
+            "TVector3",
+            "Single.TVector3",
+            "type_alias",
+            "src/legacy/single.inc",
+            Some("public"),
+            Some(8),
+        ))
+        .with(sym_full(
+            72,
+            "TVector3",
+            "Double.TVector3",
+            "type_alias",
+            "src/legacy/double.inc",
+            Some("public"),
+            Some(9),
+        ));
+    let r = extracted_call("TVector3");
+    let s = source_symbol("caller");
+    // Caller in a third directory (no same-dir candidate) and in package 7.
+    let rc = ref_ctx_with_pkg(&r, &s, Some(7));
+    let fc = pascal_file_ctx("src/window/main.inc");
+    let resolved = (DefaultResolver {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind_compatible: accept_any,
+    })
+    .resolve_all_with_profile(&crate::languages::pascal::PASCAL_PROFILE)
+    .expect("the same-package candidate wins the ranking");
+    assert_eq!(resolved.target_symbol_id, 70);
+    assert_eq!(resolved.strategy, "default_ranked_candidate");
+}
+
+/// REGRESSION GATE: the same multi-candidate type-as-call fixture must DECLINE
+/// under the default profile, which leaves `multi_candidate_ranking` off — the
+/// ranked rung never fires for a non-opted language, so the ladder stays
+/// byte-identical and the ambiguous set is left unresolved.
+#[test]
+fn ranked_rung_inert_under_default_profile() {
+    let lookup = Lookup::new()
+        .with(sym_full(
+            70,
+            "TVector3",
+            "Vectors.TVector3",
+            "class",
+            "src/base/a.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            71,
+            "TVector3",
+            "Single.TVector3",
+            "type_alias",
+            "src/legacy/single.ts",
+            Some("public"),
+            None,
+        ))
+        .with(sym_full(
+            72,
+            "TVector3",
+            "Double.TVector3",
+            "type_alias",
+            "src/legacy/double.ts",
+            Some("public"),
+            None,
+        ));
+    let r = extracted_call("TVector3");
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let fc = FileContext {
+        file_path: "src/base/main.ts".to_string(),
+        language: "default".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    assert!(
+        (DefaultResolver {
+            file_ctx: &fc,
+            ref_ctx: &rc,
+            lookup: &lookup,
+            kind_compatible: accept_any,
+        })
+        .resolve_all_with_profile(&DEFAULT_PROFILE)
+        .is_none(),
+        "the ranked rung is gated off in the default profile — multi-candidate set declines"
+    );
 }
 
 // ---------------------------------------------------------------------------

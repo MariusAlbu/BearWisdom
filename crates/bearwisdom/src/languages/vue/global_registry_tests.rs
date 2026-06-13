@@ -372,6 +372,162 @@ fn scan_picks_up_workspace_package_with_vue_router() {
 }
 
 // ---------------------------------------------------------------------------
+// Generated unplugin declaration-file ingestion (components.d.ts)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn scan_ingests_components_dts_local_tag() {
+    // A components.d.ts pinning a tag to a local `.vue` file → the registry
+    // records the exact module path, and `module_path_for` returns it.
+    let dir = tempdir_or_skip();
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("components.d.ts"),
+        "declare module 'vue' {\n  export interface GlobalComponents {\n    HoppStyleButton: typeof import('./components/style/Button.vue')['default']\n  }\n}\n",
+    )
+    .unwrap();
+
+    let parsed_paths = vec!["src/components.d.ts".to_string()];
+    let registry = scan_global_registrations(dir.path(), &parsed_paths);
+
+    assert_eq!(
+        module_path_for(&registry, "HoppStyleButton"),
+        Some("src/components/style/Button.vue"),
+        "local tag maps to the d.ts-dir-anchored project-relative .vue path"
+    );
+}
+
+#[test]
+fn scan_ingests_components_dts_bare_package_reexport() {
+    let dir = tempdir_or_skip();
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("components.d.ts"),
+        "    ExtWidget: typeof import('@scope/ui')['ExtWidget']\n",
+    )
+    .unwrap();
+
+    let registry =
+        scan_global_registrations(dir.path(), &["src/components.d.ts".to_string()]);
+    assert_eq!(module_path_for(&registry, "ExtWidget"), Some("@scope/ui"));
+}
+
+#[test]
+fn scan_ingests_auto_imports_dts_composable() {
+    // auto-imports.d.ts pins a camelCase composable to its package — the
+    // exact-name map binds it regardless of identifier case.
+    let dir = tempdir_or_skip();
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("auto-imports.d.ts"),
+        "declare global {\n  const useThing: typeof import('@scope/composables')['useThing']\n}\n",
+    )
+    .unwrap();
+
+    let registry =
+        scan_global_registrations(dir.path(), &["src/auto-imports.d.ts".to_string()]);
+    assert_eq!(
+        module_path_for(&registry, "useThing"),
+        Some("@scope/composables")
+    );
+}
+
+#[test]
+fn scan_without_dts_records_no_module_binding() {
+    // No generated declaration file on disk → no hallucinated tag→module map.
+    let dir = tempdir_or_skip();
+    let registry = scan_global_registrations(dir.path(), &[]);
+    assert!(module_path_for(&registry, "HoppStyleButton").is_none());
+    assert!(registry.is_empty());
+}
+
+#[test]
+fn scan_skips_dts_under_node_modules() {
+    // A vendored components.d.ts inside node_modules must not be ingested as
+    // project config.
+    let dir = tempdir_or_skip();
+    let nm = dir.path().join("node_modules").join("some-lib");
+    std::fs::create_dir_all(&nm).unwrap();
+    std::fs::write(
+        nm.join("components.d.ts"),
+        "    Vendored: typeof import('./Vendored.vue')['default']\n",
+    )
+    .unwrap();
+
+    let registry = scan_global_registrations(
+        dir.path(),
+        &["node_modules/some-lib/components.d.ts".to_string()],
+    );
+    assert!(module_path_for(&registry, "Vendored").is_none());
+}
+
+#[test]
+fn scan_dts_first_binding_wins() {
+    // Monorepo: two packages ship a components.d.ts that both declare the same
+    // tag. First-registration wins (mirrors app.component handling) — no panic,
+    // deterministic module.
+    let dir = tempdir_or_skip();
+    for (pkg, module) in [("a", "./A.vue"), ("b", "./B.vue")] {
+        let d = dir.path().join("packages").join(pkg).join("src");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("components.d.ts"),
+            format!("    Shared: typeof import('{module}')['default']\n"),
+        )
+        .unwrap();
+    }
+    let registry = scan_global_registrations(
+        dir.path(),
+        &[
+            "packages/a/src/components.d.ts".to_string(),
+            "packages/b/src/components.d.ts".to_string(),
+        ],
+    );
+    assert_eq!(
+        module_path_for(&registry, "Shared"),
+        Some("packages/a/src/A.vue")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// resolve_dts_module — d.ts-dir-anchored path folding
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_dts_module_folds_relative_against_dts_dir() {
+    assert_eq!(
+        _test_resolve_dts_module(
+            "packages/app/src/components.d.ts",
+            "./components/Foo.vue"
+        ),
+        "packages/app/src/components/Foo.vue"
+    );
+}
+
+#[test]
+fn resolve_dts_module_folds_parent_segments() {
+    assert_eq!(
+        _test_resolve_dts_module("src/components.d.ts", "../shared/Bar.vue"),
+        "shared/Bar.vue"
+    );
+}
+
+#[test]
+fn resolve_dts_module_passes_bare_package_through() {
+    assert_eq!(
+        _test_resolve_dts_module("src/components.d.ts", "@scope/ui"),
+        "@scope/ui"
+    );
+    assert_eq!(
+        _test_resolve_dts_module("src/auto-imports.d.ts", "vue-tippy"),
+        "vue-tippy"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

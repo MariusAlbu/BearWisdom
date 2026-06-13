@@ -26,6 +26,17 @@ fn bicep_profile_strips_sys_az_namespace_aliases() {
 }
 
 #[test]
+fn bicep_declares_list_wildcard_builtin() {
+    // The `az` `list*` regex overload is expressed as a single anchored
+    // wildcard folding onto the vendored `list` family base.
+    assert_eq!(BICEP_PROFILE.wildcard_builtins.len(), 1);
+    let wb = &BICEP_PROFILE.wildcard_builtins[0];
+    assert_eq!(wb.fold("listConnectionStrings"), Some("list"));
+    assert_eq!(wb.fold("listener"), None);
+    assert_eq!(wb.fold("list"), None);
+}
+
+#[test]
 fn bicep_kind_table_gates_calls_to_callables() {
     // The kind table replaces PERMISSIVE — Calls accepts callables, not types.
     let table = BICEP_PROFILE.kind_compatible_table;

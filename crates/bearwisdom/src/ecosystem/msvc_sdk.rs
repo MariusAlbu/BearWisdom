@@ -168,8 +168,16 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // doesn't list SDK paths on MSVC.
 //
 
-/// Find every `*.vcxproj` under `project_root`, capped at depth 6 to avoid
-/// pathological monorepos. Returns absolute paths.
+/// Directory levels below the workspace root the vcxproj scan descends.
+/// MSBuild monorepos nest platform projects several segments deep
+/// (`src/<area>/<server>/<module>/<lib>/Foo.vcxproj`); the cap must clear
+/// the deepest real layout while still bounding the walk on pathological
+/// trees. A dir at level `D` is read when `D < this`, so reaching a
+/// vcxproj at level 7 requires a cap of at least 8.
+const VCXPROJ_SCAN_MAX_DEPTH: u32 = 10;
+
+/// Find every `*.vcxproj` under `project_root`, capped at
+/// [`VCXPROJ_SCAN_MAX_DEPTH`] directory levels. Returns absolute paths.
 fn find_vcxproj_files(project_root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     walk_vcxproj_rec(project_root, &mut out, 0);
@@ -177,7 +185,7 @@ fn find_vcxproj_files(project_root: &Path) -> Vec<PathBuf> {
 }
 
 fn walk_vcxproj_rec(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
-    if depth >= 6 {
+    if depth >= VCXPROJ_SCAN_MAX_DEPTH {
         return;
     }
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -273,13 +281,6 @@ fn pinned_target_platform_version(vcxprojs: &[PathBuf]) -> Option<String> {
 fn discover_msvc_include(pinned_version: Option<&str>) -> Vec<ExternalDepRoot> {
     if !cfg!(target_os = "windows") {
         return Vec::new();
-    }
-
-    if let Some(explicit) = std::env::var_os("BEARWISDOM_MSVC_INCLUDE") {
-        let p = PathBuf::from(explicit);
-        if p.is_dir() {
-            return vec![super::posix_headers::make_root(&p, TAG)];
-        }
     }
 
     let mut include_roots: Vec<PathBuf> = Vec::new();

@@ -172,6 +172,13 @@ fn run_flow_queries_on_root(
     meta.ref_byte_offsets = refs.iter().map(|r| r.byte_offset).collect();
 
     run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta);
+    // Go table-driven anonymous-struct slices: type a `range` value variable as
+    // the slice's anonymous-struct element. The element's fields are indexed as
+    // members of the enclosing function, so the binding is a structural pass
+    // over the Go AST rather than a flow query, and runs only for Go.
+    if cfg.strategy_prefix == "go" {
+        crate::languages::go::flow::bind_range_element_locals(&root, src_bytes, symbols, &mut meta);
+    }
     run_type_guard_query(&root, src_bytes, cfg, &mut meta);
     run_discriminant_guard_query(&root, src_bytes, cfg, &mut meta);
     run_type_args_query(&root, src_bytes, cfg, refs);

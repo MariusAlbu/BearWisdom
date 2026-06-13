@@ -73,6 +73,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     // Library-prefix bind: a `i0.Value` ref carries the prefix's import URI on
@@ -106,6 +107,8 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
+    multi_candidate_ranking: false,
+    scope_functions: &[],
     constructor_patterns: &[ConstructorPattern::New, ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

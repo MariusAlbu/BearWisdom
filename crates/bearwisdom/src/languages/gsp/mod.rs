@@ -3,9 +3,14 @@
 
 pub(crate) mod hooks;
 pub(crate) mod profile;
+pub(crate) mod taglib;
 
 pub use hooks::GSP_HOOKS;
 pub use profile::GSP_PROFILE;
+
+#[cfg(test)]
+#[path = "embedded_tests.rs"]
+mod embedded_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -63,6 +68,30 @@ impl LanguagePlugin for GspPlugin {
         let line_starts: Vec<u32> = std::iter::once(0)
             .chain(source.match_indices('\n').map(|(i, _)| (i + 1) as u32))
             .collect();
+
+        // Namespaced markup taglib invocations (`<warehouse:message ...>`,
+        // `<g:link ...>`). Each emits a `Calls` ref to the tag local name so a
+        // custom taglib binds to its indexed closure definition; a Grails core
+        // tag has no in-index target and is branded `grails-taglib` by the GSP
+        // hook's external classifier. The `<g:render template="...">` template
+        // edge is emitted separately below as an `Imports` ref.
+        for tag in taglib::scan_markup_tags(source) {
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index: 0,
+                target_name: tag.name,
+                kind: EdgeKind::Calls,
+                line: tag.line as u32,
+                module: None,
+                chain: None,
+                col: 0,
+                byte_offset: tag.byte_offset as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
+        }
+
         for (line_no, line) in source.lines().enumerate() {
             if let Some(pos) = line.find("<g:render") {
                 let rest = &line[pos..];

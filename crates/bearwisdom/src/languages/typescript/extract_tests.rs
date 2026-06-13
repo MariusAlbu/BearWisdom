@@ -81,6 +81,90 @@ export function call(opts?: Oazapfts.RequestOpts): void {}
     );
 }
 
+/// Collect the import-binding TypeRefs (the `Foo` in `import { Foo } from 'm'`)
+/// keyed by the canonical exported target name, with their module.
+fn import_bindings(source: &str) -> Vec<(String, Option<String>)> {
+    extract::extract(source, false)
+        .refs
+        .into_iter()
+        .filter(|r| r.is_import_binding && r.kind == EdgeKind::TypeRef)
+        .map(|r| (r.target_name, r.module))
+        .collect()
+}
+
+#[test]
+fn import_type_multiline_emits_module_tagged_bindings() {
+    // A multi-line `import type { ... }` with a trailing comma and an alias
+    // must emit one import-binding TypeRef per specifier, each carrying the
+    // source module. The aliased specifier binds under its *exported* name
+    // (`Person`), not the local alias (`P`) — that's the name the source
+    // module exports and the resolver matches against.
+    let src = r#"
+import type {
+  Person as P,
+  Calendar,
+  CalendarEvent,
+} from "@calcom/types/Calendar";
+"#;
+    let bindings = import_bindings(src);
+    let module = Some("@calcom/types/Calendar".to_string());
+    assert!(
+        bindings.contains(&("Person".to_string(), module.clone())),
+        "expected aliased binding under exported name 'Person'; got {bindings:?}"
+    );
+    assert!(
+        bindings.contains(&("CalendarEvent".to_string(), module.clone())),
+        "expected binding 'CalendarEvent' with module; got {bindings:?}"
+    );
+    assert!(
+        bindings.contains(&("Calendar".to_string(), module)),
+        "expected binding 'Calendar' with module; got {bindings:?}"
+    );
+}
+
+#[test]
+fn import_type_single_line_emits_module_tagged_bindings() {
+    let bindings = import_bindings(r#"import type { A, B } from "m";"#);
+    let module = Some("m".to_string());
+    assert!(bindings.contains(&("A".to_string(), module.clone())), "{bindings:?}");
+    assert!(bindings.contains(&("B".to_string(), module)), "{bindings:?}");
+}
+
+#[test]
+fn import_mixed_per_specifier_type_keyword_emits_bindings() {
+    // `import { type X, Y }` — the `type` keyword sits on the first specifier
+    // only. Both names must still bind with the module.
+    let bindings = import_bindings(r#"import { type X, Y } from "m";"#);
+    let module = Some("m".to_string());
+    assert!(bindings.contains(&("X".to_string(), module.clone())), "{bindings:?}");
+    assert!(bindings.contains(&("Y".to_string(), module)), "{bindings:?}");
+}
+
+#[test]
+fn import_type_default_emits_module_tagged_binding() {
+    let bindings = import_bindings(r#"import type Foo from "m";"#);
+    assert!(
+        bindings.contains(&("Foo".to_string(), Some("m".to_string()))),
+        "expected default `import type` binding 'Foo' with module; got {bindings:?}"
+    );
+}
+
+#[test]
+fn plain_value_import_bindings_unaffected() {
+    // Regression guard: a plain value import must keep emitting module-tagged
+    // bindings exactly as before the `import type` fix.
+    let bindings = import_bindings(r#"import { useState, useEffect } from "react";"#);
+    let module = Some("react".to_string());
+    assert!(
+        bindings.contains(&("useState".to_string(), module.clone())),
+        "{bindings:?}"
+    );
+    assert!(
+        bindings.contains(&("useEffect".to_string(), module)),
+        "{bindings:?}"
+    );
+}
+
 #[test]
 fn extracts_class() {
     let src = "export class UserService {}";

@@ -175,6 +175,8 @@ pub(super) fn resolve_iteration_inner_with_arena(
         &[],
         // One-shot / incremental: persist speculative rows immediately.
         None,
+        // One-shot / incremental: resolve every internal file, no worklist.
+        None,
     )
 }
 
@@ -188,6 +190,7 @@ pub(super) fn resolve_iteration_inner_with_index(
     cached_side_tables: &mut Option<ResolveSideTables>,
     new_files: &[ParsedFile],
     defer_speculative: Option<&mut DeferredSpeculative>,
+    retry_files: Option<&std::collections::HashSet<String>>,
 ) -> Result<ResolutionStats> {
     resolve_iteration_body(
         db,
@@ -200,6 +203,7 @@ pub(super) fn resolve_iteration_inner_with_index(
         cached_side_tables,
         new_files,
         defer_speculative,
+        retry_files,
     )
 }
 
@@ -218,6 +222,12 @@ fn resolve_iteration_body(
     // to flush once after the fixpoint settles. `None` flushes everything
     // immediately (the one-shot / incremental path).
     defer_speculative: Option<&mut DeferredSpeculative>,
+    // Worklist filter for the full-index fixpoint. `None` resolves every
+    // internal file (iteration 0, incremental, one-shot). `Some(set)` resolves
+    // only the frontier — files that recorded a chain miss last pass — because
+    // a file with no chain misses is fully resolved and its result cannot change
+    // when only `ext:` files are added to the index.
+    retry_files: Option<&std::collections::HashSet<String>>,
 ) -> Result<ResolutionStats> {
     // The closure passed to par_iter requires `&SymbolIndex` (for the
     // SymbolLookup trait), not `&mut SymbolIndex`. Reborrow as
@@ -365,7 +375,13 @@ fn resolve_iteration_body(
     // lookup only, never as resolution sources.
     let (mut combined_buf, local_stats_total) = parsed
         .par_iter()
-        .filter(|pf| !pf.path.starts_with("ext:"))
+        .filter(|pf| {
+            // `ext:` files are lookup targets only, never resolution sources.
+            // With a worklist, also skip any internal file that recorded no
+            // chain miss last pass — its result is stable.
+            !pf.path.starts_with("ext:")
+                && retry_files.map_or(true, |s| s.contains(pf.path.as_str()))
+        })
         .map(|pf| -> (FileWriteBuf, FileStats) {
             let mut buf = FileWriteBuf::default();
             let mut local_stats = FileStats::default();
@@ -487,6 +503,11 @@ fn resolve_iteration_body(
                     index.record_local_type(lhs_sym.name.clone(), decl_type.clone());
                 }
             }
+
+            // Tag the worker thread so every `record_chain_miss` call within this
+            // file's ref loop captures the correct source path. Must come after the
+            // local-type seed pass and before the ref iteration below.
+            index.set_current_source_file(&pf.path);
 
             // R5: iterate refs in source order so forward inference
             // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
@@ -834,6 +855,7 @@ fn resolve_iteration_body(
                                 current_type: String::new(),
                                 target_name: leaf.to_string(),
                                 module: Some(module.to_string()),
+                                source_path: String::new(),
                             });
                         }
                     }
@@ -928,6 +950,25 @@ fn resolve_iteration_body(
                                     continue;
                                 }
                             }
+                            // C/C++ `#include` directives name a header by its
+                            // include-path (`windows.h`, `openssl/bio.h`), not a
+                            // symbol. The path-keyed external header index
+                            // (`build_c_header_index`) registers every SDK / vcpkg
+                            // / POSIX header under that same include-path. Record an
+                            // include-driven demand so the Stage-2 expand loop pulls
+                            // the header via `SymbolLocationIndex::locate(path, path)`
+                            // and a re-resolve admits its symbols. Both miss fields
+                            // carry the include-path because the index keys headers
+                            // at `(include_path, include_path)`. O(1) push — the pull
+                            // happens demand-time in `expand`, never in this loop.
+                            if is_c_family(effective_lang) && looks_like_header_include(probe) {
+                                index.record_chain_miss(engine::ChainMiss {
+                                    current_type: String::new(),
+                                    target_name: probe.to_string(),
+                                    module: Some(probe.to_string()),
+                                    source_path: String::new(),
+                                });
+                            }
                             // Import we can't trace — write as unresolved so
                             // the ref stays visible to investigation queries
                             // rather than silently dropping it on the floor.
@@ -966,6 +1007,7 @@ fn resolve_iteration_body(
                                 current_type: String::new(),
                                 target_name: r.target_name.clone(),
                                 module: None,
+                                source_path: String::new(),
                             });
                         }
                         let module_value = r.module.as_deref().map(|s| s.to_string());
@@ -1021,6 +1063,16 @@ fn resolve_iteration_body(
     stats.unresolved += local_stats_total.unresolved;
     stats.external += local_stats_total.external;
 
+    // Collect the leaf target name of every unresolved ref so the demand
+    // filter receives a complete seed set. `combined_buf.unresolved` was
+    // already reduced from all rayon workers; field .1 is the target_name
+    // string emitted at each unresolved site.
+    stats.unresolved_targets = combined_buf
+        .unresolved
+        .iter()
+        .map(|(_, target_name, _, _, _, _, _)| target_name.clone())
+        .collect();
+
     // INFER-3: join return-type candidates per function (see
     // `join_inferred_returns`). Skip any qname still carrying a known return.
     if !combined_buf.inferred_returns.is_empty() {
@@ -1042,17 +1094,30 @@ fn resolve_iteration_body(
     }
 
     // Drain chain walker bail-outs for the orchestrator's R3 reload pass.
-    // Deduped on (current_type, target_name) — the second pass cares about
-    // unique misses; the source-ref retry list is recovered from the DB's
-    // `unresolved_refs` table.
+    // `unique_misses` is deduped on (current_type, target_name) for the expand
+    // pull. `frontier_files` is the distinct set of source paths that recorded
+    // any miss — these are the only files whose resolution can change when new
+    // external symbols are added. A file with no misses is fully resolved and
+    // safe to skip on the next fixpoint pass.
     let raw_misses = index.take_chain_misses();
-    let mut seen: std::collections::HashSet<ChainMiss> = std::collections::HashSet::new();
+    let mut frontier_set: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    // Dedup key excludes `source_path` — expand only needs one pull per
+    // (current_type, target_name, module) triple, regardless of how many
+    // source files recorded the same miss.
+    let mut seen: std::collections::HashSet<(String, String, Option<String>)> =
+        std::collections::HashSet::new();
     let mut unique_misses: Vec<ChainMiss> = Vec::new();
     for m in raw_misses.iter().cloned() {
-        if seen.insert(m.clone()) {
+        if !m.source_path.is_empty() {
+            frontier_set.insert(m.source_path.clone());
+        }
+        let key = (m.current_type.clone(), m.target_name.clone(), m.module.clone());
+        if seen.insert(key) {
             unique_misses.push(m);
         }
     }
+    stats.frontier_files = frontier_set.into_iter().collect();
     if !unique_misses.is_empty() {
         debug!(
             "Chain walker recorded {} bail-outs ({} unique)",
@@ -1265,6 +1330,35 @@ fn is_module_in_project(
         }
     }
     false
+}
+
+/// True for the C-family languages whose `#include` directives are admitted
+/// through the path-keyed external header index.
+fn is_c_family(language: &str) -> bool {
+    matches!(language, "c" | "cpp")
+}
+
+/// True when an `#include` target names a header rather than a project-local
+/// module. A header include is either a path ending in a header extension
+/// (`stdio.h`, `openssl/bio.h`, `vector.hpp`) or an extensionless name with
+/// no path separators — the extensionless C++ stdlib convention (`<vector>`,
+/// `<memory>`). Path-bearing includes without a header extension
+/// (`./local`, `../src/foo`) are project-relative and excluded so the demand
+/// only fires for headers the path-keyed index can actually answer.
+fn looks_like_header_include(include_path: &str) -> bool {
+    if include_path.is_empty() {
+        return false;
+    }
+    let basename = include_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(include_path);
+    let is_header_ext = basename.ends_with(".h")
+        || basename.ends_with(".hpp")
+        || basename.ends_with(".hxx")
+        || basename.ends_with(".hh");
+    let is_extensionless_stdlib = !basename.contains('.') && !include_path.contains('/');
+    is_header_ext || is_extensionless_stdlib
 }
 
 /// Pull the set of `origin='external'` file paths from the `files` table.

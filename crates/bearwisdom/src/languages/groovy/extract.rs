@@ -199,6 +199,43 @@ pub fn extract(source: &str) -> ExtractionResult {
         }
     }
 
+    // Recover closure-valued members the grammar dropped under error recovery.
+    // A Grails taglib defines each tag as a closure assigned to a member
+    // (`def message = { attrs, body -> ... }`). When the closure body contains
+    // GString / `out <<` content the grammar fails to close the closure and
+    // shreds the assignment into flat sibling tokens (`def`/`message`/`=`/`{`)
+    // under a top-level ERROR, so neither `field_declaration` nor any symbol
+    // node survives. The closures never index, so a `<ns:tag>` / `${tag(...)}`
+    // invocation has no in-index target. Recover them by source-line scan,
+    // attributing each to the class whose member indent it matches.
+    if has_errors {
+        let class_symbols: Vec<(usize, String, u32)> = symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.kind == SymbolKind::Class)
+            .map(|(i, s)| (i, s.qualified_name.clone(), s.start_col))
+            .collect();
+        for (class_idx, class_qname, class_col) in class_symbols {
+            let already_extracted_names: std::collections::HashSet<String> = symbols
+                .iter()
+                .filter(|s| {
+                    matches!(s.kind, SymbolKind::Method | SymbolKind::Field)
+                        && s.scope_path.as_deref() == Some(class_qname.as_str())
+                })
+                .map(|s| s.name.clone())
+                .collect();
+            let member_indent = class_col as usize + 2;
+            let new_closures = scan_taglib_closures_from_source(
+                source,
+                class_idx,
+                &class_qname,
+                &already_extracted_names,
+                member_indent,
+            );
+            symbols.extend(new_closures);
+        }
+    }
+
     // Post-processing: annotate Inherits/Implements refs that have no module
     // with the FQN from the file's import table. A Groovy file that writes
     //   import spock.lang.Specification
@@ -410,6 +447,120 @@ fn scan_methods_from_source(
         });
     }
     methods
+}
+
+/// Scan source lines for closure-valued members the grammar dropped under
+/// error recovery, returning a `Method` symbol per recovered closure.
+///
+/// Recognises the shape `(def | <TypeName>) <name> = {` at this class's member
+/// indent — a member assigned a closure literal. A leading `static` and an
+/// access modifier are tolerated. The opening `{` (not `[`) distinguishes a
+/// closure from a map/list literal, so `def m = [:]` is never recovered. The
+/// symbol is emitted as a `Method` because the invocation surfaces as a `Calls`
+/// edge, and `Calls` is kind-compatible with `method`, not `field`.
+///
+/// `member_indent` and the tab/indent gate mirror `scan_methods_from_source`:
+/// a line qualifies when it is tab-indented or carries at least the member
+/// indent, scoping recovered closures to a class member position.
+fn scan_taglib_closures_from_source(
+    src: &str,
+    parent_idx: usize,
+    class_qname: &str,
+    already_extracted: &std::collections::HashSet<String>,
+    member_indent: usize,
+) -> Vec<ExtractedSymbol> {
+    let mut closures: Vec<ExtractedSymbol> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = already_extracted.clone();
+
+    const ACCESS: &[&str] = &["public", "protected", "private", "static"];
+    let indent_prefix: String = " ".repeat(member_indent);
+
+    for (line_idx, line) in src.lines().enumerate() {
+        let has_tab = line.starts_with('\t');
+        let has_indent = !indent_prefix.is_empty() && line.starts_with(&indent_prefix);
+        if !has_tab && !has_indent {
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with('*')
+            || trimmed.starts_with('@')
+        {
+            continue;
+        }
+
+        // The assignment binds a closure when an `=` precedes a `{` and no `[`
+        // (map/list literal) opens first on the line.
+        let eq = match trimmed.find('=') {
+            Some(i) => i,
+            None => continue,
+        };
+        let rest = trimmed[eq + 1..].trim_start();
+        if !rest.starts_with('{') {
+            continue;
+        }
+
+        // Tokens before `=` are the declaration head: optional access / static,
+        // then `def` or a type name, then the member name.
+        let head = trimmed[..eq].trim();
+        let mut tokens = head.split_whitespace().peekable();
+        while tokens.peek().map_or(false, |t| ACCESS.contains(t)) {
+            tokens.next();
+        }
+        // A member declaration leads with `def` or a type name, then the member
+        // name — exactly two tokens after access modifiers. A bare reassignment
+        // (`result = { ... }`, a closure-valued local) is a single token and is
+        // not a class member, so it is excluded.
+        let toks: Vec<&str> = tokens.collect();
+        if toks.len() != 2 {
+            continue;
+        }
+        let head_token = toks[0];
+        let is_def_or_type = head_token == "def"
+            || head_token
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_uppercase());
+        if !is_def_or_type {
+            continue;
+        }
+        let name = toks[1];
+        if name.is_empty()
+            || seen.contains(name)
+            || !name
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_lowercase() || c == '_')
+            || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            || predicates::is_groovy_keyword(name)
+        {
+            continue;
+        }
+
+        seen.insert(name.to_string());
+        closures.push(ExtractedSymbol {
+            name: name.to_string(),
+            qualified_name: format!("{}.{}", class_qname, name),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: line_idx as u32,
+            end_line: line_idx as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(name.to_string()),
+            doc_comment: None,
+            scope_path: Some(class_qname.to_string()),
+            parent_index: Some(parent_idx),
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
+    }
+    closures
 }
 
 /// Scan source lines for a class declaration when tree-sitter parsing fails.

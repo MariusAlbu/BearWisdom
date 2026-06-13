@@ -186,7 +186,7 @@ fn collect_receiver_segments(
     match node.kind() {
         "identifier" => {
             let name = node_text(node, src).to_string();
-            if name.is_empty() || predicates::is_groovy_keyword(&name) {
+            if predicates::is_interpolation_marker(&name) || predicates::is_groovy_keyword(&name) {
                 return None;
             }
             let declared_type = local_types.get(&name).cloned();
@@ -253,6 +253,12 @@ fn collect_receiver_segments(
                 Some(n) => n,
                 None => return None,
             };
+            // A `$`-named segment is the GString interpolation marker, not a
+            // real receiver; reject the chain so the leaf call falls back to a
+            // bare ref instead of carrying a `$` segment.
+            if predicates::is_interpolation_marker(&inner_name) {
+                return None;
+            }
             if let Some(inner_obj) = node.child_by_field_name("object") {
                 collect_receiver_segments(&inner_obj, src, local_types, segments, depth + 1)?;
             } else {

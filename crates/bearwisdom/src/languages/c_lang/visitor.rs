@@ -6,8 +6,9 @@ use tree_sitter::Node;
 
 use super::calls::extract_calls_from_body;
 use super::declarations::{
-    extract_enum_body, push_declaration, push_function_def, push_include, push_namespace,
-    push_namespace_alias, push_specifier, push_typedef,
+    emit_alias_from_declaration, extract_enum_body, is_attribute_typedef_artifact,
+    push_declaration, push_function_def, push_include, push_namespace, push_namespace_alias,
+    push_specifier, push_typedef,
 };
 use super::helpers::node_text;
 use super::macro_misparse::{
@@ -16,8 +17,8 @@ use super::macro_misparse::{
 use super::predicates;
 use super::preproc::{push_preproc_def, push_preproc_function_def};
 use super::templates::{push_alias_decl, push_template_decl, push_using_decl};
-use super::type_refs::emit_param_type_refs;
-use super::typerefs::{emit_typerefs_for_type_descriptor, extract_bases};
+use super::type_refs::{emit_param_type_refs, is_qualifier_macro_position};
+use super::typerefs::{emit_typerefs_for_type_descriptor, extract_bases, is_cpp_keyword};
 use crate::parser::scope_tree;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 
@@ -34,6 +35,11 @@ pub(super) fn extract_node<'a>(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
+    // Start byte of a `declaration` already consumed as the real alias of a
+    // preceding attribute-typedef artifact. Its declarator must not also surface
+    // as a Variable when the loop reaches it.
+    let mut consumed_alias_decl: Option<usize> = None;
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -156,6 +162,36 @@ pub(super) fn extract_node<'a>(
             }
 
             "type_definition" => {
+                // `typedef __attribute__((...)) T Name;` strands the `typedef`
+                // here and lands the real `T Name;` in the next sibling. Emit
+                // the alias from that sibling and mark it consumed so its
+                // declarator doesn't also surface as a Variable.
+                if is_attribute_typedef_artifact(&child, src) {
+                    if let Some(sib) = child.next_sibling() {
+                        if sib.kind() == "declaration" {
+                            let pre_alias_len = symbols.len();
+                            let source_type = emit_alias_from_declaration(
+                                &sib,
+                                src,
+                                scope_tree,
+                                symbols,
+                                parent_index,
+                            );
+                            // Link each new alias to its source type so the
+                            // chain walker can dereference it.
+                            if let Some(type_node) = source_type {
+                                for sym_idx in pre_alias_len..symbols.len() {
+                                    emit_typerefs_for_type_descriptor(
+                                        type_node, src, sym_idx, refs,
+                                    );
+                                }
+                            }
+                            consumed_alias_decl = Some(sib.start_byte());
+                        }
+                    }
+                    continue;
+                }
+
                 let pre_typedef_len = symbols.len();
                 push_typedef(&child, src, scope_tree, symbols, parent_index);
                 let post_typedef_len = symbols.len();
@@ -280,6 +316,13 @@ pub(super) fn extract_node<'a>(
             }
 
             "declaration" | "field_declaration" => {
+                // Already emitted as the real alias of a preceding
+                // attribute-typedef artifact — don't re-emit as a Variable.
+                if consumed_alias_decl == Some(child.start_byte()) {
+                    consumed_alias_decl = None;
+                    continue;
+                }
+
                 // Capture the symbol count before pushing so we know which
                 // symbols were just introduced by this declaration.
                 let pre_decl_len = symbols.len();
@@ -357,8 +400,18 @@ pub(super) fn extract_node<'a>(
                             }
                         }
                         "type_identifier" => {
+                            // Error recovery can re-lex a reserved keyword as a
+                            // declaration's type token; a keyword is never a
+                            // bindable type name. A leading qualifier macro that
+                            // stole the type slot leaves the real type in an
+                            // ERROR sibling — that structural shape is a macro,
+                            // not the declared type.
                             let name = node_text(type_node, src);
-                            if !name.is_empty() && !predicates::is_c_primitive_type(&name) {
+                            if !name.is_empty()
+                                && !predicates::is_c_primitive_type(&name)
+                                && !is_cpp_keyword(&name)
+                                && !is_qualifier_macro_position(&type_node)
+                            {
                                 refs.push(ExtractedRef {
                                     is_import_binding: false,
                                     is_reexport: false,

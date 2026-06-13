@@ -82,6 +82,28 @@ fn kind_compat_table_defaults_unlisted_edge_kinds_to_permissive() {
 }
 
 #[test]
+fn default_profile_declares_no_wildcard_builtins() {
+    assert!(DEFAULT_PROFILE.wildcard_builtins.is_empty());
+}
+
+#[test]
+fn wildcard_builtin_folds_only_on_uppercase_anchor() {
+    static WB: WildcardBuiltin = WildcardBuiltin {
+        prefix: "list",
+        fold_to: "list",
+    };
+    // `prefix` + uppercase → folds to the family base.
+    assert_eq!(WB.fold("listKeys"), Some("list"));
+    assert_eq!(WB.fold("listConnectionStrings"), Some("list"));
+    assert_eq!(WB.fold("listFoo"), Some("list"));
+    // Bare prefix, lowercase continuation, or unrelated word → no fold.
+    assert_eq!(WB.fold("list"), None);
+    assert_eq!(WB.fold("listener"), None);
+    assert_eq!(WB.fold("listing"), None);
+    assert_eq!(WB.fold("resourceId"), None);
+}
+
+#[test]
 fn method_bucket_construction_is_const_friendly() {
     static BUCKET: MethodBucket = MethodBucket {
         arg: ArgKey::Named("public"),

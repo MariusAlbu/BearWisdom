@@ -7,21 +7,19 @@
 // use the toolbox APIs unqualified at runtime — `pdist2(...)`, `dlarray(...)`,
 // `uibutton(parent, ...)`, `imshow(I)`, `fft(x)` — without imports.
 //
-// `matlab_stdlib` (sibling ecosystem) covers the ~400 base built-ins via a
-// curated synthetic name list. This ecosystem is the **toolbox** complement:
-// it walks the actual installed sources so the resolver can match the long
-// tail of toolbox functions / classes / methods to real symbols rather
-// than leaving them unresolved or forcing a hand-maintained name list.
+// It walks the actual installed toolbox sources so the resolver can match
+// toolbox functions / classes / methods to real symbols on disk. When no
+// MATLAB is installed the probe finds nothing and the ecosystem stays inert.
 //
-// Probe order:
-//   1. $BEARWISDOM_MATLAB_ROOT — explicit dir override pointing at the
-//      MATLAB install root (the dir whose `bin/` and `toolbox/` siblings
-//      define the install).
-//   2. $MATLAB_ROOT — sometimes set by users in shell profiles.
-//   3. `matlab -batch "disp(matlabroot)"` — query an installed binary.
+// Probe order (each candidate is tried in turn; the first existing install
+// root wins — none of these is required, discovery falls through to the
+// next when a candidate is absent):
+//   1. $MATLAB_ROOT — the standard env var MATLAB itself exports; some
+//      users also set it in shell profiles.
+//   2. `matlab -batch "disp(matlabroot)"` — query an installed binary.
 //      Slow (multi-second startup) so guarded behind probe failure of
 //      everything else.
-//   4. Standard install paths on each OS:
+//   3. Standard install paths on each OS:
 //        Windows: `C:\Program Files\MATLAB\R20XXa|b\`
 //        macOS:   `/Applications/MATLAB_R20XXa|b.app/`
 //        Linux:   `/usr/local/MATLAB/R20XXa|b/`
@@ -115,12 +113,6 @@ fn discover_matlab_toolbox() -> Vec<ExternalDepRoot> {
 }
 
 fn probe_matlab_root() -> Option<PathBuf> {
-    if let Some(explicit) = std::env::var_os("BEARWISDOM_MATLAB_ROOT") {
-        let p = PathBuf::from(explicit);
-        if p.is_dir() {
-            return Some(p);
-        }
-    }
     if let Some(env_root) = std::env::var_os("MATLAB_ROOT") {
         let p = PathBuf::from(env_root);
         if p.is_dir() {

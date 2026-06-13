@@ -820,6 +820,252 @@ fn bare_name_call_overload_ignores_out_of_scope_homonym() {
     assert_ne!(resolution.strategy, "bare_overload_arg_typed");
 }
 
+/// Lookup double for the arity-ranked rung: the two `foo` callables are
+/// reachable via `by_name`, but `in_file` returns them only for their OWN files
+/// — never for the caller's file. So the bare ladder's same-file strategy
+/// declines and `resolve_generic` returns None, leaving the engine-level
+/// arity-ranked rung to disambiguate the cross-file overload set by argument
+/// type. Mirrors the Pascal shape: same-name functions split across sibling
+/// include files with empty scope_path, which `select_bare_overload`'s
+/// same-file-and-same-scope override can't reach.
+struct CrossFileOverloadLookup {
+    foos: Vec<SymbolInfo>,
+    empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
+}
+
+impl CrossFileOverloadLookup {
+    fn new(foos: Vec<SymbolInfo>) -> Self {
+        Self {
+            foos,
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+        }
+    }
+}
+
+impl SymbolLookup for CrossFileOverloadLookup {
+    fn by_name(&self, name: &str) -> &[SymbolInfo] {
+        if name == "foo" {
+            &self.foos
+        } else {
+            &self.empty
+        }
+    }
+    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+        None
+    }
+    fn members_of(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn types_by_name(&self, _: &str) -> &[SymbolInfo] {
+        &self.empty
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
+    fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
+        // Only a foo's OWN file lists it — never the caller's file.
+        if self.foos.iter().any(|f| &*f.file_path == file_path) {
+            &self.foos
+        } else {
+            &self.empty
+        }
+    }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn field_type_args(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<&[String]> {
+        None
+    }
+    fn alias_target(&self, _: &str) -> Option<&AliasTarget> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_reexports
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
+}
+
+/// Build two `foo` callables in DISTINCT files (neither the caller's), each with
+/// the given parameter types. Mirrors `foo_overloads` but spreads the symbols
+/// across files so the same-file ladder strategy declines and the cross-file
+/// arity-ranked rung is what disambiguates.
+fn foo_overloads_cross_file(
+    params_a: Vec<crate::type_checker::core::types::TypeId>,
+    params_b: Vec<crate::type_checker::core::types::TypeId>,
+) -> (ParsedFile, SymbolIdMap, Vec<SymbolInfo>) {
+    let mk_sym = |params: Vec<crate::type_checker::core::types::TypeId>| ExtractedSymbol {
+        name: "foo".to_string(),
+        qualified_name: "foo".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: params,
+        generic_params: Vec::new(),
+    };
+    // Both symbols live in one ParsedFile for the type build, but their
+    // SymbolInfo file paths point at distinct sibling include files.
+    let symbols = vec![mk_sym(params_a), mk_sym(params_b)];
+    let pf = ParsedFile {
+        path: "src/unit/u_a.inc".to_string(),
+        language: "pascal".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: symbols.clone(),
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: Default::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("src/unit/u_a.inc".to_string(), 0), 1);
+    sym_ids.insert(("src/unit/u_a.inc".to_string(), 1), 2);
+
+    let infos = vec![
+        SymbolInfo {
+            id: 1,
+            name: "foo".to_string(),
+            qualified_name: "foo".to_string(),
+            kind: "function".to_string(),
+            visibility: Some("public".to_string()),
+            file_path: Arc::from("src/unit/u_a.inc"),
+            scope_path: None,
+            package_id: None,
+            signature: None,
+        },
+        SymbolInfo {
+            id: 2,
+            name: "foo".to_string(),
+            qualified_name: "foo".to_string(),
+            kind: "function".to_string(),
+            visibility: Some("public".to_string()),
+            file_path: Arc::from("src/unit/u_b.inc"),
+            scope_path: None,
+            package_id: None,
+            signature: None,
+        },
+    ];
+    (pf, sym_ids, infos)
+}
+
+fn pascal_caller_ctx() -> FileContext {
+    FileContext {
+        file_path: "src/unit/u_c.inc".to_string(),
+        language: "pascal".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    }
+}
+
+#[test]
+fn cross_file_overload_set_bound_by_arity_when_axis_on() {
+    // Two `foo` in sibling include files (u_a.inc arity 1, u_b.inc arity 2),
+    // neither the caller's file. The same-file / same-dir-unique rungs decline
+    // (the set has two candidates), and `select_bare_overload`'s same-file
+    // override can't reach a cross-file homonym. With Pascal's
+    // multi_candidate_ranking on, a 2-arg call's arity selects u_b.inc's foo.
+    let arena = Arc::new(TypeArena::new());
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+    let (pf, sym_ids, infos) = foo_overloads_cross_file(vec![int_ty], vec![int_ty, int_ty]);
+    let lookup = CrossFileOverloadLookup::new(infos);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("pascal", &crate::languages::pascal::PASCAL_PROFILE);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let r = bare_call_ref(2);
+    let rc = ref_ctx_for(&r, &source);
+    let fc = pascal_caller_ctx();
+
+    let resolution = engine
+        .resolve(&rc, &fc, &lookup)
+        .expect("the 2-arg call binds the arity-matching cross-file overload");
+    assert_eq!(resolution.target_symbol_id, 2);
+    assert_eq!(resolution.strategy, "engine_arity_ranked");
+}
+
+#[test]
+fn cross_file_overload_set_declines_when_axis_off() {
+    // REGRESSION GATE: the SAME cross-file overload set under a profile that
+    // leaves multi_candidate_ranking off (the default) must NOT bind — the
+    // arity-ranked rung never fires, so the ambiguous set stays unresolved and
+    // the ladder is byte-identical to its pre-axis behavior.
+    let arena = Arc::new(TypeArena::new());
+    let int_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Int);
+    let (mut pf, sym_ids, infos) = foo_overloads_cross_file(vec![int_ty], vec![int_ty, int_ty]);
+    // Drive the build under the default profile by tagging the file `default`.
+    pf.language = "default".to_string();
+    let lookup = CrossFileOverloadLookup::new(infos);
+
+    let mut profiles: FxHashMap<&'static str, &LanguageProfile> = FxHashMap::default();
+    profiles.insert("default", &DEFAULT_PROFILE);
+    let engine = Engine::build_with_hooks(
+        std::slice::from_ref(&pf),
+        &sym_ids,
+        profiles,
+        FxHashMap::default(),
+        &lookup,
+        arena.clone(),
+    );
+
+    let source = dummy_source();
+    let r = bare_call_ref(2);
+    let rc = ref_ctx_for(&r, &source);
+    let fc = FileContext {
+        file_path: "src/unit/u_c.inc".to_string(),
+        language: "default".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+
+    assert!(
+        engine.resolve(&rc, &fc, &lookup).is_none(),
+        "with the axis off, the cross-file overload set must stay unresolved"
+    );
+}
+
 #[test]
 fn engine_infer_yield_returns_class_typeid_for_instantiates() {
     let pf = ts_parsed_file("src/u.ts", "export class Foo {}");

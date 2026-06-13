@@ -131,6 +131,210 @@ fn build_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i
     (index, id_map)
 }
 
+/// Parse an MDX `source` exactly as the indexer does: run the host extractor
+/// for JSX `Calls` refs, then sub-extract each emitted `ScriptBlock` region as
+/// TypeScript and merge the import refs into the host file's ref vector. The
+/// result mirrors `parse_file`'s post-splice `ParsedFile`, so the import
+/// bindings the ESM region carries land in `pf.refs` with their `module` field
+/// intact — the data `build_file_context` reads to populate
+/// `FileContext.imports`.
+fn parse_mdx(path: &str, source: &str) -> ParsedFile {
+    let host = super::extract::extract(source, path);
+    let mut symbols = host.symbols;
+    let mut refs = host.refs;
+    for region in super::embedded::detect_regions(source) {
+        if region.language_id != "typescript" {
+            continue;
+        }
+        let sub = crate::languages::typescript::extract::extract(&region.text, false);
+        let symbol_offset = symbols.len();
+        for mut sr in sub.refs {
+            sr.source_symbol_index += symbol_offset;
+            refs.push(sr);
+        }
+        symbols.extend(sub.symbols);
+    }
+    make_file(path, "mdx", symbols, refs)
+}
+
+#[test]
+fn relative_astro_import_binds_jsx_call_through_full_pipeline() {
+    // The dominant Track-G shape: an MDX page imports a project-defined
+    // component via a relative `.astro` specifier and uses it as a JSX tag.
+    // The import sits in the ESM body region (sub-extracted as TypeScript);
+    // the `<Card />` tag is a host `Calls` ref. The file-import / component-
+    // import rungs must bind the tag to the internal `Card` symbol — proving
+    // the ESM region reached `FileContext.imports`.
+    let card = make_file(
+        "src/components/Card.astro",
+        "astro",
+        vec![make_symbol("Card", "Card", SymbolKind::Class, None)],
+        vec![],
+    );
+    let page = parse_mdx(
+        "src/content/docs/page.mdx",
+        "import { Card } from '../../components/Card.astro';\n\n# Title\n\n<Card title=\"Hi\" />\n",
+    );
+
+    let (index, id_map) = build_env(&[&page, &card]);
+    let file_ctx = MdxHooks.build_file_context(&page, None).unwrap();
+    assert!(
+        file_ctx
+            .imports
+            .iter()
+            .any(|e| e.imported_name == "Card"),
+        "ESM body import must populate FileContext.imports; got {:?}",
+        file_ctx.imports
+    );
+
+    let call = page
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Card")
+        .expect("host extractor must emit a Calls ref for <Card />");
+    let ref_ctx = RefContext {
+        extracted_ref: call,
+        source_symbol: &page.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("imported <Card /> tag must bind the internal Card component");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("src/components/Card.astro".to_string(), "Card".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn bare_specifier_import_binds_when_package_indexed_internal() {
+    // Components imported from a bare specifier (`@scope/pkg/components`) bind
+    // only when that package is materialized in-index (workspace shape): the
+    // module's slash-form must appear as a segment-bounded run inside the
+    // defining file's path. Here the package source lives under a matching
+    // path, so `resolve_via_component_import` binds the tag. A bare import to a
+    // non-indexed package would instead fall through to the external
+    // classifier — out of scope for this rung.
+    let comp = make_file(
+        "node_modules/@scope/pkg/components/Card.ts",
+        "typescript",
+        vec![make_symbol("Card", "Card", SymbolKind::Class, None)],
+        vec![],
+    );
+    let page = parse_mdx(
+        "src/page.mdx",
+        "import { Card } from '@scope/pkg/components';\n\n<Card />\n",
+    );
+
+    let (index, id_map) = build_env(&[&page, &comp]);
+    let file_ctx = MdxHooks.build_file_context(&page, None).unwrap();
+    let call = page
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Card")
+        .expect("host extractor must emit a Calls ref for <Card />");
+    let ref_ctx = RefContext {
+        extracted_ref: call,
+        source_symbol: &page.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("bare-specifier <Card /> must bind the in-index package component");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "node_modules/@scope/pkg/components/Card.ts".to_string(),
+                "Card".to_string()
+            ))
+            .unwrap()
+    );
+}
+
+#[test]
+fn multiple_imports_one_block_bind_nested_tabitem_usage() {
+    // One ESM region declaring several components, used as nested JSX tags.
+    // Each tag must bind its own import — confirms the merged region carries
+    // every binding, not just the first.
+    let tabs = make_file(
+        "src/ui/Tabs.astro",
+        "astro",
+        vec![make_symbol("Tabs", "Tabs", SymbolKind::Class, None)],
+        vec![],
+    );
+    let tab_item = make_file(
+        "src/ui/TabItem.astro",
+        "astro",
+        vec![make_symbol("TabItem", "TabItem", SymbolKind::Class, None)],
+        vec![],
+    );
+    let page = parse_mdx(
+        "src/page.mdx",
+        "import { Tabs } from './ui/Tabs.astro';\nimport { TabItem } from './ui/TabItem.astro';\n\n<Tabs>\n  <TabItem label=\"One\">a</TabItem>\n</Tabs>\n",
+    );
+
+    let (index, id_map) = build_env(&[&page, &tabs, &tab_item]);
+    let file_ctx = MdxHooks.build_file_context(&page, None).unwrap();
+
+    let resolve_tag = |name: &str| {
+        let call = page
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == name)
+            .unwrap_or_else(|| panic!("expected a Calls ref for <{name}>"));
+        let ref_ctx = RefContext {
+            extracted_ref: call,
+            source_symbol: &page.symbols[0],
+            scope_chain: build_scope_chain(None),
+            file_package_id: None,
+        };
+        run_resolve(&file_ctx, &ref_ctx, &index)
+            .unwrap_or_else(|| panic!("<{name}> must bind its imported component"))
+    };
+
+    assert_eq!(
+        resolve_tag("Tabs").target_symbol_id,
+        *id_map
+            .get(&("src/ui/Tabs.astro".to_string(), "Tabs".to_string()))
+            .unwrap()
+    );
+    assert_eq!(
+        resolve_tag("TabItem").target_symbol_id,
+        *id_map
+            .get(&("src/ui/TabItem.astro".to_string(), "TabItem".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn markdown_content_still_extracts_with_import_block_present() {
+    // Regression: adding an ESM import block must not disturb the host scan of
+    // ordinary Markdown — headings stay Field symbols, fenced code stays inert,
+    // and the relative-link Imports ref is still emitted.
+    let page = parse_mdx(
+        "docs/guide.mdx",
+        "import { Card } from './Card.astro';\n\n# Heading One\n\n## Heading Two\n\nSee [more](./info.md).\n\n```ts\nconst x: number = 1;\n```\n",
+    );
+
+    let headings: Vec<&str> = page
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Field)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(headings, vec!["Heading One", "Heading Two"]);
+
+    assert!(
+        page.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Imports && r.target_name == "info"),
+        "relative markdown link must still emit an Imports ref"
+    );
+}
+
 #[test]
 fn jsx_calls_dispatched_to_ts_resolver_for_same_file_export() {
     // The MDX host emits the JSX `Calls` ref against the file's host

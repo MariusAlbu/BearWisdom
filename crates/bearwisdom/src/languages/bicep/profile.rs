@@ -63,6 +63,15 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &["sys", "az"],
+    // The `az` namespace registers `list*` as a regex overload, not a finite
+    // name set; arbitrary `listFoo()` / `listConnectionStrings()` calls fold to
+    // the vendored `list` builtin (the family base shipped in the namespace
+    // surface). Anchored `list` + uppercase, so `list`/`listener`/`listing`
+    // don't fold.
+    wildcard_builtins: &[crate::type_checker::profile::language_profile::WildcardBuiltin {
+        prefix: "list",
+        fold_to: "list",
+    }],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
@@ -90,6 +99,8 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
+    multi_candidate_ranking: false,
+    scope_functions: &[],
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -33,7 +33,7 @@ use super::super::{
 };
 use super::SymbolIndex;
 use super::{
-    common_prefix_len, find_matching_bracket, is_ambient_global_lib_path, is_type_like_kind,
+    common_prefix_len, find_matching_bracket, is_ts_ambient_global_lib_path, is_type_like_kind,
     merge_where_bounds, parse_generic_param_clause,
 };
 use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeInfo};
@@ -81,6 +81,11 @@ impl SymbolIndex {
         let mut types_by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_id: FxHashMap<i64, SymbolInfo> = FxHashMap::default();
         let mut containing_id: FxHashMap<i64, i64> = FxHashMap::default();
+        // Workspace-package member index. Populated per symbol below (NOT from
+        // `by_qname`, whose first-wins keying would drop every same-qname
+        // sibling), so a package's bucket holds every symbol it declares even
+        // when sibling packages declare the identical qualified name.
+        let mut by_package: FxHashMap<i64, Vec<SymbolInfo>> = FxHashMap::default();
 
         for pf in parsed {
             // One Arc<str> per file — all symbols in this file share the same
@@ -148,6 +153,14 @@ impl SymbolIndex {
                 // walk starts from `by_qname`'s first-wins record — so its
                 // chain must be the first occurrence's too, not the last.
                 by_id.entry(id).or_insert_with(|| info.clone());
+
+                // Workspace-package bucket — every symbol with a package_id,
+                // keyed only on the package, so same-qname siblings across
+                // packages all survive for `symbols_in_package` scans.
+                if let Some(pkg_id) = info.package_id {
+                    by_package.entry(pkg_id).or_default().push(info.clone());
+                }
+
                 if let Some(p) = sym.parent_index {
                     if let Some(parent) = pf.symbols.get(p) {
                         if let Some(&pid) =
@@ -238,6 +251,12 @@ impl SymbolIndex {
                     package_id: source.package_id,
                     signature: source.signature.clone(),
                 };
+                // Mirror the main-loop bucketing: a re-export alias inherits
+                // its source's package_id, so it must surface in that package's
+                // `symbols_in_package` scan under its alias name.
+                if let Some(pkg_id) = synth.package_id {
+                    by_package.entry(pkg_id).or_default().push(synth.clone());
+                }
                 by_name.insert(alias.clone(), vec![synth.clone()]);
                 by_qname.entry(alias.clone()).or_insert(synth);
                 registered_this_pass += 1;
@@ -978,7 +997,7 @@ impl SymbolIndex {
         // "external (DOM/ES runtime)", not "unresolved".
         let mut ambient_global_method_names: HashSet<String> = HashSet::new();
         for pf in parsed {
-            if !is_ambient_global_lib_path(&pf.path) {
+            if !is_ts_ambient_global_lib_path(&pf.path.replace('\\', "/")) {
                 continue;
             }
             for sym in &pf.symbols {
@@ -1001,17 +1020,6 @@ impl SymbolIndex {
                 if !set.is_empty() {
                     primitives_by_language.insert(pf.language.clone(), set);
                 }
-            }
-        }
-
-        // Group symbols by workspace package_id so language resolvers can
-        // scope lookups when an import specifier matches a sibling package's
-        // declared_name. One entry per qname — duplicates filtered via
-        // by_qname's first-wins semantics.
-        let mut by_package: FxHashMap<i64, Vec<SymbolInfo>> = FxHashMap::default();
-        for sym in by_qname.values() {
-            if let Some(pkg_id) = sym.package_id {
-                by_package.entry(pkg_id).or_default().push(sym.clone());
             }
         }
 

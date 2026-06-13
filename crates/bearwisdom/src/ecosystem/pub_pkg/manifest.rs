@@ -79,7 +79,7 @@ fn collect_pubspec_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     }
 }
 
-fn parse_pubspec_name(content: &str) -> Option<String> {
+pub(crate) fn parse_pubspec_name(content: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim_end();
         if trimmed.starts_with("name:") && !line.starts_with(' ') && !line.starts_with('\t') {

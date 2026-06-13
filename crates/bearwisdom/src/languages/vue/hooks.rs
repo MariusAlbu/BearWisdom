@@ -54,11 +54,13 @@ impl LanguageEngineHooks for VueHooks {
         let mut ctx =
             crate::languages::typescript::hooks::build_file_context_inner(file, project_ctx);
 
-        // For each Calls ref whose target is PascalCase and doesn't already
-        // appear in the file's import list, check the project-wide global
-        // registry stored in plugin_state. If a library covers that component
-        // (via a prefix convention), add a synthetic ImportEntry so the engine's
-        // import loop resolves the component against the external index.
+        // For each ref that doesn't already appear in the file's import list,
+        // consult the project-wide global registry in plugin_state and add a
+        // synthetic ImportEntry so the engine's import loop resolves it:
+        //   1. exact-name binding from a generated `components.d.ts` /
+        //      `auto-imports.d.ts` — the module is pinned by project config, so
+        //      both PascalCase tags and camelCase composables bind verbatim;
+        //   2. PascalCase tag covered by a library prefix convention.
         if let Some(ctx_ref) = project_ctx {
             if let Some(registry) = ctx_ref
                 .plugin_state
@@ -74,19 +76,28 @@ impl LanguageEngineHooks for VueHooks {
                     let mut extra_imports: Vec<ImportEntry> = Vec::new();
                     for r in &file.refs {
                         let name = &r.target_name;
-                        if !name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                            continue;
-                        }
                         if already_imported.contains(name.as_str()) {
                             continue;
                         }
                         if extra_imports.iter().any(|e| &e.imported_name == name) {
                             continue;
                         }
-                        if let Some(pkg) = global_registry::library_for_name(registry, name) {
+                        // Config-pinned exact module (components.d.ts /
+                        // auto-imports.d.ts) wins — any identifier case.
+                        let module = if let Some(m) =
+                            global_registry::module_path_for(registry, name)
+                        {
+                            Some(m.to_string())
+                        } else if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                            // Library prefix convention — PascalCase tags only.
+                            global_registry::library_for_name(registry, name).map(str::to_string)
+                        } else {
+                            None
+                        };
+                        if let Some(module_path) = module {
                             extra_imports.push(ImportEntry {
                                 imported_name: name.clone(),
-                                module_path: Some(pkg.to_string()),
+                                module_path: Some(module_path),
                                 alias: None,
                                 is_wildcard: false,
                             });
@@ -104,3 +115,7 @@ impl LanguageEngineHooks for VueHooks {
 }
 
 pub static VUE_HOOKS: VueHooks = VueHooks;
+
+#[cfg(test)]
+#[path = "hooks_tests.rs"]
+mod tests;

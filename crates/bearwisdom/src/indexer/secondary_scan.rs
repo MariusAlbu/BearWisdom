@@ -24,32 +24,43 @@
 // =============================================================================
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use regex::Regex;
 
 use crate::walker::WalkedFile;
 
+/// Upper bound on files the secondary pass will pull, guarding against
+/// pathological import fan-out in a gitignored tree. A generated client splits
+/// into per-model files; a large schema (calcom ~100 models) lands a few
+/// hundred files, well under this cap.
+const MAX_PULLED_FILES: usize = 5000;
+
 /// Scan every EcmaScript-family file in `primary` for module specifiers,
 /// resolve them against the filesystem under `project_root`, and return any
 /// files that aren't already in `primary` but exist on disk and look like
-/// project source.
+/// project source. Follows the import graph transitively: a pulled file's own
+/// imports are scanned too, so a gitignored chain (generated client →
+/// `internal/class` → per-model delegates) is pulled whole, not just the first
+/// hop the primary walk happened to import directly.
 ///
 /// Returns an additive set — caller merges with the primary list.
 pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> Vec<WalkedFile> {
     let walked_abs: HashSet<PathBuf> = primary.iter().map(|f| f.absolute_path.clone()).collect();
 
-    let project_root_canonical = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-
     let mut found: HashSet<PathBuf> = HashSet::new();
+    // Worklist seeded with the primary files; pulled files are enqueued so
+    // their own imports are followed. Dedup via `found` (pulled targets) and
+    // `walked_abs` (primary) keeps each file scanned at most once.
+    let mut queue: std::collections::VecDeque<PathBuf> =
+        primary.iter().map(|f| f.absolute_path.clone()).collect();
 
-    for file in primary {
-        if !is_ecmascript_family(file.language) {
+    while let Some(from_path) = queue.pop_front() {
+        // Only EcmaScript-family files carry module specifiers worth following.
+        if !crate::walker::detect_language(&from_path).is_some_and(is_ecmascript_family) {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&file.absolute_path) else {
+        let Ok(content) = std::fs::read_to_string(&from_path) else {
             continue;
         };
         for spec in scan_import_specifiers(&content) {
@@ -59,19 +70,21 @@ pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> V
             if !is_path_specifier(&spec) {
                 continue;
             }
-            for resolved in
-                resolve_to_existing_files(&file.absolute_path, &project_root_canonical, &spec)
-            {
+            for resolved in resolve_to_existing_files(&from_path, project_root, &spec) {
                 if walked_abs.contains(&resolved) || found.contains(&resolved) {
                     continue;
                 }
-                if !is_under_project_root(&resolved, &project_root_canonical) {
+                if !is_under_project_root(&resolved, project_root) {
                     continue;
                 }
                 if has_hard_excluded_component(&resolved) {
                     continue;
                 }
-                found.insert(resolved);
+                if found.len() >= MAX_PULLED_FILES {
+                    break;
+                }
+                found.insert(resolved.clone());
+                queue.push_back(resolved);
             }
         }
     }
@@ -79,12 +92,16 @@ pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> V
     found
         .into_iter()
         .filter_map(|path| {
-            let language_id = crate::walker::detect_language(&path)?;
+            // `lexically_normalize` already folded every resolved path before
+            // it entered `found`, so `strip_prefix` against the raw (non-
+            // canonicalized) `project_root` is a plain textual prefix match —
+            // no verbatim-path mismatch on Windows.
             let relative_path = path
-                .strip_prefix(&project_root_canonical)
+                .strip_prefix(project_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
+            let language_id = crate::walker::detect_language(&path)?;
             Some(WalkedFile {
                 relative_path,
                 absolute_path: path,
@@ -145,7 +162,13 @@ fn resolve_to_existing_files(from_file: &Path, project_root: &Path, spec: &str) 
     ];
     let mut out = Vec::new();
     for base in bases {
-        let candidate = base.join(cleaned);
+        // Fold `..`/`.` lexically before any disk probe or storage. A
+        // relative specifier like `../config.json` joins to a path carrying
+        // a literal `/../` segment; the OS resolves it for `is_file`, but the
+        // unfolded form would be stored verbatim and strip_prefix against the
+        // canonical root would miss — producing a duplicate, package-less file
+        // row that shadows the canonical one.
+        let candidate = lexically_normalize(&base.join(cleaned));
 
         // 1. Direct file as-is.
         if candidate.is_file() {
@@ -153,7 +176,7 @@ fn resolve_to_existing_files(from_file: &Path, project_root: &Path, spec: &str) 
         }
         // 2. With each extension appended (`./foo` → `./foo.ts`).
         for ext in exts {
-            let with_ext = base.join(format!("{cleaned}{ext}"));
+            let with_ext = lexically_normalize(&base.join(format!("{cleaned}{ext}")));
             if with_ext.is_file() {
                 out.push(with_ext);
             }
@@ -171,9 +194,51 @@ fn resolve_to_existing_files(from_file: &Path, project_root: &Path, spec: &str) 
     out
 }
 
+/// Fold `.` and `..` segments out of a path lexically, without touching the
+/// filesystem or resolving symlinks. `a/b/../c` → `a/c`, `a/./b` → `a/b`.
+///
+/// Conservative at the root: a leading `..` that would escape the path prefix
+/// (drive/root) is retained rather than popped, preserving the pre-fold
+/// failure mode for paths that escape their anchor. Repeated separators and
+/// trailing slashes collapse as a side effect of component iteration.
+fn lexically_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    // Tracks how many real directory names sit above the prefix/root anchor,
+    // so a `..` only pops a name we actually pushed — never the anchor itself.
+    let mut poppable = 0usize;
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                out.push(component.as_os_str());
+                poppable = 0;
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if poppable > 0 {
+                    out.pop();
+                    poppable -= 1;
+                } else {
+                    out.push("..");
+                }
+            }
+            Component::Normal(seg) => {
+                out.push(seg);
+                poppable += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Returns true when `path` is inside `project_root`.
+///
+/// Both `path` and `project_root` must use the same prefix form (both
+/// verbatim or both non-verbatim). Callers guarantee this by passing the
+/// raw `project_root` and a `lexically_normalize`d path built from
+/// `file.absolute_path` — which shares its prefix form with `project_root`
+/// because the primary walk constructs paths from the same root.
 fn is_under_project_root(path: &Path, project_root: &Path) -> bool {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    canonical.starts_with(project_root)
+    path.starts_with(project_root)
 }
 
 /// Hard-exclude directories that always belong to the externals walker or

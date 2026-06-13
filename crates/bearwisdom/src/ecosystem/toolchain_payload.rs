@@ -37,9 +37,11 @@ pub fn toolchain_payload_prefixes(project_root: &Path) -> Vec<String> {
 
 /// Zig toolchain checkout: `lib/std/` is the stdlib marker that identifies the
 /// directory as a Zig install / compiler checkout (an ordinary Zig app has no
-/// `lib/std`). Its sibling `lib/libc*` / `lib/libcxx*` subtrees are vendored
-/// C/C++ system libraries shipped with the toolchain. `lib/std` itself stays
-/// internal — it is indexed via the `zig-std` ecosystem.
+/// `lib/std`). Its sibling subtrees are vendored C/C++ payload shipped with the
+/// toolchain, not Zig's own code: `lib/libc*` / `lib/libcxx*` (musl/libc++),
+/// `lib/include` (bundled clang headers), and `lib/libtsan` (the compiler-rt
+/// ThreadSanitizer runtime). `lib/std` itself stays internal — it is indexed via
+/// the `zig-std` ecosystem.
 fn zig_payload_prefixes(project_root: &Path) -> Vec<String> {
     if !project_root.join("lib").join("std").is_dir() {
         return Vec::new();
@@ -57,13 +59,19 @@ fn zig_payload_prefixes(project_root: &Path) -> Vec<String> {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        // `libc`, `libcxx`, `libcxxabi`, `libunwind`, ... — vendored
-        // C/C++ payload shipped under lib/.
-        if name.starts_with("libc") || name.starts_with("libcxx") {
+        if is_zig_vendored_payload_dir(&name) {
             out.push(format!("lib/{name}"));
         }
     }
     out
+}
+
+/// True for a `lib/<name>` subtree that holds vendored C/C++ payload bundled
+/// with the Zig toolchain rather than Zig's own source: `libc`, `libcxx`,
+/// `libcxxabi`, `libunwind` (the C/C++ system libraries), `include` (bundled
+/// clang headers), and `libtsan` (the compiler-rt ThreadSanitizer runtime).
+fn is_zig_vendored_payload_dir(name: &str) -> bool {
+    name.starts_with("libc") || name.starts_with("libcxx") || matches!(name, "include" | "libtsan")
 }
 
 /// Odin toolchain checkout: `core/` (stdlib) and `vendor/` (bundled bindings)

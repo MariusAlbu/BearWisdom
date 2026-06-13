@@ -67,16 +67,121 @@ fn discover_finds_clone_vendored_in_project_tree() {
 }
 
 #[test]
-fn discover_returns_empty_when_no_clone_in_tree() {
+fn discover_falls_back_to_vendored_surface_when_no_clone_in_tree() {
     let root = std::env::temp_dir().join("bw-bicep-no-clone-in-tree");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("src").join("app")).unwrap();
     std::fs::write(root.join("main.bicep"), "param x string").unwrap();
 
     let roots = discover_bicep_source(&root);
-    assert!(roots.is_empty(), "no Bicep.Core in tree → honest empty");
+    assert_eq!(
+        roots.len(),
+        1,
+        "no Bicep.Core in tree → single vendored fallback root"
+    );
+    assert_eq!(
+        roots[0].root.as_path(),
+        std::path::Path::new(VENDORED_FALLBACK_ROOT),
+        "fallback dep root carries the vendored-surface sentinel"
+    );
 
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn vendored_surface_supplies_builtin_function_and_decorator_names() {
+    // Template-only project: no in-tree Bicep clone anywhere. The vendored
+    // pinned surface must still supply the builtin function + decorator
+    // names so `resourceGroup()`-style calls and `@description`-style
+    // decorators resolve. Before the fallback this returned an empty Vec.
+    let root = std::env::temp_dir().join("bw-bicep-template-only");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("main.bicep"),
+        "@description('rg') param location string = resourceGroup().location",
+    )
+    .unwrap();
+
+    let roots = discover_bicep_source(&root);
+    assert_eq!(roots.len(), 1, "vendored fallback root present");
+
+    let files = synthesise_bicep_namespace_file(&roots[0].root);
+    assert_eq!(files.len(), 1, "vendored surface synthesises one ParsedFile");
+    let names: Vec<&str> = files[0].symbols.iter().map(|s| s.name.as_str()).collect();
+
+    // Functions the template-only corpus leaves unresolved without a clone.
+    assert!(names.contains(&"resourceGroup"), "az ns fn from vendored asset");
+    assert!(names.contains(&"resourceId"), "resolved-constant fn present");
+    assert!(names.contains(&"subscription"), "az ns fn present");
+    assert!(names.contains(&"union"), "system fn present");
+    assert!(names.contains(&"concat"), "system fn present");
+    assert!(names.contains(&"uniqueString"), "system fn present");
+    // Decorators.
+    assert!(names.contains(&"description"), "decorator from vendored asset");
+    assert!(names.contains(&"secure"), "decorator present");
+    // Namespace aliases.
+    assert!(names.contains(&"sys"), "sys namespace alias present");
+    assert!(names.contains(&"az"), "az namespace alias present");
+
+    // The emitted qnames match the clone path's shape so resolution treats
+    // both sources identically.
+    let rg = files[0]
+        .symbols
+        .iter()
+        .find(|s| s.name == "resourceGroup")
+        .unwrap();
+    assert_eq!(rg.qualified_name, "bicep.builtins.resourceGroup");
+    let desc = files[0]
+        .symbols
+        .iter()
+        .find(|s| s.name == "description")
+        .unwrap();
+    assert_eq!(desc.qualified_name, "bicep.decorators.description");
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn in_tree_clone_takes_precedence_over_vendored_surface() {
+    // A clone vendored in the tree must win over the embedded asset: the
+    // dep root points at the clone's `src/Bicep.Core`, not the sentinel.
+    let root = std::env::temp_dir().join("bw-bicep-clone-precedence");
+    let _ = std::fs::remove_dir_all(&root);
+    let clone = root.join("third_party").join("bicep");
+    write_minimal_clone(&clone);
+
+    let roots = discover_bicep_source(&root);
+    assert_eq!(roots.len(), 1);
+    assert_ne!(
+        roots[0].root.as_path(),
+        std::path::Path::new(VENDORED_FALLBACK_ROOT),
+        "in-tree clone must take precedence over the vendored fallback"
+    );
+    assert!(
+        roots[0]
+            .root
+            .ends_with(std::path::Path::new("src").join("Bicep.Core")),
+        "dep root points at the clone, got {}",
+        roots[0].root.display()
+    );
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn vendored_surface_asset_parses_and_is_nonempty() {
+    // Guards the embedded asset against a malformed edit: it must
+    // deserialize and yield the function + decorator + namespace surface.
+    let named = vendored_namespace_symbols();
+    assert!(
+        named.len() > 100,
+        "vendored surface should expose the full ARM builtin set, got {}",
+        named.len()
+    );
+    assert!(named.iter().any(|(n, m, _)| n == "resourceGroup" && *m == "bicep.builtins"));
+    assert!(named.iter().any(|(n, m, _)| n == "description" && *m == "bicep.decorators"));
+    assert!(named.iter().any(|(n, m, _)| n == "sys" && *m == "bicep.namespace"));
 }
 
 #[test]

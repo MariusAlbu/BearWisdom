@@ -336,3 +336,301 @@ fn construction_initializer_types_local_for_member_chain() {
         "expected a `calls` edge for analyzer.m() bound to C.m, got {edges:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Include-driven external admission gates (C/C++ `#include`)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Delta-resolve worklist fixpoint
+// ---------------------------------------------------------------------------
+
+/// A file with a same-file callee `helper_<key>` (idx 0) and a caller `run`
+/// (idx 1) that calls it. `run` resolves to a `Calls` edge against the helper.
+/// When `also_call` is `Some(name)`, `run` also calls a name no file defines,
+/// which stays unresolved and puts this file on the frontier. `key` namespaces
+/// the qnames so two files don't share an ambiguous bare callee name.
+fn caller_file(path: &str, key: &str, also_call: Option<&str>) -> ParsedFile {
+    let helper_name = format!("helper_{key}");
+    let helper = method_symbol(&helper_name, &helper_name); // idx 0 — resolvable callee
+    let run = method_symbol("run", &format!("run_{key}")); // idx 1 — the caller
+    let mut refs = vec![ExtractedRef {
+        source_symbol_index: 1,
+        ..calls_ref(&helper_name)
+    }];
+    if let Some(missing) = also_call {
+        // A bare call to a name no file defines → stays unresolved, so this
+        // file lands on the frontier.
+        refs.push(ExtractedRef {
+            source_symbol_index: 1,
+            line: 2,
+            byte_offset: 2,
+            ..calls_ref(missing)
+        });
+    }
+    ParsedFile {
+        path: path.to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![helper, run],
+        refs,
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![None; if also_call.is_some() { 2 } else { 1 }],
+        symbol_from_snippet: vec![],
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+/// Run one cached-index resolution pass over `parsed` with an optional
+/// `retry_files` worklist, returning `(edge_count, unresolved_count,
+/// frontier_files)`. Reuses the caller-supplied caches so a sequence of calls
+/// models the full-index fixpoint (build on the first, reuse on the rest).
+#[allow(clippy::type_complexity)]
+fn run_pass(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &std::collections::HashMap<(String, String), i64>,
+    cached_index: &mut Option<crate::indexer::resolve::engine::SymbolIndex>,
+    cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
+    cached_side_tables: &mut Option<crate::indexer::resolve::ResolveSideTables>,
+    retry_files: Option<&std::collections::HashSet<String>>,
+) -> (i64, i64, Vec<String>) {
+    let mut deferred = crate::indexer::resolve::DeferredSpeculative::default();
+    let arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
+    let stats = crate::indexer::resolve::resolve_iteration_with_cached_index_and_arena(
+        db,
+        parsed,
+        symbol_id_map,
+        None,
+        cached_index,
+        cached_engine,
+        cached_side_tables,
+        &[],
+        arena,
+        Some(&mut deferred),
+        retry_files,
+    )
+    .expect("cached-index resolve pass");
+    crate::indexer::resolve::flush_deferred_speculative(db, &deferred)
+        .expect("flush deferred speculative");
+    let conn = db.conn();
+    let edges: i64 = conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .expect("count edges");
+    let unresolved: i64 = conn
+        .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
+        .expect("count unresolved");
+    (edges, unresolved, stats.frontier_files)
+}
+
+/// Two files: A fully resolves its one internal call; B resolves its internal
+/// call AND has a bare call to an undefined name (`Missing`) that stays
+/// unresolved. `ParsedFile` is not `Clone`, so rebuild a fresh pair per DB.
+fn ab_files() -> Vec<ParsedFile> {
+    vec![
+        caller_file("A.ts", "A", None),
+        caller_file("B.ts", "B", Some("Missing")),
+    ]
+}
+
+#[test]
+fn frontier_holds_exactly_the_files_with_open_refs() {
+    // The frontier returned by a full pass must be exactly {B} — A is fully
+    // resolved (no unresolved, no external) and so cannot change on a later
+    // pass, while B carries the unresolved `Missing` call.
+    let files = ab_files();
+    let mut db = Database::open_in_memory().expect("in-memory db");
+    let (_files, symbol_id_map) =
+        write_parsed_files_with_origin(&db, &files, "internal", None).expect("write parsed files");
+
+    let mut idx = None;
+    let mut engine = None;
+    let mut side = None;
+    let (_edges, _unresolved, frontier) = run_pass(
+        &mut db,
+        &files,
+        &symbol_id_map,
+        &mut idx,
+        &mut engine,
+        &mut side,
+        None,
+    );
+    assert_eq!(
+        frontier,
+        vec!["B.ts".to_string()],
+        "only the file with an open (unresolved) ref belongs on the frontier"
+    );
+}
+
+#[test]
+fn delta_frontier_pass_equals_full_pass() {
+    // Equivalence the resolution-rate gate checks: a full first pass (every
+    // file) followed by a frontier-only delta pass produces the SAME edge and
+    // unresolved counts as a full first pass followed by another full pass.
+    // File A is stable after pass 0 (its edge persists, INSERT OR IGNORE);
+    // re-resolving only B reproduces B's edge + unresolved without touching A.
+
+    // --- Delta variant: pass 0 full, pass 1 restricted to the frontier. ---
+    let (delta_edges, delta_unresolved) = {
+        let files = ab_files();
+        let mut db = Database::open_in_memory().expect("in-memory db");
+        let (_f, sym) = write_parsed_files_with_origin(&db, &files, "internal", None)
+            .expect("write parsed files");
+        let mut idx = None;
+        let mut engine = None;
+        let mut side = None;
+        let (_e0, _u0, frontier0) =
+            run_pass(&mut db, &files, &sym, &mut idx, &mut engine, &mut side, None);
+        let frontier: std::collections::HashSet<String> = frontier0.into_iter().collect();
+        let (e1, u1, _f1) = run_pass(
+            &mut db,
+            &files,
+            &sym,
+            &mut idx,
+            &mut engine,
+            &mut side,
+            Some(&frontier),
+        );
+        (e1, u1)
+    };
+
+    // --- Full variant: pass 0 full, pass 1 also full (resolve everything). ---
+    let (full_edges, full_unresolved) = {
+        let files = ab_files();
+        let mut db = Database::open_in_memory().expect("in-memory db");
+        let (_f, sym) = write_parsed_files_with_origin(&db, &files, "internal", None)
+            .expect("write parsed files");
+        let mut idx = None;
+        let mut engine = None;
+        let mut side = None;
+        let (_e0, _u0, _f0) =
+            run_pass(&mut db, &files, &sym, &mut idx, &mut engine, &mut side, None);
+        let (e1, u1, _f1) =
+            run_pass(&mut db, &files, &sym, &mut idx, &mut engine, &mut side, None);
+        (e1, u1)
+    };
+
+    assert_eq!(
+        delta_edges, full_edges,
+        "delta frontier pass must produce the same edge count as a full pass"
+    );
+    assert_eq!(
+        delta_unresolved, full_unresolved,
+        "delta frontier pass must produce the same unresolved count as a full pass"
+    );
+}
+
+#[test]
+fn c_family_gate_admits_only_c_and_cpp() {
+    assert!(super::is_c_family("c"));
+    assert!(super::is_c_family("cpp"));
+    assert!(!super::is_c_family("typescript"));
+    assert!(!super::is_c_family("rust"));
+    assert!(!super::is_c_family("python"));
+}
+
+#[test]
+fn header_include_shape_accepts_header_extensions_and_stdlib_names() {
+    // Header-extension paths — the path-keyed index can answer these.
+    assert!(super::looks_like_header_include("stdio.h"));
+    assert!(super::looks_like_header_include("windows.h"));
+    assert!(super::looks_like_header_include("openssl/bio.h"));
+    assert!(super::looks_like_header_include("um/winnt.h"));
+    assert!(super::looks_like_header_include("foo.hpp"));
+    assert!(super::looks_like_header_include("bar.hxx"));
+    assert!(super::looks_like_header_include("baz.hh"));
+    // Extensionless C++ stdlib headers — `<vector>`, `<memory>`.
+    assert!(super::looks_like_header_include("vector"));
+    assert!(super::looks_like_header_include("memory"));
+}
+
+#[test]
+fn header_include_shape_rejects_project_relative_and_empty() {
+    // Path-bearing includes with no header extension are project-relative
+    // and the path-keyed index can't answer them — exclude so the demand
+    // only fires for real SDK / vcpkg / POSIX headers.
+    assert!(!super::looks_like_header_include("./local"));
+    assert!(!super::looks_like_header_include("../src/foo"));
+    assert!(!super::looks_like_header_include("sub/module"));
+    assert!(!super::looks_like_header_include(""));
+}
+
+// ---------------------------------------------------------------------------
+// unresolved_targets completeness — demand-filter seed widening
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_type_ref_to_external_name_appears_in_unresolved_targets() {
+    // A bare TypeRef (no chain, no module) to a name that has no definition
+    // anywhere in the parsed files must land in ResolutionStats::unresolved_targets
+    // so the expand loop can widen the demand set for any pulled file that
+    // defines the target. This is the mechanism that fixes sql-pgmq's
+    // Message / PGMQueue regression: those types are referenced only by bare
+    // type_refs, never by chain-walk bail-outs, so they were absent from the
+    // demand set and dropped by the filter on the first external file pull.
+    // `resolve_and_write` consumes the slice by shared reference so we need
+    // two ParsedFile values: one for the write pass and one for resolve.
+    // Re-use the same builder; ParsedFile is not Clone.
+    let make_file = || ParsedFile {
+        path: "src/lib.rs".to_string(),
+        language: "rust".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![method_symbol("do_work", "Crate.do_work")],
+        refs: vec![ExtractedRef {
+            source_symbol_index: 0,
+            target_name: "Foo".to_string(),
+            kind: EdgeKind::TypeRef,
+            line: 3,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+        }],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![],
+        ref_origin_languages: vec![None],
+        symbol_from_snippet: vec![],
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut db = Database::open_in_memory().expect("in-memory db");
+    let (_file_rows, symbol_id_map) =
+        write_parsed_files_with_origin(&db, &[make_file()], "internal", None)
+            .expect("write parsed files");
+    let stats = resolve_and_write(&mut db, &[make_file()], &symbol_id_map, None)
+        .expect("resolve_and_write");
+
+    assert!(
+        stats.unresolved_targets.contains("Foo"),
+        "bare TypeRef to external `Foo` must appear in unresolved_targets so the demand filter \
+         keeps it when a pulled external file defines it; got {:?}",
+        stats.unresolved_targets,
+    );
+}

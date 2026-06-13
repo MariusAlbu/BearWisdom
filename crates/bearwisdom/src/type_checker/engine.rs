@@ -332,6 +332,7 @@ impl<'a> Engine<'a> {
                         .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
                         .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
                         .or_else(|| self.resolve_via_adl(ref_ctx, lookup, profile))
+                        .or_else(|| self.resolve_via_arity_ranked(ref_ctx, lookup, profile))
                         .or_else(|| {
                             hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup))
                         });
@@ -359,6 +360,7 @@ impl<'a> Engine<'a> {
                     .and_then(|h| h.resolve_bare_pre(ref_ctx, file_ctx, lookup))
                     .or_else(|| self.resolve_generic(ref_ctx, file_ctx, lookup, profile))
                     .or_else(|| self.resolve_via_adl(ref_ctx, lookup, profile))
+                    .or_else(|| self.resolve_via_arity_ranked(ref_ctx, lookup, profile))
                     .or_else(|| hooks.and_then(|h| h.resolve_bare_post(ref_ctx, file_ctx, lookup)));
                 if let Some(mut r) = bare {
                     self.select_bare_overload_override(&mut r, ref_ctx, lookup, profile);
@@ -657,6 +659,81 @@ impl<'a> Engine<'a> {
             target_symbol_id: chosen.id,
             confidence: 1.0,
             strategy: "engine_adl",
+            resolved_yield_type: None,
+            flow_emit: None,
+        })
+    }
+
+    /// Arity/type-driven overload pick for a bare call the structural ladder
+    /// (including the profile's ranked-candidate scoring rung) declined. When a
+    /// bare `Calls`/`Instantiates` carrying arguments has SEVERAL same-name,
+    /// callable, project-internal candidates, type each argument and filter the
+    /// set through the same assignability check the multi-arg dispatcher uses
+    /// (`arg_assignable_candidates`, which rejects on arity first). A single
+    /// survivor binds; zero or several decline (never guess).
+    ///
+    /// The argument-typed companion to `resolve_via_ranked_candidates`: that
+    /// rung scores candidates the argument signal can't separate (a type used
+    /// function-style, an argument-less call); this one lets concrete arguments
+    /// pick the matching overload from a same-name set. Gated on
+    /// `multi_candidate_ranking`; off (every non-opted language) is inert, and
+    /// it runs only after `resolve_generic` declines, so every structural and
+    /// scoring rung wins first.
+    fn resolve_via_arity_ranked(
+        &self,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) -> Option<Resolution> {
+        if !profile.multi_candidate_ranking {
+            return None;
+        }
+        let er = ref_ctx.extracted_ref;
+        if !matches!(er.kind, EdgeKind::Calls | EdgeKind::Instantiates) || er.call_args.is_empty() {
+            return None;
+        }
+        let target = er.target_name.as_str();
+        if target.contains('.') || target.contains("::") || target.contains('/') {
+            return None;
+        }
+        // Same-name, callable, project-internal candidates. Constructors are
+        // included so a type used function-style resolves to its constructor
+        // overload when arguments separate them.
+        let candidates: Vec<SymbolInfo> = lookup
+            .by_name(target)
+            .iter()
+            .filter(|s| !lookup.is_external_file(&s.file_path))
+            .filter(|s| matches!(s.kind.as_str(), "function" | "method" | "constructor"))
+            .cloned()
+            .collect();
+        if candidates.len() < 2 {
+            // Zero or one: the single-candidate / scoring rungs already had their
+            // chance. Arity has nothing to disambiguate.
+            return None;
+        }
+        let arg_type_ids = crate::type_checker::core::dispatch::resolve_arg_types(
+            &er.call_args,
+            &self.arena,
+            lookup,
+            profile,
+        );
+        let matches = crate::type_checker::core::dispatch::arg_assignable_candidates(
+            candidates,
+            &arg_type_ids,
+            &self.members,
+            &self.symbol_types,
+            &self.arena,
+            lookup,
+            profile,
+        );
+        if matches.len() != 1 {
+            return None;
+        }
+        let chosen = matches.into_iter().next().unwrap();
+        Some(Resolution {
+            target_symbol_id: chosen.id,
+            confidence: 1.0,
+            strategy: "engine_arity_ranked",
             resolved_yield_type: None,
             flow_emit: None,
         })

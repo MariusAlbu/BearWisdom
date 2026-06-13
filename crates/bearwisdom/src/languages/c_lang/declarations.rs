@@ -296,6 +296,103 @@ fn emit_namespace_target_refs(
     }
 }
 
+/// Construct and push a `TypeAlias` symbol named `name`, located at `loc`,
+/// scoped by `node`'s enclosing scope. The single shared shape for every
+/// typedef-alias emission path.
+#[allow(clippy::too_many_arguments)]
+fn push_type_alias(
+    name: &str,
+    loc: &Node,
+    scope: Option<&scope_tree::ScopeEntry>,
+    scope_path: Option<String>,
+    doc: Option<String>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let qualified_name = scope_tree::qualify(name, scope);
+    symbols.push(ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: None,
+        start_line: loc.start_position().row as u32,
+        end_line: loc.end_position().row as u32,
+        start_col: loc.start_position().column as u32,
+        end_col: loc.end_position().column as u32,
+        signature: Some(format!("typedef {name}")),
+        doc_comment: doc,
+        scope_path,
+        parent_index,
+        byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
+}
+
+/// True when `node` is a `type_definition` that tree-sitter produced for the
+/// attribute-before-source-type form `typedef __attribute__((...)) T Name;`.
+///
+/// In that form the grammar can't reach the real alias: it consumes `typedef`
+/// plus the attribute, misparsing the attribute keyword as the source type and
+/// the parenthesized arguments as a declarator, then ends the node. The real
+/// `T Name;` lands in the FOLLOWING sibling `declaration`. The marker is a
+/// leading `type_identifier` whose text is a GNU/MSVC attribute keyword —
+/// never a legitimate typedef source type.
+pub(super) fn is_attribute_typedef_artifact(node: &Node, src: &[u8]) -> bool {
+    if node.kind() != "type_definition" {
+        return false;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_identifier" {
+            return matches!(
+                node_text(child, src).as_str(),
+                "__attribute__" | "__attribute" | "__declspec"
+            );
+        }
+    }
+    false
+}
+
+/// Emit the alias name(s) of a `declaration` as `TypeAlias` symbols. Used for
+/// the sibling `declaration` that holds the real alias of an attribute-typedef
+/// whose `typedef` keyword was stranded in the preceding `type_definition`.
+///
+/// Only the `declarator`-field children name aliases — the source type sits in
+/// the `type` field. `typedef __attr T A, B;` carries two `declarator` fields
+/// (`A`, `B`). Returns the source-type node so the caller can emit the
+/// alias→source TypeRef.
+pub(super) fn emit_alias_from_declaration<'a>(
+    decl_node: &Node<'a>,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<Node<'a>> {
+    let scope = enclosing_scope(scope_tree, decl_node.start_byte(), decl_node.end_byte());
+    let scope_path = scope_tree::scope_path(scope);
+    let doc = extract_doc_comment(decl_node, src);
+
+    let mut cursor = decl_node.walk();
+    for child in decl_node.children_by_field_name("declarator", &mut cursor) {
+        let Some(name) = first_type_identifier(&child, src) else {
+            continue;
+        };
+        push_type_alias(
+            &name,
+            &child,
+            scope,
+            scope_path.clone(),
+            doc.clone(),
+            symbols,
+            parent_index,
+        );
+    }
+    decl_node.child_by_field_name("type")
+}
+
 pub(super) fn push_typedef(
     node: &Node,
     src: &[u8],
@@ -331,6 +428,16 @@ pub(super) fn push_typedef(
     // In practice this means:
     //   typedef T Foo;          → 2 children → emit last (Foo)
     //   typedef struct{} A, B;  → struct body + 2 type_identifiers → both A and B
+
+    // The attribute-before-source-type form (`typedef __attribute__((...)) T
+    // Name;`) misparses into this node plus a sibling declaration holding the
+    // real alias. Emitting anything from here would surface the attribute
+    // keyword as a bogus alias — the visitor handles the real name from the
+    // sibling instead.
+    if is_attribute_typedef_artifact(node, src) {
+        return;
+    }
+
     let mut cursor = node.walk();
     let mut declarators: Vec<Node> = Vec::new();
     // Check whether there is a struct/union/enum/class body child (anonymous
@@ -395,26 +502,15 @@ pub(super) fn push_typedef(
     if let Some(name) = trailing_error_name {
         let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
         let scope_path = scope_tree::scope_path(scope);
-        let qualified_name = scope_tree::qualify(&name, scope);
-        symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name,
-            kind: SymbolKind::TypeAlias,
-            visibility: None,
-            start_line: node.start_position().row as u32,
-            end_line: node.end_position().row as u32,
-            start_col: node.start_position().column as u32,
-            end_col: node.end_position().column as u32,
-            signature: Some(format!("typedef {name}")),
-            doc_comment: extract_doc_comment(node, src),
+        push_type_alias(
+            &name,
+            node,
+            scope,
             scope_path,
+            extract_doc_comment(node, src),
+            symbols,
             parent_index,
-            byte_offset: 0,
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        });
+        );
         return;
     }
 
@@ -441,26 +537,15 @@ pub(super) fn push_typedef(
         let Some(name) = first_type_identifier(decl, src) else {
             continue;
         };
-        let qualified_name = scope_tree::qualify(&name, scope);
-        symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name,
-            kind: SymbolKind::TypeAlias,
-            visibility: None,
-            start_line: node.start_position().row as u32,
-            end_line: node.end_position().row as u32,
-            start_col: node.start_position().column as u32,
-            end_col: node.end_position().column as u32,
-            signature: Some(format!("typedef {name}")),
-            doc_comment: doc.clone(),
-            scope_path: scope_path.clone(),
+        push_type_alias(
+            &name,
+            node,
+            scope,
+            scope_path.clone(),
+            doc.clone(),
+            symbols,
             parent_index,
-            byte_offset: 0,
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        });
+        );
     }
 }
 

@@ -49,8 +49,9 @@ pub(crate) use chain_walker::{
     strip_generic_args,
 };
 pub(crate) use util::{
-    common_prefix_len, file_belongs_to_npm_package, is_ambient_global_lib_path, is_type_like_kind,
-    npm_package_from_external_path, npm_package_from_specifier,
+    common_prefix_len, file_belongs_to_npm_package, is_ambient_global_lib_path,
+    is_ts_ambient_global_lib_path, is_type_like_kind, npm_package_from_external_path,
+    npm_package_from_specifier,
 };
 
 #[cfg(test)]

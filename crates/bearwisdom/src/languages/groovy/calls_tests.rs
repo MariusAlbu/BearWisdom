@@ -144,6 +144,71 @@ class Caller {
     );
 }
 
+/// Collect every Calls ref target produced for a snippet.
+fn call_targets(src: &str) -> Vec<String> {
+    extract::extract(src)
+        .refs
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name)
+        .collect()
+}
+
+/// `$` is a valid Groovy identifier (used as the Geb navigator method and by
+/// jQuery-style DSLs). A bare `$("selector")` call produces a `method_invocation`
+/// with name `$` — a target that can never resolve in the symbol index.
+#[test]
+fn dollar_identifier_call_emits_no_dollar_ref() {
+    let src = r#"
+Browser.drive {
+    $("input", name: "username").value("manager")
+}
+"#;
+    let targets = call_targets(src);
+    assert!(
+        !targets.iter().any(|t| t == "$" || t.is_empty()),
+        "`$` bare call leaked a `$`/empty Calls target: {targets:?}"
+    );
+}
+
+/// A call chained on a `$()` return — `$("input").value("x")` — the `value`
+/// call ref must still be emitted even though the receiver chain's root is the
+/// suppressed `$`.
+#[test]
+fn dollar_chained_call_preserves_inner_ref() {
+    let src = r#"
+Browser.drive {
+    $("button", type: "submit").click()
+}
+"#;
+    let targets = call_targets(src);
+    assert!(
+        targets.iter().any(|t| t == "click"),
+        "call chained on `$()` return was dropped: {targets:?}"
+    );
+    assert!(
+        !targets.iter().any(|t| t == "$" || t.is_empty()),
+        "`$` bare call leaked alongside the chained call: {targets:?}"
+    );
+}
+
+/// Ordinary method calls without `$` are unaffected by the marker filter.
+#[test]
+fn plain_method_call_unaffected_by_marker_filter() {
+    let src = r#"
+class Caller {
+    void run(svc) {
+        svc.fetchAll()
+    }
+}
+"#;
+    let targets = call_targets(src);
+    assert!(
+        targets.iter().any(|t| t == "fetchAll"),
+        "ordinary method call `fetchAll` was dropped: {targets:?}"
+    );
+}
+
 #[test]
 fn object_creation_strips_qualifier_and_generics() {
     let src = r#"

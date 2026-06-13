@@ -46,6 +46,7 @@ pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: Some(PUG_IMPORTS),
     import_module_path: ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
@@ -73,6 +74,8 @@ pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
+    multi_candidate_ranking: false,
+    scope_functions: &[],
     constructor_patterns: &[],
     class_builder_specs: &[],
     decorator_syntax: None,

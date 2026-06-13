@@ -125,6 +125,19 @@ pub struct LanguageProfile {
     /// ambient symbol (Bicep `sys.concat` / `az.resourceId` → `concat` /
     /// `resourceId`). `&[]` (the default) leaves every dotted target intact.
     pub ambient_namespace_prefixes: &'static [&'static str],
+    /// Wildcard ambient builtins: an upstream runtime registers a family of
+    /// builtins under one regex stem rather than a finite name set, so the
+    /// concrete callees aren't enumerable as symbols. Each entry folds an
+    /// anchored target to the single ambient symbol that stands for the family
+    /// (Bicep's `az` `list*` regex overload → the vendored `list` symbol). The
+    /// engine matches `{prefix}` immediately followed by an ASCII-uppercase
+    /// char (`listConnectionStrings`, `listFoo` — never `list`, `listener`, or
+    /// `listing`), then retries the ambient-package probe under `fold_to`. It
+    /// fires after the bare ambient-package and namespace-alias-strip rungs, so
+    /// a concrete same-named ambient symbol always binds first. `&[]` (the
+    /// default) leaves the rung inert — a non-bicep language's `list*` call is
+    /// unaffected. See `WildcardBuiltin`.
+    pub wildcard_builtins: &'static [WildcardBuiltin],
     /// Template-include import resolution. `Some` for languages whose
     /// `Imports` refs name another template FILE by relative path / stem
     /// (handlebars partials, EJS / Pug / Nunjucks includes, GSP renders,
@@ -176,11 +189,14 @@ pub struct LanguageProfile {
     /// The module boundary a bare same-module reference binds within when no
     /// import and no chain root the target. `Off` (the default) leaves the
     /// rung inert. `SameDir` makes the file's parent directory the module
-    /// (Odin/MATLAB same-package references — no `module` to anchor on).
-    /// `SourcesTargetSubtree` spans a whole `Sources/<Target>/` subtree (Swift
-    /// whole-module compilation). The rung runs module-independently near the
-    /// end of the ladder; a candidate binds only when EXACTLY ONE
-    /// kind-compatible internal declaration is in-module.
+    /// (Odin/MATLAB same-package references — no `module` to anchor on),
+    /// first-match. `SameDirUnique` is the same dir boundary but binds only on
+    /// exactly one in-dir candidate (a unit split across sibling include files
+    /// that also carries overload sets). `SourcesTargetSubtree` spans a whole
+    /// `Sources/<Target>/` subtree (Swift whole-module compilation). The rung
+    /// runs module-independently near the end of the ladder; the `SameDir` arm
+    /// first-matches, the other arms bind only when EXACTLY ONE kind-compatible
+    /// internal declaration is in-module.
     pub module_scope: ModuleScope,
     /// How `resolve_via_wildcard_import` decides a candidate sits under a
     /// wildcard import's module. `QnameUnder` (the default) keeps the current
@@ -331,6 +347,34 @@ pub struct LanguageProfile {
     /// (e.g. `PascalToKebab` for `<app-user-card>` → `app-user-card`). See
     /// `SelectorResolution`.
     pub selector_resolution: Option<SelectorResolution>,
+    /// Multi-candidate disambiguation by ranking. `false` (the default) leaves
+    /// the rung inert — when several same-name, kind-compatible candidates
+    /// survive every structural rung, the ladder declines rather than guess.
+    /// `true` opts a language into `resolve_via_ranked_candidates`: the last
+    /// ladder rung scores the candidate set on data the resolver already has
+    /// (same workspace package, file-path proximity, visibility, ambient path)
+    /// and binds the top only when it beats the runner-up by `RANK_MARGIN`,
+    /// else declines on a tie. Sits AFTER every structural rung and after
+    /// `resolve_via_unique_internal_name`, so any single-candidate or
+    /// structural evidence wins first. For a language whose bare overload sets
+    /// (same-name functions across a unit's include files, a type used
+    /// function-style) have no import or scope signal to separate them.
+    pub multi_candidate_ranking: bool,
+    /// Receiver-threading scope functions: stdlib higher-order calls that yield
+    /// a type structurally derived from their receiver rather than from a
+    /// declared return. `&[]` (the default) leaves the chain walker's member
+    /// lookup unchanged — every segment must resolve to a real member. A
+    /// non-empty list opts a language in (Kotlin `apply`/`also`/`let`/`run`):
+    /// these are unindexed stdlib extensions, so a mid-chain `x.apply { … }`
+    /// segment misses ordinary member lookup and the chain dies before its real
+    /// tail. When a CALL segment's name matches a `Receiver`-yielding entry and
+    /// member lookup has missed, the walker keeps the receiver type and advances
+    /// past the segment, so `x.apply { … }.realMember()` types `realMember`
+    /// against `x`. Strictly a miss-fallback — a real member of the same name
+    /// always wins first — so it can only widen. `LambdaBody`-yielding entries
+    /// (`let`/`run`/`with`) are listed for completeness but only suppress a
+    /// chain-miss record; the body type is not inferred generically.
+    pub scope_functions: &'static [(&'static str, ScopeYield)],
 
     // === Syntax (extractor) ===
     pub constructor_patterns: &'static [ConstructorPattern],
@@ -338,6 +382,19 @@ pub struct LanguageProfile {
     pub decorator_syntax: Option<DecoratorSyntax>,
     pub doc_comment_kinds: &'static [&'static str],
     pub visibility_keywords: &'static [(&'static str, Visibility)],
+}
+
+/// What a scope function yields relative to its receiver, for the chain
+/// walker's `scope_functions` miss-fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeYield {
+    /// The call yields its own receiver type (Kotlin `apply` / `also`): the
+    /// chain continues against the same receiver.
+    Receiver,
+    /// The call yields the type of its trailing lambda's body (Kotlin `let` /
+    /// `run` / `with`). Not inferred generically — listed so the segment
+    /// suppresses a chain-miss record instead of being treated as a hard miss.
+    LambdaBody,
 }
 
 // ---------------------------------------------------------------------------
@@ -715,6 +772,32 @@ pub enum NameTransform {
     PascalToKebab,
 }
 
+/// A wildcard ambient-builtin family: an anchored target folds to one ambient
+/// symbol. `prefix` is the literal stem; a target matches only when `prefix` is
+/// immediately followed by an ASCII-uppercase character (the upstream
+/// `^list[A-Z]` shape), so `listKeys`/`listFoo` match but `list`, `listener`,
+/// and `listing` do not. `fold_to` is the ambient symbol name the matched
+/// target resolves against (the vendored family base, e.g. `list`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WildcardBuiltin {
+    pub prefix: &'static str,
+    pub fold_to: &'static str,
+}
+
+impl WildcardBuiltin {
+    /// `Some(fold_to)` when `target` is `prefix` immediately followed by an
+    /// ASCII-uppercase character; `None` otherwise. The uppercase anchor is the
+    /// upstream regex shape — `prefix` alone, or `prefix` followed by a
+    /// lowercase letter, is a different identifier and does not fold.
+    pub fn fold(&self, target: &str) -> Option<&'static str> {
+        let rest = target.strip_prefix(self.prefix)?;
+        match rest.chars().next() {
+            Some(c) if c.is_ascii_uppercase() => Some(self.fold_to),
+            _ => None,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Name normalization (data for normalize_name in the bare-name strategies)
 // ---------------------------------------------------------------------------
@@ -806,8 +889,18 @@ pub enum ModuleScope {
     Off,
     /// The source file's immediate parent directory IS the module (Odin,
     /// MATLAB): a candidate is in-module iff its immediate parent-dir
-    /// basename equals the source's.
+    /// basename equals the source's. Binds the FIRST kind-compatible same-dir
+    /// candidate — a same-package same-name duplicate is a compile error in
+    /// these languages, so the first match is the only match.
     SameDir,
+    /// Like `SameDir` (the immediate parent dir is the module), but binds only
+    /// when EXACTLY ONE kind-compatible internal candidate is in-dir, after the
+    /// unique-internal-name dedup. For a language whose unit is split across
+    /// sibling include files in one directory AND carries same-name overload
+    /// sets in that directory: a single same-dir declaration binds; an overload
+    /// set declines here and falls to argument-driven disambiguation, never a
+    /// first-match guess.
+    SameDirUnique,
     /// SwiftPM whole-module compilation: every file under one
     /// `Sources/<Target>/` (or `Tests/<Target>/`) subtree compiles into module
     /// `<Target>` and sees every other top-level type in that subtree without
@@ -1042,6 +1135,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: None,
     import_module_path: ImportModulePath::None,
     module_anchor: ModuleAnchor::Off,
@@ -1066,6 +1160,8 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     explicit_member_import: false,
     self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
+    multi_candidate_ranking: false,
+    scope_functions: &[],
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: None,

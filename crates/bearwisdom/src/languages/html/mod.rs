@@ -12,8 +12,10 @@
 //! shared with Vue/Svelte/Astro via `languages::common::extract_html_script_style_regions`.
 
 pub mod extract;
+pub(crate) mod hooks;
 pub(crate) mod profile;
 
+pub use hooks::HTML_HOOKS;
 pub use profile::HTML_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -77,6 +79,12 @@ impl LanguagePlugin for HtmlPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HTML_PROFILE)
+    }
+
+    fn language_hooks(
+        &self,
+    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
+        Some(&hooks::HTML_HOOKS)
     }
 }
 

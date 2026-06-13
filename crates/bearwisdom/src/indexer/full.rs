@@ -336,6 +336,7 @@ pub fn full_index(
     let mut fts_count = 0u32;
     let mut total_chunks = 0u32;
 
+    let _t_parse_write = phase_timer::scope("parse_write.project");
     std::thread::scope(|scope| -> Result<()> {
         // Parser worker thread: drives the rayon pool to parse files in
         // parallel and send each result into the bounded channel. When the
@@ -553,6 +554,7 @@ pub fn full_index(
         }
         Ok(())
     })?;
+    drop(_t_parse_write);
 
     info!(
         "Parsed + wrote {} files ({} with syntax errors) via streaming pipeline",
@@ -949,6 +951,8 @@ pub fn full_index(
             &[],
             std::sync::Arc::clone(&workspace_arena),
             Some(&mut deferred_spec),
+            // Iteration 0 resolves every internal file — no worklist.
+            None,
         )
         .context("Failed to resolve references")?
     };
@@ -958,6 +962,19 @@ pub fn full_index(
         rstats.resolved, rstats.external, rstats.unresolved
     );
     mem_probe::probe("10_resolve_iter_0");
+
+    // Delta-resolve worklist: after iteration 0 (which resolved everything),
+    // only files that still had an unresolved ref can change on a later pass —
+    // expand adds only `ext:` files, which can flip an unresolved internal ref
+    // to resolved/external but never un-resolve an edge or surface a new
+    // resolution in an already-fully-resolved file. Each subsequent pass
+    // re-resolves only this shrinking frontier.
+    let mut frontier: std::collections::HashSet<String> =
+        rstats.frontier_files.iter().cloned().collect();
+    // Inferred returns are harvested per pass; with the delta worklist a later
+    // pass only re-examines the frontier, so accumulate every pass's returns
+    // and apply the union in the return-inference loop below.
+    let mut all_inferred = rstats.inferred_returns.clone();
 
     let mut iteration = 1;
     while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
@@ -976,6 +993,7 @@ pub fn full_index(
                     Some(&symbol_index)
                 },
                 workspace_arena.as_ref(),
+                &rstats.unresolved_targets,
             )
             .context("Failed to expand chain reachability")?
         };
@@ -1003,6 +1021,8 @@ pub fn full_index(
                 new_slice,
                 std::sync::Arc::clone(&workspace_arena),
                 Some(&mut deferred_spec),
+                // Re-resolve only the frontier from the prior pass.
+                Some(&frontier),
             )
             .context("Failed to re-resolve after chain reachability expansion")?
         };
@@ -1014,6 +1034,17 @@ pub fn full_index(
             rstats2.external,
             rstats2.unresolved,
             estats.new_files,
+        );
+        // The frontier shrinks to the files still unresolved after this delta
+        // pass; the next pull/re-resolve only touches those. `rstats2`'s
+        // chain_misses / unresolved are the true remaining totals — skipped
+        // files had zero — so `converged()` and the next expand stay correct.
+        frontier = rstats2.frontier_files.iter().cloned().collect();
+        all_inferred.extend(
+            rstats2
+                .inferred_returns
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
         );
         rstats = rstats2;
         iteration += 1;
@@ -1046,7 +1077,10 @@ pub fn full_index(
     for ret_iteration in 0..MAX_RETURN_ITERATIONS {
         let mut applied = 0usize;
         if let Some(idx) = cached_index.as_mut() {
-            for (qname, ty) in &rstats.inferred_returns {
+            // Apply the union of returns inferred across all passes — the delta
+            // worklist means a single pass's `inferred_returns` only covers the
+            // frontier it re-examined, so the accumulated set is authoritative.
+            for (qname, ty) in &all_inferred {
                 if idx.set_inferred_return(qname.clone(), ty.clone()) {
                     applied += 1;
                 }
@@ -1056,6 +1090,7 @@ pub fn full_index(
             break;
         }
         // Speculative rows stay in `deferred_spec`; not cleared/written here.
+        let _t = phase_timer::scope("resolve.return_infer");
         rstats = resolve::resolve_iteration_with_cached_index_and_arena(
             db,
             &parsed,
@@ -1067,8 +1102,18 @@ pub fn full_index(
             &[],
             std::sync::Arc::clone(&workspace_arena),
             Some(&mut deferred_spec),
+            // A changed return can only unlock a chain that previously missed,
+            // so only the frontier needs re-resolving.
+            Some(&frontier),
         )
         .context("Failed to re-resolve after return-type inference")?;
+        all_inferred.extend(
+            rstats
+                .inferred_returns
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
+        );
+        frontier = rstats.frontier_files.iter().cloned().collect();
         info!(
             "Return-inference iteration {}: {} edges resolved, {} inferred returns applied",
             ret_iteration + 1,
@@ -1085,6 +1130,16 @@ pub fn full_index(
 
     // Materialize incoming_edge_count once, after the loop settles.
     resolve::finalize_resolution(db).context("Failed to finalize resolution")?;
+    // With the delta worklist, `rstats.resolved` only counts the last frontier
+    // pass's edge writes, not the cumulative total (edges are idempotent
+    // INSERT OR IGNORE across passes). Read the true total from the edges table
+    // so the summary is accurate. `IndexStats.edge_count` already derives from
+    // the same COUNT in `read_stats`; this only corrects the cosmetic log.
+    rstats.resolved = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get::<_, i64>(0))
+        .map(|n| n as u64)
+        .unwrap_or(rstats.resolved);
     emit(
         "resolving",
         1.0,

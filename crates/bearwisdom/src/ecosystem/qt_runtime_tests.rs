@@ -33,13 +33,20 @@ fn fixture_qt_include() -> (TempDir, std::path::PathBuf) {
 }
 
 #[test]
-fn qt_locator_finds_install_via_explicit_env_var() {
+fn qt_locator_finds_install_via_standard_qtdir_env() {
+    // `QTDIR` is the standard env var the Qt toolchain/qmake exports — it
+    // names the install root, and discovery drills into its `include/`.
+    // No BearWisdom-private override is consulted; standard discovery alone
+    // surfaces the install.
     let (_tmp, include) = fixture_qt_include();
-    // Use parent dir as BEARWISDOM_QT_DIR — locator should drill into `include/`.
     let parent = include.parent().unwrap();
-    std::env::set_var("BEARWISDOM_QT_DIR", parent);
+    let prior = std::env::var_os("QTDIR");
+    std::env::set_var("QTDIR", parent);
     let roots = discover_qt_include();
-    std::env::remove_var("BEARWISDOM_QT_DIR");
+    match prior {
+        Some(p) => std::env::set_var("QTDIR", p),
+        None => std::env::remove_var("QTDIR"),
+    }
     assert!(
         roots.iter().any(|r| r.root == include),
         "expected discovery to find include dir; got roots={:?}",
@@ -153,17 +160,13 @@ fn qt_windows_probe_finds_standard_install_root() {
 }
 
 #[test]
-fn qt_locator_returns_empty_when_no_install_present() {
-    // Make sure NO env override is set and probe — fixture-free scenario.
-    let prior = std::env::var_os("BEARWISDOM_QT_DIR");
-    std::env::remove_var("BEARWISDOM_QT_DIR");
+fn qt_locator_returns_only_real_on_disk_roots() {
+    // Fixture-free scenario: discovery probes standard env vars and install
+    // paths only. We can't assert empty unconditionally because the host
+    // might have Qt installed in a default location. We CAN assert that none
+    // of the roots are bogus — every returned dep root must point at an
+    // existing dir.
     let roots = discover_qt_include();
-    if let Some(p) = prior {
-        std::env::set_var("BEARWISDOM_QT_DIR", p);
-    }
-    // We can't assert empty unconditionally because the host might have Qt
-    // installed in a default location. We CAN assert that none of the roots
-    // are bogus — every returned dep root must point at an existing dir.
     for r in &roots {
         assert!(
             r.root.is_dir(),

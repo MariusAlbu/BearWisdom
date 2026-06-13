@@ -614,8 +614,18 @@ pub(crate) fn read_package_manifest(dir: &Path, kind: &str) -> (Option<String>, 
         "go" => (read_go_manifest(dir), true),
         "python" => read_python_manifest(dir),
         "dotnet" => (read_dotnet_manifest(dir), true),
+        "dart" => (read_dart_manifest(dir), true),
         _ => (None, true),
     }
+}
+
+/// The package name a sibling Dart package imports this one by — the pubspec
+/// `name:` field, which roots every `package:<name>/...` URI. Registering it as
+/// the package's `declared_name` lets workspace-package resolution map a
+/// cross-package import to the member that declares the target.
+fn read_dart_manifest(dir: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(dir.join("pubspec.yaml")).ok()?;
+    crate::ecosystem::pub_pkg::parse_pubspec_name(&content)
 }
 
 /// True when the project-root manifest declares runtime dependencies of

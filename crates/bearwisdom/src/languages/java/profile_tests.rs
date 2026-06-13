@@ -1,5 +1,7 @@
 use super::*;
-use crate::type_checker::profile::language_profile::{DispatchAxis, SupertypeDiscovery};
+use crate::type_checker::profile::language_profile::{
+    DispatchAxis, KindCompatibility, SupertypeDiscovery,
+};
 
 #[test]
 fn id_matches() {
@@ -38,4 +40,15 @@ fn primitives_include_jvm_built_in_types() {
             "missing Java primitive: {canonical}"
         );
     }
+}
+
+#[test]
+fn enum_member_is_not_a_call_target() {
+    // Precision guard: in Java an enum value (`Color.RED`) is a value read,
+    // not a construction — a `Calls` ref must never bind to an `EnumMember`.
+    assert!(!KindCompatibility::check(
+        JAVA_KIND_TABLE,
+        crate::types::EdgeKind::Calls,
+        crate::types::SymbolKind::EnumMember,
+    ));
 }

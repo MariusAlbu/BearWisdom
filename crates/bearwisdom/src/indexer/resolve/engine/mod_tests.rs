@@ -9,7 +9,8 @@ use crate::indexer::resolve::engine::chain_walker::{
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, ChainMiss, LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
+    build_scope_chain, is_ambient_global_lib_path, is_ts_ambient_global_lib_path, ChainMiss,
+    LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::core::types::Type;
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
@@ -20,6 +21,29 @@ use std::sync::Arc;
 fn test_scope_chain_from_path() {
     let chain = build_scope_chain(Some("A.B.C"));
     assert_eq!(chain, vec!["A.B.C", "A.B", "A"]);
+}
+
+#[test]
+fn ambient_lib_path_admits_ts_and_stdlib_externals() {
+    // TS ambient surfaces — recognised by both the broad and TS-scoped probes.
+    for p in [
+        "ext:ts:@types/node/process.d.ts",
+        "/usr/lib/node_modules/typescript/lib/lib.dom.d.ts",
+    ] {
+        assert!(is_ambient_global_lib_path(p), "{p}");
+        assert!(is_ts_ambient_global_lib_path(&p.replace('\\', "/")), "{p}");
+    }
+    // A language-stdlib external — admitted by the broad probe only.
+    let lua = "ext:lua-stdlib:lua_stdlib_generated.lua";
+    assert!(is_ambient_global_lib_path(lua));
+    assert!(!is_ts_ambient_global_lib_path(lua));
+    // Any `<lang>-stdlib` ecosystem id qualifies — path-pattern, not a list.
+    assert!(is_ambient_global_lib_path("ext:r-stdlib:base.R"));
+    // A regular third-party external is NOT ambient.
+    assert!(!is_ambient_global_lib_path("ext:ts:lodash/index.d.ts"));
+    assert!(!is_ambient_global_lib_path("ext:go:github.com/x/y/z.go"));
+    // A project-internal path is never ambient.
+    assert!(!is_ambient_global_lib_path("src/app.lua"));
 }
 
 fn dummy_sym(qname: &str) -> SymbolInfo {

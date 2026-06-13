@@ -341,7 +341,7 @@ fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::wal
 /// `WalkedFile` per file actually present. Probes filenames known to host
 /// `declare global { ... }` blocks across `@types/jest`, `@types/mocha`,
 /// `@types/node`, `vitest`, `chai`, `sinon`, etc.
-fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+pub(crate) fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     const CANDIDATE_REL_PATHS: &[&str] = &[
         "globals.d.ts",
         "global.d.ts",

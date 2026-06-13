@@ -10,8 +10,7 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::LOCAL_TYPE_CACHE;
-use super::{strip_generic_args, SymbolIndex};
+use super::{strip_generic_args, SymbolIndex, CURRENT_SOURCE_FILE, LOCAL_TYPE_CACHE};
 use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
 
 impl SymbolLookup for SymbolIndex {
@@ -374,12 +373,14 @@ impl SymbolLookup for SymbolIndex {
         // queries the symbol index by bare name — index entries never
         // carry `<…>`. Without this trim, every chain miss on a generic
         // type silently fails to resolve at expansion time.
+        let source_path = CURRENT_SOURCE_FILE.with(|c| c.borrow().clone());
         let miss = ChainMiss {
             current_type: strip_generic_args(&miss.current_type),
             target_name: strip_generic_args(&miss.target_name),
             // Preserve the import-qualified module (EXT-1) through the strip —
             // it's the key `expand` uses for the module-scoped locate.
             module: miss.module,
+            source_path,
         };
         self.chain_misses
             .lock()

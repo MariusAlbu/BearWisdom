@@ -515,6 +515,7 @@ pub fn resolve_via_chain(
             current_type: miss_type,
             target_name: seg.name.clone(),
             module: None,
+            source_path: String::new(),
         });
         return None;
     }
@@ -709,6 +710,7 @@ pub fn resolve_via_chain(
         current_type: effective_type,
         target_name: last.name.clone(),
         module: None,
+        source_path: String::new(),
     });
     None
 }

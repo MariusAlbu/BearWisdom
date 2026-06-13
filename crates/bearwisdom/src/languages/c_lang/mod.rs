@@ -51,6 +51,10 @@ mod resolve_tests;
 #[path = "type_refs_tests.rs"]
 mod type_refs_tests;
 
+#[cfg(test)]
+#[path = "macro_catalog_tests.rs"]
+mod macro_catalog_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;

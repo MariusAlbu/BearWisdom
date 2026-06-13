@@ -67,6 +67,7 @@ impl LanguagePlugin for HaskellPlugin {
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "function",
+            "bind",
             "data_type",
             "newtype",
             "class",

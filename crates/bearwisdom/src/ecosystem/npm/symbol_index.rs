@@ -11,12 +11,12 @@ use crate::ecosystem::externals::ExternalDepRoot;
 use crate::ecosystem::SymbolLocationIndex;
 use crate::walker::WalkedFile;
 
-use super::package_declares_globals;
 use super::ts_scan::{scan_declare_global_blocks, scan_ts_file_exports, ExportSource, FileExports};
 use super::walk::{
     extract_relative_reexports, is_test_or_story_file, resolve_package_entry_path,
     resolve_relative_ts_path, walk_ts_dep_entry_only, walk_ts_external_root, REEXPORT_MAX_DEPTH,
 };
+use super::{package_declares_globals, probe_global_decl_files};
 
 // ---------------------------------------------------------------------------
 // Symbol-location index (demand-driven pipeline entry)
@@ -29,8 +29,9 @@ use super::walk::{
 // (gigabytes of) `node_modules/` that the eager walker used to force-parse
 // stays untouched unless a real user chain lands on one of its symbols.
 //
-// File scope matches `walk_ts_external_root` — same .ts/.tsx/.d.ts/.js/.jsx
-// filter, same exclusions (nested node_modules, test/story dirs, etc.).
+// File scope is the package entry plus its relative-reexport closure
+// (`walk_ts_dep_entry_only`); globals-declaring packages additionally
+// union in the canonical globals-declaration files (`probe_global_decl_files`).
 
 /// Synthetic module key under which `declare global { ... }` names get
 /// indexed. Resolvers doing a bare-name fallback for unimported globals
@@ -52,14 +53,17 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // Full-tree walks were the dominant cost of npm externals indexing:
     // material-ui ships ~3 K declaration files, lodash/rxjs/three.js
     // similar — almost all of them unreachable from the user's actual
-    // imports. Globals-declaring packages bypass the entry restriction:
-    // their `declare global { ... }` blocks anywhere in the tree need
-    // to surface as global symbols, so `package_declares_globals` gates
-    // a full walk instead of entry-only.
+    // imports. A package's globals contributions live in its entry, the
+    // entry's relative-reexport closure, and a handful of canonical
+    // globals files (`globals.d.ts`, `dist/globals.d.ts`, …) — never in
+    // every leaf `.d.ts`. So a globals-declaring package gets the same
+    // bounded entry+reexport walk as a non-globals package, unioned with
+    // the `probe_global_decl_files` set. Files reachable only through
+    // deep import paths stay locatable on demand via `resolve_symbol`.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         let walked = if package_declares_globals(&dep.root) {
-            walk_ts_external_root(dep)
+            union_entry_and_globals(dep)
         } else {
             walk_ts_dep_entry_only(dep)
         };
@@ -147,6 +151,30 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         }
     }
     index
+}
+
+/// Files to index for a package that contributes runtime globals: the
+/// entry + its relative-reexport closure (same bounded set the non-globals
+/// branch uses) unioned with the canonical globals-declaration files. The
+/// union keeps every `declare global { ... }` symbol locatable without
+/// pulling the package's full leaf tree.
+///
+/// Fail open: when the entry can't be resolved, the relative-reexport
+/// closure is unavailable, so fall back to the full-tree walk rather than
+/// risk dropping a reexport-reachable type behind a non-canonical entry.
+/// Over-pull is safe; under-pull is a resolution regression.
+fn union_entry_and_globals(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if resolve_package_entry_path(dep).is_none() {
+        return walk_ts_external_root(dep);
+    }
+    let mut out = walk_ts_dep_entry_only(dep);
+    let mut seen: HashSet<PathBuf> = out.iter().map(|wf| wf.absolute_path.clone()).collect();
+    for wf in probe_global_decl_files(dep) {
+        if seen.insert(wf.absolute_path.clone()) {
+            out.push(wf);
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

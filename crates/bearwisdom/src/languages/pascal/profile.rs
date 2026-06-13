@@ -75,6 +75,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
@@ -89,7 +90,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
             strip_sigils: &[],
         },
     ),
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+    module_scope: crate::type_checker::profile::language_profile::ModuleScope::SameDirUnique,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
         underscore_prefix: true,
     },
@@ -108,6 +109,8 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
+    multi_candidate_ranking: true,
+    scope_functions: &[],
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,

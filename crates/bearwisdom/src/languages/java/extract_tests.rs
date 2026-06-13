@@ -679,3 +679,106 @@ class Service {
             .collect::<Vec<_>>()
     );
 }
+
+// -----------------------------------------------------------------------
+// Fully-qualified type names: only trailing simple names become TypeRefs;
+// package-prefix segments never leak.
+// -----------------------------------------------------------------------
+
+/// Sorted, de-duplicated TypeRef target names for a source snippet.
+fn type_ref_targets(source: &str) -> Vec<String> {
+    let mut names: Vec<String> = refs(source)
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name)
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[test]
+fn fqn_generic_field_emits_only_simple_names() {
+    let src = r#"
+class Holder {
+    java.util.List<org.apache.commons.fileupload2.core.DiskFileItem> items;
+}
+"#;
+    let targets = type_ref_targets(src);
+    assert!(
+        targets.contains(&"List".to_string()),
+        "expected List, got: {targets:?}"
+    );
+    assert!(
+        targets.contains(&"DiskFileItem".to_string()),
+        "expected DiskFileItem, got: {targets:?}"
+    );
+    for leaked in [
+        "java",
+        "util",
+        "org",
+        "apache",
+        "commons",
+        "fileupload2",
+        "core",
+    ] {
+        assert!(
+            !targets.iter().any(|t| t == leaked),
+            "package segment {leaked:?} leaked as TypeRef: {targets:?}"
+        );
+    }
+}
+
+#[test]
+fn fqn_annotation_argument_does_not_leak_segments() {
+    let src = r#"
+class Controller {
+    @org.springframework.web.bind.annotation.GetMapping("/x")
+    public java.util.Map<java.lang.String, com.example.dto.UserDto> handle() {
+        return null;
+    }
+}
+"#;
+    let targets = type_ref_targets(src);
+    assert!(
+        targets.contains(&"UserDto".to_string()),
+        "expected UserDto, got: {targets:?}"
+    );
+    for leaked in [
+        "org",
+        "springframework",
+        "web",
+        "bind",
+        "annotation",
+        "java",
+        "util",
+        "lang",
+        "com",
+        "example",
+        "dto",
+    ] {
+        assert!(
+            !targets.iter().any(|t| t == leaked),
+            "segment {leaked:?} leaked as TypeRef: {targets:?}"
+        );
+    }
+}
+
+#[test]
+fn simple_generic_usage_unchanged() {
+    let src = r#"
+class Holder {
+    List<Customer> names;
+}
+"#;
+    let targets = type_ref_targets(src);
+    // Unqualified generic types still emit the base type and the type argument.
+    assert!(
+        targets.contains(&"List".to_string()),
+        "expected List, got: {targets:?}"
+    );
+    assert!(
+        targets.contains(&"Customer".to_string()),
+        "expected Customer type argument, got: {targets:?}"
+    );
+}

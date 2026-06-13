@@ -1,5 +1,5 @@
 use super::KOTLIN_PROFILE;
-use crate::type_checker::profile::language_profile::KindCompatibility;
+use crate::type_checker::profile::language_profile::{KindCompatibility, ScopeYield};
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
@@ -53,4 +53,21 @@ fn kotlin_inherits_accepts_class_and_interface() {
 fn kotlin_async_wrappers_contain_deferred_and_flow() {
     assert!(KOTLIN_PROFILE.async_wrappers.contains(&"Deferred"));
     assert!(KOTLIN_PROFILE.async_wrappers.contains(&"Flow"));
+}
+
+#[test]
+fn kotlin_scope_functions_thread_receiver_for_apply_also() {
+    let sf = KOTLIN_PROFILE.scope_functions;
+    assert_eq!(
+        sf.iter().find(|(n, _)| *n == "apply").map(|(_, y)| *y),
+        Some(ScopeYield::Receiver)
+    );
+    assert_eq!(
+        sf.iter().find(|(n, _)| *n == "also").map(|(_, y)| *y),
+        Some(ScopeYield::Receiver)
+    );
+    assert_eq!(
+        sf.iter().find(|(n, _)| *n == "let").map(|(_, y)| *y),
+        Some(ScopeYield::LambdaBody)
+    );
 }

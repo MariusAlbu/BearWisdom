@@ -34,23 +34,33 @@ fn make_install_fixture() -> TempDir {
     tmp
 }
 
+/// Run `body` with `MATLAB_ROOT` pointed at `root`, restoring the prior
+/// value afterward. `MATLAB_ROOT` is the standard env var MATLAB exports;
+/// discovery honors it as one standard-path candidate, no BearWisdom-private
+/// override required.
+fn with_matlab_root<R>(root: &Path, body: impl FnOnce() -> R) -> R {
+    let key = "MATLAB_ROOT";
+    let prior = std::env::var_os(key);
+    std::env::set_var(key, root);
+    let out = body();
+    match prior {
+        Some(p) => std::env::set_var(key, p),
+        None => std::env::remove_var(key),
+    }
+    out
+}
+
 #[test]
-fn probe_via_env_override_finds_install_root() {
+fn probe_via_standard_matlab_root_env_finds_install_root() {
     let fixture = make_install_fixture();
-    let key = "BEARWISDOM_MATLAB_ROOT";
-    std::env::set_var(key, fixture.path());
-    let probed = probe_matlab_root();
-    std::env::remove_var(key);
+    let probed = with_matlab_root(fixture.path(), probe_matlab_root);
     assert_eq!(probed.as_deref(), Some(fixture.path()));
 }
 
 #[test]
 fn discover_returns_toolbox_dir_when_install_has_one() {
     let fixture = make_install_fixture();
-    let key = "BEARWISDOM_MATLAB_ROOT";
-    std::env::set_var(key, fixture.path());
-    let roots = discover_matlab_toolbox();
-    std::env::remove_var(key);
+    let roots = with_matlab_root(fixture.path(), discover_matlab_toolbox);
     assert_eq!(roots.len(), 1);
     assert!(roots[0].root.ends_with("toolbox"));
 }
@@ -59,10 +69,7 @@ fn discover_returns_toolbox_dir_when_install_has_one() {
 fn discover_returns_empty_when_install_missing_toolbox() {
     let tmp = TempDir::new().unwrap();
     write_file(&tmp.path().join("bin/matlab"), "");
-    let key = "BEARWISDOM_MATLAB_ROOT";
-    std::env::set_var(key, tmp.path());
-    let roots = discover_matlab_toolbox();
-    std::env::remove_var(key);
+    let roots = with_matlab_root(tmp.path(), discover_matlab_toolbox);
     assert!(roots.is_empty());
 }
 

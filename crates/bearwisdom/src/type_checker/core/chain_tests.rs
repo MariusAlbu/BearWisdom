@@ -191,6 +191,22 @@ impl EmptyLookup {
         self.by_qname.insert(qname.to_string(), info);
         self
     }
+    /// Register a member symbol keyed under its full (namespace-qualified)
+    /// qname, marked external-origin — the shape a generated-client delegate
+    /// member has in the index (`gen.Client.delegate`, file `ext:...`).
+    fn with_external_qname_member(
+        mut self,
+        qname: &str,
+        name: &str,
+        kind: &str,
+        scope: &str,
+    ) -> Self {
+        let mut info = sym_info(0, name, qname, kind, Some(scope));
+        info.id = (self.by_qname.len() as i64) + 1000;
+        info.file_path = Arc::from("ext:test");
+        self.by_qname.insert(qname.to_string(), info);
+        self
+    }
     fn with_return_type(mut self, qname: &str, type_name: &str) -> Self {
         self.return_types
             .insert(qname.to_string(), type_name.to_string());
@@ -6231,4 +6247,991 @@ fn wildcard_using_promotes_only_when_fqn_keys() {
         walker.walk(&chain, &ref_ctx, &fc).is_none(),
         "no FQN keyed → no promotion → no false bind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// SelfRef receiver on a generic impl — the enclosing scope decomposes into
+// Apply so the impl's type params bind and a `self.method()` returning a param
+// yields the bound type for the next segment.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn self_ref_generic_scope_binds_impl_type_param_through_method() {
+    // impl Container<String> { fn get(&self) -> T { ... } }
+    // a method body does `self.get().len()`. The enclosing scope_path is the
+    // concrete instantiation `Container<String>`; the SelfRef root decomposes
+    // it into `Apply { Container, [String] }`, binds T→String, `get()` yields
+    // String, and `len()` resolves on String. Without the Apply decomposition
+    // the receiver is an opaque `Class("Container<String>")`, T stays unbound,
+    // and the chain dies at the `len()` segment.
+    use crate::type_checker::core::types::{GenericParamData, PrimKind, Type};
+
+    let mut arena = TypeArena::new();
+    let container_ty = arena.class("Container");
+    let string_ty = arena.class("String");
+    let str_prim = arena.primitive(PrimKind::Str);
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    // Container<T> declares T; self-yields for the root reverse index.
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(container_ty),
+            generic_params: vec![t_param],
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(container_ty, 1);
+    // String self-yields and owns `len`.
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(string_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(string_ty, 2);
+    // get(): T — declared on the impl, return is the param.
+    symbol_types.insert(
+        3,
+        SymbolTypeData {
+            return_type: Some(generic_t),
+            ..Default::default()
+        },
+    );
+    // len(): str — declared on String.
+    symbol_types.insert(
+        4,
+        SymbolTypeData {
+            return_type: Some(str_prim),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    // Production `ingest_files` keys a generic type's members under BOTH the
+    // raw `Container<String>` qname and its bare base `Container`. The Apply
+    // receiver `Apply { Container, [String] }` resolves member lookup against
+    // the bare base, so `get` must be reachable there.
+    let get_info =
+        sym_info(3, "get", "Container<String>.get", "method", Some("Container<String>"));
+    members.add_direct(arena.class("Container<String>"), get_info.clone());
+    members.add_direct(container_ty, get_info);
+    members.add_direct(
+        string_ty,
+        sym_info(4, "len", "String.len", "method", Some("String")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // Container's declared params are read from generic_param_type_ids("Container")
+    // — the bare base, which is what `bind_apply_args` resolves the Apply base to.
+    let lookup = EmptyLookup::new().with_generic_param_type_ids("Container", vec![generic_t]);
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("self", SegmentKind::SelfRef),
+            ChainSegment {
+                is_call: true,
+                ..seg("get", SegmentKind::Property)
+            },
+            ChainSegment {
+                is_call: true,
+                ..seg("len", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("body", Some("Container<String>"));
+    let r = dummy_extracted_ref("len");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["Container<String>".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("self.get().len() resolves through the bound generic param");
+    assert_eq!(result.target_symbol_id, 4, "len() must bind on the String yield");
+}
+
+#[test]
+fn self_ref_non_generic_scope_unchanged_by_decomposition() {
+    // Guard: a non-generic enclosing scope (`Foo`) interns identically whether
+    // via `arena.class` or `intern_type_str`, so the SelfRef root for a plain
+    // impl is byte-identical and the inherent method still binds.
+    let mut arena = TypeArena::new();
+    let foo_ty = arena.class("Foo");
+    let str_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Str);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(foo_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(foo_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(str_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        foo_ty,
+        sym_info_sig(2, "name", "Foo.name", "method", Some("Foo"), "fn name(&self) -> str"),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("self", SegmentKind::SelfRef),
+            ChainSegment {
+                is_call: true,
+                ..seg("name", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("body", Some("Foo"));
+    let r = dummy_extracted_ref("name");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: vec!["Foo".to_string()],
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("self.name() resolves on a plain impl");
+    assert_eq!(result.target_symbol_id, 2);
+}
+
+#[test]
+fn unbounded_generic_receiver_clone_declines() {
+    // Borderline pin: a receiver typed as an UNBOUNDED generic param `T` has no
+    // members (no concrete binding, no bound), so a `t.clone()` call must
+    // DECLINE rather than first-match across the project's many `clone` impls.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None, // unbounded — no member surface
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+
+    let symbol_types = SymbolTypeMap::new();
+    let members = MembersIndex::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct GenericRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for GenericRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("t", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("clone", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("clone");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker
+            .walk_with_root(&chain, &ref_ctx, &fc, &GenericRoot { ty: generic_t })
+            .is_none(),
+        "unbounded generic receiver clone must decline, never first-match"
+    );
+}
+
+#[test]
+fn concrete_receiver_clone_binds_its_own_impl() {
+    // let x: Widget; x.clone() → binds Widget.clone, not a same-named clone on
+    // any other type. The local-typed receiver roots to the concrete `Widget`
+    // and member lookup keys `clone` directly on it.
+    use crate::type_checker::core::types::Type;
+
+    let mut arena = TypeArena::new();
+    let widget_ty = arena.class("Widget");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(widget_ty, 1);
+    // clone(): Widget
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        widget_ty,
+        sym_info(2, "clone", "Widget.clone", "method", Some("Widget")),
+    );
+    // A same-named clone on an unrelated type must NOT be reachable from Widget.
+    let other_ty = arena.intern(Type::Class("Other".to_string()));
+    members.add_direct(
+        other_ty,
+        sym_info(99, "clone", "Other.clone", "method", Some("Other")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("x", "Widget");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("x", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("clone", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("clone");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("x.clone() resolves on the concrete receiver");
+    assert_eq!(result.target_symbol_id, 2, "must bind Widget.clone, not Other.clone");
+}
+
+// ---------------------------------------------------------------------------
+// Generic-builder Apply-carry + scope functions (Kotlin-shaped).
+// ---------------------------------------------------------------------------
+
+const SCOPE_FN_PROFILE: LanguageProfile = LanguageProfile {
+    has_generics: true,
+    scope_functions: &[
+        ("apply", crate::type_checker::profile::language_profile::ScopeYield::Receiver),
+        ("also", crate::type_checker::profile::language_profile::ScopeYield::Receiver),
+        ("let", crate::type_checker::profile::language_profile::ScopeYield::LambdaBody),
+    ],
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn generic_builder_carries_apply_args_to_member_on_result() {
+    // class Client { request(): Response<T> }   (T is Client's param)
+    // val c: Client<Body>; c.request().payload  → payload resolves on
+    // Response<Body>, with T threaded through the builder's returned Apply.
+    use crate::type_checker::core::types::{GenericParamData, Type};
+
+    let mut arena = TypeArena::new();
+    let client_ty = arena.class("Client");
+    let response_ty = arena.class("Response");
+    let body_ty = arena.class("Body");
+    let t_param = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    let generic_t = arena.intern(Type::Generic { param: t_param });
+    // request(): Response<T> — the returned wrapper carries the receiver's param.
+    let response_of_t = arena.intern(Type::Apply {
+        base: response_ty,
+        args: vec![generic_t],
+    });
+    let client_of_body = arena.intern(Type::Apply {
+        base: client_ty,
+        args: vec![body_ty],
+    });
+
+    let mut symbol_types = SymbolTypeMap::new();
+    // Client<T> declares T.
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(client_ty),
+            generic_params: vec![t_param],
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(client_ty, 1);
+    // Response<U> declares its own param so bind_apply_args on the RETURNED
+    // Apply binds it from the threaded arg.
+    let u_param = arena.intern_generic(GenericParamData {
+        name: "U".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(response_ty),
+            generic_params: vec![u_param],
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(response_ty, 2);
+    symbol_types.insert(
+        3,
+        SymbolTypeData {
+            return_type: Some(body_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(body_ty, 3);
+    // request(): Response<T>
+    symbol_types.insert(
+        4,
+        SymbolTypeData {
+            return_type: Some(response_of_t),
+            ..Default::default()
+        },
+    );
+    // payload(): U — declared on Response, returns Response's own param.
+    let generic_u = arena.intern(Type::Generic { param: u_param });
+    symbol_types.insert(
+        5,
+        SymbolTypeData {
+            return_type: Some(generic_u),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        client_ty,
+        sym_info(4, "request", "Client.request", "method", Some("Client")),
+    );
+    members.add_direct(
+        response_ty,
+        sym_info(5, "payload", "Response.payload", "method", Some("Response")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+
+    struct FixedRoot {
+        ty: TypeId,
+    }
+    impl RootResolver for FixedRoot {
+        fn resolve(
+            &self,
+            _seg: &ChainSegment,
+            _ref_ctx: &RefContext,
+            _file_ctx: &FileContext,
+            _arena: &TypeArena,
+            _lookup: &dyn SymbolLookup,
+        ) -> Option<TypeId> {
+            Some(self.ty)
+        }
+    }
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &SCOPE_FN_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("c", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("request", SegmentKind::Property)
+            },
+            ChainSegment {
+                is_call: true,
+                ..seg("payload", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("payload");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &FixedRoot { ty: client_of_body })
+        .expect("payload resolves on the builder-returned Response<Body>");
+    assert_eq!(result.target_symbol_id, 5);
+    // The threaded arg must have reached Body through the returned Apply.
+    assert_eq!(result.resolved_yield_type, body_ty);
+}
+
+#[test]
+fn scope_function_apply_threads_receiver_to_tail_member() {
+    // val w: Widget; w.apply { … }.render() → `apply` is an unindexed stdlib
+    // extension (member lookup misses), but the Receiver-yielding scope-function
+    // axis threads `w` forward so `render` binds on Widget.
+    let mut arena = TypeArena::new();
+    let widget_ty = arena.class("Widget");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(widget_ty, 1);
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        widget_ty,
+        sym_info(2, "render", "Widget.render", "method", Some("Widget")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("w", "Widget");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &SCOPE_FN_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("w", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                call_args: vec![CallArg::Lambda { params: Vec::new() }],
+                ..seg("apply", SegmentKind::Property)
+            },
+            ChainSegment {
+                is_call: true,
+                ..seg("render", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("render");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("render resolves through apply's threaded receiver");
+    assert_eq!(result.target_symbol_id, 2);
+}
+
+#[test]
+fn scope_function_axis_inert_under_default_profile() {
+    // Guard: without the scope_functions axis (DEFAULT_PROFILE), a mid-chain
+    // `apply` is a hard miss — the chain declines exactly as before, so the
+    // 14 byte-identical languages are unaffected.
+    let mut arena = TypeArena::new();
+    let widget_ty = arena.class("Widget");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(widget_ty, 1);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        widget_ty,
+        sym_info(2, "render", "Widget.render", "method", Some("Widget")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("w", "Widget");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("w", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                call_args: vec![CallArg::Lambda { params: Vec::new() }],
+                ..seg("apply", SegmentKind::Property)
+            },
+            ChainSegment {
+                is_call: true,
+                ..seg("render", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("render");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker.walk(&chain, &ref_ctx, &fc).is_none(),
+        "no scope_functions axis → mid-chain apply is a hard miss"
+    );
+}
+
+#[test]
+fn lambda_body_scope_function_declines_without_chain_miss() {
+    // val w: Widget; w.let { … }.render() → `let` yields the lambda body, which
+    // is not inferred generically, so the chain declines. It must NOT first-match
+    // `render` on the receiver (that would be wrong — the body type is unknown).
+    let mut arena = TypeArena::new();
+    let widget_ty = arena.class("Widget");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(widget_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(widget_ty, 1);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        widget_ty,
+        sym_info(2, "render", "Widget.render", "method", Some("Widget")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("w", "Widget");
+
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &SCOPE_FN_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("w", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                call_args: vec![CallArg::Lambda { params: Vec::new() }],
+                ..seg("let", SegmentKind::Property)
+            },
+            ChainSegment {
+                is_call: true,
+                ..seg("render", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("render");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker.walk(&chain, &ref_ctx, &fc).is_none(),
+        "lambda-body scope function declines, never first-matches the receiver"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M-4 — chain continuation through external→external member hops.
+//
+// A generated-client delegate chain (`db.user.findMany()`): the receiver's
+// type and every member live in external files, the delegate's members are
+// keyed under a namespace-qualified parent (`ns.Db.user`, `ns.UserDelegate
+// .findMany`), and the intermediate delegate type is NOT itself a registered
+// type symbol (a generated client emits it as a bare yield string, not a
+// class). The walk must align the user-written short receiver to the
+// namespaced member keys AND carry the namespace forward across the hop so
+// the second member resolves and the element type survives.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn external_delegate_chain_walks_field_then_method() {
+    // db.user.findMany() — db: Db (external). Db.user types to UserDelegate
+    // (external), UserDelegate.findMany returns User[]. The delegate members
+    // are keyed under the package namespace `gen.`; the receiver short names
+    // (`Db`, `UserDelegate`) carry no namespace and `UserDelegate` has no type
+    // symbol, so the hop must re-qualify the yielded bare type within the
+    // owner's namespace to find the next member.
+    let mut arena = TypeArena::new();
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let lookup = EmptyLookup::new()
+        // db: Db
+        .with_local("db", "Db")
+        // The receiver type `Db` is an external type symbol keyed under `gen.Db`.
+        .with_external_type("Db", "gen.Db")
+        // Db.user — keyed under the namespaced parent; types to a bare
+        // `UserDelegate` (the generated client emits the delegate type bare).
+        .with_external_qname_member("gen.Db.user", "user", "property", "gen.Db")
+        .with_field_type("gen.Db.user", "UserDelegate")
+        // UserDelegate is NOT a registered type symbol (no types_by_name hit) —
+        // only its members exist, keyed under the same `gen.` namespace.
+        .with_external_qname_member(
+            "gen.UserDelegate.findMany",
+            "findMany",
+            "method",
+            "gen.UserDelegate",
+        )
+        .with_return_type("gen.UserDelegate.findMany", "User[]");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("db", SegmentKind::Identifier),
+            seg("user", SegmentKind::Property),
+            ChainSegment {
+                is_call: true,
+                ..seg("findMany", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("findMany");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("db.user.findMany resolves through the external delegate hop");
+    // The terminal target is findMany on the external delegate.
+    let expected_id = lookup
+        .by_qname
+        .get("gen.UserDelegate.findMany")
+        .unwrap()
+        .id;
+    assert_eq!(result.target_symbol_id, expected_id);
+}
+
+#[test]
+fn external_receiver_short_name_aligns_to_namespaced_member() {
+    // A user-written short receiver `Client` whose member `delegate` is keyed
+    // under the namespace-qualified parent `gen.Client.delegate`. The short
+    // receiver must align to the namespaced member key.
+    let mut arena = TypeArena::new();
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let lookup = EmptyLookup::new()
+        .with_local("client", "Client")
+        .with_external_type("Client", "gen.Client")
+        .with_external_qname_member(
+            "gen.Client.delegate",
+            "delegate",
+            "property",
+            "gen.Client",
+        );
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("client", SegmentKind::Identifier),
+            seg("delegate", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let mut r = dummy_extracted_ref("delegate");
+    r.kind = EdgeKind::Reads;
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("short Client receiver aligns to gen.Client.delegate");
+    let expected_id = lookup.by_qname.get("gen.Client.delegate").unwrap().id;
+    assert_eq!(result.target_symbol_id, expected_id);
+}
+
+#[test]
+fn external_hop_declines_when_member_absent_on_external_type() {
+    // db.user.bogus() — `user` resolves to the external delegate, but `bogus`
+    // is genuinely not a member of UserDelegate under any keying. The walk must
+    // decline (no guessing), not bind to some unrelated same-named symbol.
+    let mut arena = TypeArena::new();
+
+    let members = MembersIndex::new();
+    let symbol_types = SymbolTypeMap::new();
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+
+    let lookup = EmptyLookup::new()
+        .with_local("db", "Db")
+        .with_external_type("Db", "gen.Db")
+        .with_external_qname_member("gen.Db.user", "user", "property", "gen.Db")
+        .with_field_type("gen.Db.user", "UserDelegate")
+        // `findMany` exists on the delegate; `bogus` does not.
+        .with_external_qname_member(
+            "gen.UserDelegate.findMany",
+            "findMany",
+            "method",
+            "gen.UserDelegate",
+        );
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("db", SegmentKind::Identifier),
+            seg("user", SegmentKind::Property),
+            ChainSegment {
+                is_call: true,
+                ..seg("bogus", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("bogus");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    assert!(
+        walker.walk(&chain, &ref_ctx, &fc).is_none(),
+        "an absent member on the external delegate must decline, not guess"
+    );
+}
+
+#[test]
+fn internal_chain_unaffected_by_external_hop_fallback() {
+    // Regression guard: a purely internal field-then-method chain resolves the
+    // same as before — the external-hop re-qualification must never perturb a
+    // chain whose intermediate types are real internal type symbols.
+    let mut arena = TypeArena::new();
+    let svc_ty = arena.class("Svc");
+    let repo_ty = arena.class("Repo");
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        1,
+        SymbolTypeData {
+            return_type: Some(svc_ty),
+            ..Default::default()
+        },
+    );
+    symbol_types.mark_self_yielding(svc_ty, 1);
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        svc_ty,
+        sym_info(10, "repo", "Svc.repo", "field", Some("Svc")),
+    );
+    members.add_direct(
+        repo_ty,
+        sym_info(11, "save", "Repo.save", "method", Some("Repo")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    // Internal: `repo` field types to a real internal `Repo` type symbol.
+    let lookup = EmptyLookup::new()
+        .with_local("s", "Svc")
+        .with_type("Repo", "Repo")
+        .with_field_type("Svc.repo", "Repo");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("s", SegmentKind::Identifier),
+            seg("repo", SegmentKind::Property),
+            ChainSegment {
+                is_call: true,
+                ..seg("save", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("save");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("internal repo.save resolves unchanged");
+    assert_eq!(result.target_symbol_id, 11);
 }

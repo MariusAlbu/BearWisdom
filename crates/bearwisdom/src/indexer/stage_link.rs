@@ -502,6 +502,22 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             }
             Some(format!("ext:ts:{pkg}/{rel}"))
         }
+        "rust" => {
+            // Cargo registry layout: `.../registry/src/<index>/<crate>-<ver>/<rel>`.
+            // Reconstruct the eager walker's `ext:rust:<crate>/<rel>` shape (the
+            // crate dir name has the version stripped) so a demand-pulled crate
+            // file matches the `already_walked` dedupe against walker output.
+            let src_idx = s.find("/registry/src/")?;
+            let after_src = &s[src_idx + "/registry/src/".len()..];
+            // Skip the registry index directory segment.
+            let (_index, after_index) = after_src.split_once('/')?;
+            let (crate_dir, rel) = after_index.split_once('/')?;
+            let (name, _version) = crate::ecosystem::cargo::split_crate_dir_name(crate_dir)?;
+            if rel.is_empty() {
+                return None;
+            }
+            Some(format!("ext:rust:{name}/{rel}"))
+        }
         "go" => {
             let mod_idx = s.find("/pkg/mod/")?;
             let after = &s[mod_idx + "/pkg/mod/".len()..];
@@ -635,3 +651,7 @@ fn is_ambient_global_external(
     };
     ambient_globals_packages.contains(pkg)
 }
+
+#[cfg(test)]
+#[path = "stage_link_tests.rs"]
+mod tests;

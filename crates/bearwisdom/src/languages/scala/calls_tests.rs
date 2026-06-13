@@ -77,3 +77,29 @@ object O { def caller(x: User) = wrap { val t = x; t.foo } }
         "expected no Lambda from a non-lambda block, got: {lambda_args:?}"
     );
 }
+
+#[test]
+fn type_arg_fqn_emits_trailing_name_only() {
+    // A fully-qualified type argument (`stable_type_identifier`) must emit a
+    // TypeRef to the trailing simple name only — never a bare package segment.
+    let src = r#"
+object O { val items: List[org.apache.commons.io.IOUtils] = null }
+"#;
+    let r = super::super::extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == crate::types::EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"IOUtils"),
+        "expected TypeRef to trailing name IOUtils; got {type_refs:?}"
+    );
+    for seg in ["org", "apache", "commons", "io"] {
+        assert!(
+            !type_refs.contains(&seg),
+            "package segment {seg:?} leaked as a TypeRef; got {type_refs:?}"
+        );
+    }
+}

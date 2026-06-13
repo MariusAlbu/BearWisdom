@@ -1650,6 +1650,165 @@ fn workspace_package_deep_import_prefers_matching_file() {
 }
 
 #[test]
+fn workspace_deep_import_resolves_despite_same_qname_in_sibling_package() {
+    // Three symbols share the bare qualified name `Calendar`: the target
+    // interface in `@scope/types` (pkg 16), an unrelated class in `@scope/app`
+    // (pkg 21), and an external declaration (no package_id). A deep import
+    // `@scope/types/Calendar` must bind the pkg-16 interface — the per-package
+    // index must not collapse the same-qname siblings to one winner.
+    let types_pkg = make_ts_file_in_pkg(
+        "packages/types/Calendar.d.ts",
+        Some(16),
+        vec![
+            make_symbol(
+                "Calendar",
+                "Calendar",
+                SymbolKind::Interface,
+                Visibility::Public,
+                None,
+            ),
+            make_symbol(
+                "CredentialPayload",
+                "CredentialPayload",
+                SymbolKind::TypeAlias,
+                Visibility::Public,
+                None,
+            ),
+        ],
+        vec![],
+    );
+    let app_pkg = make_ts_file_in_pkg(
+        "packages/app/calendar.ts",
+        Some(21),
+        vec![make_symbol(
+            "Calendar",
+            "Calendar",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let external = make_ts_file_in_pkg(
+        "ext:@microsoft/microsoft-graph-types/calendar.d.ts",
+        None,
+        vec![make_symbol(
+            "Calendar",
+            "Calendar",
+            SymbolKind::Interface,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "packages/lib/CalendarService.ts",
+        Some(99),
+        vec![make_symbol(
+            "BaseCalendarService",
+            "BaseCalendarService",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![
+            make_import_ref(0, "Calendar", "@scope/types/Calendar", 1),
+            make_import_ref(0, "CredentialPayload", "@scope/types/Calendar", 2),
+        ],
+    );
+
+    // Index the external and the pkg-21 class BEFORE the pkg-16 interface so a
+    // non-target `Calendar` wins the first-wins qname race — the exact shape a
+    // qname-keyed bucket would collapse, dropping pkg 16's symbol entirely.
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&external, &app_pkg, &types_pkg, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("@scope/types".to_string(), 16);
+    ctx.workspace_pkg_by_declared_name
+        .insert("@scope/app".to_string(), 21);
+
+    use crate::indexer::resolve::engine::SymbolLookup;
+    let parsed = vec![external, app_pkg, types_pkg, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[3];
+    let file_ctx = build_file_context(consumer_ref, Some(&ctx));
+
+    // The colliding `Calendar` import binds the pkg-16 interface, never the
+    // pkg-21 class or the external same-name symbol.
+    let calendar_id = id_map[&("packages/types/Calendar.d.ts".to_string(), "Calendar".to_string())];
+    let app_calendar_id =
+        id_map[&("packages/app/calendar.ts".to_string(), "Calendar".to_string())];
+    let external_calendar_id = id_map[&(
+        "ext:@microsoft/microsoft-graph-types/calendar.d.ts".to_string(),
+        "Calendar".to_string(),
+    )];
+    let rc_calendar = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(99),
+    };
+    let res = run_resolve(&file_ctx, &rc_calendar, &index)
+        .expect("same-qname collision must still resolve the workspace import");
+    assert_eq!(res.strategy, "default_workspace_package");
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(
+        res.target_symbol_id, calendar_id,
+        "must bind the importing package's Calendar"
+    );
+    assert_ne!(res.target_symbol_id, app_calendar_id);
+    assert_ne!(res.target_symbol_id, external_calendar_id);
+
+    // A non-colliding name from the same package still resolves (regression).
+    let rc_cred = RefContext {
+        extracted_ref: &consumer_ref.refs[1],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(99),
+    };
+    let res_cred = run_resolve(&file_ctx, &rc_cred, &index)
+        .expect("non-colliding workspace import resolves");
+    assert_eq!(res_cred.strategy, "default_workspace_package");
+    let cred_id = id_map[&(
+        "packages/types/Calendar.d.ts".to_string(),
+        "CredentialPayload".to_string(),
+    )];
+    assert_eq!(res_cred.target_symbol_id, cred_id);
+
+    // The external same-name symbol carries no package_id, so the per-package
+    // index never offers it to the workspace rung.
+    assert!(
+        index
+            .symbols_in_package(16)
+            .iter()
+            .any(|s| s.id == calendar_id),
+        "pkg 16 bucket holds the target despite the qname collision"
+    );
+    assert!(
+        index
+            .symbols_in_package(21)
+            .iter()
+            .any(|s| s.id == app_calendar_id),
+        "pkg 21 bucket holds its own same-qname Calendar"
+    );
+    assert!(
+        !index
+            .symbols_in_package(16)
+            .iter()
+            .chain(index.symbols_in_package(21).iter())
+            .any(|s| s.id == external_calendar_id),
+        "external same-name symbol never enters a package bucket"
+    );
+}
+
+#[test]
 fn workspace_package_import_not_classified_as_external() {
     // Import that references a workspace package must not surface as
     // external even if the resolver's main path didn't land a match.

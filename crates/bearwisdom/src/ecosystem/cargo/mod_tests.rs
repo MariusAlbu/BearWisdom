@@ -2,8 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::discovery::{discover_cargo_roots, parse_cargo_lock, split_crate_dir_name};
+use super::features::register_root_features;
 use super::manifest::parse_cargo_path_dependencies;
-use super::reachability::{extract_rust_mod_decls, resolve_rust_mod_path};
+use super::reachability::{
+    cfg_mod_reachable, extract_rust_mod_decls_with_cfg, resolve_rust_mod_path,
+};
 use super::symbol_index::scan_rust_header;
 use super::*;
 
@@ -213,14 +216,17 @@ use foo::bar;
 pub mod inline { pub fn f() {} }  // inline body — has no ;
 mod ok_end;
 "#;
-    let decls = extract_rust_mod_decls(src);
-    assert!(decls.contains(&"a".to_string()));
-    assert!(decls.contains(&"b".to_string()));
-    assert!(decls.contains(&"c".to_string()));
-    assert!(decls.contains(&"d".to_string()));
-    assert!(decls.contains(&"e".to_string()));
-    assert!(decls.contains(&"ok_end".to_string()));
-    assert!(!decls.contains(&"inline".to_string()));
+    let names: Vec<String> = extract_rust_mod_decls_with_cfg(src)
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+    assert!(names.contains(&"a".to_string()));
+    assert!(names.contains(&"b".to_string()));
+    assert!(names.contains(&"c".to_string()));
+    assert!(names.contains(&"d".to_string()));
+    assert!(names.contains(&"e".to_string()));
+    assert!(names.contains(&"ok_end".to_string()));
+    assert!(!names.contains(&"inline".to_string()));
 }
 
 #[test]
@@ -371,4 +377,123 @@ impl Foo {
 #[test]
 fn rust_build_symbol_index_empty_returns_empty() {
     assert!(build_cargo_symbol_index(&[]).is_empty());
+}
+
+// -----------------------------------------------------------------
+// cfg(feature)-gated module traversal
+// -----------------------------------------------------------------
+
+#[test]
+fn cfg_aware_extractor_pairs_attr_with_decl() {
+    let src = r#"
+#[cfg(feature = "AI")]
+pub mod AI;
+pub mod always;
+#[cfg(feature = "Win32")]
+pub mod Win32;
+#[cfg(all(feature = "X", feature = "Y"))]
+pub mod combined;
+"#;
+    let decls = extract_rust_mod_decls_with_cfg(src);
+    let by_name: std::collections::HashMap<&str, Option<&str>> = decls
+        .iter()
+        .map(|d| (d.name.as_str(), d.cfg_feature.as_deref()))
+        .collect();
+    assert_eq!(by_name.get("AI"), Some(&Some("AI")));
+    assert_eq!(by_name.get("always"), Some(&None));
+    assert_eq!(by_name.get("Win32"), Some(&Some("Win32")));
+    // `all(...)` is not the single-feature form — no feature captured, so the
+    // module fails open (always walked).
+    assert_eq!(by_name.get("combined"), Some(&None));
+}
+
+#[test]
+fn cfg_gate_reachability_rules() {
+    // No cfg → always reachable.
+    assert!(cfg_mod_reachable(None, &["Win32_Foundation".to_string()]));
+    // Empty enabled set → fail open.
+    assert!(cfg_mod_reachable(Some("AI"), &[]));
+    // Exact match.
+    assert!(cfg_mod_reachable(
+        Some("Win32_Foundation"),
+        &["Win32_Foundation".to_string()]
+    ));
+    // Prerequisite parent: enabling `Win32_Foundation` keeps `Win32` reachable.
+    assert!(cfg_mod_reachable(
+        Some("Win32"),
+        &["Win32_Foundation".to_string()]
+    ));
+    // Disabled feature with an enabled set present → dropped.
+    assert!(!cfg_mod_reachable(Some("AI"), &["Win32".to_string()]));
+    // Prefix-without-underscore-boundary must NOT match (`Win3` ≠ `Win32`).
+    assert!(!cfg_mod_reachable(Some("Win3"), &["Win32".to_string()]));
+}
+
+#[test]
+fn gated_walk_drops_disabled_features_and_follows_include() {
+    // Mirror the `windows` crate's shape: lib.rs reaches the API surface via
+    // `include!`, and every module is feature-gated.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("winlike-0.1.0");
+    let src = root.join("src");
+    let api = src.join("Api");
+    std::fs::create_dir_all(api.join("Foundation")).unwrap();
+    std::fs::create_dir_all(api.join("AI")).unwrap();
+
+    std::fs::write(src.join("lib.rs"), "include!(\"Api/mod.rs\");\n").unwrap();
+    std::fs::write(
+        api.join("mod.rs"),
+        "#[cfg(feature = \"Foundation\")]\npub mod Foundation;\n#[cfg(feature = \"AI\")]\npub mod AI;\n",
+    )
+    .unwrap();
+    std::fs::write(
+        api.join("Foundation").join("mod.rs"),
+        "pub struct HANDLE;\n",
+    )
+    .unwrap();
+    std::fs::write(api.join("AI").join("mod.rs"), "pub struct Model;\n").unwrap();
+
+    register_root_features(&root, vec!["Foundation".to_string()]);
+
+    let dep = mkdep(root.clone(), "winlike", "0.1.0");
+    let walked = walk_cargo_root(&dep);
+    let paths: std::collections::HashSet<_> =
+        walked.iter().map(|w| w.absolute_path.clone()).collect();
+
+    // Enabled subtree reached (the type-hop target must stay locatable).
+    assert!(
+        paths.contains(&api.join("Foundation").join("mod.rs")),
+        "enabled Foundation module must be walked: {paths:?}"
+    );
+    // Disabled subtree dropped.
+    assert!(
+        !paths.contains(&api.join("AI").join("mod.rs")),
+        "disabled AI module must be dropped: {paths:?}"
+    );
+    // include! target itself is reached.
+    assert!(paths.contains(&api.join("mod.rs")), "{paths:?}");
+    for w in &walked {
+        assert!(w.relative_path.starts_with("ext:rust:winlike/"));
+    }
+}
+
+#[test]
+fn unfeatured_crate_walks_full_tree() {
+    // No registered feature set → full filesystem walk, byte-identical to the
+    // pre-gate behaviour. A file unreachable from the module graph (no `mod`
+    // decl points at it) must still be indexed by the fail-open path.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("plain-0.1.0");
+    let src = root.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "// no mod decls\n").unwrap();
+    std::fs::write(src.join("orphan.rs"), "pub struct Orphan;\n").unwrap();
+
+    let dep = mkdep(root.clone(), "plain", "0.1.0");
+    let walked = walk_cargo_root(&dep);
+    let paths: std::collections::HashSet<_> =
+        walked.iter().map(|w| w.absolute_path.clone()).collect();
+    // Filesystem walk picks up the orphan file that the module graph misses.
+    assert!(paths.contains(&src.join("orphan.rs")), "{paths:?}");
+    assert!(paths.contains(&src.join("lib.rs")), "{paths:?}");
 }

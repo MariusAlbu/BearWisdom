@@ -777,6 +777,21 @@ pub(super) fn _test_is_cpp_stdlib_header_name(name: &str) -> bool {
     is_cpp_stdlib_header_name(name)
 }
 
+/// Crate-visible test handle for the path-keyed header-index builder so the
+/// indexer's include-driven admission tests can construct a real index over a
+/// synthetic header fixture without depending on a Windows SDK install.
+#[cfg(test)]
+pub(crate) fn _test_build_c_header_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    build_c_header_index(dep_roots)
+}
+
+/// Crate-visible test handle for `make_root` — wraps a fixture dir as an
+/// `ExternalDepRoot` for the header-index builder above.
+#[cfg(test)]
+pub(crate) fn _test_make_root(dir: &Path, tag: &'static str) -> ExternalDepRoot {
+    make_root(dir, tag)
+}
+
 /// Returns the include target if `path` is a forwarding header — its first
 /// non-comment non-whitespace bytes form a single `#include "x"` or
 /// `#include <x>` directive. Used to detect extensionless C++ class

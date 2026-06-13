@@ -1410,34 +1410,109 @@ fn build_index_follows_relative_reexports_from_entry() {
 }
 
 #[test]
-fn build_index_full_walks_packages_that_declare_globals() {
-    // Packages whose entry .d.ts contributes globals (via
-    // `declare global { ... }` or top-level `declare namespace ...`)
-    // bypass the entry-only restriction so ambient declarations
-    // anywhere in the package surface as indexed globals. Gate is
-    // content-based via `package_declares_globals`.
+fn build_index_bounds_globals_package_to_entry_reexports_and_globals_probe() {
+    // A globals-declaring package gets the bounded entry+reexport walk
+    // (same as a non-globals package) unioned with the canonical
+    // globals-declaration files — NOT a full leaf-tree walk. Every
+    // `declare global` symbol and every reexport-reachable type stays
+    // locatable; leaf files that declare no globals and aren't reachable
+    // through the entry's reexport closure are dropped (pulled on demand
+    // by `resolve_symbol` if a chain ever lands on them).
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path().join("node_modules").join("globals-pkg");
+    std::fs::create_dir_all(root.join("dist")).unwrap();
     std::fs::create_dir_all(root.join("internal")).unwrap();
-    // Entry .d.ts opts into globals via declare-global.
     std::fs::write(
-        root.join("index.d.ts"),
-        "declare global { const $myFn: () => void; }\nexport {};\n",
+        root.join("package.json"),
+        r#"{"name":"globals-pkg","version":"1.0.0","types":"dist/index.d.ts"}"#,
     )
     .unwrap();
-    // Deep file that the entry-only walker would skip — full walk
-    // keeps it indexable.
+    // Entry: opts into globals via declare-global AND re-exports a sibling
+    // type, exercising the reexport closure.
     std::fs::write(
-        root.join("internal").join("helper.d.ts"),
-        "export function deepHelper(value: unknown): unknown;\n",
+        root.join("dist").join("index.d.ts"),
+        "declare global { const $entryGlobal: () => void; }\nexport { Reachable } from './reachable';\n",
+    )
+    .unwrap();
+    // Reexport target — reachable from the entry, must stay indexed.
+    std::fs::write(
+        root.join("dist").join("reachable.d.ts"),
+        "export interface Reachable { method(): void; }\n",
+    )
+    .unwrap();
+    // Canonical globals file the entry doesn't reference — pulled in by the
+    // globals-probe union, must stay indexed.
+    std::fs::write(
+        root.join("globals.d.ts"),
+        "declare global { const $probedGlobal: () => void; }\nexport {};\n",
+    )
+    .unwrap();
+    // Deep leaf that declares no globals and isn't reexport-reachable. The
+    // old whole-tree walk indexed it; the bounded walk must NOT.
+    std::fs::write(
+        root.join("internal").join("leaf.d.ts"),
+        "export function deepLeaf(value: unknown): unknown;\n",
     )
     .unwrap();
 
     let dep = mkdep(root, "globals-pkg");
     let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+
+    // Entry's declare-global symbol — locatable under both the synthetic
+    // globals module (bare-name fallback) and the owning package.
     assert!(
-        idx.locate("globals-pkg", "deepHelper").is_some(),
-        "deep file must be indexed when entry declares globals"
+        idx.locate(NPM_GLOBALS_MODULE, "$entryGlobal").is_some(),
+        "entry declare-global symbol must be locatable as a global"
+    );
+    assert!(idx.locate("globals-pkg", "$entryGlobal").is_some());
+    // Globals-probe file's symbol stays locatable.
+    assert!(
+        idx.locate(NPM_GLOBALS_MODULE, "$probedGlobal").is_some(),
+        "globals.d.ts symbol must be pulled in by the globals-probe union"
+    );
+    // Reexport-reachable type stays locatable.
+    assert!(
+        idx.locate("globals-pkg", "Reachable").is_some(),
+        "reexport-reachable type must stay indexed"
+    );
+    // Deep leaf is dropped — not a global, not reexport-reachable.
+    assert!(
+        idx.locate("globals-pkg", "deepLeaf").is_none(),
+        "leaf declaring no globals must NOT be eagerly indexed"
+    );
+}
+
+#[test]
+fn build_index_fails_open_to_full_walk_when_globals_package_has_no_entry() {
+    // Fail-open guard: a globals-declaring package whose entry can't be
+    // resolved (no package.json `types`, no `index.d.ts` fallback) has no
+    // computable reexport closure. Rather than drop reexport-reachable
+    // types, the build falls back to the full-tree walk — so even a deep
+    // leaf is indexed. Globals live only in a root `globals.d.ts`, which
+    // is what trips `package_declares_globals`.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("node_modules").join("entryless-globals");
+    std::fs::create_dir_all(root.join("internal")).unwrap();
+    std::fs::write(
+        root.join("globals.d.ts"),
+        "declare global { const $injected: () => void; }\nexport {};\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("internal").join("leaf.d.ts"),
+        "export function deepLeaf(value: unknown): unknown;\n",
+    )
+    .unwrap();
+
+    let dep = mkdep(root, "entryless-globals");
+    let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+    assert!(
+        idx.locate(NPM_GLOBALS_MODULE, "$injected").is_some(),
+        "globals.d.ts symbol must be locatable"
+    );
+    assert!(
+        idx.locate("entryless-globals", "deepLeaf").is_some(),
+        "no resolvable entry → full-walk fallback indexes the deep leaf"
     );
 }
 

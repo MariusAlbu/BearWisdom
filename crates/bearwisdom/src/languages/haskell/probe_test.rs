@@ -235,3 +235,97 @@ fn data_with_operator_constructor_emits_cons() {
         "expected `[]` nullary constructor; got {names:?}"
     );
 }
+
+#[test]
+fn where_bound_local_extracted_as_child_of_enclosing_function() {
+    // `f x = g x where g y = y + 1` — the where-bound helper `g` is a nested
+    // `function` node under `f`. It must be extracted with `f` as its scope so
+    // the scope-visible resolver rung can bind a sibling-scope call `f.g`.
+    let src = "f x = g x\n  where g y = y + 1\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let g = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "g")
+        .expect("where-bound `g` must be extracted");
+    assert_eq!(
+        g.scope_path.as_deref(),
+        Some("f"),
+        "where-bound `g` must carry the enclosing function `f` as its scope_path; got {:?}",
+        g.scope_path
+    );
+    assert_eq!(
+        g.qualified_name, "f.g",
+        "where-bound `g` qname must be `f.g`; got {:?}",
+        g.qualified_name
+    );
+}
+
+#[test]
+fn nullary_where_bound_local_extracted() {
+    // `f = g where g = 1` — both `f` and the where-bound `g` are nullary
+    // `bind` nodes (no parameters). The bind form must still surface `g` as a
+    // scoped child of `f`.
+    let src = "f = g\n  where g = 1\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    let g = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "g")
+        .expect("nullary where-bound `g` must be extracted");
+    assert_eq!(
+        g.scope_path.as_deref(),
+        Some("f"),
+        "nullary where-bound `g` must carry scope_path `f`; got {:?}",
+        g.scope_path
+    );
+}
+
+#[test]
+fn nullary_top_level_bind_extracted() {
+    // `answer = 42` is a nullary `bind` declaration. It declares a callable
+    // top-level value and must be surfaced as a symbol so refs to `answer`
+    // resolve.
+    let src = "answer = 42\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "answer"),
+        "expected top-level `answer` bind symbol; got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn operator_bind_definition_normalized_to_bare_surface_form() {
+    // `($$) = foo` is a nullary operator definition parsed as a `bind` whose
+    // name is the parenthesized `prefix_id` `($$)`. The symbol name must be the
+    // bare operator `$$` — the same surface form an infix call `x $$ y` emits —
+    // so the call ref and the definition agree.
+    let src = "($$) = foo\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "$$"),
+        "expected operator symbol `$$` (parens stripped); got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn infix_form_operator_definition_normalized_to_bare_surface_form() {
+    // `a $$ b = a` defines the `$$` operator in infix form: a `function` node
+    // with no `name` field whose operator lives in an `infix` child. The symbol
+    // name must be `$$`, not the raw equation text.
+    let src = "a $$ b = a\n";
+    let r = crate::languages::haskell::extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "$$"),
+        "expected operator symbol `$$` from infix-form definition; got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+    // The garbage fallback name (raw equation text) must NOT appear.
+    assert!(
+        !r.symbols.iter().any(|s| s.name.contains("$$ b")),
+        "infix-form operator def must not fall back to raw equation text; got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}

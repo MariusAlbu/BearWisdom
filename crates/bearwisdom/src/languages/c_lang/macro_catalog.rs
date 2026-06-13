@@ -37,6 +37,180 @@ impl MacroCatalog {
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
     }
+
+    /// True when `name` is a defined macro whose body is attribute / linkage /
+    /// storage-class shaped (or empty). Such a macro in leading type position is
+    /// a qualifier, never the declared type, so a TypeRef carrying its name is
+    /// always unresolvable and is dropped.
+    ///
+    /// A macro whose body names a real type (`#define MyInt int`, `#define
+    /// Handle void*`) is NOT attribute-shaped: it legitimately aliases a type,
+    /// so its TypeRef must survive.
+    pub fn is_attribute_macro(&self, name: &str) -> bool {
+        self.by_name
+            .get(name)
+            .is_some_and(|def| is_attribute_shaped_body(&def.body))
+    }
+
+    /// Record one `#define`. The same name often carries several bodies across
+    /// conditional branches (`#if WIN32 … #else …`); only one survives the real
+    /// preprocessor, but the catalog can't preprocess. When any branch is
+    /// attribute-shaped, keep that body — a qualifier macro must read as a
+    /// qualifier regardless of which branch the walk encountered first.
+    /// Otherwise first definition wins.
+    fn merge_define(&mut self, name: String, def: MacroDef) {
+        match self.by_name.entry(name) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(def);
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                if !is_attribute_shaped_body(&slot.get().body)
+                    && is_attribute_shaped_body(&def.body)
+                {
+                    slot.insert(def);
+                }
+            }
+        }
+    }
+}
+
+/// Classify a `#define` body as attribute / linkage / storage-shaped. Returns
+/// `true` for bodies that consist solely of attribute, linkage, calling-
+/// convention, or storage-class tokens (or that are empty) — the shapes a
+/// qualifier macro expands to. Returns `false` the moment a token could name a
+/// type, so type-aliasing macros are preserved.
+///
+/// Empty body → `true`: `#define PERL_CALLCONV` is the dominant qualifier form.
+fn is_attribute_shaped_body(body: &str) -> bool {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    // Scan token-by-token. Every token must be attribute-shaped; a single
+    // type-naming token disqualifies the whole body.
+    let mut saw_token = false;
+    for tok in tokenize_body(trimmed) {
+        saw_token = true;
+        if !is_attribute_token(&tok) {
+            return false;
+        }
+    }
+    saw_token
+}
+
+/// Split a macro body into identifier-or-symbol tokens. Identifiers (incl. a
+/// leading `__`) group together; parenthesised attribute arguments
+/// (`__attribute__((x))`, `__declspec(y)`) are consumed as part of the
+/// preceding token so their inner words don't leak out as bare identifiers.
+fn tokenize_body(body: &str) -> Vec<String> {
+    let bytes = body.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if is_ident_byte(b) {
+            let start = i;
+            while i < bytes.len() && is_ident_byte(bytes[i]) {
+                i += 1;
+            }
+            let mut tok = body[start..i].to_string();
+            // Swallow a directly-following `(...)` group (attribute args).
+            while i < bytes.len() && bytes[i] == b'(' {
+                let mut depth = 0usize;
+                let grp_start = i;
+                while i < bytes.len() {
+                    match bytes[i] {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            i += 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                tok.push_str(&body[grp_start..i]);
+            }
+            out.push(tok);
+        } else if b == b'"' {
+            // A string literal is one token (`extern "C"` carries `"C"`), so
+            // its contents never leak out as bare identifiers.
+            let start = i;
+            i += 1;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'"' => {
+                        i += 1;
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            out.push(body[start..i.min(body.len())].to_string());
+        } else {
+            // Lone punctuation (`*`, `&`, `(`) — record as its own token so the
+            // classifier can reject pointer/reference type aliases.
+            out.push((b as char).to_string());
+            i += 1;
+        }
+    }
+    out
+}
+
+/// True when a single body token is an attribute / linkage / storage / calling-
+/// convention specifier — never a type name. Recognises, in order:
+///   * String literals — `extern "C"` carries a `"C"` token.
+///   * Attribute carriers `__attribute__(...)` / `__declspec(...)`, with their
+///     `(...)` already swallowed by the tokenizer.
+///   * The C storage / linkage / qualifier keywords (`extern`, `static`, …).
+///   * Reserved-identifier shapes (`__`-prefixed, or `_` + uppercase) — the
+///     standard reserves these for the implementation, so a leading-position
+///     token of this shape is a compiler intrinsic / convention specifier, not
+///     a user type (`__cdecl`, `__stdcall`, `_System`).
+///
+/// Anything else — an ordinary or SCREAMING_CASE identifier, a pointer/
+/// reference symbol — returns `false`, so a type-aliasing body survives.
+fn is_attribute_token(tok: &str) -> bool {
+    let t = tok.trim();
+    if t.is_empty() {
+        return true;
+    }
+    if t.starts_with('"') {
+        return true;
+    }
+    for carrier in ["__attribute__", "__attribute", "__declspec"] {
+        if t == carrier || t.starts_with(&format!("{carrier}(")) {
+            return true;
+        }
+    }
+    if matches!(
+        t,
+        "extern" | "static" | "inline" | "register" | "const" | "volatile"
+    ) {
+        return true;
+    }
+    is_reserved_identifier(t)
+}
+
+/// True for identifiers the C/C++ standard reserves for the implementation:
+/// a `__` prefix anywhere, or a leading `_` followed by an uppercase letter.
+/// User type names never take these shapes, so a body composed only of such
+/// tokens is a compiler-convention specifier, not a type alias.
+fn is_reserved_identifier(t: &str) -> bool {
+    let bytes = t.as_bytes();
+    if bytes.first() != Some(&b'_') {
+        return false;
+    }
+    bytes.get(1) == Some(&b'_') || bytes.get(1).is_some_and(|b| b.is_ascii_uppercase())
 }
 
 /// Discover macros visible to a translation unit, with a directory-level
@@ -165,7 +339,7 @@ fn project_macro_catalog(root: &Path) -> Arc<MacroCatalog> {
             continue;
         };
         for (name, def) in parse_defines(&content) {
-            catalog.by_name.entry(name).or_insert(def);
+            catalog.merge_define(name, def);
         }
     }
     let arc = Arc::new(catalog);
@@ -228,6 +402,23 @@ pub(crate) fn _reset_cache_for_test() {
     }
 }
 
+/// Build a catalog directly from one source string (the `#define` parser only),
+/// bypassing the on-disk header walk. Lets tests assert which names `#define`
+/// shapes capture and how their bodies classify.
+#[cfg(test)]
+pub(crate) fn _catalog_from_source(source: &str) -> MacroCatalog {
+    let mut catalog = MacroCatalog::default();
+    for (name, def) in parse_defines(source) {
+        catalog.merge_define(name, def);
+    }
+    catalog
+}
+
+#[cfg(test)]
+pub(crate) fn _is_attribute_shaped_body(body: &str) -> bool {
+    is_attribute_shaped_body(body)
+}
+
 fn build_catalog(dir: &Path) -> MacroCatalog {
     let mut header_files: Vec<PathBuf> = Vec::new();
     collect_header_files(dir, &mut header_files);
@@ -246,7 +437,7 @@ fn build_catalog(dir: &Path) -> MacroCatalog {
             continue;
         };
         for (name, def) in parse_defines(&content) {
-            catalog.by_name.entry(name).or_insert(def);
+            catalog.merge_define(name, def);
         }
     }
     catalog
@@ -294,9 +485,21 @@ fn parse_defines(source: &str) -> Vec<(String, MacroDef)> {
     let mut out = Vec::new();
     for line in logical.lines() {
         let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("#define") else {
+        // The directive is `#` then `define`, but the standard permits
+        // whitespace between them (`#   define NAME`, used by code that indents
+        // directives by conditional-nesting depth). Strip the `#`, then any
+        // intervening whitespace, before matching the keyword.
+        let Some(after_hash) = trimmed.strip_prefix('#') else {
             continue;
         };
+        let Some(rest) = after_hash.trim_start().strip_prefix("define") else {
+            continue;
+        };
+        // Require a separator after `define` so `#defined` / `#definition`
+        // don't match.
+        if !rest.starts_with(|c: char| c.is_whitespace()) {
+            continue;
+        }
         let rest = rest.trim_start();
         if rest.is_empty() {
             continue;

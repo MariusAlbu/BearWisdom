@@ -153,10 +153,13 @@ pub fn extract_with_file(source: &str, file_path: &str, language: &str) -> super
     // linkage specifier, never a type, so the ref can only ever be unresolvable.
     // Filtering here — after both the visitor and the sweep have emitted — is
     // the single chokepoint every TypeRef-producing path converges on.
+    //
+    // Gated on the macro's BODY shape: only attribute / linkage / storage-shaped
+    // (or empty) bodies are dropped. A macro that aliases a real type
+    // (`#define MyInt int`) keeps its TypeRef — its name resolves to the alias.
     if !macro_catalog.is_empty() {
         refs.retain(|r| {
-            r.kind != EdgeKind::TypeRef
-                || !macro_catalog.by_name.contains_key(r.target_name.as_str())
+            r.kind != EdgeKind::TypeRef || !macro_catalog.is_attribute_macro(r.target_name.as_str())
         });
     }
 

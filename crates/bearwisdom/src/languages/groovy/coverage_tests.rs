@@ -1059,3 +1059,66 @@ fn symbol_four_space_multiline_method_recovered_with_generic_implements() {
         names
     );
 }
+
+/// A Grails taglib closure member (`def message = { attrs, body -> ... }`) is
+/// recovered as a callable symbol even when GString / `out <<` content in the
+/// closure body triggers grammar error recovery that shreds the assignment into
+/// flat sibling tokens (no `field_declaration` / `variable_declarator` survives).
+/// Without recovery the tag has no in-index target and a `<ns:tag>` / `${tag()}`
+/// invocation can never bind.
+#[test]
+fn taglib_closure_recovered_under_gstring_error_recovery() {
+    let src = "package org.pih.warehouse\n\
+               \n\
+               class MessageTagLib {\n\
+               \n\
+               \x20\x20\x20\x20static namespace = \"warehouse\"\n\
+               \x20\x20\x20\x20GrailsApplication grailsApplication\n\
+               \n\
+               \x20\x20\x20\x20def message = { attrs, body ->\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20boolean databaseStoreEnabled = grailsApplication.config.openboxes.locale.custom.enabled\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20attrs.locale = attrs?.locale ?: LocalizationUtil.currentLocale\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20if (databaseStoreEnabled && session.user) {\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20out << MessageFormat.format(localization.text, attrs?.args?.toArray()).encodeAsHTML()\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20return\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20}\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20out << defaultTagLib.message.call(attrs)\n\
+               \x20\x20\x20\x20}\n\
+               \n\
+               \x20\x20\x20\x20def helper = { attrs, body ->\n\
+               \x20\x20\x20\x20\x20\x20\x20\x20out << \"plain\"\n\
+               \x20\x20\x20\x20}\n\
+               }";
+    let r = extract(src);
+    eprintln!(
+        "has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind, s.scope_path.as_deref()))
+            .collect::<Vec<_>>()
+    );
+    // The error-recovery shape is a precondition: if a grammar revision parses
+    // this cleanly the recovery is moot and the assertion below still holds via
+    // the normal field/closure extraction path.
+    let message = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "message")
+        .expect("taglib closure `message` was not indexed");
+    assert_eq!(
+        message.kind,
+        SymbolKind::Method,
+        "closure tag must be a callable Method so a Calls edge can bind"
+    );
+    assert_eq!(
+        message.qualified_name,
+        "org.pih.warehouse.MessageTagLib.message",
+        "closure must be scoped to its taglib class"
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "helper"),
+        "second closure `helper` was not indexed; got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}

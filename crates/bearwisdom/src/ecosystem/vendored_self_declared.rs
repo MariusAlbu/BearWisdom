@@ -20,6 +20,25 @@
 // `vendored_submodules`, the files already live in the project tree and are
 // walked by the main scan; this module only supplies the external-classification
 // signal consumed during origin assignment in `indexer/full.rs`.
+//
+// rebar3 (Erlang) extends the same shape with a different manifest family: a
+// vendored dependency checkout carries its OWN `rebar.config` and/or
+// `src/<pkg>.app.src`. The gate fires only when the HOST itself declares the
+// rebar ecosystem (a root `rebar.config`), and never classifies a project app:
+// rebar3 umbrella members live under the `apps/` and `lib/` app dirs, which are
+// excluded structurally.
+//
+// Go vendoring and Composer (PHP) extend the same shape with their own
+// in-subtree declaration. A root-level `vendor/` is already dropped by the file
+// walker (`ROOT_ONLY_EXCLUDE_NAMES`), so the residual surface is a NESTED
+// `vendor/` — a monorepo package's `services/api/vendor/...`, which the walker
+// does index. Such a tree self-declares as external via a manifest INSIDE it:
+//   * go-vendor: `vendor/modules.txt` (Go's vendor inventory) at the subtree
+//     root, optionally with vendored modules carrying their own `go.mod`.
+//   * composer-vendor: `vendor/composer/installed.json` (Composer's install
+//     ledger) at the subtree root.
+// The HOST's own module is protected: the project's own `go.mod` /
+// `composer.json` is never under a `vendor/` segment, so it is never matched.
 // =============================================================================
 
 use std::path::Path;
@@ -43,23 +62,33 @@ const NPM_WORKSPACE_KINDS: &[&str] = &[
 
 /// Vendored self-declared package subtree prefixes for the project at
 /// `project_root`, normalized to forward slashes with surrounding slashes
-/// trimmed. Empty when the host project owns the npm ecosystem (conservative
-/// gate) or declares no vendored foreign package.
+/// trimmed. Each manifest family is gated independently: npm/bower subtrees are
+/// reported only when the host owns NO npm ecosystem (conservative gate);
+/// rebar3 subtrees only when the host declares a root `rebar.config`; go-vendor
+/// and composer-vendor subtrees when a `vendor/` tree carries its ecosystem's
+/// in-subtree install ledger. Empty when no gate fires or no vendored foreign
+/// package is declared.
 ///
 /// `packages` and `workspace_kind` are the output of `detect_packages` — the
 /// recursive manifest scan already registered every in-tree `package.json` as
 /// an npm `PackageInfo`, including deep vendored ones. This function partitions
-/// those by the gate rather than re-walking for them.
+/// those by the gate rather than re-walking for them. The rebar pass is a
+/// bounded filesystem probe (erlang manifests are not in `detect_packages`).
 pub fn self_declared_vendor_prefixes(
     project_root: &Path,
     packages: &[PackageInfo],
     workspace_kind: Option<&str>,
 ) -> Vec<String> {
-    if host_owns_npm(packages, workspace_kind) {
-        return Vec::new();
-    }
-    let mut out = npm_vendored_prefixes(packages);
-    out.extend(bower_only_vendored_prefixes(project_root, &out));
+    let mut out = if host_owns_npm(packages, workspace_kind) {
+        Vec::new()
+    } else {
+        let mut out = npm_vendored_prefixes(packages);
+        out.extend(bower_only_vendored_prefixes(project_root, &out));
+        out
+    };
+    out.extend(rebar_vendored_prefixes(project_root, &out));
+    out.extend(go_vendor_prefixes(project_root, &out));
+    out.extend(composer_vendor_prefixes(project_root, &out));
     out
 }
 
@@ -165,6 +194,204 @@ fn walk_for_bower(
 
     for sub in subdirs {
         walk_for_bower(project_root, &sub, depth + 1, max_depth, already, out);
+    }
+}
+
+/// rebar3 default `project_app_dirs` — the top-level path segments under which
+/// umbrella PROJECT applications live. A self-declaring subtree under one of
+/// these is a first-party app, never a vendored dependency. `rebar.config` may
+/// override `project_app_dirs`, but the reader does not parse that key, so these
+/// defaults are the conservative protection gate.
+const REBAR_APP_DIRS: &[&str] = &["apps", "lib"];
+
+/// rebar3 vendored-dependency subtree prefixes for the project at
+/// `project_root`. Empty unless the HOST declares the rebar ecosystem (a root
+/// `rebar.config`). A subtree is vendored when it self-declares an erlang
+/// application (its own `rebar.config` or a `src/*.app.src`) AND its top path
+/// segment is not a rebar app dir (`apps/`, `lib/`) — i.e. it is not a project
+/// umbrella member. `already` (the npm/bower prefixes) are skipped to avoid
+/// duplicate entries.
+fn rebar_vendored_prefixes(project_root: &Path, already: &[String]) -> Vec<String> {
+    if !host_declares_rebar(project_root) {
+        return Vec::new();
+    }
+    const MAX_DEPTH: u32 = 8;
+    let mut out = Vec::new();
+    walk_for_rebar_app(project_root, project_root, 0, MAX_DEPTH, already, &mut out);
+    out
+}
+
+/// True when `project_root` carries a top-level `rebar.config` — the host
+/// declares the rebar ecosystem. The unambiguous signal that vendored erlang
+/// checkouts inside the tree are foreign, not first-party.
+fn host_declares_rebar(project_root: &Path) -> bool {
+    project_root.join("rebar.config").is_file()
+        || project_root.join("rebar3.config").is_file()
+}
+
+/// Recursive helper for `rebar_vendored_prefixes`. Prunes dotted dirs and the
+/// rebar build-output `_build`. Registers a directory at depth ≥ 1 that
+/// self-declares an erlang application and is not under a project app dir.
+fn walk_for_rebar_app(
+    project_root: &Path,
+    dir: &Path,
+    depth: u32,
+    max_depth: u32,
+    already: &[String],
+    out: &mut Vec<String>,
+) {
+    if depth > max_depth {
+        return;
+    }
+
+    // Depth ≥ 1: the host root self-declares its OWN application; only nested
+    // subtrees are candidate vendored checkouts.
+    if depth >= 1 && declares_erlang_app(dir) {
+        if let Ok(rel) = dir.strip_prefix(project_root) {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            let rel = rel.trim_matches('/').to_string();
+            // Project app dirs (`apps/<x>`, `lib/<x>`) are first-party umbrella
+            // members — never vendored.
+            let in_app_dir = rel
+                .split('/')
+                .next()
+                .is_some_and(|seg| REBAR_APP_DIRS.contains(&seg));
+            if !rel.is_empty() && !in_app_dir && !already.iter().any(|p| p == &rel) {
+                // A self-declaring vendored app is a leaf — don't descend into
+                // its own nested deps, which the prefix already covers.
+                out.push(rel);
+                return;
+            }
+        }
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name == "_build" {
+            continue;
+        }
+        walk_for_rebar_app(project_root, &entry.path(), depth + 1, max_depth, already, out);
+    }
+}
+
+/// True when `dir` self-declares an erlang/OTP application: a `rebar.config`
+/// at the subtree root, or a `src/*.app.src` application resource file.
+fn declares_erlang_app(dir: &Path) -> bool {
+    if dir.join("rebar.config").is_file() || dir.join("rebar3.config").is_file() {
+        return true;
+    }
+    let src = dir.join("src");
+    let Ok(entries) = std::fs::read_dir(&src) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.file_name()
+            .to_string_lossy()
+            .ends_with(".app.src")
+    })
+}
+
+/// Go-vendored subtree prefixes for the project at `project_root`. A `vendor/`
+/// directory carrying Go's `vendor/modules.txt` inventory at its root is a Go
+/// vendored-dependency tree; the whole `vendor/` subtree is third-party. The
+/// project's own module (its root `go.mod`) is never under a `vendor/` segment,
+/// so it is never matched. A root-level `vendor/` is already dropped by the file
+/// walker — this catches the nested-monorepo-package case it does not. `already`
+/// (prior prefixes) are skipped to avoid duplicate entries.
+fn go_vendor_prefixes(project_root: &Path, already: &[String]) -> Vec<String> {
+    vendor_ledger_prefixes(project_root, already, go_vendor_ledger)
+}
+
+/// Composer-vendored subtree prefixes for the project at `project_root`. A
+/// `vendor/` directory carrying Composer's `vendor/composer/installed.json`
+/// ledger is a Composer vendored-dependency tree; the whole `vendor/` subtree is
+/// third-party. The project's own package (its root `composer.json`) is never
+/// under a `vendor/` segment, so it is never matched. A root-level `vendor/` is
+/// already dropped by the file walker — this catches the nested case it does
+/// not. `already` (prior prefixes) are skipped to avoid duplicate entries.
+fn composer_vendor_prefixes(project_root: &Path, already: &[String]) -> Vec<String> {
+    vendor_ledger_prefixes(project_root, already, composer_vendor_ledger)
+}
+
+/// True when `dir` is a Go vendored-dependency tree: it carries the
+/// `modules.txt` inventory `go mod vendor` writes at the `vendor/` root.
+fn go_vendor_ledger(dir: &Path) -> bool {
+    dir.join("modules.txt").is_file()
+}
+
+/// True when `dir` is a Composer vendored-dependency tree: it carries the
+/// `composer/installed.json` ledger Composer writes at the `vendor/` root.
+fn composer_vendor_ledger(dir: &Path) -> bool {
+    dir.join("composer").join("installed.json").is_file()
+}
+
+/// Generic vendored-dependency subtree finder. Walks `project_root` for any
+/// directory literally named `vendor` whose contents self-declare it via
+/// `ledger` (the ecosystem's install inventory written at the `vendor/` root).
+/// The matched `vendor` subtree is registered as a single prefix and not
+/// descended into. Bounded depth-8 walk; dotted dirs and `node_modules` are
+/// pruned. `already` are skipped to avoid duplicate entries.
+fn vendor_ledger_prefixes(
+    project_root: &Path,
+    already: &[String],
+    ledger: fn(&Path) -> bool,
+) -> Vec<String> {
+    const MAX_DEPTH: u32 = 8;
+    let mut out = Vec::new();
+    walk_for_vendor_ledger(project_root, project_root, 0, MAX_DEPTH, already, ledger, &mut out);
+    out
+}
+
+/// Recursive helper for `vendor_ledger_prefixes`. Registers a `vendor`
+/// directory whose contents satisfy `ledger`, then prunes it from the descent
+/// (the prefix already covers everything below). Prunes dotted dirs and
+/// `node_modules`.
+#[allow(clippy::too_many_arguments)]
+fn walk_for_vendor_ledger(
+    project_root: &Path,
+    dir: &Path,
+    depth: u32,
+    max_depth: u32,
+    already: &[String],
+    ledger: fn(&Path) -> bool,
+    out: &mut Vec<String>,
+) {
+    if depth > max_depth {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name == "node_modules" {
+            continue;
+        }
+        let path = entry.path();
+        if name == "vendor" && ledger(&path) {
+            if let Ok(rel) = path.strip_prefix(project_root) {
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                let rel = rel.trim_matches('/').to_string();
+                if !rel.is_empty() && !already.iter().any(|p| p == &rel) {
+                    // A self-declaring vendor tree is a leaf — its whole subtree
+                    // is third-party, so don't descend into it.
+                    out.push(rel);
+                }
+            }
+            continue;
+        }
+        walk_for_vendor_ledger(project_root, &path, depth + 1, max_depth, already, ledger, out);
     }
 }
 

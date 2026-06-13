@@ -9,12 +9,11 @@ fn write(path: &Path, body: &str) {
 
 #[test]
 fn locate_roots_returns_empty_when_msvc_install_missing() {
-    // With no `BEARWISDOM_MSVC_INCLUDE` override and no `VCINSTALLDIR`/
-    // `WindowsSdkDir`/vswhere-discoverable VS install at the host's
-    // standard paths, discovery yields no roots — even though the
-    // ecosystem would otherwise activate on any Windows + C/C++ project.
-    // This test isolates the override path; the on-host result depends
-    // on whether a real VS is installed, which we don't gate on.
+    // With no `VCINSTALLDIR`/`WindowsSdkDir`/vswhere-discoverable VS install
+    // at the host's standard paths, discovery yields no roots — even though
+    // the ecosystem would otherwise activate on any Windows + C/C++ project.
+    // The on-host result depends on whether a real VS is installed, which we
+    // don't gate on.
     let tmp = TempDir::new().unwrap();
     write(&tmp.path().join("main.c"), "int main() { return 0; }\n");
     let _ = tmp; // path used only to satisfy the locate_roots signature
@@ -69,6 +68,23 @@ fn pinned_version_extracts_highest_target_platform_version() {
 }
 
 #[test]
+fn pinned_version_prefers_declared_value_verbatim() {
+    // The declared `<WindowsTargetPlatformVersion>` is the pin — discovery
+    // selects the matching versioned SDK subdir over the newest-installed
+    // default. A single declaration is returned verbatim.
+    let tmp = TempDir::new().unwrap();
+    let pa = tmp.path().join("pinned.vcxproj");
+    write(
+        &pa,
+        "<Project>\n  <PropertyGroup>\n    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>\n  </PropertyGroup>\n</Project>\n",
+    );
+    assert_eq!(
+        pinned_target_platform_version(&[pa]).as_deref(),
+        Some("10.0.22621.0")
+    );
+}
+
+#[test]
 fn pinned_version_returns_none_when_no_vcxproj_declares_one() {
     let tmp = TempDir::new().unwrap();
     let pa = tmp.path().join("legacy.vcxproj");
@@ -101,6 +117,85 @@ fn vcxproj_present_at_nested_depth() {
     );
     let found = find_vcxproj_files(tmp.path());
     assert_eq!(found.len(), 1);
+}
+
+#[test]
+fn vcxproj_found_in_deeply_nested_monorepo_layout() {
+    // An MSBuild monorepo nests platform projects under
+    // `src/<area>/<server>/<module>/<lib>/...`; an installer project can sit
+    // seven directory levels below the workspace root. The scan descends far
+    // enough to reach projects at that depth alongside shallower ones.
+    let tmp = TempDir::new().unwrap();
+    write(
+        &tmp.path()
+            .join("src/Installers/Windows/Module-Setup/IIS-Setup/IIS-Common/lib/Setup.vcxproj"),
+        "<Project></Project>\n",
+    );
+    write(
+        &tmp.path()
+            .join("src/Servers/IIS/ModuleV2/AspNetCore/AspNetCore.vcxproj"),
+        "<Project></Project>\n",
+    );
+    let found = find_vcxproj_files(tmp.path());
+    assert_eq!(
+        found.len(),
+        2,
+        "both the depth-5 module project and the depth-7 installer project must be found"
+    );
+}
+
+#[test]
+fn inert_when_no_vcxproj_present() {
+    // Regression: a C/C++ tree with no MSBuild project files must not yield
+    // any vcxproj — the ecosystem stays inert and contributes no SDK roots.
+    let tmp = TempDir::new().unwrap();
+    write(&tmp.path().join("src/main.cpp"), "int main(){return 0;}\n");
+    write(&tmp.path().join("src/util.h"), "#pragma once\n");
+    let found = find_vcxproj_files(tmp.path());
+    assert!(found.is_empty());
+}
+
+#[test]
+fn um_subdir_headers_register_at_include_visible_path() {
+    // Fixture SDK shaped like `Include/<version>/{um,shared}` — the IIS
+    // headers a native module references (`httpserv.h`, `ahadmin.h`) live in
+    // `um/`. The header index must register each at its `#include`-visible
+    // path so a project's `#include <httpserv.h>` resolves.
+    let tmp = TempDir::new().unwrap();
+    let um = tmp.path().join("10.0.26100.0/um");
+    write(&um.join("httpserv.h"), "struct IHttpServer {};\n");
+    write(&um.join("ahadmin.h"), "struct IAppHostElement {};\n");
+    write(
+        &tmp.path().join("10.0.26100.0/shared").join("winerror.h"),
+        "typedef long HRESULT;\n",
+    );
+
+    let um_root = crate::ecosystem::posix_headers::make_root(&um, TAG);
+    let idx = crate::ecosystem::posix_headers::build_c_header_index(&[um_root]);
+    assert_eq!(
+        idx.locate("httpserv.h", "httpserv.h"),
+        Some(um.join("httpserv.h").as_path())
+    );
+    assert_eq!(
+        idx.locate("ahadmin.h", "ahadmin.h"),
+        Some(um.join("ahadmin.h").as_path())
+    );
+}
+
+#[test]
+fn demand_pull_admits_um_header_by_include_name() {
+    // Demand-pull: a source file's `#include <httpserv.h>` drives a header
+    // lookup keyed by the include name. With `um/` as the dep root the
+    // header is admitted as an external WalkedFile for the extraction
+    // pipeline.
+    let tmp = TempDir::new().unwrap();
+    let um = tmp.path().join("um");
+    write(&um.join("httpserv.h"), "struct IHttpServer {};\n");
+
+    let um_root = crate::ecosystem::posix_headers::make_root(&um, TAG);
+    let admitted = crate::ecosystem::posix_headers::resolve_header(&um_root, "httpserv.h");
+    let file = admitted.expect("httpserv.h must be admitted from the um/ root");
+    assert_eq!(file.absolute_path, um.join("httpserv.h"));
 }
 
 #[cfg(not(target_os = "windows"))]

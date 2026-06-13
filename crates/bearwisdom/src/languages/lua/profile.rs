@@ -65,6 +65,7 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
@@ -85,13 +86,17 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,
-    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::Off,
+    ambient_globals: crate::type_checker::profile::language_profile::AmbientGlobals::On {
+        instantiate_accepts_variable: false,
+    },
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
+    multi_candidate_ranking: false,
+    scope_functions: &[],
     constructor_patterns: &[ConstructorPattern::LuaColonNew],
     class_builder_specs: &[],
     decorator_syntax: None,

@@ -19,6 +19,7 @@
 //! 4. Register the plugin in [`default_registry()`]
 
 pub mod common;
+pub mod demand_filter;
 pub mod registry;
 pub mod string_dsl;
 
@@ -120,9 +121,15 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         source: &str,
         file_path: &str,
         lang_id: &str,
-        _demand: Option<&std::collections::HashSet<String>>,
+        demand: Option<&std::collections::HashSet<String>>,
     ) -> ExtractionResult {
-        self.extract(source, file_path, lang_id)
+        let result = self.extract(source, file_path, lang_id);
+        match demand {
+            Some(d) if !d.is_empty() => {
+                demand_filter::filter_extraction_to_demand(result, d)
+            }
+            _ => result,
+        }
     }
 
     /// Extract with access to the workspace `TypeArena`. Default impl

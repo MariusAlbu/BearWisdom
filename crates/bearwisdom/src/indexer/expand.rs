@@ -66,7 +66,15 @@ pub fn expand_chain_reachability(
     _packages: &[PackageInfo],
     registry: &LanguageRegistry,
 ) -> Result<ExpansionStats> {
-    expand_chain_reachability_with_index(db, parsed, symbol_id_map, chain_misses, registry, None)
+    expand_chain_reachability_with_index(
+        db,
+        parsed,
+        symbol_id_map,
+        chain_misses,
+        registry,
+        None,
+        &std::collections::HashSet::new(),
+    )
 }
 
 /// Same as `expand_chain_reachability_with_index` but threads a workspace
@@ -81,6 +89,7 @@ pub fn expand_chain_reachability_with_index_and_arena(
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
     type_arena: &crate::type_checker::core::types::TypeArena,
+    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     expand_chain_reachability_inner(
         db,
@@ -90,6 +99,7 @@ pub fn expand_chain_reachability_with_index_and_arena(
         registry,
         symbol_index,
         Some(type_arena),
+        unresolved_targets,
     )
 }
 
@@ -106,6 +116,7 @@ pub fn expand_chain_reachability_with_index(
     chain_misses: &[ChainMiss],
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
+    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     expand_chain_reachability_inner(
         db,
@@ -115,6 +126,7 @@ pub fn expand_chain_reachability_with_index(
         registry,
         symbol_index,
         None,
+        unresolved_targets,
     )
 }
 
@@ -126,6 +138,7 @@ fn expand_chain_reachability_inner(
     registry: &LanguageRegistry,
     symbol_index: Option<&SymbolLocationIndex>,
     type_arena: Option<&crate::type_checker::core::types::TypeArena>,
+    unresolved_targets: &std::collections::HashSet<String>,
 ) -> Result<ExpansionStats> {
     let mut stats = ExpansionStats {
         misses: chain_misses.len(),
@@ -204,6 +217,21 @@ fn expand_chain_reachability_inner(
         );
         return Ok(stats);
     }
+
+    // Widen every pulled file's demand set with the names that internal code
+    // left unresolved (bare type_refs, simple calls — anything that didn't
+    // produce a chain miss). A file located by a chain miss for symbol X may
+    // also define Y, which internal code references only by bare name. Without
+    // this union the demand filter keeps X and drops Y, leaving Y permanently
+    // unresolved because the file is already_walked on future iterations.
+    if !unresolved_targets.is_empty() {
+        for w in &new_walked {
+            per_file_demand
+                .entry(w.absolute_path.clone())
+                .or_default()
+                .extend(unresolved_targets.iter().cloned());
+        }
+    }
     debug!("expand: {} new files to parse", new_walked.len());
 
     // Parse new files in parallel. Errors are logged but not fatal.
@@ -253,16 +281,215 @@ fn expand_chain_reachability_inner(
     stats.new_files = new_parsed.len();
     stats.new_symbols = new_id_map.len();
     symbol_id_map.extend(new_id_map);
+
+    // Transitive `#include` closure for C/C++ headers. A pulled header
+    // (`windows.h`) carries its own `#include` directives as `Imports` refs,
+    // but external files are filtered from the resolve loop — so those refs
+    // never re-drive the chain-miss demand. Follow them here, demand-time,
+    // before the refs are about to be slimmed away: locate each included
+    // header through the same path-keyed index, pull + parse it, and repeat
+    // until no new header is reached, the per-pass cap is hit, or the
+    // fan-out cap is hit. Bounded so a pathological include graph can't run
+    // away. Non-C/C++ pulls contribute no header includes and skip this.
+    let transitive = follow_header_includes(
+        db,
+        &new_parsed,
+        index,
+        registry,
+        type_arena,
+        &mut seen_paths,
+        &mut already_walked,
+    )?;
+    stats.new_files += transitive.new_files;
+    stats.new_symbols += transitive.new_symbols;
+    symbol_id_map.extend(transitive.id_map);
+
     for pf in new_parsed.iter_mut() {
         pf.slim_for_resolve();
     }
     parsed.extend(new_parsed);
+    for mut pf in transitive.parsed {
+        pf.slim_for_resolve();
+        parsed.push(pf);
+    }
 
     info!(
         "Chain reachability expansion: {} misses → {} mapped → {} new files, {} new symbols",
         stats.misses, stats.mapped, stats.new_files, stats.new_symbols,
     );
     Ok(stats)
+}
+
+/// Maximum bounded passes over the transitive `#include` graph. Each pass
+/// follows one hop of `#include` edges from the headers pulled by the
+/// previous pass. Mirrors the npm transitive re-export cap.
+const MAX_TRANSITIVE_PASSES: u32 = 5;
+
+/// Hard ceiling on the total number of header files admitted across the whole
+/// transitive closure for a single expand call. Mirrors the secondary-scan
+/// `MAX_PULLED_FILES` precedent so a deeply-included SDK header (`windows.h`
+/// fans out to hundreds of `um/` headers) can't admit an unbounded slice.
+const MAX_PULLED_FILES: usize = 5000;
+
+/// Outcome of the transitive `#include` walk: the parsed header files plus
+/// the index growth they contributed.
+#[derive(Default)]
+struct TransitiveResult {
+    parsed: Vec<ParsedFile>,
+    id_map: HashMap<(String, String), i64>,
+    new_files: usize,
+    new_symbols: usize,
+}
+
+/// Follow C/C++ headers' own `#include` directives transitively, pulling each
+/// reachable header through the path-keyed `SymbolLocationIndex`. Bounded by
+/// [`MAX_TRANSITIVE_PASSES`] hops and [`MAX_PULLED_FILES`] total admissions.
+///
+/// `seen_paths` / `already_walked` are threaded in from the caller so a header
+/// already pulled this expand call (by the symbol-miss wave or an earlier
+/// transitive pass) is never pulled twice. Each pass parses the headers
+/// reached by the previous pass and harvests their `#include` refs into the
+/// next pass's frontier.
+fn follow_header_includes(
+    db: &mut Database,
+    seed_parsed: &[ParsedFile],
+    index: &SymbolLocationIndex,
+    registry: &LanguageRegistry,
+    type_arena: Option<&crate::type_checker::core::types::TypeArena>,
+    seen_paths: &mut std::collections::HashSet<std::path::PathBuf>,
+    already_walked: &mut std::collections::HashSet<String>,
+) -> Result<TransitiveResult> {
+    let mut result = TransitiveResult::default();
+
+    // Frontier: header include-paths reached by the most recently parsed
+    // wave but not yet pulled. Seeded from the symbol-miss wave's headers.
+    let mut frontier = harvest_header_includes(seed_parsed);
+    if frontier.is_empty() {
+        return Ok(result);
+    }
+
+    let parse_pool = crate::indexer::parse_file::build_parse_pool()?;
+    for _pass in 0..MAX_TRANSITIVE_PASSES {
+        if frontier.is_empty() || result.new_files >= MAX_PULLED_FILES {
+            break;
+        }
+
+        // Locate each frontier include-path through the path-keyed index and
+        // build the next wave of WalkedFiles, deduped against everything
+        // pulled so far this expand call.
+        let mut wave_walked: Vec<WalkedFile> = Vec::new();
+        for include_path in frontier.drain() {
+            let Some(target) = index.locate(&include_path, &include_path) else {
+                continue;
+            };
+            let path = target.to_path_buf();
+            if !seen_paths.insert(path.clone()) {
+                continue;
+            }
+            let Some(language) = language_from_file_ext(&path) else {
+                continue;
+            };
+            let virtual_path = virtual_path_for_indexed_file(&path, language);
+            if !already_walked.insert(virtual_path.clone()) {
+                continue;
+            }
+            wave_walked.push(WalkedFile {
+                relative_path: virtual_path,
+                absolute_path: path,
+                language,
+            });
+            if result.new_files + wave_walked.len() >= MAX_PULLED_FILES {
+                break;
+            }
+        }
+        if wave_walked.is_empty() {
+            break;
+        }
+
+        let wave_parsed: Vec<ParsedFile> = parse_pool.install(|| {
+            wave_walked
+                .par_iter()
+                .filter_map(|w| {
+                    let parsed = match type_arena {
+                        Some(a) => parse_file_with_arena_and_demand(w, registry, None, a),
+                        None => parse_file_with_demand(w, registry, None),
+                    };
+                    match parsed {
+                        Ok(pf) => Some(pf),
+                        Err(e) => {
+                            debug!("expand: transitive parse failed for {}: {e}", w.relative_path);
+                            None
+                        }
+                    }
+                })
+                .collect()
+        });
+        if wave_parsed.is_empty() {
+            break;
+        }
+
+        let (_file_map, wave_id_map) =
+            write::write_parsed_files_with_origin(db, &wave_parsed, "external", type_arena)
+                .context("expand: failed to write transitive header symbols")?;
+        result.new_files += wave_parsed.len();
+        result.new_symbols += wave_id_map.len();
+        result.id_map.extend(wave_id_map);
+
+        // The headers just parsed seed the next pass's frontier.
+        frontier = harvest_header_includes(&wave_parsed);
+        result.parsed.extend(wave_parsed);
+    }
+
+    if result.new_files > 0 {
+        debug!(
+            "expand: transitive #include closure pulled {} headers, {} symbols",
+            result.new_files, result.new_symbols,
+        );
+    }
+    Ok(result)
+}
+
+/// Collect the set of header include-paths referenced by C/C++ files' own
+/// `#include` directives. The C extractor emits each `#include <x/y.h>` as an
+/// `Imports` ref with `module = "x/y.h"`. Only header-shaped includes are
+/// returned — project-relative includes the path-keyed index can't answer are
+/// filtered out so the walk stays scoped to real SDK / vcpkg / POSIX headers.
+fn harvest_header_includes(parsed: &[ParsedFile]) -> std::collections::HashSet<String> {
+    use crate::types::EdgeKind;
+    let mut out = std::collections::HashSet::new();
+    for pf in parsed {
+        if pf.language != "c" && pf.language != "cpp" {
+            continue;
+        }
+        for r in &pf.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let Some(module) = r.module.as_deref().filter(|m| !m.is_empty()) else {
+                continue;
+            };
+            if header_include_shape(module) {
+                out.insert(module.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Whether an `#include` target names a header the path-keyed index could
+/// hold: a header-extension path or an extensionless, separator-free name
+/// (the C++ stdlib convention `<vector>` / `<memory>`).
+fn header_include_shape(include_path: &str) -> bool {
+    let basename = include_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(include_path);
+    let is_header_ext = basename.ends_with(".h")
+        || basename.ends_with(".hpp")
+        || basename.ends_with(".hxx")
+        || basename.ends_with(".hh");
+    let is_extensionless_stdlib = !basename.contains('.') && !include_path.contains('/');
+    is_header_ext || is_extensionless_stdlib
 }
 
 /// Query the symbol index for every file plausibly defining the miss's

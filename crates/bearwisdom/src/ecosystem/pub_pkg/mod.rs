@@ -103,14 +103,30 @@ impl Ecosystem for PubEcosystem {
     /// packages are discovered, because nothing demanded a file pull for
     /// them.
     ///
-    /// The entry walk is the same one `resolve_import` returns; cost is
-    /// bounded by `DART_EXPORT_MAX_DEPTH`. Per-root cost: a handful of
-    /// .dart files per package — total a few MB on a 79-pub-root project
-    /// like ts-immich/mobile.
+    /// The entry walk follows in-package `export`/`part` specs and, when a
+    /// `export 'package:<other>/...'` targets another discovered dep, crosses
+    /// into that package's `lib/` to reach the defining leaf. Cost is bounded
+    /// by `DART_EXPORT_MAX_DEPTH` and a per-walk `seen` set. Per-root cost: a
+    /// handful of .dart files per package — total a few MB on a 79-pub-root
+    /// project.
     fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
+        // `module_path → lib_root` over every discovered dep, so a framework
+        // entry package's cross-package `export 'package:<other>/...'` chain
+        // can reach the leaf that defines the re-exported API surface. The
+        // canonical case: `package:test`'s `expect` FUNCTION lives in
+        // `matcher`'s secondary `expect.dart` library, which `matcher`'s own
+        // conventional entry never re-exports — only `test`'s cross-package
+        // export reaches it.
+        let siblings: SiblingRoots = dep_roots
+            .iter()
+            .map(|d| (d.module_path.clone(), d.root.clone()))
+            .collect();
         let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for dep in dep_roots {
-            out.extend(resolve_dart_package_entry(dep));
+            out.extend(resolve_dart_package_entry_shared_seen(
+                dep, &siblings, &mut seen,
+            ));
         }
         out
     }
@@ -150,10 +166,13 @@ mod walk;
 
 pub use discovery::{discover_dart_externals, find_pub_cache, parse_pubspec_lock};
 pub use manifest::{parse_pubspec_deps, PubspecManifest};
+pub(crate) use manifest::parse_pubspec_name;
 pub(crate) use symbol_index::build_dart_symbol_index;
 pub use walk::walk_dart_root;
 
-use reachability::resolve_dart_package_entry;
+use reachability::{
+    resolve_dart_package_entry, resolve_dart_package_entry_shared_seen, SiblingRoots,
+};
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

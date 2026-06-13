@@ -80,6 +80,20 @@ pub struct ResolutionStats {
     /// these into the cached index and re-resolves so callers read the
     /// inferred return (INFER-3 / INFER-2).
     pub inferred_returns: std::collections::HashMap<String, String>,
+    /// Internal files that can still gain an edge on a later pass — those with
+    /// a remaining unresolved ref or an external ref. They form the shrinking
+    /// frontier whose resolution can still change once externals are pulled;
+    /// the full-index fixpoint feeds this back as the next pass's worklist so
+    /// already-resolved files are skipped.
+    pub frontier_files: Vec<String>,
+    /// Leaf target names of every ref that remained unresolved after this pass
+    /// (no chain miss, no external namespace — the ref simply had no match).
+    /// Passed to `expand_chain_reachability` so any file the demand-driven
+    /// pull locates for a chain miss also carries these names in its demand
+    /// set. Without this, an external symbol referenced only by a bare
+    /// `type_ref` (no chain) is filtered out by the demand filter even though
+    /// internal code genuinely references it.
+    pub unresolved_targets: std::collections::HashSet<String>,
 }
 
 impl ResolutionStats {
@@ -196,6 +210,7 @@ pub fn resolve_iteration_with_cached_index(
     cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
     defer_speculative: Option<&mut DeferredSpeculative>,
+    retry_files: Option<&std::collections::HashSet<String>>,
 ) -> Result<ResolutionStats> {
     resolve_iteration_with_cached_index_and_arena(
         db,
@@ -208,6 +223,7 @@ pub fn resolve_iteration_with_cached_index(
         new_files_slice,
         std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
         defer_speculative,
+        retry_files,
     )
 }
 
@@ -227,6 +243,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     new_files_slice: &[ParsedFile],
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
     defer_speculative: Option<&mut DeferredSpeculative>,
+    retry_files: Option<&std::collections::HashSet<String>>,
 ) -> Result<ResolutionStats> {
     if cached_index.is_none() {
         let mut index = engine::SymbolIndex::build_with_context_and_arena(
@@ -255,6 +272,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
         cached_side_tables,
         new_files_slice,
         defer_speculative,
+        retry_files,
     )
 }
 

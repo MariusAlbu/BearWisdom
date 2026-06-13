@@ -227,12 +227,26 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| node_text(name_node, src));
-                    crate::languages::emit_chain_type_ref(
-                        &chain,
-                        source_symbol_index,
-                        &name_node,
-                        refs,
-                    );
+                    // A two-segment chain (`Receiver.method()`) names the bare
+                    // receiver as its only non-method segment. Whether that
+                    // receiver is a class (`Collections.sort`) or a field
+                    // (`LOG.debug`), the chain walker resolves it from the
+                    // `Calls` ref's chain root — a TypeRef edge would be
+                    // redundant for the class and permanently dead for the
+                    // field. Only emit the prefix TypeRef for nested-namespace
+                    // chains (`Stripe.Event.create()`), where the segment
+                    // before the method is a genuine intermediate type.
+                    let has_namespace_prefix = chain
+                        .as_ref()
+                        .map_or(false, |c| c.segments.len() >= 3);
+                    if has_namespace_prefix {
+                        crate::languages::emit_chain_type_ref(
+                            &chain,
+                            source_symbol_index,
+                            &name_node,
+                            refs,
+                        );
+                    }
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {

@@ -324,6 +324,88 @@ fn ref_record_expr() {
     );
 }
 
+/// A quoted record name (`#'queue.declare'{}`) must emit its Instantiates
+/// target without the surrounding single quotes, matching the unquoted Struct
+/// symbol stored by `-record('queue.declare', {...})`.
+#[test]
+fn ref_record_expr_quoted_name() {
+    let src = concat!(
+        "-module(m).\n",
+        "-record('queue.declare', {ticket, queue}).\n",
+        "foo() -> #'queue.declare'{queue = q}.\n",
+    );
+    let r = extract(src);
+    // The Struct definition is stored unquoted.
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.name == "queue.declare" && s.kind == SymbolKind::Struct),
+        "expected Struct queue.declare (unquoted); got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+    // The Instantiates ref target must also be unquoted so the two agree.
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "queue.declare" && rf.kind == EdgeKind::Instantiates),
+        "expected Instantiates queue.declare (no quotes); got {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
+    // The quoted form must not survive into the target.
+    assert!(
+        !r.refs
+            .iter()
+            .any(|rf| rf.target_name == "'queue.declare'" && rf.kind == EdgeKind::Instantiates),
+        "quoted target leaked through: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A plain unquoted record name is unchanged by the quote-strip path.
+#[test]
+fn ref_record_expr_unquoted_unchanged() {
+    let src = concat!(
+        "-module(m).\n",
+        "-record(state, {count}).\n",
+        "foo() -> #state{count = 0}.\n",
+    );
+    let r = extract(src);
+    assert!(
+        r.refs
+            .iter()
+            .any(|rf| rf.target_name == "state" && rf.kind == EdgeKind::Instantiates),
+        "expected Instantiates state unchanged; got {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Helper unit cases: strip exactly one matched surrounding quote pair; leave
+/// unquoted and unbalanced names untouched.
+#[test]
+fn strip_quoted_atom_cases() {
+    use super::functions::_test_strip_quoted_atom as strip;
+    assert_eq!(strip("'a.b'"), "a.b");
+    assert_eq!(strip("a"), "a");
+    assert_eq!(strip("'a"), "'a");
+    assert_eq!(strip("a'"), "a'");
+    assert_eq!(strip("'"), "'");
+    assert_eq!(strip(""), "");
+    // Interior quotes are preserved; only the outermost pair is dropped.
+    assert_eq!(strip("'a'b'"), "a'b");
+}
+
 /// Private function: fun_decl not in export list → Visibility::Private
 #[test]
 fn symbol_fun_decl_private() {

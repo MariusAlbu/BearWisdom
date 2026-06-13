@@ -9,24 +9,21 @@
 // runtime surface (Bicep ships as a single self-contained .NET binary
 // with embedded DLLs that aren't trivially walkable).
 //
-// **Discovery strategy** (project-driven, real on-disk only): search the
-// project tree itself for a vendored Azure/bicep checkout — a directory
-// whose `src/Bicep.Core/Bicep.Core.csproj` +
-// `Semantics/Namespaces/SystemNamespaceType.cs` marker pair identifies it
+// **Discovery strategy**: first search the project tree for a vendored
+// Azure/bicep checkout — a directory whose `src/Bicep.Core/Bicep.Core.csproj`
+// + `Semantics/Namespaces/SystemNamespaceType.cs` marker pair identifies it
 // (`looks_like_bicep_clone`). The walk is depth-bounded and prunes dep
-// caches / VCS dirs. No env-var override and no machine-path probing: a
-// project resolves these names only when it carries the compiler source
-// in its own tree.
+// caches / VCS dirs. When no clone is present, fall back to a vendored,
+// pinned distillation of the same registration surface shipped in the repo
+// (`assets/bicep/namespace_surface.json`). The in-tree clone takes
+// precedence; the vendored asset only fires when discovery misses.
 //
-// When discovery succeeds we synthesise a single `ParsedFile` whose
-// symbols are the Bicep runtime grammar names, extracted by recognising
-// the upstream `FunctionOverloadBuilder("name")` / `DecoratorBuilder(...)`
-// registration calls in those `.cs` files. The symbols resolve through
-// the ambient-package rung in the standard symbol index.
-//
-// **When discovery fails** (no clone anywhere in the tree): Bicep refs to
-// builtin names stay unresolved. That's the honest state — we can't know
-// the surface without the source on disk.
+// Either way we synthesise a single `ParsedFile` whose symbols are the
+// Bicep runtime grammar names. From a clone they are extracted by
+// recognising the upstream `FunctionOverloadBuilder("name")` /
+// `DecoratorBuilder(...)` registration calls in those `.cs` files; from the
+// vendored asset they are read from the distilled name lists. The symbols
+// resolve through the ambient-package rung in the standard symbol index.
 //
 // Activation: `.bicep` files present in the project.
 // =============================================================================
@@ -43,6 +40,17 @@ use crate::walker::WalkedFile;
 pub const ID: EcosystemId = EcosystemId::new("bicep-runtime");
 const ECOSYSTEM_TAG: &str = "bicep-runtime";
 const LANGUAGES: &[&str] = &["bicep"];
+
+/// Sentinel `ExternalDepRoot.root` returned when no in-tree Bicep clone is
+/// found. `synthesise_bicep_namespace_file` recognises it and emits the
+/// runtime grammar names from the embedded namespace-surface asset instead
+/// of reading `.cs` files off disk.
+const VENDORED_FALLBACK_ROOT: &str = "ext:bicep-runtime:vendored-surface";
+
+/// Distilled function/decorator/namespace surface, vendored from the Bicep
+/// compiler's `{System,Az}NamespaceType.cs` registrations at a pinned tag.
+const VENDORED_NAMESPACE_SURFACE: &str =
+    include_str!("../../assets/bicep/namespace_surface.json");
 
 pub struct BicepRuntimeEcosystem;
 
@@ -118,7 +126,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 
 fn discover_bicep_source(project_root: &Path) -> Vec<ExternalDepRoot> {
     let Some(clone) = find_bicep_clone_in_tree(project_root) else {
-        return Vec::new();
+        return vec![vendored_fallback_root()];
     };
     // The two namespace files plus LanguageConstants live under the same
     // Bicep.Core C# project. `looks_like_bicep_clone` already proved the
@@ -136,6 +144,20 @@ fn discover_bicep_source(project_root: &Path) -> Vec<ExternalDepRoot> {
         package_id: None,
         requested_imports: Vec::new(),
     }]
+}
+
+/// Dep root standing in for the vendored namespace-surface asset. Its `root`
+/// is the `VENDORED_FALLBACK_ROOT` sentinel rather than an on-disk path; the
+/// synthesis step branches on it to read the embedded asset.
+fn vendored_fallback_root() -> ExternalDepRoot {
+    ExternalDepRoot {
+        module_path: "bicep-core".to_string(),
+        version: String::from("vendored"),
+        root: PathBuf::from(VENDORED_FALLBACK_ROOT),
+        ecosystem: ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    }
 }
 
 /// Depth cap for the project-tree clone search. A vendored compiler
@@ -200,10 +222,43 @@ fn looks_like_bicep_clone(p: &Path) -> bool {
 // Synthesis from on-disk Bicep source
 // ---------------------------------------------------------------------------
 
-/// Read the namespace .cs files from a located Bicep clone and emit a
-/// single synthetic `ParsedFile` whose symbols are Bicep's runtime grammar
-/// names. The names are extracted by recognising the upstream
-/// registration patterns:
+/// Emit a single synthetic `ParsedFile` whose symbols are Bicep's runtime
+/// grammar names. Names sourced from an in-tree clone come from the user's
+/// actual Bicep revision (`clone_namespace_symbols`); when no clone is
+/// present the `VENDORED_FALLBACK_ROOT` sentinel routes to
+/// `vendored_namespace_symbols`, which reads the embedded distilled surface.
+/// Either way the emitted qnames are identical (`bicep.builtins.<fn>`,
+/// `bicep.decorators.<dec>`, `bicep.namespace.{sys,az}`).
+fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
+    let named = if bicep_core == Path::new(VENDORED_FALLBACK_ROOT) {
+        vendored_namespace_symbols()
+    } else {
+        clone_namespace_symbols(bicep_core)
+    };
+
+    if named.is_empty() {
+        tracing::warn!(
+            "bicep-runtime: source at {} yielded 0 names — \
+             upstream layout may have changed",
+            bicep_core.display()
+        );
+        return Vec::new();
+    }
+    tracing::info!(
+        "bicep-runtime: extracted {} runtime grammar names from {}",
+        named.len(),
+        bicep_core.display()
+    );
+
+    vec![build_namespace_parsed_file(named)]
+}
+
+/// One runtime grammar name plus the synthetic module it belongs to and the
+/// symbol kind it is emitted as.
+type NamedSymbol = (String, &'static str, SymbolKind);
+
+/// Extract the runtime grammar names from an on-disk Bicep clone by
+/// recognising the upstream registration patterns:
 ///
 ///   * `FunctionOverloadBuilder("name")` / `BannedFunctionBuilder("name")`
 ///     / `BannedFunction("name")` — literal-string registration.
@@ -216,11 +271,7 @@ fn looks_like_bicep_clone(p: &Path) -> bool {
 ///   * `DecoratorBuilder(LanguageConstants.X)` — parameter / output
 ///     decorators like `description`, `minLength`, `metadata`,
 ///     `discriminator`.
-///
-/// **No regex-into-vendored-JSON path.** Names come from the user's actual
-/// Bicep clone at index time. If the clone is stale, the names match
-/// whatever that revision defined.
-fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
+fn clone_namespace_symbols(bicep_core: &Path) -> Vec<NamedSymbol> {
     let semantics_ns = bicep_core.join("Semantics").join("Namespaces");
     let sys_path = semantics_ns.join("SystemNamespaceType.cs");
     let az_path = semantics_ns.join("AzNamespaceType.cs");
@@ -243,63 +294,16 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
         collect_string_consts(src, &mut consts);
     }
 
-    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
-    let mut emitted: std::collections::HashSet<(String, &'static str)> =
-        std::collections::HashSet::new();
-    let mut emit =
-        |name: String,
-         module: &'static str,
-         kind: SymbolKind,
-         symbols: &mut Vec<ExtractedSymbol>,
-         emitted: &mut std::collections::HashSet<(String, &'static str)>| {
-            if name.is_empty() {
-                return;
-            }
-            if !emitted.insert((name.clone(), module)) {
-                return;
-            }
-            symbols.push(ExtractedSymbol {
-                name: name.clone(),
-                qualified_name: format!("{module}.{name}"),
-                kind,
-                visibility: Some(Visibility::Public),
-                start_line: 0,
-                end_line: 0,
-                start_col: 0,
-                end_col: 0,
-                signature: Some(format!("from {} (Bicep upstream)", module)),
-                doc_comment: None,
-                scope_path: Some(module.to_string()),
-                parent_index: None,
-                byte_offset: 0,
-                declared_type: None,
-                return_type: None,
-                param_types: Vec::new(),
-                generic_params: Vec::new(),
-            });
-        };
-
+    let mut named: Vec<NamedSymbol> = Vec::new();
     for src in [sys_src.as_deref(), az_src.as_deref()]
         .into_iter()
         .flatten()
     {
         for name in extract_function_names(src, &consts) {
-            emit(
-                name,
-                "bicep.builtins",
-                SymbolKind::Function,
-                &mut symbols,
-                &mut emitted,
-            );
+            named.push((name, "bicep.builtins", SymbolKind::Function));
         }
         for name in extract_decorator_names(src, &consts) {
-            emit(
-                name,
-                "bicep.decorators",
-                SymbolKind::Function,
-                &mut symbols,
-                &mut emitted,
-            );
+            named.push((name, "bicep.decorators", SymbolKind::Function));
         }
     }
     // Namespace aliases — derived from the file names that are present
@@ -307,40 +311,80 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
     // Convention from upstream Bicep: the file's class name has a `Type`
     // suffix and the namespace alias is the lowercase prefix before it.
     if sys_src.is_some() {
-        emit(
-            "sys".to_string(),
-            "bicep.namespace",
-            SymbolKind::Class,
-            &mut symbols,
-            &mut emitted,
-        );
+        named.push(("sys".to_string(), "bicep.namespace", SymbolKind::Class));
     }
     if az_src.is_some() {
-        emit(
-            "az".to_string(),
-            "bicep.namespace",
-            SymbolKind::Class,
-            &mut symbols,
-            &mut emitted,
-        );
+        named.push(("az".to_string(), "bicep.namespace", SymbolKind::Class));
     }
+    named
+}
 
-    if symbols.is_empty() {
-        tracing::warn!(
-            "bicep-runtime: located clone at {} but extracted 0 names — \
-             upstream layout may have changed",
-            bicep_core.display()
-        );
-        return Vec::new();
+/// Read the distilled function/decorator/namespace surface from the embedded
+/// vendored asset. Used when no in-tree Bicep clone exists; the names come
+/// from a pinned upstream Bicep release, not hand-authored here.
+fn vendored_namespace_symbols() -> Vec<NamedSymbol> {
+    let surface: VendoredSurface = match serde_json::from_str(VENDORED_NAMESPACE_SURFACE) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("bicep-runtime: vendored namespace surface is unreadable: {e}");
+            return Vec::new();
+        }
+    };
+
+    let mut named: Vec<NamedSymbol> = Vec::new();
+    for name in surface.functions {
+        named.push((name, "bicep.builtins", SymbolKind::Function));
     }
-    tracing::info!(
-        "bicep-runtime: extracted {} runtime grammar names from {}",
-        symbols.len(),
-        bicep_core.display()
-    );
+    for name in surface.decorators {
+        named.push((name, "bicep.decorators", SymbolKind::Function));
+    }
+    for name in surface.namespaces {
+        named.push((name, "bicep.namespace", SymbolKind::Class));
+    }
+    named
+}
+
+/// Embedded namespace-surface asset shape: parallel name lists per category.
+#[derive(serde::Deserialize)]
+struct VendoredSurface {
+    functions: Vec<String>,
+    decorators: Vec<String>,
+    namespaces: Vec<String>,
+}
+
+/// Build the single synthetic `ParsedFile` from `(name, module, kind)`
+/// triples, deduplicating on `(name, module)` and skipping empties.
+fn build_namespace_parsed_file(named: Vec<NamedSymbol>) -> ParsedFile {
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut emitted: std::collections::HashSet<(String, &'static str)> =
+        std::collections::HashSet::new();
+    for (name, module, kind) in named {
+        if name.is_empty() || !emitted.insert((name.clone(), module)) {
+            continue;
+        }
+        symbols.push(ExtractedSymbol {
+            qualified_name: format!("{module}.{name}"),
+            name,
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(format!("from {} (Bicep upstream)", module)),
+            doc_comment: None,
+            scope_path: Some(module.to_string()),
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
+    }
 
     let n = symbols.len();
-    vec![ParsedFile {
+    ParsedFile {
         path: "ext:bicep-runtime:namespace.bicep".to_string(),
         language: "bicep".to_string(),
         content_hash: format!("bicep-runtime-{n}"),
@@ -363,7 +407,7 @@ fn synthesise_bicep_namespace_file(bicep_core: &Path) -> Vec<ParsedFile> {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
-    }]
+    }
 }
 
 fn collect_string_consts(source: &str, out: &mut HashMap<String, String>) {

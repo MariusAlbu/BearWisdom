@@ -27,8 +27,8 @@ use crate::types::{
 use tree_sitter::{Node, Parser};
 
 use super::definitions::{
-    extract_data_constructors, extract_deriving, extract_foreign, extract_function, extract_import,
-    extract_instance, extract_named_symbol, extract_signature_symbols,
+    extract_bind, extract_data_constructors, extract_deriving, extract_foreign, extract_function,
+    extract_import, extract_instance, extract_named_symbol, extract_signature_symbols,
 };
 use super::expressions::{extract_apply, extract_infix};
 use super::servant::extract_servant_routes;
@@ -40,6 +40,13 @@ use super::servant::extract_servant_routes;
 pub(crate) static HASKELL_SCOPE_KINDS: &[ScopeKind] = &[
     ScopeKind {
         node_kind: "function",
+        name_field: "name",
+    },
+    // A nullary binding (`f = ...`) is a `bind` node, not a `function` node, but
+    // it equally opens a where/let scope for its local bindings. Without this a
+    // where-local under a nullary parent would lose its enclosing-scope qname.
+    ScopeKind {
+        node_kind: "bind",
         name_field: "name",
     },
     ScopeKind {
@@ -167,6 +174,29 @@ fn visit(
                     SymbolKind::Function
                 };
                 let idx = extract_function(&child, src, scope_tree, symbols, kind, parent_index);
+                visit(
+                    child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    routes,
+                    idx.or(parent_index),
+                    inside_class_or_instance,
+                );
+            }
+            "bind" => {
+                // Nullary binding: a top-level value/operator definition or a
+                // no-parameter where/let local. Method inside a class/instance
+                // body (mirrors the `function` arm — the operator/method
+                // implementation), otherwise a Variable, which the kind table
+                // admits as a Calls target.
+                let kind = if inside_class_or_instance {
+                    SymbolKind::Method
+                } else {
+                    SymbolKind::Variable
+                };
+                let idx = extract_bind(&child, src, scope_tree, symbols, kind, parent_index);
                 visit(
                     child,
                     src,

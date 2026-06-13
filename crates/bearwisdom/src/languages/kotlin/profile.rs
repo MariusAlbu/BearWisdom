@@ -5,7 +5,7 @@
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
     ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
-    LanguageProfile, SupertypeDiscovery,
+    LanguageProfile, ScopeYield, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -86,6 +86,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
+    wildcard_builtins: &[],
     import_resolution: None,
     import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
@@ -113,6 +114,19 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,
     explicit_member_import: false,
+    multi_candidate_ranking: false,
+    // Stdlib scope functions. `apply`/`also` thread the receiver forward
+    // (`x.apply { … }.member()` types `member` against `x`); `let`/`run`/`with`
+    // yield the lambda body and only suppress a chain-miss record. They are
+    // unindexed stdlib extensions, so without this a mid-chain scope-function
+    // call misses member lookup and the chain dies before its real tail.
+    scope_functions: &[
+        ("apply", ScopeYield::Receiver),
+        ("also", ScopeYield::Receiver),
+        ("let", ScopeYield::LambdaBody),
+        ("run", ScopeYield::LambdaBody),
+        ("with", ScopeYield::LambdaBody),
+    ],
     constructor_patterns: &[ConstructorPattern::CallableClass],
     class_builder_specs: &[],
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),

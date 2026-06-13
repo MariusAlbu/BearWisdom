@@ -160,11 +160,13 @@ impl LanguageEngineHooks for ClojureHooks {
                 return Some("java".to_string());
             }
         }
-        if let Some(import) = file_ctx
-            .imports
-            .iter()
-            .find(|i| i.alias.as_deref() == Some(target.as_str()) && i.module_path.is_some())
-        {
+        // A `:refer`-injected name whose namespace is not indexed declines the
+        // bare-name import rung; classify it external to its source namespace so
+        // it doesn't surface as a bare miss. The injected name is the entry's
+        // `imported_name` (non-wildcard, module set).
+        if let Some(import) = file_ctx.imports.iter().find(|i| {
+            !i.is_wildcard && i.imported_name == *target && i.module_path.is_some()
+        }) {
             if let Some(ns) = import.module_path.as_deref() {
                 return Some(ns.to_string());
             }
@@ -210,19 +212,34 @@ impl LanguageEngineHooks for ClojureHooks {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
-            let ns = r.module.as_deref().unwrap_or(&r.target_name);
-            let alias = if r.module.is_some() && r.target_name != ns {
-                Some(r.target_name.clone())
-            } else {
-                None
-            };
-            let is_wildcard = alias.is_none();
-            imports.push(ImportEntry {
-                imported_name: ns.to_string(),
-                module_path: Some(ns.to_string()),
-                alias,
-                is_wildcard,
-            });
+            match r.module.as_deref() {
+                // A `:refer`-injected name: the extractor keyed the namespace on
+                // `module` and the bare injected name on `target_name`. This is an
+                // ordinary import binding — `(:require [clojure.test :refer [is]])`
+                // means `is` is in bare-name scope, sourced from `clojure.test`.
+                // The injected name is the `imported_name` so the bare-name import
+                // rung binds a call site `(is ...)` to the namespace's symbol,
+                // never to a same-named function in an unrelated namespace.
+                Some(ns) if ns != r.target_name => {
+                    imports.push(ImportEntry {
+                        imported_name: r.target_name.clone(),
+                        module_path: Some(ns.to_string()),
+                        alias: None,
+                        is_wildcard: false,
+                    });
+                }
+                // A whole-namespace import (`:require`/`:use`/`:import` entry with
+                // no per-name `:refer`): the namespace is the wildcard scope.
+                _ => {
+                    let ns = r.module.as_deref().unwrap_or(&r.target_name);
+                    imports.push(ImportEntry {
+                        imported_name: ns.to_string(),
+                        module_path: Some(ns.to_string()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+                }
+            }
         }
         Some(FileContext {
             file_path: file.path.clone(),

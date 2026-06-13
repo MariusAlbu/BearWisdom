@@ -133,7 +133,7 @@ fn cargo_registry_src_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-pub(super) fn split_crate_dir_name(s: &str) -> Option<(String, String)> {
+pub(crate) fn split_crate_dir_name(s: &str) -> Option<(String, String)> {
     let bytes = s.as_bytes();
     let mut i = s.len();
     while let Some(pos) = s[..i].rfind('-') {
@@ -281,6 +281,17 @@ pub(super) fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
                     requested_imports: Vec::new(),
                 });
             }
+        }
+    }
+
+    // Register each crate root's project-declared feature set so the cfg-gated
+    // module walk can bound feature-packed crates (notably `windows`). Crates
+    // absent from the map get no registration — the walk fails open and indexes
+    // every module, matching the pre-gate behaviour.
+    let crate_features = super::features::collect_crate_features(project_root);
+    for root in &roots {
+        if let Some(features) = crate_features.get(&root.module_path) {
+            super::features::register_root_features(&root.root, features.clone());
         }
     }
 
