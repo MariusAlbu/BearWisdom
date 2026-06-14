@@ -378,7 +378,7 @@ fn resolve_iteration_body(
     //
     // External (`ext:`) files are filtered out — they're indexed for
     // lookup only, never as resolution sources.
-    let (mut combined_buf, local_stats_total) = parsed
+    let (mut combined_buf, local_stats_total) = crate::indexer::parse_file::with_resolve_pool(|| parsed
         .par_iter()
         .filter(|pf| {
             // `ext:` files are lookup targets only, never resolution sources.
@@ -1065,7 +1065,7 @@ fn resolve_iteration_body(
                 stats_a.merge(stats_b);
                 (buf_a, stats_a)
             },
-        );
+        ));
 
     // The read-phase tx wrapped only DB reads (file imports). Close it, then
     // write the materialized external files under their own tx so their

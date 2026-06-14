@@ -12,6 +12,7 @@ use crate::languages::LanguageRegistry;
 use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
@@ -51,6 +52,37 @@ pub(crate) fn build_parse_pool() -> Result<rayon::ThreadPool> {
         .stack_size(PARSE_STACK_SIZE)
         .build()
         .context("Failed to build parse thread pool")
+}
+
+/// Pool the resolve pass runs on. Full width (one worker per core, unlike the
+/// parse pool's memory-capped 8) but the deep [`PARSE_STACK_SIZE`] stack: the
+/// pass lazily materializes external files by parsing them on its own workers,
+/// and a generated or bundled external (`.d.ts`, minified JS) nests the CST far
+/// past what the binary's ≈8 MB global-pool stack holds. Built once on first
+/// use; `None` only if pool creation fails, in which case [`with_resolve_pool`]
+/// runs the pass on the caller's stack.
+static RESOLVE_POOL: Lazy<Option<rayon::ThreadPool>> = Lazy::new(|| {
+    rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("bw-resolve-{i}"))
+        .stack_size(PARSE_STACK_SIZE)
+        .build()
+        .ok()
+});
+
+/// Run the resolve pass's parallel work on [`RESOLVE_POOL`] so the external
+/// parses it performs inline get the deep parse stack. Installing the whole
+/// pass (rather than each lazy parse) keeps every external parse inline on a
+/// deep-stack worker — no cross-pool hand-off, which would block resolve
+/// workers against the parse pool and deadlock the reduction.
+///
+/// Called from the resolve driver on the main thread; the caller blocks until
+/// the pass completes. Best-effort: if the pool couldn't be built, the work
+/// runs on the caller's stack — correct, only without the deep-stack guarantee.
+pub(crate) fn with_resolve_pool<R: Send>(f: impl FnOnce() -> R + Send) -> R {
+    match &*RESOLVE_POOL {
+        Some(pool) => pool.install(f),
+        None => f(),
+    }
 }
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
