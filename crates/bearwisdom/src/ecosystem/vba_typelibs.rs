@@ -17,7 +17,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform};
+use super::{
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, Platform,
+    SymbolLocationIndex,
+};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
@@ -53,6 +56,18 @@ impl Ecosystem for VbaTypelibsEcosystem {
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
     }
+
+    fn build_symbol_index(&self, _dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+        // `locate_roots` returns empty — no dep roots reach here until
+        // COM typelib introspection is implemented. An empty index is the
+        // correct offering: the demand-driven resolver has nothing to pull
+        // from this ecosystem.
+        SymbolLocationIndex::new()
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 }
 
 impl ExternalSourceLocator for VbaTypelibsEcosystem {
@@ -71,3 +86,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
         .get_or_init(|| Arc::new(VbaTypelibsEcosystem))
         .clone()
 }
+
+#[cfg(test)]
+#[path = "vba_typelibs_tests.rs"]
+mod tests;

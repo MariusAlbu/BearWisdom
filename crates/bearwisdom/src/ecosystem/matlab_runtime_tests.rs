@@ -152,3 +152,76 @@ fn ecosystem_identity() {
     assert_eq!(eco.kind(), EcosystemKind::Stdlib);
     assert_eq!(eco.languages(), &["matlab"]);
 }
+
+#[test]
+fn uses_demand_driven_parse_is_true() {
+    use crate::ecosystem::Ecosystem;
+    assert!(MatlabRuntimeEcosystem.uses_demand_driven_parse());
+}
+
+#[test]
+fn scan_matlab_header_extracts_function_name() {
+    let src = "function y = zeros(n)\n  y = 0;\nend\n";
+    let names = scan_matlab_header(src);
+    assert!(
+        names.contains(&"zeros".to_string()),
+        "expected 'zeros' in {:?}",
+        names
+    );
+}
+
+#[test]
+fn scan_matlab_header_extracts_class_and_methods() {
+    let src = r#"
+classdef MyClass < handle
+  methods
+    function obj = MyClass()
+      obj.x = 0;
+    end
+    function do_work(obj)
+    end
+  end
+end
+"#;
+    let names = scan_matlab_header(src);
+    assert!(
+        names.contains(&"MyClass".to_string()),
+        "expected class name 'MyClass' in {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"do_work".to_string()),
+        "expected method 'do_work' in {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"MyClass.do_work".to_string()),
+        "expected qualified 'MyClass.do_work' in {:?}",
+        names
+    );
+}
+
+#[test]
+fn scan_matlab_header_returns_empty_for_blank_file() {
+    assert!(scan_matlab_header("").is_empty());
+}
+
+#[test]
+fn build_symbol_index_returns_non_empty_for_fixture() {
+    use crate::ecosystem::Ecosystem;
+    let fixture = make_install_fixture();
+    let roots = with_matlab_root(fixture.path(), discover_matlab_toolbox);
+    assert!(!roots.is_empty(), "fixture must produce at least one dep root");
+
+    // Write actual parseable MATLAB content into one toolbox file.
+    let m_file = fixture
+        .path()
+        .join("toolbox/matlab/general/zeros.m");
+    fs::write(&m_file, "function y = zeros(n)\n  y = 0;\nend\n").unwrap();
+
+    let index = MatlabRuntimeEcosystem.build_symbol_index(&roots);
+    assert!(
+        !index.is_empty(),
+        "symbol index must be non-empty when toolbox has parseable .m files"
+    );
+}

@@ -137,3 +137,74 @@ fn ecosystem_identity() {
     assert_eq!(eco.kind(), EcosystemKind::Stdlib);
     assert_eq!(eco.languages(), &["lua"]);
 }
+
+#[test]
+fn uses_demand_driven_parse_is_true() {
+    use crate::ecosystem::Ecosystem;
+    assert!(NvimRuntimeEcosystem.uses_demand_driven_parse());
+}
+
+#[test]
+fn scan_lua_header_extracts_function_declaration() {
+    let src = "function M.setup(opts)\n  vim.g.option = opts\nend\n";
+    let names = scan_lua_header(src);
+    assert!(
+        names.iter().any(|n| n.contains("setup") || n.contains("M.setup")),
+        "expected function name in {:?}",
+        names
+    );
+}
+
+#[test]
+fn scan_lua_header_extracts_local_function() {
+    let src = "local function helper(x)\n  return x + 1\nend\n";
+    let names = scan_lua_header(src);
+    assert!(
+        names.contains(&"helper".to_string()),
+        "expected 'helper' in {:?}",
+        names
+    );
+}
+
+#[test]
+fn scan_lua_header_extracts_global_assignment() {
+    // Top-level assignment_statement: `M = value` (no `local`).
+    let src = "M = {}\nM.api = vim.api\nreturn M\n";
+    let names = scan_lua_header(src);
+    assert!(
+        names.contains(&"M".to_string()),
+        "expected 'M' in {:?}",
+        names
+    );
+}
+
+#[test]
+fn scan_lua_header_returns_empty_for_blank_file() {
+    assert!(scan_lua_header("").is_empty());
+}
+
+#[test]
+fn build_symbol_index_returns_non_empty_for_fixture() {
+    use crate::ecosystem::Ecosystem;
+    let fixture = make_runtime_fixture();
+
+    // Write parseable Lua content into one of the fixture files.
+    write_file(
+        &fixture.path().join("lua/vim/api.lua"),
+        "local M = {}\nfunction M.nvim_buf_get_lines() end\nreturn M\n",
+    );
+
+    let dep = ExternalDepRoot {
+        module_path: "nvim-runtime".to_string(),
+        version: String::new(),
+        root: fixture.path().to_path_buf(),
+        ecosystem: LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    };
+    let index = NvimRuntimeEcosystem.build_symbol_index(&[dep]);
+    assert!(
+        !index.is_empty(),
+        "symbol index must be non-empty when runtime has parseable .lua files"
+    );
+}
