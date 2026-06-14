@@ -108,9 +108,7 @@ pub(crate) fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
 ///
 /// `import_test_files` controls whether we walk `__tests__` / `*.spec.*`
 /// trees. Production code usually doesn't import test fixtures, so the
-/// scan skips test trees by default; the `demand_pre_pull_test_globals`
-/// path covers the symbols those files would have brought in via
-/// declare-global blocks in test-runner packages.
+/// scan skips test trees by default.
 pub(crate) fn collect_ts_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
     let mut imports = std::collections::HashSet::new();
     scan_ts_user_imports_recursive(project_root, &mut imports, 0);

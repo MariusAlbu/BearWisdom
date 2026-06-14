@@ -31,8 +31,7 @@ One ecosystem may serve several languages — Maven covers Java + Kotlin + Scala
 **Reachability and demand**
 - `resolve_import(dep, package, symbols)` — narrow walk for a specific import statement
 - `resolve_symbol(dep, fqn)` — chain-walk step: pull the file defining one fqn
-- `build_symbol_index(dep_roots)` — cheap header-only `(module, name) → file` map for Stage 2 demand
-- `demand_pre_pull(dep_roots)` — bounded entry files to surface ahead of demand
+- `build_symbol_index(dep_roots)` — cheap header-only `(module, name) → file` map for Stage 2 demand. An ecosystem's sole obligation for surfacing externals: it offers locations here and the generic `find_by_name` → materialize-on-miss resolver pulls only the files a ref actually demands. Re-exports, ambient globals, prelude macros, and inherited members all resolve through this offering — there is no eager-pull escape hatch.
 - `parse_metadata_only(dep)` — for binary-only deps (NuGet DLLs, jmod files)
 - `supports_reachability()` / `uses_demand_driven_parse()` — opt-in flags
 

@@ -228,49 +228,6 @@ fn walk_language_is_erlang() {
     }
 }
 
-#[test]
-fn demand_pre_pull_returns_only_substrate_apps() {
-    let _g = ENV_GUARD.lock().unwrap_or_else(|p| p.into_inner());
-    let tmp = TempDir::new().unwrap();
-    make_otp_fixture(tmp.path());
-
-    std::env::set_var("BEARWISDOM_OTP_ROOT", tmp.path());
-    let roots = discover();
-    std::env::remove_var("BEARWISDOM_OTP_ROOT");
-
-    let eco = ErlangOtpEcosystem;
-    let pre_pulled = eco.demand_pre_pull(&roots);
-
-    // All pre-pulled files must come from kernel or stdlib.
-    for wf in &pre_pulled {
-        assert!(
-            wf.relative_path.starts_with("ext:erlang:kernel/")
-                || wf.relative_path.starts_with("ext:erlang:stdlib/"),
-            "unexpected pre-pull: {}",
-            wf.relative_path
-        );
-    }
-    // At least one file per substrate app.
-    assert!(
-        pre_pulled
-            .iter()
-            .any(|f| f.relative_path.starts_with("ext:erlang:kernel/")),
-        "no kernel files in pre-pull"
-    );
-    assert!(
-        pre_pulled
-            .iter()
-            .any(|f| f.relative_path.starts_with("ext:erlang:stdlib/")),
-        "no stdlib files in pre-pull"
-    );
-    // mnesia must NOT appear in pre-pull.
-    assert!(
-        pre_pulled
-            .iter()
-            .all(|f| !f.relative_path.starts_with("ext:erlang:mnesia/")),
-        "mnesia should not be pre-pulled"
-    );
-}
 
 #[test]
 fn extract_module_name_parses_attribute() {

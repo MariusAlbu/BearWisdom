@@ -278,7 +278,7 @@ fn discover_ts_externals_keeps_at_types_when_runtime_pkg_is_imported() {
     );
 }
 
-// ---- demand_pre_pull globals probe ------------------------------------
+// ---- globals probe ------------------------------------
 
 fn mkdep_simple(root: PathBuf, module: &str) -> ExternalDepRoot {
     ExternalDepRoot {
@@ -357,63 +357,6 @@ fn probe_global_decl_files_finds_jest_d_ts_at_root() {
     assert!(paths.iter().any(|p| p.ends_with("jest.d.ts")), "{paths:?}");
 }
 
-#[test]
-fn project_uses_scss_via_dep_root_true_when_scss_present() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let project_root = tmp.path();
-    std::fs::create_dir_all(project_root.join("src")).unwrap();
-    std::fs::write(project_root.join("src/styles.scss"), "$color: #fff;\n").unwrap();
-    let dep_root = project_root.join("node_modules").join("bootstrap");
-    std::fs::create_dir_all(&dep_root).unwrap();
-
-    assert!(project_uses_scss_via_dep_root(&dep_root));
-}
-
-#[test]
-fn project_uses_scss_via_dep_root_false_when_no_scss() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let project_root = tmp.path();
-    std::fs::create_dir_all(project_root.join("src")).unwrap();
-    std::fs::write(project_root.join("src/index.ts"), "export const x = 1;\n").unwrap();
-    let dep_root = project_root.join("node_modules").join("react");
-    std::fs::create_dir_all(&dep_root).unwrap();
-
-    assert!(!project_uses_scss_via_dep_root(&dep_root));
-}
-
-#[test]
-fn demand_pre_pull_test_globals_skips_scss_walk_on_ts_only_project() {
-    // A dep with NO globals-declaring entry .d.ts and NO project-side
-    // .scss → returns empty. Confirms both gates fire: no full tree
-    // walk when the package isn't a globals provider, no SCSS walk
-    // on a TS-only checkout.
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let project_root = tmp.path();
-    std::fs::create_dir_all(project_root.join("src")).unwrap();
-    std::fs::write(project_root.join("src/index.ts"), "export const x = 1;\n").unwrap();
-
-    let vitest_root = project_root.join("node_modules").join("vitest");
-    std::fs::create_dir_all(&vitest_root).unwrap();
-    // Drop a noise file deep in the tree to confirm the OLD walk-then-
-    // filter would have visited (and discarded) it. The new probe must
-    // skip it without reading.
-    std::fs::create_dir_all(vitest_root.join("dist").join("noise_deep")).unwrap();
-    std::fs::write(
-        vitest_root
-            .join("dist")
-            .join("noise_deep")
-            .join("noise.d.ts"),
-        "export const noise = 1;\n",
-    )
-    .unwrap();
-
-    let dep = mkdep_simple(vitest_root, "vitest");
-    let pulled = demand_pre_pull_test_globals(std::slice::from_ref(&dep));
-    assert!(
-        pulled.is_empty(),
-        "no globals.d.ts → no probe match; no .scss in project → no SCSS walk; {pulled:?}"
-    );
-}
 
 #[test]
 fn discover_ts_externals_falls_back_to_keep_all_when_no_user_source() {

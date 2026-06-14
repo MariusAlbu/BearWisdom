@@ -298,21 +298,6 @@ pub(crate) fn parse_external_sources(
                 );
             }
             symbol_index.extend(idx);
-            // Ecosystem-declared pre-pull: entry files whose symbols are
-            // broad enough to warrant eager parsing even in demand-driven
-            // mode (npm type-entry files, future PyPI __init__.py, etc.).
-            let pre_pull = eco.demand_pre_pull(roots);
-            if !pre_pull.is_empty() {
-                info!(
-                    "Demand pre-pull for {}: {} entry files",
-                    tag,
-                    pre_pull.len()
-                );
-                if let Some(locator) = locator_by_ecosystem.get(tag) {
-                    walked_owners.extend(std::iter::repeat(locator.clone()).take(pre_pull.len()));
-                }
-                walked.extend(pre_pull);
-            }
         }
     }
     drop(_t_symidx);

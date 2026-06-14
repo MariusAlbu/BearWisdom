@@ -28,9 +28,7 @@ use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
 };
-use crate::ecosystem::externals::{
-    ts_package_from_virtual_path, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
-};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::manifest::npm::NpmManifest;
 use crate::ecosystem::manifest::ManifestReader;
 use crate::walker::WalkedFile;
@@ -154,10 +152,6 @@ impl Ecosystem for NpmEcosystem {
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_npm_symbol_index(dep_roots)
-    }
-
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
-        demand_pre_pull_test_globals(dep_roots)
     }
 
     fn uses_demand_driven_parse(&self) -> bool {
@@ -295,47 +289,6 @@ fn file_contributes_globals(content: &str) -> bool {
     false
 }
 
-fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
-    let mut out = Vec::new();
-    for dep in dep_roots {
-        // Content-based gate: only pre-pull packages whose entry .d.ts
-        // declares globals. See `package_declares_globals`.
-        if !package_declares_globals(&dep.root) {
-            continue;
-        }
-        // Probe a handful of canonical filenames where ambient
-        // `declare global { ... }` blocks live, instead of walking the
-        // package tree. `@types/node` ships ~150 .d.ts files; a
-        // walk-then-filter strategy would read every directory entry
-        // under each globals-providing dep just to retain a single
-        // index.d.ts. Direct path probing scales with the candidate-list
-        // size, not the package tree size.
-        out.extend(probe_global_decl_files(dep));
-    }
-
-    // SCSS pre-pull. Sass test frameworks (sass-true, true, sass-mq) and
-    // mixin libraries (bootstrap, foundation) ship `.scss` source under
-    // `node_modules/<pkg>/sass/` or `<pkg>/_*.scss`. Demand-driven import
-    // resolution doesn't pull these — SCSS test runners inject the
-    // assertion mixins (`assert-equal`, `assert-true`, `describe`, `it`)
-    // as ambient globals at compile time, so user `.scss` source has no
-    // explicit `@import "sass-true"` for the npm walker to follow.
-    //
-    // Gate on a representative dep root using a sibling project-source
-    // probe: walk up from one dep's parent looking for `.scss` files in
-    // the consuming workspace. When the project has no SCSS source, skip
-    // the per-dep walks entirely (saves wasted I/O on every TS-only
-    // checkout). When SCSS is present, walk every dep — most have zero
-    // `.scss` files and the walker bails fast.
-    if let Some(rep) = dep_roots.first() {
-        if project_uses_scss_via_dep_root(&rep.root) {
-            for dep in dep_roots {
-                out.extend(walk_scss_external_root(dep));
-            }
-        }
-    }
-    out
-}
 
 /// Try each canonical declaration-file path under `dep.root`. Return one
 /// `WalkedFile` per file actually present. Probes filenames known to host
@@ -384,36 +337,6 @@ pub(crate) fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> 
     out
 }
 
-/// Cheap project-side probe: starting at `dep_root`'s grand-ancestor
-/// (typically the workspace root holding the consuming `package.json`),
-/// look for any `.scss` file in the project tree. Used to short-circuit
-/// the SCSS pre-pull on TS-only projects so we don't walk every dep's
-/// directory tree just to confirm it has no SCSS.
-fn project_uses_scss_via_dep_root(dep_root: &Path) -> bool {
-    // dep_root layout is typically:
-    //   <project>/node_modules/<pkg>/        (unscoped)
-    //   <project>/node_modules/@scope/<pkg>/ (scoped)
-    // pnpm: <store>/node_modules/<pkg>/, but the consuming project is
-    // reachable via the symlinked path's parent. canonicalise first to
-    // get the real on-disk path for store layouts.
-    let canonical = std::fs::canonicalize(dep_root).ok();
-    let root = canonical.as_deref().unwrap_or(dep_root);
-    // Walk up until we leave node_modules.
-    let mut cur = root.parent();
-    while let Some(p) = cur {
-        if p.file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n != "node_modules" && !n.starts_with('@'))
-            .unwrap_or(true)
-        {
-            // p is the first ancestor outside node_modules; treat it as
-            // the consuming project root.
-            return scan_for_scss_bounded(p, 0);
-        }
-        cur = p.parent();
-    }
-    false
-}
 
 pub(super) fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
     if depth >= 6 {
@@ -464,82 +387,6 @@ pub(super) fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
     false
 }
 
-/// Walk a dep root and yield every indexable `.scss` file. Mirrors
-/// `walk_ts_external_root` but tags files with `language="scss"` so the
-/// SCSS plugin handles parsing. Skips test/example/fixture/dot dirs and
-/// nested `node_modules` (same exclusions as the TS walker).
-fn walk_scss_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    let mut out = Vec::new();
-    walk_scss_dir_bounded(&dep.root, &dep.root, dep, &mut out, 0);
-    out
-}
-
-fn walk_scss_dir_bounded(
-    dir: &Path,
-    root: &Path,
-    dep: &ExternalDepRoot,
-    out: &mut Vec<WalkedFile>,
-    depth: u32,
-) {
-    if depth >= MAX_WALK_DEPTH {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
-        if file_type.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" {
-                    continue;
-                }
-                if name.starts_with('.') {
-                    continue;
-                }
-                if matches!(
-                    name,
-                    "__tests__"
-                        | "__mocks__"
-                        | "test"
-                        | "tests"
-                        | "docs"
-                        | "example"
-                        | "examples"
-                        | "_examples"
-                        | "fixtures"
-                ) {
-                    continue;
-                }
-            }
-            walk_scss_dir_bounded(&path, root, dep, out, depth + 1);
-        } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if !name.ends_with(".scss") {
-                continue;
-            }
-            if is_test_or_story_file(name) {
-                continue;
-            }
-
-            let rel_sub = match path.strip_prefix(root) {
-                Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
-                Err(_) => continue,
-            };
-            let virtual_path = format!("ext:scss:{}/{}", dep.module_path, rel_sub);
-            out.push(WalkedFile {
-                relative_path: virtual_path,
-                absolute_path: path,
-                language: "scss",
-            });
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Legacy ExternalSourceLocator impl — adapter for the indexer pipeline

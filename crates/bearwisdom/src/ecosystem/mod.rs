@@ -539,22 +539,6 @@ pub trait Ecosystem: Send + Sync {
         false
     }
 
-    /// Files to eagerly pull before Stage 2's demand loop starts, even
-    /// for demand-driven ecosystems. Lets ecosystems whose "entry point"
-    /// is a natural, bounded artefact (an npm package's types entry;
-    /// a PyPI package's `__init__.py`; a JDK module's `module-info.java`)
-    /// surface their public API on pass 1 without paying the cost of a
-    /// full walk.
-    ///
-    /// Default returns empty — suited to ecosystems whose per-dep surface
-    /// is large enough that even entry files are wasteful until demand
-    /// names them (Go modules, where the "entry" is an entire flat
-    /// directory of .go files).
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
-        let _ = dep_roots;
-        Vec::new()
-    }
-
     /// Per-file post-processing hook. npm uses this to prefix symbols
     /// with package name so the Tier-1 resolver matches
     /// `import { X } from 'pkg'` → `pkg.X`.
