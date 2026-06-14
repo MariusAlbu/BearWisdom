@@ -30,27 +30,18 @@ use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file}
 static DLL_CACHE: Lazy<Mutex<HashMap<PathBuf, Option<Arc<dotscope::prelude::CilObject>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-/// Get the parsed assembly for `dll_path`, loading + caching it on first use.
-/// The whole-assembly parse runs under the cache lock, so dotscope is never
-/// invoked from two threads at once.
-fn load_assembly_cached(dll_path: &Path) -> Option<Arc<dotscope::prelude::CilObject>> {
+/// Parse one DLL into a `CilObject`. NOT serialized itself — callers must hold
+/// [`DLL_CACHE`]'s lock, because dotscope is unsafe to use (parse OR read) from
+/// more than one thread at a time.
+fn load_assembly(dll_path: &Path) -> Option<dotscope::prelude::CilObject> {
     use dotscope::metadata::cilassemblyview::CilAssemblyView;
     use dotscope::metadata::validation::ValidationConfig;
     use dotscope::prelude::CilObject;
 
-    let mut cache = DLL_CACHE.lock().ok()?;
-    if let Some(entry) = cache.get(dll_path) {
-        return entry.clone();
-    }
-    let loaded = (|| {
-        let mut config = ValidationConfig::disabled();
-        config.lenient = true;
-        let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
-        CilObject::from_view_with_validation(view, config).ok()
-    })()
-    .map(Arc::new);
-    cache.insert(dll_path.to_path_buf(), loaded.clone());
-    loaded
+    let mut config = ValidationConfig::disabled();
+    config.lenient = true;
+    let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
+    CilObject::from_view_with_validation(view, config).ok()
 }
 
 /// Public entry point used by back-compat re-exports in `externals.rs`.
@@ -198,7 +189,20 @@ pub(crate) fn crack_one_dll_type(
     let qualified_type = parts.next()?;
 
     let dll_path = std::path::Path::new(dll_str);
-    let assembly = load_assembly_cached(dll_path)?;
+    // Hold the cache lock for the WHOLE crack. dotscope is not thread-safe for
+    // either parsing or reading, so every access — the cached get-or-load here
+    // and the type/member extraction below — is serialized under this one lock.
+    // The cache means each DLL is parsed at most once; the per-type read under
+    // the lock is a cheap in-memory lookup.
+    let mut cache = DLL_CACHE.lock().ok()?;
+    let assembly = match cache.get(dll_path) {
+        Some(entry) => entry.clone()?,
+        None => {
+            let loaded = load_assembly(dll_path).map(Arc::new);
+            cache.insert(dll_path.to_path_buf(), loaded.clone());
+            loaded?
+        }
+    };
 
     // Find the matching type definition by qualified name.
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
