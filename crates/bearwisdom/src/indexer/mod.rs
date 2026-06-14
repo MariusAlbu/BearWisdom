@@ -2,6 +2,7 @@ pub mod canonical_form;
 pub mod changeset;
 pub mod demand;
 pub mod embedded_regions;
+pub mod external_parse_cache;
 pub mod flow;
 pub mod flow_cfg;
 #[cfg(test)]

@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
+use crate::indexer::external_parse_cache;
 use crate::indexer::full::parse_file_with_arena_and_demand;
 use crate::indexer::resolve::engine::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
@@ -92,20 +93,40 @@ impl SymbolIndex {
             return;
         };
         let virtual_path = virtual_path_for_indexed_file(file, language);
-        let walked = WalkedFile {
-            relative_path: virtual_path,
-            absolute_path: file.to_path_buf(),
-            language,
+        // Consult the persistent parse cache: a content-hash hit rebuilds the
+        // extraction without tree-sitter. On a miss, parse, TS-post-process, and
+        // store the result so a future run (or another project sharing this dep)
+        // skips the parse. Best-effort — a read failure just falls through.
+        let Ok(bytes) = std::fs::read(file) else {
+            return;
         };
-        let mut parsed =
-            match parse_file_with_arena_and_demand(&walked, default_registry(), None, &self.type_arena)
-            {
-                Ok(pf) => pf,
-                Err(_) => return,
-            };
-        // Mirror the expand pull's TS post-process so external `.d.ts` symbols
-        // carry the `<pkg>.` prefix the resolver keys on. No-op for non-TS.
-        crate::ecosystem::npm::ts_post_process_external(&mut parsed);
+        let hash = external_parse_cache::content_hash(&bytes);
+        let size = bytes.len() as u64;
+        let parsed = match external_parse_cache::get(file, &hash, &virtual_path, size) {
+            Some(cached) => cached,
+            None => {
+                let walked = WalkedFile {
+                    relative_path: virtual_path,
+                    absolute_path: file.to_path_buf(),
+                    language,
+                };
+                let mut pf = match parse_file_with_arena_and_demand(
+                    &walked,
+                    default_registry(),
+                    None,
+                    &self.type_arena,
+                ) {
+                    Ok(pf) => pf,
+                    Err(_) => return,
+                };
+                // Mirror the expand pull's TS post-process so external `.d.ts`
+                // symbols carry the `<pkg>.` prefix the resolver keys on. No-op
+                // for non-TS. Cache the POST-processed shape.
+                crate::ecosystem::npm::ts_post_process_external(&mut pf);
+                external_parse_cache::put(file, &hash, &pf);
+                pf
+            }
+        };
 
         let file_path: Arc<str> = Arc::from(parsed.path.as_str());
         for sym in &parsed.symbols {
