@@ -86,20 +86,6 @@ impl Ecosystem for CabalEcosystem {
         build_haskell_symbol_index(dep_roots)
     }
 
-    /// Pre-pull the top-level module files that the user's project imports
-    /// directly. When those files are parsed by the demand pipeline, their
-    /// `import` declarations (including re-exports from sibling packages like
-    /// `hspec → hspec-core`) emit `Imports` refs. The demand BFS resolves
-    /// those refs against the symbol index (now keyed by Haskell module name
-    /// as well as package name) and pulls the transitive definitions — giving
-    /// bare names like `it` and `describe` a path to their defining file.
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
-        dep_roots
-            .iter()
-            .flat_map(|dep| walk_haskell_narrowed(dep))
-            .collect()
-    }
-
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }

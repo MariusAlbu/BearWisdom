@@ -45,10 +45,6 @@ pub const ID: EcosystemId = EcosystemId::new("erlang-otp");
 const LEGACY_ECOSYSTEM_TAG: &str = "erlang-otp";
 const LANGUAGES: &[&str] = &["erlang"];
 
-/// OTP apps that every Erlang module implicitly depends on. Their src trees
-/// are pre-pulled so bare-name and qualified resolution (gen_server, lists,
-/// io, erlang BIFs) can bind without waiting for the demand BFS.
-const SUBSTRATE_APPS: &[&str] = &["kernel", "stdlib"];
 
 pub struct ErlangOtpEcosystem;
 
@@ -93,16 +89,6 @@ impl Ecosystem for ErlangOtpEcosystem {
     }
     fn is_workspace_global(&self) -> bool {
         true
-    }
-
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
-        // Eagerly surface kernel and stdlib so the resolver can bind
-        // unqualified and qualified OTP calls on the first pass.
-        dep_roots
-            .iter()
-            .filter(|dep| SUBSTRATE_APPS.contains(&dep.module_path.as_str()))
-            .flat_map(walk)
-            .collect()
     }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {

@@ -80,42 +80,6 @@ impl Ecosystem for OpamEcosystem {
         build_ocaml_symbol_index(dep_roots)
     }
 
-    /// Stdlib substrate (List, String, Array, Printf, Buffer, Bytes, ...) is
-    /// auto-opened in every OCaml compilation unit. Third-party packages
-    /// opened with `open Pkg` bring all their names into scope without
-    /// qualified module prefixes, so refs like `returning` or `const` carry
-    /// no module context and the demand BFS can't chase them. Pre-pulling any
-    /// dep root where the project code opens the corresponding module (i.e.
-    /// the module name, lowercased, matches the package name) covers both
-    /// cases. The narrowed walk limits what's pulled to the files that stem-
-    /// match the demanded module names — no unrelated package files are
-    /// traversed.
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
-        dep_roots
-            .iter()
-            .filter(|d| {
-                if matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims") {
-                    return true;
-                }
-                // Pre-pull any third-party package where the project opens
-                // the corresponding OCaml module directly (open Pkg or open
-                // Pkg.Sub). Module names are CamelCase; package names are
-                // lowercase and may use hyphens instead of underscores.
-                d.requested_imports.iter().any(|m| {
-                    let lower = m.to_lowercase();
-                    lower == d.module_path || lower.replace('_', "-") == d.module_path
-                })
-            })
-            .flat_map(|d| {
-                if matches!(d.module_path.as_str(), "ocaml" | "stdlib-shims") {
-                    walk_ocaml_root(d)
-                } else {
-                    walk_ocaml_narrowed(d)
-                }
-            })
-            .collect()
-    }
-
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }

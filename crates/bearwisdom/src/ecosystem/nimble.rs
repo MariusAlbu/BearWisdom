@@ -87,10 +87,6 @@ impl Ecosystem for NimbleEcosystem {
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }
-
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
-        nim_stdlib_pre_pull(dep_roots)
-    }
 }
 
 impl ExternalSourceLocator for NimbleEcosystem {
@@ -766,54 +762,6 @@ fn walk_dir_bounded(
 // ---------------------------------------------------------------------------
 // Stdlib pre-pull (demand-driven pipeline)
 // ---------------------------------------------------------------------------
-
-/// Subdirectories of the Nim stdlib pre-pulled unconditionally for every
-/// Nim project. These contain the modules most commonly imported (`strutils`,
-/// `sequtils`, `tables`, `math`, `os`, `json`, …). Relative to `<lib>/`.
-const STDLIB_PRE_PULL_SUBDIRS: &[&str] = &["system", "pure", "core", "std"];
-
-/// Walk the stdlib subdirs and the main entry file of every nimble package dep,
-/// returning WalkedFiles for eager parsing. Called by the demand-driven pipeline
-/// before symbol-index queries begin so that stdlib AND package symbols are
-/// available on the first resolve pass — before the chain-walker expand loop runs.
-///
-/// For the stdlib dep: walks `system.nim` + `pure/`, `core/`, `std/` subdirs.
-/// For each nimble package dep: includes `<module_path>.nim` at the package root
-/// (the canonical entry point for single-file packages like `results.nim`) so
-/// bare call targets (`ok`, `tryGet`, `some`, …) resolve on pass 1.
-fn nim_stdlib_pre_pull(dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
-    let mut out = Vec::new();
-    for dep in dep_roots {
-        let root = &dep.root;
-        if dep.module_path == "nim-stdlib" {
-            // Top-level system.nim is the auto-imported prelude.
-            let sys = root.join("system.nim");
-            if sys.is_file() {
-                let rel = format!("ext:nim:{}/system.nim", dep.module_path);
-                out.push(WalkedFile {
-                    relative_path: rel,
-                    absolute_path: sys,
-                    language: "nim",
-                });
-            }
-            for sub in STDLIB_PRE_PULL_SUBDIRS {
-                let dir = root.join(sub);
-                if dir.is_dir() {
-                    walk_dir_bounded(&dir, root, dep, &mut out, 0);
-                }
-            }
-        } else {
-            // For nimble package deps, pre-pull all `.nim` files in the
-            // package. Packages like `chronos` expose their surface via
-            // re-exported submodules; indexing only the root entry file
-            // misses the symbols in `asyncloop.nim`, `asyncsync.nim`, etc.
-            // The walker respects the standard exclusions (tests/, examples/,
-            // nimcache) so depth is bounded in practice.
-            walk_dir_bounded(root, root, dep, &mut out, 0);
-        }
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // Symbol-location index (demand-driven pipeline entry)
