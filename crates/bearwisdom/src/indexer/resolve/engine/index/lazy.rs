@@ -17,6 +17,8 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
+use crate::ecosystem::jar_walker;
+use crate::ecosystem::nuget::crack_one_dll_type;
 use crate::indexer::external_parse_cache;
 use crate::indexer::full::parse_file_with_arena_and_demand;
 use crate::indexer::resolve::engine::{
@@ -89,6 +91,28 @@ impl SymbolIndex {
     /// The one-shot body run under the file guard: parse the file and intern
     /// its symbols into the materialized store, each with a fresh external id.
     fn do_materialize_file(&self, file: &Path) {
+        let path_str = file.to_string_lossy();
+
+        // Binary format dispatch: virtual paths produced by the demand-driven
+        // JAR and DLL ecosystems encode the archive + entry/type, not a source
+        // file path. Detect them first and short-circuit to the binary crack
+        // functions, which produce a ParsedFile without touching tree-sitter.
+        if path_str.starts_with("ext:jar:") {
+            if let Some(pf) = materialize_jar_class(&path_str) {
+                self.intern_parsed_file(pf);
+            }
+            return;
+        }
+        if path_str.starts_with("ext:dotnet-type:") {
+            // Language id is not encoded in the path; infer from context. The
+            // materialize step only needs it for the ParsedFile.language tag —
+            // "csharp" is the dominant .NET language and a safe default.
+            if let Some(pf) = crack_one_dll_type(&path_str, "csharp") {
+                self.intern_parsed_file(pf);
+            }
+            return;
+        }
+
         let Some(language) = language_from_file_ext(file) else {
             return;
         };
@@ -128,6 +152,13 @@ impl SymbolIndex {
             }
         };
 
+        self.intern_parsed_file(parsed);
+    }
+
+    /// Intern a pre-built `ParsedFile` into the materialized store. Shared by
+    /// the tree-sitter source path and the binary-format crack paths (JAR class
+    /// files, DLL type slices).
+    fn intern_parsed_file(&self, parsed: ParsedFile) {
         let file_path: Arc<str> = Arc::from(parsed.path.as_str());
         for sym in &parsed.symbols {
             let id = self.next_ext_id.fetch_add(1, Ordering::Relaxed);
@@ -146,13 +177,8 @@ impl SymbolIndex {
                 signature: sym.signature.clone(),
             });
         }
-        // Per-symbol type metadata so chain-walks through this file's externals
-        // form downstream edges (return_type / field_type / generic_params).
         self.populate_materialized_type_info(&parsed);
-        // Inheritance edges so a chain-walk can climb an external base class.
         self.populate_materialized_inherits(&parsed);
-        // Keep the full parsed file for the deferred DB write (the in-memory
-        // intern above carries only the lookup-facing `SymbolInfo` subset).
         self.materialized.stash_parsed(parsed);
     }
 
@@ -384,4 +410,19 @@ fn virtual_path_for_indexed_file(path: &Path, language: &str) -> String {
 fn language_from_file_ext(path: &Path) -> Option<&'static str> {
     let name = path.file_name().and_then(|n| n.to_str())?;
     default_registry().language_by_extension(name)
+}
+
+/// Crack a single `.class` entry from the JAR encoded in a virtual path of
+/// the form `ext:jar:<archive_abs>!<entry_name>`. Returns `None` on any
+/// decode or I/O error so the caller can skip silently.
+fn materialize_jar_class(virtual_path: &str) -> Option<ParsedFile> {
+    // Strip the "ext:jar:" prefix → "<archive_abs>!<entry_name>"
+    let payload = virtual_path.strip_prefix("ext:jar:")?;
+    // The `!` separating archive from entry cannot appear in a filesystem path
+    // on Windows or Unix, so the first `!` is unambiguous.
+    let bang = payload.find('!')?;
+    let archive_str = &payload[..bang];
+    let entry_name = &payload[bang + 1..];
+    let archive = std::path::Path::new(archive_str);
+    jar_walker::crack_one_class(archive, entry_name)
 }

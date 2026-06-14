@@ -1,35 +1,33 @@
 // =============================================================================
-// ecosystem/maven_classes.rs — Java bytecode walker for declared jars
+// ecosystem/maven_classes.rs — demand-driven Java bytecode walker
 //
 // Maven/Gradle projects declare deps via pom.xml/build.gradle; the build
 // downloads each dep's `.jar` (bytecode) into the local cache. The
 // optional `-sources.jar` (containing `.java` sources) is opt-in — most
 // projects don't fetch them. The `MavenEcosystem` source path walks
 // sources-jars when present but is blind to the bytecode-only jars.
-// This walker fills that gap: for each dependency coordinate the project
-// declares, when no `-sources.jar` exists in the caches, the matching
-// bytecode `.jar` is cracked and its public/protected types + members are
-// emitted as ParsedFile entries.
+// This ecosystem fills that gap using a demand-driven approach:
 //
-// **Activation:** transitive on Maven — if Maven didn't already fire,
-// neither did source-jar discovery, so there's nothing for us to fill
-// in.
+//   1. `locate_roots` discovers bytecode jars via the same coordinate-driven
+//      cache probe as before, returning one `ExternalDepRoot` per jar.
+//   2. `build_symbol_index` scans each jar's ZIP central directory (cheap —
+//      no bytecode parse) and registers every class name against a virtual
+//      path of the form `ext:jar:<jar_abs>!<entry_name>`.
+//   3. `uses_demand_driven_parse` returns `true`, so the eager
+//      `parse_metadata_only` path is bypassed entirely.
+//   4. The resolve engine's materialize-on-miss path cracks exactly the
+//      one class file a ref demands, not the whole jar.
 //
-// **Discovery is coordinate-driven:** jars are located by probing the
-// `.m2` / Gradle / Coursier caches for the exact group:artifact:version
-// the project declares, never by crawling the machine-wide cache. A
-// coordinate whose `-sources.jar` is already cached is skipped here — the
-// source path indexes it instead.
-//
-// **Performance:** the bytecode parse runs only on the declared
-// dependency set. Signed/agent jars are handled by `jar_walker`; anything
-// > 32 MB (rare fat shaded artefacts that bog down the parser) is skipped.
+// This eliminates the 77-minute Grails-monorepo wedge that arose from
+// cracking 311 k entries up front during the index-build pass.
 // =============================================================================
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
+use tracing::debug;
+
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex};
 use crate::ecosystem::externals::{
     coursier_cache_root, gradle_caches_root, maven_local_repo, resolve_coursier_bytecode_jar,
     resolve_gradle_bytecode_jar, resolve_maven_artifact_dir, ExternalDepRoot,
@@ -41,20 +39,18 @@ use crate::ecosystem::maven::{
     collect_declared_jvm_coords, collect_workspace_artifact_ids, jvm_sources_jar_available,
     ID as MAVEN_ID,
 };
-use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("maven-classes");
 const ECOSYSTEM_TAG: &str = "maven-classes";
 const LANGUAGES: &[&str] = &["java"];
-/// Cap per-jar parse cost — anything bigger is almost certainly a fat
-/// shaded artefact that'd dominate index time without proportional
-/// resolution value.
-const MAX_JAR_BYTES: u64 = 32 * 1024 * 1024;
-/// Safety bound on jars cracked per project. The coordinate-driven probe
-/// already bounds the set to declared deps; this only guards a manifest
-/// that declares a pathological number of coordinates.
+/// Safety bound on jars per project. The coordinate-driven probe already
+/// bounds the set to declared deps; this guards a manifest with a
+/// pathological coordinate count.
 const MAX_JARS_PER_PROJECT: usize = 300;
+/// Cap per-jar size — anything bigger is almost certainly a fat shaded
+/// artefact that would dominate index time without proportional value.
+const MAX_JAR_BYTES: u64 = 32 * 1024 * 1024;
 
 pub struct MavenClassesEcosystem;
 
@@ -73,13 +69,40 @@ impl Ecosystem for MavenClassesEcosystem {
         EcosystemActivation::TransitiveOn(MAVEN_ID)
     }
 
-    fn locate_roots(&self, _ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        // No on-disk root layout — everything happens via parse_metadata_only.
-        Vec::new()
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        jars_as_dep_roots(ctx.project_root)
     }
 
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
+    }
+
+    /// Build the `(module, class_name) → virtual_path` index by scanning each
+    /// jar's ZIP central directory. Cheap: reads only the directory index, never
+    /// decompresses any class file. The virtual path encodes the jar + entry so
+    /// the materialize path can crack exactly that one class on demand.
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+        let mut index = SymbolLocationIndex::new();
+        for dep in dep_roots {
+            let jar_path = &dep.root;
+            let archive_str = jar_path.to_string_lossy().replace('\\', "/");
+            let entries = jar_walker::list_jar_class_entries(jar_path);
+            let count = entries.len();
+            for (entry_name, class_name) in entries {
+                let virt = PathBuf::from(format!("ext:jar:{archive_str}!{entry_name}"));
+                index.insert(dep.module_path.clone(), class_name, virt);
+            }
+            debug!(
+                "maven-classes: indexed {} class entries from {}",
+                count,
+                jar_path.display()
+            );
+        }
+        index
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
     }
 }
 
@@ -87,53 +110,25 @@ impl ExternalSourceLocator for MavenClassesEcosystem {
     fn ecosystem(&self) -> &'static str {
         ECOSYSTEM_TAG
     }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
-        Vec::new()
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        jars_as_dep_roots(project_root)
     }
+
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
     }
 
-    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
-        let jars = discover_jars(project_root);
-        if jars.is_empty() {
-            return None;
-        }
-        let mut out: Vec<ParsedFile> = Vec::new();
-        for (i, jar) in jars.into_iter().enumerate() {
-            if i >= MAX_JARS_PER_PROJECT {
-                break;
-            }
-            if let Ok(meta) = fs::metadata(&jar) {
-                if meta.len() > MAX_JAR_BYTES {
-                    continue;
-                }
-            }
-            out.extend(jar_walker::walk_jar(&jar));
-        }
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
-    }
+    // parse_metadata_only returns None: the demand-driven path handles all
+    // class extraction. Returning None here prevents the eager full-jar dump
+    // that previously wedged the indexer on large JVM projects.
 }
 
-/// Locate the bytecode `.jar` for each dependency the project declares.
-///
-/// Two sources, both project-scoped:
-///   * **Project-local** `lib/`, `libs/`, `vendor/`, `deps/` directories —
-///     jars vendored in the repo itself.
-///   * **Declared coordinates** — for every `group:artifact:version` in the
-///     project's pom/Gradle manifests, probe the `.m2`, Gradle, and Coursier
-///     caches for that exact coordinate's bytecode jar. A coordinate whose
-///     `-sources.jar` is already cached is skipped: the source path indexes
-///     it, and re-indexing the bytecode would duplicate the symbols.
-///
-/// The `-sources`/`-javadoc`/`-tests` classifier jars are never returned as
-/// the bytecode jar.
-fn discover_jars(project_root: &Path) -> Vec<PathBuf> {
-    discover_jars_in_caches(
+/// Return one `ExternalDepRoot` per bytecode jar the project declares.
+/// Each root's `root` field is the jar path; `module_path` is the
+/// `artifact_id` used as the module key in `build_symbol_index`.
+fn jars_as_dep_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
+    jars_as_dep_roots_in_caches(
         project_root,
         maven_local_repo().as_deref(),
         gradle_caches_root().as_deref(),
@@ -141,33 +136,51 @@ fn discover_jars(project_root: &Path) -> Vec<PathBuf> {
     )
 }
 
-/// Core of `discover_jars` with the cache roots passed explicitly, so the
-/// coordinate-driven probe can be exercised against fixture caches without
-/// touching process-global cache-discovery env vars.
-fn discover_jars_in_caches(
+/// Core of `jars_as_dep_roots` with explicit cache roots so tests can
+/// exercise the probe against fixture caches without touching process-global
+/// cache-discovery env vars.
+fn jars_as_dep_roots_in_caches(
     project_root: &Path,
     m2: Option<&Path>,
     gradle: Option<&Path>,
     coursier: Option<&Path>,
-) -> Vec<PathBuf> {
-    let mut jars = Vec::new();
+) -> Vec<ExternalDepRoot> {
+    let mut out: Vec<ExternalDepRoot> = Vec::new();
 
     // Project-local `lib/`, `libs/`, `vendor/`, `deps/` — common in older
-    // projects that check jars into the repo. This stays a directory scan
-    // because it's scoped to the project tree, not the machine.
+    // projects that check jars into the repo. Scoped to the project tree.
+    let mut local_jars: Vec<PathBuf> = Vec::new();
     for sub in &["lib", "libs", "vendor", "deps"] {
         let dir = project_root.join(sub);
         if dir.is_dir() {
-            collect_local_jars(&dir, &mut jars, 0);
+            collect_local_jars(&dir, &mut local_jars, 0);
         }
     }
+    for jar in local_jars {
+        let module = jar
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        out.push(ExternalDepRoot {
+            module_path: module,
+            version: String::new(),
+            root: jar,
+            ecosystem: ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+    }
 
-    // The workspace's own module ids — a coordinate naming one resolves to
-    // project build output, never a cached jar. These are indexed from
-    // project source, so exclude them from the bytecode probe.
+    // The workspace's own module ids resolve to project build output, not
+    // cached jars — exclude them from the bytecode probe.
     let own_modules = collect_workspace_artifact_ids(project_root);
+    let mut count = out.len();
 
     for coord in collect_declared_jvm_coords(project_root) {
+        if count >= MAX_JARS_PER_PROJECT {
+            break;
+        }
         if own_modules.contains(&coord.artifact_id) {
             continue;
         }
@@ -177,11 +190,23 @@ fn discover_jars_in_caches(
             continue;
         }
         if let Some(jar) = resolve_jvm_bytecode_jar(m2, gradle, coursier, &coord) {
-            jars.push(jar);
+            if let Ok(meta) = fs::metadata(&jar) {
+                if meta.len() > MAX_JAR_BYTES {
+                    continue;
+                }
+            }
+            out.push(ExternalDepRoot {
+                module_path: coord.artifact_id.clone(),
+                version: coord.version.clone().unwrap_or_default(),
+                root: jar,
+                ecosystem: ECOSYSTEM_TAG,
+                package_id: None,
+                requested_imports: Vec::new(),
+            });
+            count += 1;
         }
     }
-
-    jars
+    out
 }
 
 /// Probe the `.m2`, Gradle, and Coursier caches (in that precedence order)
@@ -286,7 +311,10 @@ pub(super) fn _test_discover_jars_in_caches(
     gradle: Option<&Path>,
     coursier: Option<&Path>,
 ) -> Vec<PathBuf> {
-    discover_jars_in_caches(project_root, m2, gradle, coursier)
+    jars_as_dep_roots_in_caches(project_root, m2, gradle, coursier)
+        .into_iter()
+        .map(|dep| dep.root)
+        .collect()
 }
 
 #[cfg(test)]

@@ -1,28 +1,23 @@
 // =============================================================================
 // ecosystem/nuget/ — NuGet ecosystem (.NET: C#, F#, VB.NET)
 //
-// Phase 2 + 3: consolidates `indexer/externals/dotnet.rs` +
-// `indexer/manifest/nuget.rs`. .NET externals are metadata-only: DLLs are
-// parsed via the `dotscope` ECMA-335 reader and emitted as synthetic
-// `ParsedFile` rows — no source walk. The pipeline uses
-// `parse_metadata_only()` instead of the usual locate_roots/walk_root path.
+// Demand-driven DLL metadata: rather than cracking every type from every
+// declared package DLL up front (the old eager path that caused 71-minute
+// indexing on aspnetcore), the ecosystem now:
 //
-// Languages: csharp, fsharp, vbnet. All three consume the same DLLs from
-// `~/.nuget/packages/`. The file-level `language` tag on emitted parsed
-// files follows the owning .csproj/.fsproj/.vbproj file type.
+//   1. `locate_roots` discovers one `ExternalDepRoot` per DLL.
+//   2. `build_symbol_index` enumerates type names from each DLL's type-
+//      definition table (cheap header scan via dotscope) and registers
+//      `(module, TypeName) → ext:dotnet-type:<dll>!!<asm>!!<QualifiedType>`.
+//   3. `uses_demand_driven_parse` returns `true`, skipping the eager dump.
+//   4. The resolve engine's materialize-on-miss path cracks exactly the one
+//      type a ref demands via `crack_one_dll_type`.
 //
-// Hybrid source + metadata strategy (additive, no flag flip):
-//   The DLL metadata path (`parse_metadata_only`) remains the primary eager
-//   pass — `uses_demand_driven_parse` stays `false`. A supplementary source
-//   scan runs alongside it: for each resolved package directory we look for
-//   `.cs` files under `contentFiles/cs/<tfm>/`, `lib/<tfm>/`, `src/`, and
-//   the package root. Any found source files are parsed header-only
-//   (top-level namespace/class/interface/enum/struct/method decls) and emitted
-//   as additional `ParsedFile` rows. When source and DLL metadata provide the
-//   same qname, source wins at query time because it carries real line numbers.
+// Source files inside NuGet package dirs (contentFiles/cs/, src/) are still
+// indexed when present; they win over DLL metadata on the same qnames.
 // =============================================================================
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{
@@ -46,7 +41,8 @@ pub use manifest::{
     NuGetCoord, NuGetManifest,
 };
 
-use dll_metadata::parse_dotnet_externals_with_source;
+pub(crate) use dll_metadata::crack_one_dll_type;
+use dll_metadata::{list_dll_type_names, locate_dlls_for_project};
 use symbol_index::{build_nuget_source_symbol_index, resolve_nuget_source_symbols};
 
 pub const ID: EcosystemId = EcosystemId::new("nuget");
@@ -72,8 +68,6 @@ impl Ecosystem for NugetEcosystem {
     }
 
     fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
-        // .NET project files embed the project name as the filename stem,
-        // so they must be matched by extension. One row per project file.
         &[
             (".csproj", "dotnet"),
             (".fsproj", "dotnet"),
@@ -82,56 +76,46 @@ impl Ecosystem for NugetEcosystem {
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        // No `packages/` here — that's a canonical npm-monorepo workspace
-        // directory and pruning it would block sibling Dart/iOS/Rust pkgs.
-        // NuGet's package cache lives at `~/.nuget/packages/`, not in the
-        // repo.
         &["bin", "obj", ".nuget"]
     }
 
     fn activation(&self) -> EcosystemActivation {
-        // Project deps via `*.csproj` / `*.fsproj` / `*.vbproj` (or
-        // `Directory.Packages.props`). The .NET runtime + BCL belong to
-        // `dotnet-stdlib`; nuget only resolves declared NuGet package
-        // refs. Dropping the LanguagePresent shotgun is correct per the
-        // trait doc.
         EcosystemActivation::ManifestMatch
     }
 
-    // NuGet is metadata-only: no source dep roots, no walking. Return empty
-    // from locate_roots so the pipeline knows there's nothing to walk; the
-    // legacy indexer consumes parse_metadata_only() directly below.
-    fn locate_roots(&self, _ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        Vec::new()
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        dll_roots_for_project(ctx.project_root)
     }
 
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
     }
 
-    // `uses_demand_driven_parse` intentionally stays `false`.
-    //
-    // The DLL metadata path is the primary eager pass — flipping this to
-    // `true` would disable `parse_metadata_only` and leave the indexer
-    // relying only on the demand loop, which requires `locate_roots` to return
-    // real dep roots. Since `locate_roots` returns empty (NuGet has no source
-    // walk), flipping would cause a complete regression.
-    //
-    // The new source-index path is SUPPLEMENTARY: it runs inside
-    // `parse_metadata_only` alongside the DLL scan, so source wins on
-    // qnames it covers while DLL metadata fills the rest. No flag change
-    // needed.
-
-    /// Build a supplementary `(module, name) → file` index over any `.cs`
-    /// source files found inside NuGet package dirs. Consumed by chain walkers
-    /// that need a file path for a specific qname — when source resolves it,
-    /// source wins over the DLL-synthesized row.
-    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
-        build_nuget_source_symbol_index(dep_roots)
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
     }
 
-    /// Resolve a specific import against the supplementary source index.
-    /// Falls back to empty when no source covers the requested symbols.
+    /// Build `(module, TypeName) → ext:dotnet-type virtual path` by scanning
+    /// the ECMA-335 type-definition table of each DLL (header-only, no method
+    /// body parse). The virtual path is decoded by the materialize path to
+    /// crack exactly that one type on demand.
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+        let mut index = SymbolLocationIndex::new();
+        // DLL-backed type entries keyed by virtual path.
+        for dep in dep_roots {
+            for (simple_name, virt_path) in list_dll_type_names(&dep.root, &dep.module_path) {
+                index.insert(
+                    dep.module_path.clone(),
+                    simple_name,
+                    PathBuf::from(&virt_path),
+                );
+            }
+        }
+        // Source files in NuGet package dirs win over DLL metadata.
+        index.extend(build_nuget_source_symbol_index(dep_roots));
+        index
+    }
+
     fn resolve_import(
         &self,
         dep: &ExternalDepRoot,
@@ -141,8 +125,6 @@ impl Ecosystem for NugetEcosystem {
         resolve_nuget_source_symbols(dep, symbols)
     }
 
-    /// Resolve a single fully-qualified name from the source index.
-    /// Falls back to empty when no source covers `fqn`.
     fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
         let short = fqn.rsplit('.').next().unwrap_or(fqn);
         resolve_nuget_source_symbols(dep, &[short])
@@ -154,21 +136,36 @@ impl ExternalSourceLocator for NugetEcosystem {
         LEGACY_ECOSYSTEM_TAG
     }
 
-    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
-        let (mut parsed, source_pf) = parse_dotnet_externals_with_source(project_root);
-        parsed.extend(source_pf);
-        if parsed.is_empty() {
-            None
-        } else {
-            Some(parsed)
-        }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        dll_roots_for_project(project_root)
     }
+
+    // parse_metadata_only returns None: the demand-driven path handles all
+    // DLL metadata extraction. Returning None here prevents the eager full-DLL
+    // dump that previously wedged the indexer on large .NET solutions.
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<NugetEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(NugetEcosystem)).clone()
+}
+
+/// Discover one `ExternalDepRoot` per DLL the project declares. Uses the same
+/// project-file scan + NuGet cache probe as the old eager pass, but emits
+/// only the DLL path — no symbols extracted yet.
+fn dll_roots_for_project(project_root: &Path) -> Vec<ExternalDepRoot> {
+    locate_dlls_for_project(project_root)
+        .into_iter()
+        .map(|(pkg_name, dll_path, _lang_id)| ExternalDepRoot {
+            module_path: pkg_name,
+            version: String::new(),
+            root: dll_path,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +192,22 @@ mod tests {
     #[test]
     fn legacy_locator_tag_is_dotnet() {
         assert_eq!(ExternalSourceLocator::ecosystem(&NugetEcosystem), "dotnet");
+    }
+
+    #[test]
+    fn demand_driven_flag_is_set() {
+        assert!(NugetEcosystem.uses_demand_driven_parse());
+    }
+
+    #[test]
+    fn parse_metadata_only_returns_none() {
+        // The eager dump must be disabled — demand-driven path handles all DLL
+        // extraction. An empty project dir must not trigger the old eager pass.
+        let tmp = std::env::temp_dir().join("bw-nuget-test-empty-project");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let result = ExternalSourceLocator::parse_metadata_only(&NugetEcosystem, &tmp);
+        assert!(result.is_none(), "parse_metadata_only must return None");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

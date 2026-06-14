@@ -24,6 +24,293 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
     dll_pf
 }
 
+/// Locate every DLL the project declares, without emitting any parsed symbols.
+/// Returns `(package_name, dll_abs_path, lang_id)` for each discovered DLL.
+/// Used by the demand-driven path to build a `SymbolLocationIndex` cheaply.
+pub(crate) fn locate_dlls_for_project(
+    project_root: &Path,
+) -> Vec<(String, PathBuf, &'static str)> {
+    let mut project_files: Vec<PathBuf> = Vec::new();
+    collect_dotnet_project_files(project_root, &mut project_files, 0);
+    if project_files.is_empty() {
+        return Vec::new();
+    }
+    let lang_id = dominant_dotnet_language(&project_files);
+    let mut coords: Vec<NuGetCoord> = Vec::new();
+    for p in &project_files {
+        let Ok(content) = std::fs::read_to_string(p) else {
+            continue;
+        };
+        coords.extend(parse_package_references_full(&content));
+    }
+    for p in &project_files {
+        if let Some(proj_dir) = p.parent() {
+            coords.extend(collect_transitive_coords_from_deps_json(proj_dir));
+        }
+    }
+    if coords.is_empty() {
+        return Vec::new();
+    }
+    let Some(nuget_root) = nuget_packages_root() else {
+        return Vec::new();
+    };
+    // Deduplicate by DLL path to avoid re-indexing the same assembly twice.
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for coord in &coords {
+        let pkg_dir = nuget_root.join(coord.name.to_lowercase());
+        if !pkg_dir.is_dir() {
+            continue;
+        }
+        let version = if let Some(v) = &coord.version {
+            let concrete = pkg_dir.join(v);
+            if concrete.is_dir() {
+                v.clone()
+            } else {
+                match largest_version_subdir(&pkg_dir) {
+                    Some(v) => v,
+                    None => continue,
+                }
+            }
+        } else {
+            match largest_version_subdir(&pkg_dir) {
+                Some(v) => v,
+                None => continue,
+            }
+        };
+        let version_dir = pkg_dir.join(&version);
+        if let Some(dll_path) = find_dll_in_version_dir(&version_dir, &coord.name) {
+            if seen.insert(dll_path.clone()) {
+                out.push((coord.name.clone(), dll_path, lang_id));
+            }
+        }
+    }
+    out
+}
+
+/// Enumerate the public type names from a DLL without synthesizing full
+/// ParsedFile entries for each. Returns `(simple_name, namespace, virtual_path)`
+/// for every public/public-nested type. Cheap: only reads the type-definition
+/// table header from the ECMA-335 metadata, not method bodies.
+///
+/// `virtual_path` encodes `"ext:dotnet-type:<dll_abs>!!<namespace>.<TypeName>"`
+/// (using `!!` as separator because `!` cannot appear in filesystem paths on
+/// either Windows or Unix).
+pub(crate) fn list_dll_type_names(
+    dll_path: &Path,
+    package_name: &str,
+) -> Vec<(String, String)> {
+    use dotscope::metadata::cilassemblyview::CilAssemblyView;
+    use dotscope::metadata::validation::ValidationConfig;
+    use dotscope::prelude::CilObject;
+
+    let mut config = ValidationConfig::disabled();
+    config.lenient = true;
+    let Ok(view) = CilAssemblyView::from_path_with_validation(dll_path, config.clone()) else {
+        return Vec::new();
+    };
+    let Ok(assembly) = CilObject::from_view_with_validation(view, config) else {
+        return Vec::new();
+    };
+    let assembly_name = assembly
+        .assembly()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| package_name.to_string());
+    let dll_str = dll_path.to_string_lossy().replace('\\', "/");
+    let mut out = Vec::new();
+    for type_def in assembly.types().all_types().iter() {
+        let name = type_def.name.clone();
+        let namespace = type_def.namespace.clone();
+        if name.starts_with('<') || name == "<Module>" {
+            continue;
+        }
+        let visibility_mask = type_def.flags & 0x07;
+        if visibility_mask != 1 && visibility_mask != 2 {
+            continue;
+        }
+        let simple = strip_backtick_arity(&name).to_string();
+        let qualified = if namespace.is_empty() {
+            simple.clone()
+        } else {
+            format!("{namespace}.{simple}")
+        };
+        // Virtual path encodes the DLL location + assembly name + qualified type name.
+        // The materialize path decodes this to re-open just this one type.
+        let virt = format!("ext:dotnet-type:{dll_str}!!{assembly_name}!!{qualified}");
+        out.push((simple, virt));
+    }
+    out
+}
+
+/// Crack a single .NET type from a DLL on demand. `virtual_path` must be in
+/// the `ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>` form
+/// produced by `list_dll_type_names`. Returns `None` on any decoding or I/O
+/// error so the caller can skip gracefully.
+pub(crate) fn crack_one_dll_type(
+    virtual_path: &str,
+    lang_id: &str,
+) -> Option<crate::types::ParsedFile> {
+    use dotscope::metadata::cilassemblyview::CilAssemblyView;
+    use dotscope::metadata::method::MethodAccessFlags;
+    use dotscope::metadata::validation::ValidationConfig;
+    use dotscope::prelude::CilObject;
+    use crate::types::{ExtractedSymbol, SymbolKind};
+
+    // Decode "ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>"
+    let payload = virtual_path.strip_prefix("ext:dotnet-type:")?;
+    let mut parts = payload.splitn(3, "!!");
+    let dll_str = parts.next()?;
+    let _assembly_name = parts.next()?;
+    let qualified_type = parts.next()?;
+
+    let dll_path = std::path::Path::new(dll_str);
+    let mut config = ValidationConfig::disabled();
+    config.lenient = true;
+    let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
+    let assembly = CilObject::from_view_with_validation(view, config).ok()?;
+
+    // Find the matching type definition by qualified name.
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    for type_def in assembly.types().all_types().iter() {
+        let name = type_def.name.clone();
+        let namespace = type_def.namespace.clone();
+        if name.starts_with('<') || name == "<Module>" {
+            continue;
+        }
+        let visibility_mask = type_def.flags & 0x07;
+        if visibility_mask != 1 && visibility_mask != 2 {
+            continue;
+        }
+        let display_name = strip_backtick_arity(&name);
+        let this_qualified = if namespace.is_empty() {
+            display_name.to_string()
+        } else {
+            format!("{namespace}.{display_name}")
+        };
+        if this_qualified != qualified_type {
+            continue;
+        }
+        let is_interface = type_def.flags & 0x20 != 0;
+        let kind = if is_interface {
+            SymbolKind::Interface
+        } else {
+            SymbolKind::Class
+        };
+        let type_generic_names: Vec<String> = type_def
+            .generic_params
+            .iter()
+            .map(|(_, gp)| gp.name.clone())
+            .collect();
+        let type_gp_suffix = format_generic_suffix(&type_generic_names);
+        symbols.push(ExtractedSymbol {
+            name: display_name.to_string(),
+            qualified_name: qualified_type.to_string(),
+            kind,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(format!(
+                "{} {}{}",
+                if is_interface { "interface" } else { "class" },
+                display_name,
+                type_gp_suffix
+            )),
+            doc_comment: None,
+            scope_path: if namespace.is_empty() {
+                None
+            } else {
+                Some(namespace.clone())
+            },
+            parent_index: None,
+            byte_offset: 0,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
+        for (_, method_ref) in type_def.methods.iter() {
+            let Some(method) = method_ref.upgrade() else {
+                continue;
+            };
+            if method.name.starts_with('<') || method.name.starts_with('.') {
+                continue;
+            }
+            if method.flags_access != MethodAccessFlags::PUBLIC {
+                continue;
+            }
+            let method_name = method.name.clone();
+            let method_qname = format!("{qualified_type}.{method_name}");
+            let method_generic_names: Vec<String> = method
+                .generic_params
+                .iter()
+                .map(|(_, gp)| gp.name.clone())
+                .collect();
+            let signature = format_method_signature(
+                &method_name,
+                &method.signature,
+                &type_generic_names,
+                &method_generic_names,
+                &assembly,
+            );
+            symbols.push(ExtractedSymbol {
+                name: method_name,
+                qualified_name: method_qname,
+                kind: SymbolKind::Method,
+                visibility: Some(crate::types::Visibility::Public),
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+                signature: Some(signature),
+                doc_comment: None,
+                scope_path: Some(qualified_type.to_string()),
+                parent_index: None,
+                byte_offset: 0,
+                declared_type: None,
+                return_type: None,
+                param_types: Vec::new(),
+                generic_params: Vec::new(),
+            });
+        }
+        break;
+    }
+    if symbols.is_empty() {
+        return None;
+    }
+    let metadata = std::fs::metadata(dll_path).ok();
+    let size = metadata.as_ref().map_or(0, |m| m.len());
+    let mtime = metadata
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    Some(crate::types::ParsedFile {
+        path: virtual_path.to_string(),
+        language: lang_id.to_string(),
+        content_hash: format!("{:x}", size),
+        size,
+        line_count: 0,
+        mtime,
+        package_id: None,
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    })
+}
+
 /// Internal: returns `(dll_parsed_files, source_parsed_files)`. Called by the
 /// `ExternalSourceLocator::parse_metadata_only` impl which concatenates both.
 /// Keeping them separate lets back-compat callers stay cheap (DLL-only).

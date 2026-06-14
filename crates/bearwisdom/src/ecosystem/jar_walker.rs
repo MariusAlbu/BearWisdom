@@ -459,6 +459,68 @@ fn visibility_for(access: u16) -> Visibility {
     } // package-private treated as public for cross-jar refs
 }
 
+/// Crack a single `.class` entry from a JAR on demand. Used by the
+/// demand-driven materialize path to pull exactly one type without walking the
+/// entire archive. `entry_name` is the central-directory name as listed in the
+/// ZIP (e.g. `"org/example/Foo.class"`). Returns `None` on any I/O or parse
+/// error — callers skip silently rather than aborting.
+pub fn crack_one_class(jar_path: &Path, entry_name: &str) -> Option<ParsedFile> {
+    let file = File::open(jar_path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut entry = archive.by_name(entry_name).ok()?;
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry.read_to_end(&mut bytes).ok()?;
+    let parsed = parse_class_file(&bytes)?;
+    let archive_str = jar_path.to_string_lossy().replace('\\', "/");
+    let virt_path = format!("ext:jar:{archive_str}!{entry_name}");
+    Some(parsed_class_to_parsed_file(virt_path, parsed))
+}
+
+/// Scan the ZIP central directory of a JAR and return `(entry_name, outer_class_name)`
+/// pairs for every `.class` file it contains. Cheap: reads only the central
+/// directory index, never decompresses any entry. Excludes anonymous/compiler
+/// synthetic classes whose outer name starts with a digit.
+///
+/// Used by `build_symbol_index` to register `(module, class_name) → virtual_path`
+/// without cracking any bytecode.
+pub fn list_jar_class_entries(jar_path: &Path) -> Vec<(String, String)> {
+    let Ok(file) = File::open(jar_path) else {
+        return Vec::new();
+    };
+    let Ok(mut archive) = zip::ZipArchive::new(file) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for i in 0..archive.len() {
+        let Ok(entry) = archive.by_index_raw(i) else {
+            continue;
+        };
+        let name = entry.name().to_string();
+        drop(entry);
+        if !name.ends_with(".class") {
+            continue;
+        }
+        if name.starts_with("META-INF/versions/") {
+            continue;
+        }
+        // Take only the outermost class name for nested/inner types (Outer$Inner
+        // → Outer) so callers can find by the name they import.
+        let outer_owned: String = {
+            let stem = name.trim_end_matches(".class");
+            let simple = stem.rsplit('/').next().unwrap_or(stem);
+            simple.split('$').next().unwrap_or(simple).to_string()
+        };
+        if outer_owned.is_empty()
+            || outer_owned.starts_with('<')
+            || outer_owned.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
+            continue;
+        }
+        out.push((name, outer_owned));
+    }
+    out
+}
+
 /// JVM internal class names use `/` separators; convert to `.`.
 fn jvm_name_to_dot(name: &str) -> String {
     name.replace('/', ".")
