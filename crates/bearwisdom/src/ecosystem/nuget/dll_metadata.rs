@@ -19,20 +19,60 @@ use tracing::debug;
 use super::manifest::{parse_package_references_full, NuGetCoord};
 use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file};
 
-/// Process-global cache of loaded .NET assemblies, keyed by DLL path.
-///
-/// `dotscope` parses the entire assembly to build a `CilObject` and is NOT
-/// safe to construct concurrently — parallel `from_view` calls from the resolve
-/// pool's workers deadlock. The load is therefore serialized under this lock,
-/// and the resulting object reused for every type cracked from the same DLL
-/// (each DLL is parsed at most once instead of once per referenced type). A
-/// load failure caches `None` so a broken DLL isn't retried per type.
-static DLL_CACHE: Lazy<Mutex<HashMap<PathBuf, Option<Arc<dotscope::prelude::CilObject>>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+/// A request to crack one type out of a DLL, sent to the dedicated dotscope
+/// thread. `reply` carries the resulting `ParsedFile` (or `None`) back.
+struct CrackRequest {
+    dll_path: PathBuf,
+    qualified_type: String,
+    lang_id: String,
+    virtual_path: String,
+    reply: std::sync::mpsc::Sender<Option<crate::types::ParsedFile>>,
+}
 
-/// Parse one DLL into a `CilObject`. NOT serialized itself — callers must hold
-/// [`DLL_CACHE`]'s lock, because dotscope is unsafe to use (parse OR read) from
-/// more than one thread at a time.
+/// All `dotscope` work runs on ONE dedicated OS thread, never on the resolve
+/// pool's rayon workers.
+///
+/// Two reasons this is mandatory: (1) `dotscope` is not safe to use from
+/// multiple threads at once (parallel parse OR read deadlocks); (2) `dotscope`
+/// itself uses rayon — calling it from a resolve-pool worker nests its parallel
+/// work on the resolve pool, which deadlocks when the other workers are blocked
+/// waiting on this DLL. Running on a plain (non-rayon) thread routes dotscope's
+/// internal rayon to the idle global pool instead, and the single thread
+/// serializes access. The per-DLL `CilObject` cache lives on this thread, so it
+/// needs no lock and each DLL is parsed at most once.
+static DOTSCOPE_TX: Lazy<Mutex<std::sync::mpsc::Sender<CrackRequest>>> = Lazy::new(|| {
+    let (tx, rx) = std::sync::mpsc::channel::<CrackRequest>();
+    std::thread::Builder::new()
+        .name("bw-dotscope".into())
+        .spawn(move || {
+            let mut cache: HashMap<PathBuf, Option<Arc<dotscope::prelude::CilObject>>> =
+                HashMap::new();
+            while let Ok(req) = rx.recv() {
+                let assembly = match cache.get(&req.dll_path) {
+                    Some(entry) => entry.clone(),
+                    None => {
+                        let loaded = load_assembly(&req.dll_path).map(Arc::new);
+                        cache.insert(req.dll_path.clone(), loaded.clone());
+                        loaded
+                    }
+                };
+                let result = assembly.and_then(|asm| {
+                    extract_type_from_assembly(
+                        &asm,
+                        &req.qualified_type,
+                        &req.lang_id,
+                        &req.virtual_path,
+                        &req.dll_path,
+                    )
+                });
+                let _ = req.reply.send(result);
+            }
+        })
+        .expect("failed to spawn dotscope worker thread");
+    Mutex::new(tx)
+});
+
+/// Parse one DLL into a `CilObject`. Only ever called on the dotscope thread.
 fn load_assembly(dll_path: &Path) -> Option<dotscope::prelude::CilObject> {
     use dotscope::metadata::cilassemblyview::CilAssemblyView;
     use dotscope::metadata::validation::ValidationConfig;
@@ -178,9 +218,6 @@ pub(crate) fn crack_one_dll_type(
     virtual_path: &str,
     lang_id: &str,
 ) -> Option<crate::types::ParsedFile> {
-    use dotscope::metadata::method::MethodAccessFlags;
-    use crate::types::{ExtractedSymbol, SymbolKind};
-
     // Decode "ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>"
     let payload = virtual_path.strip_prefix("ext:dotnet-type:")?;
     let mut parts = payload.splitn(3, "!!");
@@ -188,21 +225,31 @@ pub(crate) fn crack_one_dll_type(
     let _assembly_name = parts.next()?;
     let qualified_type = parts.next()?;
 
-    let dll_path = std::path::Path::new(dll_str);
-    // Hold the cache lock for the WHOLE crack. dotscope is not thread-safe for
-    // either parsing or reading, so every access — the cached get-or-load here
-    // and the type/member extraction below — is serialized under this one lock.
-    // The cache means each DLL is parsed at most once; the per-type read under
-    // the lock is a cheap in-memory lookup.
-    let mut cache = DLL_CACHE.lock().ok()?;
-    let assembly = match cache.get(dll_path) {
-        Some(entry) => entry.clone()?,
-        None => {
-            let loaded = load_assembly(dll_path).map(Arc::new);
-            cache.insert(dll_path.to_path_buf(), loaded.clone());
-            loaded?
-        }
+    // Hand the crack to the dedicated dotscope thread and block for the reply —
+    // dotscope must never run on a resolve-pool worker (see `DOTSCOPE_TX`).
+    let (reply, reply_rx) = std::sync::mpsc::channel();
+    let req = CrackRequest {
+        dll_path: PathBuf::from(dll_str),
+        qualified_type: qualified_type.to_string(),
+        lang_id: lang_id.to_string(),
+        virtual_path: virtual_path.to_string(),
+        reply,
     };
+    DOTSCOPE_TX.lock().ok()?.send(req).ok()?;
+    reply_rx.recv().ok()?
+}
+
+/// Extract one type (and its public methods) from an already-parsed assembly.
+/// Runs ONLY on the dotscope thread (see `DOTSCOPE_TX`).
+fn extract_type_from_assembly(
+    assembly: &dotscope::prelude::CilObject,
+    qualified_type: &str,
+    lang_id: &str,
+    virtual_path: &str,
+    dll_path: &Path,
+) -> Option<crate::types::ParsedFile> {
+    use dotscope::metadata::method::MethodAccessFlags;
+    use crate::types::{ExtractedSymbol, SymbolKind};
 
     // Find the matching type definition by qualified name.
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
