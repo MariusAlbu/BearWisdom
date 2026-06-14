@@ -17,11 +17,9 @@ fn ecosystem_identity() {
 }
 
 #[test]
-fn eager_walk_and_substrate() {
+fn demand_driven_and_substrate() {
     let e = GnatStdlibEcosystem;
-    // Bare-name resolution under Ada `use` clauses needs every package's
-    // public subprograms in the symbol table — eager walk pays off here.
-    assert!(!e.uses_demand_driven_parse());
+    assert!(e.uses_demand_driven_parse());
     assert!(e.supports_reachability());
     assert!(e.is_workspace_global());
 }

@@ -79,12 +79,10 @@ impl Ecosystem for AlireEcosystem {
     fn supports_reachability(&self) -> bool {
         true
     }
-    // Eager walk: like gnat-stdlib, the Ada bare-name + use-clause shape
-    // requires every public subprogram from a use'd package to live in
-    // the symbol table. members_of() only sees indexed symbols, so
-    // demand-driven loading would need engine wildcard-demand support
-    // we don't have for Ada. The Alire dep cache is bounded (~1700 Ada
-    // files in a typical workspace setup) so the eager cost is fine.
+
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         build_alire_symbol_index(dep_roots)

@@ -75,13 +75,10 @@ impl Ecosystem for GnatStdlibEcosystem {
         discover_gnat_adainclude()
     }
 
-    // Eager walk. Bare-name resolution under Ada `use` clauses needs every
-    // procedure / function from the use'd package to live in the symbol
-    // table — `Put_Line` written without qualifier must reach
-    // `Ada.Text_IO.Put_Line`. Demand-driven parsing keyed by package qname
-    // doesn't expose the inner subprograms by short name. The 910-file
-    // runtime parses in <2s on rayon and the overhead is bounded
-    // (substrate ecosystem; same shape as rust-stdlib once it goes eager).
+    fn uses_demand_driven_parse(&self) -> bool {
+        true
+    }
+
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         let mut out = Vec::new();
         let _ = walk_adainclude(&dep.root, &mut |path| {

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-06-12T00:00:00Z",
+  "captured_at": "2026-06-14T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -68,14 +68,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 93
       },
       "code_chunks": 38020,
       "files": 1555,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 17304,
-      "internal_unresolved": 1381,
+      "internal_edges": 19568,
+      "internal_unresolved": 1400,
       "languages": {
         "ada": 467,
         "c": 2,
@@ -91,44 +91,44 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-alire",
       "perf": {
-        "end_ws_mb": 129,
-        "files_per_sec": 54,
-        "index_duration_ms": 28824
+        "end_ws_mb": 133,
+        "files_per_sec": 37,
+        "index_duration_ms": 41471
       },
       "project": "ada-alire",
       "rate_by_language": {
-        "ada": 92.79,
-        "c": 0.0,
+        "ada": 93.43,
+        "c": 97.14,
         "javascript": 28.57,
         "markdown": 50.0,
-        "python": 92.73,
-        "shell": 15.63
+        "python": 93.58,
+        "shell": 31.43
       },
-      "resolution_rate": 92.61,
+      "resolution_rate": 93.32,
       "routes": 0,
       "symbols": 16807,
       "unresolved_by_lang_kind": {
-        "ada.calls": 1068,
-        "ada.imports": 13,
-        "ada.type_ref": 81,
+        "ada.calls": 1049,
+        "ada.imports": 60,
+        "ada.type_ref": 75,
         "c.calls": 1,
         "javascript.type_ref": 5,
         "markdown.calls": 2,
         "python.calls": 168,
         "python.type_ref": 16,
-        "shell.calls": 27
+        "shell.calls": 24
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 99
+        "min_resolution_rate": 98
       },
       "code_chunks": 161955,
       "files": 1128,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 52136,
-      "internal_unresolved": 440,
+      "internal_edges": 51939,
+      "internal_unresolved": 639,
       "languages": {
         "ada": 1019,
         "fsharp": 1,
@@ -139,25 +139,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-drivers",
       "perf": {
-        "end_ws_mb": 139,
-        "files_per_sec": 76,
-        "index_duration_ms": 14755
+        "end_ws_mb": 77,
+        "files_per_sec": 82,
+        "index_duration_ms": 13764
       },
       "project": "ada-drivers",
       "rate_by_language": {
-        "ada": 99.25,
+        "ada": 98.87,
         "make": 100.0,
         "markdown": 100.0,
         "python": 65.71,
         "shell": 50.0
       },
-      "resolution_rate": 99.16,
+      "resolution_rate": 98.78,
       "routes": 0,
       "symbols": 77438,
       "unresolved_by_lang_kind": {
-        "ada.calls": 314,
-        "ada.imports": 4,
-        "ada.type_ref": 73,
+        "ada.calls": 457,
+        "ada.imports": 56,
+        "ada.type_ref": 77,
         "python.calls": 45,
         "python.type_ref": 3,
         "shell.calls": 1
@@ -171,8 +171,8 @@
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1219,
-      "internal_unresolved": 270,
+      "internal_edges": 1209,
+      "internal_unresolved": 281,
       "languages": {
         "ada": 37,
         "markdown": 3,
@@ -180,21 +180,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/ada-septum",
       "perf": {
-        "end_ws_mb": 241,
-        "files_per_sec": 26,
-        "index_duration_ms": 1615
+        "end_ws_mb": 50,
+        "files_per_sec": 82,
+        "index_duration_ms": 514
       },
       "project": "ada-septum",
       "rate_by_language": {
-        "ada": 81.87
+        "ada": 81.14
       },
-      "resolution_rate": 81.87,
+      "resolution_rate": 81.14,
       "routes": 0,
       "symbols": 1156,
       "unresolved_by_lang_kind": {
-        "ada.calls": 88,
-        "ada.imports": 22,
-        "ada.type_ref": 160
+        "ada.calls": 92,
+        "ada.imports": 26,
+        "ada.type_ref": 163
       }
     },
     {
