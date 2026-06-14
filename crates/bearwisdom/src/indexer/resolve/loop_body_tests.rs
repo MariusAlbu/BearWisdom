@@ -421,6 +421,7 @@ fn run_pass(
         arena,
         Some(&mut deferred),
         retry_files,
+        std::sync::Arc::new(crate::ecosystem::symbol_index::SymbolLocationIndex::new()),
     )
     .expect("cached-index resolve pass");
     crate::indexer::resolve::flush_deferred_speculative(db, &deferred)

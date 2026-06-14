@@ -59,6 +59,7 @@ impl SymbolIndex {
             symbol_id_map,
             project_ctx,
             Arc::new(TypeArena::new()),
+            Arc::new(crate::ecosystem::symbol_index::SymbolLocationIndex::new()),
         )
     }
 
@@ -72,6 +73,7 @@ impl SymbolIndex {
         symbol_id_map: &HashMap<(String, String), i64>,
         project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
         type_arena: Arc<TypeArena>,
+        loc: Arc<crate::ecosystem::symbol_index::SymbolLocationIndex>,
     ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
@@ -1206,6 +1208,13 @@ impl SymbolIndex {
             chain_misses: std::sync::Mutex::new(Vec::new()),
             type_arena,
             materialized: super::MaterializedStore::new(),
+            loc,
+            // Seed above the max internal id so a materialized external never
+            // collides with an internal symbol (all of which are written to the
+            // DB before this build).
+            next_ext_id: std::sync::atomic::AtomicI64::new(
+                symbol_id_map.values().copied().max().unwrap_or(0) + 1,
+            ),
         }
     }
 }

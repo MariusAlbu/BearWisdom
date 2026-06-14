@@ -216,6 +216,7 @@ pub fn resolve_iteration_with_cached_index(
         std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()),
         defer_speculative,
         retry_files,
+        std::sync::Arc::new(crate::ecosystem::symbol_index::SymbolLocationIndex::new()),
     )
 }
 
@@ -236,6 +237,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
     defer_speculative: Option<&mut DeferredSpeculative>,
     retry_files: Option<&std::collections::HashSet<String>>,
+    loc: std::sync::Arc<crate::ecosystem::symbol_index::SymbolLocationIndex>,
 ) -> Result<ResolutionStats> {
     if cached_index.is_none() {
         let mut index = engine::SymbolIndex::build_with_context_and_arena(
@@ -243,6 +245,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
             symbol_id_map,
             project_ctx,
             type_arena,
+            loc,
         );
         let external_paths = loop_body::read_external_file_paths(db.conn());
         if !external_paths.is_empty() {

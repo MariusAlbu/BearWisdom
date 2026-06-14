@@ -36,6 +36,7 @@ pub(super) use super::{
 mod augment;
 mod build;
 mod classify;
+mod lazy;
 mod lookup_impl;
 mod materialized;
 
@@ -204,6 +205,16 @@ pub struct SymbolIndex {
     /// the defining external file into this store and answers from it. Shared
     /// by `&self` across the resolve pass — see `materialized.rs`.
     materialized: MaterializedStore,
+    /// External location index: `(module, name) → file`. The "MetadataReader"
+    /// a lookup-miss consults to find the external file to materialize. Empty
+    /// for projects with no external sources. Shared via `Arc` so a cheap
+    /// clone flows into the index without copying the whole table.
+    loc: Arc<crate::ecosystem::symbol_index::SymbolLocationIndex>,
+    /// Id allocator for materialized external symbols. Seeded above the max
+    /// internal symbol id at build, so a materialized symbol gets a real,
+    /// collision-free id the moment it is interned — edges bind to it directly
+    /// and the deferred flush writes its row under that id.
+    next_ext_id: std::sync::atomic::AtomicI64,
 }
 
 impl SymbolIndex {

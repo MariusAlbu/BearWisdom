@@ -37,14 +37,27 @@ impl SymbolIndex {
 impl SymbolLookup for SymbolIndex {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         let eager = self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
-        self.span_eager_materialized(eager, self.materialized.by_name(name))
+        let mut mat = self.materialized.by_name(name);
+        if eager.is_empty() && mat.is_empty() {
+            // Both stores miss → pull the external file(s) that define this name
+            // and re-query. Idempotent: an already-materialized file is a no-op.
+            self.materialize_by_name(name);
+            mat = self.materialized.by_name(name);
+        }
+        self.span_eager_materialized(eager, mat)
     }
 
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         // Eager-internal wins on a qname tie, preserving "local beats imported".
-        self.by_qname
-            .get(qname)
-            .or_else(|| self.materialized.by_qualified_name(qname))
+        if let Some(s) = self.by_qname.get(qname) {
+            return Some(s);
+        }
+        if let Some(s) = self.materialized.by_qualified_name(qname) {
+            return Some(s);
+        }
+        // Miss both → materialize by the leaf name, then re-query by qname.
+        self.materialize_by_name(qname.rsplit('.').next().unwrap_or(qname));
+        self.materialized.by_qualified_name(qname)
     }
 
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
@@ -70,16 +83,34 @@ impl SymbolLookup for SymbolIndex {
             .get(parent_qname)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
-        self.span_eager_materialized(eager, self.materialized.members_of(parent_qname))
+        let mut mat = self.materialized.members_of(parent_qname);
+        if eager.is_empty() && mat.is_empty() {
+            // The parent type's file may not be pulled yet — materialize by its
+            // leaf name so its members land under this parent qname.
+            self.materialize_by_name(parent_qname.rsplit('.').next().unwrap_or(parent_qname));
+            mat = self.materialized.members_of(parent_qname);
+        }
+        self.span_eager_materialized(eager, mat)
     }
 
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
-        SymbolSet::Borrowed(
-            self.types_by_name
-                .get(name)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]),
-        )
+        let eager = self
+            .types_by_name
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let mut mat = self.materialized.types_by_name(name);
+        // Trigger materialization only when the name is unknown internally at
+        // ALL (`by_name` empty) — an `is-this-a-type?` probe fires for many bare
+        // names, and pulling for an internal NON-type whose name merely matches
+        // an external symbol is the over-pull that flips other edges to
+        // external_refs. Gating on `by_name` keeps the pull to genuinely-external
+        // type names (Result, PartialEq, Debug, …).
+        if eager.is_empty() && mat.is_empty() && !self.by_name.contains_key(name) {
+            self.materialize_by_name(name);
+            mat = self.materialized.types_by_name(name);
+        }
+        self.span_eager_materialized(eager, mat)
     }
 
     /// O(log N) prefix search via BTreeMap::range — no extra Vec needed.
@@ -161,42 +192,53 @@ impl SymbolLookup for SymbolIndex {
         self.type_info
             .get(property_qname)
             .and_then(|ti| ti.field_type.as_deref())
+            .or_else(|| self.materialized.field_type_name(property_qname))
     }
 
     fn return_type_name(&self, method_qname: &str) -> Option<&str> {
         self.type_info
             .get(method_qname)
             .and_then(|ti| ti.return_type.as_deref())
+            .or_else(|| self.materialized.return_type_name(method_qname))
     }
 
     fn field_type_args(&self, property_qname: &str) -> Option<&[String]> {
-        self.type_info.get(property_qname).and_then(|ti| {
-            if ti.type_args.is_empty() {
-                None
-            } else {
-                Some(ti.type_args.as_slice())
-            }
-        })
+        self.type_info
+            .get(property_qname)
+            .and_then(|ti| {
+                if ti.type_args.is_empty() {
+                    None
+                } else {
+                    Some(ti.type_args.as_slice())
+                }
+            })
+            .or_else(|| self.materialized.field_type_args(property_qname))
     }
 
     fn return_type_args(&self, method_qname: &str) -> Option<&[String]> {
-        self.type_info.get(method_qname).and_then(|ti| {
-            if ti.return_type_args.is_empty() {
-                None
-            } else {
-                Some(ti.return_type_args.as_slice())
-            }
-        })
+        self.type_info
+            .get(method_qname)
+            .and_then(|ti| {
+                if ti.return_type_args.is_empty() {
+                    None
+                } else {
+                    Some(ti.return_type_args.as_slice())
+                }
+            })
+            .or_else(|| self.materialized.return_type_args(method_qname))
     }
 
     fn generic_params(&self, type_name: &str) -> Option<&[String]> {
-        self.type_info.get(type_name).and_then(|ti| {
-            if ti.generic_params.is_empty() {
-                None
-            } else {
-                Some(ti.generic_params.as_slice())
-            }
-        })
+        self.type_info
+            .get(type_name)
+            .and_then(|ti| {
+                if ti.generic_params.is_empty() {
+                    None
+                } else {
+                    Some(ti.generic_params.as_slice())
+                }
+            })
+            .or_else(|| self.materialized.generic_params(type_name))
     }
 
     fn field_type_id(&self, property_qname: &str) -> Option<TypeId> {
@@ -343,9 +385,14 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
-        let child = self.by_qname.get(class_qname)?;
-        let parent_id = self.inherits_by_id.get(&child.id)?;
-        Some(self.by_id.get(parent_id)?.qualified_name.as_str())
+        if let Some(child) = self.by_qname.get(class_qname) {
+            if let Some(parent_id) = self.inherits_by_id.get(&child.id) {
+                if let Some(parent) = self.by_id.get(parent_id) {
+                    return Some(parent.qualified_name.as_str());
+                }
+            }
+        }
+        self.materialized.parent_class_qname(class_qname)
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {

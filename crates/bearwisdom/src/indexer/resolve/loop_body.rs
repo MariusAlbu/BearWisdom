@@ -143,8 +143,13 @@ pub(super) fn resolve_iteration_inner_with_arena(
     // user JS classify correctly instead of matching against those vendor
     // symbols as if they were project code.
     let external_paths = read_external_file_paths(db.conn());
-    let mut index =
-        SymbolIndex::build_with_context_and_arena(parsed, symbol_id_map, project_ctx, type_arena);
+    let mut index = SymbolIndex::build_with_context_and_arena(
+        parsed,
+        symbol_id_map,
+        project_ctx,
+        type_arena,
+        std::sync::Arc::new(crate::ecosystem::symbol_index::SymbolLocationIndex::new()),
+    );
     if !external_paths.is_empty() {
         index.set_external_paths(external_paths);
     }
@@ -641,6 +646,19 @@ fn resolve_iteration_body(
                                 index,
                             )
                         })
+                        // Inline external materialization at the resolution-
+                        // failure point — the precise signal the lookup layer
+                        // can't see. The engine + hook both declined, so the
+                        // target may be an external symbol whose defining file
+                        // isn't pulled yet. Materialize the file(s) the location
+                        // index says define this name (expand's chain-miss
+                        // closure, applied inline) and retry the resolution once.
+                        // No-op when the name is unknown to the location index,
+                        // so a genuinely-unresolvable ref still falls through.
+                        .or_else(|| {
+                            index.materialize_by_name(&r.target_name);
+                            type_engine.resolve(&ref_ctx, file_ctx, index)
+                        })
                         .map(|r| (r, true));
 
                     if let Some((resolution, came_from_engine)) = resolution {
@@ -1048,6 +1066,18 @@ fn resolve_iteration_body(
                 (buf_a, stats_a)
             },
         );
+
+    // The read-phase tx wrapped only DB reads (file imports). Close it, then
+    // write the materialized external files under their own tx so their
+    // symbol/file rows exist before the FK-enforced edges reference them, and
+    // rebind edge targets from the in-pass synthetic ids to the real DB ids.
+    tx.commit()
+        .context("Failed to commit resolve read phase")?;
+    let ext_remap = index.flush_materialized_externals(&*db)?;
+    combined_buf.remap_edge_targets(&ext_remap);
+    let tx = conn
+        .unchecked_transaction()
+        .context("Failed to begin resolve write transaction")?;
 
     // Bulk-flush the per-file buffers in one transaction. Multi-row VALUES
     // inserts keep driver round-trips low; identical chunk sizes hit the rusqlite

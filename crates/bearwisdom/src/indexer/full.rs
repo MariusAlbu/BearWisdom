@@ -713,6 +713,9 @@ pub fn full_index(
             workspace_arena.as_ref(),
         )
     };
+    // Share the external location index by Arc — it flows into the SymbolIndex
+    // so a lookup-miss can materialize the defining external file lazily.
+    let symbol_index = std::sync::Arc::new(symbol_index);
     mem_probe::probe("07_external_parsed");
     if !external_parsed.is_empty() {
         info!(
@@ -898,44 +901,22 @@ pub fn full_index(
     let _ = &demand_driven_roots;
     let _ = &demand_driven_ecosystems;
 
-    // --- Step 5: Cross-file resolution + edge writing (Stage 2 loop) ---
+    // --- Step 5: Cross-file resolution + edge writing ---
     //
-    // External symbols load lazily: the chain walker records a chain miss for
-    // each unresolved `(current_type, target_name)`, `expand` pulls the file
-    // that defines it, and a re-resolve binds it — iterating to fixpoint. No
-    // eager pre-pull of import-qualified externals.
-    //
-    // Demand-driven iteration: resolve once, let the chain walker record any
-    // `(current_type, target_name)` bail-outs, pull the files that define
-    // those symbols (via the demand-driven symbol index first, falling back
-    // to `Ecosystem::resolve_symbol` for un-migrated ecosystems), re-resolve.
-    // Edges from earlier iterations survive (`INSERT OR IGNORE`); speculative
-    // `unresolved_refs` / `external_refs` are wiped between iterations so the
-    // final iteration's answer is authoritative.
-    //
-    // Loop exit:
-    //   * `stats.converged()` — chain walker recorded no bail-outs.
-    //   * `estats.new_files == 0` — misses exist but no file pull answered any.
-    //   * `MAX_EXPANSION_ITERATIONS` hit — safety cap against degenerate
-    //     mutual recursion in external types.
+    // External symbols load lazily: a lookup that misses the eager-internal maps
+    // materializes the external file defining the target (located via the
+    // `SymbolLocationIndex`) inline, during the single resolve pass. No expand
+    // loop, no per-iteration re-resolve — each external symbol is parsed and
+    // interned at most once, on first reference.
     emit("resolving", 0.0, None);
-    const MAX_EXPANSION_ITERATIONS: usize = 8;
-    // SymbolIndex is built once on iteration 0 and augmented in-place
-    // for each expand-loop iteration that adds files. Avoids the ~5-10s
-    // rebuild per iteration on a 280k-symbol index — saves 40-80s on
-    // aspnetcore-sized projects across the 8-iteration cap.
+    // Built once on the single resolve pass and reused by the return-inference
+    // fixpoint below; no per-iteration rebuild.
     let mut cached_index: Option<resolve::engine::SymbolIndex> = None;
-    // The type-checker Engine, built once on iteration 0 and augmented with each
-    // expand iteration's appended files; threaded like `cached_index`.
     let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
-    // The resolve-loop side-tables, built once and extended with each expand
-    // iteration's appended files.
     let mut cached_side_tables: Option<resolve::ResolveSideTables> = None;
-    // Speculative unresolved/external rows accumulated across the demand loop and
-    // written once after it converges. Each pass overwrites this holder with its
-    // complete set; the final (converged) pass is authoritative.
+    // Speculative unresolved/external rows, written once after the fixpoint
+    // settles. Each pass overwrites this holder; the final pass is authoritative.
     let mut deferred_spec = resolve::DeferredSpeculative::default();
-    let parsed_len_at_iter_start = parsed.len();
     let mut rstats = {
         let _t = phase_timer::scope("resolve.iteration_0");
         resolve::resolve_iteration_with_cached_index_and_arena(
@@ -953,109 +934,32 @@ pub fn full_index(
             Some(&mut deferred_spec),
             // Iteration 0 resolves every internal file — no worklist.
             None,
+            // The external location index: a lookup-miss materializes the
+            // defining external file inline, during this single pass.
+            std::sync::Arc::clone(&symbol_index),
         )
         .context("Failed to resolve references")?
     };
-    let _ = parsed_len_at_iter_start;
     info!(
         "Wrote {} edges, {} external, {} unresolved references",
         rstats.resolved, rstats.external, rstats.unresolved
     );
     mem_probe::probe("10_resolve_iter_0");
 
-    // Delta-resolve worklist: after iteration 0 (which resolved everything),
-    // only files that still had an unresolved ref can change on a later pass —
-    // expand adds only `ext:` files, which can flip an unresolved internal ref
-    // to resolved/external but never un-resolve an edge or surface a new
-    // resolution in an already-fully-resolved file. Each subsequent pass
-    // re-resolves only this shrinking frontier.
+    // Delta-resolve worklist: iteration 0 resolved every file, materializing the
+    // external symbols its references reached inline (lazy materialize-on-miss),
+    // so there is no expand loop. Only files that still hold an unresolved ref
+    // can change on a later pass, so the return-inference fixpoint below
+    // re-resolves just this shrinking frontier.
     let mut frontier: std::collections::HashSet<String> =
         rstats.frontier_files.iter().cloned().collect();
-    // Inferred returns are harvested per pass; with the delta worklist a later
-    // pass only re-examines the frontier, so accumulate every pass's returns
+    // Inferred returns are harvested per pass; accumulate every pass's returns
     // and apply the union in the return-inference loop below.
     let mut all_inferred = rstats.inferred_returns.clone();
 
-    let mut iteration = 1;
-    while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
-        let parsed_len_before = parsed.len();
-        let estats = {
-            let _t = phase_timer::scope("resolve.expand_chain_reachability");
-            expand::expand_chain_reachability_with_index_and_arena(
-                db,
-                &mut parsed,
-                &mut symbol_id_map,
-                &rstats.chain_misses,
-                registry,
-                if symbol_index.is_empty() {
-                    None
-                } else {
-                    Some(&symbol_index)
-                },
-                workspace_arena.as_ref(),
-            )
-            .context("Failed to expand chain reachability")?
-        };
-        if estats.new_files == 0 {
-            // No file pull answered any demand — fixpoint under the lens of
-            // the current ecosystems. Remaining chain misses stay as
-            // unresolved/external; they're genuine resolution gaps.
-            break;
-        }
-        // unresolved_refs / external_refs are not cleared here: those rows are
-        // accumulated in `deferred_spec` and written once after the loop settles.
-        // Augment the cached SymbolIndex with just the new files added
-        // by expand instead of rebuilding from scratch.
-        let new_slice = &parsed[parsed_len_before..];
-        let rstats2 = {
-            let _t = phase_timer::scope("resolve.iteration_n");
-            resolve::resolve_iteration_with_cached_index_and_arena(
-                db,
-                &parsed,
-                &symbol_id_map,
-                Some(&project_ctx),
-                &mut cached_index,
-                &mut cached_engine,
-                &mut cached_side_tables,
-                new_slice,
-                std::sync::Arc::clone(&workspace_arena),
-                Some(&mut deferred_spec),
-                // Re-resolve only the frontier from the prior pass.
-                Some(&frontier),
-            )
-            .context("Failed to re-resolve after chain reachability expansion")?
-        };
-        info!(
-            "Chain expansion iteration {}: {} edges ({:+}), {} external, {} unresolved, {} new files",
-            iteration,
-            rstats2.resolved,
-            rstats2.resolved as i64 - rstats.resolved as i64,
-            rstats2.external,
-            rstats2.unresolved,
-            estats.new_files,
-        );
-        // The frontier shrinks to the files still unresolved after this delta
-        // pass; the next pull/re-resolve only touches those. `rstats2`'s
-        // chain_misses / unresolved are the true remaining totals — skipped
-        // files had zero — so `converged()` and the next expand stay correct.
-        frontier = rstats2.frontier_files.iter().cloned().collect();
-        all_inferred.extend(
-            rstats2
-                .inferred_returns
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
-        rstats = rstats2;
-        iteration += 1;
-        mem_probe::probe(&format!("10_resolve_iter_{iteration}"));
-    }
-    if iteration == MAX_EXPANSION_ITERATIONS && !rstats.converged() {
-        warn!(
-            "Chain expansion hit iteration cap ({} iterations); {} misses still pending",
-            MAX_EXPANSION_ITERATIONS,
-            rstats.chain_misses.len(),
-        );
-    }
+    // No expand loop: external symbols are materialized inline during the single
+    // resolve pass above. The return-inference fixpoint below is the only
+    // remaining re-resolve, scoped to the frontier.
 
     // --- INFER-3 / INFER-2: return-type inference fixpoint. ---
     //
@@ -1104,6 +1008,9 @@ pub fn full_index(
             // A changed return can only unlock a chain that previously missed,
             // so only the frontier needs re-resolving.
             Some(&frontier),
+            // cached_index is already built; loc is consulted only at build, so
+            // this clone is inert here — passed for signature symmetry.
+            std::sync::Arc::clone(&symbol_index),
         )
         .context("Failed to re-resolve after return-type inference")?;
         all_inferred.extend(

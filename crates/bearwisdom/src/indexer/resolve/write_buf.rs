@@ -53,6 +53,21 @@ impl FileWriteBuf {
         self.flow_emissions.append(&mut other.flow_emissions);
         self.inferred_returns.append(&mut other.inferred_returns);
     }
+
+    /// Rewrite edge target ids through a synthetic→real id map. An edge whose
+    /// target was a materialized external carries that symbol's synthetic id
+    /// during the pass; once the materialized rows are written with real ids,
+    /// this rebinds the targets so the FK-enforced edge flush succeeds.
+    pub(super) fn remap_edge_targets(&mut self, remap: &std::collections::HashMap<i64, i64>) {
+        if remap.is_empty() {
+            return;
+        }
+        for e in &mut self.edges {
+            if let Some(&real) = remap.get(&e.1) {
+                e.1 = real;
+            }
+        }
+    }
 }
 
 /// Speculative rows (unresolved + external refs) carried out of a resolve pass
