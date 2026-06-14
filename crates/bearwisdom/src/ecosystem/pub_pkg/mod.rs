@@ -93,44 +93,6 @@ impl Ecosystem for PubEcosystem {
         build_dart_symbol_index(dep_roots)
     }
 
-    /// Pre-pull every dep's `lib/<package>.dart` entry file plus the
-    /// export chain it transitively re-exports. Bare type references from
-    /// `import 'package:foo/foo.dart'` (no member access, no `.X` chain
-    /// step) never reach the chain-miss expand pass — they bottom out at
-    /// the resolver's simple-name lookup, which only finds symbols already
-    /// in the DB. Without this pre-pull, types like `WidgetRef`,
-    /// `ConsumerWidget`, `PageRouteInfo` stay unresolved even though their
-    /// packages are discovered, because nothing demanded a file pull for
-    /// them.
-    ///
-    /// The entry walk follows in-package `export`/`part` specs and, when a
-    /// `export 'package:<other>/...'` targets another discovered dep, crosses
-    /// into that package's `lib/` to reach the defining leaf. Cost is bounded
-    /// by `DART_EXPORT_MAX_DEPTH` and a per-walk `seen` set. Per-root cost: a
-    /// handful of .dart files per package — total a few MB on a 79-pub-root
-    /// project.
-    fn demand_pre_pull(&self, dep_roots: &[ExternalDepRoot]) -> Vec<WalkedFile> {
-        // `module_path → lib_root` over every discovered dep, so a framework
-        // entry package's cross-package `export 'package:<other>/...'` chain
-        // can reach the leaf that defines the re-exported API surface. The
-        // canonical case: `package:test`'s `expect` FUNCTION lives in
-        // `matcher`'s secondary `expect.dart` library, which `matcher`'s own
-        // conventional entry never re-exports — only `test`'s cross-package
-        // export reaches it.
-        let siblings: SiblingRoots = dep_roots
-            .iter()
-            .map(|d| (d.module_path.clone(), d.root.clone()))
-            .collect();
-        let mut out = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for dep in dep_roots {
-            out.extend(resolve_dart_package_entry_shared_seen(
-                dep, &siblings, &mut seen,
-            ));
-        }
-        out
-    }
-
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }
@@ -170,9 +132,7 @@ pub(crate) use manifest::parse_pubspec_name;
 pub(crate) use symbol_index::build_dart_symbol_index;
 pub use walk::walk_dart_root;
 
-use reachability::{
-    resolve_dart_package_entry, resolve_dart_package_entry_shared_seen, SiblingRoots,
-};
+use reachability::resolve_dart_package_entry;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]
