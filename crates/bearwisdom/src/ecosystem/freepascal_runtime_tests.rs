@@ -11,38 +11,21 @@ fn make_lazarus_fixture(root: &std::path::Path) {
 
     fs::create_dir_all(root.join("components").join("codetools")).unwrap();
     fs::write(
-        root.join("components")
-            .join("codetools")
-            .join("codecache.pas"),
+        root.join("components").join("codetools").join("codecache.pas"),
         "unit CodeCache;\n",
     )
     .unwrap();
 
-    let win64 = root
-        .join("fpc")
-        .join("3.2.2")
-        .join("source")
-        .join("rtl")
-        .join("win64");
+    let win64 = root.join("fpc").join("3.2.2").join("source").join("rtl").join("win64");
     fs::create_dir_all(&win64).unwrap();
     fs::write(win64.join("system.pp"), "unit System;\n").unwrap();
     fs::write(win64.join("classes.pp"), "unit Classes;\n").unwrap();
 
-    let win32 = root
-        .join("fpc")
-        .join("3.2.2")
-        .join("source")
-        .join("rtl")
-        .join("win32");
+    let win32 = root.join("fpc").join("3.2.2").join("source").join("rtl").join("win32");
     fs::create_dir_all(&win32).unwrap();
     fs::write(win32.join("system.pp"), "unit System;\n").unwrap();
 
-    let objpas = root
-        .join("fpc")
-        .join("3.2.2")
-        .join("source")
-        .join("rtl")
-        .join("objpas");
+    let objpas = root.join("fpc").join("3.2.2").join("source").join("rtl").join("objpas");
     fs::create_dir_all(&objpas).unwrap();
     fs::write(objpas.join("classes.pp"), "unit Classes;\n").unwrap();
     fs::write(objpas.join("sysutils.pp"), "unit SysUtils;\n").unwrap();
@@ -83,16 +66,10 @@ fn discover_uses_explicit_dir_override() {
     let module_paths: std::collections::HashSet<String> =
         roots.iter().map(|r| r.module_path.clone()).collect();
     assert!(module_paths.contains("lcl"), "{module_paths:?}");
-    assert!(
-        module_paths.contains("lazarus-components"),
-        "{module_paths:?}"
-    );
+    assert!(module_paths.contains("lazarus-components"), "{module_paths:?}");
     assert!(module_paths.contains("fpc-rtl-objpas"), "{module_paths:?}");
     // Single package under packages/fcl-base/src/ emits one per-package root.
-    assert!(
-        module_paths.contains("fpc-pkg-fcl-base"),
-        "{module_paths:?}"
-    );
+    assert!(module_paths.contains("fpc-pkg-fcl-base"), "{module_paths:?}");
     // The old aggregate fpc-packages root no longer exists — packages are emitted
     // individually so module_path values are distinct per package.
     assert!(!module_paths.contains("fpc-packages"), "{module_paths:?}");
@@ -105,13 +82,12 @@ fn discover_uses_explicit_dir_override() {
 }
 
 #[test]
-fn walk_pascal_root_picks_pas_pp_inc() {
+fn symbol_index_scans_pas_and_pp_but_not_non_pascal_files() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().join("lcl");
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("forms.pas"), "unit Forms;\n").unwrap();
-    fs::write(root.join("buttons.pp"), "unit Buttons;\n").unwrap();
-    fs::write(root.join("config.inc"), "// include\n").unwrap();
+    fs::write(root.join("forms.pas"), "unit Forms;\ninterface\nimplementation\n").unwrap();
+    fs::write(root.join("buttons.pp"), "unit Buttons;\ninterface\nimplementation\n").unwrap();
     fs::write(root.join("README.md"), "docs\n").unwrap();
 
     let dep = ExternalDepRoot {
@@ -122,35 +98,24 @@ fn walk_pascal_root_picks_pas_pp_inc() {
         package_id: None,
         requested_imports: Vec::new(),
     };
-    let walked = walk_pascal_root(&dep);
-    let names: std::collections::HashSet<String> = walked
-        .iter()
-        .map(|f| {
-            f.absolute_path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
-    assert!(names.contains("forms.pas"));
-    assert!(names.contains("buttons.pp"));
-    assert!(names.contains("config.inc"));
-    assert!(!names.contains("README.md"));
-    assert!(walked.iter().all(|f| f.language == "pascal"));
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+    assert!(idx.locate("lcl", "forms").is_some(), "forms.pas must be scanned");
+    assert!(idx.locate("lcl", "buttons").is_some(), "buttons.pp must be scanned");
+    // Non-Pascal files must not produce entries.
+    assert!(idx.locate("lcl", "readme").is_none(), "README.md must not be indexed");
 }
 
 #[test]
-fn walk_skips_tests_examples_demos() {
+fn symbol_index_skips_tests_and_examples_dirs() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().join("lcl");
     fs::create_dir_all(root.join("tests")).unwrap();
     fs::create_dir_all(root.join("examples")).unwrap();
     fs::create_dir_all(root.join("demos")).unwrap();
-    fs::write(root.join("tests").join("test_forms.pas"), "// skip\n").unwrap();
-    fs::write(root.join("examples").join("hello.pas"), "// skip\n").unwrap();
-    fs::write(root.join("demos").join("demo.pas"), "// skip\n").unwrap();
-    fs::write(root.join("forms.pas"), "// keep\n").unwrap();
+    fs::write(root.join("tests").join("test_forms.pas"), "unit TestForms;\ninterface\nimplementation\n").unwrap();
+    fs::write(root.join("examples").join("hello.pas"), "unit Hello;\ninterface\nimplementation\n").unwrap();
+    fs::write(root.join("demos").join("demo.pas"), "unit Demo;\ninterface\nimplementation\n").unwrap();
+    fs::write(root.join("forms.pas"), "unit Forms;\ninterface\nimplementation\n").unwrap();
 
     let dep = ExternalDepRoot {
         module_path: "lcl".to_string(),
@@ -160,28 +125,11 @@ fn walk_skips_tests_examples_demos() {
         package_id: None,
         requested_imports: Vec::new(),
     };
-    let walked = walk_pascal_root(&dep);
-    assert_eq!(walked.len(), 1);
-    assert!(walked[0].absolute_path.ends_with("forms.pas"));
-}
-
-#[test]
-fn walk_emits_virtual_path_with_pascal_prefix() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path().to_path_buf();
-    fs::write(root.join("forms.pas"), "unit Forms;\n").unwrap();
-
-    let dep = ExternalDepRoot {
-        module_path: "lcl".to_string(),
-        version: String::new(),
-        root: root.clone(),
-        ecosystem: LEGACY_ECOSYSTEM_TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    };
-    let walked = walk_pascal_root(&dep);
-    assert_eq!(walked.len(), 1);
-    assert_eq!(walked[0].relative_path, "ext:pascal:lcl/forms.pas");
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+    assert!(idx.locate("lcl", "forms").is_some(), "top-level forms.pas must be indexed");
+    assert!(idx.locate("lcl", "testforms").is_none(), "tests/ dir must be skipped");
+    assert!(idx.locate("lcl", "hello").is_none(), "examples/ dir must be skipped");
+    assert!(idx.locate("lcl", "demo").is_none(), "demos/ dir must be skipped");
 }
 
 #[test]
@@ -235,13 +183,7 @@ fn emit_package_roots_requires_src_subdir() {
 #[test]
 fn platform_excluded_exotic_targets() {
     // These exotic targets must always be excluded regardless of host.
-    for pkg in &[
-        "arosunits",
-        "ami-extra",
-        "palmunits",
-        "libgbafpc",
-        "libndsfpc",
-    ] {
+    for pkg in &["arosunits", "ami-extra", "palmunits", "libgbafpc", "libndsfpc"] {
         assert!(is_platform_excluded(pkg), "{pkg} should be excluded");
     }
 }
@@ -249,14 +191,155 @@ fn platform_excluded_exotic_targets() {
 #[test]
 fn cross_platform_packages_never_excluded() {
     // These packages are cross-platform and must always be walked.
-    for pkg in &[
-        "fcl-base",
-        "fcl-xml",
-        "fcl-net",
-        "rtl-generics",
-        "paszlib",
-        "hash",
-    ] {
+    for pkg in &["fcl-base", "fcl-xml", "fcl-net", "rtl-generics", "paszlib", "hash"] {
         assert!(!is_platform_excluded(pkg), "{pkg} should not be excluded");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Demand-driven interface
+// ---------------------------------------------------------------------------
+
+fn make_dep(root: &std::path::Path, module: &str) -> ExternalDepRoot {
+    ExternalDepRoot {
+        module_path: module.to_string(),
+        version: String::new(),
+        root: root.to_path_buf(),
+        ecosystem: LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    }
+}
+
+#[test]
+fn ecosystem_declares_demand_driven() {
+    let e = FreePascalRuntimeEcosystem;
+    assert!(Ecosystem::uses_demand_driven_parse(&e));
+}
+
+#[test]
+fn walk_root_is_empty_under_demand_driven() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("forms.pas"), "unit Forms;\n").unwrap();
+    let dep = make_dep(tmp.path(), "lcl");
+    assert!(Ecosystem::walk_root(&FreePascalRuntimeEcosystem, &dep).is_empty());
+}
+
+#[test]
+fn symbol_index_registers_unit_name() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("sysutils.pp"), "unit SysUtils;\ninterface\nimplementation\n").unwrap();
+    let dep = make_dep(tmp.path(), "fpc-rtl-objpas");
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+    // Unit name registered both as-declared and lowercase.
+    assert!(idx.locate("fpc-rtl-objpas", "sysutils").is_some());
+    assert!(idx.locate("fpc-rtl-objpas", "SysUtils").is_some());
+}
+
+#[test]
+fn symbol_index_registers_interface_section_decls() {
+    let tmp = TempDir::new().unwrap();
+    let content = "\
+unit MyUnit;
+interface
+type
+  TMyClass = class
+procedure DoSomething(x: Integer);
+function GetValue: String;
+const
+  MAX_ITEMS = 100;
+var
+  GlobalFlag: Boolean;
+implementation
+procedure DoSomething(x: Integer);
+begin end;
+end.
+";
+    fs::write(tmp.path().join("myunit.pas"), content).unwrap();
+    let dep = make_dep(tmp.path(), "lcl");
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+
+    // Unit name.
+    assert!(idx.locate("lcl", "myunit").is_some(), "unit name must be indexed");
+    // Interface declarations.
+    assert!(idx.locate("lcl", "tmyclass").is_some(), "type must be indexed");
+    assert!(idx.locate("lcl", "dosomething").is_some(), "procedure must be indexed");
+    assert!(idx.locate("lcl", "getvalue").is_some(), "function must be indexed");
+    assert!(idx.locate("lcl", "max_items").is_some(), "const must be indexed");
+    assert!(idx.locate("lcl", "globalflag").is_some(), "var must be indexed");
+    // Implementation-only names must NOT appear.
+    assert!(
+        idx.locate("lcl", "begin").is_none(),
+        "implementation bodies must not be indexed"
+    );
+}
+
+#[test]
+fn symbol_index_stops_at_implementation_keyword() {
+    let tmp = TempDir::new().unwrap();
+    let content = "\
+unit Foo;
+interface
+procedure IfaceProc;
+implementation
+procedure ImplOnlyProc;
+begin end;
+end.
+";
+    fs::write(tmp.path().join("foo.pas"), content).unwrap();
+    let dep = make_dep(tmp.path(), "mod");
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+
+    assert!(idx.locate("mod", "ifaceproc").is_some());
+    assert!(
+        idx.locate("mod", "implonlyproc").is_none(),
+        "names declared after `implementation` must not be indexed"
+    );
+}
+
+#[test]
+fn symbol_index_skips_inc_files() {
+    // .inc files are included via {$I} directives and do not have
+    // unit declarations; the scanner skips them intentionally.
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("heap.inc"), "procedure GetMem(var p: Pointer; n: SizeInt);\n").unwrap();
+    fs::write(tmp.path().join("system.pp"), "unit System;\ninterface\nprocedure Move;\nimplementation\nend.\n").unwrap();
+    let dep = make_dep(tmp.path(), "rtl");
+    let idx = _test_build_pascal_symbol_index(&[dep]);
+
+    // system.pp contributes its unit and interface symbols.
+    assert!(idx.locate("rtl", "system").is_some());
+    assert!(idx.locate("rtl", "move").is_some());
+    // heap.inc is skipped entirely.
+    assert!(idx.locate("rtl", "getmem").is_none());
+}
+
+#[test]
+fn extract_decl_ident_recognises_keywords() {
+    assert_eq!(_test_extract_decl_ident("procedure dosomething(x: integer)"), Some("dosomething"));
+    assert_eq!(_test_extract_decl_ident("function getvalue: string"), Some("getvalue"));
+    assert_eq!(_test_extract_decl_ident("type tmyclass = class"), Some("tmyclass"));
+    assert_eq!(_test_extract_decl_ident("var globalflag: boolean"), Some("globalflag"));
+    assert_eq!(_test_extract_decl_ident("const max_size = 100"), Some("max_size"));
+    // Non-declaration lines return None.
+    assert_eq!(_test_extract_decl_ident("begin"), None);
+    assert_eq!(_test_extract_decl_ident("end."), None);
+    assert_eq!(_test_extract_decl_ident("uses sysutils;"), None);
+}
+
+#[test]
+fn symbol_index_non_empty_for_fixture_roots() {
+    let tmp = TempDir::new().unwrap();
+    make_lazarus_fixture(tmp.path());
+
+    std::env::set_var("BEARWISDOM_LAZARUS_DIR", tmp.path());
+    let roots = discover_freepascal_roots();
+    std::env::remove_var("BEARWISDOM_LAZARUS_DIR");
+
+    let idx = _test_build_pascal_symbol_index(&roots);
+    assert!(!idx.is_empty(), "symbol index must be non-empty for a Lazarus fixture");
+    // The fixture writes `unit Forms;` in lcl/forms.pas.
+    let hit = roots.iter().any(|r| r.module_path == "lcl")
+        && idx.find_by_name("forms").iter().any(|(m, _)| *m == "lcl");
+    assert!(hit, "unit 'forms' must appear in the lcl module index");
 }
