@@ -13,7 +13,6 @@
 
 use crate::db::Database;
 use crate::indexer::changeset;
-use crate::indexer::expand;
 use crate::indexer::mem_probe;
 use crate::indexer::phase_timer;
 use crate::indexer::ref_cache::RefCache;
