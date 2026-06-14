@@ -8,13 +8,50 @@
 // methods via `dotscope`. Per-coord work runs on rayon.
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use tracing::debug;
 
 use super::manifest::{parse_package_references_full, NuGetCoord};
 use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file};
+
+/// Process-global cache of loaded .NET assemblies, keyed by DLL path.
+///
+/// `dotscope` parses the entire assembly to build a `CilObject` and is NOT
+/// safe to construct concurrently — parallel `from_view` calls from the resolve
+/// pool's workers deadlock. The load is therefore serialized under this lock,
+/// and the resulting object reused for every type cracked from the same DLL
+/// (each DLL is parsed at most once instead of once per referenced type). A
+/// load failure caches `None` so a broken DLL isn't retried per type.
+static DLL_CACHE: Lazy<Mutex<HashMap<PathBuf, Option<Arc<dotscope::prelude::CilObject>>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Get the parsed assembly for `dll_path`, loading + caching it on first use.
+/// The whole-assembly parse runs under the cache lock, so dotscope is never
+/// invoked from two threads at once.
+fn load_assembly_cached(dll_path: &Path) -> Option<Arc<dotscope::prelude::CilObject>> {
+    use dotscope::metadata::cilassemblyview::CilAssemblyView;
+    use dotscope::metadata::validation::ValidationConfig;
+    use dotscope::prelude::CilObject;
+
+    let mut cache = DLL_CACHE.lock().ok()?;
+    if let Some(entry) = cache.get(dll_path) {
+        return entry.clone();
+    }
+    let loaded = (|| {
+        let mut config = ValidationConfig::disabled();
+        config.lenient = true;
+        let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
+        CilObject::from_view_with_validation(view, config).ok()
+    })()
+    .map(Arc::new);
+    cache.insert(dll_path.to_path_buf(), loaded.clone());
+    loaded
+}
 
 /// Public entry point used by back-compat re-exports in `externals.rs`.
 /// Returns DLL metadata ParsedFiles only — source ParsedFiles are merged by
@@ -150,10 +187,7 @@ pub(crate) fn crack_one_dll_type(
     virtual_path: &str,
     lang_id: &str,
 ) -> Option<crate::types::ParsedFile> {
-    use dotscope::metadata::cilassemblyview::CilAssemblyView;
     use dotscope::metadata::method::MethodAccessFlags;
-    use dotscope::metadata::validation::ValidationConfig;
-    use dotscope::prelude::CilObject;
     use crate::types::{ExtractedSymbol, SymbolKind};
 
     // Decode "ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>"
@@ -164,10 +198,7 @@ pub(crate) fn crack_one_dll_type(
     let qualified_type = parts.next()?;
 
     let dll_path = std::path::Path::new(dll_str);
-    let mut config = ValidationConfig::disabled();
-    config.lenient = true;
-    let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
-    let assembly = CilObject::from_view_with_validation(view, config).ok()?;
+    let assembly = load_assembly_cached(dll_path)?;
 
     // Find the matching type definition by qualified name.
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
