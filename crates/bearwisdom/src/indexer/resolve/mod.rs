@@ -40,8 +40,6 @@ use crate::db::Database;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::ParsedFile;
 
-use engine::ChainMiss;
-
 pub use adapters::append_db_route_consumer_emissions;
 pub use flow_pair::flush_flow_emissions_public;
 pub(crate) use loop_body::ResolveSideTables;
@@ -70,10 +68,6 @@ pub struct ResolutionStats {
     pub engine_resolved: u64,
     pub unresolved: u64,
     pub external: u64,
-    /// Chain walker bail-outs collected during this pass. The orchestrator
-    /// (full.rs) feeds these into `expand_chain_reachability` to drive a
-    /// second-pass `Ecosystem::resolve_symbol` reload.
-    pub chain_misses: Vec<ChainMiss>,
     /// Function return types inferred from `return <expr>` sites this pass
     /// (qname → joined type), already conflict-filtered and limited to
     /// functions with no declared/known return. The orchestrator gap-fills
@@ -86,15 +80,6 @@ pub struct ResolutionStats {
     /// the full-index fixpoint feeds this back as the next pass's worklist so
     /// already-resolved files are skipped.
     pub frontier_files: Vec<String>,
-}
-
-impl ResolutionStats {
-    /// `true` when the chain walker recorded no bail-outs — i.e. no external
-    /// file demand was surfaced by this pass and the Stage 2 loop can stop.
-    /// Used by the demand-driven pipeline as the fixpoint-exit condition.
-    pub fn converged(&self) -> bool {
-        self.chain_misses.is_empty()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +146,8 @@ pub fn resolve_and_write_incremental_and_arena(
 /// DELETE speculative unresolved/external rows between iterations, and
 /// only finalize once the demand set reaches fixpoint.
 ///
-/// `stats.converged()` reports whether the chain walker recorded any
-/// bail-outs. Callers use that as the loop-exit signal.
+/// `stats.frontier_files` lists the source files that recorded a chain miss —
+/// the worklist the full-index fixpoint re-resolves on its next pass.
 pub fn resolve_iteration(
     db: &mut Database,
     parsed: &[ParsedFile],

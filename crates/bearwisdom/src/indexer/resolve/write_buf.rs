@@ -43,6 +43,12 @@ pub(super) struct FileWriteBuf {
     /// callers read the inferred return (INFER-3/2). The db_id distinguishes
     /// two functions that share a qname across files.
     pub(super) inferred_returns: Vec<(String, i64, String)>,
+    /// Chain-miss frontier contributed by this file: `(source_path, miss_target_names)`.
+    /// A file lands here when its ref loop recorded at least one chain bail-out.
+    /// The orchestrator collects the distinct source paths into the next pass's
+    /// re-resolve worklist; the target names are retained for narrowing that
+    /// worklist against newly-inferred returns.
+    pub(super) frontier: Vec<(String, Vec<String>)>,
 }
 
 impl FileWriteBuf {
@@ -52,6 +58,7 @@ impl FileWriteBuf {
         self.unresolved.append(&mut other.unresolved);
         self.flow_emissions.append(&mut other.flow_emissions);
         self.inferred_returns.append(&mut other.inferred_returns);
+        self.frontier.append(&mut other.frontier);
     }
 
     /// Rewrite edge target ids through a synthetic→real id map. An edge whose
@@ -95,9 +102,8 @@ impl DeferredSpeculative {
 }
 
 /// Counters accumulated per file; reduced into the global ResolutionStats
-/// after the parallel section. Excludes `chain_misses`, which are pushed
-/// directly into the SymbolIndex's Mutex-protected accumulator by the
-/// chain walker (already thread-safe).
+/// after the parallel section. Chain-miss frontier entries travel on
+/// `FileWriteBuf::frontier` (per-file, no shared lock).
 #[derive(Default, Clone, Copy)]
 pub(super) struct FileStats {
     pub(super) resolved: u64,

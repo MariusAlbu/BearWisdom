@@ -21,7 +21,7 @@ use std::sync::Arc;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::AliasTarget;
 
-use super::{ChainMiss, SymbolInfo, TypeInfo};
+use super::{SymbolInfo, TypeInfo};
 
 // Re-export the engine-level free helpers that submodules of this module need.
 // Children of `engine/index/` can see engine's private items via the
@@ -184,14 +184,6 @@ pub struct SymbolIndex {
     angular_selectors: FxHashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
-    /// Interior-mutable accumulator for chain walker bail-outs.
-    /// `record_chain_miss` pushes; `take_chain_misses` drains.
-    ///
-    /// `Mutex` is needed because `SymbolIndex` is shared by `&` across
-    /// rayon workers in the parallel resolve loop. Contention is bounded —
-    /// chain misses are a small fraction of resolves, and locking is fast
-    /// compared to the SQL writes the workers are also doing.
-    chain_misses: std::sync::Mutex<Vec<ChainMiss>>,
     /// Workspace-wide TypeArena. Holds the canonical `Type` interpretation
     /// of every type expression referenced from any indexed symbol. Used
     /// by chain walkers and language resolvers to switch from string-keyed
@@ -234,19 +226,25 @@ impl SymbolIndex {
 // (rayon worker threads are persistent) is safe because of that reset.
 thread_local! {
     pub(crate) static LOCAL_TYPE_CACHE: RefCell<LocalTypeCache> = RefCell::new(LocalTypeCache::default());
-    /// The project-relative path of the file currently being resolved on this
-    /// worker thread. Set once per file before its ref loop begins, read by
-    /// `record_chain_miss` to tag each miss with its originating file.
-    pub(crate) static CURRENT_SOURCE_FILE: RefCell<String> = RefCell::new(String::new());
+    /// Per-worker accumulator of chain-miss target names for the file currently
+    /// being resolved on this thread. `record_chain_miss` pushes; the resolve
+    /// loop clears it before each file's ref loop (`reset_file_misses`) and
+    /// drains it after (`take_file_misses`), attributing the misses to that
+    /// file. Thread-local so rayon workers don't contend on a shared lock.
+    pub(crate) static CURRENT_FILE_MISSES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 impl SymbolIndex {
-    /// Record the project-relative path of the file whose refs are about to be
-    /// resolved on the calling rayon worker. Must be called once per file before
-    /// the ref loop so that every `record_chain_miss` within that loop reads the
-    /// correct source path from the thread-local.
-    pub fn set_current_source_file(&self, path: &str) {
-        CURRENT_SOURCE_FILE.with(|c| *c.borrow_mut() = path.to_string());
+    /// Clear this worker's per-file chain-miss accumulator. Called once per file
+    /// before its ref loop so misses attribute to the correct source file.
+    pub fn reset_file_misses(&self) {
+        CURRENT_FILE_MISSES.with(|c| c.borrow_mut().clear());
+    }
+
+    /// Drain the chain-miss target names recorded for the file just resolved on
+    /// this worker, in record order. The accumulator is left empty.
+    pub fn take_file_misses(&self) -> Vec<String> {
+        CURRENT_FILE_MISSES.with(|c| std::mem::take(&mut *c.borrow_mut()))
     }
 }
 

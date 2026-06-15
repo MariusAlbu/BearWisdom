@@ -10,7 +10,7 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{ChainMiss, SymbolInfo, SymbolSet};
+use super::{SymbolInfo, SymbolSet};
 
 // ---------------------------------------------------------------------------
 // SymbolLookup trait — decouples resolvers from index internals
@@ -372,15 +372,14 @@ pub trait SymbolLookup {
     /// Record a chain walker bail-out for the R3 second-pass reload.
     ///
     /// Called by `crate::type_checker::chain::resolve_via_chain` when it resolved
-    /// `current_type` but couldn't continue because the next segment isn't
-    /// indexed under it. Default impl is a no-op so test/synthetic lookups
-    /// don't have to opt in.
+    /// the receiver type but couldn't continue because the next segment isn't
+    /// indexed under it. `target_name` is that next segment. Default impl is a
+    /// no-op so test/synthetic lookups don't have to opt in.
     ///
-    /// `SymbolIndex` overrides this with an interior-mutable buffer drained
-    /// by `take_chain_misses` after the main resolution loop, so that the
-    /// indexer can drive `Ecosystem::resolve_symbol` on demand and re-resolve
-    /// only the affected refs.
-    fn record_chain_miss(&self, _miss: ChainMiss) {}
+    /// `SymbolIndex` overrides this to mark the file currently being resolved
+    /// as part of the next pass's frontier — the only files whose resolution
+    /// can change once inline externals materialization adds members.
+    fn record_chain_miss(&self, _target_name: &str) {}
 
     // -------------------------------------------------------------------
     // Per-file flow-typing cache (R5).

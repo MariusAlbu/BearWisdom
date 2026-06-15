@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::connectors::url_pattern;
 use crate::db::Database;
@@ -32,7 +32,7 @@ use super::adapters::{
     nextjs_route_consumer_emissions, plugin_flow_emissions_to_emissions,
 };
 use super::engine::{
-    self, build_scope_chain, ChainMiss, ImportEntry, RefContext, SymbolIndex, SymbolLookup,
+    self, build_scope_chain, ImportEntry, RefContext, SymbolIndex, SymbolLookup,
 };
 use super::flow_emit;
 use super::flow_pair::flush_flow_emissions;
@@ -509,10 +509,10 @@ fn resolve_iteration_body(
                 }
             }
 
-            // Tag the worker thread so every `record_chain_miss` call within this
-            // file's ref loop captures the correct source path. Must come after the
+            // Clear this worker's chain-miss accumulator so the misses recorded
+            // in the ref loop below attribute to this file. Must come after the
             // local-type seed pass and before the ref iteration below.
-            index.set_current_source_file(&pf.path);
+            index.reset_file_misses();
 
             // R5: iterate refs in source order so forward inference
             // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
@@ -869,12 +869,7 @@ fn resolve_iteration_body(
                             .next()
                             .unwrap_or(r.target_name.as_str());
                         if !leaf.is_empty() {
-                            index.record_chain_miss(engine::ChainMiss {
-                                current_type: String::new(),
-                                target_name: leaf.to_string(),
-                                module: Some(module.to_string()),
-                                source_path: String::new(),
-                            });
+                            index.record_chain_miss(leaf);
                         }
                     }
                     buf.externals.push((
@@ -980,12 +975,7 @@ fn resolve_iteration_body(
                             // at `(include_path, include_path)`. O(1) push — the pull
                             // happens demand-time in `expand`, never in this loop.
                             if is_c_family(effective_lang) && looks_like_header_include(probe) {
-                                index.record_chain_miss(engine::ChainMiss {
-                                    current_type: String::new(),
-                                    target_name: probe.to_string(),
-                                    module: Some(probe.to_string()),
-                                    source_path: String::new(),
-                                });
+                                index.record_chain_miss(probe);
                             }
                             // Import we can't trace — write as unresolved so
                             // the ref stays visible to investigation queries
@@ -1007,26 +997,19 @@ fn resolve_iteration_body(
                             local_stats.unresolved += 1;
                             continue;
                         }
-                        // Bare unresolved refs (no module path, no chain) seed
-                        // the demand-driven expand pass: record an empty-receiver
-                        // chain miss so `locate_via_symbol_index` Phase B can
-                        // probe `find_by_name(target)` against the external
-                        // symbol index and pull the declaring file. Without
-                        // this the seed and chain expand both skip bare names,
-                        // so ambient identifiers declared in external `.d.ts`
-                        // (Vue 3 macros in `@vue/runtime-core`, RxJS pipeable
-                        // operators, lodash defaults) never trigger a pull.
+                        // Bare unresolved refs (no module path, no chain) record a
+                        // miss so this file re-enters the frontier: a later pass
+                        // probes `find_by_name(target)` against the external symbol
+                        // index once inline materialization has pulled the declaring
+                        // file. Without it, ambient identifiers declared in external
+                        // `.d.ts` (Vue 3 macros, RxJS pipeable operators, lodash
+                        // defaults) never get a second resolution attempt.
                         if r.module.is_none()
                             && r.chain.is_none()
                             && !r.target_name.is_empty()
                             && !r.target_name.contains('.')
                         {
-                            index.record_chain_miss(engine::ChainMiss {
-                                current_type: String::new(),
-                                target_name: r.target_name.clone(),
-                                module: None,
-                                source_path: String::new(),
-                            });
+                            index.record_chain_miss(&r.target_name);
                         }
                         let module_value = r.module.as_deref().map(|s| s.to_string());
                         // E3: propagate snippet flag from source symbol for
@@ -1055,6 +1038,14 @@ fn resolve_iteration_body(
             // (TLS cache survives across rayon tasks on the same worker
             // thread; explicit clear keeps it tight.)
             index.clear_local_cache();
+
+            // Drain this file's chain misses (recorded into the worker-local
+            // accumulator during the ref loop) into the per-file buffer. A file
+            // with any miss joins the next pass's frontier.
+            let file_misses = index.take_file_misses();
+            if !file_misses.is_empty() {
+                buf.frontier.push((pf.path.clone(), file_misses));
+            }
 
             (buf, local_stats)
         })
@@ -1113,39 +1104,11 @@ fn resolve_iteration_body(
         }
     }
 
-    // Drain chain walker bail-outs for the orchestrator's R3 reload pass.
-    // `unique_misses` is deduped on (current_type, target_name) for the expand
-    // pull. `frontier_files` is the distinct set of source paths that recorded
-    // any miss — these are the only files whose resolution can change when new
-    // external symbols are added. A file with no misses is fully resolved and
-    // safe to skip on the next fixpoint pass.
-    let raw_misses = index.take_chain_misses();
-    let mut frontier_set: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
-    // Dedup key excludes `source_path` — expand only needs one pull per
-    // (current_type, target_name, module) triple, regardless of how many
-    // source files recorded the same miss.
-    let mut seen: std::collections::HashSet<(String, String, Option<String>)> =
-        std::collections::HashSet::new();
-    let mut unique_misses: Vec<ChainMiss> = Vec::new();
-    for m in raw_misses.iter().cloned() {
-        if !m.source_path.is_empty() {
-            frontier_set.insert(m.source_path.clone());
-        }
-        let key = (m.current_type.clone(), m.target_name.clone(), m.module.clone());
-        if seen.insert(key) {
-            unique_misses.push(m);
-        }
-    }
-    stats.frontier_files = frontier_set.into_iter().collect();
-    if !unique_misses.is_empty() {
-        debug!(
-            "Chain walker recorded {} bail-outs ({} unique)",
-            raw_misses.len(),
-            unique_misses.len(),
-        );
-    }
-    stats.chain_misses = unique_misses;
+    // `frontier_files` is the set of source paths that recorded any chain miss
+    // this pass — the only files whose resolution can change once inline
+    // externals materialization adds members, so the fixpoint re-resolves them.
+    // Each file appears once (one per-file buffer per worker).
+    stats.frontier_files = combined_buf.frontier.iter().map(|(p, _)| p.clone()).collect();
 
     if stats.engine_resolved > 0 || stats.external > 0 {
         info!(

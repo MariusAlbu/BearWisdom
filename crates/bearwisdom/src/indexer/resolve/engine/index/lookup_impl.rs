@@ -10,8 +10,8 @@
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::{strip_generic_args, SymbolIndex, CURRENT_SOURCE_FILE, LOCAL_TYPE_CACHE};
-use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup, SymbolSet};
+use super::{strip_generic_args, SymbolIndex, CURRENT_FILE_MISSES, LOCAL_TYPE_CACHE};
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
 
 impl SymbolIndex {
     /// Merge an eager-internal slice with materialized-external hits into one
@@ -444,26 +444,14 @@ impl SymbolLookup for SymbolIndex {
         self.angular_selectors.get(raw_selector).map(|s| s.as_str())
     }
 
-    fn record_chain_miss(&self, miss: ChainMiss) {
-        // Strip generic type arguments from both fields before stashing.
-        // The chain walker produces strings like "Promise<User>" or
-        // "react.FC<Props>", but `expand.rs::locate_via_symbol_index`
-        // queries the symbol index by bare name — index entries never
-        // carry `<…>`. Without this trim, every chain miss on a generic
-        // type silently fails to resolve at expansion time.
-        let source_path = CURRENT_SOURCE_FILE.with(|c| c.borrow().clone());
-        let miss = ChainMiss {
-            current_type: strip_generic_args(&miss.current_type),
-            target_name: strip_generic_args(&miss.target_name),
-            // Preserve the import-qualified module (EXT-1) through the strip —
-            // it's the key `expand` uses for the module-scoped locate.
-            module: miss.module,
-            source_path,
-        };
-        self.chain_misses
-            .lock()
-            .expect("chain_misses mutex poisoned")
-            .push(miss);
+    fn record_chain_miss(&self, target_name: &str) {
+        // A chain bail-out marks the file currently being resolved on this
+        // worker for the next frontier pass. The source file is attributed at
+        // drain time (`take_file_misses`), so the miss itself carries only the
+        // unresolved segment name — generics stripped (`Promise<User>` →
+        // `Promise`) so it matches bare index entries when the frontier is
+        // later narrowed against newly-inferred returns.
+        CURRENT_FILE_MISSES.with(|c| c.borrow_mut().push(strip_generic_args(target_name)));
     }
 
     fn local_type(&self, name: &str) -> Option<String> {

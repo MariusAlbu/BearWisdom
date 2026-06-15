@@ -1974,15 +1974,12 @@ fn ext2_external_class_method_chain_resolves_end_to_end() {
         "ext:ts:orm/index.d.ts".to_string(),
         "User.greet".to_string(),
     )];
-    let misses = index.take_chain_misses();
+    let misses = index.take_file_misses();
     assert_eq!(
         resolution.map(|r| r.target_symbol_id),
         Some(greet_id),
         "repo.get().greet() should bind greet on the external return type User; chain misses: {:?}",
         misses
-            .iter()
-            .map(|m| (&m.current_type, &m.target_name))
-            .collect::<Vec<_>>()
     );
 }
 
@@ -2124,15 +2121,12 @@ fn e1_external_builder_chain_resolves_both_hops_via_reachable_members() {
         "ext:ts:kysely/index.d.ts".to_string(),
         "kysely.SelectQueryBuilder.where_".to_string(),
     )];
-    let misses = index.take_chain_misses();
+    let misses = index.take_file_misses();
     assert_eq!(
         resolution.map(|r| r.target_symbol_id),
         Some(where_id),
         "conn.selectFrom().where_() must bind where_ on the second-hop external return type; chain misses: {:?}",
         misses
-            .iter()
-            .map(|m| (&m.current_type, &m.target_name))
-            .collect::<Vec<_>>()
     );
 }
 
@@ -2391,15 +2385,12 @@ fn enclosing_member_rung_binds_inherited_internal_base_member() {
 
     let resolution = engine.resolve(&rc, &fc, &index);
     let helper_id = id_map[&("base.ts".to_string(), "A.helper".to_string())];
-    let misses = index.take_chain_misses();
+    let misses = index.take_file_misses();
     assert_eq!(
         resolution.as_ref().map(|r| r.target_symbol_id),
         Some(helper_id),
         "bare helper() in B.run must bind the inherited A.helper via implicit-self synthesis; chain misses: {:?}",
         misses
-            .iter()
-            .map(|m| (&m.current_type, &m.target_name))
-            .collect::<Vec<_>>()
     );
     assert_eq!(
         resolution.map(|r| r.strategy),
@@ -2459,15 +2450,12 @@ fn enclosing_member_rung_binds_inherited_external_base_member() {
 
     let resolution = engine.resolve(&rc, &fc, &index);
     let helper_id = id_map[&("ext:ts:base/index.d.ts".to_string(), "A.helper".to_string())];
-    let misses = index.take_chain_misses();
+    let misses = index.take_file_misses();
     assert_eq!(
         resolution.as_ref().map(|r| r.target_symbol_id),
         Some(helper_id),
         "bare helper() must bind the reachable external base member A.helper; chain misses: {:?}",
         misses
-            .iter()
-            .map(|m| (&m.current_type, &m.target_name))
-            .collect::<Vec<_>>()
     );
     assert_eq!(
         resolution.map(|r| r.strategy),
@@ -2541,15 +2529,12 @@ fn implicit_self_binds_implements_only_inherited_member() {
 
     let resolution = engine.resolve(&rc, &fc, &index);
     let helper_id = id_map[&("iface.ts".to_string(), "I.helper".to_string())];
-    let misses = index.take_chain_misses();
+    let misses = index.take_file_misses();
     assert_eq!(
         resolution.as_ref().map(|r| r.target_symbol_id),
         Some(helper_id),
         "bare helper() in B.run must bind I.helper via implicit-self synthesis (the rung's Inherits-only map can't reach an Implements edge); chain misses: {:?}",
         misses
-            .iter()
-            .map(|m| (&m.current_type, &m.target_name))
-            .collect::<Vec<_>>()
     );
     assert_eq!(
         resolution.map(|r| r.strategy),

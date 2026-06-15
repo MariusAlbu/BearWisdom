@@ -30,7 +30,7 @@ use super::super::{
 };
 use super::SymbolIndex;
 use super::{common_prefix_len, is_type_like_kind};
-use crate::indexer::resolve::engine::{ChainMiss, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
 
 impl SymbolIndex {
     /// Augment an already-built index with symbols from `new_files` —
@@ -624,19 +624,6 @@ impl SymbolIndex {
             }
             _ => {}
         }
-    }
-
-    /// Drain the chain-walker miss accumulator.
-    ///
-    /// Called by `resolve_and_write` after the initial resolution pass to
-    /// drive R3 lazy-reload via `Ecosystem::resolve_symbol`. Returns the
-    /// accumulated bail-outs in insertion order; the buffer is emptied.
-    pub fn take_chain_misses(&self) -> Vec<ChainMiss> {
-        self.chain_misses
-            .lock()
-            .expect("chain_misses mutex poisoned")
-            .drain(..)
-            .collect()
     }
 
     /// Seed the external-paths set.

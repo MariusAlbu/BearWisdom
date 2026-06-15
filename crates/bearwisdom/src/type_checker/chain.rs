@@ -17,7 +17,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    intern_yield_type, ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+    intern_yield_type, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
     RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::alias::expand_alias;
@@ -503,20 +503,10 @@ pub fn resolve_via_chain(
             }
         }
 
-        // Lost the chain — can't determine the next type. Record the miss
-        // for R3 lazy reload: a second pass will call resolve_symbol on
-        // `current_type`'s owning ecosystem dep to pull its definition file.
-        let miss_type = if config.extensions.promote_external_qname {
-            external_type_qname(&current_type, lookup).unwrap_or_else(|| current_type.clone())
-        } else {
-            current_type.clone()
-        };
-        lookup.record_chain_miss(ChainMiss {
-            current_type: miss_type,
-            target_name: seg.name.clone(),
-            module: None,
-            source_path: String::new(),
-        });
+        // Lost the chain — can't determine the next type. Record the miss so
+        // this file re-enters the next frontier pass, where the segment may
+        // resolve once inline externals materialization has run.
+        lookup.record_chain_miss(&seg.name);
         return None;
     }
 
@@ -704,14 +694,9 @@ pub fn resolve_via_chain(
     }
 
     // Final-segment miss: walked to effective_type but no `.last.name` found
-    // anywhere under it. Same R3 reload signal as the intermediate-segment
+    // anywhere under it. Same frontier signal as the intermediate-segment
     // bail-out above.
-    lookup.record_chain_miss(ChainMiss {
-        current_type: effective_type,
-        target_name: last.name.clone(),
-        module: None,
-        source_path: String::new(),
-    });
+    lookup.record_chain_miss(&last.name);
     None
 }
 

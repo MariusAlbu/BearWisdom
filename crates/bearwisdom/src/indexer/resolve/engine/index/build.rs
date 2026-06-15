@@ -36,7 +36,7 @@ use super::{
     common_prefix_len, find_matching_bracket, is_ts_ambient_global_lib_path, is_type_like_kind,
     merge_where_bounds, parse_generic_param_clause,
 };
-use crate::indexer::resolve::engine::{ChainMiss, ImportEntry, SymbolInfo, TypeInfo};
+use crate::indexer::resolve::engine::{ImportEntry, SymbolInfo, TypeInfo};
 
 impl SymbolIndex {
     /// Build the index from parsed files and the symbol-to-ID mapping.
@@ -1205,7 +1205,6 @@ impl SymbolIndex {
             angular_selectors,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
-            chain_misses: std::sync::Mutex::new(Vec::new()),
             type_arena,
             materialized: super::MaterializedStore::new(),
             loc,

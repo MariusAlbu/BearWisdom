@@ -9,8 +9,8 @@
 // This file is the public API surface only — each submodule owns one
 // responsibility:
 //
-//   * types         — public data contracts (ChainMiss, FileContext,
-//                     RefContext, Resolution, SymbolInfo, TypeInfo)
+//   * types         — public data contracts (FileContext, RefContext,
+//                     Resolution, SymbolInfo, TypeInfo)
 //   * lookup        — SymbolLookup trait
 //   * index         — SymbolIndex struct + build/augment/classify/lookup_impl
 //   * chain_walker  — type-inference chain walker and its string helpers
@@ -33,8 +33,8 @@ pub use index::{LocalTypeCache, SymbolIndex};
 pub use lookup::SymbolLookup;
 pub use symbol_set::SymbolSet;
 pub use types::{
-    intern_yield_type, ChainMiss, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo,
-    TypeInfo, RESOLVED_CONFIDENCE,
+    intern_yield_type, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, TypeInfo,
+    RESOLVED_CONFIDENCE,
 };
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 

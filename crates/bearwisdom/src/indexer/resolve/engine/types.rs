@@ -14,44 +14,6 @@ use std::sync::Arc;
 use super::SymbolLookup;
 
 // ---------------------------------------------------------------------------
-// ChainMiss — chain walker failure context for R3 lazy reload
-// ---------------------------------------------------------------------------
-
-/// A chain walker bail-out point: the walker resolved `current_type` but had
-/// no member named `target_name` indexed for it. R3 reachability uses these
-/// to drive a second-pass `resolve_symbol` call against the owning
-/// ecosystem dep — pulling in `current_type`'s definition file so the chain
-/// can complete on a retry.
-///
-/// Recorded via `SymbolLookup::record_chain_miss` (interior-mutable on
-/// `SymbolIndex`); drained by `SymbolIndex::take_chain_misses` after the
-/// initial resolution pass.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ChainMiss {
-    /// The fully-qualified type the walker resolved up to but couldn't
-    /// step past. Either a project-relative qname or an external one
-    /// (e.g., `chai.Assertion`). Empty for a bare-name / import-qualified
-    /// demand that carries no receiver type.
-    pub current_type: String,
-    /// The next segment name the walker tried to look up against
-    /// `current_type` (e.g., `to` for `expect(x).to.equal(y)`).
-    pub target_name: String,
-    /// EXT-1: when the miss is an import-qualified external (the ref's name
-    /// binds to an import whose specifier resolves to a dependency root), the
-    /// resolved external module. `expand` then locates `target_name` *inside
-    /// this module* via `SymbolLocationIndex::locate` — never a coincidental
-    /// same-name symbol in another package, and with no whole-index
-    /// `find_by_name` fallback. `None` for chain-walker bail-outs and bare
-    /// ambient names, which keep the type-scoped / `find_by_name` probes.
-    pub module: Option<String>,
-    /// The project-relative path of the source file in which this miss was
-    /// recorded. Set from the per-worker thread-local installed before each
-    /// file's ref loop. Empty string when the recorder couldn't determine
-    /// the current file (should not occur in the normal resolve path).
-    pub source_path: String,
-}
-
-// ---------------------------------------------------------------------------
 // Public types used by LanguageResolver implementations
 // ---------------------------------------------------------------------------
 

@@ -9,8 +9,8 @@ use crate::indexer::resolve::engine::chain_walker::{
 };
 use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{
-    build_scope_chain, is_ambient_global_lib_path, is_ts_ambient_global_lib_path, ChainMiss,
-    LocalTypeCache, SymbolIndex, SymbolInfo, SymbolLookup, SymbolSet,
+    build_scope_chain, is_ambient_global_lib_path, is_ts_ambient_global_lib_path, LocalTypeCache,
+    SymbolIndex, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::types::Type;
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};

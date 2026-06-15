@@ -2551,13 +2551,7 @@ impl<'a> DefaultResolver<'a> {
         if trivial {
             return;
         }
-        self.lookup
-            .record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
-                current_type: String::new(),
-                target_name: target.to_string(),
-                module: None,
-                source_path: String::new(),
-            });
+        self.lookup.record_chain_miss(target);
     }
 
     /// Strategy — bare target brought into scope by a wildcard / static

@@ -1044,21 +1044,18 @@ impl<'a> ChainWalker<'a> {
     /// No-op `SymbolLookup::record_chain_miss` default keeps synthetic test
     /// lookups free.
     fn record_chain_miss(&self, current_ty: TypeId, target_name: &str) {
-        let current_type = match self.arena.get(current_ty) {
-            Type::Class(q) => q,
+        // Only a nominal receiver carries a member chain worth re-resolving;
+        // non-class receivers (function/tuple/primitive) record nothing so they
+        // don't drag their file into the frontier.
+        match self.arena.get(current_ty) {
+            Type::Class(_) => {}
             Type::Apply { base, .. } => match self.arena.get(base) {
-                Type::Class(q) => q,
+                Type::Class(_) => {}
                 _ => return,
             },
             _ => return,
-        };
-        self.lookup
-            .record_chain_miss(crate::indexer::resolve::engine::ChainMiss {
-                current_type,
-                target_name: target_name.to_string(),
-                module: None,
-                source_path: String::new(),
-            });
+        }
+        self.lookup.record_chain_miss(target_name);
     }
 
     /// Bare qname of a receiver type. `Class(q)` yields `q`; `Apply { base }`
