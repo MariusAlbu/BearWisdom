@@ -455,18 +455,20 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn local_type(&self, name: &str) -> Option<String> {
-        LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup(name).map(|s| s.to_string()))
+        LOCAL_TYPE_CACHE
+            .with(|c| c.borrow().last().and_then(|t| t.lookup(name).map(|s| s.to_string())))
     }
 
     fn local_type_union(&self, name: &str) -> Option<Vec<String>> {
-        LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup_union(name))
+        LOCAL_TYPE_CACHE.with(|c| c.borrow().last().and_then(|t| t.lookup_union(name)))
     }
 
     fn local_discriminant(&self, name: &str) -> Option<(String, String, bool)> {
         LOCAL_TYPE_CACHE.with(|c| {
-            c.borrow()
-                .discriminant(name)
-                .map(|(p, l, n)| (p.to_string(), l.to_string(), n))
+            c.borrow().last().and_then(|t| {
+                t.discriminant(name)
+                    .map(|(p, l, n)| (p.to_string(), l.to_string(), n))
+            })
         })
     }
 
@@ -477,7 +479,8 @@ impl SymbolLookup for SymbolIndex {
         cfg: crate::indexer::flow_cfg::FileCfg,
     ) {
         LOCAL_TYPE_CACHE.with(|c| {
-            let mut cache = c.borrow_mut();
+            let mut stack = c.borrow_mut();
+            let cache = stack.last_mut().expect("local-type stack has a base scope");
             cache.forward.clear();
             cache.narrowings = narrowings;
             cache.discriminants = discriminants;
@@ -487,16 +490,25 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn set_cursor(&self, byte: u32) {
-        LOCAL_TYPE_CACHE.with(|c| c.borrow_mut().cursor = byte);
+        LOCAL_TYPE_CACHE.with(|c| {
+            if let Some(cache) = c.borrow_mut().last_mut() {
+                cache.cursor = byte;
+            }
+        });
     }
 
     fn record_local_type(&self, name: String, type_name: String) {
-        LOCAL_TYPE_CACHE.with(|c| c.borrow_mut().forward.insert(name, type_name));
+        LOCAL_TYPE_CACHE.with(|c| {
+            if let Some(cache) = c.borrow_mut().last_mut() {
+                cache.forward.insert(name, type_name);
+            }
+        });
     }
 
     fn clear_local_cache(&self) {
         LOCAL_TYPE_CACHE.with(|c| {
-            let mut cache = c.borrow_mut();
+            let mut stack = c.borrow_mut();
+            let cache = stack.last_mut().expect("local-type stack has a base scope");
             cache.forward.clear();
             cache.narrowings.clear();
             cache.discriminants.clear();

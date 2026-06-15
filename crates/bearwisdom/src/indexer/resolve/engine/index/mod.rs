@@ -225,7 +225,13 @@ impl SymbolIndex {
 // resolution by `install_local_cache`; reusing the same TLS across files
 // (rayon worker threads are persistent) is safe because of that reset.
 thread_local! {
-    pub(crate) static LOCAL_TYPE_CACHE: RefCell<LocalTypeCache> = RefCell::new(LocalTypeCache::default());
+    // A STACK of per-file flow scopes, not a single slot. The base scope (always
+    // present) is what the main resolve loop installs/clears per file — depth 1,
+    // behavior-identical to the old single cache. Demand-driven return inference
+    // pushes a fresh scope before resolving a callee's body and pops after, so the
+    // host file's flow context survives the recursion (`push_local_scope`/
+    // `pop_local_scope`). Top-of-stack is the active scope.
+    pub(crate) static LOCAL_TYPE_CACHE: RefCell<Vec<LocalTypeCache>> = RefCell::new(vec![LocalTypeCache::default()]);
     /// Per-worker accumulator of chain-miss target names for the file currently
     /// being resolved on this thread. `record_chain_miss` pushes; the resolve
     /// loop clears it before each file's ref loop (`reset_file_misses`) and
@@ -245,6 +251,25 @@ impl SymbolIndex {
     /// this worker, in record order. The accumulator is left empty.
     pub fn take_file_misses(&self) -> Vec<String> {
         CURRENT_FILE_MISSES.with(|c| std::mem::take(&mut *c.borrow_mut()))
+    }
+
+    /// Push a fresh flow scope before resolving a callee's body during demand-
+    /// driven return inference, so the host file's `LocalTypeCache` is preserved.
+    /// Paired with `pop_local_scope`. The new scope starts empty and gains its
+    /// own narrowings/cfg via the usual `install_local_cache` on top.
+    pub fn push_local_scope(&self) {
+        LOCAL_TYPE_CACHE.with(|c| c.borrow_mut().push(LocalTypeCache::default()));
+    }
+
+    /// Pop the flow scope pushed by `push_local_scope`, restoring the caller's.
+    /// Never pops the base scope (the main loop's per-file cache).
+    pub fn pop_local_scope(&self) {
+        LOCAL_TYPE_CACHE.with(|c| {
+            let mut stack = c.borrow_mut();
+            if stack.len() > 1 {
+                stack.pop();
+            }
+        });
     }
 }
 

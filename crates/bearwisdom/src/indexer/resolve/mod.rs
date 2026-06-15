@@ -30,6 +30,7 @@ mod indexes;
 mod loop_body;
 mod path_util;
 pub mod reachability;
+mod return_inference;
 pub mod synthesize_dispatch;
 mod write_buf;
 

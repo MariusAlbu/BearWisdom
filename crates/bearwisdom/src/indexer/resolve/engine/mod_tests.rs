@@ -7,7 +7,6 @@ use crate::indexer::resolve::engine::chain_walker::{
     parse_param_types_from_signature_for_lang, parse_return_type_from_signature,
     resolve_type_name_in_scope, tuple_element,
 };
-use crate::indexer::resolve::engine::index::LOCAL_TYPE_CACHE;
 use crate::indexer::resolve::engine::{
     build_scope_chain, is_ambient_global_lib_path, is_ts_ambient_global_lib_path, LocalTypeCache,
     SymbolIndex, SymbolInfo, SymbolLookup, SymbolSet,
@@ -1772,4 +1771,30 @@ fn augment_from_parsed_generic_return_records_element_args() {
         index.return_type_args("Svc.getRepo").map(|a| a.to_vec()),
         Some(vec!["User".to_string()])
     );
+}
+
+#[test]
+fn local_type_scope_stack_isolates_and_restores() {
+    let index = SymbolIndex::build(&[], &HashMap::new());
+    // Base scope (the main loop's per-file cache): record a binding.
+    index.install_local_cache(vec![], vec![], crate::indexer::flow_cfg::FileCfg::default());
+    index.record_local_type("x".to_string(), "Outer".to_string());
+    assert_eq!(index.local_type("x").as_deref(), Some("Outer"));
+
+    // Inference recursion pushes a fresh scope: the host's binding is invisible.
+    index.push_local_scope();
+    assert_eq!(index.local_type("x"), None, "pushed scope starts empty");
+    index.record_local_type("x".to_string(), "Inner".to_string());
+    assert_eq!(index.local_type("x").as_deref(), Some("Inner"));
+
+    // Popping restores the host scope's binding unchanged.
+    index.pop_local_scope();
+    assert_eq!(
+        index.local_type("x").as_deref(),
+        Some("Outer"),
+        "host scope restored after pop"
+    );
+    // The base scope is never popped.
+    index.pop_local_scope();
+    assert_eq!(index.local_type("x").as_deref(), Some("Outer"));
 }
