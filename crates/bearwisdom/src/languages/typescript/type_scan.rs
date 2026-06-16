@@ -63,32 +63,70 @@ fn first_non_literal_descendant_text(node: tree_sitter::Node, src: &[u8]) -> Opt
                     return Some(t);
                 }
             }
-            _ => return Some(helpers::node_text(child, src)),
+            // Reference-bearing leaves — the first real type name in the composite.
+            "type_identifier" | "identifier" | "generic_type" | "nested_type_identifier"
+            | "member_expression" => return Some(helpers::node_text(child, src)),
+            // Structured / non-reference members (object_type, function_type,
+            // mapped_type, conditional_type, predefined_type, template_literal_type,
+            // …) — their first token is a property / parameter name, not a type
+            // ref. Skip so the caller falls back to the `_primitive` sentinel.
+            _ => continue,
         }
     }
     None
 }
 
-fn is_pure_literal_type_composite(node: tree_sitter::Node) -> bool {
-    let mut cursor = node.walk();
-    let mut any = false;
-    for child in node.named_children(&mut cursor) {
-        match child.kind() {
-            "literal_type" => any = true,
-            // Structural wrappers around literals are still "pure literal"
-            // for coverage purposes — `'a' | 'b'`, `'a'[]`, `('a' | 'b')`,
-            // `readonly 'a'[]`, `['a', 'b']` all carry no real type ref.
-            "union_type" | "intersection_type" | "parenthesized_type" | "array_type"
-            | "readonly_type" | "tuple_type" => {
-                if !is_pure_literal_type_composite(child) {
-                    return false;
-                }
-                any = true;
-            }
-            _ => return false,
+/// The coverage-ref target for a type node `tn`: the real root type name for
+/// reference-bearing forms, or the `_primitive` sentinel for forms whose first
+/// identifier is NOT a type reference — primitives, literal types, and
+/// structured types (object/function/mapped/conditional) whose first token is a
+/// property or parameter name. The sentinel satisfies the coverage budget (a ref
+/// at the node's line) without leaking `wow`/`true`/`1`/`children` into
+/// unresolved_refs; `pipeline.rs` drops `_primitive` before resolution.
+///
+/// Shared by the `type_annotation`, `as_expression`, and `satisfies_expression`
+/// arms so all three classify cast / annotation / check types identically.
+fn coverage_target_for_type_node(tn: tree_sitter::Node, src: &[u8]) -> String {
+    // Split a raw type-name string to its first identifier-shaped token, or the
+    // `_primitive` sentinel when that token is numeric (leftover literal content).
+    let root_of = |s: &str| -> String {
+        let candidate = s
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .find(|t| !t.is_empty())
+            .unwrap_or("_")
+            .to_string();
+        if candidate.is_empty() || candidate.chars().all(|c| c.is_ascii_digit()) {
+            "_primitive".to_string()
+        } else {
+            candidate
         }
+    };
+    let name = helpers::node_text(tn, src);
+    let target = match tn.kind() {
+        // Qualified forms → emit the full dotted name so downstream
+        // classification (primitives list, React namespace check) can match.
+        "nested_type_identifier" | "member_expression" => name,
+        // Reference-bearing leaf — its own text is the type name.
+        "type_identifier" | "identifier" | "generic_type" | "type_query" => root_of(&name),
+        // Literal type by itself (`true`, `42`, `'x'`) — never a real ref.
+        "literal_type" => "_primitive".to_string(),
+        // Composites: a real type name only if some member is reference-bearing
+        // (`'400' | Foo` → `Foo`, `User[]` → `User`). A composite of only
+        // literals / structured members (`{ wow: boolean } | undefined`,
+        // `'a' | 'b'`) carries no ref → sentinel.
+        "union_type" | "intersection_type" | "array_type" | "tuple_type"
+        | "parenthesized_type" | "readonly_type" => first_non_literal_descendant_text(tn, src)
+            .map(|t| root_of(&t))
+            .unwrap_or_else(|| "_primitive".to_string()),
+        // Structured types — the first identifier in the text is a property
+        // or parameter name (object/function/mapped/conditional), not a ref.
+        _ => "_primitive".to_string(),
+    };
+    if target.is_empty() || is_ts_primitive(&target) {
+        "_primitive".to_string()
+    } else {
+        target
     }
-    any
 }
 
 pub(super) fn scan_all_type_identifiers(
@@ -192,110 +230,26 @@ pub(super) fn scan_all_type_identifiers(
                     found
                 };
                 if let Some(tn) = type_node {
-                    // Emit a ref for the annotation node itself (for type_annotation coverage).
+                    // Emit a coverage ref at the annotation line. The target is a
+                    // real root type name, or the `_primitive` sentinel for
+                    // primitives / literals / structured types whose first token
+                    // is a property or parameter name (not a type reference).
                     let name = helpers::node_text(tn, src);
                     if !name.is_empty() {
-                        // Decide the coverage-ref target based on the shape of the
-                        // inner type node:
-                        //   * qualified forms → emit the full dotted name so
-                        //     downstream classification (primitives list, React
-                        //     namespace check) can match.
-                        //   * simple / generic / array / union / tuple →
-                        //     first-segment split gives a meaningful root
-                        //     (`Array<T>` → `Array`, `Promise<X>` → `Promise`).
-                        //   * structured types (object_type, function_type,
-                        //     mapped_type, conditional_type, etc.) → use the
-                        //     `_primitive` sentinel. The first segment of these
-                        //     is a property / parameter name, NOT a type ref —
-                        //     emitting it leaks names like `children`, `id`,
-                        //     `className`, `params` into unresolved_refs.
-                        let target = match tn.kind() {
-                            "nested_type_identifier" | "member_expression" => name.clone(),
-                            // Pure string/number/etc. literal-type unions like
-                            // `'default' | 'success' | 'warning'` — the first
-                            // alphanumeric token of the text is the content of
-                            // the FIRST literal (`"default"`), not a real type
-                            // reference. Use the primitive sentinel so it
-                            // doesn't leak into unresolved_refs.
-                            // Pure-literal composites of any shape — `'a' | 'b'`,
-                            // `'a'[]`, `('a' | 'b')`, `readonly 'a'[]`, `['a', 'b']` —
-                            // emit only the primitive sentinel; the literal
-                            // content isn't a real type ref.
-                            "union_type" | "intersection_type" | "array_type" | "tuple_type"
-                            | "parenthesized_type" | "readonly_type"
-                                if is_pure_literal_type_composite(tn) =>
-                            {
-                                "_primitive".to_string()
-                            }
-                            // Literal type by itself (rare — typically sits in
-                            // a union, handled above) — never a real ref.
-                            "literal_type" => "_primitive".to_string(),
-                            "type_identifier" | "identifier" | "generic_type" | "array_type"
-                            | "tuple_type" | "union_type" | "intersection_type"
-                            | "parenthesized_type" | "type_query" | "readonly_type" => {
-                                // Walk past leading literal_type children when
-                                // splitting by first segment — `'400' | Array<...>`
-                                // would otherwise pick up the string contents
-                                // (`400`) as the type name. Find the first
-                                // non-literal direct named child and split its
-                                // text instead.
-                                let split_target = first_non_literal_descendant_text(tn, src)
-                                    .unwrap_or_else(|| name.clone());
-                                let candidate = split_target
-                                    .split(|c: char| !c.is_alphanumeric() && c != '_')
-                                    .find(|s| !s.is_empty())
-                                    .unwrap_or("_")
-                                    .to_string();
-                                // Numeric-only fallback (`200`, `400`) means the
-                                // text we split was still literal content; use
-                                // the primitive sentinel.
-                                if !candidate.is_empty()
-                                    && candidate.chars().all(|c| c.is_ascii_digit())
-                                {
-                                    "_primitive".to_string()
-                                } else {
-                                    candidate
-                                }
-                            }
-                            // Structured types — the first identifier in the text
-                            // is a property or parameter name, not a type reference.
-                            _ => "_primitive".to_string(),
-                        };
-                        if !is_ts_primitive(&target) {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: target,
-                                kind: EdgeKind::TypeRef,
-                                line: child.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: child.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        } else {
-                            // Even for primitive annotations we need a ref at this line
-                            // so the type_annotation coverage budget is consumed.
-                            // Use "_primitive" as a placeholder target — it won't resolve
-                            // to any real symbol, but satisfies the coverage counter.
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: "_primitive".to_string(),
-                                kind: EdgeKind::TypeRef,
-                                line: child.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: child.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        }
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
+                            source_symbol_index: sym_idx,
+                            target_name: coverage_target_for_type_node(tn, src),
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            col: 0,
+                            module: None,
+                            chain: None,
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                     }
                 }
                 // Recurse to catch nested annotations and other type_identifiers,
@@ -319,28 +273,24 @@ pub(super) fn scan_all_type_identifiers(
                         continue;
                     }
                     if after_as {
-                        let name = helpers::node_text(as_child, src);
-                        let target = name
-                            .split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| !s.is_empty())
-                            .unwrap_or("_")
-                            .to_string();
-                        if !target.is_empty() {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: target,
-                                kind: EdgeKind::TypeRef,
-                                line: child.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: child.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        }
+                        // `x as { wow: boolean }` / `x as true` / `x as () => 1`
+                        // must NOT leak the property name / literal — classify the
+                        // cast type like an annotation (object/literal/function →
+                        // `_primitive`, real type → its root name).
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
+                            source_symbol_index: sym_idx,
+                            target_name: coverage_target_for_type_node(as_child, src),
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            col: 0,
+                            module: None,
+                            chain: None,
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         break;
                     }
                 }
@@ -357,28 +307,23 @@ pub(super) fn scan_all_type_identifiers(
                         continue;
                     }
                     if after_satisfies {
-                        let name = helpers::node_text(sat_child, src);
-                        let target = name
-                            .split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| !s.is_empty())
-                            .unwrap_or("_")
-                            .to_string();
-                        if !target.is_empty() {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: target,
-                                kind: EdgeKind::TypeRef,
-                                line: child.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: child.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        }
+                        // Classify the checked type like an annotation so object /
+                        // literal / function `satisfies` targets emit the
+                        // `_primitive` sentinel instead of leaking a property name.
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
+                            source_symbol_index: sym_idx,
+                            target_name: coverage_target_for_type_node(sat_child, src),
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            col: 0,
+                            module: None,
+                            chain: None,
+                            byte_offset: child.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
                         break;
                     }
                 }

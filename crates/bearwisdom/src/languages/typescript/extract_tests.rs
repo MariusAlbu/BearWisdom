@@ -369,6 +369,37 @@ fn as_expression_generic_emits_base_type_ref() {
 }
 
 #[test]
+fn as_cast_to_structured_or_literal_type_emits_no_phantom_ref() {
+    // The coverage scan must not leak object-property names / literal-type
+    // content as TypeRefs. `as { wow: boolean }` / `as true` / `as () => 1`
+    // carry no real type reference — only the filtered `_primitive` sentinel.
+    for (src, phantom) in [
+        ("const a = x as { wow: boolean } | undefined", "wow"),
+        ("const c = x as true", "true"),
+        ("const b = x as () => 1 | -1", "1"),
+        ("const k = ['1'] as ['1']", "1"),
+    ] {
+        let r = refs(src);
+        assert!(
+            !r.iter()
+                .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == phantom),
+            "phantom TypeRef {phantom:?} leaked from {src:?}: {r:?}"
+        );
+    }
+}
+
+#[test]
+fn as_cast_to_named_type_still_emits_type_ref() {
+    // The hygiene fix must not suppress real cast-type references.
+    let r = refs("const a = x as Repository<User>");
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Repository"),
+        "real cast type Repository should still emit: {r:?}"
+    );
+}
+
+#[test]
 fn type_assertion_emits_type_ref() {
     // TSX angle-bracket form is not valid in .tsx files but is valid in .ts.
     // `const admin = <Admin>user` — asserted type should be a TypeRef.
