@@ -10,6 +10,21 @@ fn refs(source: &str) -> Vec<ExtractedRef> {
 }
 
 #[test]
+fn mapped_type_key_binder_not_leaked_across_multiline_body() {
+    // `[AKey in keyof T]` binds AKey for the whole mapped type; its uses in the
+    // body (on lines below the clause) must not leak as TypeRefs. The binder
+    // scope walks up to the enclosing mapped_type/object_type, not just the
+    // clause line.
+    let src = "export type Override<A, B> = {\n  [AKey in keyof A]: AKey extends keyof B\n    ? B[AKey]\n    : A[AKey]\n}\n";
+    let r = refs(src);
+    assert!(
+        !r.iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AKey"),
+        "mapped-type key binder AKey leaked: {r:?}"
+    );
+}
+
+#[test]
 fn extraction_satisfies_canonical_form_contract() {
     let src = r#"
 import { Kysely } from 'kysely';

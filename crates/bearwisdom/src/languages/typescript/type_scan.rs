@@ -421,9 +421,13 @@ pub(super) fn collect_type_param_scopes(
         if let Some(name_node) = node.child_by_field_name("name") {
             if let Ok(name) = name_node.utf8_text(src) {
                 if !name.is_empty() {
-                    let scope_node = node
-                        .parent()
-                        .filter(|p| p.kind() == "mapped_type")
+                    // The binder is in scope for the whole mapped type, whose body
+                    // (`AKey extends … ? T[AKey] : U[AKey]`) spans lines below the
+                    // clause. The immediate parent is not always `mapped_type`, so
+                    // walk up to the enclosing mapped_type / object_type to cover
+                    // the body; falling back to the clause leaks body uses of the
+                    // binder on later lines.
+                    let scope_node = enclosing_of_kind(&node, &["mapped_type", "object_type"])
                         .unwrap_or(node);
                     out.push((
                         name.to_string(),
@@ -475,9 +479,18 @@ pub(super) fn collect_type_param_scopes(
 /// `infer_type` is somehow detached from a conditional context (which the
 /// TS grammar shouldn't produce, but defensive coding doesn't hurt).
 fn enclosing_conditional_type<'a>(node: &tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    enclosing_of_kind(node, &["conditional_type"])
+}
+
+/// Walk parents until one whose kind is in `kinds`. Used to find the scope an
+/// in-place type binder (mapped-type key, `infer X`) is visible in.
+fn enclosing_of_kind<'a>(
+    node: &tree_sitter::Node<'a>,
+    kinds: &[&str],
+) -> Option<tree_sitter::Node<'a>> {
     let mut cur = node.parent();
     while let Some(p) = cur {
-        if p.kind() == "conditional_type" {
+        if kinds.contains(&p.kind()) {
             return Some(p);
         }
         cur = p.parent();
