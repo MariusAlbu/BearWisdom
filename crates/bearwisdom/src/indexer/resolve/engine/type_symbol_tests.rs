@@ -23,6 +23,47 @@ fn parse_nested_application_recurses() {
 }
 
 #[test]
+fn parse_array_suffix_normalizes_to_array() {
+    // `User[]` → Array<User> so member calls root on the lib Array type.
+    let t = TypeSymbol::parse("User[]");
+    assert_eq!(t.qname, "Array");
+    assert_eq!(t.type_args, vec![TypeSymbol::plain("User")]);
+}
+
+#[test]
+fn parse_readonly_array_suffix_normalizes() {
+    let t = TypeSymbol::parse("readonly User[]");
+    assert_eq!(t.qname, "Array");
+    assert_eq!(t.type_args, vec![TypeSymbol::plain("User")]);
+}
+
+#[test]
+fn parse_nested_array_suffix_nests() {
+    // `User[][]` → Array<Array<User>>
+    let t = TypeSymbol::parse("User[][]");
+    assert_eq!(t.qname, "Array");
+    assert_eq!(t.type_args.len(), 1);
+    assert_eq!(t.type_args[0].qname, "Array");
+    assert_eq!(t.type_args[0].type_args, vec![TypeSymbol::plain("User")]);
+}
+
+#[test]
+fn parse_generic_array_element_normalizes() {
+    // `Map<K, V>[]` → Array<Map<K, V>>
+    let t = TypeSymbol::parse("Map<K, V>[]");
+    assert_eq!(t.qname, "Array");
+    assert_eq!(t.type_args.len(), 1);
+    assert_eq!(t.type_args[0].qname, "Map");
+}
+
+#[test]
+fn parse_empty_brackets_and_tuple_are_not_arrays() {
+    // A bare `[]` and a tuple `[A, B]` have no single element — left as plain.
+    assert_eq!(TypeSymbol::parse("[]"), TypeSymbol::plain("[]"));
+    assert_eq!(TypeSymbol::parse("[A, B]"), TypeSymbol::plain("[A, B]"));
+}
+
+#[test]
 fn substitute_replaces_bare_parameter_whole() {
     let t = TypeSymbol::plain("T");
     let out = t.substitute(&["T".to_string()], &[TypeSymbol::plain("User")]);

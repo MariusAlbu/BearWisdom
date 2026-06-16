@@ -77,6 +77,23 @@ fn roots_at_bare_type_name_for_static_access() {
 }
 
 #[test]
+fn roots_member_on_array_typed_receiver() {
+    // `items: User[]` — the receiver's array type normalizes to the lib Array,
+    // so `items.map(...)` resolves against Array's members.
+    let lookup = Lookup::new()
+        .with_local_type("items", "User[]")
+        .with_member(
+            "Array",
+            sym(60, "map", "Array.map", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("items", false, SegmentKind::Identifier),
+        seg("map", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(60));
+}
+
+#[test]
 fn roots_on_imported_value_declared_type() {
     // `initTRPC.create()` — the root is an imported VALUE (a `declare const`)
     // whose declaration carries a type. Rooting on that type lets the member

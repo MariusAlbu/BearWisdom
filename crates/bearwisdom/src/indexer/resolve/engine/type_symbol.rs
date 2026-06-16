@@ -39,6 +39,22 @@ impl TypeSymbol {
     /// substitutable). A type with no application parses to a plain TypeSymbol.
     pub fn parse(expr: &str) -> Self {
         let expr = expr.trim();
+        // `readonly T[]` — the modifier doesn't change the array shape.
+        let expr = expr.strip_prefix("readonly ").map(str::trim).unwrap_or(expr);
+        // `T[]` array suffix → the lib `Array<T>` so member calls (map/push/…)
+        // root on the Array type. Applied before generic parsing so `T[]` and
+        // `Array<T>` converge on the same head; a repeated suffix nests
+        // (`T[][]` → `Array<Array<T>>`). A bare `[]` or a tuple (`[A, B]`) has no
+        // single element and is left alone.
+        if let Some(elem) = expr.strip_suffix("[]") {
+            let elem = elem.trim();
+            if !elem.is_empty() {
+                return TypeSymbol {
+                    qname: "Array".to_string(),
+                    type_args: vec![TypeSymbol::parse(elem)],
+                };
+            }
+        }
         let Some(open) = expr.find('<') else {
             return TypeSymbol::plain(expr);
         };
