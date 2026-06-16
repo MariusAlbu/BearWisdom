@@ -170,6 +170,24 @@ pub(super) fn push_variable_decl(
                             // satisfies_expression: <expr> satisfies <type>
                             // The type is the last named child after the `satisfies` keyword.
                             extract_type_ref_from_satisfies_expression(&init_node, src, idx, refs);
+                        } else if init_node.kind() == "array" {
+                            // `const xs = [...]` → the variable is an Array; its
+                            // members (map/push/filter/…) resolve through the lib
+                            // Array type. Element type is not inferred here.
+                            refs.push(ExtractedRef {
+                                is_import_binding: false,
+                                is_reexport: false,
+                                source_symbol_index: idx,
+                                target_name: "Array".to_string(),
+                                kind: EdgeKind::TypeRef,
+                                line: init_node.start_position().row as u32,
+                                col: 0,
+                                module: None,
+                                chain: None,
+                                byte_offset: init_node.start_byte() as u32,
+                                namespace_segments: Vec::new(),
+                                call_args: Vec::new(),
+                            });
                         }
                     }
                 } else if name_node.kind() == "object_pattern" {

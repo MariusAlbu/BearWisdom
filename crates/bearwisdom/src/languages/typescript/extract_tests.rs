@@ -381,6 +381,19 @@ fn type_assertion_emits_type_ref() {
     );
 }
 
+#[test]
+fn array_literal_emits_array_type_ref() {
+    // `const xs = [1, 2, 3]` — the variable is an Array, so a TypeRef to `Array`
+    // is emitted; member calls (`xs.map(...)`) then resolve through the lib type.
+    let src = "const xs = [1, 2, 3];";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.target_name == "Array" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Catch clause variables
 // ---------------------------------------------------------------------------
