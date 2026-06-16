@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
 use crate::languages::typescript::extract;
 use crate::languages::typescript::TYPESCRIPT_PROFILE;
 use crate::type_checker::core::{SymbolIdMap, TypeArena};
@@ -1380,7 +1380,7 @@ fn resolve_qualified_sibling_with_import(
     let rc = ref_ctx_for(&r, &source);
     let mut fc = file_ctx_ts("src/f.ts");
     fc.imports
-        .push(crate::indexer::resolve::engine::ImportEntry {
+        .push(crate::indexer::resolve::legacy::ImportEntry {
             imported_name: import_module.to_string(),
             module_path: Some(import_module.to_string()),
             alias: None,
@@ -1723,7 +1723,7 @@ fn augment_engine_resolves_identically_to_full_build() {
     // P1 gate: an Engine built over [A] then augmented with [B] must resolve a
     // B-dependent chain identically to an Engine built over [A, B] in one shot.
     // `f.bar().qux()` needs Foo.bar(): Baz (file A) and Baz.qux() (file B).
-    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::indexer::resolve::legacy::{build_scope_chain, SymbolIndex};
     use crate::type_checker::core::SymbolIdMap;
     use std::collections::HashMap;
 
@@ -1864,7 +1864,7 @@ fn augment_engine_resolves_identically_to_full_build() {
 
 #[test]
 fn ext2_external_class_method_chain_resolves_end_to_end() {
-    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::indexer::resolve::legacy::{build_scope_chain, SymbolIndex};
     use crate::type_checker::core::SymbolIdMap;
     use std::collections::HashMap;
 
@@ -1993,7 +1993,7 @@ fn e1_external_builder_chain_resolves_both_hops_via_reachable_members() {
     // because the closure follows `selectFrom`'s return type to admit
     // `SelectQueryBuilder`. Roots on the field's external type via a declared
     // assertion so the test isolates the reachable-member walk.
-    use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
+    use crate::indexer::resolve::legacy::{build_scope_chain, SymbolIndex};
     use crate::type_checker::core::SymbolIdMap;
     use std::collections::HashMap;
 
@@ -2168,7 +2168,7 @@ fn nim_reexported_external_helper_resolves_through_module_chain() {
         }
     }
 
-    let index = crate::indexer::resolve::engine::SymbolIndex::build(&files, &qname_ids);
+    let index = crate::indexer::resolve::legacy::SymbolIndex::build(&files, &qname_ids);
     let engine = Engine::build_from_registry(&files, &engine_ids, &index, index.type_arena_arc());
     let api_file = &files[0];
     let file_ctx = engine
@@ -2177,7 +2177,7 @@ fn nim_reexported_external_helper_resolves_through_module_chain() {
     let ref_ctx = RefContext {
         extracted_ref: &api_file.refs[2],
         source_symbol: &api_file.symbols[0],
-        scope_chain: crate::indexer::resolve::engine::build_scope_chain(
+        scope_chain: crate::indexer::resolve::legacy::build_scope_chain(
             api_file.symbols[0].scope_path.as_deref(),
         ),
         file_package_id: None,
@@ -2243,7 +2243,7 @@ fn nim_named_export_resolves_through_file_imports_and_transitive_reexports() {
         }
     }
 
-    let index = crate::indexer::resolve::engine::SymbolIndex::build(&files, &qname_ids);
+    let index = crate::indexer::resolve::legacy::SymbolIndex::build(&files, &qname_ids);
     let engine = Engine::build_from_registry(&files, &engine_ids, &index, index.type_arena_arc());
     let consumer_file = &files[0];
     let file_ctx = engine
@@ -2252,7 +2252,7 @@ fn nim_named_export_resolves_through_file_imports_and_transitive_reexports() {
     let ref_ctx = RefContext {
         extracted_ref: &consumer_file.refs[1],
         source_symbol: &consumer_file.symbols[0],
-        scope_chain: crate::indexer::resolve::engine::build_scope_chain(
+        scope_chain: crate::indexer::resolve::legacy::build_scope_chain(
             consumer_file.symbols[0].scope_path.as_deref(),
         ),
         file_package_id: None,
@@ -2300,7 +2300,7 @@ fn e2_bare_call_ref(source_symbol_index: usize, target: &str) -> ExtractedRef {
 fn e2_build_index(
     files: &[ParsedFile],
 ) -> (
-    crate::indexer::resolve::engine::SymbolIndex,
+    crate::indexer::resolve::legacy::SymbolIndex,
     SymbolIdMap,
     HashMap<(String, String), i64>,
 ) {
@@ -2312,7 +2312,7 @@ fn e2_build_index(
             next += 1;
         }
     }
-    let index = crate::indexer::resolve::engine::SymbolIndex::build(files, &id_map);
+    let index = crate::indexer::resolve::legacy::SymbolIndex::build(files, &id_map);
     let mut eng = SymbolIdMap::default();
     for p in files {
         for (i, s) in p.symbols.iter().enumerate() {
@@ -2367,7 +2367,7 @@ fn enclosing_member_rung_binds_inherited_internal_base_member() {
     // `inherits_by_id`, so the ladder's `engine_enclosing_member` rung climbs
     // `parent_class_qname` + `members_of` and binds A.helper directly — the
     // implicit-self synthesis never runs (the bare ladder did not decline).
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let files = vec![e2_internal_base_file(), e2_subclass_file("helper")];
     let (index, eng, id_map) = e2_build_index(&files);
@@ -2406,7 +2406,7 @@ fn enclosing_member_rung_binds_inherited_external_base_member() {
     // in `parsed` with ids), so the `engine_enclosing_member` rung climbs and
     // binds the external `A.helper` directly — the implicit-self synthesis never
     // runs here either.
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let ext = ext2_pf(
         "ext:ts:base/index.d.ts",
@@ -2511,7 +2511,7 @@ fn implicit_self_binds_implements_only_inherited_member() {
     // `build_explicit` populates from BOTH `Inherits` and `Implements`, so its
     // synthesized `self.helper()` chain walks `B → I` through the typed graph and
     // binds `I.helper` under the `implicit_self_member` strategy.
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let files = vec![e2_iface_base_file(), e2_implements_subclass_file()];
     let (index, eng, id_map) = e2_build_index(&files);
@@ -2549,7 +2549,7 @@ fn implicit_self_declines_when_no_enclosing_member_matches() {
     // The synthesis runs (B has supertypes) but the walker finds nothing, so the
     // ref stays unresolved — no spurious bind, no regression to the unresolved
     // accounting.
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let files = vec![e2_internal_base_file(), e2_subclass_file("missing")];
     let (index, eng, _id_map) = e2_build_index(&files);
@@ -2585,7 +2585,7 @@ fn implicit_self_does_not_resurrect_builtin_skipped_name() {
     // builtin_skip declines `helper`. The decline is a decision — the synthesis
     // consults the same bare_decline gate, so it must NOT resurrect the
     // inherited member.
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let files = vec![e2_internal_base_file(), e2_subclass_file("helper")];
     let (index, eng, _id_map) = e2_build_index(&files);
@@ -2623,7 +2623,7 @@ fn implicit_self_not_entered_for_free_function() {
     // scope_path) must not enter the synthesis path. `A.helper` exists in a
     // separate file, so a synthesis bug would mis-bind it; the gate's scope_path
     // requirement keeps the free function out and the ref stays unresolved.
-    use crate::indexer::resolve::engine::build_scope_chain;
+    use crate::indexer::resolve::legacy::build_scope_chain;
 
     let caller = ext2_pf(
         "caller.ts",

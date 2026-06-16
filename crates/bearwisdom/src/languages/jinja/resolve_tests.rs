@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext, Resolution, SymbolIndex};
+use crate::indexer::resolve::legacy::{build_scope_chain, RefContext, Resolution, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;

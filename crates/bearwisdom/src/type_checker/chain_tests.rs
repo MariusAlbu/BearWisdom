@@ -10,7 +10,7 @@
 // =============================================================================
 
 use super::{identity_normalize, resolve_via_chain, ChainConfig, ChainExtensions, NamespaceLookup};
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::languages::c_lang::hooks::C_LANG_CHAIN_CONFIG;
@@ -377,7 +377,7 @@ fn run_res(
     file_ctx: &FileContext,
     scope_chain: Vec<String>,
     lookup: &dyn SymbolLookup,
-) -> Option<crate::indexer::resolve::engine::Resolution> {
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
     let src = src_symbol();
     let ref_ctx = RefContext {
         extracted_ref: chain_ref,
@@ -789,7 +789,7 @@ fn java_chain_wildcard_namespace_final() {
 
 #[test]
 fn resolution_confidence_is_binary_resolved_or_absent() {
-    use crate::indexer::resolve::engine::RESOLVED_CONFIDENCE;
+    use crate::indexer::resolve::legacy::RESOLVED_CONFIDENCE;
     use crate::indexer::resolve::reachability::REACHABILITY_CONFIDENCE_THRESHOLD;
     use crate::indexer::resolve::synthesize_dispatch::DISPATCH_CANDIDATE_CONFIDENCE;
 

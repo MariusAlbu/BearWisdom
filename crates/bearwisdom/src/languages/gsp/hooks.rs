@@ -7,8 +7,8 @@
 // `import_resolution` data.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
-use crate::indexer::resolve::engine::types::RESOLVED_CONFIDENCE;
+use crate::indexer::resolve::legacy::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::legacy::types::RESOLVED_CONFIDENCE;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 

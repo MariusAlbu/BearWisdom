@@ -14,7 +14,18 @@
 // when Vue is installed). Kept here, in the ecosystem layer that owns external
 // on-disk discovery, rather than hardcoded inside the generic resolver's
 // classification path.
+//
+// `ambient_global_qnames` / `locate_ambient_global` are the engine-facing
+// surface: the resolve engine hands a parsed batch here and gets back a plain
+// qualified-name set for its `ambient_scope`, so the generic store never
+// matches an ecosystem path or names a synthetic module key itself.
 // =============================================================================
+
+use std::collections::HashSet;
+use std::path::Path;
+
+use crate::ecosystem::symbol_index::SymbolLocationIndex;
+use crate::types::ParsedFile;
 
 /// A path is an ambient provider when it contains `contains` AND ends with
 /// `ends_with`. An empty `contains` matches any path (suffix-only rule).
@@ -138,6 +149,90 @@ pub fn is_framework_ambient_path(normalized_lower_path: &str) -> bool {
     FRAMEWORK_AMBIENT_MARKERS
         .iter()
         .any(|m| m.matches(normalized_lower_path))
+}
+
+/// Qualified names of the ambient globals a parsed batch contributes. The
+/// resolve engine indexes the matching symbols into its `ambient_scope` keyed by
+/// simple name, then binds bare references to them — without itself knowing any
+/// ecosystem convention.
+///
+/// Two structural sources: a symbol under the npm synthetic-globals module
+/// (`declare global` / test-runner globals), and a top-level declaration in an
+/// ambient-global lib source (TS `lib.*.d.ts` / `@types` globals, a language
+/// `<lang>-stdlib` runtime).
+pub fn ambient_global_qnames(parsed: &[ParsedFile]) -> HashSet<String> {
+    let globals_prefix = format!("{}.", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
+    let mut out = HashSet::new();
+    for pf in parsed {
+        let lib_source = is_ambient_global_lib_path(&pf.path);
+        for sym in &pf.symbols {
+            let qname = &sym.qualified_name;
+            if qname.starts_with(&globals_prefix) {
+                out.insert(qname.clone());
+            } else if lib_source && !qname.contains('.') {
+                // Top-level declaration in an ambient lib source; nested members
+                // (dotted qnames) are not globals.
+                out.insert(qname.clone());
+            }
+        }
+    }
+    out
+}
+
+/// Locate the file defining an import-free ambient global named `name`, for
+/// demand-driven materialization of a bare reference. Probes the npm synthetic
+/// globals module, where `declare global` / test-runner globals are registered.
+pub fn locate_ambient_global<'a>(loc: &'a SymbolLocationIndex, name: &str) -> Option<&'a Path> {
+    loc.locate(crate::ecosystem::npm::NPM_GLOBALS_MODULE, name)
+}
+
+/// Detect an ambient-global declaration file — a runtime surface a project can
+/// name without an explicit import. Two shapes qualify:
+///
+/// - TypeScript's `lib.*.d.ts` / `@types/node` (`is_ts_ambient_global_lib_path`).
+/// - A language stdlib whose symbols carry a `<lang>-stdlib`-tagged external
+///   path. These libraries are language substrate — every project in the
+///   language reaches their names unqualified-by-import (Lua's `string`,
+///   `table`, `math`, `os`, …).
+fn is_ambient_global_lib_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    is_ts_ambient_global_lib_path(&normalized) || is_stdlib_external_path(&normalized)
+}
+
+/// Detect a TypeScript ambient-global declaration file — `lib.*.d.ts` shipped
+/// with the TypeScript compiler, or any file under `@types/node/`. Methods
+/// declared in these files are the JS/DOM/ES runtime surface and need no
+/// explicit import to call.
+///
+/// Recognises both the historical absolute-path form
+/// (`.../typescript/lib/lib.dom.d.ts`) and the synthetic-module form emitted
+/// post-Pass-A (`ext:ts:__ts_lib__/lib.dom.d.ts`,
+/// `ext:ts:@types/node/process.d.ts`). The substring matchers stay so older
+/// indexes built before the path rewrite still classify correctly. The input
+/// is already forward-slash normalised.
+fn is_ts_ambient_global_lib_path(normalized: &str) -> bool {
+    let synthetic_prefix = format!(
+        "ext:ts:{}/",
+        crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
+    );
+    normalized.starts_with(&synthetic_prefix)
+        || normalized.starts_with("ext:ts:@types/node/")
+        || normalized.contains("/typescript/lib/lib.")
+        || normalized.contains("/@types/node/")
+}
+
+/// True for a language-stdlib external path — `ext:<lang>-stdlib:...`. The
+/// stdlib ecosystems tag their synthetic file path with the `<lang>-stdlib`
+/// ecosystem id, so an `ext:` external whose ecosystem segment ends in
+/// `-stdlib` is the language's runtime substrate.
+fn is_stdlib_external_path(normalized: &str) -> bool {
+    let Some(rest) = normalized.strip_prefix("ext:") else {
+        return false;
+    };
+    let Some((ecosystem, _)) = rest.split_once(':') else {
+        return false;
+    };
+    ecosystem.ends_with("-stdlib")
 }
 
 #[cfg(test)]

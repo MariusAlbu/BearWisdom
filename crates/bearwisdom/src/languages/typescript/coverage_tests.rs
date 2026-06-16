@@ -2293,7 +2293,7 @@ fn dts_class_method_emits_return_type_ref() {
     // return types but no bodies. This is the exact pattern dayjs,
     // moment, chai, etc. use — and the reason why `dayjs_synthetics.rs`
     // exists today. The extractor must emit a TypeRef from every method
-    // to its return type so `engine::TypeInfo::return_type` is populated
+    // to its return type so `legacy::TypeInfo::return_type` is populated
     // and the chain walker can follow `dayjs().clone().format()`.
     let src = r#"
 declare namespace dayjs {

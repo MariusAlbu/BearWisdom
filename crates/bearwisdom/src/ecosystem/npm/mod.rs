@@ -447,7 +447,7 @@ impl ExternalSourceLocator for NpmEcosystem {
         //    `node_modules/@types/chai/index.d.ts`) are walked by the
         //    npm locator, their methods emit TypeRef refs for return
         //    types, and the builder's scope-probe
-        //    (`indexer::resolve::engine::resolve_type_name_in_scope`)
+        //    (`indexer::resolve::legacy::resolve_type_name_in_scope`)
         //    qualifies raw type names like `Assertion` or `Dayjs`
         //    against the namespace they're declared in.
         //

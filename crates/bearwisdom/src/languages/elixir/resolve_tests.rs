@@ -4,7 +4,7 @@ use super::hooks::{
     ElixirHooks,
 };
 use super::profile::ELIXIR_PROFILE;
-use crate::indexer::resolve::engine::{RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{RefContext, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;

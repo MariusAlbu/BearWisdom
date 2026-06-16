@@ -15,7 +15,7 @@
 // =============================================================================
 
 use super::types::{Type, TypeArena, TypeId};
-use crate::indexer::resolve::engine::Resolution;
+use crate::indexer::resolve::legacy::Resolution;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ExtractedRef};
 

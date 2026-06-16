@@ -16,7 +16,7 @@
 // per-language checkers can override in subsequent PRs.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     intern_yield_type, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
     RESOLVED_CONFIDENCE,
 };

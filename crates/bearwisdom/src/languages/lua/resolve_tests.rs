@@ -1,5 +1,5 @@
 use super::hooks::{detect_lua_db_emission, detect_lua_lapis_route, detect_lua_resty_http};
-use crate::indexer::resolve::engine::{infer_external_from_chain, SymbolIndex};
+use crate::indexer::resolve::legacy::{infer_external_from_chain, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -115,7 +115,7 @@ fn test_lua_colon_call_binds_gsub_to_external_string() {
 // ---------------------------------------------------------------------------
 
 use super::hooks::{parse_value_alias, LuaHooks};
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, SymbolIndex as Index,
 };
 use crate::type_checker::core::SymbolIdMap;

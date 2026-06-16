@@ -4,7 +4,7 @@ use super::hooks::{
 };
 use crate::types::*;
 
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, ImportEntry, RefContext, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::DefaultResolver;

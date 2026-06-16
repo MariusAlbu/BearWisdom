@@ -2,7 +2,7 @@
 
 use super::predicates;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     self as engine, FileContext, ImportEntry, RefContext, Resolution, SymbolLookup,
     RESOLVED_CONFIDENCE,
 };

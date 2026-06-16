@@ -1,6 +1,6 @@
 use super::profile::PUG_PROFILE;
 use super::PUG_HOOKS;
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{build_scope_chain, RefContext, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
@@ -71,7 +71,7 @@ fn import_ref(target: &str) -> ExtractedRef {
 fn build_index_and_resolve(
     files: &[&ParsedFile],
     importer: &ParsedFile,
-) -> Option<crate::indexer::resolve::engine::Resolution> {
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
     let mut id_map = HashMap::new();
     let mut next_id = 1i64;
     for pf in files {

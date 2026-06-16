@@ -28,7 +28,7 @@
 // =============================================================================
 
 use super::types::{PrimKind, Type, TypeArena, TypeId};
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::inference::unwrap_await;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;

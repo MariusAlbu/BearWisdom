@@ -6,7 +6,7 @@
 // `import_resolution` data, the latter by the generic strategy ladder.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ParsedFile};
 

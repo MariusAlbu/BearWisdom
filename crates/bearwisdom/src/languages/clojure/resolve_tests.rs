@@ -76,7 +76,7 @@ fn test_clj_jdbc_insert_emits_db_insert() {
 
 use super::extract::extract;
 use super::hooks::ClojureHooks;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::SymbolIdMap;

@@ -12,7 +12,7 @@
 // `file_imports_proto_pkg`, etc.) live next to their consumer.
 // =============================================================================
 
-use crate::indexer::resolve::engine::FileContext;
+use crate::indexer::resolve::legacy::FileContext;
 
 // ---------------------------------------------------------------------------
 // HTTP Producer detection — net/http + resty

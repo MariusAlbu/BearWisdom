@@ -3,7 +3,7 @@
 
 use super::hooks::paired_ts_for_template;
 use super::profile::ANGULAR_PROFILE;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, Resolution, SymbolLookup, SymbolSet};
 
 /// Drive an Angular template ref through the generic engine ladder gated on
 /// `ANGULAR_PROFILE` — `selector_resolution` binds a component-tag / directive
@@ -72,7 +72,7 @@ fn companion_file_for_imports_delegates_to_paired_ts() {
 /// Minimal `SymbolLookup` stub for testing the selector-map path.
 struct SelectorMapLookup {
     selectors: std::collections::HashMap<String, String>,
-    symbols: Vec<crate::indexer::resolve::engine::SymbolInfo>,
+    symbols: Vec<crate::indexer::resolve::legacy::SymbolInfo>,
 }
 
 impl SelectorMapLookup {
@@ -91,7 +91,7 @@ impl SelectorMapLookup {
     fn with_symbol(mut self, id: i64, name: &str, qname: &str) -> Self {
         use std::sync::Arc;
         self.symbols
-            .push(crate::indexer::resolve::engine::SymbolInfo {
+            .push(crate::indexer::resolve::legacy::SymbolInfo {
                 id,
                 name: name.to_string(),
                 qualified_name: qname.to_string(),
@@ -106,7 +106,7 @@ impl SelectorMapLookup {
     }
 }
 
-impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
+impl crate::indexer::resolve::legacy::SymbolLookup for SelectorMapLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         let _ = name;
         SymbolSet::Borrowed(&self.symbols)
@@ -115,7 +115,7 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
     fn by_qualified_name(
         &self,
         qname: &str,
-    ) -> Option<&crate::indexer::resolve::engine::SymbolInfo> {
+    ) -> Option<&crate::indexer::resolve::legacy::SymbolInfo> {
         self.symbols.iter().find(|s| s.qualified_name == qname)
     }
 
@@ -125,7 +125,7 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
     fn types_by_name(&self, _n: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&[])
     }
-    fn in_namespace(&self, _n: &str) -> Vec<&crate::indexer::resolve::engine::SymbolInfo> {
+    fn in_namespace(&self, _n: &str) -> Vec<&crate::indexer::resolve::legacy::SymbolInfo> {
         vec![]
     }
     fn has_in_namespace(&self, _n: &str) -> bool {
@@ -160,7 +160,7 @@ impl crate::indexer::resolve::engine::SymbolLookup for SelectorMapLookup {
 
 #[test]
 fn selector_map_hit_resolves_to_class() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext};
+    use crate::indexer::resolve::legacy::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
     let lookup = SelectorMapLookup::new()
@@ -231,7 +231,7 @@ fn selector_map_hit_resolves_to_class() {
 
 #[test]
 fn selector_map_miss_falls_through() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext};
+    use crate::indexer::resolve::legacy::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
     // No selectors in the map — the selector strategy declines and the rest

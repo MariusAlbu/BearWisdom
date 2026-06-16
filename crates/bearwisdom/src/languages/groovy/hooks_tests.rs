@@ -1,7 +1,7 @@
 // groovy/hooks_tests.rs — GSP-host standard-taglib decline.
 
 use super::hooks::gsp_standard_tag;
-use crate::indexer::resolve::engine::{FileContext, RefContext};
+use crate::indexer::resolve::legacy::{FileContext, RefContext};
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
     Visibility,

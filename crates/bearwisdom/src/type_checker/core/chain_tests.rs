@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolSet};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolSet};
 use crate::type_checker::alias::AliasIndex;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -4144,7 +4144,7 @@ fn wildcard_import_fallback_prepends_namespace_to_member_qname() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::engine::ImportEntry {
+        .push(crate::indexer::resolve::legacy::ImportEntry {
             imported_name: "Newtonsoft.Json".to_string(),
             module_path: Some("Newtonsoft.Json".to_string()),
             alias: None,
@@ -6172,7 +6172,7 @@ fn wildcard_using_promotes_root_receiver_to_fqn() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::engine::ImportEntry {
+        .push(crate::indexer::resolve::legacy::ImportEntry {
             imported_name: "System.Windows.Controls".to_string(),
             module_path: Some("System.Windows.Controls".to_string()),
             alias: None,
@@ -6236,7 +6236,7 @@ fn wildcard_using_promotes_only_when_fqn_keys() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::engine::ImportEntry {
+        .push(crate::indexer::resolve::legacy::ImportEntry {
             imported_name: "System.Windows.Controls".to_string(),
             module_path: Some("System.Windows.Controls".to_string()),
             alias: None,

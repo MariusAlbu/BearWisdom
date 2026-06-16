@@ -6,7 +6,7 @@
 //! build the index from the resulting symbols, then exercise the public
 //! lookup API on the resulting TypeIds.
 
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{
     infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap, Type,

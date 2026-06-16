@@ -13,7 +13,7 @@
 
 use super::types::{Type, TypeArena, TypeId};
 use crate::indexer::canonical_form::signature_arity;
-use crate::indexer::resolve::engine::{strip_generic_args, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::legacy::{strip_generic_args, SymbolInfo, SymbolLookup};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;

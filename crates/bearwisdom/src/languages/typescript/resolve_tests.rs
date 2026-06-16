@@ -1,8 +1,8 @@
 use super::hooks::*;
 use super::profile::TYPESCRIPT_PROFILE;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::RefContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::RefContext;
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, Resolution, SymbolIndex, SymbolLookup,
 };
 use crate::types::*;
@@ -1734,7 +1734,7 @@ fn workspace_deep_import_resolves_despite_same_qname_in_sibling_package() {
     ctx.workspace_pkg_by_declared_name
         .insert("@scope/app".to_string(), 21);
 
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
     let parsed = vec![external, app_pkg, types_pkg, consumer];
     let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
     let consumer_ref = &parsed[3];
@@ -1904,7 +1904,7 @@ fn symbol_lookup_symbols_in_package_groups_by_pkg_id() {
     let parsed = vec![pf_a, pf_b, pf_root];
     let index = SymbolIndex::build(&parsed, &id_map);
 
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
     assert_eq!(index.symbols_in_package(1).len(), 1);
     assert_eq!(index.symbols_in_package(1)[0].qualified_name, "A");
     assert_eq!(index.symbols_in_package(2).len(), 1);
@@ -2238,7 +2238,7 @@ fn relative_import_jsx_usage_resolves_via_module_to_file() {
     // just the target name). The non-module resolver path must handle
     // the relative-import case — without it, usages fall through to the
     // heuristic.
-    use crate::indexer::resolve::engine::SymbolIndex;
+    use crate::indexer::resolve::legacy::SymbolIndex;
 
     let producer = make_ts_file_in_pkg(
         "packages/ui/src/lib/utils.ts",
@@ -2309,7 +2309,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
     // fall through to the heuristic which would pick a wrong same-named
     // symbol elsewhere in the project.
     use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-    use crate::indexer::resolve::engine::SymbolIndex;
+    use crate::indexer::resolve::legacy::SymbolIndex;
 
     // Barrel: zero own symbols, one re-export ref pointing at a bare spec.
     let barrel_ref = ExtractedRef {
@@ -4717,11 +4717,11 @@ fn make_chain_segs(segments: &[(&str, crate::types::SegmentKind)]) -> crate::typ
 fn make_ctx_with_import(
     import_name: &str,
     from_module: &str,
-) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/app.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: import_name.to_string(),
             module_path: Some(from_module.to_string()),
             alias: None,
@@ -4840,7 +4840,7 @@ fn http_call_global_fetch_emits_without_import() {
     use crate::types::SegmentKind;
 
     let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/app.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -5028,7 +5028,7 @@ fn http_call_global_fetch_captures_url() {
 
     let chain = make_chain_segs(&[("fetch", SegmentKind::Identifier)]);
     let call_args = vec![CallArg::StringLit("/graphql".to_string())];
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/api.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -5885,7 +5885,7 @@ fn test_db_query_chain_emission_dispatch_prisma() {
         ("findMany", SegmentKind::Property),
     ]);
     // No HTTP/IPC/etc. import — must fall through to DbQuery branch.
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/users.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -5907,14 +5907,14 @@ fn test_db_query_chain_emission_dispatch_prisma() {
 fn make_ctx_with_controller_prefix(
     class_qname: &str,
     prefix: &str,
-) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/users.controller.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![
             // Controller-prefix lookup (synthetic key produced by the
             // class-decorator pre-pass).
-            crate::indexer::resolve::engine::ImportEntry {
+            crate::indexer::resolve::legacy::ImportEntry {
                 imported_name: format!("__ts_controller_prefix__:{}", class_qname),
                 module_path: Some(prefix.to_string()),
                 alias: None,
@@ -5922,7 +5922,7 @@ fn make_ctx_with_controller_prefix(
             },
             // Real @nestjs/common import — required for the route-decorator
             // detector to fire. Production controllers always have this.
-            crate::indexer::resolve::engine::ImportEntry {
+            crate::indexer::resolve::legacy::ImportEntry {
                 imported_name: "Controller".to_string(),
                 module_path: Some("@nestjs/common".to_string()),
                 alias: None,
@@ -6174,10 +6174,10 @@ fn test_nestjs_http_consumer_no_controller_prefix_in_context() {
     // with just the path. The file still needs to import @nestjs/common so
     // the detector knows the @Get name is a NestJS routing decorator and not
     // an unrelated type import named "Get".
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/standalone.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: "Get".to_string(),
             module_path: Some("@nestjs/common".to_string()),
             alias: None,
@@ -6213,11 +6213,11 @@ fn test_nestjs_http_consumer_join_route_segments_helper() {
 // Express / Hono / Fastify chain-route Consumer — HttpCall
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_framework_import(framework: &str) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_framework_import(framework: &str) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/server.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: framework.to_string(),
             module_path: Some(framework.to_string()),
             alias: None,
@@ -6424,11 +6424,11 @@ fn test_chain_route_consumer_handler_only_call_skipped() {
 // Message-queue chain + decorator emissions
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_mq_import(pkg: &str) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_mq_import(pkg: &str) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/messaging.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: pkg.to_string(),
             module_path: Some(pkg.to_string()),
             alias: None,
@@ -6705,11 +6705,11 @@ fn test_mq_unknown_verb_does_not_emit() {
 // Background-job library tests — BgJob Producer/Consumer
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_bgjob_import(pkg: &str) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_bgjob_import(pkg: &str) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/jobs.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: pkg.to_string(),
             module_path: Some(pkg.to_string()),
             alias: None,
@@ -6726,18 +6726,18 @@ fn make_ctx_with_bgjob_binding(
     pkg: &str,
     var_name: &str,
     queue_name: &str,
-) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/jobs.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![
-            crate::indexer::resolve::engine::ImportEntry {
+            crate::indexer::resolve::legacy::ImportEntry {
                 imported_name: pkg.to_string(),
                 module_path: Some(pkg.to_string()),
                 alias: None,
                 is_wildcard: false,
             },
-            crate::indexer::resolve::engine::ImportEntry {
+            crate::indexer::resolve::legacy::ImportEntry {
                 imported_name: format!("__ts_bgjob_queue_binding__:{}", var_name),
                 module_path: Some(queue_name.to_string()),
                 alias: None,
@@ -7107,11 +7107,11 @@ fn test_bgjob_no_emit_without_string_arg() {
 // gRPC / Connect RpcCall tests — Producer/Consumer
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_rpc_import(pkg: &str) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_rpc_import(pkg: &str) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/rpc.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: pkg.to_string(),
             module_path: Some(pkg.to_string()),
             alias: None,
@@ -7516,11 +7516,11 @@ fn test_config_lookup_rejects_unrelated_get_calls() {
 // FeatureFlag tests
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_ff_import(pkg: &str) -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_ff_import(pkg: &str) -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/feature.ts".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: pkg.to_string(),
             module_path: Some(pkg.to_string()),
             alias: None,
@@ -7596,7 +7596,7 @@ fn test_feature_flag_use_feature_flag_hook_without_import() {
 
     // `useFeatureFlag('x')` — generic React hook shape, fires without an
     // explicit SDK import (multiple libs export a hook by this name).
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/component.tsx".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -7652,7 +7652,7 @@ fn test_feature_flag_no_emit_without_library_import() {
 
     // `gb.isOn('x')` without any feature-flag SDK imported — `gb` could be
     // anything; don't emit.
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/feature.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -7672,7 +7672,7 @@ fn test_feature_flag_no_emit_without_library_import() {
 
 #[test]
 fn test_di_binding_inject_decorator_emits() {
-    use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext};
+    use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext};
     use crate::indexer::resolve::flow_emit::FlowEmission;
     use crate::types::{EdgeKind, ExtractedRef};
 
@@ -7739,7 +7739,7 @@ fn test_di_binding_inject_decorator_emits() {
 
 #[test]
 fn test_di_binding_no_emit_for_unrelated_typeref() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext};
+    use crate::indexer::resolve::legacy::{FileContext, RefContext};
     use crate::types::{EdgeKind, ExtractedRef};
 
     // A non-`Inject` TypeRef ref must not emit a DiBinding.
@@ -7794,7 +7794,7 @@ fn test_di_binding_no_emit_for_unrelated_typeref() {
 
 #[test]
 fn test_di_binding_inject_without_token_still_emits() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext};
+    use crate::indexer::resolve::legacy::{FileContext, RefContext};
     use crate::indexer::resolve::flow_emit::FlowEmission;
     use crate::types::{EdgeKind, ExtractedRef};
 
@@ -7859,11 +7859,11 @@ fn test_di_binding_inject_without_token_still_emits() {
 // tRPC client Producer detection
 // ---------------------------------------------------------------------------
 
-fn make_ctx_with_trpc_import() -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_with_trpc_import() -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/page.tsx".to_string(),
         language: "typescript".to_string(),
-        imports: vec![crate::indexer::resolve::engine::ImportEntry {
+        imports: vec![crate::indexer::resolve::legacy::ImportEntry {
             imported_name: "trpc".to_string(),
             module_path: Some("@/trpc/client".to_string()),
             alias: None,
@@ -7930,7 +7930,7 @@ fn test_trpc_no_emit_without_trpc_import() {
     use super::hooks::detect_chain_flow_emission;
     use crate::types::{CallArg, SegmentKind};
 
-    let file_ctx = crate::indexer::resolve::engine::FileContext {
+    let file_ctx = crate::indexer::resolve::legacy::FileContext {
         file_path: "src/page.tsx".to_string(),
         language: "typescript".to_string(),
         imports: vec![],
@@ -8021,8 +8021,8 @@ fn test_ipc_ipcmain_no_emit_for_lifecycle_verbs() {
 // Mailer Producer chain tests
 // ---------------------------------------------------------------------------
 
-fn make_ctx_mailer() -> crate::indexer::resolve::engine::FileContext {
-    crate::indexer::resolve::engine::FileContext {
+fn make_ctx_mailer() -> crate::indexer::resolve::legacy::FileContext {
+    crate::indexer::resolve::legacy::FileContext {
         file_path: "src/jobs/notifier.ts".to_string(),
         language: "typescript".to_string(),
         imports: vec![],

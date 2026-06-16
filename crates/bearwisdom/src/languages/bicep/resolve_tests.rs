@@ -1,7 +1,7 @@
 // Tests for bicep external classification — Azure resource types and child
 // resource shorthand routed via `classify_external`.
 
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolIndex};
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
 };

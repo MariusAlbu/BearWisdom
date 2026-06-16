@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::predicates;
 use super::C_LANG_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::DefaultResolver;

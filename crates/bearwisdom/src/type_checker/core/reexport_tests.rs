@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::follow_reexports;
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::types::EdgeKind;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;

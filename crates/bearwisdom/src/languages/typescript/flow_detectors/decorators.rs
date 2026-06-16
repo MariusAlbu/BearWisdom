@@ -9,7 +9,7 @@
 // `target_name` is the decorator identifier.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, ImportEntry};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry};
 use crate::indexer::resolve::flow_emit::{
     AuthGuardKind, ChannelRole, FlowEmission, HttpMethod, MigrationDirection, NamedChannelKind,
     StreamKind,

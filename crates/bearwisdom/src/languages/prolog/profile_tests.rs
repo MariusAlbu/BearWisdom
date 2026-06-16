@@ -13,7 +13,7 @@
 // =============================================================================
 
 use super::PROLOG_PROFILE;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolIndex};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, Resolution, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::types::*;
 use std::collections::HashMap;

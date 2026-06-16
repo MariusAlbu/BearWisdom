@@ -15,7 +15,7 @@
 // only the strategy tag and visibility predicate differ.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, RefContext, Resolution, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::types::EdgeKind;
@@ -43,7 +43,7 @@ pub fn resolve_via_inheritance<F>(
     strategy: &'static str,
 ) -> Option<Resolution>
 where
-    F: Fn(&FileContext, &RefContext, &crate::indexer::resolve::engine::SymbolInfo) -> bool,
+    F: Fn(&FileContext, &RefContext, &crate::indexer::resolve::legacy::SymbolInfo) -> bool,
 {
     let mut class_qname = calling_class;
     for _ in 0..MAX_DEPTH {

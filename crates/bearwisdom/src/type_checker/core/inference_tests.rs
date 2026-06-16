@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::Resolution;
+use crate::indexer::resolve::legacy::Resolution;
 use crate::type_checker::core::types::{LitValue, PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{CallArg, EdgeKind, ExtractedRef};

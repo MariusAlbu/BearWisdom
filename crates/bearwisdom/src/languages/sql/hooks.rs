@@ -1,7 +1,7 @@
 // SQL language hooks — external classification and file-context construction.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{self as engine, FileContext, RefContext, SymbolLookup};
+use crate::indexer::resolve::legacy::{self as engine, FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::ParsedFile;
 

@@ -40,7 +40,7 @@
 // check exists to avoid.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;

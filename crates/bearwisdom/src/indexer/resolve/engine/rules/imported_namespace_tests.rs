@@ -1,0 +1,84 @@
+use super::*;
+use crate::indexer::resolve::engine::contract::ImportEntry;
+use crate::indexer::resolve::engine::testkit::{
+    accept_any, call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
+};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult};
+use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+
+fn resolve(lookup: &Lookup, target: &str, imports: Vec<ImportEntry>) -> Option<i64> {
+    let r = call_ref(target);
+    let s = source_symbol("caller");
+    let fc = file_ctx(imports, None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup,
+        kind: &kind,
+        profile: &DEFAULT_PROFILE,
+    };
+    match ImportedNamespaceRule.apply(&ctx) {
+        LookupResult::Resolved(res) => Some(res.target_symbol_id),
+        _ => None,
+    }
+}
+
+#[test]
+fn binds_when_qname_starts_with_imported_module() {
+    // `using FamilyBudget.Api.Entities;` → candidate qname starts with the
+    // module path, boundary-checked by a `.` after it.
+    let lookup = Lookup::new().with(sym(
+        40,
+        "Transaction",
+        "FamilyBudget.Api.Entities.Transaction",
+        "class",
+        "src/transaction.cs",
+    ));
+    let imports = vec![import("*", Some("FamilyBudget.Api.Entities"))];
+    assert_eq!(resolve(&lookup, "Transaction", imports), Some(40));
+}
+
+#[test]
+fn boundary_check_prevents_accidental_match() {
+    // `FamilyBudget.Api.EntitiesOther` does NOT start with
+    // `FamilyBudget.Api.Entities.` (the trailing `.` boundary).
+    let lookup = Lookup::new().with(sym(
+        41,
+        "Transaction",
+        "FamilyBudget.Api.EntitiesOther.Transaction",
+        "class",
+        "src/t.cs",
+    ));
+    let imports = vec![import("*", Some("FamilyBudget.Api.Entities"))];
+    assert_eq!(resolve(&lookup, "Transaction", imports), None);
+}
+
+#[test]
+fn binds_via_file_path_match() {
+    // The module path `posthog.models` matches the candidate's file path
+    // `posthog/models/person.py` via the segment-run check.
+    let lookup = Lookup::new().with(sym(
+        42,
+        "Person",
+        "posthog.models.person.Person",
+        "class",
+        "posthog/models/person.py",
+    ));
+    let imports = vec![import("*", Some("posthog.models"))];
+    assert_eq!(resolve(&lookup, "Person", imports), Some(42));
+}
+
+#[test]
+fn declines_when_no_import_matches() {
+    let lookup = Lookup::new().with(sym(
+        43,
+        "Widget",
+        "com.example.Widget",
+        "class",
+        "src/Widget.java",
+    ));
+    let imports = vec![import("*", Some("com.other"))];
+    assert_eq!(resolve(&lookup, "Widget", imports), None);
+}

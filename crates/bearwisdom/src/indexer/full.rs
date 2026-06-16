@@ -72,6 +72,31 @@ pub fn full_index(
     pre_walked: Option<Vec<WalkedFile>>,
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IndexStats> {
+    full_index_inner(db, project_root, progress, pre_walked, ref_cache, false)
+}
+
+/// Same as `full_index` but routes reference resolution through the new
+/// rule-based `SemanticModel` instead of the established engine. Parsing, symbol
+/// extraction, the symbol index, and all DB writes are identical — only the
+/// per-ref bind decision differs — so the two indexes are directly comparable.
+pub fn full_index_engine(
+    db: &mut Database,
+    project_root: &Path,
+    progress: Option<ProgressFn>,
+    pre_walked: Option<Vec<WalkedFile>>,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
+) -> Result<IndexStats> {
+    full_index_inner(db, project_root, progress, pre_walked, ref_cache, true)
+}
+
+fn full_index_inner(
+    db: &mut Database,
+    project_root: &Path,
+    progress: Option<ProgressFn>,
+    pre_walked: Option<Vec<WalkedFile>>,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
+    use_engine: bool,
+) -> Result<IndexStats> {
     let emit = |step: &str, pct: f64, detail: Option<&str>| {
         if let Some(ref cb) = progress {
             cb(step, pct, detail);
@@ -908,15 +933,34 @@ pub fn full_index(
     // loop, no per-iteration re-resolve — each external symbol is parsed and
     // interned at most once, on first reference.
     emit("resolving", 0.0, None);
+    let mut rstats: resolve::ResolutionStats;
+    if use_engine {
+        // New engine: one demand-driven pass over the SymbolTree. No SymbolIndex,
+        // no iteration_0 + return-inference fixpoint, no old resolve loop.
+        let _t = phase_timer::scope("resolve.single_pass");
+        rstats = resolve::engine::pipeline::resolve_single_pass(
+            db,
+            &parsed,
+            &symbol_id_map,
+            Some(&project_ctx),
+            std::sync::Arc::clone(&workspace_arena),
+            std::sync::Arc::clone(&symbol_index),
+        )
+        .context("SemanticModel single-pass resolve failed")?;
+        info!(
+            "SemanticModel single pass: {} edges, {} unresolved",
+            rstats.resolved, rstats.unresolved
+        );
+    } else {
     // Built once on the single resolve pass and reused by the return-inference
     // fixpoint below; no per-iteration rebuild.
-    let mut cached_index: Option<resolve::engine::SymbolIndex> = None;
+    let mut cached_index: Option<resolve::legacy::SymbolIndex> = None;
     let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
     let mut cached_side_tables: Option<resolve::ResolveSideTables> = None;
     // Speculative unresolved/external rows, written once after the fixpoint
     // settles. Each pass overwrites this holder; the final pass is authoritative.
     let mut deferred_spec = resolve::DeferredSpeculative::default();
-    let mut rstats = {
+    rstats = {
         let _t = phase_timer::scope("resolve.iteration_0");
         resolve::resolve_iteration_with_cached_index_and_arena(
             db,
@@ -1032,6 +1076,7 @@ pub fn full_index(
     // has settled, from the final pass's authoritative set.
     resolve::flush_deferred_speculative(db, &deferred_spec)
         .context("Failed to flush deferred speculative refs")?;
+    }
 
     // Materialize incoming_edge_count once, after the loop settles.
     resolve::finalize_resolution(db).context("Failed to finalize resolution")?;

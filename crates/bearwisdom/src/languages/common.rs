@@ -55,7 +55,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                 };
                 if sym.return_type.is_none() {
                     if let Some(rt) =
-                        crate::indexer::resolve::engine::chain_walker::parse_return_type_from_signature_for_lang(
+                        crate::indexer::resolve::legacy::chain_walker::parse_return_type_from_signature_for_lang(
                             sig,
                             lang_id,
                         )
@@ -67,7 +67,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                 }
                 if sym.param_types.is_empty() {
                     if let Some(params) =
-                        crate::indexer::resolve::engine::chain_walker::parse_param_types_from_signature_for_lang(
+                        crate::indexer::resolve::legacy::chain_walker::parse_param_types_from_signature_for_lang(
                             sig,
                             lang_id,
                         )
@@ -90,7 +90,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     continue;
                 };
                 if let Some(ty) =
-                    crate::indexer::resolve::engine::chain_walker::parse_declared_type_from_signature_for_lang(
+                    crate::indexer::resolve::legacy::chain_walker::parse_declared_type_from_signature_for_lang(
                         sig,
                         lang_id,
                     )

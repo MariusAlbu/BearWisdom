@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::hooks::is_delphi_namespaced_file;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry};
 
 fn wildcard_import(module: &str) -> ImportEntry {
     ImportEntry {

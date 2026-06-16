@@ -22,6 +22,7 @@ pub mod phase_timer;
 pub mod plugin_state;
 pub mod post_index;
 pub mod query_builtins;
+pub mod resolve_diff;
 pub mod secondary_scan;
 pub mod service;
 #[cfg(test)]

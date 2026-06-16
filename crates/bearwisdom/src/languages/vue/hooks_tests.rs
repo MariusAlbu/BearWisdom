@@ -81,7 +81,7 @@ fn ctx_with(registry: VueGlobalRegistry) -> ProjectContext {
     ctx
 }
 
-fn module_for<'a>(ctx: &'a crate::indexer::resolve::engine::FileContext, name: &str) -> Option<&'a str> {
+fn module_for<'a>(ctx: &'a crate::indexer::resolve::legacy::FileContext, name: &str) -> Option<&'a str> {
     ctx.imports
         .iter()
         .find(|e| e.imported_name == name)

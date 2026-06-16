@@ -6,7 +6,7 @@
 // =============================================================================
 
 use super::hooks::{build_file_context_inner, normalize_php_ns};
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{build_scope_chain, RefContext, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
 

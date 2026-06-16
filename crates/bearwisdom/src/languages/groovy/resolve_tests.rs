@@ -2,7 +2,7 @@
 // groovy/resolve_tests.rs — unit tests for Groovy hooks (GORM flow emission).
 // =============================================================================
 
-use crate::indexer::resolve::engine::FileContext;
+use crate::indexer::resolve::legacy::FileContext;
 
 // ---------------------------------------------------------------------------
 // Goal 31 — GORM flow emission

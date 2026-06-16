@@ -1,7 +1,7 @@
 use super::hooks::build_file_context_inner;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
+use crate::indexer::resolve::legacy::{build_scope_chain, RefContext};
 use crate::types::*;
 
 fn make_symbol(
@@ -119,7 +119,7 @@ fn bare_anyhow_path_attributed_to_anyhow_not_std() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+        let empty_lookup = crate::indexer::resolve::legacy::SymbolIndex::build(
             &[],
             &std::collections::HashMap::new(),
         );
@@ -160,7 +160,7 @@ fn bare_hyphenated_crate_normalized_to_underscore() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+        let empty_lookup = crate::indexer::resolve::legacy::SymbolIndex::build(
             &[],
             &std::collections::HashMap::new(),
         );
@@ -204,7 +204,7 @@ fn bare_stdlib_path_still_routes_to_std() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+        let empty_lookup = crate::indexer::resolve::legacy::SymbolIndex::build(
             &[],
             &std::collections::HashMap::new(),
         );
@@ -243,7 +243,7 @@ fn bare_crate_path_internal_not_attributed_external() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+        let empty_lookup = crate::indexer::resolve::legacy::SymbolIndex::build(
             &[],
             &std::collections::HashMap::new(),
         );
@@ -288,7 +288,7 @@ fn unknown_bare_path_not_attributed_when_not_in_manifest() {
 
     let ns = {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        let empty_lookup = crate::indexer::resolve::engine::SymbolIndex::build(
+        let empty_lookup = crate::indexer::resolve::legacy::SymbolIndex::build(
             &[],
             &std::collections::HashMap::new(),
         );
@@ -697,7 +697,7 @@ fn test_rust_tonic_direct_detector_still_rejects_bare_variable() {
 
 #[test]
 fn test_rust_tonic_let_bound_client_emits_via_lookup() {
-    use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
+    use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolLookup, SymbolSet};
     use crate::indexer::resolve::flow_emit::{FlowEmission, NamedChannelKind};
     use crate::types::{ChainSegment, ExtractedRef, ExtractedSymbol, MemberChain};
 
@@ -1044,7 +1044,7 @@ fn test_rust_async_graphql_rejects_unrelated() {
 
 mod prelude {
     use super::*;
-    use crate::indexer::resolve::engine::SymbolIndex;
+    use crate::indexer::resolve::legacy::SymbolIndex;
     use std::collections::HashMap;
 
     fn stdlib_path(rel: &str) -> String {
@@ -1100,7 +1100,7 @@ mod prelude {
         ctx: &ProjectContext,
         caller_idx: usize,
         files: &[ParsedFile],
-    ) -> Option<crate::indexer::resolve::engine::Resolution> {
+    ) -> Option<crate::indexer::resolve::legacy::Resolution> {
         use crate::type_checker::core::DefaultResolver;
         let caller = &files[caller_idx];
         let index = build_index(files);

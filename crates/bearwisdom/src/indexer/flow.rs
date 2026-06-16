@@ -37,7 +37,7 @@
 // Sprint 2 wires TypeScript. Sprint 3+ wires Python/Rust/etc.
 // =============================================================================
 
-use crate::indexer::resolve::engine::strip_generic_args;
+use crate::indexer::resolve::legacy::strip_generic_args;
 use crate::types::{
     ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
     SymbolKind,

@@ -181,7 +181,7 @@ fn synthesized_members_are_callable_kinds() {
 
 #[test]
 fn default_chains_through_at_index_level() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 

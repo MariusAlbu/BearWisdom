@@ -1,7 +1,7 @@
 // Odin language hooks. Absorbed from the deleted `odin/resolve.rs`.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     self as engine, FileContext, ImportEntry, RefContext, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;

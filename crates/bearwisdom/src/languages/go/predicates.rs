@@ -2,7 +2,7 @@
 // go/predicates.rs — Go builtin and helper predicates
 // =============================================================================
 
-use crate::indexer::resolve::engine::SymbolInfo;
+use crate::indexer::resolve::legacy::SymbolInfo;
 use crate::types::EdgeKind;
 
 /// Extract the Go package name from a symbol's qualified_name.

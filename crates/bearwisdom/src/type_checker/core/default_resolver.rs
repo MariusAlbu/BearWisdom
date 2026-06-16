@@ -21,7 +21,7 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use super::reexport::follow_reexports;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::profile::language_profile::{
@@ -2054,7 +2054,7 @@ impl<'a> DefaultResolver<'a> {
         }
         // Ambient-global lib-file bare-qname probe.
         for candidate in self.lookup.all_by_qualified_name(target) {
-            if !crate::indexer::resolve::engine::is_ambient_global_lib_path(&candidate.file_path) {
+            if !crate::indexer::resolve::legacy::is_ambient_global_lib_path(&candidate.file_path) {
                 continue;
             }
             let kind_ok = kind(edge_kind, &candidate.kind)
@@ -2271,7 +2271,7 @@ impl<'a> DefaultResolver<'a> {
         if matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements)
             && r.target_name.contains('<')
         {
-            let head = crate::indexer::resolve::engine::chain_walker::parse_type_head_and_args(
+            let head = crate::indexer::resolve::legacy::chain_walker::parse_type_head_and_args(
                 &r.target_name,
             )
             .0;
@@ -3018,7 +3018,7 @@ fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
 /// Yield every namespace prefix worth trying for an import: the module
 /// path (when dotted) and the imported name (when dotted and distinct).
 fn candidate_namespace_prefixes(
-    import: &crate::indexer::resolve::engine::ImportEntry,
+    import: &crate::indexer::resolve::legacy::ImportEntry,
 ) -> impl Iterator<Item = &str> {
     let mut prefixes: Vec<&str> = Vec::with_capacity(2);
     if let Some(m) = import.module_path.as_deref() {
@@ -3416,7 +3416,7 @@ fn import_path_candidates(
     target: &str,
     ir: &ImportResolution,
 ) -> Vec<std::path::PathBuf> {
-    use crate::indexer::resolve::engine::{camel_to_kebab, lexical_normalize};
+    use crate::indexer::resolve::legacy::{camel_to_kebab, lexical_normalize};
     use std::path::PathBuf;
 
     let mut out: Vec<PathBuf> = Vec::with_capacity(32);

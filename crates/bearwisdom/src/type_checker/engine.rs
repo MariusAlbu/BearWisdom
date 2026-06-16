@@ -14,7 +14,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::alias::{build_alias_index, AliasIndex};

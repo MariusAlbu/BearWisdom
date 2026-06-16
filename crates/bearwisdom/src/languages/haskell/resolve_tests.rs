@@ -40,7 +40,7 @@ fn parsed_haskell(path: &str, src: &str) -> ParsedFile {
 
 /// Build a SymbolIndex over the files, faking the symbol_id_map the indexer
 /// normally produces (1-based, per (path, qname)).
-fn build_index(files: &[ParsedFile]) -> crate::indexer::resolve::engine::SymbolIndex {
+fn build_index(files: &[ParsedFile]) -> crate::indexer::resolve::legacy::SymbolIndex {
     let mut id_map: std::collections::HashMap<(String, String), i64> =
         std::collections::HashMap::new();
     let mut next: i64 = 1;
@@ -50,7 +50,7 @@ fn build_index(files: &[ParsedFile]) -> crate::indexer::resolve::engine::SymbolI
             next += 1;
         }
     }
-    crate::indexer::resolve::engine::SymbolIndex::build(files, &id_map)
+    crate::indexer::resolve::legacy::SymbolIndex::build(files, &id_map)
 }
 
 /// Drive the default resolver over the first ref matching `target`/`kind`
@@ -59,7 +59,7 @@ fn resolve_ref(
     pf: &ParsedFile,
     target: &str,
     kind: EdgeKind,
-) -> Option<crate::indexer::resolve::engine::Resolution> {
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
     resolve_ref_impl(pf, target, kind, None)
 }
 
@@ -71,7 +71,7 @@ fn resolve_ref_from(
     source_name: &str,
     target: &str,
     kind: EdgeKind,
-) -> Option<crate::indexer::resolve::engine::Resolution> {
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
     resolve_ref_impl(pf, target, kind, Some(source_name))
 }
 
@@ -80,8 +80,8 @@ fn resolve_ref_impl(
     target: &str,
     kind: EdgeKind,
     source_name: Option<&str>,
-) -> Option<crate::indexer::resolve::engine::Resolution> {
-    use crate::indexer::resolve::engine::{build_scope_chain, RefContext};
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
+    use crate::indexer::resolve::legacy::{build_scope_chain, RefContext};
     use crate::type_checker::core::DefaultResolver;
     use crate::type_checker::profile::hooks::LanguageEngineHooks;
 

@@ -1,4 +1,4 @@
-use crate::indexer::resolve::engine::SymbolIndex;
+use crate::indexer::resolve::legacy::SymbolIndex;
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -96,7 +96,7 @@ fn synth_splice(path: &str, source: &str) -> ParsedFile {
 
 #[test]
 fn lombok_synthesized_methods_carry_return_types_in_index() {
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
 
     // The synthesized return-type refs flow through the index builder into the
     // return-type map, so a chain types through builder()/getName()/build() the
@@ -126,7 +126,7 @@ fn lombok_synthesized_methods_carry_return_types_in_index() {
 
 #[test]
 fn lombok_generic_getter_binds_element_via_signature() {
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
 
     // A generic getter's synthesized leading-form signature (`List<User>
     // getItems()`) lets the index recover the element args, so the getter

@@ -4,7 +4,7 @@ use super::hooks::{
 };
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext, SymbolIndex};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;

@@ -8,7 +8,7 @@ use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{AliasTarget, EdgeKind};
-use crate::indexer::resolve::engine::SymbolSet;
+use crate::indexer::resolve::legacy::SymbolSet;
 use std::sync::Arc;
 
 fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {

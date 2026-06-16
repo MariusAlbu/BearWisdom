@@ -8,7 +8,7 @@
 
 use super::hooks::PythonResolver;
 use super::profile::PYTHON_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
 use crate::type_checker::core::DefaultResolver;

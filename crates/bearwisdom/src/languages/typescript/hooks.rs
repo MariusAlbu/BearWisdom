@@ -21,7 +21,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::indexer::resolve::flow_emit::FlowEmission;
 use crate::types::{EdgeKind, ParsedFile};
 

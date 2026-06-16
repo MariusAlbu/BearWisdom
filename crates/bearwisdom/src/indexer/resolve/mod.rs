@@ -17,20 +17,23 @@
 //   * flow_pair  — Producer/Consumer pairing of FlowEmissions
 //   * adapters   — framework-specific Consumer adapters (mailer / Next.js /
 //                  extractor-emitted routes + DbSets)
-//   * engine     — SymbolIndex + chain walker + language resolver dispatch
+//   * legacy     — FROZEN old engine: SymbolIndex + chain walker + language
+//                  resolver dispatch. Reference oracle only; slated for deletion
+//                  once the engine island reaches corpus parity.
 //   * flow_emit  — FlowEmission data model
 //   * reachability + synthesize_dispatch — post-resolution dead-code support
 // =============================================================================
 
 mod adapters;
-pub mod engine;
 pub mod flow_emit;
 mod flow_pair;
 mod indexes;
+pub mod legacy;
 mod loop_body;
 mod path_util;
 pub mod reachability;
 mod return_inference;
+pub mod engine;
 pub mod synthesize_dispatch;
 mod write_buf;
 
@@ -183,7 +186,7 @@ pub fn resolve_iteration_with_cached_index(
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
-    cached_index: &mut Option<engine::SymbolIndex>,
+    cached_index: &mut Option<legacy::SymbolIndex>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
@@ -216,7 +219,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
-    cached_index: &mut Option<engine::SymbolIndex>,
+    cached_index: &mut Option<legacy::SymbolIndex>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<loop_body::ResolveSideTables>,
     new_files_slice: &[ParsedFile],
@@ -226,7 +229,7 @@ pub fn resolve_iteration_with_cached_index_and_arena(
     loc: std::sync::Arc<crate::ecosystem::symbol_index::SymbolLocationIndex>,
 ) -> Result<ResolutionStats> {
     if cached_index.is_none() {
-        let mut index = engine::SymbolIndex::build_with_context_and_arena(
+        let mut index = legacy::SymbolIndex::build_with_context_and_arena(
             parsed,
             symbol_id_map,
             project_ctx,

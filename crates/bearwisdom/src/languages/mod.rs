@@ -6,7 +6,7 @@
 //! - Symbol + reference extraction from source code
 //!
 //! Resolution (turning reference names into resolved symbol edges) is provided
-//! separately via [`crate::indexer::resolve::engine::LanguageResolver`] to avoid
+//! separately via [`crate::indexer::resolve::legacy::LanguageResolver`] to avoid
 //! circular dependencies — resolvers need the full symbol index, which isn't
 //! available during extraction.
 //!

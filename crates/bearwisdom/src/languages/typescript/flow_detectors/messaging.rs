@@ -14,7 +14,7 @@
 // via `pub(super)`).
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext, SymbolLookup};
 use crate::indexer::resolve::flow_emit::{ChannelRole, FlowEmission, NamedChannelKind, StreamKind};
 use crate::types::CallArg;
 

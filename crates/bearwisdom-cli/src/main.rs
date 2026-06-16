@@ -423,6 +423,27 @@ enum Commands {
         force: bool,
     },
 
+    /// Full-index a project using the new rule-based CodeSolver for reference
+    /// resolution instead of the established engine. For validating the new
+    /// engine: the parse, symbol extraction, and DB writes are identical — only
+    /// the per-ref bind decision differs. Outputs JSON stats with the
+    /// resolution rate.
+    ReindexCodeSolver {
+        /// Path to the project root.
+        path: String,
+    },
+
+    /// Parity oracle: index a project with BOTH the legacy and the new engine
+    /// and diff their resolved edges. Reports edges the legacy engine bound that
+    /// the new engine did not (the parity worklist) and the reverse. JSON out.
+    ResolveDiff {
+        /// Path to the project root.
+        path: String,
+        /// Max number of regression rows to include in the sample.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+
     /// Analyze tree-sitter extraction coverage for a project.
     /// Shows which node kinds appear in real code and how many symbols/refs
     /// the extractor produces per language.
@@ -755,6 +776,8 @@ fn run(command: Commands, full: bool) -> Result<String> {
             max_traces,
         } => cmd_full_trace(&path, symbol.as_deref(), depth, max_traces),
         Commands::Reindex { path, force } => cmd_reindex(&path, force),
+        Commands::ReindexCodeSolver { path } => cmd_reindex_code_solver(&path),
+        Commands::ResolveDiff { path, limit } => cmd_resolve_diff(&path, limit),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck {
             baseline,
@@ -1560,6 +1583,102 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
         "unresolved_refs": stats.unresolved_ref_count,
         "unresolved_refs_external": stats.unresolved_ref_count_external,
         "flow_edge_types": flow_edge_types,
+    }))
+}
+
+/// Parity oracle: full-index a project with the legacy engine and the new
+/// engine into separate in-memory databases and diff their resolved edges.
+/// `regression_sample` lists edges the legacy engine bound that the new engine
+/// did not — the worklist toward deleting the legacy engine.
+fn cmd_resolve_diff(project_path: &str, limit: usize) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let start = std::time::Instant::now();
+    eprintln!(
+        "Indexing {} with both engines for resolve-diff ...",
+        root.display()
+    );
+    let diff = bearwisdom::resolve_diff(&root)
+        .with_context(|| format!("resolve-diff failed for {}", root.display()))?;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    eprintln!(
+        "Done in {:.2}s: legacy {} edges, engine {} edges, {} regressions, {} gains{}",
+        elapsed_ms as f64 / 1000.0,
+        diff.legacy_edges,
+        diff.engine_edges,
+        diff.regressions.len(),
+        diff.gains.len(),
+        if diff.at_parity() { "  (PARITY)" } else { "" },
+    );
+
+    let regression_sample: Vec<_> = diff
+        .regressions
+        .iter()
+        .take(limit)
+        .map(|e| serde_json::json!({ "source": e.source, "target": e.target, "kind": e.kind }))
+        .collect();
+
+    ok_json(serde_json::json!({
+        "project": root.display().to_string(),
+        "duration_ms": elapsed_ms,
+        "legacy_edges": diff.legacy_edges,
+        "engine_edges": diff.engine_edges,
+        "regressions": diff.regressions.len(),
+        "gains": diff.gains.len(),
+        "parity": diff.at_parity(),
+        "regression_sample": regression_sample,
+        "sample_truncated": diff.regressions.len() > limit,
+    }))
+}
+
+/// Full-index a project through the new rule-based `CodeSolver`. Always a full
+/// rebuild (the new engine has no incremental path yet); reports the resolution
+/// rate so the engine can be measured against the same project the established
+/// engine indexes.
+fn cmd_reindex_code_solver(project_path: &str) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let start = std::time::Instant::now();
+
+    let mut db = Database::open(&db_path)
+        .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
+
+    eprintln!(
+        "Running full index with the rule-based CodeSolver for {} ...",
+        root.display()
+    );
+    bearwisdom::full_index_engine(&mut db, &root, None, None, None)
+        .with_context(|| format!("CodeSolver index failed for {}", root.display()))?;
+
+    let stats = bearwisdom::index_stats(&db)?;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    let resolved = stats.edge_count;
+    let unresolved = stats.unresolved_ref_count;
+    let denom = resolved + unresolved;
+    let rate = if denom > 0 {
+        resolved as f64 / denom as f64 * 100.0
+    } else {
+        0.0
+    };
+    eprintln!(
+        "Done in {:.2}s (code-solver): {} files, {} symbols, {} edges, {} unresolved ({:.2}% resolved)",
+        elapsed_ms as f64 / 1000.0,
+        stats.file_count,
+        stats.symbol_count,
+        resolved,
+        unresolved,
+        rate
+    );
+
+    ok_json(serde_json::json!({
+        "project": root.display().to_string(),
+        "engine": "code_solver",
+        "duration_ms": elapsed_ms,
+        "files": stats.file_count,
+        "symbols": stats.symbol_count,
+        "edges": stats.edge_count,
+        "unresolved_refs": stats.unresolved_ref_count,
+        "unresolved_refs_external": stats.unresolved_ref_count_external,
+        "resolution_rate": rate,
     }))
 }
 

@@ -16,7 +16,7 @@
 // applications.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{parse_type_head_and_args, SymbolLookup};
+use crate::indexer::resolve::legacy::{parse_type_head_and_args, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena, TypeId};

@@ -1,6 +1,6 @@
 use super::hooks::MdxHooks;
 use super::profile::MDX_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
 use crate::type_checker::profile::hooks::LanguageEngineHooks;

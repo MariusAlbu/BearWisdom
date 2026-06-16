@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
 
 use super::helpers::node_text;
-use crate::indexer::resolve::engine::ImportEntry;
+use crate::indexer::resolve::legacy::ImportEntry;
 use crate::types::ParsedFile;
 
 /// One directive a module's `__using__` quote block injects into every caller

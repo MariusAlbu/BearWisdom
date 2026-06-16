@@ -13,7 +13,7 @@ use tracing::debug;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE};
+use crate::indexer::resolve::legacy::{Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE};
 use crate::type_checker::core::reexport::follow_reexports;
 
 use super::predicates;

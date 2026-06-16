@@ -180,7 +180,7 @@ fn make_nuget_ctx() -> crate::indexer::project_context::ProjectContext {
 
 #[test]
 fn test_vbnet_bcl_import_classified_external() {
-    use crate::indexer::resolve::engine::{
+    use crate::indexer::resolve::legacy::{
         build_scope_chain, FileContext, RefContext, SymbolIndex,
     };
     use crate::type_checker::profile::hooks::LanguageEngineHooks;

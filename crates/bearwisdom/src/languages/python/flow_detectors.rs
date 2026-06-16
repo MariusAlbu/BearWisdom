@@ -13,7 +13,7 @@
 // and emit `FlowEmission` records via the resolver.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolLookup};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext, SymbolLookup};
 
 pub(crate) fn detect_python_redis_lookup(
     chain: &crate::types::MemberChain,

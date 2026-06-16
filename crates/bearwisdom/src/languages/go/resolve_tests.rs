@@ -6,7 +6,7 @@
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, ImportEntry, RefContext, SymbolIndex,
 };
 use crate::types::*;
@@ -1126,7 +1126,7 @@ fn composite_defined_type_synthesizes_no_alias_target() {
     // engine only mis-resolves when `Stack` carries an expandable AliasTarget;
     // the fix is that the composite defined type synthesizes none, so expansion
     // stays a no-op and the receiver keeps its own type.
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
     let index = index_from_go_source(
         "coll/stack.go",
         r#"package coll
@@ -1153,7 +1153,7 @@ fn defined_type_with_method_synthesizes_no_alias_target() {
     // (b) `type Foo Bar` with `func (f Foo) M()`: `f.M()` must resolve to
     // `Foo.M`, NOT be rewritten to `Bar`. A defined type carries no expandable
     // AliasTarget, so the receiver `Foo` is never rewritten away from itself.
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
     let index = index_from_go_source(
         "m/foo.go",
         r#"package m
@@ -1179,7 +1179,7 @@ fn true_alias_synthesizes_expandable_alias_target() {
     // (c) `type Alias = Bar`: a value typed `Alias` resolves members through
     // `Bar`. The true alias synthesizes an expandable AliasTarget naming Bar,
     // which alias expansion rewrites to before member lookup.
-    use crate::indexer::resolve::engine::SymbolLookup;
+    use crate::indexer::resolve::legacy::SymbolLookup;
     let index = index_from_go_source(
         "m/alias.go",
         r#"package m

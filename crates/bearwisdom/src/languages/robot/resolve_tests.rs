@@ -20,7 +20,7 @@ use super::extract;
 use super::hooks::RobotHooks;
 use super::profile::ROBOT_PROFILE;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::DefaultResolver;
@@ -206,7 +206,7 @@ fn sym_id(id_map: &HashMap<(String, String), i64>, file: &str, name: &str) -> i6
 fn resolve_first_ref(
     file: &ParsedFile,
     all_files: &[&ParsedFile],
-) -> Option<crate::indexer::resolve::engine::Resolution> {
+) -> Option<crate::indexer::resolve::legacy::Resolution> {
     let (index, _) = build_index(all_files);
     let file_ctx = RobotHooks.build_file_context(file, None).unwrap();
     let r = file.refs.first()?;

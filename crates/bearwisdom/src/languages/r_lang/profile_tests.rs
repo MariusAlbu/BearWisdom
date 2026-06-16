@@ -10,7 +10,7 @@
 // =============================================================================
 
 use super::R_PROFILE;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolIndex};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, Resolution, SymbolIndex};
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::language_profile::DispatchAxis;
 use crate::types::*;

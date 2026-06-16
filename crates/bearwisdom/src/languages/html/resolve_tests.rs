@@ -8,7 +8,7 @@
 //! property under test.
 
 use super::profile::HTML_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup, SymbolSet,
 };
 

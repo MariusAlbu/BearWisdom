@@ -3,7 +3,7 @@
 // — same approach as Vue/Svelte SFCs.
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolLookup};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::ParsedFile;
 

@@ -197,7 +197,7 @@ fn test_sentinel_constant() {
 // ---------------------------------------------------------------------------
 
 use super::hooks::PowerShellHooks;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext, SymbolIndex};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::HashMap;

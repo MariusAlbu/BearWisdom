@@ -262,7 +262,7 @@ fn synthesized_members_have_method_kind() {
 
 #[test]
 fn copy_return_ref_enables_chain_resolution() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{EdgeKind, FlowMeta, ParsedFile};
     use std::collections::HashMap;
 

@@ -402,7 +402,7 @@ fn run_pass(
     db: &mut Database,
     parsed: &[ParsedFile],
     symbol_id_map: &std::collections::HashMap<(String, String), i64>,
-    cached_index: &mut Option<crate::indexer::resolve::engine::SymbolIndex>,
+    cached_index: &mut Option<crate::indexer::resolve::legacy::SymbolIndex>,
     cached_engine: &mut Option<crate::type_checker::Engine<'static>>,
     cached_side_tables: &mut Option<crate::indexer::resolve::ResolveSideTables>,
     retry_files: Option<&std::collections::HashSet<String>>,

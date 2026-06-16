@@ -31,7 +31,7 @@
 // =============================================================================
 
 use super::types::{GenericParamId, Type, TypeArena, TypeId};
-use crate::indexer::resolve::engine::{FileContext, RefContext, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::dispatch::{
     arg_assignable_candidates, index_into, project_container_slot, resolve_arg_types,
@@ -1847,7 +1847,7 @@ impl<'a> ChainWalker<'a> {
 ///   "timeout", &["skip", "retries", "slow"])` returns
 ///   `mocha.Context` / `Mocha.Context`.
 pub fn discover_type_by_canonical_members(
-    lookup: &dyn crate::indexer::resolve::engine::SymbolLookup,
+    lookup: &dyn crate::indexer::resolve::legacy::SymbolLookup,
     seed_method: &str,
     canonical_members: &[&str],
 ) -> Option<String> {

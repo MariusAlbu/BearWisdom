@@ -12,7 +12,7 @@
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, RefContext as ResolveRefContext, Resolution, SymbolLookup,
 };
 use crate::types::ExtractedRef;

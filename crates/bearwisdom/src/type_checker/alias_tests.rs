@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena};

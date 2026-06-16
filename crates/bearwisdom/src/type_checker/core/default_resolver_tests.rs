@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::profile::language_profile::{

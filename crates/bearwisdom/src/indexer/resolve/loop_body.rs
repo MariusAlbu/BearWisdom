@@ -31,7 +31,7 @@ use super::adapters::{
     extracted_db_sets_to_emissions, extracted_routes_to_emissions, mailer_template_name_for_path,
     nextjs_route_consumer_emissions, plugin_flow_emissions_to_emissions,
 };
-use super::engine::{
+use super::legacy::{
     self, build_scope_chain, ImportEntry, RefContext, SymbolIndex, SymbolLookup,
 };
 use super::flow_emit;
@@ -558,12 +558,12 @@ fn resolve_iteration_body(
                 // Same-language refs (the common case) borrow the per-file context
                 // built once above; only cross-language embedded refs need a fresh,
                 // owned context for the embedded language's resolver.
-                let embedded_file_ctx: Option<engine::FileContext> = if is_cross_lang_embedded {
+                let embedded_file_ctx: Option<legacy::FileContext> = if is_cross_lang_embedded {
                     type_engine.build_file_context(effective_lang, pf, project_ctx)
                 } else {
                     None
                 };
-                let file_ctx: Option<&engine::FileContext> = if is_cross_lang_embedded {
+                let file_ctx: Option<&legacy::FileContext> = if is_cross_lang_embedded {
                     embedded_file_ctx.as_ref()
                 } else {
                     host_file_ctx.as_ref()
@@ -705,7 +705,7 @@ fn resolve_iteration_body(
                                 // the wrapper's payload — peel one layer so `x` is
                                 // typed as `T`, not `Result<T>`.
                                 let recorded = if pf.flow.flow_binding_unwrap.contains(&lhs_idx) {
-                                    engine::first_generic_arg(&yield_str).unwrap_or(yield_str)
+                                    legacy::first_generic_arg(&yield_str).unwrap_or(yield_str)
                                 } else {
                                     yield_str
                                 };
@@ -1136,7 +1136,7 @@ fn resolve_iteration_body(
 fn classify_external_ns(
     r: &crate::types::ExtractedRef,
     ref_ctx: &RefContext,
-    file_ctx: Option<&engine::FileContext>,
+    file_ctx: Option<&legacy::FileContext>,
     file_imports: &[(String, Option<String>)],
     module_to_files: &rustc_hash::FxHashMap<String, Vec<String>>,
     type_engine: &crate::type_checker::Engine,
@@ -1158,7 +1158,7 @@ fn classify_external_ns(
                 return None;
             }
             r.chain.as_ref().and_then(|chain| {
-                engine::infer_external_from_chain(chain, &ref_ctx.scope_chain, index)
+                legacy::infer_external_from_chain(chain, &ref_ctx.scope_chain, index)
             })
         })
         // Bare-name: test globals, language primitives, runtime builtins.
@@ -1270,7 +1270,7 @@ fn names_workspace_package(ns: &str, lookup: &dyn SymbolLookup) -> bool {
 fn is_module_in_project(
     module_path: &str,
     module_to_files: &rustc_hash::FxHashMap<String, Vec<String>>,
-    index: &engine::SymbolIndex,
+    index: &legacy::SymbolIndex,
 ) -> bool {
     if module_to_files.contains_key(module_path) {
         return true;

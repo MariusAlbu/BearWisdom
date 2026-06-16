@@ -1,6 +1,6 @@
 use super::hooks::RubyResolver;
 use super::profile::RUBY_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::DefaultResolver;

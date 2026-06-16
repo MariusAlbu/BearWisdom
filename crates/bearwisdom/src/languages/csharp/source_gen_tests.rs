@@ -289,7 +289,7 @@ fn deconstruct_carries_complex_property_type() {
 
 #[test]
 fn deconstruct_resolves_through_index() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 
@@ -841,7 +841,7 @@ fn hand_written_validator_member_wins() {
 
 #[test]
 fn observable_recipient_resolves_messenger_through_index() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 
@@ -905,7 +905,7 @@ fn observable_recipient_resolves_messenger_through_index() {
 
 #[test]
 fn observable_object_resolves_set_property_through_index() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 
@@ -965,7 +965,7 @@ fn observable_object_resolves_set_property_through_index() {
 
 #[test]
 fn observable_property_resolves_through_index() {
-    use crate::indexer::resolve::engine::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 

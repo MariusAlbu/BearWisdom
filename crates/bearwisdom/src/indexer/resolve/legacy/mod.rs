@@ -1,0 +1,71 @@
+// =============================================================================
+// indexer/resolve/legacy — FROZEN old resolution engine
+//
+// QUARANTINE. Do not extend, do not fix, do not import from here into the
+// engine island. Kept runnable only as (1) the default `reindex` path
+// until the new engine reaches parity and (2) the differential oracle that
+// `bw resolve-diff` compares against. Deleted wholesale once the new engine's
+// edge set covers it.
+//
+// Original façade doc follows.
+// =============================================================================
+// indexer/resolve/engine — resolution engine façade
+//
+// The engine is the resolve loop's contract surface: it holds the symbol
+// index, dispatches per-language resolvers, and exposes the small helpers
+// (chain walking, npm-package extraction, scope-chain construction) that
+// language resolvers and the resolve loop both consume.
+//
+// This file is the public API surface only — each submodule owns one
+// responsibility:
+//
+//   * types         — public data contracts (FileContext, RefContext,
+//                     Resolution, SymbolInfo, TypeInfo)
+//   * lookup        — SymbolLookup trait
+//   * index         — SymbolIndex struct + build/augment/classify/lookup_impl
+//   * chain_walker  — type-inference chain walker and its string helpers
+//   * common        — `infer_external_common` external-classification helper
+//   * util          — scope-chain construction, npm-package extraction,
+//                     ambient-path detection, type-kind classification
+// =============================================================================
+
+pub mod chain_walker;
+pub mod common;
+pub mod index;
+pub mod lookup;
+pub mod symbol_set;
+pub mod types;
+pub mod util;
+
+pub use chain_walker::{find_member_via_inheritance, infer_external_from_chain};
+pub use common::infer_external_common;
+pub use index::{LocalTypeCache, SymbolIndex};
+pub use lookup::SymbolLookup;
+pub use symbol_set::SymbolSet;
+pub use types::{
+    intern_yield_type, FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, TypeInfo,
+    RESOLVED_CONFIDENCE,
+};
+pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
+
+// Crate-visible re-exports for items the engine's own submodules (and a
+// handful of language resolvers) consult via the engine path. Keeps every
+// `crate::indexer::resolve::legacy::<name>` call site stable across the
+// internal carve-up.
+pub(crate) use chain_walker::{
+    find_matching_bracket, first_generic_arg, infer_type_from_chain, is_jvm_language,
+    is_plain_type_name, merge_where_bounds, parse_declared_type_from_signature_for_lang,
+    parse_generic_param_clause, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing,
+    parse_type_head_and_args, parse_type_head_and_args_bracket, resolve_type_name_in_scope,
+    strip_generic_args,
+};
+pub(crate) use util::{
+    common_prefix_len, file_belongs_to_npm_package, is_ambient_global_lib_path,
+    is_ts_ambient_global_lib_path, is_type_like_kind, npm_package_from_external_path,
+    npm_package_from_specifier,
+};
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

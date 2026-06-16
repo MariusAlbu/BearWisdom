@@ -1,6 +1,6 @@
 use super::hooks::HeexHooks;
-use crate::indexer::resolve::engine::FileContext;
-use crate::indexer::resolve::engine::{build_scope_chain, RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::FileContext;
+use crate::indexer::resolve::legacy::{build_scope_chain, RefContext, SymbolIndex};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::*;
 use std::collections::HashMap;
@@ -288,7 +288,7 @@ fn infer_external_namespace_dotted_phoenix_root() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
         let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+            crate::indexer::resolve::legacy::SymbolIndex::build(&[], &HashMap::new());
         crate::languages::heex::hooks::HeexHooks.classify_external(
             &ref_ctx,
             &file_ctx,

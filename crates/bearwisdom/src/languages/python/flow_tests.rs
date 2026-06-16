@@ -13,7 +13,7 @@ use super::flow_detectors::{
     detect_python_grpc_stub_emission, detect_python_http_chain_emission,
     detect_python_route_decorator_emission, detect_python_sqlalchemy_select_call,
 };
-use crate::indexer::resolve::engine::{FileContext, ImportEntry};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry};
 use crate::types::{CallArg, ChainSegment, MemberChain, SegmentKind};
 
 fn make_chain(segments: &[&str]) -> MemberChain {

@@ -295,7 +295,7 @@ fn external_callable_param_types_hydrate() {
     // return_type that the externals pipeline already interned. The builder
     // must admit external CALLABLE kinds so SymbolView can query their
     // parameter types — the file-level ext: skip must not bury them.
-    use crate::indexer::resolve::engine::SymbolInfo;
+    use crate::indexer::resolve::legacy::SymbolInfo;
     use crate::type_checker::core::symbol_view::SymbolView;
     use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
     use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};

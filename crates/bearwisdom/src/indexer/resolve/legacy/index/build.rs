@@ -1,0 +1,1368 @@
+// =============================================================================
+// indexer/resolve/engine/index/build.rs — initial SymbolIndex construction
+//
+// `build_with_context` is the master constructor: it walks every `ParsedFile`
+// and populates every field of SymbolIndex in a fixed sequence of passes
+// (basic indexes → type metadata → re-exports → module resolution →
+// inheritance → alias targets → workspace + tsconfig → ambient globals).
+// One file because the passes share a lot of context; the per-pass
+// boundaries are still visible via inline comments.
+//
+// Augmentation (later adding files / DB symbols to an already-built index)
+// lives in `augment.rs`.
+// =============================================================================
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
+
+use crate::indexer::module_resolution::ModuleResolver as _;
+use crate::type_checker::core::types::TypeArena;
+use crate::types::{
+    AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility,
+};
+
+use super::super::{
+    file_belongs_to_npm_package, infer_type_from_chain, is_jvm_language, is_plain_type_name,
+    npm_package_from_external_path, npm_package_from_specifier,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
+    parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
+    parse_type_head_and_args_bracket, resolve_type_name_in_scope,
+};
+use super::SymbolIndex;
+use super::{
+    common_prefix_len, find_matching_bracket, is_ts_ambient_global_lib_path, is_type_like_kind,
+    merge_where_bounds, parse_generic_param_clause,
+};
+use crate::indexer::resolve::legacy::{ImportEntry, SymbolInfo, TypeInfo};
+
+impl SymbolIndex {
+    /// Build the index from parsed files and the symbol-to-ID mapping.
+    /// Creates a fresh workspace TypeArena. Use
+    /// `build_with_context_and_arena` from the indexer entry point to
+    /// share an arena with extractors and other passes.
+    pub fn build(parsed: &[ParsedFile], symbol_id_map: &HashMap<(String, String), i64>) -> Self {
+        Self::build_with_context(parsed, symbol_id_map, None)
+    }
+
+    /// Build the index, optionally with project context for ecosystem-aware
+    /// module resolution. Creates a fresh workspace TypeArena.
+    pub fn build_with_context(
+        parsed: &[ParsedFile],
+        symbol_id_map: &HashMap<(String, String), i64>,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+    ) -> Self {
+        Self::build_with_context_and_arena(
+            parsed,
+            symbol_id_map,
+            project_ctx,
+            Arc::new(TypeArena::new()),
+            Arc::new(crate::ecosystem::symbol_index::SymbolLocationIndex::new()),
+        )
+    }
+
+    /// Build the index using a pre-existing workspace TypeArena. The arena
+    /// must be the same one threaded through `parse_file` so extractor-set
+    /// TypeIds on `ExtractedSymbol` (declared_type, return_type,
+    /// param_types) point into the same canonical table the engine and
+    /// language resolvers consult.
+    pub fn build_with_context_and_arena(
+        parsed: &[ParsedFile],
+        symbol_id_map: &HashMap<(String, String), i64>,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+        type_arena: Arc<TypeArena>,
+        loc: Arc<crate::ecosystem::symbol_index::SymbolLocationIndex>,
+    ) -> Self {
+        let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        let mut qname_duplicates: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut types_by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut by_id: FxHashMap<i64, SymbolInfo> = FxHashMap::default();
+        let mut containing_id: FxHashMap<i64, i64> = FxHashMap::default();
+        // Workspace-package member index. Populated per symbol below (NOT from
+        // `by_qname`, whose first-wins keying would drop every same-qname
+        // sibling), so a package's bucket holds every symbol it declares even
+        // when sibling packages declare the identical qualified name.
+        let mut by_package: FxHashMap<i64, Vec<SymbolInfo>> = FxHashMap::default();
+
+        for pf in parsed {
+            // One Arc<str> per file — all symbols in this file share the same
+            // allocation instead of cloning an independent String per symbol.
+            let file_path: Arc<str> = Arc::from(pf.path.as_str());
+
+            for sym in &pf.symbols {
+                let Some(&id) = symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                else {
+                    continue;
+                };
+
+                let info = SymbolInfo {
+                    id,
+                    name: sym.name.clone(),
+                    qualified_name: sym.qualified_name.clone(),
+                    kind: sym.kind.as_str().to_string(),
+                    visibility: sym
+                        .visibility
+                        .as_ref()
+                        .map(|v| format!("{v:?}").to_lowercase()),
+                    file_path: Arc::clone(&file_path),
+                    scope_path: sym.scope_path.clone(),
+                    package_id: pf.package_id,
+                    signature: sym.signature.clone(),
+                };
+
+                // Simple name index
+                let simple = sym.name.clone();
+                by_name.entry(simple).or_default().push(info.clone());
+
+                // Qualified name index (first wins for duplicates).
+                // When a duplicate arrives, copy the existing winner into
+                // `qname_duplicates` (if not already there) and append the
+                // new one — `qname_duplicates` stores the FULL set of
+                // symbols sharing that qname, in insertion order. The
+                // kind-compatible scan reads from there to find the right
+                // overload when TypeScript declaration merging makes the
+                // first-wins race pick the wrong kind (e.g.
+                // `@angular/core.Injectable` exists as both interface and
+                // variable — Calls refs need the variable).
+                match by_qname.entry(sym.qualified_name.clone()) {
+                    std::collections::btree_map::Entry::Vacant(e) => {
+                        e.insert(info.clone());
+                    }
+                    std::collections::btree_map::Entry::Occupied(occ) => {
+                        let entry = qname_duplicates
+                            .entry(sym.qualified_name.clone())
+                            .or_insert_with(|| vec![occ.get().clone()]);
+                        entry.push(info.clone());
+                    }
+                }
+
+                // File index — key stays String (one allocation per file, not per symbol)
+                by_file
+                    .entry(pf.path.clone())
+                    .or_default()
+                    .push(info.clone());
+
+                // Id spine: id → record, plus the structural containment edge
+                // from the in-file parent pointer (child id → parent id), the
+                // in-memory mirror of the persisted `containing_id` column.
+                // First-wins to match `by_qname`: a duplicated qname (declaration
+                // merging, overloads) collapses to one id, and the containment
+                // walk starts from `by_qname`'s first-wins record — so its
+                // chain must be the first occurrence's too, not the last.
+                by_id.entry(id).or_insert_with(|| info.clone());
+
+                // Workspace-package bucket — every symbol with a package_id,
+                // keyed only on the package, so same-qname siblings across
+                // packages all survive for `symbols_in_package` scans.
+                if let Some(pkg_id) = info.package_id {
+                    by_package.entry(pkg_id).or_default().push(info.clone());
+                }
+
+                if let Some(p) = sym.parent_index {
+                    if let Some(parent) = pf.symbols.get(p) {
+                        if let Some(&pid) =
+                            symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
+                        {
+                            containing_id.entry(id).or_insert(pid);
+                        }
+                    }
+                }
+
+                // Direct-children index keyed on the PARENT symbol's qualified
+                // name, resolved structurally via `parent_index`. Using the
+                // parent pointer rather than truncating the child's qname at the
+                // last '.' files a child under its real parent even when the
+                // child's own qname was mis-qualified (a parameter whose qname
+                // dropped its package). Falls back to qname truncation for
+                // symbols with no parent pointer; top-level symbols go under "".
+                let parent_key: String = match sym.parent_index.and_then(|p| pf.symbols.get(p)) {
+                    Some(parent) => parent.qualified_name.clone(),
+                    None => match sym.qualified_name.rfind('.') {
+                        Some(idx) => sym.qualified_name[..idx].to_string(),
+                        None => String::new(),
+                    },
+                };
+                if is_type_like_kind(&info.kind) {
+                    types_by_name
+                        .entry(sym.name.clone())
+                        .or_default()
+                        .push(info.clone());
+                }
+                members_by_parent.entry(parent_key).or_default().push(info);
+            }
+        }
+
+        // Re-export alias synthesis. An import of the shape `pub use X as Y`
+        // (rust), `export { X as Y }` (ts), `from m import X as Y` (python)
+        // carries the original name in chain.segments[0] and the alias in
+        // target_name. Register a virtual `Y` entry under by_name + by_qname
+        // pointing at the same file + kind as `X`'s definition.
+        //
+        // Resolution is transitive: a multi-hop barrel chain like
+        //   $lib/components/ui/sidebar/index.ts   `export * from "./Sidebar.svelte"`
+        //   $lib/index.ts                         `export * from "./components/ui/sidebar"`
+        //   src/+page.svelte                      `import { Sidebar } from "$lib"`
+        // requires the inner alias to land before the outer one can resolve.
+        // Fixed-point loop runs the registration pass up to `MAX_ALIAS_HOPS`
+        // times, stopping as soon as a pass adds no new entries. Cycles
+        // (alias-of-alias-of-self) terminate naturally — neither side ever
+        // resolves to a non-alias source.
+        let mut alias_decls: Vec<(String, String)> = Vec::new();
+        for pf in parsed {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports {
+                    continue;
+                }
+                let alias = r.target_name.as_str();
+                let original = match r.chain.as_ref().and_then(|c| c.segments.first()) {
+                    Some(seg) => seg.name.as_str(),
+                    None => continue,
+                };
+                if alias.is_empty() || original.is_empty() || alias == original {
+                    continue;
+                }
+                alias_decls.push((alias.to_string(), original.to_string()));
+            }
+        }
+        const MAX_ALIAS_HOPS: usize = 5;
+        for _hop in 0..MAX_ALIAS_HOPS {
+            let mut registered_this_pass = 0usize;
+            for (alias, original) in &alias_decls {
+                if by_name.contains_key(alias.as_str()) {
+                    continue;
+                }
+                let Some(candidates) = by_name.get(original.as_str()) else {
+                    continue;
+                };
+                let Some(source) = candidates.first() else {
+                    continue;
+                };
+                let synth = SymbolInfo {
+                    id: source.id,
+                    name: alias.clone(),
+                    qualified_name: alias.clone(),
+                    kind: source.kind.clone(),
+                    visibility: source.visibility.clone(),
+                    file_path: Arc::clone(&source.file_path),
+                    scope_path: source.scope_path.clone(),
+                    package_id: source.package_id,
+                    signature: source.signature.clone(),
+                };
+                // Mirror the main-loop bucketing: a re-export alias inherits
+                // its source's package_id, so it must surface in that package's
+                // `symbols_in_package` scan under its alias name.
+                if let Some(pkg_id) = synth.package_id {
+                    by_package.entry(pkg_id).or_default().push(synth.clone());
+                }
+                by_name.insert(alias.clone(), vec![synth.clone()]);
+                by_qname.entry(alias.clone()).or_insert(synth);
+                registered_this_pass += 1;
+            }
+            if registered_this_pass == 0 {
+                break;
+            }
+        }
+
+        // Build field_type, field_type_args, return_type, and generic_params maps.
+        let mut field_type: FxHashMap<String, String> = FxHashMap::default();
+        let mut field_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut return_type: FxHashMap<String, String> = FxHashMap::default();
+        let mut return_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut generic_params: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut generic_param_bounds: FxHashMap<String, Vec<Option<String>>> = FxHashMap::default();
+
+        for pf in parsed {
+            // Group TypeRef (non-import) refs by source_symbol_index in one
+            // pass over pf.refs — avoids the O(symbols × refs) cost of
+            // re-scanning the full ref list for each symbol. At 869k total
+            // symbols with 2k-3k refs per external Go stdlib file this
+            // inner scan was the dominant term in build_with_context.
+            let mut type_refs_by_sym: Vec<Vec<&str>> = vec![Vec::new(); pf.symbols.len()];
+            for r in &pf.refs {
+                // Module-tagged USAGE TypeRefs (a field/param/return whose type
+                // resolves to an imported symbol) feed the per-symbol type maps;
+                // only an import STATEMENT's own binding ref is excluded — its
+                // `source_symbol_index` is a positional artifact, not a real type
+                // attribution.
+                if r.kind != EdgeKind::TypeRef || r.is_import_binding {
+                    continue;
+                }
+                let idx = r.source_symbol_index;
+                if idx < type_refs_by_sym.len() {
+                    type_refs_by_sym[idx].push(r.target_name.as_str());
+                }
+            }
+
+            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
+                let type_refs = &type_refs_by_sym[sym_idx];
+
+                match sym.kind {
+                    // Properties/fields: first TypeRef is the field type.
+                    // Subsequent TypeRefs from the same symbol may be generic type args.
+                    SymbolKind::Property | SymbolKind::Field => {
+                        // A JVM field has no TypeRef (externals emit no refs); its
+                        // type lives in the raw bytecode descriptor signature
+                        // (`Lcom/foo/Bar;`). Decode that when no TypeRef is present.
+                        let jvm_field_type = type_refs
+                            .first()
+                            .is_none()
+                            .then(|| {
+                                sym.signature
+                                    .as_deref()
+                                    .filter(|_| is_jvm_language(&pf.language))
+                                    .and_then(parse_return_type_from_jvm_descriptor)
+                            })
+                            .flatten();
+                        let Some(first) =
+                            type_refs.first().map(|s| s.to_string()).or(jvm_field_type)
+                        else {
+                            continue;
+                        };
+                        let resolved = resolve_type_name_in_scope(
+                            &first,
+                            sym.scope_path.as_deref(),
+                            &by_qname,
+                        );
+                        field_type.insert(sym.qualified_name.clone(), resolved);
+                        // If there are additional TypeRefs, they're generic type arguments.
+                        // e.g., `repo: Repository<User>` emits ["Repository", "User"]
+                        if type_refs.len() > 1 {
+                            field_type_args.insert(
+                                sym.qualified_name.clone(),
+                                type_refs[1..].iter().map(|s| s.to_string()).collect(),
+                            );
+                        }
+                    }
+                    // Local variables and parameters: first TypeRef is the
+                    // inferred / annotated type. Emitted by extractors when
+                    // the RHS is a constructor, struct literal, or factory
+                    // call (e.g. `let pool = DbPool::new(config)`,
+                    // `const svc = new UserService()`, `repo = UserRepository(db)`),
+                    // or when a parameter's annotation is captured in source
+                    // (`def f(x: int)`, `void m(User u)`). Parameter joined
+                    // Variable after the d08e0872 kind migration; before
+                    // that, Python / Java lambda / Rust fn params all came
+                    // through as Variable and reached this branch. Without
+                    // Parameter here, chain refs whose root is a typed
+                    // parameter stop resolving (-2.68pp on
+                    // java-spring-petclinic, -0.52pp on python-black).
+                    // Only non-chain TypeRefs land here; chain-bearing ones
+                    // are handled by the chain-inference pass below.
+                    SymbolKind::Variable | SymbolKind::Parameter => {
+                        let Some(&first) = type_refs.first() else {
+                            continue;
+                        };
+                        // Resolve the type in the symbol's structural container
+                        // (its parent's qname) rather than its own scope_path —
+                        // a mis-qualified parameter can carry a scope_path with
+                        // the package dropped, which prevents the type from
+                        // resolving to its package-qualified form. Falls back to
+                        // scope_path for top-level symbols with no parent.
+                        let scope = sym
+                            .parent_index
+                            .and_then(|p| pf.symbols.get(p))
+                            .map(|parent| parent.qualified_name.as_str())
+                            .or(sym.scope_path.as_deref());
+                        let resolved = resolve_type_name_in_scope(first, scope, &by_qname);
+                        field_type.insert(sym.qualified_name.clone(), resolved);
+                        if type_refs.len() > 1 {
+                            field_type_args.insert(
+                                sym.qualified_name.clone(),
+                                type_refs[1..].iter().map(|s| s.to_string()).collect(),
+                            );
+                        }
+                    }
+                    // Type aliases (typedefs, `using Alias = Type`): first TypeRef
+                    // is the aliased type. This populates field_type_str("AliasName")
+                    // so the generic alias-expansion path can collapse pointer typedefs.
+                    // e.g., `typedef SocketChannel* SocketChannelPtr;`
+                    //   → field_type("SocketChannelPtr") = "SocketChannel"
+                    SymbolKind::TypeAlias => {
+                        let Some(&first) = type_refs.first() else {
+                            continue;
+                        };
+                        field_type.insert(sym.qualified_name.clone(), first.to_string());
+                        // Also index by simple name for cross-TU lookups where
+                        // the typedef may be referenced without its full scope prefix.
+                        if sym.name != sym.qualified_name {
+                            field_type
+                                .entry(sym.name.clone())
+                                .or_insert_with(|| first.to_string());
+                        }
+                    }
+                    // Methods/functions: capture the return type and, when it
+                    // is generic, its element args (`List<User>` → head `List`,
+                    // args `["User"]`) so a chain types through the element.
+                    //
+                    // A parseable signature is authoritative ONLY when it yields
+                    // a generic application: the head and args are then
+                    // unambiguous. A flat TypeRef list is not — extractors order
+                    // param vs return refs differently per language, so
+                    // `type_refs.last()` can't be split into head+args reliably.
+                    // For a non-generic return, or a signature form this parser
+                    // doesn't read (leading `RetType name()`, Go's trailing
+                    // form), the last TypeRef (then the signature) gives the head.
+                    SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
+                        let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
+                            parse_return_type_from_signature(s)
+                                .or_else(|| {
+                                    // Leading-form return (`RetType name(...)`,
+                                    // Java/C#): the return type is the first depth-0
+                                    // token (our signature builders omit modifiers).
+                                    // Only reached when the colon/arrow parse failed,
+                                    // so it never fires for params-first languages;
+                                    // skipped for constructors (no return to read).
+                                    if sym.kind == SymbolKind::Constructor {
+                                        None
+                                    } else {
+                                        parse_return_type_positional(s)
+                                    }
+                                })
+                                .or_else(|| {
+                                    // Trailing-form return (`name(params) Ret`, Go):
+                                    // the type after the last top-level `)`.
+                                    if sym.kind != SymbolKind::Constructor && pf.language == "go" {
+                                        parse_return_type_trailing(s)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .or_else(|| {
+                                    // JVM bytecode descriptor (`(params)Ret`, Maven /
+                                    // `.class` metadata): decode the return element
+                                    // type. Gated on the JVM language set so it never
+                                    // perturbs the colon/arrow path.
+                                    if is_jvm_language(&pf.language) {
+                                        parse_return_type_from_jvm_descriptor(s)
+                                    } else {
+                                        None
+                                    }
+                                })
+                        });
+                        // A signature that parses to a generic application
+                        // (`Repository<User>`) yields an unambiguous head + args.
+                        // A structural type that merely CONTAINS an inner generic
+                        // (tuple `[A, B<C>]`, union `A | B<C>`, function
+                        // `() => B<C>`) splits at the first `<` into a
+                        // non-identifier head — those must fall to the else
+                        // branch, so require the head to be a bare/dotted name.
+                        let sig_generic: Option<(String, Vec<String>)> =
+                            sig_rt.as_deref().and_then(|rt| {
+                                let (head, args) = parse_type_head_and_args(rt);
+                                // Go/Scala express generics with `[]`; try that
+                                // when the `<>` form found no args.
+                                let (head, args) = if args.is_empty()
+                                    && matches!(pf.language.as_str(), "go" | "scala")
+                                {
+                                    parse_type_head_and_args_bracket(rt)
+                                } else {
+                                    (head, args)
+                                };
+                                // A structural type that merely CONTAINS an inner
+                                // generic (tuple `[A, B<C>]`, union `A | B<C>`)
+                                // splits into a non-identifier head — require a
+                                // plain head so those fall to the else branch.
+                                if args.is_empty() || !is_plain_type_name(head) {
+                                    None
+                                } else {
+                                    Some((
+                                        head.to_string(),
+                                        args.iter().map(|s| s.to_string()).collect(),
+                                    ))
+                                }
+                            });
+                        if let Some((head, args)) = sig_generic {
+                            let resolved = resolve_type_name_in_scope(
+                                &head,
+                                sym.scope_path.as_deref(),
+                                &by_qname,
+                            );
+                            return_type.insert(sym.qualified_name.clone(), resolved);
+                            return_type_args.insert(sym.qualified_name.clone(), args);
+                        } else {
+                            // A signature naming a plain return type is
+                            // authoritative for the head: a leading-form
+                            // language's last TypeRef can be a parameter (a
+                            // return-first ref list ends on the last param). A
+                            // structural or absent signature falls back to the
+                            // last TypeRef, then the raw signature.
+                            let sig_plain = sig_rt.as_deref().filter(|rt| is_plain_type_name(rt));
+                            if let Some(rt) = sig_plain {
+                                let resolved = resolve_type_name_in_scope(
+                                    rt,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
+                            } else if let Some(&last) = type_refs.last() {
+                                let resolved = resolve_type_name_in_scope(
+                                    last,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
+                            } else if let Some(rt) = &sig_rt {
+                                let resolved = resolve_type_name_in_scope(
+                                    rt,
+                                    sym.scope_path.as_deref(),
+                                    &by_qname,
+                                );
+                                return_type.insert(sym.qualified_name.clone(), resolved);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Class symbols are callable — `Foo()` returns an instance of `Foo`.
+            // Populate return_type = qualified_name unconditionally so the chain
+            // walker can follow `x = Foo(); x.method()`. This pass is separate
+            // from the TypeRef loop above because class symbols have no outgoing
+            // TypeRefs of their own.
+            for sym in &pf.symbols {
+                if sym.kind == SymbolKind::Class {
+                    return_type
+                        .entry(sym.qualified_name.clone())
+                        .or_insert_with(|| sym.qualified_name.clone());
+                }
+            }
+
+            // Build generic_params: for class/interface/struct symbols that have
+            // type_parameters in their signature (e.g., `interface Repository<T>`,
+            // `def process[F[_]]`, `fn compute<T: Clone>`).
+            // We detect this by looking at the symbol's signature text.
+            // Includes Namespace because Rust impl blocks emit a Namespace
+            // symbol whose signature carries the generic params (`impl Foo<T>`),
+            // and methods inside the impl reference those params by simple name.
+            for sym in &pf.symbols {
+                if !matches!(
+                    sym.kind,
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Trait
+                        | SymbolKind::Struct
+                        | SymbolKind::TypeAlias
+                        | SymbolKind::Function
+                        | SymbolKind::Method
+                        | SymbolKind::Namespace
+                ) {
+                    continue;
+                }
+                if let Some(sig) = &sym.signature {
+                    // Parse generic params from signature:
+                    //   "interface Repository<T>"      → ["T"]      (Java, C#, TS, Kotlin)
+                    //   "class Map<K, V>"              → ["K", "V"]
+                    //   "trait SnapshotReader[F[_]]"   → ["F"]      (Scala)
+                    //   "struct Vec<T>"                → ["T"]      (Rust)
+                    //   "class FSM[F[_], S, I, O]"    → ["F", "S", "I", "O"]
+                    //
+                    // Tries `<>` first (most languages), then `[]` (Scala).
+                    // Uses depth-counted bracket matching for nested generics.
+                    let bracket_pairs: &[(char, char)] = &[('<', '>'), ('[', ']')];
+                    for &(open, close) in bracket_pairs {
+                        if let Some(start) = sig.find(open) {
+                            if let Some(relative_end) =
+                                find_matching_bracket(&sig[start..], open, close)
+                            {
+                                let end = start + relative_end;
+                                let mut parsed = parse_generic_param_clause(&sig[start + 1..end]);
+                                merge_where_bounds(&mut parsed, sig);
+                                if !parsed.is_empty() {
+                                    let (params, bounds): (Vec<String>, Vec<Option<String>>) =
+                                        parsed.into_iter().unzip();
+                                    generic_params.insert(sym.name.clone(), params.clone());
+                                    generic_params.insert(sym.qualified_name.clone(), params);
+                                    generic_param_bounds.insert(sym.name.clone(), bounds.clone());
+                                    generic_param_bounds.insert(sym.qualified_name.clone(), bounds);
+                                    break; // found params, don't try next bracket pair
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Merge the four local maps into the unified type_info map.
+        let mut type_info: FxHashMap<String, TypeInfo> = FxHashMap::default();
+        for (qname, ft) in field_type {
+            type_info.entry(qname).or_default().field_type = Some(ft);
+        }
+        for (qname, args) in field_type_args {
+            type_info.entry(qname).or_default().type_args = args;
+        }
+        for (qname, args) in return_type_args {
+            type_info.entry(qname).or_default().return_type_args = args;
+        }
+        for (qname, rt) in return_type {
+            type_info.entry(qname).or_default().return_type = Some(rt);
+        }
+        for (name_or_qname, params) in generic_params {
+            type_info.entry(name_or_qname).or_default().generic_params = params;
+        }
+        for (name_or_qname, bounds) in generic_param_bounds {
+            type_info
+                .entry(name_or_qname)
+                .or_default()
+                .generic_param_bounds = bounds;
+        }
+
+        // Variable type inference pass: for Variable symbols without an explicit
+        // type annotation, try to infer the type from chain-bearing TypeRef refs.
+        // These are emitted by the extractor for `const x = this.repo.findOne()`.
+        // We resolve the chain to get the method's return type.
+        //
+        // Per-file, we group the first chain-bearing TypeRef by symbol index in
+        // one O(refs) pass so the Variable loop avoids the O(variables × refs)
+        // filter that dominated build_with_context on the external Go stdlib
+        // (hundreds of top-level `var _ = …` decls × thousands of refs each).
+        for pf in parsed {
+            let mut first_chain_typeref: Vec<Option<&crate::types::ExtractedRef>> =
+                vec![None; pf.symbols.len()];
+            for r in &pf.refs {
+                if r.kind != EdgeKind::TypeRef || r.chain.is_none() {
+                    continue;
+                }
+                let idx = r.source_symbol_index;
+                if idx < first_chain_typeref.len() && first_chain_typeref[idx].is_none() {
+                    first_chain_typeref[idx] = Some(r);
+                }
+            }
+
+            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
+                // Parameter joined Variable in d08e0872 for Python params,
+                // Java lambda params, Rust fn params. Both need chain-
+                // inference fallback so receivers like `(user: User) =>
+                // user.name` resolve through the param's inferred type.
+                if !matches!(sym.kind, SymbolKind::Variable | SymbolKind::Parameter) {
+                    continue;
+                }
+                // Skip if already has an explicit type.
+                if type_info
+                    .get(&sym.qualified_name)
+                    .and_then(|ti| ti.field_type.as_ref())
+                    .is_some()
+                {
+                    continue;
+                }
+                let Some(r) = first_chain_typeref[sym_idx] else {
+                    continue;
+                };
+                let chain = r.chain.as_ref().unwrap();
+                if let Some(inferred) =
+                    infer_type_from_chain(chain, &sym.scope_path, &type_info, &by_name, &by_qname)
+                {
+                    type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default()
+                        .field_type = Some(inferred);
+                }
+            }
+        }
+
+        // Build the class inheritance edge: child symbol id → parent symbol id.
+        //
+        // Source: `Inherits` refs emitted by language extractors.  The
+        // `source_symbol_index` identifies the child class symbol in its own
+        // file; `target_name` is the parent's short/simple name, resolved to a
+        // symbol via the by_name index (already built above).
+        //
+        // When multiple symbols share the same short name, we prefer the one
+        // whose namespace matches the child class's namespace most closely
+        // (longest common prefix).  This is a best-effort approximation —
+        // the common case (one class per simple name in a project) will always
+        // resolve correctly.
+        let mut inherits_by_id: FxHashMap<i64, i64> = FxHashMap::default();
+        for pf in parsed {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Inherits {
+                    continue;
+                }
+                // Identify the child symbol. Struct is included so Go embedded
+                // fields (and other struct-based inheritance) populate the map.
+                let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
+                    continue;
+                };
+                if !matches!(
+                    child_sym.kind,
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Trait
+                        | SymbolKind::Struct
+                ) {
+                    continue;
+                }
+                let child_qname = &child_sym.qualified_name;
+                let Some(&child_id) = symbol_id_map.get(&(pf.path.clone(), child_qname.clone()))
+                else {
+                    continue;
+                };
+                // Avoid overwriting an existing entry (first Inherits edge wins).
+                if inherits_by_id.contains_key(&child_id) {
+                    continue;
+                }
+                // Resolve parent simple name → its symbol via by_name. Strip generic
+                // type arguments so `extends Foo<Bar>` keys on the head `Foo`.
+                let parent_raw = r.target_name.trim_start_matches('\\');
+                let parent_simple = parse_type_head_and_args(parent_raw).0;
+                let candidates = by_name
+                    .get(parent_simple)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+                if candidates.is_empty() {
+                    continue;
+                }
+                // Pick the candidate whose namespace best matches the child's namespace.
+                // "Best" = longest common dotted prefix.
+                let child_ns = child_qname
+                    .rfind('.')
+                    .map(|i| &child_qname[..i])
+                    .unwrap_or("");
+                let best = if candidates.len() == 1 {
+                    &candidates[0]
+                } else {
+                    candidates
+                        .iter()
+                        .max_by_key(|c| {
+                            let cns = c
+                                .qualified_name
+                                .rfind('.')
+                                .map(|i| &c.qualified_name[..i])
+                                .unwrap_or("");
+                            common_prefix_len(child_ns, cns)
+                        })
+                        .unwrap_or(&candidates[0])
+                };
+                inherits_by_id.insert(child_id, best.id);
+            }
+        }
+
+        // Build alias_target map. Two sources, in priority order:
+        //   1. Structurally-classified shapes from per-file `alias_targets`
+        //      (TS extractor populates these — Application / Union /
+        //      Intersection / Object / Other).
+        //   2. A derived `Application` shape for any TypeAlias symbol the
+        //      explicit map didn't cover. Sources: typedefs in C/C++,
+        //      Dart/F#/Erlang/Bicep type abbreviations, and TS aliases that
+        //      didn't make it through (e.g. parsed under demand filtering
+        //      that skipped the symbol body). The fallback uses the
+        //      `field_type` already populated by the TypeAlias arm above.
+        let mut alias_target_map: FxHashMap<String, AliasTarget> = FxHashMap::default();
+        for pf in parsed {
+            for (qname, target) in &pf.alias_targets {
+                alias_target_map.insert(qname.clone(), target.clone());
+                // Mirror by simple name so chain walkers can resolve aliases
+                // regardless of whether the encountered current_type is
+                // namespaced or bare.
+                if let Some(simple) = qname.rsplit('.').next() {
+                    if simple != qname {
+                        alias_target_map
+                            .entry(simple.to_string())
+                            .or_insert_with(|| target.clone());
+                    }
+                }
+            }
+        }
+        // Fallback for languages that don't emit alias_targets explicitly:
+        // synthesize Application{root, args} from the type_info maps the
+        // TypeAlias arm above already populated. type_args may carry the
+        // generic args when the typedef points at a parameterized type.
+        for pf in parsed {
+            for sym in &pf.symbols {
+                if sym.kind != SymbolKind::TypeAlias {
+                    continue;
+                }
+                if alias_target_map.contains_key(&sym.qualified_name) {
+                    continue;
+                }
+                let Some(ti) = type_info.get(&sym.qualified_name) else {
+                    continue;
+                };
+                let Some(root) = ti.field_type.clone() else {
+                    continue;
+                };
+                let target = AliasTarget::Application {
+                    root,
+                    args: ti.type_args.clone(),
+                };
+                alias_target_map.insert(sym.qualified_name.clone(), target.clone());
+                if sym.name != sym.qualified_name {
+                    alias_target_map.entry(sym.name.clone()).or_insert(target);
+                }
+            }
+        }
+
+        // Build re-export map from re-export refs that have a module set:
+        //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
+        //   export * from './y'       → Imports ref, target_name="*", module="./y"
+        //   Rust `pub use foo::Bar`   → Imports ref, target_name="Bar", module="foo"
+        // The `is_reexport` gate is load-bearing for soundness: a PRIVATE import
+        // (`import { X } from 'pkg'`, Rust `use foo::Bar`) is `is_reexport=false`
+        // and must NOT enter this map — following it would bind a name through a
+        // module that merely imports it, violating scope-directed resolution.
+        let mut reexport_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
+        for pf in parsed {
+            let import_modules: Vec<String> = pf
+                .refs
+                .iter()
+                .filter(|r| r.kind == EdgeKind::Imports && !r.is_reexport)
+                .filter_map(|r| {
+                    r.module
+                        .clone()
+                        .or_else(|| (!r.target_name.is_empty()).then(|| r.target_name.clone()))
+                })
+                .filter(|m| !m.is_empty())
+                .collect();
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports || !r.is_reexport {
+                    continue;
+                }
+                let Some(ref mod_path) = r.module else {
+                    continue;
+                };
+                if mod_path.is_empty() {
+                    continue;
+                }
+                reexport_map
+                    .entry(pf.path.clone())
+                    .or_default()
+                    .push((r.target_name.clone(), mod_path.clone()));
+                if r.target_name == "*" {
+                    for import_module in &import_modules {
+                        if import_module == mod_path {
+                            continue;
+                        }
+                        reexport_map
+                            .entry(pf.path.clone())
+                            .or_default()
+                            .push((mod_path.clone(), import_module.clone()));
+                    }
+                }
+            }
+        }
+        for entries in reexport_map.values_mut() {
+            entries.sort();
+            entries.dedup();
+        }
+
+        // Aggregate re-exports by the npm package they belong to. Only
+        // bare cross-package re-exports matter (relative ones stay
+        // intra-package and are followed via the per-file map). The
+        // resulting map answers: "package P forwards which names to which
+        // packages?", which the chain resolver walks at lookup time.
+        let mut pkg_reexports: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
+        for (file_path, entries) in &reexport_map {
+            let Some(pkg) = npm_package_from_external_path(file_path) else {
+                continue;
+            };
+            for (name, target_module) in entries {
+                if target_module.starts_with("./") || target_module.starts_with("../") {
+                    continue;
+                }
+                if target_module.is_empty() {
+                    continue;
+                }
+                let Some(target_pkg) = npm_package_from_specifier(target_module) else {
+                    continue;
+                };
+                if target_pkg == pkg {
+                    continue;
+                }
+                pkg_reexports
+                    .entry(pkg.clone())
+                    .or_default()
+                    .push((name.clone(), target_pkg));
+            }
+        }
+        // Dedup each package's entries — many d.ts files re-export the same
+        // names; storing duplicates blows up walk cost without changing
+        // outcomes.
+        for v in pkg_reexports.values_mut() {
+            v.sort();
+            v.dedup();
+        }
+
+        // Build module-to-file mapping using ecosystem-specific ModuleResolvers.
+        // For each import ref that carries a module specifier, resolve it to an
+        // actual indexed file path and cache the result.
+        //
+        // Two cache shapes:
+        //   - module_to_file: spec → file (for bare/aliased specifiers where
+        //     the source file's directory doesn't affect resolution)
+        //   - module_to_file_per_source: (source_file, spec) → file (for
+        //     relative specifiers like ./utils, ../shared — different
+        //     source dirs resolve the same spec to different files)
+        //
+        // Sharing one global map for relative paths causes the first
+        // consumer to "win the slot" for `./utils` and silently breaks
+        // resolution for every other file with a same-named neighbour.
+        //
+        // Performance: the hot path for TypeScript monorepos was an O(N × refs)
+        // linear scan inside `NodeModuleResolver::try_resolve` — each unique
+        // (source_file, relative_specifier) pair scanned all N file paths with
+        // 18 extension probes. On ts-nextjs (~83,000 files, ~100k+ unique pairs)
+        // this was ~150 billion comparisons (~22 minutes of wall-clock time).
+        //
+        // Fix: build a `FilePathIndex` once, pass it to `resolve_to_file_indexed`
+        // which uses O(1) hash lookups. The suffix map is keyed by every trailing
+        // segment sequence, so `"components/Button.tsx"` resolves in O(1)
+        // regardless of project size.
+        let go_module_path = project_ctx
+            .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::GoMod))
+            .and_then(|m| m.module_path.as_deref());
+        // The Dart resolver needs the project's own pubspec `name:` to tell a
+        // `package:<self>/...` URI (project-local) from a foreign package.
+        let dart_self_package = project_ctx
+            .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::Pubspec))
+            .and_then(|m| m.package_names.first())
+            .map(String::as_str);
+        let resolvers = crate::indexer::module_resolution::all_resolvers_with_manifest_data(
+            go_module_path,
+            dart_self_package,
+        );
+        let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
+        // Pre-build the O(1) path index. Construction is O(N × depth) where
+        // depth is the average segment count per path (4-8). Amortised over
+        // all subsequent lookups (potentially millions), this is near-free.
+        let file_path_index = crate::indexer::module_resolution::FilePathIndex::build(&file_paths);
+        let mut module_to_file: FxHashMap<String, String> = FxHashMap::default();
+        let mut module_to_file_per_source: FxHashMap<(String, String), String> =
+            FxHashMap::default();
+
+        for pf in parsed {
+            let resolver = resolvers
+                .iter()
+                .find(|r| r.language_ids().contains(&pf.language.as_str()));
+            let Some(resolver) = resolver else {
+                continue;
+            };
+
+            for r in &pf.refs {
+                let Some(module) = &r.module else {
+                    continue;
+                };
+                if module.is_empty() {
+                    continue;
+                }
+                // Cache every resolved specifier per-source. Relative
+                // specifiers require this, and some ecosystems (Nim) also have
+                // bare specifiers whose nearest-file meaning depends on the
+                // importing directory. The global map remains a fallback for
+                // stable package-style imports.
+                let is_relative = module.starts_with('.');
+                let key = (pf.path.clone(), module.clone());
+                let resolved_for_source = if module_to_file_per_source.contains_key(&key) {
+                    None
+                } else {
+                    resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
+                };
+                if let Some(resolved) = resolved_for_source.as_ref() {
+                    module_to_file_per_source.insert(key, resolved.clone());
+                }
+                if is_relative {
+                    continue;
+                }
+                if module_to_file.contains_key(module.as_str()) {
+                    continue;
+                }
+                if let Some(resolved) = resolved_for_source {
+                    module_to_file.insert(module.clone(), resolved);
+                    continue;
+                }
+                // The resolver returns None for a bare specifier. If it names a
+                // workspace package, recover its entry file so the re-export
+                // walker can follow the `project → workspace pkg → npm` hop.
+                if let Some(ctx) = project_ctx {
+                    if let Some(resolved) = resolve_workspace_pkg_entry(
+                        module,
+                        &ctx.workspace_pkg_by_declared_name,
+                        &ctx.workspace_pkg_paths,
+                        &file_path_index,
+                    ) {
+                        module_to_file.insert(module.clone(), resolved);
+                    }
+                }
+            }
+        }
+
+        // Build the ambient-global method-name set. Any method/property
+        // declared in a file whose path looks like a TypeScript ambient
+        // declaration (`typescript/lib/lib.*.d.ts`, `@types/node/*`) goes
+        // in. Chain walkers hit this when a receiver can't be typed but
+        // the called name is a known runtime API — the honest answer is
+        // "external (DOM/ES runtime)", not "unresolved".
+        let mut ambient_global_method_names: HashSet<String> = HashSet::new();
+        for pf in parsed {
+            if !is_ts_ambient_global_lib_path(&pf.path.replace('\\', "/")) {
+                continue;
+            }
+            for sym in &pf.symbols {
+                if matches!(
+                    sym.kind,
+                    SymbolKind::Method | SymbolKind::Property | SymbolKind::Function
+                ) {
+                    ambient_global_method_names.insert(sym.name.clone());
+                }
+            }
+        }
+
+        // Build test-framework globals from manifest dependencies.
+        // Build per-language primitive sets for all languages present in parsed files.
+        let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =
+            FxHashMap::default();
+        for pf in parsed {
+            if !primitives_by_language.contains_key(&pf.language) {
+                let set = crate::indexer::keywords::keywords_set_for_language(&pf.language);
+                if !set.is_empty() {
+                    primitives_by_language.insert(pf.language.clone(), set);
+                }
+            }
+        }
+
+        let workspace_pkg_by_declared_name: FxHashMap<String, i64> = project_ctx
+            .map(|ctx| {
+                ctx.workspace_pkg_by_declared_name
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Snapshot tsconfig aliases — per-package if available, plus a union
+        // derived from the NPM manifest for files with no package_id.
+        let mut path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
+        let mut path_aliases_union: Vec<(String, String)> = Vec::new();
+        let mut tsconfig_types_union: Vec<String> = Vec::new();
+        if let Some(ctx) = project_ctx {
+            if let Some(npm) = ctx.manifest(crate::ecosystem::manifest::ManifestKind::Npm) {
+                path_aliases_union = npm.path_aliases.clone();
+                tsconfig_types_union = npm.tsconfig_types.clone();
+            }
+            path_aliases_by_pkg = snapshot_path_aliases(
+                &path_aliases_union,
+                &ctx.by_package,
+                &ctx.workspace_pkg_paths,
+            );
+        }
+
+        // Build the Angular selector map: raw selector → class qualified name.
+        // Source: `ParsedFile::component_selectors` populated by the full-index
+        // pipeline for TypeScript/Angular files with `@Component({selector:...})`.
+        let mut angular_selectors: FxHashMap<String, String> = FxHashMap::default();
+        for pf in parsed {
+            for (selector, class_qname) in &pf.component_selectors {
+                if !selector.is_empty() && !class_qname.is_empty() {
+                    angular_selectors.insert(selector.clone(), class_qname.clone());
+                }
+            }
+        }
+
+        // ExtractedSymbol.return_type / declared_type were previously
+        // read here as workspace TypeIds. They aren't reliably from the
+        // workspace arena (some parse_file paths run populate_positions
+        // with a throwaway arena, leaving stale TypeIds), so we re-derive
+        // every TypeId-typed slot from the canonical string maps below.
+        // When extractors need to drive structural shapes (Apply) into
+        // TypeInfo, they'll feed signature strings that the intern pass
+        // already decomposes via `intern_type_str`.
+
+        // Intern every string-typed type_info entry into the shared
+        // workspace TypeArena for slots the extractor didn't already fill.
+        // `intern_type_str` decomposes generic applications into structural
+        // `Apply { base, args }`, so a `Repository<User>` field type
+        // produces an Apply TypeId whose base and args are independently
+        // resolvable — letting the engine bind generic substitutions
+        // across method chains.
+        for ti in type_info.values_mut() {
+            if ti.field_type_id.is_none() {
+                if let Some(ft) = ti.field_type.as_deref() {
+                    if !ft.is_empty() {
+                        ti.field_type_id = Some(type_arena.intern_type_str(ft));
+                    }
+                }
+            }
+            if ti.return_type_id.is_none() {
+                if let Some(rt) = ti.return_type.as_deref() {
+                    if !rt.is_empty() {
+                        ti.return_type_id = Some(type_arena.intern_type_str(rt));
+                    }
+                }
+            }
+            if ti.type_arg_ids.is_empty() && !ti.type_args.is_empty() {
+                ti.type_arg_ids = ti
+                    .type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| type_arena.intern_type_str(s))
+                    .collect();
+            }
+            if ti.return_type_arg_ids.is_empty() && !ti.return_type_args.is_empty() {
+                ti.return_type_arg_ids = ti
+                    .return_type_args
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| type_arena.intern_type_str(s))
+                    .collect();
+            }
+        }
+
+        // Final sweep: re-derive the string fields from the canonical
+        // TypeIds. After this point any caller that hits the string-typed
+        // accessors gets exactly what the TypeId formats back to —
+        // extractor-set TypeIds (which can carry structural Apply) propagate
+        // to the string surface so the two views never drift. The string
+        // fallback is now a derived projection, not an independent source.
+        // generic_params get a TypeId companion through
+        // `arena.intern_generic` so substitution code can switch from
+        // string-keyed lookups to id-keyed ones.
+        for ti in type_info.values_mut() {
+            if let Some(id) = ti.field_type_id {
+                ti.field_type = Some(type_arena.format_type(id));
+            }
+            if let Some(id) = ti.return_type_id {
+                ti.return_type = Some(type_arena.format_type(id));
+            }
+            if !ti.type_arg_ids.is_empty() {
+                ti.type_args = ti
+                    .type_arg_ids
+                    .iter()
+                    .map(|id| type_arena.format_type(*id))
+                    .collect();
+            }
+            if !ti.return_type_arg_ids.is_empty() {
+                ti.return_type_args = ti
+                    .return_type_arg_ids
+                    .iter()
+                    .map(|id| type_arena.format_type(*id))
+                    .collect();
+            }
+        }
+
+        // generic_params get their TypeId companions interned through
+        // arena.intern_generic. Owner is the symbol DB id when the
+        // type_info key resolves to a unique symbol via by_qname — so T
+        // declared on class A and T declared on class B get distinct
+        // GenericParamIds. When no unique owner exists (simple-name keys
+        // that collide across files, ambient declarations), owner stays
+        // 0 and same-name params collapse — a known-and-documented loss.
+        for (key, ti) in type_info.iter_mut() {
+            if !ti.generic_param_type_ids.is_empty() || ti.generic_params.is_empty() {
+                continue;
+            }
+            let owner_id = by_qname.get(key).map(|info| info.id).unwrap_or(0) as usize;
+            ti.generic_param_type_ids = ti
+                .generic_params
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let bound = ti
+                        .generic_param_bounds
+                        .get(i)
+                        .and_then(|b| b.as_deref())
+                        .map(|b| type_arena.intern_type_str(b));
+                    let param = type_arena.intern_generic(
+                        crate::type_checker::core::types::GenericParamData {
+                            name: name.clone(),
+                            owner_symbol_index: owner_id,
+                            bound,
+                        },
+                    );
+                    type_arena.intern(crate::type_checker::core::types::Type::Generic { param })
+                })
+                .collect();
+        }
+
+        Self {
+            by_name,
+            by_qname,
+            by_file,
+            members_by_parent,
+            types_by_name,
+            type_info,
+            reexport_map,
+            pkg_reexports,
+            module_to_file,
+            module_to_file_per_source,
+            primitives_by_language,
+            by_package,
+            workspace_pkg_by_declared_name,
+            path_aliases_by_pkg,
+            path_aliases_union,
+            tsconfig_types_union,
+            inherits_by_id,
+            by_id,
+            containing_id,
+            alias_target: alias_target_map,
+            qname_duplicates,
+            ambient_global_method_names,
+            external_paths: HashSet::new(),
+            angular_selectors,
+            empty: Vec::new(),
+            empty_reexports: Vec::new(),
+            type_arena,
+            materialized: super::MaterializedStore::new(),
+            loc,
+            // Seed above the max internal id so a materialized external never
+            // collides with an internal symbol (all of which are written to the
+            // DB before this build).
+            next_ext_id: std::sync::atomic::AtomicI64::new(
+                symbol_id_map.values().copied().max().unwrap_or(0) + 1,
+            ),
+        }
+    }
+}
+
+/// Build the per-package tsconfig path-alias map, keyed by `package_id`.
+///
+/// tsconfig `paths` targets are relative to each package's own directory, not
+/// the workspace root. In a monorepo where `apps/landing/tsconfig.json`
+/// declares `"@/*": ["src/*"]`, a rewritten `@/components/x` must land at
+/// `apps/landing/src/components/x` for `in_file()` to find it. Each target is
+/// therefore prefixed with the owning package's directory at snapshot time.
+///
+/// Two sources feed each package's entry, in precedence order:
+///   1. The package's own NPM manifest aliases (when it declares any).
+///   2. Otherwise the root-manifest `union_aliases`, prefixed with the
+///      package's directory — so a package that inherits the root alias still
+///      resolves to its own files rather than the workspace root's.
+///
+/// Packages with no own aliases AND no known directory are omitted; their
+/// files fall through to the raw `union_aliases` at lookup time. Files with no
+/// `package_id` are never keyed here and always read the raw union.
+fn snapshot_path_aliases(
+    union_aliases: &[(String, String)],
+    by_package: &HashMap<i64, HashMap<crate::ecosystem::manifest::ManifestKind, crate::ecosystem::manifest::ManifestData>>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+) -> FxHashMap<i64, Vec<(String, String)>> {
+    let prefix_targets = |pkg_path: Option<&String>, aliases: &[(String, String)]| -> Vec<(String, String)> {
+        aliases
+            .iter()
+            .map(|(alias, target)| {
+                let full_target = match pkg_path {
+                    Some(p) if !p.is_empty() => format!("{p}/{target}"),
+                    _ => target.clone(),
+                };
+                (alias.clone(), full_target)
+            })
+            .collect()
+    };
+
+    let mut by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
+    // Every package with either own manifests OR a known directory is a
+    // candidate: a package that declares no own aliases still inherits the
+    // prefixed root union as long as its directory anchors the rewrite.
+    let pkg_ids = by_package
+        .keys()
+        .chain(workspace_pkg_paths.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<i64>>();
+    for pkg_id in pkg_ids {
+        let pkg_path = workspace_pkg_paths.get(&pkg_id);
+        let own_npm = by_package
+            .get(&pkg_id)
+            .and_then(|m| m.get(&crate::ecosystem::manifest::ManifestKind::Npm));
+        match own_npm {
+            Some(npm) if !npm.path_aliases.is_empty() => {
+                by_pkg.insert(pkg_id, prefix_targets(pkg_path, &npm.path_aliases));
+            }
+            _ => {
+                // Package declares no own aliases: inherit the root union,
+                // prefixed with this package's directory so the targets point
+                // at package-relative files instead of the workspace root.
+                if !union_aliases.is_empty() {
+                    if let Some(p) = pkg_path.filter(|p| !p.is_empty()) {
+                        by_pkg.insert(pkg_id, prefix_targets(Some(p), union_aliases));
+                    }
+                }
+            }
+        }
+    }
+    by_pkg
+}
+
+#[cfg(test)]
+pub(super) fn _test_snapshot_path_aliases(
+    union_aliases: &[(String, String)],
+    by_package: &HashMap<i64, HashMap<crate::ecosystem::manifest::ManifestKind, crate::ecosystem::manifest::ManifestData>>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+) -> FxHashMap<i64, Vec<(String, String)>> {
+    snapshot_path_aliases(union_aliases, by_package, workspace_pkg_paths)
+}
+
+/// Entry-file extensions probed when mapping a workspace package's declared
+/// name to its index file. Mirrors the Node resolver's TS/JS entry set.
+const WORKSPACE_ENTRY_EXTENSIONS: &[&str] = &[
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".mts", ".svelte", ".astro", ".vue",
+];
+
+/// Resolve a bare specifier that names a workspace package to that package's
+/// entry file.
+///
+/// `node_modules`-style resolvers return `None` for a bare specifier, so a
+/// monorepo import like `@myorg/ui` never lands in `module_to_file` and the
+/// re-export walker drops the `project → workspace pkg → npm` hop. This
+/// recovers the entry file: match `spec` (or a parent of a deep import such
+/// as `@myorg/ui/button`) against a workspace package's declared name, then
+/// probe the package root for `index.*` and `src/index.*`.
+///
+/// Returns `None` when `spec` names no workspace package or the package has no
+/// indexed entry file.
+fn resolve_workspace_pkg_entry(
+    spec: &str,
+    workspace_pkg_by_declared_name: &HashMap<String, i64>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+    index: &crate::indexer::module_resolution::FilePathIndex,
+) -> Option<String> {
+    // Match the full specifier first, then strip trailing subpath segments
+    // (`@myorg/ui/button` → `@myorg/ui`) — mirrors `workspace_package_id`.
+    let pkg_id = {
+        let mut path = spec;
+        let mut found = workspace_pkg_by_declared_name.get(path).copied();
+        while found.is_none() {
+            let Some(slash) = path.rfind('/') else { break };
+            path = &path[..slash];
+            found = workspace_pkg_by_declared_name.get(path).copied();
+        }
+        found?
+    };
+    let root = workspace_pkg_paths.get(&pkg_id)?;
+    let root = root.trim_end_matches('/');
+    for stem in ["index", "src/index"] {
+        for ext in WORKSPACE_ENTRY_EXTENSIONS {
+            let candidate = if root.is_empty() {
+                format!("{stem}{ext}")
+            } else {
+                format!("{root}/{stem}{ext}")
+            };
+            if let Some(p) = index.find_suffix(&candidate) {
+                return Some(p.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+pub(super) fn _test_resolve_workspace_pkg_entry(
+    spec: &str,
+    workspace_pkg_by_declared_name: &HashMap<String, i64>,
+    workspace_pkg_paths: &HashMap<i64, String>,
+    index: &crate::indexer::module_resolution::FilePathIndex,
+) -> Option<String> {
+    resolve_workspace_pkg_entry(
+        spec,
+        workspace_pkg_by_declared_name,
+        workspace_pkg_paths,
+        index,
+    )
+}
+
+#[cfg(test)]
+#[path = "build_tests.rs"]
+mod tests;

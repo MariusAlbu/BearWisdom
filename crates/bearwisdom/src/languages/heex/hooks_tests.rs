@@ -1,7 +1,7 @@
 use super::_test_colocated_view_file as colocated_view_file;
 use super::HeexHooks;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-use crate::indexer::resolve::engine::{RefContext, SymbolIndex};
+use crate::indexer::resolve::legacy::{RefContext, SymbolIndex};
 use crate::type_checker::profile::hooks::LanguageEngineHooks;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use std::collections::HashMap;

@@ -155,3 +155,29 @@ fn rejects_ordinary_files() {
         );
     }
 }
+
+#[test]
+fn lib_path_recognises_ts_lib_types_node_and_stdlib() {
+    for p in [
+        "ext:ts:__ts_lib__/lib.es5.d.ts",
+        "ext:ts:__ts_lib__/lib.dom.d.ts",
+        "ext:ts:@types/node/process.d.ts",
+        "node_modules/typescript/lib/lib.dom.d.ts",
+        "node_modules/@types/node/fs.d.ts",
+        "ext:lua-stdlib:string.lua",
+        "ext:python-stdlib:os.py",
+    ] {
+        assert!(is_ambient_global_lib_path(p), "lib source should match: {p}");
+    }
+}
+
+#[test]
+fn lib_path_rejects_ordinary_externals() {
+    for p in [
+        "ext:ts:@tanstack/query-core/index.d.ts",
+        "src/app.ts",
+        "ext:rust:serde/src/lib.rs", // a crate is not -stdlib
+    ] {
+        assert!(!is_ambient_global_lib_path(p), "must NOT be a lib source: {p}");
+    }
+}

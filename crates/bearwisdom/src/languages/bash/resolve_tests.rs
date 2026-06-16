@@ -3,7 +3,7 @@
 // Ported from pre-restructure commit 8dcc438 (dangling in object store).
 
 use super::hooks::{ends_with_path_suffix, shell_path_suffix, BashHooks};
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, ImportEntry, RefContext, Resolution, SymbolIndex,
 };
 use crate::type_checker::core::SymbolIdMap;

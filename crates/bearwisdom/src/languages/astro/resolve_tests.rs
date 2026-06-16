@@ -9,7 +9,7 @@
 
 use super::hooks::AstroHooks;
 use super::profile::ASTRO_PROFILE;
-use crate::indexer::resolve::engine::{
+use crate::indexer::resolve::legacy::{
     build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex, SymbolLookup,
 };
 use crate::languages::LanguagePlugin;

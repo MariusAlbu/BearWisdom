@@ -23,7 +23,7 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::indexer::resolve::engine::{FileContext, ImportEntry, RefContext};
+use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------
@@ -639,7 +639,7 @@ fn infer_external_namespace_from_hash_r_import() {
         use crate::type_checker::profile::hooks::LanguageEngineHooks;
         use std::collections::HashMap;
         let empty_lookup =
-            crate::indexer::resolve::engine::SymbolIndex::build(&[], &HashMap::new());
+            crate::indexer::resolve::legacy::SymbolIndex::build(&[], &HashMap::new());
         crate::languages::fsharp::hooks::FsharpHooks.classify_external(
             &ref_ctx,
             &file_ctx,

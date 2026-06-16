@@ -41,7 +41,8 @@ pub use panic_hook::install_fail_fast_panic_hook;
 pub use db::audit::{AuditRecord, AuditSessionSummary, AuditStats};
 pub use db::metrics::{QueryMetrics, QueryStats};
 pub use db::{db_exists, resolve_db_path, Database, DbPool, PoolGuard};
-pub use indexer::full::{full_index, ProgressFn};
+pub use indexer::full::{full_index, full_index_engine, ProgressFn};
+pub use indexer::resolve_diff::{resolve_diff, EdgeKey, ResolveDiff};
 pub use indexer::incremental::{
     git_reindex, incremental_index, reindex_files, ChangeKind, FileChangeEvent,
 };

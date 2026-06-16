@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::engine::SymbolInfo;
+use crate::indexer::resolve::legacy::SymbolInfo;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{PrimKind, TypeArena};
 use std::sync::Arc;
