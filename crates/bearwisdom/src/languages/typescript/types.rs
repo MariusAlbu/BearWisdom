@@ -218,7 +218,24 @@ pub(super) fn extract_type_ref_from_annotation(
             }
         }
         "array_type" => {
-            // User[]  — element type is the child before "["
+            // `User[]` — the receiver type is the lib `Array`, with the element
+            // as its type argument. Emit `Array` as the head TypeRef first so the
+            // field_type derivation roots member calls (map/filter/forEach/…) on
+            // Array; the element type follows and lands in type_args.
+            refs.push(ExtractedRef {
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index,
+                target_name: "Array".to_string(),
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                col: 0,
+                module: None,
+                chain: None,
+                byte_offset: type_node.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
             for i in 0..type_node.child_count() {
                 if let Some(child) = type_node.child(i) {
                     if child.kind() != "[" && child.kind() != "]" {

@@ -394,6 +394,25 @@ fn array_literal_emits_array_type_ref() {
     );
 }
 
+#[test]
+fn array_typed_param_emits_array_head_and_element_type_refs() {
+    // `function getUser(items: User[])` — the param's array type roots member
+    // calls (`items.map(...)`) on the lib `Array`, so an `Array` head TypeRef is
+    // emitted; the element type `User` follows as the type argument.
+    let src = "function getUser(items: User[]) {}";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.target_name == "Array" && r.kind == EdgeKind::TypeRef),
+        "expected Array head TypeRef, refs: {r:?}"
+    );
+    assert!(
+        r.iter()
+            .any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+        "expected User element TypeRef, refs: {r:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Catch clause variables
 // ---------------------------------------------------------------------------
