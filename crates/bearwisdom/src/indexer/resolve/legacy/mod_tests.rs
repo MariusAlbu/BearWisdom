@@ -932,12 +932,19 @@ fn join_inferred_returns_skips_conflicts_and_cross_file_collisions() {
     let conflict = vec![c("pick", 2, "User"), c("pick", 2, "Account")];
     assert!(join_inferred_returns(&conflict, |_| false).is_empty());
 
-    // Cross-file collision: two distinct functions (db_id 3 and 4) share the
-    // qname "helper" and even agree on the type — still infer nothing, because
-    // the qname-keyed type map cannot tell them apart (applying one's return to
-    // the other would be wrong).
-    let collision = vec![c("helper", 3, "User"), c("helper", 4, "User")];
-    assert!(join_inferred_returns(&collision, |_| false).is_empty());
+    // Cross-module AGREEMENT: the same library function copied across monorepo
+    // packages (qname "helper", distinct db_ids 3 and 4, both return "User") —
+    // infer User. The agreed type is correct for every owner of the shared slot.
+    let agree_cross = vec![c("helper", 3, "User"), c("helper", 4, "User")];
+    assert_eq!(
+        join_inferred_returns(&agree_cross, |_| false).get("helper"),
+        Some(&"User".to_string())
+    );
+
+    // Cross-module DISAGREEMENT: two functions share the qname but return
+    // different types — infer nothing; one shared slot cannot hold both.
+    let disagree_cross = vec![c("helper2", 5, "User"), c("helper2", 6, "Account")];
+    assert!(join_inferred_returns(&disagree_cross, |_| false).is_empty());
 
     // already_known filters out a qname that already carries a return.
     assert!(join_inferred_returns(&agree, |q| q == "makeUser").is_empty());

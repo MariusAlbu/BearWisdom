@@ -42,39 +42,28 @@ use super::ResolutionStats;
 
 /// Join harvested return-type candidates into per-function inferred returns.
 ///
-/// Each candidate is `(function_qname, function_db_id, yield_type)`. Rules,
-/// all conservative — widen what resolves, never infer a wrong type:
-///   - a qname claimed by more than one distinct `db_id` (the same simple name
-///     defined in different files) is ambiguous in the qname-keyed type map, so
-///     it infers nothing — applying one function's return to the others would
-///     be wrong;
-///   - for a uniquely-owned qname, the inferred return is the single type all
-///     its candidates agree on; any disagreement infers nothing;
-///   - `already_known(qname)` drops a qname that already has a declared or
-///     previously-inferred return (inference only fills genuine gaps).
+/// Each candidate is `(function_qname, function_db_id, yield_type)`. A qname's
+/// return is inferred only when every candidate for it agrees on a single type.
+/// Agreement is the soundness gate for the qname-keyed type store, and it holds
+/// even when the qname is shared across files/modules: an agreed type is correct
+/// for every owner, so the same library function copied across monorepo packages
+/// (identical `qname`, distinct `db_id`, same return) infers correctly — while
+/// any disagreement (different return types, or an internally-ambiguous
+/// multi-type return) leaves the qname uninferred, since one shared slot cannot
+/// hold two types. `already_known(qname)` drops a qname that already carries a
+/// declared or previously-inferred return (inference only fills genuine gaps).
+///
+/// Per-module inferred returns (distinct types for the same qname in different
+/// modules) require the `(ModuleId, qname)`-keyed store — see MODULE-IDENTITY.md;
+/// until that lands, cross-module disagreement is conservatively skipped.
 pub(super) fn join_inferred_returns(
     candidates: &[(String, i64, String)],
     already_known: impl Fn(&str) -> bool,
 ) -> HashMap<String, String> {
-    use std::collections::HashSet;
-    // Distinct function db_ids per qname → detects cross-file collisions.
-    let mut ids_by_qname: HashMap<&str, HashSet<i64>> = HashMap::new();
-    for (qname, db_id, _) in candidates {
-        ids_by_qname
-            .entry(qname.as_str())
-            .or_default()
-            .insert(*db_id);
-    }
-    // Conflict-join the yield types for uniquely-owned qnames.
-    // qname → Some(agreed type) | None (conflict sentinel).
+    // qname → Some(agreed type) | None (conflict sentinel). The db_id is not a
+    // gate: agreement across distinct owners is sound for the shared qname slot.
     let mut by_fn: HashMap<&str, Option<&str>> = HashMap::new();
     for (qname, _db_id, ty) in candidates {
-        if ids_by_qname
-            .get(qname.as_str())
-            .map_or(true, |ids| ids.len() != 1)
-        {
-            continue;
-        }
         match by_fn.get(qname.as_str()) {
             None => {
                 by_fn.insert(qname, Some(ty));
