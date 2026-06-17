@@ -425,6 +425,17 @@ impl Compilation {
             self.derive_type_info_from_refs(pf);
         }
 
+        // -----------------------------------------------------------------------
+        // Phase C — bare-identifier return-type inference.
+        //
+        // Runs after Phase B so a typed parameter's `field_type` is already in
+        // `type_info`. Harvests a function's return type from a bare-identifier
+        // return (`return qc`) that emits no ref, types the returned identifier
+        // against the function's parameter of the same name, and folds candidates
+        // through the cross-module agreement gate before filling the return slot.
+        // -----------------------------------------------------------------------
+        self.infer_bare_identifier_returns(parsed);
+
         // Id-keyed member index, derived from the now-complete `members_by_parent`
         // + `by_qname`. Rebuilt in full (not incrementally) because `ingest` runs
         // more than once — internal files, then the materialized externals — and
@@ -688,6 +699,90 @@ impl Compilation {
                     }
                 }
             }
+        }
+    }
+
+    /// Harvest a function's return type from a bare-identifier return site
+    /// (`return qc` / `return queryClient`) that emits no ref — a parameter or
+    /// local read is not a cross-symbol reference, so the typeref-derived pass
+    /// never saw it. For each `(fn_idx, ident)` the extractor recorded in
+    /// `pf.flow.flow_return_ident`, type the returned identifier against the
+    /// function's PARAMETER of the same name: a typed param is emitted as a child
+    /// symbol scoped to the function, so its declared type lives in
+    /// `type_info[{fn_qname}.{ident}].field_type` after Phase B. A candidate is
+    /// dropped when the function already has a return (extractor TypeId or a
+    /// Phase-A/B return slot), when the param has no resolvable type, when the
+    /// type is `unknown`, or when it equals one of the function's generic
+    /// parameters (an unbound type variable is not an inference).
+    ///
+    /// Surviving candidates are folded through `agree_inferred_returns`: a qname
+    /// inferred only when every candidate for it agrees on a single type. Because
+    /// `type_info` is keyed by qname STRING (first-winner), an agreed type is
+    /// sound for every owner of the shared slot — so a hook copied across monorepo
+    /// packages (identical qname, distinct symbol id, identical return) infers
+    /// correctly, while two same-named functions with different returns leave the
+    /// qname uninferred (one slot cannot hold two types).
+    fn infer_bare_identifier_returns(&mut self, parsed: &[ParsedFile]) {
+        // (fn_qname, candidate_return_type, candidate_return_type_id, type_args)
+        let mut candidates: Vec<(String, String, Option<TypeId>, Vec<String>)> = Vec::new();
+
+        for pf in parsed {
+            for (fn_idx, ident) in &pf.flow.flow_return_ident {
+                let Some(fn_sym) = pf.symbols.get(*fn_idx) else {
+                    continue;
+                };
+                // A declared/extractor return or an already-derived return slot
+                // wins; inference only fills genuine gaps.
+                if fn_sym.return_type.is_some() {
+                    continue;
+                }
+                if self
+                    .type_info
+                    .get(&fn_sym.qualified_name)
+                    .and_then(|ti| ti.return_type.as_deref())
+                    .is_some()
+                {
+                    continue;
+                }
+                let param_qname = format!("{}.{}", fn_sym.qualified_name, ident);
+                let Some(param_ti) = self.type_info.get(&param_qname) else {
+                    continue;
+                };
+                let Some(ty) = param_ti.field_type.clone() else {
+                    continue;
+                };
+                if ty.is_empty() || ty.eq_ignore_ascii_case("unknown") {
+                    continue;
+                }
+                // An unbound type variable of the function is not an inference.
+                let is_generic_param = self
+                    .type_info
+                    .get(&fn_sym.qualified_name)
+                    .map(|ti| ti.generic_params.iter().any(|p| p == &ty))
+                    .unwrap_or(false);
+                if is_generic_param {
+                    continue;
+                }
+                candidates.push((
+                    fn_sym.qualified_name.clone(),
+                    ty,
+                    param_ti.field_type_id,
+                    param_ti.type_args.clone(),
+                ));
+            }
+        }
+
+        for (qname, ty, ty_id, type_args) in agree_inferred_returns(candidates) {
+            // Re-check the slot: a same-batch candidate ordering, or a slot a
+            // concurrent function already filled, must not be overwritten.
+            let ti = self.type_info.entry(qname).or_default();
+            if ti.return_type.is_some() {
+                continue;
+            }
+            ti.return_type_id =
+                Some(ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)));
+            ti.return_type = Some(ty);
+            ti.return_type_args = type_args;
         }
     }
 
@@ -1122,6 +1217,42 @@ impl Compilation {
     }
 }
 
+/// Fold harvested return-type candidates into per-qname agreed returns.
+///
+/// Each candidate is `(fn_qname, return_type, return_type_id, type_args)`. A
+/// qname's return is agreed only when every candidate for it carries the same
+/// `return_type` string; any disagreement leaves the qname out. Agreement is the
+/// soundness gate for the qname-string-keyed return slot, and it holds across
+/// owners: an agreed type is correct for every owner of the shared slot, so a
+/// function copied across monorepo packages (identical qname, distinct symbol
+/// id, identical return) is folded, while two same-named functions with
+/// different returns are skipped — one slot cannot hold two types. The agreed
+/// candidate's id and type args ride along so the caller fills the structured
+/// slot, not just the string.
+fn agree_inferred_returns(
+    candidates: Vec<(String, String, Option<TypeId>, Vec<String>)>,
+) -> Vec<(String, String, Option<TypeId>, Vec<String>)> {
+    // qname → Some(candidate) on a single agreed type, None on a conflict.
+    let mut by_fn: HashMap<String, Option<(String, Option<TypeId>, Vec<String>)>> = HashMap::new();
+    for (qname, ty, ty_id, type_args) in candidates {
+        match by_fn.get(&qname) {
+            None => {
+                by_fn.insert(qname, Some((ty, ty_id, type_args)));
+            }
+            Some(Some((prev_ty, _, _))) if *prev_ty != ty => {
+                by_fn.insert(qname, None);
+            }
+            _ => {}
+        }
+    }
+    by_fn
+        .into_iter()
+        .filter_map(|(qname, agreed)| {
+            agreed.map(|(ty, ty_id, type_args)| (qname, ty, ty_id, type_args))
+        })
+        .collect()
+}
+
 /// Serialize a string vec to a JSON array, or `None` (SQL NULL) when empty.
 fn json_string_array(items: &[String]) -> Option<String> {
     if items.is_empty() {
@@ -1157,6 +1288,17 @@ fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeI
 #[cfg(test)]
 pub(super) fn is_type_like_for_test(kind: &str) -> bool {
     is_type_like(kind)
+}
+
+/// Test-only re-export of the return-inference agreement gate so the sibling
+/// tests can drive it on candidate tuples directly — the param-qname collision
+/// that masks per-owner type differences in the full pass makes the gate's
+/// disagreement branch only reachable by feeding candidates straight in.
+#[cfg(test)]
+pub(super) fn agree_inferred_returns_for_test(
+    candidates: Vec<(String, String, Option<TypeId>, Vec<String>)>,
+) -> Vec<(String, String, Option<TypeId>, Vec<String>)> {
+    agree_inferred_returns(candidates)
 }
 
 #[cfg(test)]

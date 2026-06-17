@@ -638,6 +638,233 @@ fn ambient_scope_indexes_globals_namespace_symbols() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Bare-identifier return-type inference (Phase C / infer_bare_identifier_returns)
+// ---------------------------------------------------------------------------
+
+/// Build a hook whose body is `return <ident>`, where `<ident>` is a typed
+/// parameter. The function carries no declared/extractor return, so its return
+/// type must be inferred from the parameter's declared type.
+///
+/// ```text
+/// class QueryClient { clear(): void }
+/// function useQueryClient(qc: QueryClient) { return qc }   // → QueryClient
+/// ```
+///
+/// `qc` is emitted as a Parameter child symbol `useQueryClient.qc` with a
+/// TypeRef ref to `QueryClient`; the bare return is recorded in
+/// `flow.flow_return_ident` as `(fn_idx, "qc")`.
+fn build_hook_fixture(
+    path: &str,
+    hook_qname: &str,
+    param_type: &str,
+    next_id: &mut i64,
+) -> (ParsedFile, HashMap<(String, String), i64>) {
+    let param_qname = format!("{hook_qname}.qc");
+    // QueryClient(0), QueryClient.clear(1), hook(2), hook.qc param(3)
+    let symbols = vec![
+        make_symbol(param_type, param_type, SymbolKind::Class, None, None, None),
+        make_symbol(
+            "clear",
+            &format!("{param_type}.clear"),
+            SymbolKind::Method,
+            Some(0),
+            None,
+            None,
+        ),
+        make_symbol("useQueryClient", hook_qname, SymbolKind::Function, None, None, None),
+        make_symbol("qc", &param_qname, SymbolKind::Parameter, Some(2), None, None),
+    ];
+    // The param (index 3) has a TypeRef → param_type, so Phase B types it.
+    let refs = vec![typeref_ref(3, param_type)];
+    let mut pf = make_parsed_file(path, symbols, refs);
+    // `return qc` — bare identifier, no ref; recorded by the extractor as the
+    // function (index 2) returning identifier "qc".
+    pf.flow.flow_return_ident = vec![(2, "qc".to_string())];
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    for qname in [
+        param_type.to_string(),
+        format!("{param_type}.clear"),
+        hook_qname.to_string(),
+        param_qname.clone(),
+    ] {
+        id_map.insert((path.to_string(), qname), *next_id);
+        *next_id += 1;
+    }
+    (pf, id_map)
+}
+
+/// A function whose body is `return <param>` infers its return type from the
+/// typed parameter, even though no ref or signature names the return.
+#[test]
+fn bare_identifier_return_infers_param_type() {
+    let arena = Arc::new(TypeArena::new());
+    let mut next_id = 1;
+    let (pf, id_map) =
+        build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_name("useQueryClient"),
+        Some("QueryClient"),
+        "the function's return must be inferred from the returned parameter's type"
+    );
+}
+
+/// A declared/extractor return wins: a function that already has a return type
+/// must not be overwritten by the bare-identifier inference.
+#[test]
+fn declared_return_blocks_bare_identifier_inference() {
+    let arena = Arc::new(TypeArena::new());
+    let other_id = arena.class("Other");
+
+    // hook(0) has an extractor return_type = Other; qc param(1): QueryClient.
+    // The bare-return harvest must leave the declared Other in place.
+    let symbols = vec![
+        make_symbol(
+            "useQueryClient",
+            "useQueryClient",
+            SymbolKind::Function,
+            None,
+            None,
+            Some(other_id),
+        ),
+        make_symbol("qc", "useQueryClient.qc", SymbolKind::Parameter, Some(0), None, None),
+    ];
+    let refs = vec![typeref_ref(1, "QueryClient")];
+    let mut pf = make_parsed_file("src/hooks.ts", symbols, refs);
+    pf.flow.flow_return_ident = vec![(0, "qc".to_string())];
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/hooks.ts".to_string(), "useQueryClient".to_string()), 1);
+    id_map.insert(("src/hooks.ts".to_string(), "useQueryClient.qc".to_string()), 2);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_name("useQueryClient"),
+        Some("Other"),
+        "an extractor-declared return must survive bare-identifier inference"
+    );
+}
+
+/// A hook copied across two monorepo packages — identical qname, distinct
+/// symbol ids, identical returned-parameter type — infers correctly: the shared
+/// qname-keyed slot agrees, so the agreement gate folds it.
+#[test]
+fn cross_module_agreement_infers_shared_qname() {
+    let arena = Arc::new(TypeArena::new());
+    let mut next_id = 1;
+    let (mut pf1, id1) =
+        build_hook_fixture("p1/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+    let (mut pf2, id2) =
+        build_hook_fixture("p2/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+    pf1.package_id = Some(1);
+    pf2.package_id = Some(2);
+
+    let mut id_map = id1;
+    id_map.extend(id2);
+
+    let tree = Compilation::build(&[pf1, pf2], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_name("useQueryClient"),
+        Some("QueryClient"),
+        "two copies agreeing on the same return must infer the shared slot"
+    );
+}
+
+/// The agreement gate, driven directly on candidate tuples: agreement across
+/// distinct owners folds, disagreement skips. Driving the gate directly is the
+/// only way to exercise the disagreement branch — in the full pass two copies of
+/// a function share the param's qname, so the param-derived candidate type is
+/// the same first-winner string for both owners and can never disagree.
+#[test]
+fn agreement_gate_folds_agreement_and_skips_disagreement() {
+    let c = |q: &str, t: &str| (q.to_string(), t.to_string(), None, Vec::<String>::new());
+
+    // Agreement across two owners of the shared qname → one folded entry.
+    let agree = super::agree_inferred_returns_for_test(vec![
+        c("helper", "User"),
+        c("helper", "User"),
+    ]);
+    assert_eq!(agree.len(), 1, "agreeing candidates fold to one entry");
+    assert_eq!(agree[0].0, "helper");
+    assert_eq!(agree[0].1, "User");
+
+    // Disagreement on the shared qname → the qname is dropped entirely.
+    let disagree = super::agree_inferred_returns_for_test(vec![
+        c("helper2", "User"),
+        c("helper2", "Account"),
+    ]);
+    assert!(
+        disagree.is_empty(),
+        "one shared slot cannot hold two types; disagreement skips"
+    );
+
+    // A second qname that agrees still survives alongside a dropped one.
+    let mixed = super::agree_inferred_returns_for_test(vec![
+        c("a", "User"),
+        c("a", "Account"),
+        c("b", "Account"),
+    ]);
+    let folded: Vec<&str> = mixed.iter().map(|(q, _, _, _)| q.as_str()).collect();
+    assert_eq!(folded, vec!["b"], "only the agreeing qname `b` is folded");
+}
+
+/// End-to-end: once the inferred return lands, a call-root chain
+/// `useQueryClient().clear()` resolves through the chain walker against the
+/// `Compilation`, binding the leaf to `QueryClient.clear`.
+#[test]
+fn inferred_return_lets_call_root_chain_resolve() {
+    use crate::indexer::resolve::engine::chain::bind_member_access;
+    use crate::indexer::resolve::engine::testkit::{call_ref, ref_ctx, source_symbol};
+    use crate::types::{ChainSegment, MemberChain, SegmentKind};
+
+    let arena = Arc::new(TypeArena::new());
+    let mut next_id = 1;
+    let (pf, id_map) =
+        build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    // `useQueryClient().clear()` — the call root reads useQueryClient's inferred
+    // return (QueryClient), then `clear` binds on QueryClient.
+    let mk_seg = |name: &str, is_call: bool, kind: SegmentKind| ChainSegment {
+        name: name.to_string(),
+        node_kind: String::new(),
+        kind,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    };
+    let segs = vec![
+        mk_seg("useQueryClient", true, SegmentKind::Identifier),
+        mk_seg("clear", true, SegmentKind::Property),
+    ];
+    let mut r = call_ref("clear");
+    r.chain = Some(MemberChain { segments: segs });
+    let src = source_symbol("caller");
+    let rc = ref_ctx(&r, &src, vec![]);
+
+    let resolved = bind_member_access(&rc, &tree).map(|res| res.target_symbol_id);
+    let clear_id = tree
+        .by_qualified_name("QueryClient.clear")
+        .expect("QueryClient.clear indexed")
+        .id;
+    assert_eq!(
+        resolved,
+        Some(clear_id),
+        "the call-root chain must resolve `clear` on the inferred QueryClient return"
+    );
+}
+
 /// A top-level symbol whose qname the materialization layer flagged ambient is
 /// indexed into `ambient_scope` by its simple name; a nested member of the same
 /// file is not (only top-level lib globals are ambient).
