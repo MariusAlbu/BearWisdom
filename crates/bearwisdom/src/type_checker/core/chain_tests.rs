@@ -3405,6 +3405,67 @@ fn identifier_root_resolves_local_variable_via_lookup() {
 }
 
 #[test]
+fn identifier_root_decomposes_generic_local_type() {
+    // const q = cache.build();  // inferred local type Query<string>
+    // q.isStaleByTime()
+    // A generic inferred local must intern STRUCTURALLY (Apply{Query,[string]})
+    // so member lookup keys on the bare head `Query`. `arena.class("Query<string>")`
+    // would be a flat class literally named "Query<string>" with no members.
+    let mut arena = TypeArena::new();
+    let query_ty = arena.class("Query");
+    let bool_ty = arena.primitive(crate::type_checker::core::types::PrimKind::Bool);
+
+    let mut symbol_types = SymbolTypeMap::new();
+    symbol_types.insert(
+        2,
+        SymbolTypeData {
+            return_type: Some(bool_ty),
+            ..Default::default()
+        },
+    );
+
+    let mut members = MembersIndex::new();
+    members.add_direct(
+        query_ty,
+        sym_info(2, "isStaleByTime", "Query.isStaleByTime", "method", Some("Query")),
+    );
+
+    let supertypes = SupertypeGraph::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new().with_local("q", "Query<string>");
+
+    let mut walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+
+    let chain = MemberChain {
+        segments: vec![
+            seg("q", SegmentKind::Identifier),
+            seg("isStaleByTime", SegmentKind::Property),
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("isStaleByTime");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk(&chain, &ref_ctx, &fc)
+        .expect("generic inferred local type bridges to its head's members");
+    assert_eq!(result.target_symbol_id, 2);
+}
+
+#[test]
 fn identifier_root_local_wins_over_same_named_global_type() {
     // A local `User` of type Admin shadows the global User class. The
     // walker must resolve to Admin's members, not User's.

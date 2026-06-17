@@ -188,10 +188,16 @@ impl RootResolver for DefaultRootResolver {
                 //    carry the member, which is the safe semantic — a runtime
                 //    value could land on any branch.
                 if let Some(branches) = lookup.local_type_union(&seg.name) {
+                    // Intern structurally (like steps 2 and 4 below) so a
+                    // generic inferred local (`const q = cache.build()` →
+                    // `Query<string>`) decomposes into `Apply { base, args }` and
+                    // member lookup keys on the bare head. `arena.class` would
+                    // treat `"Query<string>"` as a flat class name with no members.
                     return Some(match branches.as_slice() {
-                        [one] => arena.class(one),
+                        [one] => arena.intern_type_str(one),
                         many => {
-                            let ids: Vec<TypeId> = many.iter().map(|n| arena.class(n)).collect();
+                            let ids: Vec<TypeId> =
+                                many.iter().map(|n| arena.intern_type_str(n)).collect();
                             arena.intern(Type::Union(ids))
                         }
                     });
