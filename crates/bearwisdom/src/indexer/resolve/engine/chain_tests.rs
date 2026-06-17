@@ -372,3 +372,27 @@ fn inheritance_climb_keys_on_parent_symbol_id() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
 }
+
+// --- structural interning of a generic inferred-local root ------------------
+
+/// A generic inferred local — `const q = cache.build()` whose forward-inferred
+/// type is `Query<string>` — interns structurally at the root, so member lookup
+/// keys on the bare head `Query`, not on a flat class literally named
+/// `Query<string>` (which would have no members). `resolve_root` runs the local
+/// type through `arena.intern_type_str`, producing `Apply { Query, [string] }`;
+/// `head_qname` looks through the application to `Query`, where `isStaleByTime`
+/// is found.
+#[test]
+fn identifier_root_decomposes_generic_local_type() {
+    let lookup = Lookup::new()
+        .with_local_type("q", "Query<string>")
+        .with_member(
+            "Query",
+            sym(80, "isStaleByTime", "Query.isStaleByTime", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("q", false, SegmentKind::Identifier),
+        seg("isStaleByTime", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(80));
+}

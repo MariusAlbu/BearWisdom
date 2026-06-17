@@ -96,3 +96,15 @@ fn kind_ok_table(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
         Err(_) => true,
     }
 }
+
+/// Test-only re-export of the engine's kind-compatibility predicate so sibling
+/// tests can assert which symbol kinds a profile's `KindTable` admits for an
+/// edge — the exact gate the rule ladder consults via `BinderContext.kind`.
+#[cfg(test)]
+pub(super) fn kind_ok_table_for_test(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
+    kind_ok_table(table, edge, sym_kind)
+}
+
+#[cfg(test)]
+#[path = "semantic_model_tests.rs"]
+mod tests;
