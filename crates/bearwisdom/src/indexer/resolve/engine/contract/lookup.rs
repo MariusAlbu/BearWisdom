@@ -50,6 +50,14 @@ pub trait SymbolLookup {
     /// shares a simple name across the project + externals.
     fn members_of(&self, parent_qname: &str) -> SymbolSet<'_>;
 
+    /// Direct children of a type/namespace by its symbol id — the id-keyed
+    /// counterpart to `members_of`. A chain walker that has typed a receiver to
+    /// a symbol id walks its members by identity instead of re-matching qname
+    /// strings. Default returns empty; the real store overrides it.
+    fn members_of_id(&self, _parent_id: i64) -> SymbolSet<'_> {
+        SymbolSet::empty()
+    }
+
     /// Find all type-kind symbols (class, struct, interface, enum, ...) with
     /// the given simple name.
     ///

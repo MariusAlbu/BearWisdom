@@ -176,6 +176,26 @@ fn members_of_repo_contains_find() {
 }
 
 #[test]
+fn members_of_id_matches_members_of() {
+    let (tree, _) = build_fixture();
+    let repo_id = tree.by_qualified_name("Repo").expect("Repo should be indexed").id;
+    let qname_set = tree.members_of("Repo");
+    let id_set = tree.members_of_id(repo_id);
+    let mut by_qname: Vec<&str> = qname_set.iter().map(|s| s.name.as_str()).collect();
+    let mut by_id: Vec<&str> = id_set.iter().map(|s| s.name.as_str()).collect();
+    by_qname.sort_unstable();
+    by_id.sort_unstable();
+    assert_eq!(
+        by_id, by_qname,
+        "members_of_id(Repo) must equal members_of(\"Repo\")"
+    );
+    assert!(
+        by_id.contains(&"find"),
+        "members_of_id(Repo) should contain `find`; got {by_id:?}"
+    );
+}
+
+#[test]
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();
     assert_eq!(

@@ -62,6 +62,16 @@ pub struct Compilation {
     by_qname_all: FxHashMap<String, Vec<Symbol>>,
     by_file: FxHashMap<String, Vec<Symbol>>,
     members_by_parent: FxHashMap<String, Vec<Symbol>>,
+    /// Id spine: symbol id → its record. The id-keyed counterpart to `by_qname`
+    /// (which keys on the qname string); lets consumers holding a resolved id
+    /// recover the symbol without a qname round-trip.
+    by_id: FxHashMap<i64, Symbol>,
+    /// Direct children keyed by PARENT symbol id — the id-keyed counterpart to
+    /// `members_by_parent`. Stores child ids (resolved through `by_id`), so a
+    /// chain walker that has typed a receiver to a symbol id walks its members
+    /// by identity rather than re-matching qname strings. Derived at the end of
+    /// `ingest` from the fully-built `members_by_parent` + `by_qname`.
+    members_by_id: FxHashMap<i64, Vec<i64>>,
     types_by_name: FxHashMap<String, Vec<Symbol>>,
     /// Per-symbol type metadata: field type, return type, generic params.
     type_info: FxHashMap<String, TypeInfo>,
@@ -153,6 +163,8 @@ impl Compilation {
             by_qname_all: FxHashMap::default(),
             by_file: FxHashMap::default(),
             members_by_parent: FxHashMap::default(),
+            by_id: FxHashMap::default(),
+            members_by_id: FxHashMap::default(),
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
@@ -257,6 +269,10 @@ impl Compilation {
                 if let Some(pkg) = pf.package_id {
                     self.by_package.entry(pkg).or_default().push(info.clone());
                 }
+
+                // Id spine — first-wins to match `by_qname` (a merged/duplicated
+                // qname collapses to one record).
+                self.by_id.entry(info.id).or_insert_with(|| info.clone());
 
                 // Ambient scope: the materialization layer (ecosystem::ambient)
                 // classified which qnames are import-free globals; index those by
@@ -398,6 +414,22 @@ impl Compilation {
         for pf in parsed {
             self.derive_type_info_from_refs(pf);
         }
+
+        // Id-keyed member index, derived from the now-complete `members_by_parent`
+        // + `by_qname`. Rebuilt in full (not incrementally) because `ingest` runs
+        // more than once — internal files, then the materialized externals — and
+        // each run must reflect the cumulative member set. Stores child ids;
+        // `members_of_id` resolves them through `by_id`.
+        let mut members_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
+        for (parent_qname, members) in &self.members_by_parent {
+            if let Some(parent) = self.by_qname.get(parent_qname) {
+                members_by_id
+                    .entry(parent.id)
+                    .or_default()
+                    .extend(members.iter().map(|m| m.id));
+            }
+        }
+        self.members_by_id = members_by_id;
     }
 
     /// Derive per-symbol type metadata from `TypeRef` refs and signature
@@ -626,6 +658,15 @@ impl SymbolLookup for Compilation {
                 .map(|v| v.as_slice())
                 .unwrap_or(&self.empty),
         )
+    }
+
+    fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
+        match self.members_by_id.get(&parent_id) {
+            Some(ids) => {
+                SymbolSet::Owned(ids.iter().filter_map(|id| self.by_id.get(id)).collect())
+            }
+            None => SymbolSet::empty(),
+        }
     }
 
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
