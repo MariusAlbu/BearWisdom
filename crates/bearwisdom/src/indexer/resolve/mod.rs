@@ -17,9 +17,11 @@
 //   * flow_pair  — Producer/Consumer pairing of FlowEmissions
 //   * adapters   — framework-specific Consumer adapters (mailer / Next.js /
 //                  extractor-emitted routes + DbSets)
-//   * legacy     — FROZEN old engine: SymbolIndex + chain walker + language
-//                  resolver dispatch. Reference oracle only; slated for deletion
-//                  once the engine island reaches corpus parity.
+//   * legacy     — SymbolIndex + chain walker + language resolver dispatch.
+//                  Full reindex now routes through the `engine` island
+//                  (SemanticModel); this path is reached only by INCREMENTAL
+//                  reindex until the engine grows an incremental pass, then it
+//                  is deleted.
 //   * flow_emit  — FlowEmission data model
 //   * reachability + synthesize_dispatch — post-resolution dead-code support
 // =============================================================================

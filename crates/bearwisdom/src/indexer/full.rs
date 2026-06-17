@@ -72,13 +72,13 @@ pub fn full_index(
     pre_walked: Option<Vec<WalkedFile>>,
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IndexStats> {
-    full_index_inner(db, project_root, progress, pre_walked, ref_cache, false)
+    // The rule-based `SemanticModel` (single demand-driven pass) is the only
+    // resolver. The previous `SymbolIndex` + iteration loop is no longer reached.
+    full_index_inner(db, project_root, progress, pre_walked, ref_cache, true)
 }
 
-/// Same as `full_index` but routes reference resolution through the new
-/// rule-based `SemanticModel` instead of the established engine. Parsing, symbol
-/// extraction, the symbol index, and all DB writes are identical — only the
-/// per-ref bind decision differs — so the two indexes are directly comparable.
+/// Deprecated alias for `full_index` — both route through the `SemanticModel`.
+/// Retained so existing callers compile; prefer `full_index`.
 pub fn full_index_engine(
     db: &mut Database,
     project_root: &Path,
