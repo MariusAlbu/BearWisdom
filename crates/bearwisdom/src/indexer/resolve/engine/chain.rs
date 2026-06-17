@@ -153,7 +153,7 @@ fn resolve_root(
     // imported binding, a typed field) whose declaration carries a type roots
     // the chain on that type — `initTRPC.create()` roots on `initTRPC`'s builder
     // type even though `initTRPC` is not itself a type name.
-    if let Some(ty) = value_root_type(lookup, &seg.name) {
+    if let Some(ty) = value_root_type(lookup, &seg.name, &ref_ctx.source_symbol.qualified_name) {
         return Some(ty);
     }
     lookup
@@ -163,12 +163,47 @@ fn resolve_root(
         .map(|s| with_segment_args(TypeSymbol::plain(s.qualified_name.clone()), &seg.type_args))
 }
 
-/// Type a chain root that is a *value* by the declared type on its declaration:
-/// the first value-kind symbol named `name` whose declaration carries a field
-/// type. Runs after the flow-cache and annotation roots, so a local's inferred
-/// type still wins; this catches imported / ambient values whose type lives on
-/// the declaration rather than at the use site.
-fn value_root_type(lookup: &dyn SymbolLookup, name: &str) -> Option<TypeSymbol> {
+/// Type a chain root that is a *value* by the declared type on its declaration.
+/// Runs after the flow-cache and annotation roots, so a local's inferred type
+/// still wins; this catches values whose type lives on the declaration rather
+/// than at the use site.
+///
+/// Binds the root to its SPECIFIC in-scope declaration first: a local/field is
+/// declared in an enclosing scope, so `{scope}.{name}` — derived from the use
+/// site's owning symbol, innermost out — names the exact declaration whose type
+/// to read, not a same-named value elsewhere in the project. `source_qname` is
+/// the symbol owning the reference, so its own qname is the innermost scope (the
+/// declaration is its child). Only when no in-scope binding exists do we fall
+/// back to the first same-named value anywhere (an imported / ambient / top-level
+/// value with no enclosing-scope qname relative to the use site).
+fn value_root_type(
+    lookup: &dyn SymbolLookup,
+    name: &str,
+    source_qname: &str,
+) -> Option<TypeSymbol> {
+    let mut scope = source_qname;
+    loop {
+        let qn = if scope.is_empty() {
+            name.to_string()
+        } else {
+            format!("{scope}.{name}")
+        };
+        if lookup
+            .by_qualified_name(&qn)
+            .is_some_and(|s| is_value_kind(&s.kind))
+        {
+            if let Some(ty) = lookup.field_type_str(&qn) {
+                return Some(TypeSymbol::parse(&ty));
+            }
+        }
+        if scope.is_empty() {
+            break;
+        }
+        scope = match scope.rfind('.') {
+            Some(i) => &scope[..i],
+            None => "",
+        };
+    }
     for cand in lookup.by_name(name) {
         if is_value_kind(&cand.kind) {
             if let Some(ty) = lookup.field_type_str(&cand.qualified_name) {

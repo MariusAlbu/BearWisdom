@@ -294,3 +294,27 @@ fn roots_declared_annotation_with_split_type_args() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
 }
+
+#[test]
+fn root_binds_in_scope_var_over_same_named_value_elsewhere() {
+    // Two `x` locals in different scopes: HostA.x: FooA (has `m`), HostB.x: FooB
+    // (no `m`). The root must bind to the use site's in-scope declaration, not
+    // the first same-named value in the by-name index. Mirrors the `devtools` /
+    // `client` / `result` collisions across a monorepo.
+    let lookup = Lookup::new()
+        .with(sym(1, "x", "HostA.x", "variable", "a.ts"))
+        .with(sym(2, "x", "HostB.x", "variable", "a.ts"))
+        .with_field_type("HostA.x", "FooA")
+        .with_field_type("HostB.x", "FooB")
+        .with_member("FooA", sym(10, "m", "FooA.m", "method", "a.ts"));
+    let segs = || {
+        vec![
+            seg("x", false, SegmentKind::Identifier),
+            seg("m", true, SegmentKind::Property),
+        ]
+    };
+    // From HostA: x is HostA.x -> FooA -> FooA.m.
+    assert_eq!(resolve(&lookup, segs(), "HostA"), Some(10));
+    // From HostB: x is HostB.x -> FooB, which has no `m` -> unresolved (NOT FooA.m).
+    assert_eq!(resolve(&lookup, segs(), "HostB"), None);
+}
