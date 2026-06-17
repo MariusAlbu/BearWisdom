@@ -954,6 +954,12 @@ pub struct FlowMeta {
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
     pub flow_return_lhs: HashMap<usize, usize>,
+    /// `(fn_symbol_idx, identifier)` for a `return <bare-identifier>` whose
+    /// expression carries no ref — `return queryClient` / `return client`. The
+    /// ref-based `flow_return_lhs` misses these (a bare param/local read emits no
+    /// ref), so the resolver types the identifier against the function's
+    /// parameters / locals and records the result as a return-type candidate.
+    pub flow_return_ident: Vec<(usize, String)>,
     pub ref_byte_offsets: Vec<u32>,
     /// Per-function control-flow graphs for the file, built at extract time
     /// from the same tree the query runner uses. Empty when the language has

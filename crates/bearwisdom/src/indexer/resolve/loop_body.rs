@@ -1022,6 +1022,39 @@ fn resolve_iteration_body(
                 }
             }
 
+            // Harvest bare-identifier return-type candidates the ref loop missed:
+            // `return queryClient` / `return client` carry no ref (a param/local
+            // read is not a cross-symbol reference), so `flow_return_lhs` never
+            // saw them. Type the returned identifier against the function's
+            // PARAMETERS — a typed param is emitted as a Property scoped to the
+            // function, so its declared type lives in `field_type`. This is what
+            // lets an arrow-const hook like `useQueryClient(qc?: QueryClient)
+            // => { …; return qc }` infer `QueryClient`. (Typed locals are left
+            // to a later pass; a single agreeing param candidate already infers.)
+            for (fn_idx, ident) in &pf.flow.flow_return_ident {
+                let Some(fn_sym) = pf.symbols.get(*fn_idx) else {
+                    continue;
+                };
+                if fn_sym.return_type.is_some()
+                    || index.return_type_name(&fn_sym.qualified_name).is_some()
+                {
+                    continue;
+                }
+                let Some(fn_db_id) = file_symbol_ids.get(*fn_idx).and_then(|id| *id) else {
+                    continue;
+                };
+                let param_qname = format!("{}.{}", fn_sym.qualified_name, ident);
+                if let Some(ty) = index.field_type_str(&param_qname) {
+                    let is_generic_param = index
+                        .generic_params(&fn_sym.qualified_name)
+                        .map_or(false, |g| g.iter().any(|p| p == &ty));
+                    if !ty.is_empty() && !ty.eq_ignore_ascii_case("unknown") && !is_generic_param {
+                        buf.inferred_returns
+                            .push((fn_sym.qualified_name.clone(), fn_db_id, ty));
+                    }
+                }
+            }
+
             // R5: wipe the local-type cache so bindings from this file don't
             // leak into the next file processed on the same rayon worker.
             // (TLS cache survives across rayon tasks on the same worker

@@ -577,6 +577,21 @@ fn attribute_return_expr(
         .map(|(i, _)| i);
     if let Some(ref_idx) = ref_idx {
         meta.flow_return_lhs.insert(ref_idx, fn_idx);
+        return;
+    }
+    // No ref inside the return expression. A bare identifier return
+    // (`return queryClient` / `return client`) carries no ref — a local/param
+    // read isn't a cross-symbol reference — so the ref-based path above misses
+    // it. Record `(fn, identifier)` so the resolver can type the identifier
+    // against the function's parameters / typed locals and harvest that as a
+    // return-type candidate. Only a single bare identifier qualifies; a
+    // compound expression with no ref carries no nameable type here.
+    if expr.kind() == "identifier" {
+        if let Ok(ident) = expr.utf8_text(src) {
+            if !ident.is_empty() {
+                meta.flow_return_ident.push((fn_idx, ident.to_string()));
+            }
+        }
     }
 }
 

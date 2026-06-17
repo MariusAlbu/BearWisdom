@@ -196,6 +196,28 @@ fn flow_return_binds_call_to_function() {
 }
 
 #[test]
+fn flow_return_bare_identifier_records_ident() {
+    // function f(x) { return x; }  — `x` is a bare param read, no ref. The
+    // ref-based flow_return_lhs misses it; flow_return_ident records (fn, "x")
+    // so the resolver types x against f's parameters and harvests its return.
+    let source = "function f(x) {\n  return x;\n}\n";
+    let symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert!(
+        meta.flow_return_lhs.is_empty(),
+        "a bare identifier return carries no ref"
+    );
+    assert_eq!(
+        meta.flow_return_ident,
+        vec![(0usize, "x".to_string())],
+        "bare identifier return should record (fn_idx, ident)"
+    );
+}
+
+#[test]
 fn flow_return_ignores_nested_callback_return() {
     // function f() { items.forEach(x => { return g(); }); }
     // The inner arrow's `return g()` is NOT a direct child of f's body block,
