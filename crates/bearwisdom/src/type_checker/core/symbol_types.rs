@@ -179,7 +179,21 @@ impl SymbolTypeMap {
         let map = self;
         for pf in parsed {
             let is_external = pf.path.starts_with("ext:");
+            // Documentation files (Markdown API references) contribute no real
+            // code API to the type reverse-index that the code chain-root
+            // resolver consults — both their fenced code (examples) and their
+            // native heading symbols (`# Function: useQueryClient()` → a
+            // `useQueryClient` symbol) would shadow the real function. Doc-to-doc
+            // link resolution uses the markdown resolver, not this index, so
+            // excluding the whole doc file here is safe.
+            let is_doc = pf.language == "markdown";
             for (idx, sym) in pf.symbols.iter().enumerate() {
+                // Plus doc-fence / doctest symbols spliced into a code file
+                // (Rust doctests, Python `>>>` blocks), flagged per-symbol.
+                let from_snippet = pf.symbol_from_snippet.get(idx).copied().unwrap_or(false);
+                if is_doc || from_snippet {
+                    continue;
+                }
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };

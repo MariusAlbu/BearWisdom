@@ -94,7 +94,18 @@ impl SymbolIndex {
             // allocation instead of cloning an independent String per symbol.
             let file_path: Arc<str> = Arc::from(pf.path.as_str());
 
-            for sym in &pf.symbols {
+            for (sym_i, sym) in pf.symbols.iter().enumerate() {
+                // Doc-fence / doctest symbols (a ```ts fence in a Markdown API
+                // reference, a Rust doctest, a Python `>>>` block) are examples,
+                // not the real API — exclude them from the resolution index, else
+                // a code ref to `useQueryClient` binds to the doc fence that
+                // shadows the real function. Markdown-NATIVE symbols (headings,
+                // link targets) are not from_snippet, so doc link resolution is
+                // unaffected; the symbols also stay in the DB for search.
+                let from_snippet = pf.symbol_from_snippet.get(sym_i).copied().unwrap_or(false);
+                if from_snippet {
+                    continue;
+                }
                 let Some(&id) = symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
                 else {
                     continue;
