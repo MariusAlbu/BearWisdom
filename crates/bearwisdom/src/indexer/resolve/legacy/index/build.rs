@@ -38,6 +38,41 @@ use super::{
 };
 use crate::indexer::resolve::legacy::{ImportEntry, SymbolInfo, TypeInfo};
 
+/// Choose the best inheritance parent among same-named candidates. Ranking,
+/// most significant first:
+///   1. the candidate under the import's module — a base imported from a package
+///      binds that package's symbol (its external path carries the package as a
+///      directory segment, `ext:ts:preact/...`), the same evidence the
+///      resolution ladder binds the inherits edge by;
+///   2. a real type over a same-named value/function — only a type can be a base;
+///   3. closest namespace — an empty-vs-empty namespace scores 0 so a top-level
+///      local can't phantom-match over a namespaced base class.
+///
+/// Returns `None` for an empty candidate set.
+pub(crate) fn best_inherits_parent<'a>(
+    candidates: impl IntoIterator<Item = &'a SymbolInfo>,
+    child_ns: &str,
+    import_module: Option<&str>,
+) -> Option<&'a SymbolInfo> {
+    let needles = import_module.map(|m| (format!("/{m}/"), format!(":{m}/")));
+    candidates.into_iter().max_by_key(|c| {
+        let cns = c
+            .qualified_name
+            .rfind('.')
+            .map(|i| &c.qualified_name[..i])
+            .unwrap_or("");
+        let import_match = needles
+            .as_ref()
+            .is_some_and(|(a, b)| c.file_path.contains(a.as_str()) || c.file_path.contains(b.as_str()));
+        let ns = if child_ns.is_empty() || cns.is_empty() {
+            0
+        } else {
+            common_prefix_len(child_ns, cns)
+        };
+        (import_match, is_type_like_kind(&c.kind), ns)
+    })
+}
+
 impl SymbolIndex {
     /// Build the index from parsed files and the symbol-to-ID mapping.
     /// Creates a fresh workspace TypeArena. Use
@@ -726,31 +761,20 @@ impl SymbolIndex {
                     .get(parent_simple)
                     .map(|v| v.as_slice())
                     .unwrap_or(&[]);
-                if candidates.is_empty() {
-                    continue;
-                }
-                // Pick the candidate whose namespace best matches the child's namespace.
-                // "Best" = longest common dotted prefix.
+                // The base imported from a package binds that package's symbol —
+                // the same evidence the resolution ladder binds the inherits edge by.
+                let import_module = pf
+                    .refs
+                    .iter()
+                    .find(|ir| ir.module.is_some() && ir.target_name == parent_simple)
+                    .and_then(|ir| ir.module.as_deref());
                 let child_ns = child_qname
                     .rfind('.')
                     .map(|i| &child_qname[..i])
                     .unwrap_or("");
-                let best = if candidates.len() == 1 {
-                    &candidates[0]
-                } else {
-                    candidates
-                        .iter()
-                        .max_by_key(|c| {
-                            let cns = c
-                                .qualified_name
-                                .rfind('.')
-                                .map(|i| &c.qualified_name[..i])
-                                .unwrap_or("");
-                            common_prefix_len(child_ns, cns)
-                        })
-                        .unwrap_or(&candidates[0])
-                };
-                inherits_by_id.insert(child_id, best.id);
+                if let Some(best) = best_inherits_parent(candidates.iter(), child_ns, import_module) {
+                    inherits_by_id.insert(child_id, best.id);
+                }
             }
         }
 

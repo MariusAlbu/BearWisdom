@@ -54,7 +54,8 @@ const TS_KIND_TABLE: KindTable = &[
     // TypeRef carries the TS import-binding ref (the extractor emits every
     // `import { X } from '...'` as a TypeRef regardless of X's actual kind),
     // so a function / variable / namespace import must bind here alongside the
-    // type kinds.
+    // type kinds. The extractor emits `namespace X {}` / `declare namespace X`
+    // as `Module`, so a namespace root (`Reflect.set`, `React.FC`) binds here.
     (
         EdgeKind::TypeRef,
         &[
@@ -66,6 +67,7 @@ const TS_KIND_TABLE: KindTable = &[
             SymbolKind::Function,
             SymbolKind::Variable,
             SymbolKind::Namespace,
+            SymbolKind::Module,
         ],
     ),
     (

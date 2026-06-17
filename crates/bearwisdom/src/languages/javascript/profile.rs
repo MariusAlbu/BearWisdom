@@ -22,7 +22,9 @@ const JS_KIND_TABLE: KindTable = &[
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class]),
-    (EdgeKind::TypeRef, &[SymbolKind::Class]),
+    // A namespace root used in value position (`Reflect.set`) binds here; the
+    // extractor emits namespaces as `Module`.
+    (EdgeKind::TypeRef, &[SymbolKind::Class, SymbolKind::Module]),
     (EdgeKind::Instantiates, &[SymbolKind::Class]),
 ];
 

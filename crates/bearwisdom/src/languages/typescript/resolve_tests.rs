@@ -8230,3 +8230,309 @@ fn decorator_websocket_gateway_emits_ws_consumer_with_class_name() {
         other => panic!("Expected WebSocket Consumer, got {other:?}"),
     }
 }
+
+#[test]
+fn type_ref_resolves_to_module_kind_namespace_root() {
+    // `Reflect.set(...)` roots on `Reflect`, a value namespace the TS lib emits
+    // as a `module`-kind symbol (from `declare namespace Reflect`). The bare
+    // type_ref to the namespace root must accept `module` to resolve.
+    let file = make_ts_file(
+        "src/app.ts",
+        vec![
+            make_symbol(
+                "consume",
+                "consume",
+                SymbolKind::Function,
+                Visibility::Public,
+                None,
+            ),
+            make_symbol(
+                "Reflect",
+                "Reflect",
+                SymbolKind::Module,
+                Visibility::Public,
+                None,
+            ),
+        ],
+        vec![make_ref(0, "Reflect", EdgeKind::TypeRef, 2)],
+    );
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let file_ctx = build_file_context(&file, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[0],
+        source_symbol: &file.symbols[0],
+        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("type_ref to a module-kind namespace should resolve");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("src/app.ts".to_string(), "Reflect".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn inherits_prefers_type_like_base_over_same_named_function() {
+    // `by_name["Base"]` holds both the real `class Base` and a colliding local
+    // `function Base` helper. With the function inserted LAST and both scoring an
+    // equal namespace-prefix match, the supertype lookup must still bind the
+    // class — a function can never be a supertype — so `extends Base` climbs into
+    // the class's members rather than dead-ending on the helper.
+    let sub = make_ts_file(
+        "src/sub.ts",
+        vec![make_symbol(
+            "Sub",
+            "Sub",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_ref(0, "Base", EdgeKind::Inherits, 1)],
+    );
+    let lib = make_ts_file(
+        "src/lib.ts",
+        vec![
+            make_symbol(
+                "Base",
+                "lib.Base",
+                SymbolKind::Class,
+                Visibility::Public,
+                None,
+            ),
+            make_symbol(
+                "Base",
+                "Base",
+                SymbolKind::Function,
+                Visibility::Public,
+                None,
+            ),
+        ],
+        vec![],
+    );
+
+    let (index, _) = build_test_env(&[&sub, &lib]);
+    assert_eq!(index.parent_class_qname("Sub"), Some("lib.Base"));
+}
+
+#[test]
+fn inherits_prefers_imported_package_base_over_same_named_local() {
+    // `class Sub extends Base` where `Base` is imported from a package must bind
+    // the package's class, not a same-named top-level local. Both are real
+    // classes (the kind tie-break can't separate them) and the child is
+    // namespace-less (so the local would otherwise win the proximity tie), so
+    // only the import disambiguates — the same binding the inherits edge uses.
+    let sub = make_ts_file(
+        "src/sub.ts",
+        vec![make_symbol(
+            "Sub",
+            "Sub",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![
+            make_import_ref(0, "Base", "preact", 1),
+            make_ref(0, "Base", EdgeKind::Inherits, 2),
+        ],
+    );
+    let local = make_ts_file(
+        "src/local.ts",
+        vec![make_symbol(
+            "Base",
+            "Base",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let pkg = make_ts_file(
+        "ext:ts:preact/src/index.d.ts",
+        vec![make_symbol(
+            "Base",
+            "preact.Base",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    let (index, _) = build_test_env(&[&sub, &local, &pkg]);
+    assert_eq!(index.parent_class_qname("Sub"), Some("preact.Base"));
+}
+
+#[test]
+fn inherits_import_match_survives_many_same_named_decoys() {
+    // Mirrors a framework base class: `class ErrorBoundary extends Component`
+    // with `Component` imported from a package, against a crowd of same-named
+    // local helpers and other packages' `Component`. The import binding must
+    // pin the right package's class.
+    let import_binding = ExtractedRef {
+        is_import_binding: true,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "Component".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 1,
+        col: 0,
+        module: Some("preact".to_string()),
+        chain: None,
+        byte_offset: 1,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let sub = make_ts_file(
+        "src/ErrorBoundary.ts",
+        vec![make_symbol(
+            "ErrorBoundary",
+            "ErrorBoundary",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![
+            import_binding,
+            make_ref(
+                0,
+                "Component<ErrorBoundaryProps, ErrorBoundaryState>",
+                EdgeKind::Inherits,
+                2,
+            ),
+        ],
+    );
+    let decoys = make_ts_file(
+        "src/decoys.ts",
+        vec![
+            make_symbol("Component", "Component", SymbolKind::Function, Visibility::Public, None),
+            make_symbol("Component", "Component", SymbolKind::Class, Visibility::Public, None),
+        ],
+        vec![],
+    );
+    let react = make_ts_file(
+        "ext:ts:@types/react/index.d.ts",
+        vec![make_symbol("Component", "@types/react.React.Component", SymbolKind::Class, Visibility::Public, None)],
+        vec![],
+    );
+    let preact = make_ts_file(
+        "ext:ts:preact/src/index.d.ts",
+        vec![make_symbol("Component", "preact.Component", SymbolKind::Class, Visibility::Public, None)],
+        vec![],
+    );
+    let (index, _) = build_test_env(&[&sub, &decoys, &react, &preact]);
+    assert_eq!(index.parent_class_qname("ErrorBoundary"), Some("preact.Component"));
+}
+
+#[test]
+fn this_member_climbs_into_imported_external_base() {
+    // End-to-end: `class Sub extends Base` (Base imported from a package) and a
+    // `this.m()` call must climb the supertype into the external base's member.
+    let mut caller = make_symbol(
+        "caller",
+        "Sub.caller",
+        SymbolKind::Method,
+        Visibility::Public,
+        Some("Sub"),
+    );
+    caller.parent_index = Some(0);
+    let this_m = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 1,
+        target_name: "m".to_string(),
+        kind: EdgeKind::Calls,
+        line: 3,
+        col: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
+                ChainSegment {
+                    name: "m".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: true,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                },
+            ],
+        }),
+        byte_offset: 1,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let sub = make_ts_file(
+        "src/sub.ts",
+        vec![
+            make_symbol("Sub", "Sub", SymbolKind::Class, Visibility::Public, None),
+            caller,
+        ],
+        vec![
+            make_import_ref(0, "Base", "preact", 1),
+            make_ref(0, "Base", EdgeKind::Inherits, 1),
+            this_m,
+        ],
+    );
+    let mut base_m = make_symbol(
+        "m",
+        "preact.Base.m",
+        SymbolKind::Method,
+        Visibility::Public,
+        Some("preact.Base"),
+    );
+    base_m.parent_index = Some(0);
+    let pkg = make_ts_file(
+        "ext:ts:preact/src/index.d.ts",
+        vec![
+            make_symbol(
+                "Base",
+                "preact.Base",
+                SymbolKind::Class,
+                Visibility::Public,
+                None,
+            ),
+            base_m,
+        ],
+        vec![],
+    );
+
+    let (index, id_map) = build_test_env(&[&sub, &pkg]);
+    let file_ctx = build_file_context(&sub, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &sub.refs[2],
+        source_symbol: &sub.symbols[1],
+        scope_chain: build_scope_chain(sub.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let res = run_resolve(&file_ctx, &ref_ctx, &index)
+        .expect("this.m() must climb into the imported external base");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("ext:ts:preact/src/index.d.ts".to_string(), "preact.Base.m".to_string()))
+            .unwrap()
+    );
+}

@@ -189,7 +189,14 @@ pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         EdgeKind::Implements => matches!(sym_kind, "interface" | "type_alias"),
         EdgeKind::TypeRef => matches!(
             sym_kind,
-            "class" | "interface" | "enum" | "type_alias" | "function" | "variable" | "namespace"
+            "class"
+                | "interface"
+                | "enum"
+                | "type_alias"
+                | "function"
+                | "variable"
+                | "namespace"
+                | "module"
         ),
         EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
         _ => true,

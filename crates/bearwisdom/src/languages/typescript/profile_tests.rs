@@ -96,6 +96,9 @@ fn typeref_kind_table_accepts_type_and_import_binding_kinds() {
         SymbolKind::Function,
         SymbolKind::Variable,
         SymbolKind::Namespace,
+        // The extractor emits `namespace X {}` / `declare namespace X` as
+        // `Module`, so a namespace root (`Reflect.set`) binds through TypeRef.
+        SymbolKind::Module,
     ] {
         assert!(
             KindCompatibility::check(table, EdgeKind::TypeRef, kind),
