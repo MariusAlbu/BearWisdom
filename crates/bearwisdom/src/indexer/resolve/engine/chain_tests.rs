@@ -193,15 +193,16 @@ fn member_yield_type_reads_return_for_calls_and_field_otherwise() {
     let lookup = Lookup::new()
         .with_return_type("Repo.find", "User")
         .with_field_type("Repo.db", "Database");
+    let arena = lookup.type_arena().unwrap();
     assert_eq!(
-        member_yield_type(&lookup, "Repo.find", true).map(|t| t.qname),
+        member_yield_type(&lookup, arena, "Repo.find", true).map(|id| arena.format_type(id)),
         Some("User".to_string())
     );
     assert_eq!(
-        member_yield_type(&lookup, "Repo.db", false).map(|t| t.qname),
+        member_yield_type(&lookup, arena, "Repo.db", false).map(|id| arena.format_type(id)),
         Some("Database".to_string())
     );
-    assert_eq!(member_yield_type(&lookup, "Repo.unknown", true), None);
+    assert_eq!(member_yield_type(&lookup, arena, "Repo.unknown", true), None);
 }
 
 #[test]

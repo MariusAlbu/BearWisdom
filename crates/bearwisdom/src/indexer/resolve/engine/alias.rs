@@ -1,5 +1,5 @@
 // =============================================================================
-// engine/alias — type-alias expansion to a concrete TypeSymbol
+// engine/alias — type-alias expansion to a concrete TypeId
 //
 // A chain step rooted at, or yielding, a type alias must see THROUGH the alias
 // to its target before member lookup: `type UserMap = Map<string, User>` looked
@@ -11,10 +11,13 @@
 // type unchanged — a later step.
 // =============================================================================
 
+use rustc_hash::FxHashMap;
+
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::AliasTarget;
 
+use super::chain::{apply_args, head_qname};
 use super::contract::SymbolLookup;
-use super::type_symbol::TypeSymbol;
 
 /// Upper bound on alias-of-alias chaining; guards against a cyclic alias.
 const MAX_ALIAS_DEPTH: usize = 8;
@@ -24,10 +27,13 @@ const MAX_ALIAS_DEPTH: usize = 8;
 /// applied as `Box<User>` → `Container<User>`. Recurses through an alias of an
 /// alias, bounded. A type that is not a registered `Application` alias is
 /// returned unchanged.
-pub(crate) fn expand(mut ty: TypeSymbol, lookup: &dyn SymbolLookup) -> TypeSymbol {
+pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeArena) -> TypeId {
     for _ in 0..MAX_ALIAS_DEPTH {
+        let Some(head) = head_qname(arena, ty) else {
+            break;
+        };
         // Snapshot out of the lookup borrow so `ty` can be reassigned below.
-        let snapshot = match lookup.alias_target(&ty.qname) {
+        let snapshot = match lookup.alias_target(&head) {
             Some(AliasTarget::Application { root, args }) => Some((root.clone(), args.clone())),
             _ => None,
         };
@@ -35,14 +41,26 @@ pub(crate) fn expand(mut ty: TypeSymbol, lookup: &dyn SymbolLookup) -> TypeSymbo
             break;
         };
         let params = lookup
-            .generic_params(&ty.qname)
+            .generic_params(&head)
             .map(|p| p.to_vec())
             .unwrap_or_default();
-        let target = TypeSymbol {
-            qname: root,
-            type_args: args.iter().map(|a| TypeSymbol::parse(a)).collect(),
+        // The alias target as a TypeId: `root<args…>`.
+        let base = arena.class(&root);
+        let target = if args.is_empty() {
+            base
+        } else {
+            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+            arena.intern(Type::Apply { base, args: arg_ids })
         };
-        ty = target.substitute(&params, &ty.type_args);
+        // Substitute the alias's own generic params with the application's args.
+        let ty_args = apply_args(arena, ty);
+        ty = if params.is_empty() || ty_args.is_empty() {
+            target
+        } else {
+            let map: FxHashMap<String, TypeId> =
+                params.into_iter().zip(ty_args).collect();
+            arena.rebind_class_params(target, &map)
+        };
     }
     ty
 }

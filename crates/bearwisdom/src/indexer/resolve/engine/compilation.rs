@@ -19,7 +19,7 @@ use crate::indexer::resolve::engine::contract::{
     SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::type_checker::core::types::{TypeArena, TypeId};
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile, SymbolKind};
 
 // ---------------------------------------------------------------------------
@@ -467,13 +467,15 @@ impl Compilation {
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
+                            let arg_strs: Vec<String> = if type_refs.len() > 1 {
+                                type_refs[1..].iter().map(|s| s.to_string()).collect()
+                            } else {
+                                Vec::new()
+                            };
+                            ti.field_type_id =
+                                Some(intern_head_and_args(&self.arena, &resolved, &arg_strs));
                             ti.field_type = Some(resolved);
-                            if type_refs.len() > 1 {
-                                ti.type_args = type_refs[1..]
-                                    .iter()
-                                    .map(|s| s.to_string())
-                                    .collect();
-                            }
+                            ti.type_args = arg_strs;
                         } else if is_jvm_language(&pf.language) {
                             if let Some(decoded) = sym
                                 .signature
@@ -485,6 +487,7 @@ impl Compilation {
                                     sym.scope_path.as_deref(),
                                     &self.by_qname,
                                 );
+                                ti.field_type_id = Some(self.arena.class(&resolved));
                                 ti.field_type = Some(resolved);
                             }
                         }
@@ -494,6 +497,7 @@ impl Compilation {
                     if let Some(&first) = type_refs.first() {
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                         if ti.field_type.is_none() {
+                            ti.field_type_id = Some(self.arena.intern_type_str(first));
                             ti.field_type = Some(first.to_string());
                         }
                     }
@@ -546,6 +550,8 @@ impl Compilation {
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
+                            ti.return_type_id =
+                                Some(intern_head_and_args(&self.arena, &resolved, &args));
                             ti.return_type = Some(resolved);
                             ti.return_type_args = args;
                         } else if let Some(&last) = type_refs.last() {
@@ -554,6 +560,7 @@ impl Compilation {
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
+                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
                             ti.return_type = Some(resolved);
                         } else if let Some(rt) = &sig_rt {
                             let resolved = resolve_type_name_in_scope(
@@ -561,6 +568,7 @@ impl Compilation {
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
+                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
                             ti.return_type = Some(resolved);
                         }
                     }
@@ -569,6 +577,7 @@ impl Compilation {
                     // Constructor call yields the class itself.
                     let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                     if ti.return_type.is_none() {
+                        ti.return_type_id = Some(self.arena.class(&sym.qualified_name));
                         ti.return_type = Some(sym.qualified_name.clone());
                     }
                 }
@@ -814,6 +823,20 @@ impl SymbolLookup for Compilation {
                 .map(|v| v.as_slice())
                 .unwrap_or(&self.empty),
         )
+    }
+}
+
+/// Intern a head qname plus its (string) generic arguments into a single
+/// canonical TypeId: a bare `Class(head)` when there are no args, else
+/// `Apply { Class(head), [args…] }`. The chain walker reads this id directly, so
+/// a ref-derived field/return type needs no per-hop string re-parse.
+fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeId {
+    let base = arena.class(head);
+    if args.is_empty() {
+        base
+    } else {
+        let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+        arena.intern(Type::Apply { base, args: arg_ids })
     }
 }
 

@@ -263,6 +263,23 @@ impl TypeArena {
             };
             return self.intern(Type::Function { params, return_ });
         }
+        // `readonly T[]` — the modifier doesn't change the array shape; strip it
+        // so the suffix and the bare form converge.
+        let trimmed = trimmed.strip_prefix("readonly ").map(str::trim).unwrap_or(trimmed);
+        // `T[]` array suffix → the lib `Array<T>` so member calls (map / push /
+        // …) root on the Array type. Checked before the generic-bracket search
+        // so `User[]` becomes `Apply(Array, [User])` rather than collapsing to
+        // the bare head (an empty `[]` group). A repeated suffix nests (`T[][]` →
+        // `Array<Array<T>>`); a bare `[]` or a tuple (`[A, B]`) has no single
+        // element and falls through to the bracket parse below.
+        if let Some(elem) = trimmed.strip_suffix("[]") {
+            let elem = elem.trim();
+            if !elem.is_empty() {
+                let inner = self.intern_type_str(elem);
+                let base = self.class("Array");
+                return self.intern(Type::Apply { base, args: vec![inner] });
+            }
+        }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
         let (open_idx, open_char, close_char) = {

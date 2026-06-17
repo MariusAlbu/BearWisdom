@@ -14,6 +14,7 @@ use rustc_hash::FxHashMap;
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet,
 };
+use crate::type_checker::core::types::TypeArena;
 use crate::types::{AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 /// Synthetic symbol index. Register symbols with `with`, members with
@@ -33,6 +34,9 @@ pub(crate) struct Lookup {
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
     ambient: FxHashMap<String, Vec<Symbol>>,
+    /// Workspace arena the chain walker interns roots / yields into. Mirrors the
+    /// real `Compilation`, which owns one; the chain walk declines without it.
+    arena: TypeArena,
 }
 
 impl Lookup {
@@ -52,6 +56,7 @@ impl Lookup {
             enclosing: Default::default(),
             aliases: Default::default(),
             ambient: Default::default(),
+            arena: TypeArena::new(),
         }
     }
 
@@ -221,6 +226,9 @@ impl SymbolLookup for Lookup {
     }
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.ambient.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty))
+    }
+    fn type_arena(&self) -> Option<&TypeArena> {
+        Some(&self.arena)
     }
 }
 
