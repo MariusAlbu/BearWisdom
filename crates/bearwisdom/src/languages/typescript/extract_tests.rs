@@ -25,6 +25,30 @@ fn mapped_type_key_binder_not_leaked_across_multiline_body() {
 }
 
 #[test]
+fn arrow_const_params_emitted_as_scoped_symbols() {
+    // `const useQueryClient = (queryClient?: QueryClient) => …` — the arrow's
+    // params must be emitted as Property symbols qualified under the function
+    // (`useQueryClient.queryClient`) with a TypeRef to their type, the same as a
+    // `function` declaration. Without this, chain resolution and return
+    // inference inside the arrow body have no typed receiver to root on.
+    let src = "export const useQueryClient = (queryClient?: QueryClient) => { return queryClient }";
+    let s = sym(src);
+    let param = s
+        .iter()
+        .find(|s| s.name == "queryClient" && s.kind == SymbolKind::Property);
+    assert!(
+        param.is_some_and(|p| p.qualified_name == "useQueryClient.queryClient"),
+        "arrow-const param should be `useQueryClient.queryClient`: {s:?}"
+    );
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "QueryClient"),
+        "arrow-const param type should emit a TypeRef: {r:?}"
+    );
+}
+
+#[test]
 fn extraction_satisfies_canonical_form_contract() {
     let src = r#"
 import { Kysely } from 'kysely';

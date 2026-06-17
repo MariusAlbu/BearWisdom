@@ -4,7 +4,10 @@ use super::symbols_casts::{
     extract_type_ref_from_as_expression, extract_type_ref_from_satisfies_expression,
     extract_type_ref_from_type_assertion,
 };
-use super::types::extract_type_ref_from_annotation;
+use super::types::{
+    extract_param_and_return_types, extract_type_ref_from_annotation,
+    extract_typed_params_as_symbols,
+};
 use crate::parser::scope_tree;
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, SegmentKind, SymbolKind,
@@ -63,6 +66,39 @@ pub(super) fn push_variable_decl(
                         param_types: Vec::new(),
                         generic_params: Vec::new(),
                     });
+
+                    // Arrow-const / function-expression initializer (`const f =
+                    // (x: T) => …`): extract its parameters as scoped symbols so
+                    // `f.x` carries a field_type for chain resolution and
+                    // return inference, and emit its param/return TypeRefs — the
+                    // same treatment a `function` declaration gets.
+                    if matches!(
+                        init_kind.as_deref(),
+                        Some("arrow_function" | "function_expression")
+                    ) {
+                        if let Some(init) = child.child_by_field_name("value") {
+                            let fn_qname = symbols[idx].qualified_name.clone();
+                            let params_start = symbols.len();
+                            extract_typed_params_as_symbols(
+                                &init,
+                                src,
+                                scope_tree,
+                                symbols,
+                                refs,
+                                Some(idx),
+                            );
+                            // The scope tree doesn't register the arrow's scope, so
+                            // the params qualify bare (`queryClient`) instead of
+                            // under the function (`useQueryClient.queryClient`).
+                            // field_type keys on the qualified name, so re-qualify
+                            // the just-added params under the function name — the
+                            // same shape a `function` declaration's params get.
+                            for p in symbols.iter_mut().skip(params_start) {
+                                p.qualified_name = format!("{}.{}", fn_qname, p.name);
+                            }
+                            extract_param_and_return_types(&init, src, idx, refs);
+                        }
+                    }
 
                     // Extract TypeRef from variable type annotation: `const repo: Repository`
                     if let Some(type_ann) = child.child_by_field_name("type") {
