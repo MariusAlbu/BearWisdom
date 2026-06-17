@@ -544,6 +544,21 @@ CREATE TABLE IF NOT EXISTS symbol_locations (
 );
 CREATE INDEX IF NOT EXISTS idx_symloc_file ON symbol_locations(file_id);
 
+-- Per-symbol resolved type metadata, persisted so an incremental resolve can
+-- load EXACT type info for unchanged symbols — the full ref+signature
+-- derivation the full pass computed, not the lossy signature-only re-derivation.
+-- TypeIds are per-build arena indices and are never persisted; the strings here
+-- are re-interned into the fresh build's TypeArena on load. `type_args` /
+-- `return_type_args` / `generic_params` are JSON string arrays.
+CREATE TABLE IF NOT EXISTS symbol_type_info (
+    symbol_id        INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
+    field_type       TEXT,
+    return_type      TEXT,
+    type_args        TEXT,
+    return_type_args TEXT,
+    generic_params   TEXT
+);
+
 -- ============================================================
 -- CODE GRAPH: EDGES
 -- ============================================================

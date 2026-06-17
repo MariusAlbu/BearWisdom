@@ -261,7 +261,73 @@ pub fn resolve_single_pass(
     stats.unresolved = unresolved.len() as u64;
 
     // Write: replace all three resolution tables atomically.
-    flush_to_db(db, &edges, &unresolved)?;
+    flush_to_db(db, &edges, &unresolved, true)?;
+    // Persist the resolved type metadata so an incremental pass can load it back
+    // exactly, instead of re-deriving a lossier version from signatures alone.
+    tree.persist_type_info(db.conn())
+        .context("Failed to persist symbol type info")?;
+
+    Ok(stats)
+}
+
+/// Incremental resolution for the rule-based engine — the complement of
+/// `resolve_single_pass`. Builds a `Compilation` from the changed files in
+/// `parsed`, loads the unchanged remainder (and the externals the last full
+/// index materialized) plus their persisted type metadata from the DB, resolves
+/// the changed files' refs, and INSERTS their edges / unresolved rows (the old
+/// rows were dropped upstream when the changed files' symbols were rewritten).
+///
+/// No on-disk externals walk runs here: externals don't change on a source edit,
+/// so they are read back from the DB via `ingest_from_db`.
+pub fn resolve_incremental_pass(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    arena: Arc<TypeArena>,
+) -> Result<ResolutionStats> {
+    let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(parsed);
+    let mut tree = Compilation::build_with_context(
+        parsed,
+        symbol_id_map,
+        Arc::clone(&arena),
+        project_ctx,
+        &ambient_qnames,
+    );
+
+    // Grow the tree with every other symbol in the index — unchanged internal
+    // files plus the externals a prior full index already materialized — and
+    // their persisted type metadata. The returned id map covers every DB symbol;
+    // fold it into the changed-files map so an affected file's source symbols
+    // (which live only in the DB) map to their ids during resolution.
+    let mut full_id_map = symbol_id_map.clone();
+    for (k, v) in tree.ingest_from_db(db.conn()) {
+        full_id_map.entry(k).or_insert(v);
+    }
+
+    let profiles = build_profiles();
+    let solver = SemanticModel::production();
+
+    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>)> = parsed
+        .par_iter()
+        .filter(|pf| !pf.path.starts_with("ext:"))
+        .map(|pf| resolve_one_file(pf, &tree, &profiles, &solver, &full_id_map))
+        .collect();
+
+    let mut edges: Vec<Edge> = Vec::new();
+    let mut unresolved: Vec<Unresolved> = Vec::new();
+    for (e, u) in per_file {
+        edges.extend(e);
+        unresolved.extend(u);
+    }
+
+    let mut stats = ResolutionStats::default();
+    stats.resolved = edges.len() as u64;
+    stats.unresolved = unresolved.len() as u64;
+
+    // Insert-only: do NOT clear the tables — only the changed files' rows were
+    // dropped upstream; everything else must survive.
+    flush_to_db(db, &edges, &unresolved, false)?;
 
     Ok(stats)
 }
@@ -378,6 +444,7 @@ fn flush_to_db(
     db: &mut Database,
     edges: &[(i64, i64, &'static str, u32, f64, &'static str)],
     unresolved: &[(i64, String, &'static str, u32, Option<String>, Option<i64>, bool)],
+    clear_existing: bool,
 ) -> Result<()> {
     use rusqlite::types::Value;
 
@@ -386,12 +453,17 @@ fn flush_to_db(
         .unchecked_transaction()
         .context("Failed to begin single-pass resolution transaction")?;
 
-    tx.execute("DELETE FROM edges", [])
-        .context("Failed to clear edges")?;
-    tx.execute("DELETE FROM unresolved_refs", [])
-        .context("Failed to clear unresolved_refs")?;
-    tx.execute("DELETE FROM external_refs", [])
-        .context("Failed to clear external_refs")?;
+    // The full pass replaces all three tables; the incremental pass inserts only
+    // (the changed files' old rows were already dropped upstream when their
+    // symbols were rewritten, and the rest of the tables must survive).
+    if clear_existing {
+        tx.execute("DELETE FROM edges", [])
+            .context("Failed to clear edges")?;
+        tx.execute("DELETE FROM unresolved_refs", [])
+            .context("Failed to clear unresolved_refs")?;
+        tx.execute("DELETE FROM external_refs", [])
+            .context("Failed to clear external_refs")?;
+    }
 
     const EDGE_CHUNK: usize = 256;
     const UNRESOLVED_CHUNK: usize = 256;

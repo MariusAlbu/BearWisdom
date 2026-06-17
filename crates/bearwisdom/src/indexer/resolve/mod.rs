@@ -111,21 +111,24 @@ pub fn resolve_and_write(
     Ok(stats)
 }
 
-/// Incremental variant: augments the SymbolIndex with all symbols from DB
-/// so the engine resolver can find targets in unchanged files.
+/// Incremental variant: resolves the changed files through the engine, loading
+/// the unchanged remainder (and previously-materialized externals) from the DB
+/// via `Compilation::ingest_from_db`.
 pub fn resolve_and_write_incremental(
     db: &mut Database,
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
-    let stats = loop_body::resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, true)?;
+    let arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
+    let stats =
+        engine::pipeline::resolve_incremental_pass(db, parsed, symbol_id_map, project_ctx, arena)?;
     finalize_resolution(db)?;
     Ok(stats)
 }
 
-/// Same as `resolve_and_write_incremental` but threads a workspace
-/// `TypeArena` through to `SymbolIndex::build_with_context_and_arena`.
+/// Same as `resolve_and_write_incremental` but threads the workspace `TypeArena`
+/// the parse phase used, so extractor-set TypeIds align with the engine's.
 pub fn resolve_and_write_incremental_and_arena(
     db: &mut Database,
     parsed: &[ParsedFile],
@@ -133,12 +136,11 @@ pub fn resolve_and_write_incremental_and_arena(
     project_ctx: Option<&ProjectContext>,
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
 ) -> Result<ResolutionStats> {
-    let stats = loop_body::resolve_iteration_inner_with_arena(
+    let stats = engine::pipeline::resolve_incremental_pass(
         db,
         parsed,
         symbol_id_map,
         project_ctx,
-        true,
         type_arena,
     )?;
     finalize_resolution(db)?;

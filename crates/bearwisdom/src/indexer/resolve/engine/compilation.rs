@@ -826,6 +826,250 @@ impl SymbolLookup for Compilation {
     }
 }
 
+// ---------------------------------------------------------------------------
+// DB persistence — the incremental complement of build_with_context
+// ---------------------------------------------------------------------------
+
+impl Compilation {
+    /// Persist per-symbol resolved type metadata to `symbol_type_info`, so an
+    /// incremental pass loads back exactly the full pass's ref+signature-derived
+    /// type info for unchanged symbols (not the lossy signature-only
+    /// re-derivation). Replaces the table wholesale. Only entries that map to a
+    /// DB symbol id are written; the simple-name `generic_params` duplicate keys
+    /// are rebuilt from these rows on load.
+    pub(crate) fn persist_type_info(&self, conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM symbol_type_info", [])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO symbol_type_info \
+                 (symbol_id, field_type, return_type, type_args, return_type_args, generic_params) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            for (qname, ti) in &self.type_info {
+                let Some(sym) = self.by_qname.get(qname) else {
+                    continue;
+                };
+                if ti.field_type.is_none()
+                    && ti.return_type.is_none()
+                    && ti.type_args.is_empty()
+                    && ti.return_type_args.is_empty()
+                    && ti.generic_params.is_empty()
+                {
+                    continue;
+                }
+                stmt.execute(rusqlite::params![
+                    sym.id,
+                    ti.field_type.as_deref(),
+                    ti.return_type.as_deref(),
+                    json_string_array(&ti.type_args),
+                    json_string_array(&ti.return_type_args),
+                    json_string_array(&ti.generic_params),
+                ])?;
+            }
+        }
+        tx.commit()
+    }
+
+    /// Load every DB symbol — and its persisted type metadata — into the store,
+    /// skipping qnames already present from the freshly-parsed batch. The
+    /// incremental complement of `build_with_context`: changed files come from
+    /// `parsed`, the unchanged remainder (plus the externals the last full index
+    /// materialized) come from here, so cross-file chains into untouched code
+    /// still resolve. No on-disk externals walk runs on a save.
+    pub(crate) fn ingest_from_db(
+        &mut self,
+        conn: &rusqlite::Connection,
+    ) -> HashMap<(String, String), i64> {
+        // Complete `(path, qname) -> id` map over every DB symbol — the resolve
+        // loop maps each source symbol to its id through it, and an affected
+        // (re-resolved) file's source symbols are only in the DB, not the passed
+        // changed-files map.
+        let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+
+        // The freshly-parsed (changed) symbols, captured before DB symbols are
+        // folded in. Their type_info is authoritative from this parse, so a stale
+        // persisted row must NOT resurrect type info the edit removed.
+        let parsed_qnames: HashSet<String> = self.by_qname.keys().cloned().collect();
+
+        // 1) Symbols + structural indexes.
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.scope_path, \
+                    s.visibility, f.package_id, s.signature \
+             FROM symbols s JOIN files f ON f.id = s.file_id",
+        ) else {
+            return id_map;
+        };
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<i64>>(7)?,
+                r.get::<_, Option<String>>(8)?,
+            ))
+        }) else {
+            return id_map;
+        };
+        for (id, name, qname, kind, path, scope_path, visibility, package_id, signature) in
+            rows.flatten()
+        {
+            // Every DB symbol contributes to the id map, even ones the parsed
+            // batch already owns.
+            id_map.insert((path.clone(), qname.clone()), id);
+
+            // The freshly-parsed batch wins for the structural indexes.
+            if self.by_qname.contains_key(&qname) {
+                continue;
+            }
+            let file_arc: std::sync::Arc<str> = std::sync::Arc::from(path.as_str());
+            let info = Symbol {
+                id,
+                name: name.clone(),
+                qualified_name: qname.clone(),
+                kind: kind.clone(),
+                visibility,
+                file_path: std::sync::Arc::clone(&file_arc),
+                scope_path,
+                package_id,
+                signature,
+            };
+            self.by_name.entry(name.clone()).or_default().push(info.clone());
+            self.by_qname_all.entry(qname.clone()).or_default().push(info.clone());
+            self.by_qname.entry(qname.clone()).or_insert_with(|| info.clone());
+            self.by_file.entry(path).or_default().push(info.clone());
+            self.by_id.entry(id).or_insert_with(|| info.clone());
+            if let Some(pkg) = package_id {
+                self.by_package.entry(pkg).or_default().push(info.clone());
+            }
+            if is_type_like(&kind) {
+                self.types_by_name.entry(name).or_default().push(info.clone());
+            }
+            let parent_key = match qname.rfind('.') {
+                Some(dot) => qname[..dot].to_string(),
+                None => String::new(),
+            };
+            self.members_by_parent.entry(parent_key).or_default().push(info);
+        }
+
+        // 2) Persisted type_info, re-interned into this build's fresh arena.
+        if let Ok(mut ti_stmt) = conn.prepare(
+            "SELECT s.qualified_name, s.name, t.field_type, t.return_type, \
+                    t.type_args, t.return_type_args, t.generic_params \
+             FROM symbol_type_info t JOIN symbols s ON s.id = t.symbol_id",
+        ) {
+            if let Ok(ti_rows) = ti_stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                ))
+            }) {
+                for (qname, name, field_type, return_type, type_args_j, return_type_args_j, generic_params_j) in
+                    ti_rows.flatten()
+                {
+                    // A changed symbol's type_info is the fresh parse's, not the
+                    // last index's persisted (possibly stale) row.
+                    if parsed_qnames.contains(&qname) {
+                        continue;
+                    }
+                    let type_args = parse_json_string_array(type_args_j.as_deref());
+                    let return_type_args = parse_json_string_array(return_type_args_j.as_deref());
+                    let generic_params = parse_json_string_array(generic_params_j.as_deref());
+
+                    let ti = self.type_info.entry(qname.clone()).or_default();
+                    if ti.field_type.is_none() {
+                        if let Some(ft) = &field_type {
+                            ti.field_type_id = Some(self.arena.intern_type_str(ft));
+                            ti.field_type = Some(ft.clone());
+                        }
+                    }
+                    if ti.return_type.is_none() {
+                        if let Some(rt) = &return_type {
+                            ti.return_type_id = Some(self.arena.intern_type_str(rt));
+                            ti.return_type = Some(rt.clone());
+                        }
+                    }
+                    if ti.type_args.is_empty() {
+                        ti.type_args = type_args;
+                    }
+                    if ti.return_type_args.is_empty() {
+                        ti.return_type_args = return_type_args;
+                    }
+                    if ti.generic_params.is_empty() && !generic_params.is_empty() {
+                        ti.generic_params = generic_params.clone();
+                    }
+                    // Rebuild the simple-name generic_params key (the full pass
+                    // stores generic params under both the qname and the bare name).
+                    if !generic_params.is_empty() && name != qname {
+                        let sti = self.type_info.entry(name).or_default();
+                        if sti.generic_params.is_empty() {
+                            sti.generic_params = generic_params;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3) Inheritance from persisted edges. The changed files' edges were
+        //    cleared upstream before this pass, so the rows are the unchanged
+        //    remainder; the changed files' inherits come from `parsed`.
+        if let Ok(mut inh) = conn.prepare(
+            "SELECT src.qualified_name, tgt.qualified_name \
+             FROM edges e \
+             JOIN symbols src ON src.id = e.source_id \
+             JOIN symbols tgt ON tgt.id = e.target_id \
+             WHERE e.kind IN ('inherits', 'implements')",
+        ) {
+            if let Ok(inh_rows) =
+                inh.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            {
+                for (child, parent) in inh_rows.flatten() {
+                    let head = parent.split('<').next().unwrap_or(&parent).to_string();
+                    self.inherits.entry(child).or_insert(head);
+                }
+            }
+        }
+
+        // 4) Rebuild the id-keyed member index over the now-complete maps.
+        let mut members_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
+        for (parent_qname, members) in &self.members_by_parent {
+            if let Some(parent) = self.by_qname.get(parent_qname) {
+                members_by_id
+                    .entry(parent.id)
+                    .or_default()
+                    .extend(members.iter().map(|m| m.id));
+            }
+        }
+        self.members_by_id = members_by_id;
+
+        id_map
+    }
+}
+
+/// Serialize a string vec to a JSON array, or `None` (SQL NULL) when empty.
+fn json_string_array(items: &[String]) -> Option<String> {
+    if items.is_empty() {
+        None
+    } else {
+        serde_json::to_string(items).ok()
+    }
+}
+
+/// Parse a JSON string array back to a vec; empty on NULL or malformed input.
+fn parse_json_string_array(raw: Option<&str>) -> Vec<String> {
+    raw.and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+        .unwrap_or_default()
+}
+
 /// Intern a head qname plus its (string) generic arguments into a single
 /// canonical TypeId: a bare `Class(head)` when there are no args, else
 /// `Apply { Class(head), [args…] }`. The chain walker reads this id directly, so
