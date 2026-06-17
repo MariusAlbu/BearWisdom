@@ -80,6 +80,15 @@ pub struct Compilation {
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
     /// Direct-parent inheritance: child_qname → parent_qname (head, generics stripped).
     inherits: FxHashMap<String, String>,
+    /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → parent
+    /// symbol id — the id-keyed counterpart of `inherits`. Derived at the end of
+    /// `ingest` / `ingest_from_db` by resolving each `inherits` child qname to its
+    /// id and each parent head to a SPECIFIC parent symbol (a same-package
+    /// candidate winning over a same-named type in another package). Lets the
+    /// chain walker climb supertypes by identity, so an `extends Base` where the
+    /// `Base` qname is duplicated across packages binds inherited members from the
+    /// child's actual base, not the first-wins qname collision.
+    inherits_by_id: FxHashMap<i64, i64>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
     /// Nearest enclosing namespace/module ancestor: source_qname → enclosing_ns_qname.
@@ -169,6 +178,7 @@ impl Compilation {
             type_info: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
             inherits: FxHashMap::default(),
+            inherits_by_id: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
@@ -430,6 +440,56 @@ impl Compilation {
             }
         }
         self.members_by_id = members_by_id;
+
+        // Id-keyed inherits, derived from the now-complete `inherits` (child qname
+        // → parent head string) + `by_qname`. Each edge resolves to specific
+        // symbol ids so the chain walker climbs supertypes by identity.
+        self.rebuild_inherits_by_id();
+    }
+
+    /// Rebuild `inherits_by_id` from the string-keyed `inherits` map and the
+    /// fully-built symbol indexes. For each `child_qname → parent_head` edge,
+    /// resolve the child to its id via `by_qname` and the parent head to a
+    /// SPECIFIC parent symbol id, preferring a candidate in the child's own
+    /// workspace package over a same-named type elsewhere. Rebuilt in full (not
+    /// incrementally) because `ingest` / `ingest_from_db` each run over the
+    /// cumulative symbol set.
+    fn rebuild_inherits_by_id(&mut self) {
+        let mut inherits_by_id: FxHashMap<i64, i64> = FxHashMap::default();
+        for (child_qname, parent_head) in &self.inherits {
+            let Some(child) = self.by_qname.get(child_qname) else {
+                continue;
+            };
+            if let Some(parent_id) = self.resolve_parent_id(parent_head, child.package_id) {
+                inherits_by_id.insert(child.id, parent_id);
+            }
+        }
+        self.inherits_by_id = inherits_by_id;
+    }
+
+    /// Resolve a parent head (a qualified or simple name from an `extends` /
+    /// `implements` ref) to a specific parent symbol id. A type-like candidate in
+    /// the child's own workspace package wins first, so a base whose name is
+    /// shared across packages binds to the child's package's base rather than
+    /// whichever same-named type won the first-wins qname race. With no
+    /// same-package signal, an exact qname match is used, then the first type-like
+    /// same-name candidate anywhere.
+    fn resolve_parent_id(&self, parent_head: &str, child_package: Option<i64>) -> Option<i64> {
+        let simple = parent_head.rsplit('.').next().unwrap_or(parent_head);
+        let mut fallback: Option<i64> = None;
+        for cand in self.by_name(simple).iter() {
+            if !is_type_like(&cand.kind) {
+                continue;
+            }
+            if child_package.is_some() && cand.package_id == child_package {
+                return Some(cand.id);
+            }
+            fallback.get_or_insert(cand.id);
+        }
+        if let Some(parent) = self.by_qname.get(parent_head) {
+            return Some(parent.id);
+        }
+        fallback
     }
 
     /// Derive per-symbol type metadata from `TypeRef` refs and signature
@@ -781,6 +841,10 @@ impl SymbolLookup for Compilation {
         self.inherits.get(class_qname).map(|s| s.as_str())
     }
 
+    fn parent_class_id(&self, child_id: i64) -> Option<i64> {
+        self.inherits_by_id.get(&child_id).copied()
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing_type
             .get(source_qname)
@@ -1050,6 +1114,9 @@ impl Compilation {
             }
         }
         self.members_by_id = members_by_id;
+
+        // Id-keyed inherits over the now-complete maps (parsed batch + DB rows).
+        self.rebuild_inherits_by_id();
 
         id_map
     }

@@ -357,6 +357,17 @@ pub trait SymbolLookup {
         None
     }
 
+    /// The direct parent class's symbol id for a child symbol id — the id-keyed
+    /// counterpart of `parent_class_qname`. A chain walker that has typed a
+    /// receiver to a symbol id climbs its supertype chain by identity, so a
+    /// class extending a base whose qname is shared by an unrelated type in
+    /// another package climbs to the SPECIFIC base recorded for this child, not
+    /// whichever same-named type won a first-wins qname race. Default returns
+    /// `None`; the real store overrides it.
+    fn parent_class_id(&self, _child_id: i64) -> Option<i64> {
+        None
+    }
+
     /// The qualified name of the nearest type (class/struct/interface/trait/enum)
     /// that structurally encloses the symbol named `source_qname`, excluding the
     /// symbol itself — Roslyn's `ContainingType`.

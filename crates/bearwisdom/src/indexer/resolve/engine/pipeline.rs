@@ -81,6 +81,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.members_of(parent_qname)
     }
 
+    fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
+        self.tree.members_of_id(parent_id)
+    }
+
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         self.tree.types_by_name(name)
     }
@@ -151,6 +155,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.tree.parent_class_qname(class_qname)
+    }
+
+    fn parent_class_id(&self, child_id: i64) -> Option<i64> {
+        self.tree.parent_class_id(child_id)
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {

@@ -319,3 +319,56 @@ fn root_binds_in_scope_var_over_same_named_value_elsewhere() {
     // From HostB: x is HostB.x -> FooB, which has no `m` -> unresolved (NOT FooA.m).
     assert_eq!(resolve(&lookup, segs(), "HostB"), None);
 }
+
+// --- id-keyed member walk / inheritance climb (cross-package identity) -------
+
+/// Member lookup follows the receiver's SYMBOL ID, not its qname string. Two
+/// `Client` types in different packages share the qname `Client` but have
+/// distinct ids and distinct `query` methods. A chain rooted on package A's
+/// `Client` binds A's `query` (id 110); package B's binds B's (id 210) — even
+/// though `by_qname("Client")` first-wins to one of them. This is the
+/// member-walk half of the `devtools` cross-package collision.
+#[test]
+fn member_walk_keys_on_receiver_symbol_id_across_same_qname_types() {
+    // Package A's Client (id 100) with query (id 110); package B's Client
+    // (id 200) with query (id 210). Only A is registered under the qname index
+    // (first-wins), so a qname-string member lookup would always pick A.
+    let a_query = sym(110, "query", "Client.query", "method", "a.ts");
+    let b_query = sym(210, "query", "Client.query", "method", "b.ts");
+    let lookup = Lookup::new()
+        .with(sym(100, "ClientA", "ClientA", "class", "a.ts"))
+        .with(sym(200, "ClientB", "ClientB", "class", "b.ts"))
+        .with_member_id(100, a_query)
+        .with_member_id(200, b_query);
+
+    // Root on package A's class by name -> id 100 -> query id 110.
+    let segs_a = vec![
+        seg("ClientA", false, SegmentKind::TypeAccess),
+        seg("query", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs_a, "caller"), Some(110));
+
+    // Root on package B's class by name -> id 200 -> query id 210, NOT 110.
+    let segs_b = vec![
+        seg("ClientB", false, SegmentKind::TypeAccess),
+        seg("query", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs_b, "caller"), Some(210));
+}
+
+/// The supertype climb follows `parent_class_id`, not a parent qname string.
+/// Package A's `Repo` (id 100) extends `Base` id 7 (which has `save`); an
+/// unrelated `Base` in package B (id 8) has no `save`. `aRepo.save()` climbs to
+/// id 7 and binds its `save` — never B's same-named base.
+#[test]
+fn inheritance_climb_keys_on_parent_symbol_id() {
+    let lookup = Lookup::new()
+        .with(sym(100, "Repo", "Repo", "class", "a.ts"))
+        .with_parent_id(100, 7)
+        .with_member_id(7, sym(70, "save", "Base.save", "method", "a.ts"));
+    let segs = vec![
+        seg("Repo", false, SegmentKind::TypeAccess),
+        seg("save", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
+}

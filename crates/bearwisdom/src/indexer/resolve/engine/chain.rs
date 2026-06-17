@@ -48,23 +48,24 @@ pub fn bind_member_access(ref_ctx: &RefContext, lookup: &dyn SymbolLookup) -> Op
     // expose one; a lookup without an arena cannot type a chain.
     let arena = lookup.type_arena()?;
 
-    let mut current = alias::expand(
-        resolve_root(ref_ctx, lookup, arena, &chain.segments[0])?,
-        lookup,
-        arena,
-    );
+    // The receiver threads a TypeId AND the symbol id of the declaration that
+    // type names, when known. The id is the identity spine: a member step keys
+    // on `members_of_id` so two declarations sharing a qname string stay
+    // distinct, and the supertype climb is id-keyed. The id is `None` for a head
+    // with no indexed declaration (external/ambient/string-parsed), and the walk
+    // falls back to the qname-string member lookup there.
+    let root = resolve_root(ref_ctx, lookup, arena, &chain.segments[0])?;
+    let mut current = expand_receiver(root, lookup, arena);
     let last = chain.segments.len() - 1;
 
     for (i, seg) in chain.segments.iter().enumerate().skip(1) {
-        // The member index keys on the bare head type; a receiver typed
-        // `Repository<User>` looks up members under `Repository`.
-        let head = head_qname(arena, current)?;
-        let member = lookup_member(lookup, &head, &seg.name, &|_kind| true)?;
+        let member = lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true)?;
         if i == last {
             // The final member's yield type (with the receiver's type arguments
             // substituted) records x's type for `const x = a.b.c()` so a later
             // `x.method()` can root on it — forward inference compounds.
-            let resolved_yield_type = yield_through(lookup, arena, &member, seg.is_call, current);
+            let resolved_yield_type =
+                yield_through(lookup, arena, &member, seg.is_call, current.ty);
             return Some(SymbolInfo {
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
@@ -76,13 +77,73 @@ pub fn bind_member_access(ref_ctx: &RefContext, lookup: &dyn SymbolLookup) -> Op
         // Advance to the type this member yields, substituting the receiver's
         // type arguments for the declaring type's generic parameters, then
         // expand it through any type alias before the next member lookup.
-        current = alias::expand(
-            yield_through(lookup, arena, &member, seg.is_call, current)?,
-            lookup,
-            arena,
-        );
+        let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty)?;
+        current = expand_receiver(Receiver::untyped(yielded), lookup, arena);
     }
     None
+}
+
+/// A chain receiver: the type a segment evaluates to, plus the symbol id of the
+/// declaration that type names when one is indexed. The id is the identity spine
+/// of the walk — member lookup and the supertype climb key on it so two
+/// declarations sharing a qname string never collide.
+#[derive(Clone, Copy)]
+pub(crate) struct Receiver {
+    ty: TypeId,
+    id: Option<i64>,
+}
+
+impl Receiver {
+    /// A receiver whose declaration is known by id.
+    fn new(ty: TypeId, id: i64) -> Self {
+        Self { ty, id: Some(id) }
+    }
+
+    /// A receiver typed but not yet bound to a declaration id; the id is
+    /// recovered from the type's head when `expand_receiver` runs.
+    fn untyped(ty: TypeId) -> Self {
+        Self { ty, id: None }
+    }
+}
+
+/// Expand a receiver's type through any type alias, then re-derive its
+/// declaration id from the (possibly rewritten) head — an alias root resolves to
+/// a different declaration than the alias name, so the id is recomputed after
+/// expansion. Keeps an id the caller already established when the head qname is
+/// unchanged and no more specific declaration is found.
+fn expand_receiver(recv: Receiver, lookup: &dyn SymbolLookup, arena: &TypeArena) -> Receiver {
+    let ty = alias::expand(recv.ty, lookup, arena);
+    let id = head_symbol_id(arena, lookup, ty).or(recv.id);
+    Receiver { ty, id }
+}
+
+/// The symbol id of the declaration a type's nominal head names, resolved
+/// through `by_qualified_name`. `None` for a head with no indexed declaration
+/// (external/ambient/string-parsed) — the walk then falls back to qname-string
+/// member lookup.
+fn head_symbol_id(arena: &TypeArena, lookup: &dyn SymbolLookup, ty: TypeId) -> Option<i64> {
+    let head = head_qname(arena, ty)?;
+    lookup.by_qualified_name(&head).map(|s| s.id)
+}
+
+/// Find `member` on a receiver, preferring the identity path: when the receiver
+/// is bound to a declaration id, climb its supertypes by id via
+/// `lookup_member_by_id`; otherwise fall back to the qname-string climb. The
+/// id path is what keeps two same-qname receiver types apart.
+fn lookup_member_on(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    if let Some(id) = recv.id {
+        if let Some(m) = lookup_member_by_id(lookup, id, member, accept) {
+            return Some(m);
+        }
+    }
+    let head = head_qname(arena, recv.ty)?;
+    lookup_member(lookup, &head, member, accept)
 }
 
 /// Resolve `member` on `type_qname`, climbing its supertypes up to
@@ -103,6 +164,33 @@ pub(crate) fn lookup_member(
         }
         match lookup.parent_class_qname(&cur) {
             Some(parent) => cur = parent.to_string(),
+            None => break,
+        }
+    }
+    None
+}
+
+/// Resolve `member` on the declaration `type_id`, climbing its supertypes up to
+/// `MAX_SUPERTYPE_DEPTH` by SYMBOL ID. Both the member index (`members_of_id`)
+/// and the supertype climb (`parent_class_id`) key on identity, so a receiver
+/// whose qname is shared by an unrelated type in another package binds members
+/// only from THIS declaration and climbs only ITS recorded base — never a
+/// first-wins qname collision.
+pub(crate) fn lookup_member_by_id(
+    lookup: &dyn SymbolLookup,
+    type_id: i64,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    let mut cur = type_id;
+    for _ in 0..MAX_SUPERTYPE_DEPTH {
+        for m in lookup.members_of_id(cur) {
+            if m.name == member && accept(&m.kind) {
+                return Some(m.clone());
+            }
+        }
+        match lookup.parent_class_id(cur) {
+            Some(parent) => cur = parent,
             None => break,
         }
     }
@@ -209,26 +297,42 @@ fn substitute_through(
 ///   - an imported / typed value whose declaration carries a type,
 ///   - a bare type name used as a static-access / construction root.
 /// Each case interns its type expression into the arena once, here at the root.
+///
+/// Returns a `Receiver`: the root type plus, where a SPECIFIC declaration is in
+/// hand (the bare type name resolved through `types_by_name`, the enclosing type
+/// for `this`/`self`), that declaration's symbol id. Cases that produce a type
+/// EXPRESSION (a local's inferred type, a declared annotation, a value's field
+/// type, a callee return) leave the id unbound; `expand_receiver` recovers it
+/// from the type's head. The id is what keeps a same-named receiver type in one
+/// package distinct from another's during the member walk.
 fn resolve_root(
     ref_ctx: &RefContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
-) -> Option<TypeId> {
+) -> Option<Receiver> {
     if let Some(ty) = lookup.local_type(&seg.name) {
-        return Some(arena.intern_type_str(&ty));
+        return Some(Receiver::untyped(arena.intern_type_str(&ty)));
     }
     if let Some(ty) = &seg.declared_type {
-        return Some(with_segment_args(arena, arena.intern_type_str(ty), &seg.type_args));
+        return Some(Receiver::untyped(with_segment_args(
+            arena,
+            arena.intern_type_str(ty),
+            &seg.type_args,
+        )));
     }
     if matches!(seg.kind, SegmentKind::SelfRef) {
-        return lookup
-            .enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)
-            .map(|q| arena.class(q));
+        // `this`/`self` roots on the enclosing type — the one declaration whose
+        // members the chain walks. Bind its id so an inherited-member climb keys
+        // on identity, not the enclosing type's qname string.
+        let enc_qname = lookup.enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)?;
+        let ty = arena.class(enc_qname);
+        let id = lookup.by_qualified_name(enc_qname).map(|s| s.id);
+        return Some(Receiver { ty, id });
     }
     if seg.is_call {
         if let Some(ty) = callee_return_type(lookup, arena, &seg.name) {
-            return Some(ty);
+            return Some(Receiver::untyped(ty));
         }
     }
     // Import-of-value / typed-value root: a value (a `declare const`, an
@@ -238,13 +342,14 @@ fn resolve_root(
     if let Some(ty) =
         value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name)
     {
-        return Some(ty);
+        return Some(Receiver::untyped(ty));
     }
-    lookup
-        .types_by_name(&seg.name)
-        .into_iter()
-        .next()
-        .map(|s| with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args))
+    // Bare type name used as a static-access / construction root. The resolved
+    // `Symbol` IS the receiver's declaration, so bind its id directly rather than
+    // round-tripping its qname back through `by_qualified_name`.
+    let s = lookup.types_by_name(&seg.name).into_iter().next()?;
+    let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
+    Some(Receiver::new(ty, s.id))
 }
 
 /// Type a chain root that is a *value* by the declared type on its declaration.

@@ -26,10 +26,16 @@ pub(crate) struct Lookup {
     by_qname: FxHashMap<String, Symbol>,
     by_qname_all: FxHashMap<String, Vec<Symbol>>,
     members: FxHashMap<String, Vec<Symbol>>,
+    /// Id-keyed members: parent symbol id → member symbols. The id-keyed
+    /// counterpart of `members`, exercising the chain walker's identity path.
+    members_by_id: FxHashMap<i64, Vec<Symbol>>,
     generics: FxHashMap<String, Vec<String>>,
     field_types: FxHashMap<String, String>,
     return_types: FxHashMap<String, String>,
     parents: FxHashMap<String, String>,
+    /// Id-keyed inherits: child symbol id → parent symbol id. The id-keyed
+    /// counterpart of `parents`.
+    parents_by_id: FxHashMap<i64, i64>,
     local_types: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
@@ -48,10 +54,12 @@ impl Lookup {
             by_qname: Default::default(),
             by_qname_all: Default::default(),
             members: Default::default(),
+            members_by_id: Default::default(),
             generics: Default::default(),
             field_types: Default::default(),
             return_types: Default::default(),
             parents: Default::default(),
+            parents_by_id: Default::default(),
             local_types: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
@@ -80,6 +88,21 @@ impl Lookup {
             .entry(parent_qname.to_string())
             .or_default()
             .push(sym);
+        self
+    }
+
+    /// Register a member symbol under its parent's SYMBOL ID — the id-keyed
+    /// counterpart of `with_member`, for tests that exercise the chain walker's
+    /// identity path (two same-qname parents kept distinct by id).
+    pub(crate) fn with_member_id(mut self, parent_id: i64, sym: Symbol) -> Self {
+        self.members_by_id.entry(parent_id).or_default().push(sym);
+        self
+    }
+
+    /// Register `child`'s direct parent by SYMBOL ID — the id-keyed counterpart
+    /// of `with_parent`, driving the id-keyed supertype climb.
+    pub(crate) fn with_parent_id(mut self, child_id: i64, parent_id: i64) -> Self {
+        self.parents_by_id.insert(child_id, parent_id);
         self
     }
 
@@ -172,6 +195,14 @@ impl SymbolLookup for Lookup {
                 .unwrap_or(&self.empty),
         )
     }
+    fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.members_by_id
+                .get(&parent_id)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
+    }
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         match self.by_name.get(name) {
             Some(v) => SymbolSet::Owned(v.iter().filter(|s| is_type_like(&s.kind)).collect()),
@@ -202,6 +233,9 @@ impl SymbolLookup for Lookup {
     }
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.parents.get(class_qname).map(|s| s.as_str())
+    }
+    fn parent_class_id(&self, child_id: i64) -> Option<i64> {
+        self.parents_by_id.get(&child_id).copied()
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.local_types.get(name).cloned()

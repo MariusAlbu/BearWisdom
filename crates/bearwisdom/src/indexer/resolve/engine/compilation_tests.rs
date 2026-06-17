@@ -226,6 +226,62 @@ fn parent_class_qname_for_user_repo() {
 }
 
 #[test]
+fn parent_class_id_resolves_to_specific_parent() {
+    let (tree, _) = build_fixture();
+    let user_repo_id = tree.by_qualified_name("UserRepo").unwrap().id;
+    let repo_id = tree.by_qualified_name("Repo").unwrap().id;
+    assert_eq!(
+        tree.parent_class_id(user_repo_id),
+        Some(repo_id),
+        "parent_class_id(UserRepo) should resolve to Repo's symbol id"
+    );
+}
+
+/// Two packages each declare a class `Base`; a child in package 2 extends
+/// `Base`. `inherits_by_id` must bind the child to package 2's `Base`, not
+/// package 1's same-named class that won the first-wins qname race.
+#[test]
+fn inherits_by_id_prefers_same_package_parent() {
+    let arena = Arc::new(TypeArena::new());
+
+    // Package 1: class Base (qname "Base"), wins by_qname first-insert.
+    let mut pf1 = make_parsed_file(
+        "p1/base.ts",
+        vec![make_symbol("Base", "Base", SymbolKind::Class, None, None, None)],
+        vec![],
+    );
+    pf1.package_id = Some(1);
+
+    // Package 2: class Base (also qname "Base") and class Child extends Base.
+    let mut pf2 = make_parsed_file(
+        "p2/mod.ts",
+        vec![
+            make_symbol("Base", "Base", SymbolKind::Class, None, None, None),
+            make_symbol("Child", "Child", SymbolKind::Class, None, None, None),
+        ],
+        // Child (index 1 in pf2) inherits Base.
+        vec![inherits_ref(1, "Base")],
+    );
+    pf2.package_id = Some(2);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("p1/base.ts".to_string(), "Base".to_string()), 1);
+    id_map.insert(("p2/mod.ts".to_string(), "Base".to_string()), 2);
+    id_map.insert(("p2/mod.ts".to_string(), "Child".to_string()), 3);
+
+    let tree = Compilation::build(&[pf1, pf2], &id_map, arena);
+
+    let child_id = 3;
+    // Child lives in package 2, so its Base must be package 2's Base (id 2),
+    // not package 1's same-named Base (id 1) that won the qname index.
+    assert_eq!(
+        tree.parent_class_id(child_id),
+        Some(2),
+        "Child's parent must be its own package's Base (id 2), not the first-wins Base (id 1)"
+    );
+}
+
+#[test]
 fn by_name_finds_both_classes() {
     let (tree, _) = build_fixture();
     let repos = tree.by_name("Repo");
