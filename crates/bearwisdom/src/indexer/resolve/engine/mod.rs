@@ -35,6 +35,7 @@ pub mod pipeline;
 pub mod rules;
 pub mod support;
 pub mod compilation;
+pub mod module_identity;
 pub mod type_symbol;
 
 #[cfg(test)]
