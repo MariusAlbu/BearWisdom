@@ -195,3 +195,141 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     // mount (target id 4) must resolve as an edge from SolidQueryDevtools (1).
     assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
 }
+
+/// Two monorepo packages each declare a top-level enclosing symbol holding a
+/// `devtools` variable with the SAME simple name `devtools`, each typed to that
+/// package's OWN devtools-impl class with its own `mount` method. Both files are
+/// built into one `Compilation` and resolved independently. Package A's
+/// `devtools.mount()` chain must bind A's `mount`; package B's must bind B's —
+/// never each other's. This is the end-to-end identity case the engine migration
+/// targets: the chain root keys on the in-scope (package-distinct) declaration,
+/// so a first-match-by-simple-name root scan that collapsed both `devtools` vars
+/// to one would mis-bind one package's chain and this test would catch it.
+#[test]
+fn engine_distinguishes_same_named_devtools_across_packages() {
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+    fn esym(
+        name: &str,
+        qname: &str,
+        kind: SymbolKind,
+        parent: Option<usize>,
+        scope: Option<&str>,
+    ) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(), qualified_name: qname.into(), kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
+            signature: None, doc_comment: None, scope_path: scope.map(Into::into),
+            parent_index: parent, declared_type: None, return_type: None,
+            param_types: Vec::new(), generic_params: Vec::new(),
+        }
+    }
+    fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
+        ChainSegment {
+            name: name.into(), node_kind: String::new(), kind, declared_type: None,
+            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
+            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+        }
+    }
+    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false, is_reexport: false, source_symbol_index: src,
+            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
+            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+        }
+    }
+    // One package's file: an enclosing symbol `host` holding `devtools` (typed to
+    // `impl_class`), `impl_class` with `mount`, and a `devtools.mount()` chain
+    // referenced from the enclosing symbol.
+    fn make_pkg(
+        path: &str,
+        package_id: i64,
+        host: &str,
+        impl_class: &str,
+    ) -> (ParsedFile, Vec<((String, String), ())>) {
+        let devtools_qname = format!("{host}.devtools");
+        let mount_qname = format!("{impl_class}.mount");
+        let symbols = vec![
+            esym(host, host, SymbolKind::Function, None, None), // 0
+            esym("devtools", &devtools_qname, SymbolKind::Variable, Some(0), Some(host)), // 1
+            esym(impl_class, impl_class, SymbolKind::Class, None, None), // 2
+            esym("mount", &mount_qname, SymbolKind::Method, Some(2), Some(impl_class)), // 3
+        ];
+        let refs = vec![
+            // `const devtools = new <impl_class>()` -> field-type TypeRef on devtools.
+            eref(1, impl_class, EdgeKind::TypeRef, None),
+            // `devtools.mount(...)` chain, referenced from the host (index 0).
+            eref(0, "mount", EdgeKind::Calls, Some(MemberChain {
+                segments: vec![
+                    cseg("devtools", SegmentKind::Identifier, false),
+                    cseg("mount", SegmentKind::Property, true),
+                ],
+            })),
+        ];
+        let pf = ParsedFile {
+            path: path.into(), language: "typescript".into(), content_hash: String::new(),
+            size: 0, line_count: 0, mtime: None, package_id: Some(package_id), symbols, refs,
+            routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
+            ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
+            has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
+            alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        };
+        let qnames = vec![
+            ((path.to_string(), host.to_string()), ()),
+            ((path.to_string(), devtools_qname), ()),
+            ((path.to_string(), impl_class.to_string()), ()),
+            ((path.to_string(), mount_qname), ()),
+        ];
+        (pf, qnames)
+    }
+
+    // Package A (react-query) and package B (vue-query): same simple name
+    // `devtools`, package-distinct enclosing host + impl class.
+    let (pf_a, qa) = make_pkg("packages/react-query/devtools.ts", 1, "ReactQueryDevtools", "ReactDevtoolsImpl");
+    let (pf_b, qb) = make_pkg("packages/vue-query/devtools.ts", 2, "VueQueryDevtools", "VueDevtoolsImpl");
+
+    // Build one id_map across both files, assigning stable ids in order.
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    let mut next_id = 1i64;
+    for (key, ()) in qa.into_iter().chain(qb.into_iter()) {
+        id_map.insert(key, next_id);
+        next_id += 1;
+    }
+
+    // `ParsedFile` is not `Clone`; own both in a vec so the same values back the
+    // `Compilation` and the per-file resolve calls.
+    let files = vec![pf_a, pf_b];
+    let arena = Arc::new(TypeArena::new());
+    let tree =
+        crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+
+    let mount_a = id_map[&("packages/react-query/devtools.ts".to_string(), "ReactDevtoolsImpl.mount".to_string())];
+    let mount_b = id_map[&("packages/vue-query/devtools.ts".to_string(), "VueDevtoolsImpl.mount".to_string())];
+
+    // Package A resolves to A's mount, NOT B's.
+    let (edges_a, _) = super::resolve_one_file(&files[0], &tree, &profiles, &solver, &id_map);
+    assert!(
+        edges_a.iter().any(|e| e.1 == mount_a),
+        "package A's devtools.mount must bind A's ReactDevtoolsImpl.mount (id {mount_a}); edges={edges_a:?}"
+    );
+    assert!(
+        !edges_a.iter().any(|e| e.1 == mount_b),
+        "package A's chain must NOT bind package B's VueDevtoolsImpl.mount (id {mount_b})"
+    );
+
+    // Package B resolves to B's mount, NOT A's.
+    let (edges_b, _) = super::resolve_one_file(&files[1], &tree, &profiles, &solver, &id_map);
+    assert!(
+        edges_b.iter().any(|e| e.1 == mount_b),
+        "package B's devtools.mount must bind B's VueDevtoolsImpl.mount (id {mount_b}); edges={edges_b:?}"
+    );
+    assert!(
+        !edges_b.iter().any(|e| e.1 == mount_a),
+        "package B's chain must NOT bind package A's ReactDevtoolsImpl.mount (id {mount_a})"
+    );
+}
