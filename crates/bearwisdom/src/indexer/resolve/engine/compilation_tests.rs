@@ -866,6 +866,79 @@ fn inferred_return_lets_call_root_chain_resolve() {
     );
 }
 
+/// A TypeRef the extractor tagged with a module — `typeof import('m')['k']`
+/// stores `{ target_name: k, module: Some(m) }` on the value it types — must
+/// resolve to the type of the VALUE module `m` exports as `k`, not to a
+/// self-referential `m.k` and not to the bare name `k`.
+///
+/// Mirrors the vitest globals shape: `let expect: typeof import('vitest')['expect']`
+/// where `vitest` exports `expect` as a local rename of `globalExpect`, whose
+/// declared type is the `ExpectStatic` interface. The derived `field_type` for
+/// the global `expect` must be that interface's qname.
+#[test]
+fn module_tagged_value_typeref_resolves_to_exported_value_type() {
+    let arena = Arc::new(TypeArena::new());
+
+    // Module `mod` (a `.d.ts`-shaped external file):
+    //   interface TheType {}                       index 0  → mod.TheType
+    //   const globalExp: TheType                    index 1  → mod.globalExp (TypeRef → TheType)
+    //   export { globalExp as exp }                 local rename, exposed name `exp`
+    let mod_symbols = vec![
+        make_symbol("TheType", "mod.TheType", SymbolKind::Interface, None, None, None),
+        make_symbol("globalExp", "mod.globalExp", SymbolKind::Variable, None, None, None),
+    ];
+    // `globalExp`'s declared type is `TheType`, scoped to module `mod`.
+    let mod_global_type_ref = typeref_ref(1, "TheType");
+    let mut mod_pf = make_parsed_file("ext:ts:mod/index.d.ts", mod_symbols, vec![]);
+    if let Some(s) = mod_pf.symbols.get_mut(1) {
+        s.scope_path = Some("mod".to_string());
+    }
+    // Local export rename `export { globalExp as exp }`: the extractor records
+    // this as a re-export ref carrying the local source name in `target_name`
+    // and the exposed name in `namespace_segments[0]`, with no `module`.
+    let local_rename = ExtractedRef {
+        source_symbol_index: 1,
+        target_name: "globalExp".to_string(),
+        kind: EdgeKind::Imports,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: vec!["exp".to_string()],
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: true,
+    };
+    mod_pf.refs = vec![mod_global_type_ref, local_rename];
+
+    // Consumer: a global `exp` typed `typeof import('mod')['exp']` — the
+    // extractor's `lookup_type` arm emits `{ target_name: "exp", module: Some("mod") }`.
+    // Its qname (`g.exp`) under scope `g` makes the bare-name resolution of the
+    // ref's `exp` self-match the global, the signal that the ref names a value
+    // export rather than a type — exactly the vitest global-`expect` shape.
+    let mut consumer = make_symbol("exp", "g.exp", SymbolKind::Variable, None, None, None);
+    consumer.scope_path = Some("g".to_string());
+    let mut module_tagged = typeref_ref(0, "exp");
+    module_tagged.module = Some("mod".to_string());
+    let consumer_pf = make_parsed_file("ext:ts:g/globals.d.ts", vec![consumer], vec![module_tagged]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("ext:ts:mod/index.d.ts".to_string(), "mod.TheType".to_string()), 1);
+    id_map.insert(("ext:ts:mod/index.d.ts".to_string(), "mod.globalExp".to_string()), 2);
+    id_map.insert(("ext:ts:g/globals.d.ts".to_string(), "g.exp".to_string()), 3);
+
+    let tree = Compilation::build(&[mod_pf, consumer_pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.field_type_name("g.exp"),
+        Some("mod.TheType"),
+        "a module-tagged value TypeRef that self-resolves must type to the exported \
+         value's declared type, following the local export rename — not self-referential \
+         `g.exp`, not bare `exp`"
+    );
+}
+
 /// A top-level symbol whose qname the materialization layer flagged ambient is
 /// indexed into `ambient_scope` by its simple name; a nested member of the same
 /// file is not (only top-level lib globals are ambient).

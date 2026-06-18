@@ -8,12 +8,56 @@
 // =============================================================================
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+
+use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::contract::{
-    FileContext, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
+    FileContext, Symbol, SymbolInfo, SymbolLookup, TypeInfo, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
 use crate::types::EdgeKind;
+
+/// Resolve a module-tagged value `TypeRef` to the type of the value module
+/// `module` exports as `key`. A module-tagged value ref is what
+/// `typeof import('m')['k']` (or `typeof import('m')`) annotations produce: the
+/// ref means "the type of the value exported as `k` from `m`", NOT a type name —
+/// so it must never be looked up as a bare type name against the scope.
+///
+/// The exported value's declaring symbol is reached two ways: a local export
+/// rename (`export { local as k }`, captured in `export_alias`) maps `k` to the
+/// local declaration's qname; otherwise the direct export `m.k` is the
+/// declaration. The declaration's own `field_type` / `field_type_id` is the
+/// resolved type (`globalExpect: ExpectStatic` → `ExpectStatic`).
+///
+/// `typed_qname` is the symbol the ref is being resolved FOR; a declaration that
+/// resolves back to it is the self-referential `m.k` case and is declined so the
+/// caller falls back rather than typing a value as itself. Returns the resolved
+/// `(field_type, field_type_id)`, or `None` when the export or its type can't be
+/// resolved.
+pub(crate) fn resolve_module_exported_value_type(
+    module: &str,
+    key: &str,
+    typed_qname: &str,
+    export_alias: &FxHashMap<String, FxHashMap<String, String>>,
+    by_qname: &BTreeMap<String, Symbol>,
+    type_info: &FxHashMap<String, TypeInfo>,
+) -> Option<(String, Option<crate::type_checker::core::types::TypeId>)> {
+    let declaring_qname = export_alias
+        .get(module)
+        .and_then(|aliases| aliases.get(key))
+        .cloned()
+        .or_else(|| {
+            let direct = format!("{module}.{key}");
+            by_qname.contains_key(&direct).then_some(direct)
+        })?;
+    if declaring_qname == typed_qname {
+        return None;
+    }
+    let ti = type_info.get(&declaring_qname)?;
+    let field_type = ti.field_type.clone()?;
+    Some((field_type, ti.field_type_id))
+}
 
 /// The workspace package id the file imports `name` from, when the import's
 /// module specifier is a bare specifier that resolves to a sibling workspace

@@ -10,6 +10,27 @@ fn refs(source: &str) -> Vec<ExtractedRef> {
 }
 
 #[test]
+fn local_export_rename_emits_moduleless_reexport_ref() {
+    // `export { local as exposed }` with no `from`, where `local` is declared in
+    // this file, records the rename so an import-type indexing the exposed name
+    // (`typeof import('m')['exposed']`) can follow it to the local declaration's
+    // type. The ref carries the local source in `target_name`, the exposed name
+    // in `namespace_segments[0]`, no module, and `is_reexport`.
+    let src = "declare const globalExpect: ExpectStatic;\nexport { globalExpect as expect };\n";
+    let r = refs(src);
+    let rename = r.iter().find(|rf| {
+        rf.is_reexport
+            && rf.module.is_none()
+            && rf.target_name == "globalExpect"
+            && rf.namespace_segments == ["expect"]
+    });
+    assert!(
+        rename.is_some(),
+        "local export rename should emit a module-less re-export ref: {r:?}"
+    );
+}
+
+#[test]
 fn mapped_type_key_binder_not_leaked_across_multiline_body() {
     // `[AKey in keyof T]` binds AKey for the whole mapped type; its uses in the
     // body (on lines below the clause) must not leak as TypeRefs. The binder

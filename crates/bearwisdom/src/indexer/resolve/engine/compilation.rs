@@ -18,6 +18,7 @@ use crate::indexer::resolve::engine::contract::{
     parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope, Symbol,
     SymbolLookup, SymbolSet, TypeInfo,
 };
+use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile, SymbolKind};
@@ -42,6 +43,24 @@ fn is_type_like(kind: &str) -> bool {
             | "mixin"
             | "extension"
     )
+}
+
+// ---------------------------------------------------------------------------
+// PendingModuleValue — a deferred module-tagged value TypeRef
+// ---------------------------------------------------------------------------
+
+/// A value symbol whose first `TypeRef` is module-tagged (`typeof
+/// import('m')['k']`). Resolution is deferred to a post-pass so every module's
+/// local declarations are typed first, then the export `k` of module `m` is
+/// followed to its declaring symbol's type.
+struct PendingModuleValue {
+    /// The value being typed — its resolved `field_type` slot.
+    typed_qname: String,
+    /// The imported module specifier (the `m` in `import('m')`).
+    module: String,
+    /// The exported value name indexed (the `k` in `['k']`); the whole module
+    /// when the annotation is the bare `typeof import('m')`.
+    key: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +97,15 @@ pub struct Compilation {
     /// Re-export map: file_path → [(original_name, source_module)].
     /// Populated from `pf.refs` where `is_reexport` is true.
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
+    /// Local export-rename map: module head → (exposed name → declaring qname).
+    /// A `module head` is the qualified-name prefix the renamed symbols live
+    /// under (an external file's symbols are qnamed `<module>.<name>`), which is
+    /// the same string a module-tagged TypeRef carries in its `module` field.
+    /// Populated from `is_reexport` refs with no `module` — the in-file
+    /// `export { local as exposed }` shape — so resolving the type of an
+    /// import-type that indexes the exposed name (`typeof import('m')['exposed']`)
+    /// can follow the rename to the local declaration's type.
+    export_alias_by_module: FxHashMap<String, FxHashMap<String, String>>,
     /// Direct-parent inheritance: child_qname → parent_qname (head, generics stripped).
     inherits: FxHashMap<String, String>,
     /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → parent
@@ -177,6 +205,7 @@ impl Compilation {
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
+            export_alias_by_module: FxHashMap::default(),
             inherits: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
@@ -403,6 +432,12 @@ impl Compilation {
             }
 
             // Pass 4 — re-export map from refs where `is_reexport` is true.
+            // A re-export ref WITH a module is a cross-module hop (`export { X }
+            // from 'm'`). A re-export ref with NO module is an in-file rename
+            // (`export { local as exposed }`): `target_name` is the local source
+            // name, `namespace_segments[0]` the exposed name. The latter feeds
+            // `export_alias_by_module` so import-types that index the exposed
+            // name can follow the rename to the local declaration's type.
             for r in &pf.refs {
                 if !r.is_reexport {
                     continue;
@@ -412,7 +447,30 @@ impl Compilation {
                         .entry(pf.path.clone())
                         .or_default()
                         .push((r.target_name.clone(), module.clone()));
+                    continue;
                 }
+                let Some(exposed) = r.namespace_segments.first() else {
+                    continue;
+                };
+                let local = &r.target_name;
+                // The local declaration is a same-file symbol whose simple name is
+                // `local`; its qname head is the module the exposed name belongs to.
+                let Some(local_qname) = pf
+                    .symbols
+                    .iter()
+                    .find(|s| &s.name == local)
+                    .map(|s| s.qualified_name.clone())
+                else {
+                    continue;
+                };
+                let module_head = local_qname
+                    .rsplit_once('.')
+                    .map(|(head, _)| head.to_string())
+                    .unwrap_or_default();
+                self.export_alias_by_module
+                    .entry(module_head)
+                    .or_default()
+                    .insert(exposed.clone(), local_qname);
             }
 
             // Pass 5 — type-alias targets, keyed by both the qualified and the
@@ -436,9 +494,20 @@ impl Compilation {
         // symbol introduced in Phase A. Only fills slots that Phase A left absent
         // (extractor-set TypeIds take precedence).
         // -----------------------------------------------------------------------
+        let mut pending_module_values: Vec<PendingModuleValue> = Vec::new();
         for pf in parsed {
-            self.derive_type_info_from_refs(pf);
+            self.derive_type_info_from_refs(pf, &mut pending_module_values);
         }
+
+        // -----------------------------------------------------------------------
+        // Phase B2 — module-tagged value TypeRefs.
+        //
+        // Runs after Phase B so every module's local declarations are typed.
+        // Each deferred `typeof import('m')['k']` value resolves to the type of
+        // the value `m` exports as `k` (following local export renames), instead
+        // of self-matching `m.k`.
+        // -----------------------------------------------------------------------
+        self.resolve_pending_module_values(pending_module_values);
 
         // -----------------------------------------------------------------------
         // Phase C — bare-identifier return-type inference.
@@ -515,15 +584,20 @@ impl Compilation {
     /// Mirrors `populate_materialized_type_info` in `engine/index/lazy.rs`,
     /// using `self.by_qname` (a `BTreeMap`) in place of the eager index's
     /// `self.by_qname`.
-    fn derive_type_info_from_refs(&mut self, pf: &ParsedFile) {
-        // Collect TypeRef refs (excluding import bindings) per symbol index.
-        let mut type_refs_by_sym: Vec<Vec<&str>> = vec![Vec::new(); pf.symbols.len()];
+    fn derive_type_info_from_refs(&mut self, pf: &ParsedFile, pending: &mut Vec<PendingModuleValue>) {
+        // Collect TypeRef refs (excluding import bindings) per symbol index. The
+        // module tag is preserved alongside the name so the value arm can tell a
+        // `typeof import('m')['k']` value-export ref (which self-resolves to the
+        // symbol) apart from an ordinary imported type ref.
+        let mut type_refs_by_sym: Vec<Vec<(&str, Option<&str>)>> =
+            vec![Vec::new(); pf.symbols.len()];
         for r in &pf.refs {
             if r.kind != EdgeKind::TypeRef || r.is_import_binding {
                 continue;
             }
             if r.source_symbol_index < type_refs_by_sym.len() {
-                type_refs_by_sym[r.source_symbol_index].push(r.target_name.as_str());
+                type_refs_by_sym[r.source_symbol_index]
+                    .push((r.target_name.as_str(), r.module.as_deref()));
             }
         }
 
@@ -536,14 +610,30 @@ impl Compilation {
                 | SymbolKind::Parameter => {
                     let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                     if ti.field_type.is_none() {
-                        if let Some(&first) = type_refs.first() {
+                        if let Some(&(first, module)) = type_refs.first() {
                             let resolved = resolve_type_name_in_scope(
                                 first,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
+                            // A module-tagged ref that scope-resolves to the symbol
+                            // ITSELF is the `typeof import('m')['k']` value-export
+                            // shape: `k` names a value module `m` exports, not a
+                            // type, so the bare-name resolution self-matched. Defer
+                            // it to the post-pass, which follows the export to the
+                            // declared value's type once every module is typed. A
+                            // module-tagged ref that resolves elsewhere is an
+                            // ordinary imported type and is kept.
+                            if module.is_some() && resolved == sym.qualified_name {
+                                pending.push(PendingModuleValue {
+                                    typed_qname: sym.qualified_name.clone(),
+                                    module: module.unwrap_or_default().to_string(),
+                                    key: first.to_string(),
+                                });
+                                continue;
+                            }
                             let arg_strs: Vec<String> = if type_refs.len() > 1 {
-                                type_refs[1..].iter().map(|s| s.to_string()).collect()
+                                type_refs[1..].iter().map(|(s, _)| s.to_string()).collect()
                             } else {
                                 Vec::new()
                             };
@@ -569,7 +659,7 @@ impl Compilation {
                     }
                 }
                 SymbolKind::TypeAlias => {
-                    if let Some(&first) = type_refs.first() {
+                    if let Some(&(first, _)) = type_refs.first() {
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                         if ti.field_type.is_none() {
                             ti.field_type_id = Some(self.arena.intern_type_str(first));
@@ -629,7 +719,7 @@ impl Compilation {
                                 Some(intern_head_and_args(&self.arena, &resolved, &args));
                             ti.return_type = Some(resolved);
                             ti.return_type_args = args;
-                        } else if let Some(&last) = type_refs.last() {
+                        } else if let Some(&(last, _)) = type_refs.last() {
                             let resolved = resolve_type_name_in_scope(
                                 last,
                                 sym.scope_path.as_deref(),
@@ -702,6 +792,32 @@ impl Compilation {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Resolve deferred module-tagged value TypeRefs. Each entry's `typed_qname`
+    /// receives the `field_type` of the value its module exports as `key`,
+    /// following any local export rename. Run after the full Phase B loop so the
+    /// exported value's own declared type is already populated. A self-referential
+    /// or unresolvable export leaves the slot untouched.
+    fn resolve_pending_module_values(&mut self, pending: Vec<PendingModuleValue>) {
+        for p in pending {
+            let Some((field_type, field_type_id)) = resolve_module_exported_value_type(
+                &p.module,
+                &p.key,
+                &p.typed_qname,
+                &self.export_alias_by_module,
+                &self.by_qname,
+                &self.type_info,
+            ) else {
+                continue;
+            };
+            let ti = self.type_info.entry(p.typed_qname).or_default();
+            if ti.field_type.is_none() {
+                ti.field_type_id =
+                    field_type_id.or_else(|| Some(self.arena.class(&field_type)));
+                ti.field_type = Some(field_type);
             }
         }
     }

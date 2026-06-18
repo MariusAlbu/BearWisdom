@@ -57,6 +57,35 @@ pub(super) fn extract_bare_reexports_via_imports(
                 }
 
                 let Some(import) = import_map.get(&name) else {
+                    // `name` is not imported — it's a locally-declared symbol
+                    // re-exported under a new name (`export { local as exposed }`,
+                    // no `from`). Record the rename as a module-less re-export ref
+                    // (`target_name` = local source, `namespace_segments[0]` =
+                    // exposed name) so an import-type that indexes the exposed name
+                    // can follow it to the local declaration's type. A bare
+                    // `export { local }` adds no name and needs no ref.
+                    let alias = spec
+                        .child_by_field_name("alias")
+                        .map(|n| helpers::node_text(n, src))
+                        .unwrap_or_default();
+                    let declared_locally = symbols.iter().any(|s| s.name == name);
+                    if !alias.is_empty() && declared_locally {
+                        let source_idx = symbols.len().saturating_sub(1);
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: true,
+                            source_symbol_index: source_idx,
+                            target_name: name.clone(),
+                            kind: EdgeKind::Imports,
+                            line: spec.start_position().row as u32,
+                            col: 0,
+                            module: None,
+                            chain: None,
+                            byte_offset: spec.start_byte() as u32,
+                            namespace_segments: vec![alias],
+                            call_args: Vec::new(),
+                        });
+                    }
                     continue;
                 };
 
