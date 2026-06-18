@@ -2010,3 +2010,28 @@ export const getAlbumsActions = ($t: MessageFormatter) => {
         "chain root must keep the leading '$' — store-desugar must not run on plain .ts"
     );
 }
+
+#[test]
+fn declare_global_let_lookup_type_emits_module_tagged_ref() {
+    // `declare global { let expect: typeof import('vitest')['expect'] }` —
+    // the `lookup_type` annotation inside a `declare global` block must emit a
+    // module-tagged TypeRef whose target is the index key, not the raw import call
+    // text. The `lookup_type` arm in `extract_type_ref_from_annotation` handles
+    // this — the `declare global` body flows through `push_variable_decl` which
+    // calls that dispatcher.
+    let src = "declare global { let expect: typeof import('vitest')['expect'] }\nexport {}";
+    let r = refs(src);
+    let type_refs: Vec<_> = r.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    let has_raw_import = type_refs.iter().any(|rf| rf.target_name.contains("import("));
+    assert!(
+        !has_raw_import,
+        "declare global let lookup_type must not emit raw import('...') text as TypeRef target; got: {type_refs:?}"
+    );
+    let has_correct = type_refs
+        .iter()
+        .any(|rf| rf.target_name == "expect" && rf.module.as_deref() == Some("vitest"));
+    assert!(
+        has_correct,
+        "declare global let lookup_type must emit target_name='expect' module=Some('vitest'); got: {type_refs:?}"
+    );
+}
