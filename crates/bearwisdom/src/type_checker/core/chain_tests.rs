@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolSet};
-use crate::type_checker::alias::AliasIndex;
+use crate::type_checker::alias::{build_alias_index, AliasIndex};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
@@ -7295,4 +7295,217 @@ fn internal_chain_unaffected_by_external_hop_fallback() {
         .walk(&chain, &ref_ctx, &fc)
         .expect("internal repo.save resolves unchanged");
     assert_eq!(result.target_symbol_id, 11);
+}
+
+// ---------------------------------------------------------------------------
+// TYPESURFACE: a complex alias surfaces its declared members under the
+// member-lookup + intersection/supertype climb, no per-shape special-casing.
+//
+// These exercise the live (TypeId) chain path end-to-end: a root that resolves
+// to an alias name is expanded by `expand_alias_typed` inside `expand_aliases`,
+// and `MembersIndex::lookup` reaches the declared member on the expanded shape.
+// Each case mirrors a real `.d.ts` member-bearing alias form with synthetic,
+// library-neutral names.
+// ---------------------------------------------------------------------------
+
+/// A root resolver pinned to one TypeId — used to seed the chain with a
+/// concrete alias-name receiver the walker then expands.
+struct PinnedRoot {
+    ty: TypeId,
+}
+impl RootResolver for PinnedRoot {
+    fn resolve(
+        &self,
+        _seg: &ChainSegment,
+        _ref_ctx: &RefContext,
+        _file_ctx: &FileContext,
+        _arena: &TypeArena,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<TypeId> {
+        Some(self.ty)
+    }
+}
+
+fn walk_member_on_alias(
+    arena: &mut TypeArena,
+    members: &MembersIndex,
+    aliases: &AliasIndex,
+    root_alias: &str,
+    member: &str,
+) -> Option<ChainResolution> {
+    // Intern the root alias name before the `&mut arena` borrow the walker
+    // takes; `arena.class` uses interior mutability so the id is stable.
+    let root_ty = arena.class(root_alias);
+    let supertypes = SupertypeGraph::new();
+    let symbol_types = SymbolTypeMap::new();
+    let lookup = EmptyLookup::new();
+    let walker = ChainWalker::new(
+        arena,
+        members,
+        &supertypes,
+        &symbol_types,
+        aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("v", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg(member, SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref(member);
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    walker.walk_with_root(&chain, &ref_ctx, &fc, &PinnedRoot { ty: root_ty })
+}
+
+#[test]
+fn intersection_alias_surfaces_nominal_branch_member() {
+    // `type Combined = Boundary & { container: Node }` — the nominal branch
+    // `Boundary` declares `query()`. The alias expands to
+    // `Type::Intersection([Boundary, ...])`; member lookup's Intersection arm
+    // reaches `query` on the `Boundary` branch. No intersection-specific engine
+    // code: `expand_alias_typed` builds the Intersection, `lookup` walks it.
+    let mut arena = TypeArena::new();
+    let mut members = MembersIndex::new();
+    let boundary = arena.class("Boundary");
+    members.add_direct(
+        boundary,
+        sym_info(1, "query", "Boundary.query", "method", Some("Boundary")),
+    );
+
+    let pairs = vec![(
+        "Combined".to_string(),
+        AliasTarget::Intersection(vec!["Boundary".to_string()]),
+    )];
+    let aliases = build_alias_index(&pairs, &arena);
+
+    let r = walk_member_on_alias(&mut arena, &members, &aliases, "Combined", "query")
+        .expect("query resolves on the Boundary branch of the intersection alias");
+    assert_eq!(r.target_symbol_id, 1);
+}
+
+#[test]
+fn intersection_alias_surfaces_inline_object_branch_member() {
+    // `type Combined = Boundary & { container: Node }` — the inline-object
+    // branch's members are extracted as direct members of the alias qname
+    // (`recurse_for_object_types`), so at the engine level they sit on
+    // `Class("Combined")` directly. Member lookup on the intersection consults
+    // the alias head as one branch and finds `container` there.
+    let mut arena = TypeArena::new();
+    let mut members = MembersIndex::new();
+    // Inline-object member parented under the alias qname, as the extractor emits.
+    let combined = arena.class("Combined");
+    members.add_direct(
+        combined,
+        sym_info(2, "container", "Combined.container", "field", Some("Combined")),
+    );
+
+    // The intersection carries the alias head itself plus the nominal branch,
+    // mirroring how the alias both names a branch and owns the inline members.
+    let pairs = vec![(
+        "Combined".to_string(),
+        AliasTarget::Intersection(vec!["Combined".to_string(), "Boundary".to_string()]),
+    )];
+    let aliases = build_alias_index(&pairs, &arena);
+
+    let r = walk_member_on_alias(&mut arena, &members, &aliases, "Combined", "container")
+        .expect("container resolves on the inline-object branch of the intersection alias");
+    assert_eq!(r.target_symbol_id, 2);
+}
+
+#[test]
+fn conditional_alias_object_branch_members_are_alias_direct() {
+    // `type BoundView<Q> = Q extends Source ? { lookup(): R } : never` — the
+    // explicit-member object in the conditional's true branch is flattened to
+    // direct members of the alias qname by `recurse_for_object_types`, so
+    // member lookup on the alias head finds `lookup` with no conditional
+    // evaluation. The alias target itself is Conditional and does not reduce to
+    // a nominal head; resolution comes from the extractor-flattened members.
+    let mut arena = TypeArena::new();
+    let mut members = MembersIndex::new();
+    let bound_view = arena.class("BoundView");
+    members.add_direct(
+        bound_view,
+        sym_info(3, "lookup", "BoundView.lookup", "method", Some("BoundView")),
+    );
+
+    let pairs = vec![(
+        "BoundView".to_string(),
+        AliasTarget::Conditional {
+            check: "Q".to_string(),
+            extends: "Source".to_string(),
+            true_branch: "{ lookup(): R }".to_string(),
+            false_branch: "never".to_string(),
+            infer_binding: None,
+        },
+    )];
+    let aliases = build_alias_index(&pairs, &arena);
+
+    let r = walk_member_on_alias(&mut arena, &members, &aliases, "BoundView", "lookup")
+        .expect("lookup resolves on the conditional alias's extractor-flattened members");
+    assert_eq!(r.target_symbol_id, 3);
+}
+
+#[test]
+fn interface_extends_climb_surfaces_supertype_member() {
+    // `interface Assert extends Base` — the supertype climb reaches `Base` and
+    // surfaces its `pass()` member. The climb is generic over any
+    // extends/implements edge; an external `extends` is identical at this layer
+    // because the supertype graph is origin-agnostic.
+    let mut arena = TypeArena::new();
+    let mut members = MembersIndex::new();
+    let assert_ty = arena.class("Assert");
+    let base_ty = arena.class("Base");
+    members.add_direct(
+        base_ty,
+        sym_info(4, "pass", "Base.pass", "method", Some("Base")),
+    );
+
+    let mut supertypes = SupertypeGraph::new();
+    supertypes.add_edge(assert_ty, base_ty);
+    let symbol_types = SymbolTypeMap::new();
+    let aliases = AliasIndex::default();
+    let lookup = EmptyLookup::new();
+    let walker = ChainWalker::new(
+        &mut arena,
+        &members,
+        &supertypes,
+        &symbol_types,
+        &aliases,
+        &DEFAULT_PROFILE,
+        &lookup,
+    );
+    let chain = MemberChain {
+        segments: vec![
+            seg("a", SegmentKind::Identifier),
+            ChainSegment {
+                is_call: true,
+                ..seg("pass", SegmentKind::Property)
+            },
+        ],
+    };
+    let source = dummy_source_symbol("caller", None);
+    let r = dummy_extracted_ref("pass");
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &source,
+        scope_chain: Vec::new(),
+        file_package_id: None,
+    };
+    let fc = file_ctx();
+    let result = walker
+        .walk_with_root(&chain, &ref_ctx, &fc, &PinnedRoot { ty: assert_ty })
+        .expect("pass resolves on the Base supertype via the extends climb");
+    assert_eq!(result.target_symbol_id, 4);
 }
