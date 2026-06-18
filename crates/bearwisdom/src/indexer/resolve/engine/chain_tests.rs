@@ -266,6 +266,70 @@ fn roots_a_call_at_the_callee_return_type() {
 }
 
 #[test]
+fn roots_a_call_at_a_callable_interface_values_call_signature_return() {
+    // const expect: ExpectStatic;  interface ExpectStatic { (x): Assertion }
+    // expect(x).toBe(...)  →  Assertion.toBe (id 70)
+    // The callee `expect` is a const, not a function, so its declared interface's
+    // synthesised `call` member supplies the call result type (Assertion).
+    let lookup = Lookup::new()
+        .with(sym(1, "expect", "expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("expect", "ExpectStatic")
+        .with_member(
+            "ExpectStatic",
+            sym(50, "call", "ExpectStatic.call", "method", "ext:ts:vitest/index.d.ts"),
+        )
+        .with_return_type("ExpectStatic.call", "Assertion")
+        .with_member(
+            "Assertion",
+            sym(70, "toBe", "Assertion.toBe", "method", "ext:ts:vitest/index.d.ts"),
+        );
+    let segs = vec![
+        seg("expect", true, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
+}
+
+#[test]
+fn call_root_through_callable_interface_substitutes_receiver_type_arg() {
+    // const wrap: Wrapper<User>;  interface Wrapper<T> { (): T }
+    // wrap().name  →  User.name (id 20): the `call` member returns T, which the
+    // receiver's applied arg binds to User exactly as any generic member hop does.
+    let lookup = Lookup::new()
+        .with(sym(1, "wrap", "wrap", "const", "a.ts"))
+        .with_field_type("wrap", "Wrapper<User>")
+        .with_generics("Wrapper", &["T"])
+        .with_member("Wrapper", sym(50, "call", "Wrapper.call", "method", "a.ts"))
+        .with_return_type("Wrapper.call", "T")
+        .with_member("User", sym(20, "name", "User.name", "field", "a.ts"));
+    let segs = vec![
+        seg("wrap", true, SegmentKind::Identifier),
+        seg("name", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
+}
+
+#[test]
+fn function_callee_return_path_unaffected_by_callable_value_fallback() {
+    // function render(...): RenderResult {...};  render(c).getByText(...)
+    //   →  RenderResult.getByText (id 90)
+    // render is a real function whose return type roots via callee_return_type
+    // (kind=function); the callable-value fallback must not perturb it.
+    let lookup = Lookup::new()
+        .with(sym(1, "render", "render", "function", "ext:ts:@testing-library/react/index.d.ts"))
+        .with_return_type("render", "RenderResult")
+        .with_member(
+            "RenderResult",
+            sym(90, "getByText", "RenderResult.getByText", "method", "ext:ts:@testing-library/react/index.d.ts"),
+        );
+    let segs = vec![
+        seg("render", true, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(90));
+}
+
+#[test]
 fn roots_a_call_at_a_generic_return_type() {
     // function makeRepo(): Repository<User> {...};  makeRepo().find().name  →  User.name (id 20)
     let lookup = Lookup::new()

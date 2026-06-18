@@ -340,6 +340,19 @@ fn resolve_root(
         if let Some(ty) = callee_return_type(lookup, arena, &seg.name) {
             return Some(Receiver::untyped(ty));
         }
+        // The callee is not a callable declaration (function/method) but may be
+        // a VALUE whose declared type is a callable interface — `const expect:
+        // ExpectStatic` where `ExpectStatic` carries a call signature. Calling
+        // it yields the call signature's return, not the interface type itself,
+        // so this must precede the value-root fallthrough below.
+        if let Some(ty) = call_value_root_type(
+            lookup,
+            arena,
+            &seg.name,
+            &ref_ctx.source_symbol.qualified_name,
+        ) {
+            return Some(Receiver::untyped(ty));
+        }
     }
     // Import-of-value / typed-value root: a value (a `declare const`, an
     // imported binding, a typed field) whose declaration carries a type roots
@@ -434,6 +447,31 @@ fn is_value_kind(kind: &str) -> bool {
         "variable" | "constant" | "const" | "field" | "property" | "parameter"
     )
 }
+
+/// Type a call root whose callee is a VALUE of a callable-interface type, by the
+/// return of that interface's call signature: `const expect: ExpectStatic` where
+/// `ExpectStatic` carries `(x): Assertion` types `expect(x)` as `Assertion`. The
+/// extractor synthesises that call signature as a member named `call` on the
+/// interface; this types the value to its declared interface, then yields the
+/// `call` member's return with the receiver's type arguments substituted — the
+/// same member-walk and substitution every chain hop uses, so any callable
+/// interface's value types its call result generically.
+fn call_value_root_type(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    name: &str,
+    source_qname: &str,
+) -> Option<TypeId> {
+    let value_ty = value_root_type(lookup, arena, name, source_qname)?;
+    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena);
+    let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
+    yield_through(lookup, arena, &call, true, recv.ty)
+}
+
+/// The name the extractor synthesises for an interface's call signature
+/// (`interface F { (x): R }`), surfaced as a member so a value of that interface
+/// type yields `R` when called.
+const CALL_SIGNATURE_MEMBER: &str = "call";
 
 /// Type a call root by the callee's return type: `makeRepo()` where
 /// `makeRepo(): Repository<User>` types the chain head as `Repository<User>`.
