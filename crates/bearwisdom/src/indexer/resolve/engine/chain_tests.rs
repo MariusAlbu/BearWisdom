@@ -30,14 +30,24 @@ fn seg_declared(name: &str, declared: &str, type_args: &[&str]) -> ChainSegment 
 }
 
 fn resolve(lookup: &Lookup, segs: Vec<ChainSegment>, src_qname: &str) -> Option<i64> {
+    resolve_with_fc(lookup, segs, src_qname, &file_ctx(vec![], None))
+}
+
+/// Resolve under a caller-supplied `FileContext`, so a test can carry imports
+/// that steer the import-scoped declaration pick.
+fn resolve_with_fc(
+    lookup: &Lookup,
+    segs: Vec<ChainSegment>,
+    src_qname: &str,
+    fc: &FileContext,
+) -> Option<i64> {
     let leaf = segs.last().unwrap().name.clone();
     let mut r = call_ref(&leaf);
     r.chain = Some(MemberChain { segments: segs });
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    let fc = file_ctx(vec![], None);
-    bind_member_access(&rc, &fc, lookup).map(|res| res.target_symbol_id)
+    bind_member_access(&rc, fc, lookup).map(|res| res.target_symbol_id)
 }
 
 #[test]
@@ -327,6 +337,82 @@ fn function_callee_return_path_unaffected_by_callable_value_fallback() {
         seg("getByText", true, SegmentKind::Property),
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(90));
+}
+
+#[test]
+fn callee_return_root_prefers_import_scoped_declaration_for_overloaded_name() {
+    // Two `render` callables: one in a UI-component package (pkg 7) returning a
+    // node type with no `getByText`, one in the DOM-testing package (pkg 8)
+    // returning RenderResult. The use site imports `render` from pkg 8's
+    // specifier, so `render(c).getByText(...)` must root on pkg 8's declaration
+    // (-> RenderResult -> getByText id 90), NOT the first-callable-wins pkg-7
+    // declaration that has no usable member. Generic overload disambiguation by
+    // import scope; no `render` special-case.
+    let lookup = Lookup::new()
+        .with_workspace_pkg("ui", 7)
+        .with_workspace_pkg("dom-testing", 8)
+        .with_in_package(
+            7,
+            sym(1, "render", "ui.render", "function", "packages/ui/render.ts"),
+        )
+        .with_return_type("ui.render", "ReactNode")
+        .with_in_package(
+            8,
+            sym(2, "render", "domTesting.render", "function", "packages/dom-testing/render.ts"),
+        )
+        .with_return_type("domTesting.render", "RenderResult")
+        .with_member(
+            "RenderResult",
+            sym(90, "getByText", "RenderResult.getByText", "method", "packages/dom-testing/render.ts"),
+        );
+    let segs = || {
+        vec![
+            seg("render", true, SegmentKind::Identifier),
+            seg("getByText", true, SegmentKind::Property),
+        ]
+    };
+    // Import `render` from pkg 8 -> root on domTesting.render -> RenderResult.
+    let fc_dom = file_ctx(vec![import("render", Some("dom-testing"))], None);
+    assert_eq!(resolve_with_fc(&lookup, segs(), "caller", &fc_dom), Some(90));
+    // No import attribution: first-callable (pkg 7, ReactNode) wins and has no
+    // getByText -> unresolved. Proves the scope filter, not a global reorder.
+    assert_eq!(resolve(&lookup, segs(), "caller"), None);
+}
+
+#[test]
+fn function_and_callable_value_roots_cascade_to_further_members() {
+    // The same generic root-typing mechanism that binds `toBe` / `getByText`
+    // binds any further member on the rooted interface without per-member code:
+    //   expect(x).toEqualTypeOf(y)  → ExpectStatic call sig -> Assertion.toEqualTypeOf
+    //   render(c).getByRole(r)      → render(): RenderResult -> RenderResult.getByRole
+    let lookup = Lookup::new()
+        .with(sym(1, "expect", "expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("expect", "ExpectStatic")
+        .with_member(
+            "ExpectStatic",
+            sym(50, "call", "ExpectStatic.call", "method", "ext:ts:vitest/index.d.ts"),
+        )
+        .with_return_type("ExpectStatic.call", "Assertion")
+        .with_member(
+            "Assertion",
+            sym(71, "toEqualTypeOf", "Assertion.toEqualTypeOf", "method", "ext:ts:vitest/index.d.ts"),
+        )
+        .with(sym(2, "render", "render", "function", "ext:ts:@testing-library/react/index.d.ts"))
+        .with_return_type("render", "RenderResult")
+        .with_member(
+            "RenderResult",
+            sym(91, "getByRole", "RenderResult.getByRole", "method", "ext:ts:@testing-library/react/index.d.ts"),
+        );
+    let expect_segs = vec![
+        seg("expect", true, SegmentKind::Identifier),
+        seg("toEqualTypeOf", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, expect_segs, "caller"), Some(71));
+    let render_segs = vec![
+        seg("render", true, SegmentKind::Identifier),
+        seg("getByRole", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, render_segs, "caller"), Some(91));
 }
 
 #[test]

@@ -337,7 +337,7 @@ fn resolve_root(
         return Some(Receiver { ty, id });
     }
     if seg.is_call {
-        if let Some(ty) = callee_return_type(lookup, arena, &seg.name) {
+        if let Some(ty) = callee_return_type(lookup, arena, file_ctx, &seg.name) {
             return Some(Receiver::untyped(ty));
         }
         // The callee is not a callable declaration (function/method) but may be
@@ -538,11 +538,29 @@ const CALL_SIGNATURE_MEMBER: &str = "call";
 
 /// Type a call root by the callee's return type: `makeRepo()` where
 /// `makeRepo(): Repository<User>` types the chain head as `Repository<User>`.
-fn callee_return_type(lookup: &dyn SymbolLookup, arena: &TypeArena, name: &str) -> Option<TypeId> {
-    let callee = lookup
-        .by_name(name)
-        .into_iter()
-        .find(|s| is_callable(&s.kind))?;
+///
+/// When several callable declarations share `name` across sibling packages,
+/// prefer the one in the package the use site imports `name` from, so the chain
+/// heads on THAT declaration's return type. Without an import attribution, or
+/// when no candidate sits in the imported package, the first callable wins. This
+/// is the same import-scoped declaration pick the bare-type-name root uses; no
+/// per-library knowledge enters here.
+fn callee_return_type(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+    name: &str,
+) -> Option<TypeId> {
+    let candidates = lookup.by_name(name);
+    let scoped = import_scoped_package_id(file_ctx, lookup, name).and_then(|pkg| {
+        candidates
+            .iter()
+            .find(|s| is_callable(&s.kind) && s.package_id == Some(pkg))
+    });
+    let callee = match scoped {
+        Some(c) => c,
+        None => candidates.iter().find(|s| is_callable(&s.kind))?,
+    };
     if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
         return Some(id);
     }
