@@ -9,7 +9,37 @@
 
 use std::borrow::Cow;
 
+use crate::indexer::resolve::engine::contract::{FileContext, SymbolLookup};
 use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
+
+/// The workspace package id the file imports `name` from, when the import's
+/// module specifier is a bare specifier that resolves to a sibling workspace
+/// package. `None` when nothing imports `name`, the binding specifier is
+/// relative, or no workspace package declares it.
+///
+/// Lets a bare reference to a name that exists in several sibling packages bind
+/// to the package the use site actually imports it from, instead of a first-wins
+/// same-name pick. The caller filters its own candidate set by the returned id.
+pub(crate) fn import_scoped_package_id(
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    name: &str,
+) -> Option<i64> {
+    for import in &file_ctx.imports {
+        let names_target =
+            import.imported_name == name || import.alias.as_deref() == Some(name);
+        if !names_target {
+            continue;
+        }
+        let Some(spec) = import.module_path.as_deref() else {
+            continue;
+        };
+        if let Some(pkg) = lookup.workspace_package_id(spec) {
+            return Some(pkg);
+        }
+    }
+    None
+}
 
 /// `true` when `kind` names a type a `this`/`self` keyword or an inherited
 /// member can attach to — a class-like declaration, not a namespace, function,

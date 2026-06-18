@@ -49,7 +49,7 @@ impl SemanticModel {
         profile: &LanguageProfile,
     ) -> Option<SymbolInfo> {
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
-            if let Some(res) = super::chain::bind_member_access(ref_ctx, lookup) {
+            if let Some(res) = super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
                 return Some(res);
             }
             // A multi-segment chain the walk declined is a genuine miss: a

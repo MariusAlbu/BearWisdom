@@ -221,3 +221,46 @@ fn declines_when_no_import_matches_target() {
     // Target is `other` but import only brings `createSlug` — no specifier found.
     assert_eq!(resolve(&lookup, "other", imports), None);
 }
+
+#[test]
+fn binds_bare_declared_name_import_with_no_sub_path() {
+    // `import { QueryClient } from '@tanstack/query-core'` — the specifier IS the
+    // declared name (no deep sub-path), so `workspace_sub_path` returns None and
+    // the no-sub-path fallback must bind the same-name symbol in the package.
+    let lookup = WsLookup::new()
+        .with_pkg("@tanstack/query-core", 10)
+        .with_sym(
+            10,
+            13168,
+            "QueryClient",
+            "class",
+            "packages/query-core/src/queryClient.ts",
+        );
+    let imports = vec![import("QueryClient", "@tanstack/query-core")];
+    assert_eq!(resolve(&lookup, "QueryClient", imports), Some(13168));
+}
+
+#[test]
+fn bare_declared_name_picks_the_package_def_over_a_sibling() {
+    // QueryClient exists in two sibling packages; the import names query-core, so
+    // the bind must scope to package 10's def even though package 19 also has one.
+    let lookup = WsLookup::new()
+        .with_pkg("@tanstack/query-core", 10)
+        .with_pkg("@tanstack/solid-query", 19)
+        .with_sym(
+            10,
+            13168,
+            "QueryClient",
+            "class",
+            "packages/query-core/src/queryClient.ts",
+        )
+        .with_sym(
+            19,
+            15723,
+            "QueryClient",
+            "class",
+            "packages/solid-query/src/QueryClient.ts",
+        );
+    let imports = vec![import("QueryClient", "@tanstack/query-core")];
+    assert_eq!(resolve(&lookup, "QueryClient", imports), Some(13168));
+}

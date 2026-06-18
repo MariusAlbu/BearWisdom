@@ -18,7 +18,7 @@
 // helpers inlined here from `default_resolver`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::normalize_name;
+use crate::indexer::resolve::engine::support::{import_scoped_package_id, normalize_name};
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
@@ -33,6 +33,20 @@ impl LookupRule for ImportedNamespaceRule {
         let target = ctx.target();
         let edge_kind = ctx.edge_kind();
         let norm = ctx.profile.name_normalization;
+
+        // Import-scoped preference: when the file imports `target` from a bare
+        // sibling-workspace specifier, bind the same-named candidate in THAT
+        // package before falling through to the first by-name match. Claims the
+        // same-name-across-packages refs the byte-exact probe would mis-route.
+        if let Some(pkg) = import_scoped_package_id(ctx.file_ctx, ctx.lookup, target) {
+            for sym in ctx.lookup.by_name(target) {
+                if sym.package_id == Some(pkg) && (ctx.kind)(edge_kind, &sym.kind) {
+                    return LookupResult::Resolved(
+                        ctx.resolved(sym.id, "default_imported_namespace"),
+                    );
+                }
+            }
+        }
 
         // Byte-exact probe: scan by_name candidates and check whether any
         // import's module path is a prefix of the candidate's qualified name.

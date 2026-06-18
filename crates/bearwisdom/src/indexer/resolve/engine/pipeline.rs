@@ -169,6 +169,18 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.enclosing_namespace_qname(source_qname)
     }
 
+    fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
+        self.tree.symbols_in_package(package_id)
+    }
+
+    fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        self.tree.workspace_package_id(specifier)
+    }
+
+    fn is_workspace_declared_name(&self, name: &str) -> bool {
+        self.tree.is_workspace_declared_name(name)
+    }
+
     // -- Flow cache: 5 methods implemented over `locals`. --------------------
 
     /// Return the inferred type of `name` from the per-file forward-inference
@@ -609,9 +621,17 @@ fn build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
 ///   (`None` mode) or echoes the target name (`EchoTarget` mode).
 fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfile) -> FileContext {
     let imports: Vec<ImportEntry> = match profile.import_module_path {
+        // Build entries from import-describing refs only: an explicit import
+        // binding (`import { X } from 'm'`) or an `Imports`-kind ref (require /
+        // side-effect). A bare usage ref now also carries `module` (set from the
+        // import that binds its name), so an unfiltered scan would re-derive a
+        // duplicate entry per use site; sourcing the import map from binding refs
+        // leaves one entry per imported name while the usage ref's module
+        // attribution still reaches the rules via `ctx.r().module`.
         ImportModulePath::FromModuleField => file
             .refs
             .iter()
+            .filter(|r| r.is_import_binding || r.kind == EdgeKind::Imports)
             .filter_map(|r| {
                 let module = r.module.clone()?;
                 Some(ImportEntry {

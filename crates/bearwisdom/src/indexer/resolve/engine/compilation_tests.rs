@@ -820,7 +820,7 @@ fn agreement_gate_folds_agreement_and_skips_disagreement() {
 #[test]
 fn inferred_return_lets_call_root_chain_resolve() {
     use crate::indexer::resolve::engine::chain::bind_member_access;
-    use crate::indexer::resolve::engine::testkit::{call_ref, ref_ctx, source_symbol};
+    use crate::indexer::resolve::engine::testkit::{call_ref, file_ctx, ref_ctx, source_symbol};
     use crate::types::{ChainSegment, MemberChain, SegmentKind};
 
     let arena = Arc::new(TypeArena::new());
@@ -853,7 +853,8 @@ fn inferred_return_lets_call_root_chain_resolve() {
     let src = source_symbol("caller");
     let rc = ref_ctx(&r, &src, vec![]);
 
-    let resolved = bind_member_access(&rc, &tree).map(|res| res.target_symbol_id);
+    let fc = file_ctx(vec![], None);
+    let resolved = bind_member_access(&rc, &fc, &tree).map(|res| res.target_symbol_id);
     let clear_id = tree
         .by_qualified_name("QueryClient.clear")
         .expect("QueryClient.clear indexed")

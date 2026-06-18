@@ -82,3 +82,22 @@ fn declines_when_no_import_matches() {
     let imports = vec![import("*", Some("com.other"))];
     assert_eq!(resolve(&lookup, "Widget", imports), None);
 }
+
+#[test]
+fn import_scope_picks_the_workspace_package_candidate_over_first_by_name() {
+    // `useQuery` declared in two sibling packages; the file imports it from
+    // query-core, so the bind must pick pkg-10's def even though pkg-19's is
+    // first in the by-name order.
+    let lookup = Lookup::new()
+        .with_workspace_pkg("@tanstack/query-core", 10)
+        .with_in_package(
+            19,
+            sym(900, "useQuery", "useQuery", "function", "packages/solid-query/src/useQuery.ts"),
+        )
+        .with_in_package(
+            10,
+            sym(910, "useQuery", "useQuery", "function", "packages/query-core/src/useQuery.ts"),
+        );
+    let imports = vec![import("useQuery", Some("@tanstack/query-core"))];
+    assert_eq!(resolve(&lookup, "useQuery", imports), Some(910));
+}

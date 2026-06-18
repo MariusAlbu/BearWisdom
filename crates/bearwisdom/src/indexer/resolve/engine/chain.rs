@@ -20,12 +20,13 @@
 use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::contract::{
-    RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
+    FileContext, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::SegmentKind;
 
 use super::alias;
+use super::support::import_scoped_package_id;
 
 /// Strategy tag for a member-chain bind produced by the new engine.
 const STRATEGY: &str = "rule_chain";
@@ -36,7 +37,11 @@ const MAX_SUPERTYPE_DEPTH: usize = 8;
 /// Resolve a member chain to its final segment's symbol. `None` when the root
 /// can't be typed or a hop has no matching member — an honestly-unresolved
 /// chain, diagnosable to the segment where the walk stopped.
-pub fn bind_member_access(ref_ctx: &RefContext, lookup: &dyn SymbolLookup) -> Option<SymbolInfo> {
+pub fn bind_member_access(
+    ref_ctx: &RefContext,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<SymbolInfo> {
     let chain = ref_ctx.extracted_ref.chain.as_ref()?;
     // A single-segment "chain" carries no receiver to root; the bare ladder
     // handles it. Multi-segment only here.
@@ -54,7 +59,7 @@ pub fn bind_member_access(ref_ctx: &RefContext, lookup: &dyn SymbolLookup) -> Op
     // distinct, and the supertype climb is id-keyed. The id is `None` for a head
     // with no indexed declaration (external/ambient/string-parsed), and the walk
     // falls back to the qname-string member lookup there.
-    let root = resolve_root(ref_ctx, lookup, arena, &chain.segments[0])?;
+    let root = resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0])?;
     let mut current = expand_receiver(root, lookup, arena);
     let last = chain.segments.len() - 1;
 
@@ -307,6 +312,7 @@ fn substitute_through(
 /// package distinct from another's during the member walk.
 fn resolve_root(
     ref_ctx: &RefContext,
+    file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
@@ -344,10 +350,16 @@ fn resolve_root(
     {
         return Some(Receiver::untyped(ty));
     }
-    // Bare type name used as a static-access / construction root. The resolved
-    // `Symbol` IS the receiver's declaration, so bind its id directly rather than
-    // round-tripping its qname back through `by_qualified_name`.
-    let s = lookup.types_by_name(&seg.name).into_iter().next()?;
+    // Bare type name used as a static-access / construction root. When the same
+    // name is declared in several sibling workspace packages, prefer the
+    // declaration in the package the use site imports the name from; otherwise
+    // fall back to the first same-named type. The resolved `Symbol` IS the
+    // receiver's declaration, so bind its id directly rather than round-tripping
+    // its qname back through `by_qualified_name`.
+    let candidates = lookup.types_by_name(&seg.name);
+    let s = import_scoped_package_id(file_ctx, lookup, &seg.name)
+        .and_then(|pkg| candidates.iter().find(|c| c.package_id == Some(pkg)))
+        .or_else(|| candidates.first())?;
     let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
     Some(Receiver::new(ty, s.id))
 }

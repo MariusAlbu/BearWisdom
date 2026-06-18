@@ -1,6 +1,8 @@
 use super::*;
-use crate::indexer::resolve::engine::testkit::{call_ref, ref_ctx, source_symbol, sym, Lookup};
-use crate::types::{ChainSegment, MemberChain};
+use crate::indexer::resolve::engine::testkit::{
+    call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
+};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain};
 
 fn seg(name: &str, is_call: bool, kind: SegmentKind) -> ChainSegment {
     ChainSegment {
@@ -34,7 +36,8 @@ fn resolve(lookup: &Lookup, segs: Vec<ChainSegment>, src_qname: &str) -> Option<
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, lookup).map(|res| res.target_symbol_id)
+    let fc = file_ctx(vec![], None);
+    bind_member_access(&rc, &fc, lookup).map(|res| res.target_symbol_id)
 }
 
 #[test]
@@ -395,4 +398,103 @@ fn identifier_root_decomposes_generic_local_type() {
         seg("isStaleByTime", true, SegmentKind::Property),
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(80));
+}
+
+// --- cross-package import-scoped binding (bare type_ref / 1-seg instantiates) -
+
+use crate::indexer::resolve::engine::contract::FileContext;
+use crate::indexer::resolve::engine::semantic_model::SemanticModel;
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
+
+static WS_PROFILE: LanguageProfile = LanguageProfile {
+    workspace_packages: true,
+    ..DEFAULT_PROFILE
+};
+
+/// A lookup with the same `QueryClient` class declared in two sibling workspace
+/// packages — query-core (pkg 10, id 13168) and solid-query (pkg 19, id 15723) —
+/// with query-core registered as a declared workspace package. The first-wins
+/// `by_name`/`types_by_name` order puts solid-query (id 15723) first.
+fn two_query_clients() -> Lookup {
+    Lookup::new()
+        .with_workspace_pkg("@tanstack/query-core", 10)
+        .with_workspace_pkg("@tanstack/solid-query", 19)
+        .with_in_package(
+            19,
+            sym(15723, "QueryClient", "QueryClient", "class", "packages/solid-query/src/QueryClient.ts"),
+        )
+        .with_in_package(
+            10,
+            sym(13168, "QueryClient", "QueryClient", "class", "packages/query-core/src/queryClient.ts"),
+        )
+}
+
+/// The file imports `QueryClient` from `@tanstack/query-core`.
+fn imports_query_client_from_core() -> FileContext {
+    file_ctx(
+        vec![import("QueryClient", Some("@tanstack/query-core"))],
+        None,
+    )
+}
+
+/// Drive one ref through the full engine (chain-less ladder + chain walk) under
+/// the workspace-enabled profile, returning the bound symbol id.
+fn engine_resolve(lookup: &Lookup, r: &ExtractedRef, fc: &FileContext) -> Option<i64> {
+    let s = source_symbol("caller");
+    let rc = ref_ctx(r, &s, vec![]);
+    SemanticModel::production()
+        .get_symbol_info(&rc, fc, lookup, &WS_PROFILE)
+        .map(|res| res.target_symbol_id)
+}
+
+#[test]
+fn bare_type_ref_binds_to_imported_package_not_by_name_first() {
+    let lookup = two_query_clients();
+    let fc = imports_query_client_from_core();
+    let mut r = call_ref("QueryClient");
+    r.kind = EdgeKind::TypeRef;
+    // The use site imports QueryClient from query-core (pkg 10); the bind must
+    // pick pkg-10's def (13168), NOT solid-query's first-wins def (15723).
+    assert_eq!(engine_resolve(&lookup, &r, &fc), Some(13168));
+}
+
+#[test]
+fn one_seg_instantiates_binds_to_imported_package_not_by_name_first() {
+    let lookup = two_query_clients();
+    let fc = imports_query_client_from_core();
+    let mut r = call_ref("QueryClient");
+    r.kind = EdgeKind::Instantiates;
+    // `new QueryClient()` emits a single-segment chain with module=None; it falls
+    // to the bare ladder and must bind the imported package's def.
+    r.chain = Some(MemberChain {
+        segments: vec![seg("QueryClient", false, SegmentKind::Identifier)],
+    });
+    assert_eq!(engine_resolve(&lookup, &r, &fc), Some(13168));
+}
+
+#[test]
+fn multi_seg_chain_roots_on_imported_packages_class() {
+    // `QueryClient.setQueryData(...)` static-access chain. Each package's
+    // QueryClient has its OWN setQueryData (keyed by symbol id); the root must
+    // pick the imported package's class so the member walk binds ITS method.
+    let lookup = two_query_clients()
+        .with_member_id(13168, sym(13200, "setQueryData", "QueryClient.setQueryData", "method", "packages/query-core/src/queryClient.ts"))
+        .with_member_id(15723, sym(15800, "setQueryData", "QueryClient.setQueryData", "method", "packages/solid-query/src/QueryClient.ts"));
+    let fc = imports_query_client_from_core();
+    let segs = vec![
+        seg("QueryClient", false, SegmentKind::TypeAccess),
+        seg("setQueryData", true, SegmentKind::Property),
+    ];
+    let leaf = "setQueryData";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    // query-core (pkg 10) def is registered AFTER solid-query (pkg 19), so
+    // first-wins would pick solid-query's method (15800); the import scope must
+    // steer the root to pkg-10's class -> its setQueryData (13200).
+    assert_eq!(
+        bind_member_access(&rc, &fc, &lookup).map(|res| res.target_symbol_id),
+        Some(13200)
+    );
 }

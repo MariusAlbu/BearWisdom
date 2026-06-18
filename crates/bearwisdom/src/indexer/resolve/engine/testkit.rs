@@ -40,6 +40,12 @@ pub(crate) struct Lookup {
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
     ambient: FxHashMap<String, Vec<Symbol>>,
+    /// Package id → symbols, the id-keyed counterpart of the real `by_package`
+    /// map. Backs `symbols_in_package` for workspace-scoped rule tests.
+    by_package: FxHashMap<i64, Vec<Symbol>>,
+    /// Declared workspace-package specifier → package id, backing
+    /// `workspace_package_id` / `is_workspace_declared_name`.
+    workspace_pkgs: FxHashMap<String, i64>,
     /// Workspace arena the chain walker interns roots / yields into. Mirrors the
     /// real `Compilation`, which owns one; the chain walk declines without it.
     arena: TypeArena,
@@ -64,6 +70,8 @@ impl Lookup {
             enclosing: Default::default(),
             aliases: Default::default(),
             ambient: Default::default(),
+            by_package: Default::default(),
+            workspace_pkgs: Default::default(),
             arena: TypeArena::new(),
         }
     }
@@ -88,6 +96,24 @@ impl Lookup {
             .entry(parent_qname.to_string())
             .or_default()
             .push(sym);
+        self
+    }
+
+    /// Register a symbol that belongs to a workspace package. Indexes it under
+    /// its simple/qualified name like `with`, AND records it under `package_id`
+    /// (with `package_id` stamped on the row) so `symbols_in_package` and the
+    /// import-scoped candidate pick can find it.
+    pub(crate) fn with_in_package(mut self, package_id: i64, mut sym: Symbol) -> Self {
+        sym.package_id = Some(package_id);
+        self = self.with(sym.clone());
+        self.by_package.entry(package_id).or_default().push(sym);
+        self
+    }
+
+    /// Map a workspace-package specifier to its package id, backing
+    /// `workspace_package_id` / `is_workspace_declared_name`.
+    pub(crate) fn with_workspace_pkg(mut self, specifier: &str, package_id: i64) -> Self {
+        self.workspace_pkgs.insert(specifier.to_string(), package_id);
         self
     }
 
@@ -263,6 +289,30 @@ impl SymbolLookup for Lookup {
     }
     fn type_arena(&self) -> Option<&TypeArena> {
         Some(&self.arena)
+    }
+    fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(
+            self.by_package
+                .get(&package_id)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
+    }
+    fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        if let Some(&id) = self.workspace_pkgs.get(specifier) {
+            return Some(id);
+        }
+        let mut path = specifier;
+        while let Some(slash) = path.rfind('/') {
+            path = &path[..slash];
+            if let Some(&id) = self.workspace_pkgs.get(path) {
+                return Some(id);
+            }
+        }
+        None
+    }
+    fn is_workspace_declared_name(&self, name: &str) -> bool {
+        self.workspace_pkgs.contains_key(name)
     }
 }
 
