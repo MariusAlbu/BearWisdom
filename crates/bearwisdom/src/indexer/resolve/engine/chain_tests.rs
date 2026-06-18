@@ -447,6 +447,69 @@ fn import_typed_value_resolves_through_to_referenced_export_type() {
 }
 
 #[test]
+fn re_roots_member_less_value_shim_onto_same_simple_name_type() {
+    // The callee value's declared type is a QUALIFIED head (`vitest.ExpectStatic`)
+    // whose own declaration is a member-less value re-export shim. The interface
+    // that actually declares the call signature has the SAME simple name under a
+    // DIFFERENT qname (`@vitest/expect.ExpectStatic`). Rooting `expect(x)` must
+    // bridge the shim to that interface, yield `Assertion` from its `call` member,
+    // and bind `Assertion.toBe`. Without the bridge the walk dead-ends on the
+    // member-less value and the chain is unresolved.
+    let lookup = Lookup::new()
+        .with(sym(1, "expect", "vitest.expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("vitest.expect", "vitest.ExpectStatic")
+        // The shim: a member-less value of the qualified type-name.
+        .with(sym(
+            2,
+            "ExpectStatic",
+            "vitest.ExpectStatic",
+            "variable",
+            "ext:ts:vitest/index.d.ts",
+        ))
+        // The interface that declares the call signature, same simple name.
+        .with(sym(
+            3,
+            "ExpectStatic",
+            "@vitest/expect.ExpectStatic",
+            "interface",
+            "ext:ts:@vitest/expect/index.d.ts",
+        ))
+        .with_member(
+            "@vitest/expect.ExpectStatic",
+            sym(50, "call", "@vitest/expect.ExpectStatic.call", "method", "ext:ts:@vitest/expect/index.d.ts"),
+        )
+        .with_return_type("@vitest/expect.ExpectStatic.call", "Assertion")
+        .with_member(
+            "Assertion",
+            sym(70, "toBe", "Assertion.toBe", "method", "ext:ts:@vitest/expect/index.d.ts"),
+        );
+    let segs = vec![
+        seg("expect", true, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
+}
+
+#[test]
+fn member_bearing_type_head_is_not_re_rooted() {
+    // A value whose declared type head already names a members-bearing type must
+    // root on THAT type unchanged — the shim-bridge must not divert it to a
+    // same-simple-name decl elsewhere. Here `box: Holder` and `Holder` is a real
+    // interface with `get`; no second `Holder` exists, so the receiver stays
+    // `Holder` and binds `Holder.get`.
+    let lookup = Lookup::new()
+        .with(sym(1, "box", "box", "const", "a.ts"))
+        .with_field_type("box", "Holder")
+        .with(sym(2, "Holder", "Holder", "interface", "a.ts"))
+        .with_member("Holder", sym(40, "get", "Holder.get", "method", "a.ts"));
+    let segs = vec![
+        seg("box", false, SegmentKind::Identifier),
+        seg("get", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(40));
+}
+
+#[test]
 fn roots_a_call_at_a_generic_return_type() {
     // function makeRepo(): Repository<User> {...};  makeRepo().find().name  →  User.name (id 20)
     let lookup = Lookup::new()

@@ -460,11 +460,22 @@ fn raw_field_type_of(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) 
 /// and prevents a self-referential field type from looping.
 const MAX_VALUE_TYPE_DEREF: usize = 4;
 
-/// Follow a field type whose nominal head names a VALUE through to that value's
-/// own declared type. Stops at a type-kind head, a value with no field type, a
-/// fixpoint (the value's field type names itself), or `MAX_VALUE_TYPE_DEREF`
-/// hops. `origin_qname` is the symbol the original field type was read from; it
-/// is excluded from the value lookup so a self-typed shim doesn't loop on itself.
+/// Follow a field type whose nominal head names a VALUE through to the type that
+/// declares the members. Two indirections collapse here:
+///
+///   - A head whose own declaration is a member-less value re-export shim — a
+///     `vitest.ExpectStatic` variable with no members, re-exporting an interface
+///     of the same simple name declared under a different qname — re-roots onto
+///     that same-simple-name type declaration, where the members are keyed.
+///   - A head that names no type but names a value whose own field type differs
+///     (`const x: typeof import('m')['k']` lowered to the bare export name)
+///     follows that value's declared type.
+///
+/// Stops at a type head that already declares members, a value with no field
+/// type, a fixpoint (the value's field type names itself), or
+/// `MAX_VALUE_TYPE_DEREF` hops. `origin_qname` is the symbol the original field
+/// type was read from; it is excluded from the value lookup so a self-typed shim
+/// doesn't loop on itself.
 fn deref_value_typed(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -477,15 +488,26 @@ fn deref_value_typed(
         let Some(head) = head_qname(arena, current) else {
             return current;
         };
-        // A nominal head that names a type declaration is already the receiver.
-        if !lookup.types_by_name(&head).is_empty() {
-            return current;
+        // The maps are simple-name keyed; a qualified head (`vitest.ExpectStatic`)
+        // probes them by its trailing segment.
+        let simple = head.rsplit('.').next().unwrap_or(&head);
+        // A nominal head whose declaration is a member-bearing type is already
+        // the receiver. When a same-simple-name type exists but the head's own
+        // declaration is a member-less value re-export shim, advance the receiver
+        // onto the type declaration that actually holds the members — its qname
+        // differs from the shim's, so the member walk would otherwise dead-end on
+        // the member-less value.
+        if let Some(type_decl) = receiver_type_for_head(lookup, &head, simple) {
+            if type_decl.qualified_name == head {
+                return current;
+            }
+            return arena.class(&type_decl.qualified_name);
         }
         // The head names no type; if it names a value (other than the symbol we
         // just came from) whose own field type differs, that value's type is the
         // real receiver.
         let Some(value) = lookup
-            .by_name(&head)
+            .by_name(simple)
             .into_iter()
             .find(|s| is_value_kind(&s.kind) && s.qualified_name != seen_qname)
         else {
@@ -501,6 +523,49 @@ fn deref_value_typed(
         seen_qname = value.qualified_name.clone();
     }
     current
+}
+
+/// The type declaration a head should root on: the same-simple-name type whose
+/// members the chain walks. `None` when no type shares the head's simple name —
+/// the caller then tries value indirection.
+///
+/// When the head's OWN declaration is the type (a normal member-bearing type
+/// name), that declaration is returned and the caller leaves the receiver
+/// unchanged. When the head names a member-less value re-export shim and a
+/// distinct same-simple-name type declares the members, that type is returned so
+/// the caller re-roots onto it. A type candidate that carries members is
+/// preferred over a member-less one, so the shim's own member-less value (which
+/// can also be type-kind in some shapes) never shadows the real declaration.
+fn receiver_type_for_head(
+    lookup: &dyn SymbolLookup,
+    head: &str,
+    simple: &str,
+) -> Option<Symbol> {
+    let candidates = lookup.types_by_name(simple).to_vec();
+    if candidates.is_empty() {
+        return None;
+    }
+    // A type candidate whose qname equals the head and bears members is the head
+    // itself as a member-bearing type — keep it (caller leaves the receiver as-is).
+    if let Some(exact) = candidates
+        .iter()
+        .find(|c| c.qualified_name == head && type_has_members(lookup, c))
+    {
+        return Some(exact.clone());
+    }
+    // Otherwise prefer a member-bearing type declaration (the interface that holds
+    // the call signature / members), falling back to the first type candidate.
+    candidates
+        .iter()
+        .find(|c| type_has_members(lookup, c))
+        .or_else(|| candidates.first())
+        .cloned()
+}
+
+/// `true` when the type declaration `sym` has at least one indexed member —
+/// either id-keyed (`members_of_id`) or qname-keyed (`members_of`).
+fn type_has_members(lookup: &dyn SymbolLookup, sym: &Symbol) -> bool {
+    !lookup.members_of_id(sym.id).is_empty() || !lookup.members_of(&sym.qualified_name).is_empty()
 }
 
 /// `true` when `kind` names a value whose declared type can root a chain.
