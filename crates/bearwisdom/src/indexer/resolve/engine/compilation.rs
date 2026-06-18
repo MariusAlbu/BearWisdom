@@ -672,8 +672,18 @@ impl Compilation {
                     if let Some(&(first, _)) = type_refs.first() {
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                         if ti.field_type.is_none() {
-                            ti.field_type_id = Some(self.arena.intern_type_str(first));
-                            ti.field_type = Some(first.to_string());
+                            // Scope-qualify the alias's flattened RHS head to the
+                            // declaring module so a transparent alias follows it to
+                            // the real declaration (`expect-type.PositiveExpectTypeOf`,
+                            // not the bare `PositiveExpectTypeOf`) — the same scope
+                            // resolution every field/property type takes.
+                            let resolved = resolve_type_name_in_scope(
+                                first,
+                                sym.scope_path.as_deref(),
+                                &self.by_qname,
+                            );
+                            ti.field_type_id = Some(self.arena.intern_type_str(&resolved));
+                            ti.field_type = Some(resolved);
                         }
                     }
                 }

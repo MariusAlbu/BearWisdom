@@ -6,9 +6,12 @@
 // up for `.get` must find `get` on `Map`, not on the alias name. Roslyn treats
 // aliases transparently — the alias resolves to the underlying type.
 //
-// Only the `Application` arm (`type Foo<T> = Bar<…>`) is expanded so far; the
-// other `AliasTarget` arms (union, conditional, typeof, …) decline and leave the
-// type unchanged — a later step.
+// The `Application` arm (`type Foo<T> = Bar<…>`) reduces structurally. A
+// member-less alias of any other kind (conditional / typeof / a redirect to a
+// single nominal type) is followed through its flattened RHS head, recorded as
+// the alias's field type — so `type X<T> = … ? Positive<T> : Negative<T>` is
+// transparent to member access. An alias that declares its own members (an
+// object-literal alias) keeps those members instead of being followed.
 // =============================================================================
 
 use rustc_hash::FxHashMap;
@@ -32,37 +35,73 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
         let Some(head) = head_qname(arena, ty) else {
             break;
         };
-        // Snapshot out of the lookup borrow so `ty` can be reassigned below.
-        let snapshot = match lookup.alias_target(&head) {
-            Some(AliasTarget::Application { root, args }) => Some((root.clone(), args.clone())),
-            _ => None,
+        // The alias's target as a TypeId, computed as owned data so the lookup
+        // borrow ends before `ty` is reassigned. An `Application` alias reduces
+        // to `root<args…>`; any other alias kind is transparent through its
+        // flattened RHS head when it carries no members of its own.
+        let target = match lookup.alias_target(&head) {
+            Some(AliasTarget::Application { root, args }) => application_target(arena, root, args),
+            _ => match transparent_alias_target(lookup, arena, &head) {
+                Some(t) => t,
+                None => break,
+            },
         };
-        let Some((root, args)) = snapshot else {
+        // A self-referential alias (`type T = … T …`) makes no structural
+        // progress — stop rather than spin to the depth bound.
+        if head_qname(arena, target).as_deref() == Some(head.as_str()) {
             break;
-        };
+        }
+        // Substitute the alias's own generic params with the application's args.
         let params = lookup
             .generic_params(&head)
             .map(|p| p.to_vec())
             .unwrap_or_default();
-        // The alias target as a TypeId: `root<args…>`.
-        let base = arena.class(&root);
-        let target = if args.is_empty() {
-            base
-        } else {
-            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
-            arena.intern(Type::Apply { base, args: arg_ids })
-        };
-        // Substitute the alias's own generic params with the application's args.
         let ty_args = apply_args(arena, ty);
         ty = if params.is_empty() || ty_args.is_empty() {
             target
         } else {
-            let map: FxHashMap<String, TypeId> =
-                params.into_iter().zip(ty_args).collect();
+            let map: FxHashMap<String, TypeId> = params.into_iter().zip(ty_args).collect();
             arena.rebind_class_params(target, &map)
         };
     }
     ty
+}
+
+/// The `Application` alias target `root<args…>` as a TypeId.
+fn application_target(arena: &TypeArena, root: &str, args: &[String]) -> TypeId {
+    let base = arena.class(root);
+    if args.is_empty() {
+        base
+    } else {
+        let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+        arena.intern(Type::Apply { base, args: arg_ids })
+    }
+}
+
+/// The next hop for a transparent (non-`Application`) alias: its flattened RHS
+/// head, recorded as the alias's field type. `None` — leaving the type
+/// unchanged — when `head` is not a type alias, or when the alias declares its
+/// own members (an object-literal alias `type T = { … }` / `type T = B & { … }`
+/// *is* those members, so following it would drop them), or when no field type
+/// is recorded.
+fn transparent_alias_target(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    head: &str,
+) -> Option<TypeId> {
+    let (id, is_alias) = match lookup.by_qualified_name(head) {
+        Some(s) => (s.id, s.kind == "type_alias"),
+        None => return None,
+    };
+    if !is_alias || !lookup.members_of_id(id).is_empty() {
+        return None;
+    }
+    if let Some(id) = lookup.field_type_id(head) {
+        return Some(id);
+    }
+    lookup
+        .field_type_name(head)
+        .map(|s| arena.intern_type_str(s))
 }
 
 #[cfg(test)]
