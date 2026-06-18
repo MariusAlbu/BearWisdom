@@ -131,12 +131,11 @@ pub(crate) fn scan_ts_user_imports_recursive(
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Project test dirs are NOT pruned here: test files import the
-                // assertion / matcher / DOM-query libraries (vitest,
-                // @vitest/expect, expect-type, @testing-library/*) that no
-                // production file names, and those bare specifiers must pass
-                // the gate so the transitive walker reaches the packages whose
-                // members the chain walker resolves. Build-output and
+                // Project test dirs are NOT pruned here: a dependency imported
+                // only from test files (an assertion / matcher / DOM-query
+                // library that no production file names) must still pass the
+                // user-import gate so the transitive walker reaches it and the
+                // chain walker can resolve its members. Build-output and
                 // dependency-cache dirs stay pruned — they carry no
                 // user-authored imports.
                 if matches!(
