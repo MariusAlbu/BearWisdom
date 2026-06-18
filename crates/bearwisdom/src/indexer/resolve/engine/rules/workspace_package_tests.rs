@@ -22,6 +22,9 @@ struct WsLookup {
     symbols: Vec<(i64, Symbol)>,
     /// (specifier, package_id)
     packages: Vec<(&'static str, i64)>,
+    /// (barrel_file_path, [(exported_name, source_module)]) re-export entries.
+    reexports: Vec<(&'static str, Vec<(String, String)>)>,
+    empty_reexports: Vec<(String, String)>,
 }
 
 impl WsLookup {
@@ -29,7 +32,24 @@ impl WsLookup {
         Self {
             symbols: Vec::new(),
             packages: Vec::new(),
+            reexports: Vec::new(),
+            empty_reexports: Vec::new(),
         }
+    }
+
+    fn with_reexports(
+        mut self,
+        barrel: &'static str,
+        entries: Vec<(&str, &str)>,
+    ) -> Self {
+        self.reexports.push((
+            barrel,
+            entries
+                .into_iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect(),
+        ));
+        self
     }
 
     fn with_pkg(mut self, specifier: &'static str, pkg_id: i64) -> Self {
@@ -64,8 +84,14 @@ impl WsLookup {
 }
 
 impl SymbolLookup for WsLookup {
-    fn by_name(&self, _: &str) -> SymbolSet<'_> {
-        SymbolSet::empty()
+    fn by_name(&self, name: &str) -> SymbolSet<'_> {
+        let refs: Vec<&Symbol> = self
+            .symbols
+            .iter()
+            .filter(|(_, sym)| sym.name == name)
+            .map(|(_, sym)| sym)
+            .collect();
+        SymbolSet::Owned(refs)
     }
     fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
@@ -97,8 +123,12 @@ impl SymbolLookup for WsLookup {
     fn generic_params(&self, _: &str) -> Option<&[String]> {
         None
     }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] {
-        &[]
+    fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
+        self.reexports
+            .iter()
+            .find(|(p, _)| *p == file_path)
+            .map(|(_, e)| e.as_slice())
+            .unwrap_or(self.empty_reexports.as_slice())
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
@@ -237,6 +267,50 @@ fn binds_bare_declared_name_import_with_no_sub_path() {
             "packages/query-core/src/queryClient.ts",
         );
     let imports = vec![import("QueryClient", "@tanstack/query-core")];
+    assert_eq!(resolve(&lookup, "QueryClient", imports), Some(13168));
+}
+
+#[test]
+fn follows_export_star_to_sibling_package_declaration() {
+    // `@tanstack/react-query` (pkg 15) re-exports `* from '@tanstack/query-core'`
+    // through its index barrel; it declares no QueryClient itself. `query-core`
+    // (pkg 10) re-exports `QueryClient from './queryClient'`, where the class
+    // lives. A QueryClient ref scoped to react-query must thread both hops.
+    let lookup = WsLookup::new()
+        .with_pkg("@tanstack/react-query", 15)
+        .with_pkg("@tanstack/query-core", 10)
+        // The barrel symbols are what `workspace_pkg_barrels` scans; only the
+        // file path + package attribution matter for barrel discovery.
+        .with_sym(
+            15,
+            900,
+            "useQuery",
+            "function",
+            "packages/react-query/src/index.ts",
+        )
+        .with_sym(
+            10,
+            901,
+            "QueryCache",
+            "class",
+            "packages/query-core/src/index.ts",
+        )
+        .with_sym(
+            10,
+            13168,
+            "QueryClient",
+            "class",
+            "packages/query-core/src/queryClient.ts",
+        )
+        .with_reexports(
+            "packages/react-query/src/index.ts",
+            vec![("*", "@tanstack/query-core")],
+        )
+        .with_reexports(
+            "packages/query-core/src/index.ts",
+            vec![("QueryClient", "./queryClient")],
+        );
+    let imports = vec![import("QueryClient", "@tanstack/react-query")];
     assert_eq!(resolve(&lookup, "QueryClient", imports), Some(13168));
 }
 

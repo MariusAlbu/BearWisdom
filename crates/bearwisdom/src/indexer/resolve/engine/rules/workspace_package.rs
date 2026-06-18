@@ -13,6 +13,7 @@
 //   `is_bare_module_specifier` — rejects relative and drive-rooted specifiers.
 // =============================================================================
 
+use crate::indexer::resolve::engine::support::{follow_reexports, workspace_pkg_barrels};
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 
 pub struct WorkspacePackageRule;
@@ -70,10 +71,24 @@ impl LookupRule for WorkspacePackageRule {
                 fallback = Some(sym.id);
             }
         }
-        match fallback {
-            Some(id) => LookupResult::Resolved(ctx.resolved(id, "default_workspace_package")),
-            None => LookupResult::Pass,
+        if let Some(id) = fallback {
+            return LookupResult::Resolved(ctx.resolved(id, "default_workspace_package"));
         }
+
+        // The package re-exports the name through its public barrel but does not
+        // declare it — `export * from '@org/core'` forwards a sibling workspace
+        // package's symbol. Follow the re-export chain from each of the package's
+        // `index` barrels to the declaring symbol, which may live in another
+        // workspace package. (The bare specifier has no `resolve_module_from`
+        // mapping, so the barrel is recovered from the package's own symbol set.)
+        for barrel in workspace_pkg_barrels(ctx.lookup, specifier) {
+            if let Some(res) =
+                follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0)
+            {
+                return LookupResult::Resolved(res);
+            }
+        }
+        LookupResult::Pass
     }
 }
 
