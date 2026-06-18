@@ -330,6 +330,37 @@ fn function_callee_return_path_unaffected_by_callable_value_fallback() {
 }
 
 #[test]
+fn import_typed_value_resolves_through_to_referenced_export_type() {
+    // The extractor lowers `const expect: typeof import('vitest')['expect']` to a
+    // field_type whose head is the bare export name `expect` (the cross-module
+    // ref target). The exporting module's own `expect` value carries the real
+    // type `ExpectStatic`. The chain root `expect(x).toBe(...)` must chase the
+    // import-typed shim through to `ExpectStatic`'s call-signature return,
+    // `Assertion`, and bind `Assertion.toBe`.
+    let lookup = Lookup::new()
+        // The use-site shim: its declared type is the bare export name.
+        .with(sym(1, "expect", "expect", "const", "ext:ts:globals.d.ts"))
+        .with_field_type("expect", "expect")
+        // The exporting module's `expect` value, declared `: ExpectStatic`.
+        .with(sym(2, "expect", "vitest.expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("vitest.expect", "ExpectStatic")
+        .with_member(
+            "ExpectStatic",
+            sym(50, "call", "ExpectStatic.call", "method", "ext:ts:vitest/index.d.ts"),
+        )
+        .with_return_type("ExpectStatic.call", "Assertion")
+        .with_member(
+            "Assertion",
+            sym(70, "toBe", "Assertion.toBe", "method", "ext:ts:vitest/index.d.ts"),
+        );
+    let segs = vec![
+        seg("expect", true, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
+}
+
+#[test]
 fn roots_a_call_at_a_generic_return_type() {
     // function makeRepo(): Repository<User> {...};  makeRepo().find().name  →  User.name (id 20)
     let lookup = Lookup::new()

@@ -329,8 +329,57 @@ pub(super) fn extract_type_ref_from_annotation(
                 }
             }
         }
+        // `typeof import('m')['k']` — index into a module's namespace type.
+        // The grammar nests a `type_query` (the `typeof import('m')` half)
+        // under a `lookup_type`, with a trailing `literal_type` index key.
+        // Emit ONE module-tagged TypeRef whose target is the index key, the
+        // same shape `import { k } from 'm'` produces, so cross-module
+        // resolution picks it up rather than interning the raw call text.
+        "lookup_type" => {
+            if let Some((module, key)) = import_lookup_type_parts(&type_node, src) {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index,
+                    target_name: key,
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    col: 0,
+                    module: Some(module),
+                    chain: None,
+                    byte_offset: type_node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+                return;
+            }
+            // Non-import lookup (`T['k']`) — fall back to the deep walk so
+            // the object type still yields its TypeRef leaves.
+            extract_type_refs_recursive(&type_node, src, source_symbol_index, refs);
+        }
         // `typeof Foo` — the referenced name is a value-space ref; emit as TypeRef.
         "type_query" => {
+            // `typeof import('m')` — whole-namespace import-type. The module
+            // specifier is the target; mirror the bare-module convention used
+            // for `import('m')` annotations (the module name doubles as the
+            // type referring to its default export).
+            if let Some(module) = import_type_query_module(&type_node, src) {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index,
+                    target_name: module.clone(),
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    col: 0,
+                    module: Some(module),
+                    chain: None,
+                    byte_offset: type_node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+                return;
+            }
             // The expression after `typeof` is the referenced name.
             if let Some(expr) = type_node.child_by_field_name("name") {
                 let name = node_text(expr, src);
@@ -450,6 +499,31 @@ pub(super) fn extract_type_ref_from_annotation(
         // The proper TypeRefs for member types come from the symbol-emission
         // path on the same nodes.
         "object_type" => {}
+        // `import('m')` used directly as a type annotation — the grammar lands
+        // the bare import-type (no `typeof`, no index) as a `call_expression`
+        // whose function is the `import` keyword. The module specifier is the
+        // target, mirroring the bare-module convention. Without this arm the
+        // catch-all deep-walk emits the `import` keyword / no usable ref.
+        "call_expression" => {
+            if let Some(module) = import_call_module(&type_node, src) {
+                refs.push(ExtractedRef {
+                    is_import_binding: false,
+                    is_reexport: false,
+                    source_symbol_index,
+                    target_name: module.clone(),
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    col: 0,
+                    module: Some(module),
+                    chain: None,
+                    byte_offset: type_node.start_byte() as u32,
+                    namespace_segments: Vec::new(),
+                    call_args: Vec::new(),
+                });
+                return;
+            }
+            extract_type_refs_recursive(&type_node, src, source_symbol_index, refs);
+        }
         // Tuple type: `[string, number]` — recurse into element types.
         "tuple_type" => {
             for i in 0..type_node.child_count() {
@@ -758,6 +832,88 @@ pub(super) fn extract_typed_params_as_symbols(
 /// Returns `None` when the input doesn't match the syntactic shape
 /// — caller falls back to emitting the whole string as a regular
 /// type reference.
+/// Extract the module specifier from an `import('m')` `call_expression` node
+/// whose function is the `import` keyword. Returns `None` for any other call.
+///
+/// The string argument lands as `arguments → string → string_fragment`; the
+/// fragment is the bare specifier with the quotes already stripped by the
+/// grammar.
+fn import_call_module(call: &Node, src: &[u8]) -> Option<String> {
+    if call.kind() != "call_expression" {
+        return None;
+    }
+    let func = call.child_by_field_name("function")?;
+    if func.kind() != "import" {
+        return None;
+    }
+    let args = call.child_by_field_name("arguments")?;
+    for i in 0..args.child_count() {
+        let arg = args.child(i)?;
+        if arg.kind() == "string" {
+            for j in 0..arg.child_count() {
+                let part = arg.child(j)?;
+                if part.kind() == "string_fragment" {
+                    return Some(node_text(part, src));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract the module specifier from a `typeof import('m')` `type_query` node
+/// (`typeof` keyword followed by an import `call_expression`). Returns `None`
+/// when the `type_query` is a plain `typeof someValue` rather than an
+/// import-type.
+fn import_type_query_module(type_query: &Node, src: &[u8]) -> Option<String> {
+    if type_query.kind() != "type_query" {
+        return None;
+    }
+    for i in 0..type_query.child_count() {
+        let child = type_query.child(i)?;
+        if let Some(module) = import_call_module(&child, src) {
+            return Some(module);
+        }
+    }
+    None
+}
+
+/// Decompose a `lookup_type` node of the form `typeof import('m')['k']` into
+/// `(module, key)`. The node nests a `type_query` (the `typeof import('m')`
+/// half) and a trailing `literal_type` holding the index key. Returns `None`
+/// when the object half isn't an import-type query, or the index isn't a
+/// string-literal key.
+fn import_lookup_type_parts(lookup: &Node, src: &[u8]) -> Option<(String, String)> {
+    if lookup.kind() != "lookup_type" {
+        return None;
+    }
+    let mut module: Option<String> = None;
+    let mut key: Option<String> = None;
+    for i in 0..lookup.child_count() {
+        let child = lookup.child(i)?;
+        match child.kind() {
+            "type_query" => {
+                module = import_type_query_module(&child, src);
+            }
+            "literal_type" => {
+                for j in 0..child.child_count() {
+                    let lit = child.child(j)?;
+                    if lit.kind() == "string" {
+                        for k in 0..lit.child_count() {
+                            let part = lit.child(k)?;
+                            if part.kind() == "string_fragment" {
+                                key = Some(node_text(part, src));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Some((module?, key?))
+}
+
 pub(super) fn parse_import_type_expression(s: &str) -> Option<(String, String)> {
     let s = s.trim();
     let after_import = s.strip_prefix("import")?.trim_start();

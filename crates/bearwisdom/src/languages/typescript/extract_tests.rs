@@ -188,6 +188,53 @@ fn import_type_default_emits_module_tagged_binding() {
     );
 }
 
+/// The (target_name, module) pairs of non-import-binding TypeRefs whose module
+/// is set — the cross-module type references the resolver matches by module.
+fn module_tagged_type_refs(source: &str) -> Vec<(String, Option<String>)> {
+    refs(source)
+        .into_iter()
+        .filter(|r| {
+            r.kind == EdgeKind::TypeRef && !r.is_import_binding && r.module.is_some()
+        })
+        .map(|r| (r.target_name, r.module))
+        .collect()
+}
+
+#[test]
+fn import_type_value_annotation_emits_module_tagged_export_ref() {
+    // `const expect: typeof import('vitest')['expect']` — the import-type
+    // annotation lowers to a cross-module ref at the exported name `expect`,
+    // not the raw `import('vitest')` text. The first TypeRef is what feeds the
+    // const's field_type, so it must be the resolvable (expect, vitest) pair.
+    let src = "export const expect: typeof import('vitest')['expect'] = null as any;";
+    let tagged = module_tagged_type_refs(src);
+    assert!(
+        tagged.contains(&("expect".to_string(), Some("vitest".to_string()))),
+        "expected module-tagged (expect, vitest) ref; got {tagged:?}"
+    );
+    // The raw call text must NOT leak as a target.
+    assert!(
+        !refs(src)
+            .iter()
+            .any(|r| r.target_name.contains("import(")),
+        "raw import-type call text leaked as a ref target: {:?}",
+        refs(src)
+    );
+}
+
+#[test]
+fn import_type_alias_emits_module_tagged_export_ref() {
+    // `type E = typeof import('vitest')['expect']` — the alias form lands as a
+    // `lookup_type` value; its TypeRef must also resolve cross-module rather
+    // than leaking the raw call text.
+    let src = "export type E = typeof import('vitest')['expect'];";
+    let tagged = module_tagged_type_refs(src);
+    assert!(
+        tagged.contains(&("expect".to_string(), Some("vitest".to_string()))),
+        "expected module-tagged (expect, vitest) ref for alias; got {tagged:?}"
+    );
+}
+
 #[test]
 fn plain_value_import_bindings_unaffected() {
     // Regression guard: a plain value import must keep emitting module-tagged

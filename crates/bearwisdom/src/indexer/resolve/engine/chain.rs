@@ -431,13 +431,76 @@ fn value_root_type(
 
 /// The interned field/property type of `qname`: the `field_type_id` if present,
 /// else the string accessor interned at this boundary.
+///
+/// When the resulting type's nominal head names a VALUE rather than a type — the
+/// shape the extractor lowers `const x: typeof import('m')['k']` to, where the
+/// field type is the bare exported name `k` and `k` is a value the module
+/// exports — the value's *own* declared type is the real receiver. Follow that
+/// indirection so the chain roots on the referenced export's type, not on the
+/// (non-existent) type named by the export's identifier.
 fn field_type_of(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> Option<TypeId> {
+    let id = raw_field_type_of(lookup, arena, qname)?;
+    Some(deref_value_typed(lookup, arena, id, qname))
+}
+
+/// The interned field/property type of `qname` without value-indirection
+/// following: the `field_type_id` if present, else the string accessor interned
+/// at this boundary.
+fn raw_field_type_of(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> Option<TypeId> {
     if let Some(id) = lookup.field_type_id(qname) {
         return Some(id);
     }
     lookup
         .field_type_name(qname)
         .map(|s| arena.intern_type_str(s))
+}
+
+/// Upper bound on value-indirection hops when a field type names a value whose
+/// own declared type is the real receiver. Bounds the rare re-export-shim chain
+/// and prevents a self-referential field type from looping.
+const MAX_VALUE_TYPE_DEREF: usize = 4;
+
+/// Follow a field type whose nominal head names a VALUE through to that value's
+/// own declared type. Stops at a type-kind head, a value with no field type, a
+/// fixpoint (the value's field type names itself), or `MAX_VALUE_TYPE_DEREF`
+/// hops. `origin_qname` is the symbol the original field type was read from; it
+/// is excluded from the value lookup so a self-typed shim doesn't loop on itself.
+fn deref_value_typed(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    id: TypeId,
+    origin_qname: &str,
+) -> TypeId {
+    let mut current = id;
+    let mut seen_qname = origin_qname.to_string();
+    for _ in 0..MAX_VALUE_TYPE_DEREF {
+        let Some(head) = head_qname(arena, current) else {
+            return current;
+        };
+        // A nominal head that names a type declaration is already the receiver.
+        if !lookup.types_by_name(&head).is_empty() {
+            return current;
+        }
+        // The head names no type; if it names a value (other than the symbol we
+        // just came from) whose own field type differs, that value's type is the
+        // real receiver.
+        let Some(value) = lookup
+            .by_name(&head)
+            .into_iter()
+            .find(|s| is_value_kind(&s.kind) && s.qualified_name != seen_qname)
+        else {
+            return current;
+        };
+        let Some(next) = raw_field_type_of(lookup, arena, &value.qualified_name) else {
+            return current;
+        };
+        if next == current {
+            return current;
+        }
+        current = next;
+        seen_qname = value.qualified_name.clone();
+    }
+    current
 }
 
 /// `true` when `kind` names a value whose declared type can root a chain.
