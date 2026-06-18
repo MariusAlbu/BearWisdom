@@ -2240,6 +2240,29 @@ fn coverage_interface_extends_type_clause() {
 }
 
 #[test]
+fn coverage_interface_extends_generic_and_namespaced_supertypes() {
+    // `interface A<T> extends X<P>, Y<Q>, Z.W {}` — heritage children are a
+    // `generic_type` (base nested one level under field `name`, with its own
+    // `type_arguments`) and a `nested_type_identifier` (dotted). Each supertype
+    // must emit exactly one Inherits ref: a generic parent folds its argument
+    // list into target_name (`X<P>`, `Y<Q>`) the same way the class extends path
+    // does, and the namespaced parent keeps its dotted text (`Z.W`).
+    let r = extract::extract("interface A<T> extends X<P>, Y<Q>, Z.W {}", false);
+    let inherits: Vec<&String> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Inherits)
+        .map(|r| &r.target_name)
+        .collect();
+    for expected in ["X<P>", "Y<Q>", "Z.W"] {
+        assert!(
+            inherits.iter().any(|t| t.as_str() == expected),
+            "expected Inherits ref '{expected}'; got: {inherits:?}"
+        );
+    }
+}
+
+#[test]
 fn coverage_method_call_member_expression() {
     // `obj.method()` — call_expression whose function is a member_expression.
     // Calls ref target_name should contain the method name "warn".

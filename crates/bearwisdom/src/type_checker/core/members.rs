@@ -700,15 +700,29 @@ fn reachable_external_types(
         }
     }
 
-    // Closure: walk member-type edges between external types from the seed.
+    // Closure: from each reached external type, follow both its member-type
+    // edges (the receiver of the next chain hop) and its external supertypes (a
+    // member declared on a supertype surfaces on the subtype, so the supertype's
+    // members must be admitted too). Both stay within the reachable component —
+    // only external types — so the write set keeps the seed's bound.
     let mut frontier: Vec<String> = reachable.iter().cloned().collect();
     while let Some(ty) = frontier.pop() {
-        let Some(next) = ext_member_edges.get(&ty) else {
-            continue;
-        };
-        for n in next {
-            if reachable.insert(n.clone()) {
-                frontier.push(n.clone());
+        if let Some(next) = ext_member_edges.get(&ty) {
+            for n in next {
+                if reachable.insert(n.clone()) {
+                    frontier.push(n.clone());
+                }
+            }
+        }
+        for &parent in supertypes.parents_of(arena.class(&ty)) {
+            let Some(parent_qname) = base_class_qname(parent, arena) else {
+                continue;
+            };
+            if !ext_type_qnames.contains(parent_qname.as_str()) {
+                continue;
+            }
+            if reachable.insert(parent_qname.clone()) {
+                frontier.push(parent_qname);
             }
         }
     }

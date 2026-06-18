@@ -1404,6 +1404,89 @@ fn unreferenced_external_class_member_not_admitted() {
 }
 
 #[test]
+fn reachable_external_supertype_class_members_admitted_via_closure() {
+    // An internal field is typed by external class `Sub`, which extends external
+    // class `Base`. `Sub` is admitted by the field-type seed, but `Base` is named
+    // by NO member-type edge and NO internal symbol — it is reached only as
+    // `Sub`'s supertype. The closure must follow that supertype edge so `Base`'s
+    // method `inherited` is admitted and surfaces on `Sub` through the climb.
+    // Classes (unlike traits/interfaces) are not pre-admitted by the wholesale
+    // gate, so the closure is the only route — this is the path the fix adds.
+    use crate::types::SymbolKind;
+
+    let arena = TypeArena::new();
+
+    let ext_file = parsed(
+        "ext:ts:lib/index.d.ts",
+        "typescript",
+        vec![
+            ex_sym("Base", "Base", SymbolKind::Class, None),
+            ex_sym(
+                "inherited",
+                "Base.inherited",
+                SymbolKind::Method,
+                Some("Base"),
+            ),
+            ex_sym("Sub", "Sub", SymbolKind::Class, None),
+            ex_sym("own", "Sub.own", SymbolKind::Method, Some("Sub")),
+        ],
+        // `Sub`'s own Inherits ref forms the Sub → Base supertype edge.
+        vec![ex_ref(2, "Base", EdgeKind::Inherits)],
+    );
+    let app_file = parsed(
+        "app.ts",
+        "typescript",
+        vec![
+            ex_sym("App", "App", SymbolKind::Class, None),
+            ex_field_typed("conn", "App.conn", "App", "Sub", &arena),
+        ],
+        Vec::new(),
+    );
+
+    let mut sym_ids = SymbolIdMap::default();
+    sym_ids.insert(("ext:ts:lib/index.d.ts".to_string(), 0), 100); // Base
+    sym_ids.insert(("ext:ts:lib/index.d.ts".to_string(), 1), 101); // Base.inherited
+    sym_ids.insert(("ext:ts:lib/index.d.ts".to_string(), 2), 102); // Sub
+    sym_ids.insert(("ext:ts:lib/index.d.ts".to_string(), 3), 103); // Sub.own
+    sym_ids.insert(("app.ts".to_string(), 0), 200);
+    sym_ids.insert(("app.ts".to_string(), 1), 201);
+
+    let slice = vec![ext_file, app_file];
+    let mut members = MembersIndex::build_from_parsed_files(&slice, &sym_ids, &arena);
+    let lookup = NullLookup::new();
+    let symbol_types = SymbolTypeMap::new();
+    let graph = SupertypeGraph::build(
+        &slice,
+        &arena,
+        &DEFAULT_PROFILE,
+        &members,
+        &symbol_types,
+        &lookup,
+    );
+    members.admit_reachable_externals(&slice, &sym_ids, &arena, &graph);
+
+    // The supertype class's member was admitted via the closure...
+    let base = arena.class("Base");
+    assert!(
+        members.direct_of(base).iter().any(|m| m.id == 101),
+        "closure must admit the external supertype class's member"
+    );
+    // ...and surfaces on the subtype through the supertype climb.
+    let sub = arena.class("Sub");
+    let found = members
+        .lookup(
+            sub,
+            "inherited",
+            EdgeKind::Calls,
+            &graph,
+            &arena,
+            &DEFAULT_PROFILE,
+        )
+        .expect("inherited member must resolve on the subtype through the supertype climb");
+    assert_eq!(found.id, 101);
+}
+
+#[test]
 fn external_trait_default_method_still_admitted_with_reachability_pass() {
     // Regression guard: the first pass admits an external trait's default
     // method body; the second reachability pass must neither drop it nor
