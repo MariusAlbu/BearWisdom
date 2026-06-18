@@ -303,18 +303,33 @@ impl Compilation {
 
                 // members_by_parent — resolve key via parent_index; fall back to
                 // qname truncation; top-level symbols key on the empty string.
-                let parent_key: String =
-                    match sym.parent_index.and_then(|p| pf.symbols.get(p)) {
-                        Some(parent) => parent.qualified_name.clone(),
-                        None => match sym.qualified_name.rfind('.') {
-                            Some(dot) => sym.qualified_name[..dot].to_string(),
-                            None => String::new(),
-                        },
-                    };
+                let parent_sym = sym.parent_index.and_then(|p| pf.symbols.get(p));
+                let parent_key: String = match parent_sym {
+                    Some(parent) => parent.qualified_name.clone(),
+                    None => match sym.qualified_name.rfind('.') {
+                        Some(dot) => sym.qualified_name[..dot].to_string(),
+                        None => String::new(),
+                    },
+                };
                 self.members_by_parent
                     .entry(parent_key)
                     .or_default()
                     .push(info.clone());
+
+                // Id-keyed member index keyed on the parent's REAL symbol id (via
+                // parent_index → symbol_id_map), not the qname. members_by_parent
+                // collapses two same-qname parents in different packages into one
+                // bucket; the id index must keep their member sets distinct so the
+                // chain walker, having typed a receiver to a specific declaration
+                // id, sees only that declaration's members. Top-level symbols (no
+                // structural parent) have no type receiver and stay qname-only.
+                if let Some(parent) = parent_sym {
+                    if let Some(&parent_id) =
+                        symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
+                    {
+                        self.members_by_id.entry(parent_id).or_default().push(info.id);
+                    }
+                }
 
                 // Type metadata from extractor-set TypeIds — render into strings
                 // for the legacy string-typed SymbolLookup accessors. Ref-derived
@@ -436,21 +451,10 @@ impl Compilation {
         // -----------------------------------------------------------------------
         self.infer_bare_identifier_returns(parsed);
 
-        // Id-keyed member index, derived from the now-complete `members_by_parent`
-        // + `by_qname`. Rebuilt in full (not incrementally) because `ingest` runs
-        // more than once — internal files, then the materialized externals — and
-        // each run must reflect the cumulative member set. Stores child ids;
-        // `members_of_id` resolves them through `by_id`.
-        let mut members_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
-        for (parent_qname, members) in &self.members_by_parent {
-            if let Some(parent) = self.by_qname.get(parent_qname) {
-                members_by_id
-                    .entry(parent.id)
-                    .or_default()
-                    .extend(members.iter().map(|m| m.id));
-            }
-        }
-        self.members_by_id = members_by_id;
+        // `members_by_id` is built incrementally in Pass 1 from each member's real
+        // parent id — same-qname parents stay distinct — so there is no qname-keyed
+        // rebuild here. It accumulates across `ingest` calls (internal files, then
+        // materialized externals).
 
         // Id-keyed inherits, derived from the now-complete `inherits` (child qname
         // → parent head string) + `by_qname`. Each edge resolves to specific
@@ -1054,7 +1058,7 @@ impl Compilation {
         // 1) Symbols + structural indexes.
         let Ok(mut stmt) = conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.scope_path, \
-                    s.visibility, f.package_id, s.signature \
+                    s.visibility, f.package_id, s.signature, s.containing_id \
              FROM symbols s JOIN files f ON f.id = s.file_id",
         ) else {
             return id_map;
@@ -1070,11 +1074,12 @@ impl Compilation {
                 r.get::<_, Option<String>>(6)?,
                 r.get::<_, Option<i64>>(7)?,
                 r.get::<_, Option<String>>(8)?,
+                r.get::<_, Option<i64>>(9)?,
             ))
         }) else {
             return id_map;
         };
-        for (id, name, qname, kind, path, scope_path, visibility, package_id, signature) in
+        for (id, name, qname, kind, path, scope_path, visibility, package_id, signature, containing_id) in
             rows.flatten()
         {
             // Every DB symbol contributes to the id map, even ones the parsed
@@ -1113,6 +1118,13 @@ impl Compilation {
                 None => String::new(),
             };
             self.members_by_parent.entry(parent_key).or_default().push(info);
+
+            // Id-keyed membership from the DB's structural-parent edge (the real
+            // parent symbol id), keeping same-qname parents distinct — the same
+            // identity index Pass 1 builds for freshly-parsed symbols.
+            if let Some(parent_id) = containing_id {
+                self.members_by_id.entry(parent_id).or_default().push(id);
+            }
         }
 
         // 2) Persisted type_info, re-interned into this build's fresh arena.
@@ -1198,17 +1210,10 @@ impl Compilation {
             }
         }
 
-        // 4) Rebuild the id-keyed member index over the now-complete maps.
-        let mut members_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
-        for (parent_qname, members) in &self.members_by_parent {
-            if let Some(parent) = self.by_qname.get(parent_qname) {
-                members_by_id
-                    .entry(parent.id)
-                    .or_default()
-                    .extend(members.iter().map(|m| m.id));
-            }
-        }
-        self.members_by_id = members_by_id;
+        // `members_by_id` was built directly from each DB symbol's `containing_id`
+        // (its real parent id) in the loop above, alongside Pass 1's id-keyed
+        // membership for the freshly-parsed symbols — same-qname parents stay
+        // distinct, so no qname-keyed rebuild here.
 
         // Id-keyed inherits over the now-complete maps (parsed batch + DB rows).
         self.rebuild_inherits_by_id();
