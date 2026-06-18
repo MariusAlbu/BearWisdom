@@ -16,6 +16,10 @@ use super::walk::{
 };
 use super::{is_valid_npm_module_path, npm_package_name_from_spec};
 
+#[cfg(test)]
+#[path = "externals_imports_tests.rs"]
+mod tests;
+
 /// Walk the relative re-export chain starting at `entry`, collecting every
 /// bare (cross-package) re-export specifier reachable via relative `./x` /
 /// `../x` chains. Bounded by `REEXPORT_MAX_DEPTH` and a visited set so

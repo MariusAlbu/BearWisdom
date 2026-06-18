@@ -474,3 +474,205 @@ fn definitely_typed_companion_shapes() {
     );
     assert_eq!(definitely_typed_companion("@types/chai"), None);
 }
+
+// -------------------------------------------------------------------------
+// Multi-hop transitive closure: side-import peer + companion
+// -------------------------------------------------------------------------
+
+#[test]
+fn transitive_closure_follows_side_import_peer_and_companion_multi_hop() {
+    // The matcher-chain closure the live checkout depends on, reduced to its
+    // structural shape. A directly-imported runner (`runner`, the vitest
+    // analogue) re-exports its assertion containers from a package the
+    // project never declares (`runner-expect`, the @vitest/expect analogue).
+    // `runner-expect`'s entry pulls a peer (`bdd-assert`, the chai analogue)
+    // through an `import * as ns from 'bdd-assert'` line — a bare SIDE import,
+    // not a re-export — and declares the matcher members on its OWN
+    // containers. The peer is typeless; its declared types live in the
+    // `@types/bdd-assert` companion.
+    //
+    // The walker must, across passes:
+    //   (1) collect `runner-expect` from the runner entry's re-export and
+    //       add it as a root,
+    //   (2) collect `bdd-assert` from runner-expect's `import * as` line and
+    //       add it as a root, and
+    //   (3) follow the DefinitelyTyped companion of the typeless peer.
+    //
+    // The member-declaring containers sit in `runner-expect` (reached at the
+    // first transitive pass), so once it is a root the matcher containers and
+    // the root value become locatable in the index — the data the chain
+    // walker needs to advance `expect(x).toBe(y)` from the root value onto the
+    // container members.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{ "name": "app", "dependencies": { "runner": "1.0.0" } }"#,
+    )
+    .unwrap();
+    let nm = root.join("node_modules");
+
+    // Hop 0: directly-imported runner, re-exporting its containers + root
+    // value from the peer it never re-declares.
+    write_pkg(
+        &nm,
+        "runner",
+        "export { Assertion, JestAssertion, ExpectStatic, expect } from 'runner-expect';\n",
+    );
+    // Hop 1: the member-declaring package. Its entry SIDE-imports the peer
+    // (no `export ... from`), then declares the matcher containers locally.
+    write_pkg(
+        &nm,
+        "runner-expect",
+        "import * as bdd from 'bdd-assert';\n\
+         export interface Assertion { toBe(v: unknown): Assertion; }\n\
+         export interface JestAssertion { toEqual(v: unknown): void; }\n\
+         export interface ExpectStatic { (v: unknown): Assertion; }\n\
+         export declare const expect: ExpectStatic;\n",
+    );
+    // Hop 2: the typeless peer reached via the side import; its declared types
+    // live in the DefinitelyTyped companion.
+    write_typeless_pkg(&nm, "bdd-assert", "module.exports = {};\n");
+    let types_dir = nm.join("@types").join("bdd-assert");
+    std::fs::create_dir_all(&types_dir).unwrap();
+    std::fs::write(
+        types_dir.join("package.json"),
+        r#"{"name":"@types/bdd-assert","version":"6.0.0","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        types_dir.join("index.d.ts"),
+        "export interface BddAssertion { to: BddAssertion; equal(v: unknown): void; }\n",
+    )
+    .unwrap();
+
+    // The runner is named only from a test file — matcher libs are test-only,
+    // exercising the test-dir gate alongside the transitive walk.
+    std::fs::create_dir_all(root.join("__tests__")).unwrap();
+    std::fs::write(
+        root.join("__tests__/a.test.ts"),
+        "import { expect } from 'runner';\nexpect(1).toBe(1);\n",
+    )
+    .unwrap();
+
+    let roots = discover_ts_externals(root);
+    let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+
+    // Hop 1: the cross-package re-export drags in the member-declaring package.
+    assert!(
+        ids.contains(&"runner-expect"),
+        "the matcher-container package must be reached through the runner re-export: {ids:?}"
+    );
+    // Hop 2: the peer reached via `import * as` (a side import, not a
+    // re-export) must be followed.
+    assert!(
+        ids.contains(&"bdd-assert"),
+        "the peer reached via `import * as` must be followed multi-hop: {ids:?}"
+    );
+    // Hop 2 companion: the typeless peer's DefinitelyTyped types are followed.
+    assert!(
+        ids.contains(&"@types/bdd-assert"),
+        "the typeless peer's @types companion must be followed at the same hop: {ids:?}"
+    );
+
+    // The matcher containers declared in the reached member package are now
+    // locatable in the index.
+    let idx = build_npm_symbol_index(&roots);
+    for name in ["Assertion", "JestAssertion", "ExpectStatic", "expect"] {
+        assert!(
+            idx.locate("runner-expect", name).is_some(),
+            "`{name}` must be indexed once runner-expect is a root: {ids:?}"
+        );
+    }
+    // The companion's container is locatable under the @types module.
+    assert!(
+        idx.locate("@types/bdd-assert", "BddAssertion").is_some(),
+        "the companion container must be indexed once @types/bdd-assert is a root: {ids:?}"
+    );
+}
+
+// -------------------------------------------------------------------------
+// pnpm store-sibling canonicalisation (symlink-dependent; best-effort)
+// -------------------------------------------------------------------------
+
+#[test]
+fn transitive_reach_canonicalises_pnpm_store_symlink_to_find_sibling() {
+    // pnpm exposes a flat import view over a content-addressed store by
+    // symlink: the consumer-visible `node_modules/<dep>` points at the real
+    // package in `node_modules/.pnpm/<store_node>/node_modules/<dep>`, where
+    // the dep's own transitive packages sit as siblings. `dep_local_node_modules`
+    // canonicalises the symlink so the transitive walker finds those siblings.
+    //
+    // The reach itself is covered portably by
+    // `transitive_closure_follows_side_import_peer_and_companion_multi_hop`;
+    // this test pins the symlink-canonicalisation hop specifically. Symlink
+    // creation needs elevation on Windows, so on a denial the fixture can't be
+    // built and the test returns early rather than failing — the contract it
+    // pins still holds wherever symlinks are creatable (Unix, elevated Windows).
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{ "name": "app", "dependencies": { "runner": "1.0.0" } }"#,
+    )
+    .unwrap();
+
+    let pnpm = root.join("node_modules").join(".pnpm");
+    // The runner's real dir lives in its own store node; its peer is a real
+    // sibling in the SAME store node — reachable only by canonicalising the
+    // consumer symlink to this store node.
+    let runner_store = pnpm.join("runner@1.0.0").join("node_modules");
+    let runner_real = write_pkg(
+        &runner_store,
+        "runner",
+        "export { Assertion } from 'runner-expect';\n",
+    );
+    write_pkg(
+        &runner_store,
+        "runner-expect",
+        "export interface Assertion { toBe(v: unknown): Assertion; }\n",
+    );
+
+    // Consumer-visible symlink at top-level node_modules → store real dir.
+    let link = root.join("node_modules").join("runner");
+    if create_dir_symlink(&runner_real, &link).is_err() {
+        eprintln!(
+            "skipping pnpm-symlink canonicalisation test: directory symlink \
+             creation denied in this environment"
+        );
+        return;
+    }
+
+    std::fs::create_dir_all(root.join("__tests__")).unwrap();
+    std::fs::write(
+        root.join("__tests__/a.test.ts"),
+        "import { expect } from 'runner';\n",
+    )
+    .unwrap();
+
+    let roots = discover_ts_externals(root);
+    let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(
+        ids.contains(&"runner-expect"),
+        "the peer must be found as a store sibling after canonicalising the \
+         consumer symlink: {ids:?}"
+    );
+    let idx = build_npm_symbol_index(&roots);
+    assert!(
+        idx.locate("runner-expect", "Assertion").is_some(),
+        "the peer's container must be indexed once reached through the store: {ids:?}"
+    );
+}
+
+/// Create a directory symlink at `link` pointing at `target`. Returns the
+/// platform error (e.g. permission denied) so the caller can skip rather
+/// than panic when symlink creation is unavailable.
+#[cfg(unix)]
+fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+}
