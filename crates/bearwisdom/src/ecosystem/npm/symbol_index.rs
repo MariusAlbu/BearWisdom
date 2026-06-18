@@ -13,8 +13,9 @@ use crate::walker::WalkedFile;
 
 use super::ts_scan::{scan_declare_global_blocks, scan_ts_file_exports, ExportSource, FileExports};
 use super::walk::{
-    extract_relative_reexports, is_test_or_story_file, resolve_package_entry_path,
-    resolve_relative_ts_path, walk_ts_dep_entry_only, walk_ts_external_root, REEXPORT_MAX_DEPTH,
+    expand_reexports_into, extract_relative_reexports, is_test_or_story_file,
+    resolve_package_entry_path, resolve_package_subpath_entries, resolve_relative_ts_path,
+    walk_ts_dep_entry_only, walk_ts_external_root, REEXPORT_MAX_DEPTH,
 };
 use super::{package_declares_globals, probe_global_decl_files};
 
@@ -69,6 +70,19 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         };
         for wf in walked {
             work.push((dep.module_path.clone(), wf));
+        }
+        // Concrete subpath exports (`preact/hooks`, `rxjs/ajax`) ship their own
+        // declaration entry the package-root walk never reaches. Index each
+        // under its full specifier (`module + suffix`) so a ref tagged with the
+        // deep module — which import resolution preserves — locates the symbol.
+        for (suffix, entry) in resolve_package_subpath_entries(dep) {
+            let module = format!("{}{}", dep.module_path, suffix);
+            let mut seen: HashSet<PathBuf> = HashSet::new();
+            let mut walked = Vec::new();
+            expand_reexports_into(dep, &entry, &mut walked, &mut seen, 0);
+            for wf in walked {
+                work.push((module.clone(), wf));
+            }
         }
     }
     if work.is_empty() {

@@ -1081,6 +1081,41 @@ fn resolve_package_entry_path_prefers_exports_over_legacy_types() {
 }
 
 #[test]
+fn resolve_package_subpath_entries_resolves_concrete_subpaths_skips_root_and_wildcards() {
+    // `preact/hooks` shape — a concrete subpath export ships its own .d.ts
+    // entry the package-root walk never reaches. The `.` root and `./*`
+    // wildcard keys are skipped; only hand-declared concrete subpaths return.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("node_modules").join("preact");
+    std::fs::create_dir_all(root.join("hooks").join("src")).unwrap();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{
+          "name":"preact",
+          "exports":{
+            ".":{"types":"./src/index.d.ts"},
+            "./hooks":{"types":"./hooks/src/index.d.ts"},
+            "./compat/*":{"types":"./compat/src/*.d.ts"}
+          }
+        }"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("src").join("index.d.ts"), "export const h: 1;").unwrap();
+    std::fs::write(
+        root.join("hooks").join("src").join("index.d.ts"),
+        "export function useState<T>(v: T): [T];",
+    )
+    .unwrap();
+
+    let dep = mkdep(root.clone(), "preact");
+    let entries = resolve_package_subpath_entries(&dep);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].0, "/hooks");
+    assert_eq!(entries[0].1, root.join("hooks").join("src").join("index.d.ts"));
+}
+
+#[test]
 fn resolve_relative_ts_path_strips_js_extension_for_dts_companion() {
     // Rollup-bundled type-entry shells re-export from `./chunk.js`
     // companions whose actual types live at `./chunk.d.ts`. The

@@ -401,6 +401,48 @@ pub(crate) fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBu
     candidates.into_iter().find(|p| p.is_file())
 }
 
+/// Resolve each CONCRETE subpath export of a package to its `.d.ts` entry.
+///
+/// A package's `exports` map publishes deep entry points the user imports
+/// directly — `import { useState } from 'preact/hooks'`, `import { ajax } from
+/// 'rxjs/ajax'`. Each concrete `"./sub"` key carries its own `types` condition
+/// pointing at a separate declaration file the package-root entry never
+/// re-exports. Returns `(subpath_suffix, entry_path)` for every concrete key,
+/// where `subpath_suffix` is the key without its leading `.` (`"./hooks"` →
+/// `"/hooks"`) so the caller forms the import specifier as `module + suffix`.
+///
+/// The `"."` root key (handled by `resolve_package_entry_path`) and wildcard
+/// patterns (`"./*"`, which name no single file) are skipped — only hand-
+/// declared concrete entry points, so the set stays bounded to the package's
+/// published API surface.
+pub(crate) fn resolve_package_subpath_entries(dep: &ExternalDepRoot) -> Vec<(String, PathBuf)> {
+    let pkg_json_path = dep.root.join("package.json");
+    let Some(json_str) = std::fs::read_to_string(&pkg_json_path).ok() else {
+        return Vec::new();
+    };
+    let Some(pj) = serde_json::from_str::<serde_json::Value>(&json_str).ok() else {
+        return Vec::new();
+    };
+    let Some(exports) = pj.get("exports").and_then(|e| e.as_object()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (key, cond) in exports {
+        if key == "." || !key.starts_with("./") || key.contains('*') {
+            continue;
+        }
+        let Some(rel) = extract_types_from_conditions(cond) else {
+            continue;
+        };
+        let entry = dep.root.join(rel.trim_start_matches("./"));
+        if entry.is_file() {
+            let suffix = key.strip_prefix('.').unwrap_or(key).to_string();
+            out.push((suffix, entry));
+        }
+    }
+    out
+}
+
 /// Walk the `exports` field of a package.json looking for the `types`
 /// condition that names the package's `.d.ts` entry.
 ///
