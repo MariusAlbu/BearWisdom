@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::walk::{
-    extract_relative_reexports, is_test_or_story_file, resolve_relative_ts_path, REEXPORT_MAX_DEPTH,
+    extract_relative_reexports, resolve_relative_ts_path, REEXPORT_MAX_DEPTH,
 };
 use super::{is_valid_npm_module_path, npm_package_name_from_spec};
 
@@ -131,6 +131,14 @@ pub(crate) fn scan_ts_user_imports_recursive(
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Project test dirs are NOT pruned here: test files import the
+                // assertion / matcher / DOM-query libraries (vitest,
+                // @vitest/expect, expect-type, @testing-library/*) that no
+                // production file names, and those bare specifiers must pass
+                // the gate so the transitive walker reaches the packages whose
+                // members the chain walker resolves. Build-output and
+                // dependency-cache dirs stay pruned — they carry no
+                // user-authored imports.
                 if matches!(
                     name,
                     "node_modules"
@@ -146,10 +154,6 @@ pub(crate) fn scan_ts_user_imports_recursive(
                         | ".turbo"
                         | ".cache"
                         | "coverage"
-                        | "__tests__"
-                        | "__mocks__"
-                        | "tests"
-                        | "test"
                 ) || name.starts_with('.')
                 {
                     continue;
@@ -166,11 +170,6 @@ pub(crate) fn scan_ts_user_imports_recursive(
             // Skip declaration files — they're toolchain-emitted and may
             // re-export packages the user doesn't actually consume.
             if name.ends_with(".d.ts") {
-                continue;
-            }
-            // Skip per-file test/story names — same rationale as the dir
-            // skip above.
-            if is_test_or_story_file(name) {
                 continue;
             }
             let Ok(content) = std::fs::read_to_string(&path) else {

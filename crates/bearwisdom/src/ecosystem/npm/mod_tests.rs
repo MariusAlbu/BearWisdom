@@ -102,11 +102,13 @@ fn user_imports_recursive_scan_finds_imports_across_files() {
         "import x from 'should-not-be-included';\n",
     )
     .unwrap();
-    // Test files are skipped by the gate's traversal.
+    // Test-file imports DO pass the gate: assertion / matcher / DOM-query
+    // packages (vitest, @testing-library/*, expect-type) are imported only
+    // from test files, and their members must become reachable dep roots.
     std::fs::create_dir_all(root.join("__tests__")).unwrap();
     std::fs::write(
         root.join("__tests__/x.test.ts"),
-        "import y from 'should-not-be-included-2';\n",
+        "import { expect } from 'vitest';\n",
     )
     .unwrap();
 
@@ -114,7 +116,10 @@ fn user_imports_recursive_scan_finds_imports_across_files() {
     assert!(got.contains("react"));
     assert!(got.contains("lodash"));
     assert!(!got.contains("should-not-be-included"));
-    assert!(!got.contains("should-not-be-included-2"));
+    assert!(
+        got.contains("vitest"),
+        "test-file imports must pass the gate: {got:?}"
+    );
 }
 
 #[test]

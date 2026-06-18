@@ -623,3 +623,7 @@ pub(crate) fn discover_ts_externals_scoped(
 
     roots
 }
+
+#[cfg(test)]
+#[path = "externals_tests.rs"]
+mod tests;
