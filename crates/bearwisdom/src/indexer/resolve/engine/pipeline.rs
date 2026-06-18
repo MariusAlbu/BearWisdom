@@ -686,74 +686,45 @@ fn materialize_externals(
         return Ok(());
     }
 
-    // Collect the distinct external files defining a referenced external name.
-    let mut files: Vec<PathBuf> = Vec::new();
+    // Seed: the external files defining a name an INTERNAL ref reaches.
     let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut frontier: Vec<PathBuf> = Vec::new();
     for pf in parsed {
         if pf.path.starts_with("ext:") {
             continue;
         }
-        for r in &pf.refs {
-            match r.module.as_deref() {
-                // Import-resolution tagged this ref with a module — locate the
-                // file that exports the name in that module.
-                Some(module) => {
-                    if let Some(file) = loc.locate(module, &r.target_name) {
-                        let file = file.to_path_buf();
-                        if seen.insert(file.clone()) {
-                            files.push(file);
-                        }
-                    }
-                }
-                // No module tag. Only pull when the name has no internal
-                // definition — an internal symbol always wins over an external.
-                None if tree.by_name(&r.target_name).is_empty() => {
-                    // Import-free global: a package registered this name under the
-                    // ambient-scope namespace (`declare global`, test-runner
-                    // global). Demand-driven — pulled only because the project
-                    // references the name, and bounded to global-declaring
-                    // packages, so a bare `expect()` materializes its `.d.ts`
-                    // while an ordinary bare call pulls nothing.
-                    if let Some(file) =
-                        crate::ecosystem::ambient::locate_ambient_global(loc, &r.target_name)
-                    {
-                        let file = file.to_path_buf();
-                        if seen.insert(file.clone()) {
-                            files.push(file);
-                        }
-                    }
-                    // A type-position ref may still name an external type the
-                    // `locate` seed missed (e.g. re-exported through a barrel).
-                    // Bounded to type-position kinds so a bare method call doesn't
-                    // pull a same-named external function.
-                    if matches!(
-                        r.kind,
-                        EdgeKind::Instantiates
-                            | EdgeKind::TypeRef
-                            | EdgeKind::Inherits
-                            | EdgeKind::Implements
-                    ) {
-                        for (_module, file) in loc.find_by_name(&r.target_name) {
-                            let file = file.to_path_buf();
-                            if seen.insert(file.clone()) {
-                                files.push(file);
-                            }
-                        }
-                    }
-                }
-                None => {}
-            }
-        }
+        collect_external_files(&pf.refs, tree, loc, &mut seen, &mut frontier);
     }
-    if files.is_empty() {
+    if frontier.is_empty() {
         return Ok(());
     }
 
-    // Parse each external file (cached) into a ParsedFile.
-    let ext_parsed: Vec<ParsedFile> = files
-        .iter()
-        .filter_map(|f| parse_external_file(f, arena))
-        .collect();
+    // Transitively pull the external type-dependency closure. A materialized
+    // external file's own re-exports / imports / extends name the packages that
+    // DECLARE the members its API exposes — a test runner re-exports its matcher
+    // package whose assertion interface extends another package's, a query helper
+    // returns a type aliased into a sibling package — so the member-declaring
+    // interfaces stay absent until those are pulled too. Iterated to a fixpoint,
+    // bounded: the Roslyn model where resolving a referenced library loads the
+    // libraries it references in turn. The same `collect_external_files` seed
+    // logic runs over each newly-parsed external file's refs.
+    const MAX_CLOSURE_DEPTH: usize = 8;
+    let mut ext_parsed: Vec<ParsedFile> = Vec::new();
+    let mut to_parse = frontier;
+    let mut depth = 0;
+    while !to_parse.is_empty() && depth < MAX_CLOSURE_DEPTH {
+        let batch: Vec<ParsedFile> = to_parse
+            .iter()
+            .filter_map(|f| parse_external_file(f, arena))
+            .collect();
+        let mut next: Vec<PathBuf> = Vec::new();
+        for pf in &batch {
+            collect_external_files(&pf.refs, tree, loc, &mut seen, &mut next);
+        }
+        ext_parsed.extend(batch);
+        to_parse = next;
+        depth += 1;
+    }
     if ext_parsed.is_empty() {
         return Ok(());
     }
@@ -770,6 +741,71 @@ fn materialize_externals(
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(&ext_parsed);
     tree.ingest(&ext_parsed, &ext_id_map, &ambient_qnames);
     Ok(())
+}
+
+/// Collect the external files that define a name reached by `refs`, into `out`
+/// (deduped via `seen`). A module-tagged ref locates the file exporting the name
+/// in that module; an untagged ref pulls only when no internal symbol claims the
+/// name — an ambient global, or (in type position) any external definition the
+/// `locate` seed missed. Shared by the internal seed pass and the transitive
+/// closure passes over already-materialized external files, so a re-export chain
+/// into a sibling package is followed the same way an internal import is.
+fn collect_external_files(
+    refs: &[crate::types::ExtractedRef],
+    tree: &Compilation,
+    loc: &SymbolLocationIndex,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    for r in refs {
+        match r.module.as_deref() {
+            // Import-resolution tagged this ref with a module — locate the file
+            // that exports the name in that module.
+            Some(module) => {
+                if let Some(file) = loc.locate(module, &r.target_name) {
+                    let file = file.to_path_buf();
+                    if seen.insert(file.clone()) {
+                        out.push(file);
+                    }
+                }
+            }
+            // No module tag. Only pull when the name has no internal definition —
+            // an internal symbol always wins over an external.
+            None if tree.by_name(&r.target_name).is_empty() => {
+                // Import-free global registered under the ambient-scope namespace
+                // (`declare global`, test-runner global); bounded to global-
+                // declaring packages, so a bare `expect()` materializes its
+                // `.d.ts` while an ordinary bare call pulls nothing.
+                if let Some(file) =
+                    crate::ecosystem::ambient::locate_ambient_global(loc, &r.target_name)
+                {
+                    let file = file.to_path_buf();
+                    if seen.insert(file.clone()) {
+                        out.push(file);
+                    }
+                }
+                // A type-position ref may still name an external type the `locate`
+                // seed missed (e.g. re-exported through a barrel). Bounded to
+                // type-position kinds so a bare method call doesn't pull a
+                // same-named external function.
+                if matches!(
+                    r.kind,
+                    EdgeKind::Instantiates
+                        | EdgeKind::TypeRef
+                        | EdgeKind::Inherits
+                        | EdgeKind::Implements
+                ) {
+                    for (_module, file) in loc.find_by_name(&r.target_name) {
+                        let file = file.to_path_buf();
+                        if seen.insert(file.clone()) {
+                            out.push(file);
+                        }
+                    }
+                }
+            }
+            None => {}
+        }
+    }
 }
 
 /// Parse one external source file into a `ParsedFile`, consulting the persistent
