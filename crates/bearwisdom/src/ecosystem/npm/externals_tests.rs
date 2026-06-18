@@ -48,6 +48,26 @@ fn write_pkg(node_modules: &std::path::Path, name: &str, entry_body: &str) -> st
     root
 }
 
+/// Write a runtime-only package with NO `types`/`typings`/`exports.types`
+/// field and only a `.js` entry — `resolve_package_entry_path` returns None,
+/// so the package is reachable-but-typeless. Its declared members live in a
+/// `@types/<name>` companion. Returns the package root.
+fn write_typeless_pkg(
+    node_modules: &std::path::Path,
+    name: &str,
+    js_body: &str,
+) -> std::path::PathBuf {
+    let root = node_modules.join(name);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        format!(r#"{{"name":"{name}","version":"1.0.0","main":"index.js"}}"#),
+    )
+    .unwrap();
+    std::fs::write(root.join("index.js"), js_body).unwrap();
+    root
+}
+
 // -------------------------------------------------------------------------
 // Scan-scope: test-file-only imports become dep roots
 // -------------------------------------------------------------------------
@@ -277,4 +297,180 @@ fn extractor_records_root_function_return_type() {
         "root function declared return type must be exposed as a TypeRef: {:?}",
         result.refs
     );
+}
+
+// -------------------------------------------------------------------------
+// @types companion follow for transitively-reached typeless packages
+// -------------------------------------------------------------------------
+
+#[test]
+fn transitive_typeless_pkg_drags_in_types_companion() {
+    // A directly-imported runner re-exports its assertion container from a
+    // sibling runtime package that ships NO `.d.ts` (typeless). Every member
+    // it declares lives in `@types/<sibling>`. The transitive walk reaches the
+    // typeless runtime package but must ALSO follow the DefinitelyTyped
+    // companion so the container interface enters the index.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{ "name": "app", "dependencies": { "runner": "1.0.0" } }"#,
+    )
+    .unwrap();
+    let nm = root.join("node_modules");
+    // The runner re-exports a value/type from the typeless sibling.
+    write_pkg(
+        &nm,
+        "runner",
+        "export { assertOn } from 'core-assert';\n",
+    );
+    // The sibling is reachable but typeless — only a `.js`, no `types` field.
+    write_typeless_pkg(&nm, "core-assert", "module.exports = {};\n");
+    // The declared members live in the DefinitelyTyped companion.
+    let types_dir = nm.join("@types").join("core-assert");
+    std::fs::create_dir_all(&types_dir).unwrap();
+    std::fs::write(
+        types_dir.join("package.json"),
+        r#"{"name":"@types/core-assert","version":"1.0.0","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        types_dir.join("index.d.ts"),
+        "export interface Assertion { toBe(v: unknown): Assertion; }\nexport function assertOn(v: unknown): Assertion;\n",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join("__tests__")).unwrap();
+    std::fs::write(
+        root.join("__tests__/a.test.ts"),
+        "import { assertOn } from 'runner';\n",
+    )
+    .unwrap();
+
+    let roots = discover_ts_externals(root);
+    let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(ids.contains(&"runner"), "{ids:?}");
+    assert!(
+        ids.contains(&"core-assert"),
+        "the typeless runtime sibling must still be reached: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"@types/core-assert"),
+        "the DefinitelyTyped companion of a typeless transitive package must be followed: {ids:?}"
+    );
+
+    // The companion's container interface is now locatable in the index.
+    let idx = build_npm_symbol_index(&roots);
+    assert!(
+        idx.locate("@types/core-assert", "Assertion").is_some(),
+        "companion container interface must be indexed once the @types package is a root"
+    );
+}
+
+#[test]
+fn transitive_scoped_typeless_pkg_drags_in_scoped_types_companion() {
+    // Same follow, but the typeless transitive sibling is scoped — its
+    // companion sits at `@types/<scope>__<name>` (DefinitelyTyped escaping).
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{ "name": "app", "dependencies": { "runner": "1.0.0" } }"#,
+    )
+    .unwrap();
+    let nm = root.join("node_modules");
+    write_pkg(
+        &nm,
+        "runner",
+        "export { assertOn } from '@acme/core-assert';\n",
+    );
+    let scoped_dir = nm.join("@acme").join("core-assert");
+    std::fs::create_dir_all(&scoped_dir).unwrap();
+    std::fs::write(
+        scoped_dir.join("package.json"),
+        r#"{"name":"@acme/core-assert","version":"1.0.0","main":"index.js"}"#,
+    )
+    .unwrap();
+    std::fs::write(scoped_dir.join("index.js"), "module.exports = {};\n").unwrap();
+    // Companion under the DefinitelyTyped scope-escaped name.
+    let types_dir = nm.join("@types").join("acme__core-assert");
+    std::fs::create_dir_all(&types_dir).unwrap();
+    std::fs::write(
+        types_dir.join("package.json"),
+        r#"{"name":"@types/acme__core-assert","version":"1.0.0","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        types_dir.join("index.d.ts"),
+        "export interface Assertion { toBe(v: unknown): Assertion; }\n",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join("__tests__")).unwrap();
+    std::fs::write(
+        root.join("__tests__/a.test.ts"),
+        "import { assertOn } from 'runner';\n",
+    )
+    .unwrap();
+
+    let roots = discover_ts_externals(root);
+    let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(
+        ids.contains(&"@types/acme__core-assert"),
+        "scoped companion must be followed under the escaped @types name: {ids:?}"
+    );
+}
+
+#[test]
+fn types_companion_is_skipped_when_runtime_is_self_typed() {
+    // When the transitive runtime package ships its own `.d.ts`, no companion
+    // is needed; the follow simply finds no `@types/<pkg>` dir and adds
+    // nothing extra. Asserts the companion follow does not invent roots.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{ "name": "app", "dependencies": { "runner": "1.0.0" } }"#,
+    )
+    .unwrap();
+    let nm = root.join("node_modules");
+    write_pkg(&nm, "runner", "export { thing } from 'self-typed';\n");
+    write_pkg(
+        &nm,
+        "self-typed",
+        "export interface Thing { go(): Thing; }\nexport const thing: Thing;\n",
+    );
+
+    std::fs::create_dir_all(root.join("__tests__")).unwrap();
+    std::fs::write(
+        root.join("__tests__/a.test.ts"),
+        "import { thing } from 'runner';\n",
+    )
+    .unwrap();
+
+    let roots = discover_ts_externals(root);
+    let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(ids.contains(&"self-typed"), "{ids:?}");
+    assert!(
+        !ids.iter().any(|m| m.starts_with("@types/")),
+        "no companion root should be invented when the runtime is self-typed: {ids:?}"
+    );
+}
+
+#[test]
+fn definitely_typed_companion_shapes() {
+    // Unscoped → `@types/<pkg>`; scoped → `@types/<scope>__<name>`;
+    // an `@types/*` spec has no companion of its own.
+    assert_eq!(
+        definitely_typed_companion("chai"),
+        Some(("@types/chai".to_string(), "@types/chai".to_string()))
+    );
+    assert_eq!(
+        definitely_typed_companion("@acme/widget"),
+        Some((
+            "@types/acme__widget".to_string(),
+            "@types/acme__widget".to_string()
+        ))
+    );
+    assert_eq!(definitely_typed_companion("@types/chai"), None);
 }

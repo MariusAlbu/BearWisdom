@@ -321,28 +321,115 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
             if !parent_local_nm.as_os_str().is_empty() {
                 probe_roots.push(parent_local_nm.as_path());
             }
-            for nm_root in probe_roots {
-                let candidate = nm_root.join(package_spec);
-                if !candidate.is_dir() {
-                    continue;
-                }
-                if !seen.insert(candidate.clone()) {
-                    continue;
-                }
-                roots.push(ExternalDepRoot {
-                    module_path: package_spec.to_string(),
-                    version: String::from("unknown"),
-                    root: candidate,
-                    ecosystem: LEGACY_ECOSYSTEM_TAG,
-                    package_id: None,
-                    requested_imports: Vec::new(),
-                });
-                break; // one canonical install per spec is enough
+            push_transitive_spec_root(package_spec, &probe_roots, &mut seen, &mut roots);
+            // Follow the DefinitelyTyped companion too: a transitively reached
+            // runtime package can ship without its own `.d.ts` (its `types`
+            // field and `index.d.ts` are absent), in which case every member
+            // it declares lives in `@types/<pkg>`. That companion is only
+            // probed by the direct-dep loop, so without this the transitive
+            // package is reached type-less and its members never enter the
+            // index. Probe the companion against the SAME roots — for pnpm
+            // the companion sits as a sibling symlink in the parent dep's own
+            // store `node_modules/`, which `parent_local_nm` already covers.
+            if let Some((companion_spec, companion_label)) =
+                definitely_typed_companion(package_spec)
+            {
+                push_transitive_companion_root(
+                    &companion_spec,
+                    &companion_label,
+                    &probe_roots,
+                    &mut seen,
+                    &mut roots,
+                );
             }
         }
     }
 
     roots
+}
+
+/// Push the first existing install of `package_spec` found across
+/// `probe_roots` as a transitive dep root, labelled by its package name.
+/// Honours the first-writer-wins `seen` dedupe; one canonical install per
+/// spec is enough.
+fn push_transitive_spec_root(
+    package_spec: &str,
+    probe_roots: &[&Path],
+    seen: &mut std::collections::HashSet<PathBuf>,
+    roots: &mut Vec<ExternalDepRoot>,
+) {
+    for nm_root in probe_roots {
+        let candidate = nm_root.join(package_spec);
+        if !candidate.is_dir() {
+            continue;
+        }
+        if !seen.insert(candidate.clone()) {
+            continue;
+        }
+        roots.push(ExternalDepRoot {
+            module_path: package_spec.to_string(),
+            version: String::from("unknown"),
+            root: candidate,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+        break;
+    }
+}
+
+/// Push the first existing install of a DefinitelyTyped companion directory
+/// (`<nm_root>/@types/<escaped>`) as its own dep root, labelled with the
+/// `@types/...` module_path so its content stays classified as
+/// DefinitelyTyped regardless of which spec led here. Same first-writer-wins
+/// `seen` dedupe as the runtime push.
+fn push_transitive_companion_root(
+    companion_rel: &str,
+    companion_label: &str,
+    probe_roots: &[&Path],
+    seen: &mut std::collections::HashSet<PathBuf>,
+    roots: &mut Vec<ExternalDepRoot>,
+) {
+    for nm_root in probe_roots {
+        let candidate = nm_root.join(companion_rel);
+        if !candidate.is_dir() {
+            continue;
+        }
+        if !seen.insert(candidate.clone()) {
+            continue;
+        }
+        roots.push(ExternalDepRoot {
+            module_path: companion_label.to_string(),
+            version: String::from("unknown"),
+            root: candidate,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
+        break;
+    }
+}
+
+/// Compute the DefinitelyTyped companion for a package spec: the relative
+/// path under a `node_modules/` root (`@types/<escaped>`) and the canonical
+/// `@types/...` module_path label. `@types/*` specs have no companion of
+/// their own (they ARE the type source). Returns None for those and for any
+/// spec that doesn't reduce to a valid module path.
+fn definitely_typed_companion(package_spec: &str) -> Option<(String, String)> {
+    if package_spec.starts_with("@types/") {
+        return None;
+    }
+    let label = if package_spec.starts_with('@') {
+        let escaped = definitely_typed_scoped_name(package_spec)?;
+        format!("@types/{escaped}")
+    } else {
+        format!("@types/{package_spec}")
+    };
+    if !is_valid_npm_module_path(&label) {
+        return None;
+    }
+    // The on-disk relative path mirrors the label exactly.
+    Some((label.clone(), label))
 }
 
 /// Compute a dep's own `node_modules/` directory — the place where pnpm
@@ -600,23 +687,20 @@ pub(crate) fn discover_ts_externals_scoped(
             if !parent_local_nm.as_os_str().is_empty() {
                 probe_roots.push(parent_local_nm.as_path());
             }
-            for nm_root in probe_roots {
-                let candidate = nm_root.join(package_spec);
-                if !candidate.is_dir() {
-                    continue;
-                }
-                if !seen.insert(candidate.clone()) {
-                    continue;
-                }
-                roots.push(ExternalDepRoot {
-                    module_path: package_spec.to_string(),
-                    version: String::from("unknown"),
-                    root: candidate,
-                    ecosystem: LEGACY_ECOSYSTEM_TAG,
-                    package_id: None,
-                    requested_imports: Vec::new(),
-                });
-                break;
+            push_transitive_spec_root(package_spec, &probe_roots, &mut seen, &mut roots);
+            // Mirror the project-level path: follow the DefinitelyTyped
+            // companion so a transitively reached but type-less runtime
+            // package still surfaces the members declared in `@types/<pkg>`.
+            if let Some((companion_spec, companion_label)) =
+                definitely_typed_companion(package_spec)
+            {
+                push_transitive_companion_root(
+                    &companion_spec,
+                    &companion_label,
+                    &probe_roots,
+                    &mut seen,
+                    &mut roots,
+                );
             }
         }
     }

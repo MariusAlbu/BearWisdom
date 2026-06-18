@@ -60,24 +60,10 @@ pub(crate) fn collect_bare_reexports_recursive(entry: &Path) -> Vec<String> {
 /// are handled by `expand_reexports_into`.
 pub(crate) fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for line in src.lines() {
-        let t = line.trim();
-        if !(t.starts_with("export") || t.starts_with("import")) {
-            continue;
-        }
-        let Some(ix) = t.find(" from ") else { continue };
-        let rest = t[ix + 6..].trim_start();
-        let Some(quote) = rest.chars().next() else {
+    for logical in logical_import_export_lines(src) {
+        let Some(spec) = reexport_spec_from_logical_line(&logical) else {
             continue;
         };
-        if quote != '\'' && quote != '"' {
-            continue;
-        }
-        let inner = &rest[1..];
-        let Some(end) = inner.find(quote) else {
-            continue;
-        };
-        let spec = &inner[..end];
         if spec.starts_with("./") || spec.starts_with("../") {
             continue;
         }
@@ -85,11 +71,81 @@ pub(crate) fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
         let pkg = if spec.starts_with('@') {
             spec.splitn(3, '/').take(2).collect::<Vec<_>>().join("/")
         } else {
-            spec.split('/').next().unwrap_or(spec).to_string()
+            spec.split('/').next().unwrap_or(&spec).to_string()
         };
         if !pkg.is_empty() {
             out.push(pkg);
         }
+    }
+    out
+}
+
+/// Pull the specifier out of one logical `import/export ... from '<spec>'`
+/// line. Returns the raw specifier (relative or bare) or None when the line
+/// has no `from '<spec>'` clause.
+pub(crate) fn reexport_spec_from_logical_line(line: &str) -> Option<String> {
+    let t = line.trim();
+    if !(t.starts_with("export") || t.starts_with("import")) {
+        return None;
+    }
+    let ix = t.find(" from ")?;
+    let rest = t[ix + 6..].trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let inner = &rest[1..];
+    let end = inner.find(quote)?;
+    Some(inner[..end].to_string())
+}
+
+/// Collapse `import`/`export` statements that span several physical lines into
+/// one logical line each, so a `from '<spec>'` clause sitting on a
+/// continuation line (after a multi-line `{ a,\n b }` clause) is still seen by
+/// a line-oriented `from` scan. Non-`import`/`export` lines pass through
+/// unchanged. A statement is joined from its leading `import`/`export` keyword
+/// up to and including the physical line that carries the `from '...'` clause
+/// (or a closing `;` / end-of-block when there is no `from`), bounded so an
+/// unterminated clause can't consume the rest of the file.
+pub(crate) fn logical_import_export_lines(src: &str) -> Vec<String> {
+    const MAX_JOIN_LINES: usize = 24;
+    let mut out = Vec::new();
+    let lines: Vec<&str> = src.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if !(trimmed.starts_with("import") || trimmed.starts_with("export")) {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        // Accumulate physical lines until the statement is complete: it
+        // either reaches a `from '<spec>'` clause, or terminates with `;`,
+        // or the join bound is hit.
+        let mut joined = String::new();
+        let mut j = i;
+        let mut complete_at = i;
+        while j < lines.len() && j - i < MAX_JOIN_LINES {
+            if !joined.is_empty() {
+                joined.push(' ');
+            }
+            joined.push_str(lines[j].trim());
+            complete_at = j;
+            if joined.contains(" from ") || joined.trim_end().ends_with(';') {
+                break;
+            }
+            // A single-line `import '<spec>';` / bare keyword statement with
+            // no continuation marker stops here too — only keep joining while
+            // the clause is visibly open (an unclosed `{` or a trailing `,`).
+            let open_brace = joined.matches('{').count() > joined.matches('}').count();
+            let trailing_comma = joined.trim_end().ends_with(',');
+            if !open_brace && !trailing_comma {
+                break;
+            }
+            j += 1;
+        }
+        out.push(joined);
+        i = complete_at + 1;
     }
     out
 }

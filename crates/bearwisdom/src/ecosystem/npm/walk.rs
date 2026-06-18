@@ -528,25 +528,12 @@ pub(crate) fn expand_reexports_into(
 /// their own dep roots.
 pub(crate) fn extract_relative_reexports(src: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for line in src.lines() {
-        let t = line.trim();
-        if !(t.starts_with("export") || t.starts_with("import")) {
-            continue;
-        }
-        let Some(ix) = t.find(" from ") else { continue };
-        let rest = t[ix + 6..].trim_start();
-        let Some(quote) = rest.chars().next() else {
+    for logical in super::logical_import_export_lines(src) {
+        let Some(spec) = super::reexport_spec_from_logical_line(&logical) else {
             continue;
         };
-        if quote != '\'' && quote != '"' {
-            continue;
-        }
-        let inner = &rest[1..];
-        if let Some(end) = inner.find(quote) {
-            let spec = &inner[..end];
-            if spec.starts_with("./") || spec.starts_with("../") {
-                out.push(spec.to_string());
-            }
+        if spec.starts_with("./") || spec.starts_with("../") {
+            out.push(spec);
         }
     }
     out

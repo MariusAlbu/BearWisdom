@@ -1703,3 +1703,56 @@ fn discover_ts_externals_keeps_scss_shipping_packages_in_scss_project() {
         "unused non-scss pkg should be gated out: {ids:?}"
     );
 }
+
+// ---- multi-line re-export specifier tolerance -------------------------
+
+#[test]
+fn bare_reexport_single_line_specifier_is_collected() {
+    let src = "export { Assertion } from '@scope/expect';\nexport * from 'chai';\n";
+    let got = extract_bare_reexport_specifiers(src);
+    assert!(got.contains(&"@scope/expect".to_string()), "{got:?}");
+    assert!(got.contains(&"chai".to_string()), "{got:?}");
+}
+
+#[test]
+fn bare_reexport_multi_line_specifier_is_collected() {
+    // The `{ ... }` clause spans several physical lines and `from '<spec>'`
+    // lands on a continuation line beginning with `}`. The line-oriented scan
+    // would miss it; the logical-line join must collapse the statement first.
+    let src = "import {\n  queries,\n  BoundFunction,\n} from '@testing-library/dom';\n";
+    let got = extract_bare_reexport_specifiers(src);
+    assert!(
+        got.contains(&"@testing-library/dom".to_string()),
+        "multi-line import specifier must be collected: {got:?}"
+    );
+}
+
+#[test]
+fn relative_reexport_multi_line_specifier_is_collected() {
+    let src = "export {\n  A,\n  B,\n} from './internal/queries';\n";
+    let got = extract_relative_reexports(src);
+    assert!(
+        got.iter().any(|s| s == "./internal/queries"),
+        "multi-line relative re-export must be collected: {got:?}"
+    );
+}
+
+#[test]
+fn logical_lines_pass_non_import_lines_through() {
+    // Non-import/export lines must survive untouched so a `from` token in
+    // prose or other code never gets misread as a specifier source.
+    let src = "interface X { y: number; }\nconst z = 1;\n";
+    let joined = logical_import_export_lines(src);
+    assert!(joined.iter().any(|l| l.contains("interface X")));
+    assert!(joined.iter().any(|l| l.contains("const z = 1")));
+}
+
+#[test]
+fn logical_lines_do_not_join_independent_consecutive_imports() {
+    // Two complete single-line imports must not be folded into one logical
+    // line — each terminates at its own `from '<spec>'`.
+    let src = "import { a } from 'pkg-a';\nimport { b } from 'pkg-b';\n";
+    let got = extract_bare_reexport_specifiers(src);
+    assert!(got.contains(&"pkg-a".to_string()), "{got:?}");
+    assert!(got.contains(&"pkg-b".to_string()), "{got:?}");
+}
