@@ -742,3 +742,26 @@ fn multi_seg_chain_roots_on_imported_packages_class() {
         Some(13200)
     );
 }
+
+#[test]
+fn member_walk_climbs_to_a_non_first_of_several_supertypes() {
+    // `interface Assertion extends VitestAssertion, JestAssertion, Matchers` —
+    // `toBe` is declared on JestAssertion, the SECOND supertype. The id-keyed
+    // climb must visit EVERY direct parent (a DAG, breadth-first), not follow a
+    // single linear chain that would keep only the first parent and miss toBe.
+    let lookup = Lookup::new()
+        .with(sym(100, "Assertion", "pkg.Assertion", "interface", "a.ts"))
+        .with(sym(101, "VitestAssertion", "pkg.VitestAssertion", "interface", "a.ts"))
+        .with(sym(102, "JestAssertion", "pkg.JestAssertion", "interface", "a.ts"))
+        .with(sym(103, "Matchers", "pkg.Matchers", "interface", "a.ts"))
+        .with_parent_id(100, 101)
+        .with_parent_id(100, 102)
+        .with_parent_id(100, 103)
+        .with_member_id(102, sym(200, "toBe", "pkg.JestAssertion.toBe", "method", "a.ts"))
+        .with_local_type("a", "pkg.Assertion");
+    let segs = vec![
+        seg("a", false, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(200));
+}

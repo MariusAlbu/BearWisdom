@@ -161,6 +161,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.parent_class_id(child_id)
     }
 
+    fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
+        self.tree.parent_class_ids(child_id)
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.tree.enclosing_type_qname(source_qname)
     }

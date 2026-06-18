@@ -187,17 +187,29 @@ pub(crate) fn lookup_member_by_id(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    let mut cur = type_id;
+    // Breadth-first over the supertype DAG: a type can extend/implement several
+    // supertypes, and the member may be declared on any of them, so every direct
+    // parent is followed (not a single linear chain). A visited set prevents
+    // re-walking a diamond, and the depth bound caps the climb.
+    let mut visited: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut frontier = vec![type_id];
     for _ in 0..MAX_SUPERTYPE_DEPTH {
-        for m in lookup.members_of_id(cur) {
-            if m.name == member && accept(&m.kind) {
-                return Some(m.clone());
+        let mut next: Vec<i64> = Vec::new();
+        for cur in frontier {
+            if !visited.insert(cur) {
+                continue;
             }
+            for m in lookup.members_of_id(cur) {
+                if m.name == member && accept(&m.kind) {
+                    return Some(m.clone());
+                }
+            }
+            next.extend(lookup.parent_class_ids(cur));
         }
-        match lookup.parent_class_id(cur) {
-            Some(parent) => cur = parent,
-            None => break,
+        if next.is_empty() {
+            break;
         }
+        frontier = next;
     }
     None
 }

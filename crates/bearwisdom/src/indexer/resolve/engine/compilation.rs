@@ -106,17 +106,21 @@ pub struct Compilation {
     /// import-type that indexes the exposed name (`typeof import('m')['exposed']`)
     /// can follow the rename to the local declaration's type.
     export_alias_by_module: FxHashMap<String, FxHashMap<String, String>>,
-    /// Direct-parent inheritance: child_qname → parent_qname (head, generics stripped).
-    inherits: FxHashMap<String, String>,
-    /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → parent
-    /// symbol id — the id-keyed counterpart of `inherits`. Derived at the end of
+    /// Direct-parent inheritance: child_qname → ALL parent heads (generics
+    /// stripped). An interface or class can extend/implement several supertypes
+    /// (`interface A extends X, Y, Z`), so each child keeps every direct parent —
+    /// the chain walker must reach a member declared on ANY of them.
+    inherits: FxHashMap<String, Vec<String>>,
+    /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → ALL parent
+    /// symbol ids — the id-keyed counterpart of `inherits`. Derived at the end of
     /// `ingest` / `ingest_from_db` by resolving each `inherits` child qname to its
     /// id and each parent head to a SPECIFIC parent symbol (a same-package
     /// candidate winning over a same-named type in another package). Lets the
-    /// chain walker climb supertypes by identity, so an `extends Base` where the
-    /// `Base` qname is duplicated across packages binds inherited members from the
-    /// child's actual base, not the first-wins qname collision.
-    inherits_by_id: FxHashMap<i64, i64>,
+    /// chain walker climb the supertype DAG by identity, so an `extends Base`
+    /// where the `Base` qname is duplicated across packages binds inherited
+    /// members from the child's actual base, not the first-wins qname collision —
+    /// and a multi-supertype interface reaches members on every branch.
+    inherits_by_id: FxHashMap<i64, Vec<i64>>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
     /// Nearest enclosing namespace/module ancestor: source_qname → enclosing_ns_qname.
@@ -426,9 +430,10 @@ impl Compilation {
                     .next()
                     .unwrap_or(&r.target_name)
                     .to_string();
-                self.inherits
-                    .entry(child_sym.qualified_name.clone())
-                    .or_insert(parent_head);
+                let parents = self.inherits.entry(child_sym.qualified_name.clone()).or_default();
+                if !parents.contains(&parent_head) {
+                    parents.push(parent_head);
+                }
             }
 
             // Pass 4 — re-export map from refs where `is_reexport` is true.
@@ -539,13 +544,18 @@ impl Compilation {
     /// incrementally) because `ingest` / `ingest_from_db` each run over the
     /// cumulative symbol set.
     fn rebuild_inherits_by_id(&mut self) {
-        let mut inherits_by_id: FxHashMap<i64, i64> = FxHashMap::default();
-        for (child_qname, parent_head) in &self.inherits {
+        let mut inherits_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
+        for (child_qname, parent_heads) in &self.inherits {
             let Some(child) = self.by_qname.get(child_qname) else {
                 continue;
             };
-            if let Some(parent_id) = self.resolve_parent_id(parent_head, child.package_id) {
-                inherits_by_id.insert(child.id, parent_id);
+            for parent_head in parent_heads {
+                if let Some(parent_id) = self.resolve_parent_id(parent_head, child.package_id) {
+                    let parents = inherits_by_id.entry(child.id).or_default();
+                    if !parents.contains(&parent_id) {
+                        parents.push(parent_id);
+                    }
+                }
             }
         }
         self.inherits_by_id = inherits_by_id;
@@ -1053,11 +1063,21 @@ impl SymbolLookup for Compilation {
     }
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
-        self.inherits.get(class_qname).map(|s| s.as_str())
+        self.inherits
+            .get(class_qname)
+            .and_then(|v| v.first())
+            .map(|s| s.as_str())
     }
 
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
-        self.inherits_by_id.get(&child_id).copied()
+        self.inherits_by_id
+            .get(&child_id)
+            .and_then(|v| v.first())
+            .copied()
+    }
+
+    fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
+        self.inherits_by_id.get(&child_id).cloned().unwrap_or_default()
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
@@ -1321,7 +1341,10 @@ impl Compilation {
             {
                 for (child, parent) in inh_rows.flatten() {
                     let head = parent.split('<').next().unwrap_or(&parent).to_string();
-                    self.inherits.entry(child).or_insert(head);
+                    let parents = self.inherits.entry(child).or_default();
+                    if !parents.contains(&head) {
+                        parents.push(head);
+                    }
                 }
             }
         }

@@ -368,6 +368,16 @@ pub trait SymbolLookup {
         None
     }
 
+    /// ALL direct parent symbol ids for a child symbol id — the multi-parent
+    /// counterpart of `parent_class_id`. An interface or class can extend /
+    /// implement several supertypes, and a member may be declared on any of them,
+    /// so the chain walker climbs the supertype DAG breadth-first over this set.
+    /// Default derives the single `parent_class_id` (0-or-1 parent); the real
+    /// store overrides it with every recorded direct parent.
+    fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
+        self.parent_class_id(child_id).into_iter().collect()
+    }
+
     /// The qualified name of the nearest type (class/struct/interface/trait/enum)
     /// that structurally encloses the symbol named `source_qname`, excluding the
     /// symbol itself — Roslyn's `ContainingType`.

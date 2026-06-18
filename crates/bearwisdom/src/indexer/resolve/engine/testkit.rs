@@ -33,9 +33,9 @@ pub(crate) struct Lookup {
     field_types: FxHashMap<String, String>,
     return_types: FxHashMap<String, String>,
     parents: FxHashMap<String, String>,
-    /// Id-keyed inherits: child symbol id → parent symbol id. The id-keyed
-    /// counterpart of `parents`.
-    parents_by_id: FxHashMap<i64, i64>,
+    /// Id-keyed inherits: child symbol id → ALL parent symbol ids. The id-keyed
+    /// counterpart of `parents`; a child may have several supertypes.
+    parents_by_id: FxHashMap<i64, Vec<i64>>,
     local_types: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
@@ -128,7 +128,7 @@ impl Lookup {
     /// Register `child`'s direct parent by SYMBOL ID — the id-keyed counterpart
     /// of `with_parent`, driving the id-keyed supertype climb.
     pub(crate) fn with_parent_id(mut self, child_id: i64, parent_id: i64) -> Self {
-        self.parents_by_id.insert(child_id, parent_id);
+        self.parents_by_id.entry(child_id).or_default().push(parent_id);
         self
     }
 
@@ -261,7 +261,10 @@ impl SymbolLookup for Lookup {
         self.parents.get(class_qname).map(|s| s.as_str())
     }
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
-        self.parents_by_id.get(&child_id).copied()
+        self.parents_by_id.get(&child_id).and_then(|v| v.first()).copied()
+    }
+    fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
+        self.parents_by_id.get(&child_id).cloned().unwrap_or_default()
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.local_types.get(name).cloned()
