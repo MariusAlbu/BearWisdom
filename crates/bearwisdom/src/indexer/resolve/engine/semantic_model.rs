@@ -52,11 +52,15 @@ impl SemanticModel {
             if let Some(res) = super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
                 return Some(res);
             }
-            // A multi-segment chain the walk declined is a genuine miss: a
-            // same-named sibling must not hijack `a.b.c`. A single-segment
-            // "chain" carries no receiver, so fall through to the bare-name rule
-            // ladder (the old engine does the same).
-            if chain.segments.len() > 1 {
+            // A multi-segment chain the walk declined is normally a genuine miss:
+            // a same-named sibling must not hijack `a.b.c`. The exception is
+            // NAMESPACE-qualified member access — `React.useState` where `React`
+            // names a namespace/module, not a value. The chain walker can't root
+            // on a namespace, but the bare-name ladder resolves the member under
+            // the imported module (`imported_namespace` / `ref_module`), and the
+            // module scope keeps it from binding an unrelated sibling. A
+            // single-segment "chain" carries no receiver and always falls through.
+            if chain.segments.len() > 1 && !chain_root_is_namespace(chain, lookup) {
                 return None;
             }
         }
@@ -86,6 +90,21 @@ impl SemanticModel {
         };
         self.engine.bind(&ctx)
     }
+}
+
+/// `true` when the chain's root segment names a namespace/module declaration
+/// (`React` in `React.useState`). Namespace-qualified member access roots on a
+/// namespace the chain walker can't type as a value, so a declined chain with a
+/// namespace root falls through to the bare-name ladder — scoped by the ref's
+/// module — which binds the member under the imported namespace.
+fn chain_root_is_namespace(chain: &crate::types::MemberChain, lookup: &dyn SymbolLookup) -> bool {
+    let Some(root) = chain.segments.first() else {
+        return false;
+    };
+    lookup
+        .by_name(&root.name)
+        .iter()
+        .any(|s| matches!(s.kind.as_str(), "namespace" | "module"))
 }
 
 /// Profile-table-driven kind compatibility. An unrecognised symbol-kind string

@@ -1,7 +1,49 @@
-use super::kind_ok_table_for_test;
+use super::{chain_root_is_namespace, kind_ok_table_for_test};
+use crate::indexer::resolve::engine::testkit::{sym, Lookup};
 use crate::languages::javascript::profile::JAVASCRIPT_PROFILE;
 use crate::languages::typescript::profile::TYPESCRIPT_PROFILE;
-use crate::types::EdgeKind;
+use crate::types::{ChainSegment, EdgeKind, MemberChain, SegmentKind};
+
+fn nseg(name: &str) -> ChainSegment {
+    ChainSegment {
+        name: name.to_string(),
+        node_kind: String::new(),
+        kind: SegmentKind::NamespaceAccess,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call: false,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    }
+}
+
+/// `React.useState` — the root names a module/namespace, so a chain the walker
+/// declined falls through to the bare-name ladder (which binds the member under
+/// the imported namespace) instead of being a hard miss.
+#[test]
+fn namespace_rooted_chain_is_detected() {
+    let lookup =
+        Lookup::new().with(sym(1, "React", "@types/react.React", "module", "react/index.d.ts"));
+    let chain = MemberChain {
+        segments: vec![nseg("React"), nseg("useState")],
+    };
+    assert!(chain_root_is_namespace(&chain, &lookup));
+}
+
+/// `rendered.getByText` — `rendered` is a value, not a namespace; the chain
+/// walker owns it and a decline stays a hard miss so no same-named sibling
+/// hijacks the member access.
+#[test]
+fn value_rooted_chain_is_not_a_namespace() {
+    let lookup = Lookup::new().with(sym(1, "rendered", "rendered", "variable", "x.ts"));
+    let chain = MemberChain {
+        segments: vec![nseg("rendered"), nseg("getByText")],
+    };
+    assert!(!chain_root_is_namespace(&chain, &lookup));
+}
 
 /// The extractor emits `namespace X {}` / `declare namespace X` as a `Module`
 /// (and a bare `namespace`-kind for some shapes). A namespace value root —
