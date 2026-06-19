@@ -788,3 +788,62 @@ fn member_walk_climbs_to_a_non_first_of_several_supertypes() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(200));
 }
+
+// --- use-site SymbolId threading across hops (determinism fix) ---------------
+
+/// When a chain has two hops and the intermediate type's qname is shared by two
+/// declarations in different packages, the walk must bind the final member on the
+/// declaration that the USE SITE's import scope established at the root — not the
+/// first-winner returned by `by_qualified_name`.
+///
+/// Setup:
+///   - `Client` (qname "Client") in pkg 10 (id 100), `execute` (id 105, returns Client), `status` (id 110).
+///   - `Client` (qname "Client") in pkg 20 (id 200), `execute` (id 205, returns Client), `status` (id 210).
+///   - `by_qualified_name("Client")` first-winner = id 200 (registered last).
+///   - The use-site imports `Client` from pkg 10 → root is established as id 100.
+///
+/// `Client.execute().status` must resolve to id 110 (pkg 10), NOT 210 (pkg 20's
+/// first-winner that the re-search at the intermediate hop would pick without the id fix).
+#[test]
+fn intermediate_hop_threads_use_site_id_not_first_winner() {
+    // Members for pkg A's Client (id 100).
+    let mut exec_a = sym(105, "execute", "Client.execute", "method", "pkg_a/client.ts");
+    exec_a.package_id = Some(10);
+    let mut status_a = sym(110, "status", "Client.status", "field", "pkg_a/client.ts");
+    status_a.package_id = Some(10);
+    // Members for pkg B's Client (id 200).
+    let mut exec_b = sym(205, "execute", "Client.execute", "method", "pkg_b/client.ts");
+    exec_b.package_id = Some(20);
+    let mut status_b = sym(210, "status", "Client.status", "field", "pkg_b/client.ts");
+    status_b.package_id = Some(20);
+
+    // Register pkg A's Client first (id 100), then pkg B's (id 200).
+    // `by_qname["Client"]` overwrites to id 200 — first-winner for by_qualified_name.
+    let lookup = Lookup::new()
+        .with_workspace_pkg("pkg-a", 10)
+        .with_workspace_pkg("pkg-b", 20)
+        .with_in_package(10, sym(100, "Client", "Client", "class", "pkg_a/client.ts"))
+        .with_in_package(20, sym(200, "Client", "Client", "class", "pkg_b/client.ts"))
+        .with_member_id(100, exec_a)
+        .with_member_id(100, status_a)
+        .with_member_id(200, exec_b)
+        .with_member_id(200, status_b)
+        .with_return_type("Client.execute", "Client")
+        .with_field_type("Client.status", "string");
+
+    // The chain: Client.execute().status
+    let segs = vec![
+        seg("Client", false, SegmentKind::TypeAccess),
+        seg("execute", true, SegmentKind::Property),
+        seg("status", false, SegmentKind::Property),
+    ];
+
+    // Import Client from pkg-a: root must pick id 100, and the walk must stay on
+    // pkg-a's declarations through every hop.
+    let fc = file_ctx(vec![import("Client", Some("pkg-a"))], None);
+    assert_eq!(
+        resolve_with_fc(&lookup, segs, "caller", &fc),
+        Some(110),
+        "expected pkg-a's status (110) but got pkg-b's first-winner (210)"
+    );
+}

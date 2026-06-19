@@ -82,8 +82,11 @@ pub fn bind_member_access(
         // Advance to the type this member yields, substituting the receiver's
         // type arguments for the declaring type's generic parameters, then
         // expand it through any type alias before the next member lookup.
+        // Pin the new receiver's id using the member's package context so the
+        // chain stays anchored to the package the use site established rather
+        // than falling back to a first-winner by_qname re-search.
         let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty)?;
-        current = expand_receiver(Receiver::untyped(yielded), lookup, arena);
+        current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena);
     }
     None
 }
@@ -111,14 +114,29 @@ impl Receiver {
     }
 }
 
-/// Expand a receiver's type through any type alias, then re-derive its
-/// declaration id from the (possibly rewritten) head — an alias root resolves to
-/// a different declaration than the alias name, so the id is recomputed after
-/// expansion. Keeps an id the caller already established when the head qname is
-/// unchanged and no more specific declaration is found.
+/// Expand a receiver's type through any type alias, then resolve the declaration
+/// id for the (possibly rewritten) head. When alias expansion changes the head,
+/// the receiver names a different declaration — re-derive the id from the new
+/// head via `by_qualified_name`. When the head is unchanged (no alias was
+/// applied), the caller's established id is more specific than a first-winner
+/// re-search: keep it and only fall back to `by_qualified_name` when no id was
+/// carried. This prevents a same-qname collision in another package from
+/// overwriting an id that was pinned at the use site or by prior-hop package
+/// context.
 fn expand_receiver(recv: Receiver, lookup: &dyn SymbolLookup, arena: &TypeArena) -> Receiver {
+    let pre_head = head_qname(arena, recv.ty);
     let ty = alias::expand(recv.ty, lookup, arena);
-    let id = head_symbol_id(arena, lookup, ty).or(recv.id);
+    let post_head = head_qname(arena, ty);
+    let id = if pre_head != post_head {
+        // Alias rewrote the head — re-derive from the new head, fall back to
+        // the carried id when the new head has no indexed declaration.
+        head_symbol_id(arena, lookup, ty).or(recv.id)
+    } else {
+        // Head unchanged — the caller's id is the authoritative identity; the
+        // by_qname first-winner is only a fallback for id-less (external/ambient)
+        // receivers.
+        recv.id.or_else(|| head_symbol_id(arena, lookup, ty))
+    };
     Receiver { ty, id }
 }
 
@@ -128,6 +146,44 @@ fn expand_receiver(recv: Receiver, lookup: &dyn SymbolLookup, arena: &TypeArena)
 /// member lookup.
 fn head_symbol_id(arena: &TypeArena, lookup: &dyn SymbolLookup, ty: TypeId) -> Option<i64> {
     let head = head_qname(arena, ty)?;
+    lookup.by_qualified_name(&head).map(|s| s.id)
+}
+
+/// Build a `Receiver` for the type a member yielded, pinning the declaration id
+/// from the member's package context when possible. A same-qname type in the
+/// member's package is preferred over `by_qualified_name`'s first-winner, so the
+/// chain stays anchored to the package the use site established. Falls back to
+/// `by_qualified_name` when no package id is recorded on the member or when no
+/// same-package declaration exists (external/ambient heads).
+fn yielded_receiver(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    ty: TypeId,
+    member_package_id: Option<i64>,
+) -> Receiver {
+    let id = head_symbol_id_preferring_package(arena, lookup, ty, member_package_id);
+    Receiver { ty, id }
+}
+
+/// The symbol id of the declaration a type's head names, preferring a
+/// same-package declaration over the first-winner when `preferred_pkg` is known.
+/// Falls back to `by_qualified_name` (first-winner) for external/ambient heads
+/// that have no indexed declaration in the preferred package.
+fn head_symbol_id_preferring_package(
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    ty: TypeId,
+    preferred_pkg: Option<i64>,
+) -> Option<i64> {
+    let head = head_qname(arena, ty)?;
+    let simple = head.rsplit('.').next().unwrap_or(&head);
+    if let Some(pkg) = preferred_pkg {
+        for s in lookup.by_name(simple) {
+            if s.qualified_name == head && s.package_id == Some(pkg) {
+                return Some(s.id);
+            }
+        }
+    }
     lookup.by_qualified_name(&head).map(|s| s.id)
 }
 
