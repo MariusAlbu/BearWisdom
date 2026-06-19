@@ -1,40 +1,12 @@
 // =============================================================================
 // type_checker/core — foundation layer
 //
-// types.rs holds the Type / TypeId / TypeArena primitives every other layer
-// consumes. symbol_types.rs maps DB symbol ids to per-symbol type metadata.
+// types.rs holds the Type / TypeId / TypeArena primitives the resolution engine
+// and the extractors consume. The old resolver's chain/members/dispatch/
+// generics/inference/pattern/supertype/symbol_types machinery was deleted with
+// the legacy engine — the new engine in indexer/resolve/engine/ owns resolution.
 // =============================================================================
 
-pub mod chain;
-pub mod default_resolver;
-pub mod dispatch;
-pub mod generics;
-pub mod inference;
-pub mod members;
-pub mod pattern;
-pub mod reexport;
-pub mod supertype;
-pub mod symbol_types;
-pub(crate) mod symbol_view;
 pub mod types;
 
-pub use chain::{
-    ChainResolution, ChainWalker, DefaultRootResolver, ProfileRootResolver, RootResolver,
-};
-pub use default_resolver::DefaultResolver;
-pub use dispatch::{select_method, DispatchQuery};
-pub use generics::{substitute, GenericEnv};
-pub use inference::{infer_expression_type, unwrap_await, unwrap_iterator};
-pub use members::MembersIndex;
-pub use pattern::{bind as bind_pattern, Pattern};
-pub use supertype::{SupertypeGraph, SupertypeWalk};
-pub use symbol_types::{SymbolIdMap, SymbolTypeData, SymbolTypeMap};
 pub use types::{GenericParamData, GenericParamId, LitValue, PrimKind, Type, TypeArena, TypeId};
-
-#[cfg(test)]
-#[path = "foundation_gate_tests.rs"]
-mod foundation_gate_tests;
-
-#[cfg(test)]
-#[path = "lookup_gate_tests.rs"]
-mod lookup_gate_tests;
