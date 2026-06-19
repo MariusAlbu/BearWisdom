@@ -262,6 +262,29 @@ fn binds_through_a_type_alias() {
 }
 
 #[test]
+fn binds_member_through_a_mapped_type_to_its_source() {
+    // type Override<A> = { [K in keyof A]: ... };  const m: Override<Result>;
+    // m.mutate  →  Result.mutate (id 30). A mapped type's keys ARE its source's
+    // keys, so the member resolves on the bound source object.
+    let lookup = Lookup::new()
+        .with_local_type("m", "Override<Result>")
+        .with_alias(
+            "Override",
+            crate::types::AliasTarget::Mapped {
+                source: "A".to_string(),
+                value_template: "A[K]".to_string(),
+            },
+        )
+        .with_generics("Override", &["A"])
+        .with_member("Result", sym(30, "mutate", "Result.mutate", "property", "a.ts"));
+    let segs = vec![
+        seg("m", false, SegmentKind::Identifier),
+        seg("mutate", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(30));
+}
+
+#[test]
 fn roots_a_call_at_the_callee_return_type() {
     // function makeRepo(): Repo {...};  makeRepo().save()  →  Repo.save (id 30)
     let lookup = Lookup::new()

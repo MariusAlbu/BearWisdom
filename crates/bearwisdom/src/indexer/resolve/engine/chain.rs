@@ -23,7 +23,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::types::SegmentKind;
+use crate::types::{AliasTarget, SegmentKind};
 
 use super::alias;
 use super::support::import_scoped_package_id;
@@ -142,13 +142,76 @@ fn lookup_member_on(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
+    lookup_member_on_bounded(lookup, arena, recv, member, accept, MAX_MAPPED_DEPTH)
+}
+
+/// Upper bound on mapped-type source hops — a mapped type whose source is itself
+/// a mapped type chains here. Bounds the rare nesting and guards a cyclic alias.
+const MAX_MAPPED_DEPTH: usize = 6;
+
+/// `lookup_member_on` with a mapped-type recursion budget. After the direct and
+/// supertype-climb lookups miss, a receiver that is a MAPPED type
+/// (`{ [K in keyof T]: V }` — `Override<A, B>`, `BoundFunctions<Q>`) resolves the
+/// member on its SOURCE object: the mapped type's keys ARE the source's keys, so
+/// `mapped.member` IS `source.member`. The source param is bound to the
+/// receiver's applied type argument, then the member walk recurses on it.
+fn lookup_member_on_bounded(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+) -> Option<Symbol> {
     if let Some(id) = recv.id {
         if let Some(m) = lookup_member_by_id(lookup, id, member, accept) {
             return Some(m);
         }
     }
     let head = head_qname(arena, recv.ty)?;
-    lookup_member(lookup, &head, member, accept)
+    if let Some(m) = lookup_member(lookup, &head, member, accept) {
+        return Some(m);
+    }
+    if depth == 0 {
+        return None;
+    }
+    let source_ty = mapped_source_type(lookup, arena, recv.ty, &head)?;
+    let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
+    // A mapped source that resolves back to the mapped type itself makes no
+    // progress — stop rather than spin to the depth bound.
+    if head_qname(arena, source_recv.ty).as_deref() == Some(head.as_str()) {
+        return None;
+    }
+    lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+}
+
+/// The source object type of a mapped alias `{ [K in keyof Src]: … }`, with the
+/// mapped param bound to the receiver's applied type argument: `Override<A, B>`
+/// (params `[A, B]`, source `A`) with receiver `Override<MutationObserverResult,
+/// …>` yields `MutationObserverResult`. A source naming a concrete type rather
+/// than a param is interned directly. `None` when `head` is not a mapped alias
+/// or the mapped capture recorded no source.
+fn mapped_source_type(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    ty: TypeId,
+    head: &str,
+) -> Option<TypeId> {
+    let source = match lookup.alias_target(head) {
+        Some(AliasTarget::Mapped { source, .. }) if !source.is_empty() => source.clone(),
+        _ => return None,
+    };
+    let args = apply_args(arena, ty);
+    let params = lookup
+        .generic_params(head)
+        .map(|p| p.to_vec())
+        .unwrap_or_default();
+    if let Some(pos) = params.iter().position(|p| *p == source) {
+        if let Some(&arg) = args.get(pos) {
+            return Some(arg);
+        }
+    }
+    Some(arena.intern_type_str(&source))
 }
 
 /// Resolve `member` on `type_qname`, climbing its supertypes up to

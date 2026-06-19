@@ -427,7 +427,7 @@ fn parse_file_internal(
         has_errors: r.has_errors,
         flow: flow_meta,
         demand_contributions: Vec::new(),
-        alias_targets: Vec::new(),
+        alias_targets: r.alias_targets,
         component_selectors,
         plugin_flow_emissions,
     };
