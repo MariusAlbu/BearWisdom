@@ -272,9 +272,6 @@ impl SymbolLookup for Lookup {
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing.get(source_qname).map(|s| s.as_str())
     }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> {
-        None
-    }
     fn generic_params(&self, qname: &str) -> Option<&[String]> {
         self.generics.get(qname).map(|v| v.as_slice())
     }

@@ -721,7 +721,6 @@ impl Compilation {
                             ti.return_type_id =
                                 Some(intern_head_and_args(&self.arena, &resolved, &args));
                             ti.return_type = Some(resolved);
-                            ti.return_type_args = args;
                         } else if let Some(&(last, _)) = type_refs.last() {
                             let resolved = resolve_type_name_in_scope(
                                 last,
@@ -905,7 +904,6 @@ impl Compilation {
             ti.return_type_id =
                 Some(ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)));
             ti.return_type = Some(ty);
-            ti.return_type_args = type_args;
         }
     }
 
@@ -1002,13 +1000,6 @@ impl SymbolLookup for Compilation {
         self.type_info
             .get(method_qname)
             .and_then(|ti| ti.return_type.as_deref())
-    }
-
-    fn field_type_args(&self, property_qname: &str) -> Option<&[String]> {
-        self.type_info
-            .get(property_qname)
-            .filter(|ti| !ti.type_args.is_empty())
-            .map(|ti| ti.type_args.as_slice())
     }
 
     fn generic_params(&self, type_name: &str) -> Option<&[String]> {
@@ -1135,8 +1126,8 @@ impl Compilation {
         {
             let mut stmt = tx.prepare(
                 "INSERT OR REPLACE INTO symbol_type_info \
-                 (symbol_id, field_type, return_type, type_args, return_type_args, generic_params) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 (symbol_id, field_type, return_type, type_args, generic_params) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             for (qname, ti) in &self.type_info {
                 let Some(sym) = self.by_qname.get(qname) else {
@@ -1145,7 +1136,6 @@ impl Compilation {
                 if ti.field_type.is_none()
                     && ti.return_type.is_none()
                     && ti.type_args.is_empty()
-                    && ti.return_type_args.is_empty()
                     && ti.generic_params.is_empty()
                 {
                     continue;
@@ -1155,7 +1145,6 @@ impl Compilation {
                     ti.field_type.as_deref(),
                     ti.return_type.as_deref(),
                     json_string_array(&ti.type_args),
-                    json_string_array(&ti.return_type_args),
                     json_string_array(&ti.generic_params),
                 ])?;
             }
@@ -1259,7 +1248,7 @@ impl Compilation {
         // 2) Persisted type_info, re-interned into this build's fresh arena.
         if let Ok(mut ti_stmt) = conn.prepare(
             "SELECT s.qualified_name, s.name, t.field_type, t.return_type, \
-                    t.type_args, t.return_type_args, t.generic_params \
+                    t.type_args, t.generic_params \
              FROM symbol_type_info t JOIN symbols s ON s.id = t.symbol_id",
         ) {
             if let Ok(ti_rows) = ti_stmt.query_map([], |r| {
@@ -1270,10 +1259,9 @@ impl Compilation {
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, Option<String>>(4)?,
                     r.get::<_, Option<String>>(5)?,
-                    r.get::<_, Option<String>>(6)?,
                 ))
             }) {
-                for (qname, name, field_type, return_type, type_args_j, return_type_args_j, generic_params_j) in
+                for (qname, name, field_type, return_type, type_args_j, generic_params_j) in
                     ti_rows.flatten()
                 {
                     // A changed symbol's type_info is the fresh parse's, not the
@@ -1282,7 +1270,6 @@ impl Compilation {
                         continue;
                     }
                     let type_args = parse_json_string_array(type_args_j.as_deref());
-                    let return_type_args = parse_json_string_array(return_type_args_j.as_deref());
                     let generic_params = parse_json_string_array(generic_params_j.as_deref());
 
                     let ti = self.type_info.entry(qname.clone()).or_default();
@@ -1300,9 +1287,6 @@ impl Compilation {
                     }
                     if ti.type_args.is_empty() {
                         ti.type_args = type_args;
-                    }
-                    if ti.return_type_args.is_empty() {
-                        ti.return_type_args = return_type_args;
                     }
                     if ti.generic_params.is_empty() && !generic_params.is_empty() {
                         ti.generic_params = generic_params.clone();

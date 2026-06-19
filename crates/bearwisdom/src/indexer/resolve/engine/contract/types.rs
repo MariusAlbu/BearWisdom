@@ -116,17 +116,6 @@ pub struct Symbol {
     pub signature: Option<String>,
 }
 
-/// Intern a yield-type qname into the lookup's TypeArena. Returns `None`
-/// when either the input qname or the arena is absent. Provides the
-/// migration path for legacy `LanguageResolver`/`TypeChecker` impls that
-/// still produce yield types as strings — they wrap their string output
-/// in this helper to populate `SymbolInfo::resolved_yield_type` with a
-/// canonical TypeId until they're rewritten to produce TypeId directly.
-pub fn intern_yield_type(qname: Option<String>, lookup: &dyn SymbolLookup) -> Option<TypeId> {
-    let qname = qname?;
-    let arena = lookup.type_arena()?;
-    Some(arena.class(&qname))
-}
 
 // ---------------------------------------------------------------------------
 // TypeInfo — unified per-symbol type metadata
@@ -137,26 +126,20 @@ pub fn intern_yield_type(qname: Option<String>, lookup: &dyn SymbolLookup) -> Op
 ///
 /// TypeIds are the canonical source of truth: the build pipeline populates
 /// `field_type_id` / `return_type_id` / `type_arg_ids` first from extractor
-/// signals (TypeRef refs, signature parsing, AST-driven extractors), and
-/// the string fields below are formatted from those TypeIds for the
-/// legacy string-typed `SymbolLookup` accessors. Removing the parallel
-/// string-population path closes the gap that used to let strings and
-/// TypeIds drift out of sync.
+/// signals (TypeRef refs, signature parsing, AST-driven extractors), and the
+/// string fields below are formatted from those TypeIds. The strings are the
+/// durable form: TypeIds are arena-local indices and not serializable, so the
+/// DB stores the strings and re-interns `field_type_id` / `return_type_id`
+/// from them on reload.
 #[derive(Debug, Default, Clone)]
 pub struct TypeInfo {
     /// Field/property type rendered from `field_type_id`.
     pub field_type: Option<String>,
     /// Generic type arguments of `field_type` (e.g. `["User"]` for a field
-    /// `Repository<User>`). Kept distinct from `return_type_args` so a symbol
-    /// that is both a field and a method of the same qname (legal in Java:
-    /// `List<X> size; List<Y> size()`) does not clobber one with the other.
+    /// `Repository<User>`).
     pub type_args: Vec<String>,
     /// Method return type rendered from `return_type_id`.
     pub return_type: Option<String>,
-    /// Generic type arguments of `return_type` (e.g. `["User"]` for a method
-    /// returning `Repository<User>`). Consulted by the chain walker on a
-    /// method-call yield to bind the element type parameter.
-    pub return_type_args: Vec<String>,
     /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
     pub generic_params: Vec<String>,
     /// Declared upper bounds for `generic_params`, index-aligned. `None` for an
@@ -169,16 +152,4 @@ pub struct TypeInfo {
     pub return_type_id: Option<TypeId>,
     /// Canonical TypeIds of `type_args`, in declaration order.
     pub type_arg_ids: Vec<TypeId>,
-    /// Canonical TypeIds of `return_type_args`, in declaration order. Kept in
-    /// sync with the string form through the same intern/format round-trip as
-    /// `type_arg_ids`, so a method-return arg canonicalizes the same way a
-    /// field arg does.
-    pub return_type_arg_ids: Vec<TypeId>,
-    /// Canonical TypeIds of declared generic parameters — each one a
-    /// `Type::Generic { param }` interned through the workspace arena.
-    /// Populated alongside `generic_params` so consumers that drive
-    /// substitution can resolve `T` / `K` / `V` symbols by id instead of
-    /// by name. `owner_symbol_index` is currently a placeholder (0); a
-    /// future wave will wire real owner indices from the extractor.
-    pub generic_param_type_ids: Vec<TypeId>,
 }

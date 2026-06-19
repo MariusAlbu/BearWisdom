@@ -17,7 +17,7 @@ pub mod util;
 pub use lookup::SymbolLookup;
 pub use symbol_set::SymbolSet;
 pub use types::{
-    intern_yield_type, FileContext, ImportEntry, RefContext, SymbolInfo, Symbol, TypeInfo,
+    FileContext, ImportEntry, RefContext, SymbolInfo, Symbol, TypeInfo,
     RESOLVED_CONFIDENCE,
 };
 

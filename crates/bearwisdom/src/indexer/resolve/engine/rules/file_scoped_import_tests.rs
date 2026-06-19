@@ -68,9 +68,6 @@ impl SymbolLookup for FileLookup {
     fn return_type_name(&self, _: &str) -> Option<&str> {
         None
     }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> {
-        None
-    }
     fn generic_params(&self, _: &str) -> Option<&[String]> {
         None
     }

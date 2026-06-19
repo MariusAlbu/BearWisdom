@@ -105,17 +105,6 @@ pub trait SymbolLookup {
     /// e.g., "UserRepo.findOne" → Some("User").
     fn return_type_name(&self, method_qname: &str) -> Option<&str>;
 
-    /// Get the generic type arguments for a field's type annotation.
-    /// e.g., "UserService.repo" → Some(["User"]) for `repo: Repository<User>`.
-    fn field_type_args(&self, property_qname: &str) -> Option<&[String]>;
-
-    /// Get the generic type arguments of a method's return type.
-    /// e.g., "UserRepo.findAll" → Some(["User"]) for `findAll(): List<User>`.
-    /// Default `None` so synthetic test lookups need not opt in.
-    fn return_type_args(&self, _method_qname: &str) -> Option<&[String]> {
-        None
-    }
-
     /// Get the generic type parameter names for a type declaration.
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
     fn generic_params(&self, type_name: &str) -> Option<&[String]>;
@@ -134,24 +123,8 @@ pub trait SymbolLookup {
         None
     }
 
-    /// Canonical TypeId forms of `field_type_args`. Returns `Some(ids)` when
-    /// the property's generic args have been interned into the workspace
-    /// arena. Default returns `None` so synthetic test lookups don't have
-    /// to opt in.
-    fn field_type_arg_ids(&self, _property_qname: &str) -> Option<&[TypeId]> {
-        None
-    }
-
-    /// Canonical `Type::Generic` TypeIds for `type_name`'s declared
-    /// generic parameters. Each id resolves to `Type::Generic { param }`
-    /// where `param` is the `GenericParamId` for that parameter slot.
-    /// Default returns `None` so synthetic test lookups don't opt in.
-    fn generic_param_type_ids(&self, _type_name: &str) -> Option<&[TypeId]> {
-        None
-    }
-
     /// Borrow the workspace TypeArena that owns every TypeId returned by
-    /// `field_type_id` / `return_type_id` / `field_type_arg_ids`. Returns
+    /// `field_type_id` / `return_type_id`. Returns
     /// `None` for synthetic test lookups that haven't opted into the
     /// TypeId surface.
     fn type_arena(&self) -> Option<&TypeArena> {
@@ -175,15 +148,6 @@ pub trait SymbolLookup {
             return Some(arena.format_type(id));
         }
         self.return_type_name(qname).map(|s| s.to_string())
-    }
-
-    /// Render the field type args for `qname` from the canonical TypeArena.
-    fn field_type_arg_strs(&self, qname: &str) -> Option<Vec<String>> {
-        if let (Some(ids), Some(arena)) = (self.field_type_arg_ids(qname), self.type_arena()) {
-            return Some(ids.iter().map(|id| arena.format_type(*id)).collect());
-        }
-        self.field_type_args(qname)
-            .map(|args| args.iter().cloned().collect())
     }
 
     /// Look up the structural shape of a type alias.

@@ -48,7 +48,6 @@ impl SymbolLookup for FileLookup {
     }
     fn field_type_name(&self, _: &str) -> Option<&str> { None }
     fn return_type_name(&self, _: &str) -> Option<&str> { None }
-    fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
     fn generic_params(&self, _: &str) -> Option<&[String]> { None }
     fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_pairs }
     fn is_external_name(&self, _: &str, _: &str) -> bool { false }

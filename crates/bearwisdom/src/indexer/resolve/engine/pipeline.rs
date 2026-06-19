@@ -113,14 +113,6 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.return_type_name(method_qname)
     }
 
-    fn field_type_args(&self, property_qname: &str) -> Option<&[String]> {
-        self.tree.field_type_args(property_qname)
-    }
-
-    fn return_type_args(&self, method_qname: &str) -> Option<&[String]> {
-        self.tree.return_type_args(method_qname)
-    }
-
     fn generic_params(&self, type_name: &str) -> Option<&[String]> {
         self.tree.generic_params(type_name)
     }
@@ -131,10 +123,6 @@ impl<'a> SymbolLookup for FileLookup<'a> {
 
     fn return_type_id(&self, method_qname: &str) -> Option<TypeId> {
         self.tree.return_type_id(method_qname)
-    }
-
-    fn field_type_arg_ids(&self, property_qname: &str) -> Option<&[TypeId]> {
-        self.tree.field_type_arg_ids(property_qname)
     }
 
     fn type_arena(&self) -> Option<&TypeArena> {

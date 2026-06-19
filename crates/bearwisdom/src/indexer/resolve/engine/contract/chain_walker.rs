@@ -783,7 +783,6 @@ fn strip_go_pointer(t: &str) -> &str {
 ///
 /// Only the DIRECT type args of the outermost application are returned; the
 /// caller is responsible for further descending into nested args if needed.
-/// This is consistent with the existing field_type_args convention.
 pub(crate) fn parse_type_head_and_args(type_str: &str) -> (&str, Vec<&str>) {
     split_application(type_str, '<', '>')
 }
@@ -817,9 +816,8 @@ pub(crate) fn parse_type_head_and_args_bracket(type_str: &str) -> (&str, Vec<&st
 }
 
 /// Split `Head<A, B>` / `Head[A, B]` into the head and its DIRECT top-level
-/// args (nested args are not walked — only each arg's own head is returned,
-/// matching the field_type_args convention). Returns `(trimmed input, [])` when
-/// there is no `open` bracket.
+/// args (nested args are not walked — only each arg's own head is returned).
+/// Returns `(trimmed input, [])` when there is no `open` bracket.
 fn split_application(type_str: &str, open: char, close: char) -> (&str, Vec<&str>) {
     let Some(open_idx) = type_str.find(open) else {
         return (type_str.trim(), Vec::new());
