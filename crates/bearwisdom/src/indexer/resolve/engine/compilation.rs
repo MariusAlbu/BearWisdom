@@ -24,26 +24,9 @@ use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile, SymbolKind};
 
 // ---------------------------------------------------------------------------
-// is_type_like — local mirror of the engine-util predicate
-// ---------------------------------------------------------------------------
-
-fn is_type_like(kind: &str) -> bool {
-    matches!(
-        kind,
-        "class"
-            | "struct"
-            | "interface"
-            | "enum"
-            | "type_alias"
-            | "namespace"
-            | "record"
-            | "trait"
-            | "protocol"
-            | "object"
-            | "mixin"
-            | "extension"
-    )
-}
+// `is_type_like` is the single canonical type-name-surface predicate, owned by
+// `engine::contract::util`. Aliased here so the call sites read unchanged.
+use super::contract::is_type_like_kind as is_type_like;
 
 // ---------------------------------------------------------------------------
 // PendingModuleValue — a deferred module-tagged value TypeRef
