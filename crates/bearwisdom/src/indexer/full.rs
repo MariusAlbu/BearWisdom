@@ -74,7 +74,7 @@ pub fn full_index(
 ) -> Result<IndexStats> {
     // The rule-based `SemanticModel` (single demand-driven pass) is the only
     // resolver. The previous `SymbolIndex` + iteration loop is no longer reached.
-    full_index_inner(db, project_root, progress, pre_walked, ref_cache, true)
+    full_index_inner(db, project_root, progress, pre_walked, ref_cache)
 }
 
 /// Deprecated alias for `full_index` — both route through the `SemanticModel`.
@@ -86,7 +86,7 @@ pub fn full_index_engine(
     pre_walked: Option<Vec<WalkedFile>>,
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IndexStats> {
-    full_index_inner(db, project_root, progress, pre_walked, ref_cache, true)
+    full_index_inner(db, project_root, progress, pre_walked, ref_cache)
 }
 
 fn full_index_inner(
@@ -95,7 +95,6 @@ fn full_index_inner(
     progress: Option<ProgressFn>,
     pre_walked: Option<Vec<WalkedFile>>,
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
-    use_engine: bool,
 ) -> Result<IndexStats> {
     let emit = |step: &str, pct: f64, detail: Option<&str>| {
         if let Some(ref cb) = progress {
@@ -943,12 +942,11 @@ fn full_index_inner(
     parsed.sort_by(|a, b| a.path.cmp(&b.path));
 
     emit("resolving", 0.0, None);
-    let mut rstats: resolve::ResolutionStats;
-    if use_engine {
-        // New engine: one demand-driven pass over the SymbolTree. No SymbolIndex,
-        // no iteration_0 + return-inference fixpoint, no old resolve loop.
+    // One demand-driven pass over the Compilation: no SymbolIndex, no
+    // iteration_0 + return-inference fixpoint, no old resolve loop.
+    let mut rstats: resolve::ResolutionStats = {
         let _t = phase_timer::scope("resolve.single_pass");
-        rstats = resolve::engine::pipeline::resolve_single_pass(
+        let stats = resolve::engine::pipeline::resolve_single_pass(
             db,
             &parsed,
             &symbol_id_map,
@@ -959,134 +957,10 @@ fn full_index_inner(
         .context("SemanticModel single-pass resolve failed")?;
         info!(
             "SemanticModel single pass: {} edges, {} unresolved",
-            rstats.resolved, rstats.unresolved
+            stats.resolved, stats.unresolved
         );
-    } else {
-    // Built once on the single resolve pass and reused by the return-inference
-    // fixpoint below; no per-iteration rebuild.
-    let mut cached_index: Option<resolve::legacy::SymbolIndex> = None;
-    let mut cached_engine: Option<crate::type_checker::Engine<'static>> = None;
-    let mut cached_side_tables: Option<resolve::ResolveSideTables> = None;
-    // Speculative unresolved/external rows, written once after the fixpoint
-    // settles. Each pass overwrites this holder; the final pass is authoritative.
-    let mut deferred_spec = resolve::DeferredSpeculative::default();
-    rstats = {
-        let _t = phase_timer::scope("resolve.iteration_0");
-        resolve::resolve_iteration_with_cached_index_and_arena(
-            db,
-            &parsed,
-            &symbol_id_map,
-            Some(&project_ctx),
-            &mut cached_index,
-            &mut cached_engine,
-            &mut cached_side_tables,
-            // Iteration 0: caches are None so the function builds full;
-            // empty new_files_slice is moot (the build path doesn't read it).
-            &[],
-            std::sync::Arc::clone(&workspace_arena),
-            Some(&mut deferred_spec),
-            // Iteration 0 resolves every internal file — no worklist.
-            None,
-            // The external location index: a lookup-miss materializes the
-            // defining external file inline, during this single pass.
-            std::sync::Arc::clone(&symbol_index),
-        )
-        .context("Failed to resolve references")?
+        stats
     };
-    info!(
-        "Wrote {} edges, {} external, {} unresolved references",
-        rstats.resolved, rstats.external, rstats.unresolved
-    );
-    mem_probe::probe("10_resolve_iter_0");
-
-    // Delta-resolve worklist: iteration 0 resolved every file, materializing the
-    // external symbols its references reached inline (lazy materialize-on-miss),
-    // so there is no expand loop. Only files that still hold an unresolved ref
-    // can change on a later pass, so the return-inference fixpoint below
-    // re-resolves just this shrinking frontier.
-    let mut frontier: std::collections::HashSet<String> =
-        rstats.frontier_files.iter().cloned().collect();
-    // Inferred returns are harvested per pass; accumulate every pass's returns
-    // and apply the union in the return-inference loop below.
-    let mut all_inferred = rstats.inferred_returns.clone();
-
-    // No expand loop: external symbols are materialized inline during the single
-    // resolve pass above. The return-inference fixpoint below is the only
-    // remaining re-resolve, scoped to the frontier.
-
-    // --- INFER-3 / INFER-2: return-type inference fixpoint. ---
-    //
-    // The resolve passes above harvested return-type candidates from
-    // `return <expr>` sites (`rstats.inferred_returns`, joined per function,
-    // conflict-filtered, declared returns excluded). Gap-fill them into the
-    // cached index and re-resolve so callers read the inferred return — which
-    // can make further returns inferable (a factory's return unlocks its
-    // caller's return, transitively). Iterate to a fixpoint, bounded.
-    //
-    // Cost is proportional to value: a pass that fills no new return makes
-    // `applied == 0` and the loop exits immediately, so a project with no
-    // inferable returns (e.g. no language with a return query wired, or all
-    // returns annotated) pays nothing. Runs after the externals loop so the
-    // cached index is settled; returns that unlock *external* chains are a
-    // follow-on (no expand step here).
-    const MAX_RETURN_ITERATIONS: usize = 3;
-    for ret_iteration in 0..MAX_RETURN_ITERATIONS {
-        let mut applied = 0usize;
-        if let Some(idx) = cached_index.as_mut() {
-            // Apply the union of returns inferred across all passes — the delta
-            // worklist means a single pass's `inferred_returns` only covers the
-            // frontier it re-examined, so the accumulated set is authoritative.
-            for (qname, ty) in &all_inferred {
-                if idx.set_inferred_return(qname.clone(), ty.clone()) {
-                    applied += 1;
-                }
-            }
-        }
-        if applied == 0 {
-            break;
-        }
-        // Speculative rows stay in `deferred_spec`; not cleared/written here.
-        let _t = phase_timer::scope("resolve.return_infer");
-        rstats = resolve::resolve_iteration_with_cached_index_and_arena(
-            db,
-            &parsed,
-            &symbol_id_map,
-            Some(&project_ctx),
-            &mut cached_index,
-            &mut cached_engine,
-            &mut cached_side_tables,
-            &[],
-            std::sync::Arc::clone(&workspace_arena),
-            Some(&mut deferred_spec),
-            // A changed return can only unlock a chain that previously missed,
-            // so only the frontier needs re-resolving.
-            Some(&frontier),
-            // cached_index is already built; loc is consulted only at build, so
-            // this clone is inert here — passed for signature symmetry.
-            std::sync::Arc::clone(&symbol_index),
-        )
-        .context("Failed to re-resolve after return-type inference")?;
-        all_inferred.extend(
-            rstats
-                .inferred_returns
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
-        frontier = rstats.frontier_files.iter().cloned().collect();
-        info!(
-            "Return-inference iteration {}: {} edges resolved, {} inferred returns applied",
-            ret_iteration + 1,
-            rstats.resolved,
-            applied,
-        );
-        mem_probe::probe(&format!("10_return_infer_iter_{}", ret_iteration + 1));
-    }
-
-    // Write the speculative unresolved/external rows once now that the fixpoint
-    // has settled, from the final pass's authoritative set.
-    resolve::flush_deferred_speculative(db, &deferred_spec)
-        .context("Failed to flush deferred speculative refs")?;
-    }
 
     // Materialize incoming_edge_count once, after the loop settles.
     resolve::finalize_resolution(db).context("Failed to finalize resolution")?;
