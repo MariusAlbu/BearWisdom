@@ -419,12 +419,15 @@ fn resolve_one_file(
                             tree.by_name(&r.target_name)
                                 .iter()
                                 .find(|s| s.id == target_id)
-                                .and_then(|s| {
-                                    if r.kind == EdgeKind::Calls {
-                                        tree.return_type_str(&s.qualified_name)
-                                    } else {
-                                        tree.field_type_str(&s.qualified_name)
-                                    }
+                                .and_then(|s| match r.kind {
+                                    // `const x = f()` — x is f's return type.
+                                    EdgeKind::Calls => tree.return_type_str(&s.qualified_name),
+                                    // `const x = new Foo()` — x IS Foo. The
+                                    // constructed class names the receiver type
+                                    // directly, so a later `x.method()` walks
+                                    // Foo's (and its supertypes') members.
+                                    EdgeKind::Instantiates => Some(s.qualified_name.clone()),
+                                    _ => tree.field_type_str(&s.qualified_name),
                                 })
                         });
                     if let (Some(ty), Some(lhs_sym)) = (yield_ty, pf.symbols.get(lhs_idx)) {

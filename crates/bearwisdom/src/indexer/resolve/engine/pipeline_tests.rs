@@ -196,6 +196,83 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
 }
 
+/// `const observer = new QueryObserver(); observer.getCurrentResult()` — the
+/// `new` is an `Instantiates` flow-binding, so forward inference must type
+/// `observer` as the constructed class itself (not its non-existent field type)
+/// for the later member call to walk `QueryObserver`'s methods.
+#[test]
+fn engine_types_a_new_expression_local_for_a_later_member_call() {
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+    fn esym(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(), qualified_name: qname.into(), kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
+            signature: None, doc_comment: None, scope_path: parent.map(|_| "useTest".into()),
+            parent_index: parent, declared_type: None, return_type: None,
+            param_types: Vec::new(), generic_params: Vec::new(),
+        }
+    }
+    fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
+        ChainSegment {
+            name: name.into(), node_kind: String::new(), kind, declared_type: None,
+            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
+            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+        }
+    }
+    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false, is_reexport: false, source_symbol_index: src,
+            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
+            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+        }
+    }
+    let symbols = vec![
+        esym("useTest", "useTest", SymbolKind::Function, None),                  // 0
+        esym("observer", "useTest.observer", SymbolKind::Variable, Some(0)),     // 1
+        esym("QueryObserver", "QueryObserver", SymbolKind::Class, None),         // 2
+        esym("getCurrentResult", "QueryObserver.getCurrentResult", SymbolKind::Method, Some(2)), // 3
+    ];
+    let refs = vec![
+        // `const observer = new QueryObserver()` — Instantiates, flow-bound to `observer`.
+        eref(0, "QueryObserver", EdgeKind::Instantiates, None),
+        // `observer.getCurrentResult()`
+        eref(0, "getCurrentResult", EdgeKind::Calls, Some(MemberChain {
+            segments: vec![
+                cseg("observer", SegmentKind::Identifier, false),
+                cseg("getCurrentResult", SegmentKind::Property, true),
+            ],
+        })),
+    ];
+    let mut flow = FlowMeta::default();
+    flow.flow_binding_lhs.insert(0, 1); // ref 0's LHS is symbol 1 (`observer`)
+    let pf = ParsedFile {
+        path: "d.ts".into(), language: "typescript".into(), content_hash: String::new(),
+        size: 0, line_count: 0, mtime: None, package_id: None, symbols, refs,
+        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
+        has_errors: false, flow, demand_contributions: Vec::new(),
+        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    id_map.insert(("d.ts".to_string(), "useTest".to_string()), 1i64);
+    id_map.insert(("d.ts".to_string(), "useTest.observer".to_string()), 2i64);
+    id_map.insert(("d.ts".to_string(), "QueryObserver".to_string()), 3i64);
+    id_map.insert(("d.ts".to_string(), "QueryObserver.getCurrentResult".to_string()), 4i64);
+    let arena = Arc::new(TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, _unresolved) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    assert!(
+        edges.iter().any(|e| e.1 == 4),
+        "observer.getCurrentResult must resolve to QueryObserver.getCurrentResult via new-expression typing"
+    );
+}
+
 /// Two monorepo packages each declare a top-level enclosing symbol holding a
 /// `devtools` variable with the SAME simple name `devtools`, each typed to that
 /// package's OWN devtools-impl class with its own `mount` method. Both files are
