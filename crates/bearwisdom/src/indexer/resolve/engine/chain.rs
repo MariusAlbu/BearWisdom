@@ -448,6 +448,15 @@ fn resolve_root(
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
 ) -> Option<Receiver> {
+    // Prefer the TypeId cache: `local_type_id` returns the TypeId that was
+    // stored directly by `record_local_type_id`, preserving the exact type
+    // variant (Primitive, Optional, Generic) without a format/intern round-trip.
+    // Fall back to the String cache and intern once at this boundary when no
+    // TypeId binding exists (e.g. bindings recorded via the String path or by
+    // synthetic test doubles that only implement `local_type`).
+    if let Some(id) = lookup.local_type_id(&seg.name) {
+        return Some(Receiver::untyped(id));
+    }
     if let Some(ty) = lookup.local_type(&seg.name) {
         return Some(Receiver::untyped(arena.intern_type_str(&ty)));
     }

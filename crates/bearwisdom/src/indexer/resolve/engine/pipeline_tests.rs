@@ -127,6 +127,103 @@ fn arc_clone(a: &Arc<TypeArena>) -> Arc<TypeArena> {
     Arc::clone(a)
 }
 
+// ---------------------------------------------------------------------------
+// TypeId local cache — primitive/optional corruption gate
+// ---------------------------------------------------------------------------
+
+/// Storing a `Primitive(Int)` TypeId via `record_local_type_id` and reading it
+/// back via `local_type_id` must return the exact same TypeId — not a
+/// `Class("Int")` nominalization that `intern_type_str("Int")` would produce.
+///
+/// Before the fix: no `record_local_type_id` existed; the only write path was
+/// `record_local_type(name, arena.format_type(id))`, which serializes
+/// `Primitive(Int)` as `"Int"`.  `local_type_id` would return `None`, and the
+/// chain walker would call `arena.intern_type_str("Int")` → `Class("Int")`.
+/// This test is RED in that state and GREEN after the TypeId cache lands.
+#[test]
+fn local_type_id_round_trips_primitive_without_nominalization() {
+    use crate::type_checker::core::types::{PrimKind, Type};
+
+    let arena = Arc::new(TypeArena::new());
+    let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &[],
+        &symbol_id_map,
+        arc_clone(&arena),
+    );
+    let lookup = FileLookup::new(&tree);
+
+    // Intern a real Primitive(Int) TypeId.
+    let prim_id = arena.intern(Type::Primitive(PrimKind::Int));
+
+    // Verify the corruption: intern_type_str("Int") produces Class("Int"), not
+    // Primitive(Int).  This is the shape the old round-trip produced.
+    let nominalized = arena.intern_type_str("Int");
+    assert!(
+        matches!(arena.get(nominalized), Type::Class(_)),
+        "intern_type_str(\"Int\") must yield Class, not Primitive — confirms the corruption"
+    );
+    assert_ne!(
+        nominalized, prim_id,
+        "Class(\"Int\") and Primitive(Int) must be distinct TypeIds"
+    );
+
+    // The new path: store the TypeId directly, read it back.
+    lookup.record_local_type_id("count".to_string(), prim_id);
+    let got = lookup.local_type_id("count");
+    assert_eq!(
+        got,
+        Some(prim_id),
+        "local_type_id must return the exact Primitive(Int) TypeId, not None or a nominalized Class"
+    );
+    // The returned TypeId must NOT be the nominalized Class variant.
+    assert!(
+        matches!(arena.get(got.unwrap()), Type::Primitive(PrimKind::Int)),
+        "cached TypeId must be Primitive(Int), not Class(\"Int\")"
+    );
+}
+
+/// Same guarantee for `Optional<User>`: `record_local_type_id` with an
+/// `Optional` TypeId and `local_type_id` must return it intact.
+///
+/// The old path serialized `Optional(User)` as `"User?"` via `format_type`,
+/// then `intern_type_str("User?")` fell through the suffix/bracket paths and
+/// landed in `class("User?")` — a `Class` named `"User?"`, with no members.
+#[test]
+fn local_type_id_round_trips_optional_without_nominalization() {
+    use crate::type_checker::core::types::Type;
+
+    let arena = Arc::new(TypeArena::new());
+    let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &[],
+        &symbol_id_map,
+        arc_clone(&arena),
+    );
+    let lookup = FileLookup::new(&tree);
+
+    let user_id = arena.class("User");
+    let opt_id = arena.intern(Type::Optional(user_id));
+
+    // Confirm the old round-trip produces a Class, not Optional.
+    let formatted = arena.format_type(opt_id); // "User?"
+    let nominalized = arena.intern_type_str(&formatted);
+    assert!(
+        matches!(arena.get(nominalized), Type::Class(_)),
+        "intern_type_str(\"User?\") must yield Class — confirms the corruption"
+    );
+    assert_ne!(nominalized, opt_id, "Class(\"User?\") and Optional(User) must be distinct");
+
+    // New path: TypeId stored and retrieved intact.
+    lookup.record_local_type_id("maybeUser".to_string(), opt_id);
+    let got = lookup.local_type_id("maybeUser");
+    assert_eq!(got, Some(opt_id), "local_type_id must return Optional(User) TypeId");
+    assert!(
+        matches!(arena.get(got.unwrap()), Type::Optional(_)),
+        "cached TypeId must be Optional, not a nominalized Class"
+    );
+}
+
 #[test]
 fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     use crate::types::{

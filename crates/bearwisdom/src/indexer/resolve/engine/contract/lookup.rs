@@ -430,6 +430,20 @@ pub trait SymbolLookup {
     /// `resolved_yield_type`.
     fn record_local_type(&self, _name: String, _type_name: String) {}
 
+    /// Canonical TypeId form of `local_type`. Returns the TypeId stored by
+    /// `record_local_type_id` for `name`, or `None` when no TypeId binding
+    /// exists. Preferred over `local_type` by the chain walker's root step so
+    /// non-nominal types (primitives, optionals, generics) survive the cache
+    /// round-trip without being nominalized to `Class`.
+    fn local_type_id(&self, _name: &str) -> Option<TypeId> {
+        None
+    }
+
+    /// Store the canonical TypeId for a local binding directly, avoiding the
+    /// `format_type` → `intern_type_str` round-trip that nominalizes
+    /// `Primitive`/`Optional`/`Generic` to `Class`.
+    fn record_local_type_id(&self, _name: String, _id: TypeId) {}
+
     /// Clear the cache at end of file. Keeps leftover bindings from bleeding
     /// into the next file's pass.
     fn clear_local_cache(&self) {}

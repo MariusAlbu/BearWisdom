@@ -46,11 +46,16 @@ use crate::indexer::resolve::engine::contract::build_scope_chain;
 /// inferred from an earlier binding (`const x = makeRepo(); x.find()`).
 ///
 /// The cache is intentionally flat (no CFG, no narrowing) — this is forward
-/// inference only: LHS-name → yield-type string. Narrowing remains in the
-/// old engine path via `install_local_cache` / `set_cursor`.
+/// inference only: LHS-name → yield-type. Two parallel caches are maintained:
+/// `locals_id` stores the canonical TypeId directly (populated from
+/// `resolved_yield_type` when present, avoiding the `format_type` →
+/// `intern_type_str` round-trip that nominalizes primitives/optionals/generics
+/// to `Class`); `locals` stores the String fallback for the call sites that
+/// still operate on type strings (return_type_str / field_type_str paths).
 struct FileLookup<'a> {
     tree: &'a Compilation,
     locals: RefCell<FxHashMap<String, String>>,
+    locals_id: RefCell<FxHashMap<String, TypeId>>,
 }
 
 impl<'a> FileLookup<'a> {
@@ -58,6 +63,7 @@ impl<'a> FileLookup<'a> {
         Self {
             tree,
             locals: RefCell::new(FxHashMap::default()),
+            locals_id: RefCell::new(FxHashMap::default()),
         }
     }
 }
@@ -173,7 +179,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_workspace_declared_name(name)
     }
 
-    // -- Flow cache: 5 methods implemented over `locals`. --------------------
+    // -- Flow cache: methods implemented over `locals` and `locals_id`. ------
 
     /// Return the inferred type of `name` from the per-file forward-inference
     /// cache. Returns `None` when the name has not been bound by an earlier ref.
@@ -186,9 +192,21 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.local_type(name).map(|t| vec![t])
     }
 
-    /// Bind `name` to `type_name` in the forward-inference cache.
+    /// Bind `name` to `type_name` in the String forward-inference cache.
     fn record_local_type(&self, name: String, type_name: String) {
         self.locals.borrow_mut().insert(name, type_name);
+    }
+
+    /// Return the canonical TypeId binding for `name`. Preferred by the chain
+    /// walker root step over `local_type` so non-nominal types (primitives,
+    /// optionals, generics) are not nominalized on the round-trip.
+    fn local_type_id(&self, name: &str) -> Option<TypeId> {
+        self.locals_id.borrow().get(name).copied()
+    }
+
+    /// Bind `name` directly to a TypeId, bypassing `format_type` serialization.
+    fn record_local_type_id(&self, name: String, id: TypeId) {
+        self.locals_id.borrow_mut().insert(name, id);
     }
 
     /// No-op: cursor-based narrowing is deferred; flat forward inference only.
@@ -206,6 +224,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     /// Evict all cached bindings so they cannot bleed into the next file's pass.
     fn clear_local_cache(&self) {
         self.locals.borrow_mut().clear();
+        self.locals_id.borrow_mut().clear();
     }
 }
 
@@ -398,28 +417,39 @@ fn resolve_one_file(
                 // Forward inference: when this ref is the RHS of a local binding,
                 // record the yield type so a later ref rooted on the same variable
                 // name can walk the chain.
+                //
+                // The TypeId path is preferred: `resolved_yield_type` is already a
+                // canonical TypeId that correctly represents primitives, optionals,
+                // and generics. Storing it directly via `record_local_type_id`
+                // avoids the `format_type` → `intern_type_str` round-trip that
+                // nominalizes those types to `Class`. The String path is kept as a
+                // fallback for bindings that carry no `resolved_yield_type` (the
+                // `return_type_str` / `field_type_str` / `Instantiates` branches).
                 if let Some(&lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx) {
-                    let yield_ty = res
-                        .resolved_yield_type
-                        .and_then(|id| tree.type_arena().map(|a| a.format_type(id)))
-                        .or_else(|| {
-                            let target_id = res.target_symbol_id;
-                            tree.by_name(&r.target_name)
-                                .iter()
-                                .find(|s| s.id == target_id)
-                                .and_then(|s| match r.kind {
-                                    // `const x = f()` — x is f's return type.
-                                    EdgeKind::Calls => tree.return_type_str(&s.qualified_name),
-                                    // `const x = new Foo()` — x IS Foo. The
-                                    // constructed class names the receiver type
-                                    // directly, so a later `x.method()` walks
-                                    // Foo's (and its supertypes') members.
-                                    EdgeKind::Instantiates => Some(s.qualified_name.clone()),
-                                    _ => tree.field_type_str(&s.qualified_name),
-                                })
-                        });
-                    if let (Some(ty), Some(lhs_sym)) = (yield_ty, pf.symbols.get(lhs_idx)) {
-                        file_lookup.record_local_type(lhs_sym.name.clone(), ty);
+                    if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                        if let Some(yield_id) = res.resolved_yield_type {
+                            // TypeId available: store it directly. No format/intern.
+                            file_lookup.record_local_type_id(lhs_sym.name.clone(), yield_id);
+                        } else {
+                            // No TypeId from the resolver; derive a String binding
+                            // from the target symbol's stored type metadata.
+                            let yield_ty = {
+                                let target_id = res.target_symbol_id;
+                                tree.by_name(&r.target_name)
+                                    .iter()
+                                    .find(|s| s.id == target_id)
+                                    .and_then(|s| match r.kind {
+                                        // `const x = f()` — x is f's return type.
+                                        EdgeKind::Calls => tree.return_type_str(&s.qualified_name),
+                                        // `const x = new Foo()` — x IS Foo.
+                                        EdgeKind::Instantiates => Some(s.qualified_name.clone()),
+                                        _ => tree.field_type_str(&s.qualified_name),
+                                    })
+                            };
+                            if let Some(ty) = yield_ty {
+                                file_lookup.record_local_type(lhs_sym.name.clone(), ty);
+                            }
+                        }
                     }
                 }
 
