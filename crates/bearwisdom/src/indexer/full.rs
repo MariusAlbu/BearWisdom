@@ -932,6 +932,16 @@ fn full_index_inner(
     // `SymbolLocationIndex`) inline, during the single resolve pass. No expand
     // loop, no per-iteration re-resolve — each external symbol is parsed and
     // interned at most once, on first reference.
+    // Determinism: the parse channel delivers files in parallel-completion order,
+    // so `parsed` arrives in a run-varying sequence. The Compilation's first-winner
+    // `by_qname` insert then picks a different symbol among same-qname collisions
+    // each run, flipping which target a ref binds to — resolution becomes
+    // nondeterministic. Sorting by path before resolve fixes the ingest order (and,
+    // transitively, the external-materialization seed order), so identical input
+    // yields identical edges. The `(path, qname) → id` map is order-independent, so
+    // this reordering is safe.
+    parsed.sort_by(|a, b| a.path.cmp(&b.path));
+
     emit("resolving", 0.0, None);
     let mut rstats: resolve::ResolutionStats;
     if use_engine {
