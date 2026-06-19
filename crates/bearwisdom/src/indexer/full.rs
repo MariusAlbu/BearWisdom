@@ -924,6 +924,32 @@ fn full_index_inner(
     let _ = &demand_driven_roots;
     let _ = &demand_driven_ecosystems;
 
+    // --- Step 4e: Cross-file containment + mergeable collapse ---
+    //
+    // The streaming per-file write only resolves intra-file parent_index
+    // relationships (containing_id). Members whose parent type lives in another
+    // file keep containing_id NULL at this point. Similarly, the full-index
+    // DROP+CREATE path produces one row per file per mergeable symbol; the
+    // incremental survivor-match path would collapse those to one canonical row,
+    // but on the full path that collapsing must happen here.
+    //
+    // The pass returns a map of deleted-id → canonical-id. Apply it to
+    // symbol_id_map so that the Compilation (built in the next step) and
+    // persist_type_info never reference a symbol row that no longer exists.
+    {
+        let _t = phase_timer::scope("full.cross_file_containment");
+        let remapped = write::resolve_cross_file_containment_and_merge(db)
+            .context("Failed to resolve cross-file containment and merge mergeables")?;
+        if !remapped.is_empty() {
+            for id in symbol_id_map.values_mut() {
+                if let Some(&canonical) = remapped.get(id) {
+                    *id = canonical;
+                }
+            }
+        }
+    }
+    mem_probe::probe("08b_containment_merged");
+
     // --- Step 5: Cross-file resolution + edge writing ---
     //
     // External symbols load lazily: a lookup that misses the eager-internal maps

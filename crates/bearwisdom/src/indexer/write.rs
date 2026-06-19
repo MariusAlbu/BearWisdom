@@ -1403,11 +1403,17 @@ pub fn write_package_deps(
 ///     qualified_name) against the fully-populated symbols table.
 ///
 /// (b) Collapses mergeable duplicates: a full index drops + recreates
-///     tables, so two files declaring the same namespace produce two rows
-///     sharing one symbol_key. This mirrors what survivor_match_file does
-///     on the incremental path: keep the lowest-id row as canonical, move
-///     symbol_locations from the duplicates, then delete them.
-pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<()> {
+///     tables, so two files declaring the same namespace produce one row per
+///     declaring file sharing one symbol_key. Keep the lowest-id row as the
+///     canonical row, move symbol_locations from the duplicates, then delete
+///     them. This mirrors what survivor_match_file does on the incremental path.
+///
+/// Returns a map of deleted-id → canonical-id for every collapsed duplicate.
+/// Callers that hold in-memory id maps (e.g. the full-index `symbol_id_map`)
+/// should remap any key whose id appears in this table to the canonical id,
+/// so downstream consumers (persist_type_info, the Compilation) reference
+/// only live symbol rows.
+pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap<i64, i64>> {
     let conn = db.conn();
     let tx = conn
         .unchecked_transaction()
@@ -1458,6 +1464,8 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<()> {
         .collect::<std::result::Result<_, _>>()
         .context("Failed to collect duplicate keys")?;
 
+    let mut remapped: HashMap<i64, i64> = HashMap::new();
+
     for key in &dup_keys {
         // Collect all row ids sharing this key, ascending (first = canonical).
         let ids: Vec<i64> = tx
@@ -1496,13 +1504,15 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<()> {
                 rusqlite::params![dup_id],
             )
             .context("Failed to delete duplicate symbol")?;
+
+            remapped.insert(dup_id, canonical);
         }
     }
 
     tx.commit()
         .context("Failed to commit containment/merge transaction")?;
 
-    Ok(())
+    Ok(remapped)
 }
 
 /// Load all packages from the `packages` table.
