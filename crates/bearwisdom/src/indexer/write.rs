@@ -1392,6 +1392,119 @@ pub fn write_package_deps(
 // Package loading (for incremental package_id assignment)
 // ---------------------------------------------------------------------------
 
+/// Post-write pass for the full-index path.
+///
+/// After all files are written (symbols table is complete), this pass:
+///
+/// (a) Resolves cross-file containing_id: symbols whose parent lives in
+///     another file keep containing_id NULL after per-file writes because
+///     write_containment_and_locations only sees the current file's
+///     id_by_idx vector. Here we match via scope_path (the parent's
+///     qualified_name) against the fully-populated symbols table.
+///
+/// (b) Collapses mergeable duplicates: a full index drops + recreates
+///     tables, so two files declaring the same namespace produce two rows
+///     sharing one symbol_key. This mirrors what survivor_match_file does
+///     on the incremental path: keep the lowest-id row as canonical, move
+///     symbol_locations from the duplicates, then delete them.
+pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<()> {
+    let conn = db.conn();
+    let tx = conn
+        .unchecked_transaction()
+        .context("Failed to begin containment/merge transaction")?;
+
+    // (a) Cross-file containing_id resolution.
+    //
+    // For every symbol with containing_id IS NULL and a non-empty scope_path,
+    // look up the symbol whose qualified_name equals scope_path and is visible
+    // in the same DB (internal or external). The first match wins; non-mergeable
+    // parents are unique by (file_id, qname); mergeable parents have one
+    // canonical row after step (b).
+    tx.execute(
+        "UPDATE symbols
+         SET containing_id = (
+             SELECT p.id FROM symbols p
+             WHERE p.qualified_name = symbols.scope_path
+             LIMIT 1
+         )
+         WHERE containing_id IS NULL
+           AND scope_path IS NOT NULL
+           AND EXISTS (
+               SELECT 1 FROM symbols p
+               WHERE p.qualified_name = symbols.scope_path
+           )",
+        [],
+    )
+    .context("Failed to resolve cross-file containing_id")?;
+
+    // (b) Mergeable duplicate collapse.
+    //
+    // On a full index, N files that each declare the same mergeable symbol
+    // (namespace, partial class, reopened Ruby class) produce N rows all
+    // sharing one symbol_key. Keep the row with the smallest id as the
+    // canonical row; move each non-canonical row's symbol_locations to the
+    // canonical row, then delete the non-canonical rows.
+    let dup_keys: Vec<String> = tx
+        .prepare(
+            "SELECT symbol_key
+             FROM symbols
+             WHERE mergeable = 1 AND symbol_key IS NOT NULL
+             GROUP BY symbol_key
+             HAVING COUNT(*) > 1",
+        )
+        .context("Failed to prepare duplicate-key query")?
+        .query_map([], |r| r.get::<_, String>(0))
+        .context("Failed to query duplicate keys")?
+        .collect::<std::result::Result<_, _>>()
+        .context("Failed to collect duplicate keys")?;
+
+    for key in &dup_keys {
+        // Collect all row ids sharing this key, ascending (first = canonical).
+        let ids: Vec<i64> = tx
+            .prepare("SELECT id FROM symbols WHERE symbol_key = ?1 ORDER BY id")
+            .context("Failed to prepare id query for key")?
+            .query_map([key], |r| r.get::<_, i64>(0))
+            .context("Failed to query ids for key")?
+            .collect::<std::result::Result<_, _>>()
+            .context("Failed to collect ids")?;
+
+        let canonical = ids[0];
+
+        for &dup_id in &ids[1..] {
+            // Move declaration sites: upsert each non-canonical location into
+            // the canonical row. ON CONFLICT ignores a site already present.
+            tx.execute(
+                "INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col)
+                 SELECT ?1, file_id, line, col
+                 FROM symbol_locations
+                 WHERE symbol_id = ?2",
+                rusqlite::params![canonical, dup_id],
+            )
+            .context("Failed to migrate symbol_locations")?;
+
+            // Re-point any containing_id references that point at the duplicate.
+            tx.execute(
+                "UPDATE symbols SET containing_id = ?1 WHERE containing_id = ?2",
+                rusqlite::params![canonical, dup_id],
+            )
+            .context("Failed to reparent contained symbols")?;
+
+            // Deleting the duplicate cascades its symbol_locations, edges,
+            // unresolved_refs, and external_refs rows.
+            tx.execute(
+                "DELETE FROM symbols WHERE id = ?1",
+                rusqlite::params![dup_id],
+            )
+            .context("Failed to delete duplicate symbol")?;
+        }
+    }
+
+    tx.commit()
+        .context("Failed to commit containment/merge transaction")?;
+
+    Ok(())
+}
+
 /// Load all packages from the `packages` table.
 ///
 /// Used during incremental indexing to assign `package_id` to newly parsed

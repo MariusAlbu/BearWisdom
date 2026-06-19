@@ -481,3 +481,199 @@ fn vanished_reports_dependents_and_clears_only_outgoing() {
         .unwrap();
     assert_eq!(helper_in, 1, "inbound edge to the survivor is preserved");
 }
+
+// ---------------------------------------------------------------------------
+// Full-path cross-file containment resolution (post-write pass)
+// ---------------------------------------------------------------------------
+
+/// Build a symbol with explicit scope_path (cross-file parent, no parent_index).
+fn esym_with_scope(
+    qname: &str,
+    kind: SymbolKind,
+    scope_path: Option<&str>,
+    line: u32,
+) -> ExtractedSymbol {
+    let mut s = esym(qname, kind, None, line);
+    s.scope_path = scope_path.map(str::to_string);
+    s
+}
+
+/// Write a ParsedFile using the full-index path (write_one_parsed_file).
+/// Returns the file_id assigned.
+fn write_full(
+    db: &Database,
+    path: &str,
+    lang: &str,
+    symbols: Vec<ExtractedSymbol>,
+    arena: &TypeArena,
+) -> i64 {
+    let mut pf = pf(path);
+    pf.language = lang.to_string();
+    pf.symbols = symbols;
+
+    let conn = db.conn();
+    let tx = conn.unchecked_transaction().unwrap();
+    let mut map: SymbolIdMap = std::collections::HashMap::new();
+    let now = 0i64;
+    let fid = write_one_parsed_file(&tx, &pf, "internal", now, &mut map, true, Some(arena))
+        .unwrap();
+    tx.commit().unwrap();
+    fid
+}
+
+/// After a full-index write of two files where a method in file B has its
+/// parent type in file A (cross-file parent via scope_path), the post-write
+/// pass must set `containing_id` on the method and `ingest_from_db` must
+/// expose it under `members_by_id`.
+#[test]
+fn full_index_cross_file_containment_resolved_by_post_write_pass() {
+    use crate::indexer::resolve::engine::compilation::Compilation;
+    use crate::indexer::resolve::engine::contract::SymbolLookup;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    // File A declares the struct.
+    write_full(&db, "a.rs", "rust", vec![esym("MyStruct", SymbolKind::Class, None, 1)], &arena);
+
+    // File B declares an impl method — cross-file: parent_index is None,
+    // scope_path = "MyStruct" (the parent's qualified_name in file A).
+    write_full(
+        &db,
+        "b.rs",
+        "rust",
+        vec![esym_with_scope("MyStruct.new", SymbolKind::Method, Some("MyStruct"), 1)],
+        &arena,
+    );
+
+    // Before the post-write pass, containing_id should be NULL.
+    let before: Option<i64> = db
+        .conn()
+        .query_row(
+            "SELECT containing_id FROM symbols WHERE qualified_name = 'MyStruct.new'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        before.is_none(),
+        "pre-pass: containing_id should be NULL, got {before:?}"
+    );
+
+    // Run the post-write pass.
+    resolve_cross_file_containment_and_merge(&db).unwrap();
+
+    // After the pass, containing_id must point to MyStruct's id.
+    let struct_id: i64 = db
+        .conn()
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'MyStruct'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let method_id: i64 = db
+        .conn()
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'MyStruct.new'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let after: Option<i64> = db
+        .conn()
+        .query_row(
+            "SELECT containing_id FROM symbols WHERE qualified_name = 'MyStruct.new'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        after,
+        Some(struct_id),
+        "post-pass: containing_id should be MyStruct's id"
+    );
+
+    // `ingest_from_db` must surface the method under members_by_id(struct_id).
+    let mut compilation = Compilation::build(&[], &HashMap::new(), Arc::new(TypeArena::new()));
+    compilation.ingest_from_db(db.conn());
+    let members: Vec<i64> = compilation
+        .members_of_id(struct_id)
+        .iter()
+        .map(|s| s.id)
+        .collect();
+    assert!(
+        members.contains(&method_id),
+        "members_of_id({struct_id}) should contain method id {method_id}, got {members:?}"
+    );
+}
+
+/// A full-index of two files declaring the same mergeable namespace produces
+/// two rows before the post-write pass. After the pass, they collapse to one
+/// canonical row with two symbol_locations entries.
+#[test]
+fn full_index_mergeable_namespace_collapsed_by_post_write_pass() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    // Two files each declare the same C# namespace.
+    write_full(
+        &db,
+        "a.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
+    write_full(
+        &db,
+        "b.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
+
+    // Before the pass: two rows.
+    let before: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(before, 2, "pre-pass: two rows for the mergeable namespace");
+
+    resolve_cross_file_containment_and_merge(&db).unwrap();
+
+    // After the pass: one canonical row.
+    let after: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(after, 1, "post-pass: collapsed to one logical symbol");
+
+    // Two symbol_locations entries (one per file).
+    let canonical_id: i64 = db
+        .conn()
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let loc_cnt: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM symbol_locations WHERE symbol_id = ?1",
+            rusqlite::params![canonical_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(loc_cnt, 2, "two declaration sites recorded");
+}
