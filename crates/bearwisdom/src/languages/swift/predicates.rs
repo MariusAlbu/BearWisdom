@@ -2,6 +2,8 @@
 // swift/predicates.rs — Swift builtin and helper predicates
 // =============================================================================
 
+use crate::ecosystem::manifest::ManifestKind;
+use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 
 /// Check that the edge kind is compatible with the symbol kind.
@@ -57,6 +59,22 @@ const PLATFORM_MODULES: &[&str] = &[
 /// framework. SwiftPM package modules are NOT recognized here — they are
 /// classified from `Package.swift` at the resolver hooks. A package module
 /// without a manifest declaration is honestly unresolved.
+/// Checks whether the module root matches a SwiftPM dependency declared in the
+/// manifest, case-insensitively and tolerating a `swift-` prefix on the dep atom.
+pub(crate) fn manifest_dep_match(project_ctx: Option<&ProjectContext>, root: &str) -> bool {
+    let Some(ctx) = project_ctx else {
+        return false;
+    };
+    let Some(manifest) = ctx.manifests_for(None).get(&ManifestKind::SwiftPM) else {
+        return false;
+    };
+    let root_lower = root.to_lowercase();
+    manifest.dependencies.iter().any(|d| {
+        let d_lower = d.to_lowercase();
+        d_lower == root_lower || d_lower.trim_start_matches("swift-") == root_lower.as_str()
+    })
+}
+
 pub(super) fn is_external_swift_module(module: &str) -> bool {
     // The root module name (before the first `.`).
     let root = module.split('.').next().unwrap_or(module);

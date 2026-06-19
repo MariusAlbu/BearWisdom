@@ -33,7 +33,7 @@ pub const PRISMA_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: PRISMA_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_prisma_scalar),
+    builtin_skip: Some(self::is_prisma_scalar),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -78,3 +78,14 @@ pub const PRISMA_PROFILE: LanguageProfile = LanguageProfile {
 #[cfg(test)]
 #[path = "profile_tests.rs"]
 mod tests;
+
+/// Returns true when `name` is a Prisma built-in scalar type or default function.
+pub(crate) fn is_prisma_scalar(name: &str) -> bool {
+    matches!(
+        name,
+        "String" | "Boolean" | "Int" | "BigInt" | "Float" | "Decimal"
+            | "DateTime" | "Json" | "Bytes" | "Unsupported"
+            | "autoincrement" | "cuid" | "uuid" | "now"
+            | "dbgenerated" | "auto"
+    )
+}

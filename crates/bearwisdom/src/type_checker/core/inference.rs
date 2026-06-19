@@ -15,7 +15,7 @@
 // =============================================================================
 
 use super::types::{Type, TypeArena, TypeId};
-use crate::indexer::resolve::legacy::Resolution;
+use crate::indexer::resolve::engine::contract::SymbolInfo;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ExtractedRef};
 
@@ -31,7 +31,7 @@ use crate::types::{EdgeKind, ExtractedRef};
 /// mode) carry them through.
 pub fn infer_expression_type(
     expr_ref: &ExtractedRef,
-    resolution: Option<&Resolution>,
+    resolution: Option<&SymbolInfo>,
     arena: &TypeArena,
     profile: &LanguageProfile,
 ) -> Option<TypeId> {

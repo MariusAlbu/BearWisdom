@@ -10,11 +10,8 @@ pub(crate) mod keywords;
 mod symbols;
 
 pub mod connectors;
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::PHP_HOOKS;
 pub use profile::PHP_PROFILE;
 
 #[cfg(test)]
@@ -28,10 +25,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
@@ -126,11 +119,6 @@ impl LanguagePlugin for PhpPlugin {
         Some(&profile::PHP_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PHP_HOOKS)
-    }
 
     // TODO(routes-dispatch): wire `connectors::discover_laravel_routes` into
     // the indexer route-population stage. The function now writes the `routes`

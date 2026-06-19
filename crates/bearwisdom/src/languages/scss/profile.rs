@@ -25,7 +25,7 @@ pub const SCSS_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
-    module_skip: Some(super::hooks::is_scss_skippable_module),
+    module_skip: Some(super::predicates::is_scss_skippable_module),
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,

@@ -11,16 +11,9 @@
 //! - `import_attribute` / `pp_include` → Imports
 
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::ERLANG_HOOKS;
 pub use profile::ERLANG_PROFILE;
 mod attributes;
 mod cowboy;
@@ -115,9 +108,4 @@ impl LanguagePlugin for ErlangPlugin {
         Some(&profile::ERLANG_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ERLANG_HOOKS)
-    }
 }

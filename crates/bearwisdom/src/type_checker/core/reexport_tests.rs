@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/reexport_tests.rs — generic re-export walker unit tests.
 // =============================================================================
 
 use super::follow_reexports;
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
 use crate::types::EdgeKind;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -15,16 +15,16 @@ use std::sync::Arc;
 
 #[derive(Default)]
 struct Mock {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_pairs: Vec<(String, String)>,
     /// file_path → [(exported_name, source_module_spec)]
     reexports: FxHashMap<String, Vec<(String, String)>>,
     /// module_spec → resolved file_path
     module_files: FxHashMap<String, String>,
     /// file_path → symbols defined in that file
-    in_file: FxHashMap<String, Vec<SymbolInfo>>,
+    in_file: FxHashMap<String, Vec<Symbol>>,
     /// symbol name → symbols with that name
-    by_name: FxHashMap<String, Vec<SymbolInfo>>,
+    by_name: FxHashMap<String, Vec<Symbol>>,
 }
 
 impl Mock {
@@ -39,7 +39,7 @@ impl Mock {
         self.module_files.insert(spec.to_string(), file.to_string());
         self
     }
-    fn define(mut self, file: &str, sym: SymbolInfo) -> Self {
+    fn define(mut self, file: &str, sym: Symbol) -> Self {
         self.by_name
             .entry(sym.name.clone())
             .or_default()
@@ -58,7 +58,7 @@ impl SymbolLookup for Mock {
                 .unwrap_or(&self.empty),
         )
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -67,7 +67,7 @@ impl SymbolLookup for Mock {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -116,8 +116,8 @@ impl SymbolLookup for Mock {
     }
 }
 
-fn sym(id: i64, name: &str, kind: &str, file: &str) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, kind: &str, file: &str) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: name.to_string(),

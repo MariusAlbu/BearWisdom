@@ -1,10 +1,9 @@
-// Tests for Elixir external-module classification after the Hex-package purge.
+﻿// Tests for Elixir external-module classification after the Hex-package purge.
 // The stdlib/OTP runtime set stays in `is_external_elixir_module`; Hex-package
 // modules are classified from `mix.exs` deps at the resolver hooks via
 // `is_mix_dep_match` (CamelCase module root ↔ snake_case dep atom).
 
-use super::hooks::_test_is_mix_dep_match;
-use super::predicates::is_external_elixir_module;
+use super::predicates::{is_external_elixir_module, is_mix_dep_match};
 use std::collections::HashSet;
 
 fn deps(names: &[&str]) -> HashSet<String> {
@@ -15,17 +14,17 @@ fn deps(names: &[&str]) -> HashSet<String> {
 fn mix_declared_dep_classifies_external() {
     // mix.exs stores snake_case atoms; the module root is CamelCase.
     let d = deps(&["phoenix", "ecto_sql", "jason"]);
-    assert!(_test_is_mix_dep_match("Phoenix", &d));
-    assert!(_test_is_mix_dep_match("Ecto", &d)); // ecto_sql → first segment "ecto"
-    assert!(_test_is_mix_dep_match("Jason", &d));
+    assert!(is_mix_dep_match("Phoenix", &d));
+    assert!(is_mix_dep_match("Ecto", &d)); // ecto_sql → first segment "ecto"
+    assert!(is_mix_dep_match("Jason", &d));
 }
 
 #[test]
 fn dep_without_manifest_is_not_external() {
     // Empty mix deps + purged predicate → Hex module is not classified external.
     let d = deps(&[]);
-    assert!(!_test_is_mix_dep_match("Phoenix", &d));
-    assert!(!_test_is_mix_dep_match("Ecto", &d));
+    assert!(!is_mix_dep_match("Phoenix", &d));
+    assert!(!is_mix_dep_match("Ecto", &d));
     assert!(!is_external_elixir_module("Phoenix"));
     assert!(!is_external_elixir_module("Ecto.Changeset"));
     assert!(!is_external_elixir_module("Oban"));

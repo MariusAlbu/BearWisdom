@@ -194,7 +194,7 @@ pub fn locate_ambient_global<'a>(loc: &'a SymbolLocationIndex, name: &str) -> Op
 ///   path. These libraries are language substrate — every project in the
 ///   language reaches their names unqualified-by-import (Lua's `string`,
 ///   `table`, `math`, `os`, …).
-fn is_ambient_global_lib_path(path: &str) -> bool {
+pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     is_ts_ambient_global_lib_path(&normalized) || is_stdlib_external_path(&normalized)
 }

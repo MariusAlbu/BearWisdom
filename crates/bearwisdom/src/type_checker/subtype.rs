@@ -40,7 +40,7 @@
 // check exists to avoid.
 // =============================================================================
 
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
@@ -505,8 +505,8 @@ fn structurally_assignable(
 ///   covariant (assignable to the target's).
 #[allow(clippy::too_many_arguments)]
 fn member_types_assignable(
-    source: &SymbolInfo,
-    target: &SymbolInfo,
+    source: &Symbol,
+    target: &Symbol,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
     members: &MembersIndex,
@@ -586,11 +586,11 @@ fn member_types_assignable(
     }
 }
 
-/// Collect the direct + extension members of `ty`. The returned `SymbolInfo`
+/// Collect the direct + extension members of `ty`. The returned `Symbol`
 /// carries `name`, `kind`, and the DB symbol `id` the member-type comparison
 /// uses to recover `SymbolTypeData`. Returns an empty Vec when the type has no
 /// recorded members.
-fn member_infos(ty: TypeId, members: &MembersIndex) -> Vec<&SymbolInfo> {
+fn member_infos(ty: TypeId, members: &MembersIndex) -> Vec<&Symbol> {
     members
         .direct_of(ty)
         .iter()

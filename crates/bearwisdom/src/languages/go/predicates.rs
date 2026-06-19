@@ -2,12 +2,12 @@
 // go/predicates.rs — Go builtin and helper predicates
 // =============================================================================
 
-use crate::indexer::resolve::legacy::SymbolInfo;
+use crate::indexer::resolve::engine::contract::Symbol;
 use crate::types::EdgeKind;
 
 /// Extract the Go package name from a symbol's qualified_name.
 /// "main.Server" → "main", "handlers.Handler" → "handlers".
-pub(super) fn sym_package(sym: &SymbolInfo) -> &str {
+pub(super) fn sym_package(sym: &Symbol) -> &str {
     sym.qualified_name
         .split('.')
         .next()

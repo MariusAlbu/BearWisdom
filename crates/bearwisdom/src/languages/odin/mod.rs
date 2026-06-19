@@ -14,16 +14,8 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::ODIN_HOOKS;
 pub use profile::ODIN_PROFILE;
 
 #[cfg(test)]
@@ -87,9 +79,4 @@ impl LanguagePlugin for OdinPlugin {
         Some(&profile::ODIN_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ODIN_HOOKS)
-    }
 }

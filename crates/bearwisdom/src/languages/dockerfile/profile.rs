@@ -41,7 +41,7 @@ pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
     builtin_skip: None,
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
-    module_skip: Some(super::hooks::is_registry_image_module),
+    module_skip: Some(super::keywords::is_registry_image_module),
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,

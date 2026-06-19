@@ -1,11 +1,8 @@
 //! SQL language plugin.
 
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::SQL_HOOKS;
 pub use profile::SQL_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -80,9 +77,4 @@ impl LanguagePlugin for SqlPlugin {
         Some(&profile::SQL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::SQL_HOOKS)
-    }
 }

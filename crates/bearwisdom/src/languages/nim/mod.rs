@@ -17,16 +17,8 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::NIM_HOOKS;
 pub use profile::NIM_PROFILE;
 
 #[cfg(test)]
@@ -98,9 +90,4 @@ impl LanguagePlugin for NimPlugin {
         Some(&profile::NIM_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::NIM_HOOKS)
-    }
 }

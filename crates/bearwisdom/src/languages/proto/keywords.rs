@@ -98,3 +98,35 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // google.shopping
     "google.shopping.type.Price",
 ];
+
+
+pub(crate) fn is_proto_scalar(name: &str) -> bool {
+    matches!(
+        name,
+        "double"
+            | "float"
+            | "int32"
+            | "int64"
+            | "uint32"
+            | "uint64"
+            | "sint32"
+            | "sint64"
+            | "fixed32"
+            | "fixed64"
+            | "sfixed32"
+            | "sfixed64"
+            | "bool"
+            | "string"
+            | "bytes"
+    )
+}
+
+/// Proto targets the generic resolver must not bind to a project symbol: the
+/// scalar types and the `google.protobuf.*` well-known types. Tolerates the
+/// leading-dot form (`.google.protobuf.Timestamp`) the extractor emits for
+/// fully-qualified references.
+pub(crate) fn is_proto_builtin(name: &str) -> bool {
+    let bare = name.trim_start_matches('.');
+    is_proto_scalar(bare) || bare.starts_with("google.protobuf.")
+}
+

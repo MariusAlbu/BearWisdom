@@ -9,12 +9,8 @@ pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::KOTLIN_HOOKS;
 pub use profile::KOTLIN_PROFILE;
 
 #[cfg(test)]
@@ -24,10 +20,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "data_class_tests.rs"]
@@ -134,11 +126,6 @@ impl LanguagePlugin for KotlinPlugin {
         Some(&profile::KOTLIN_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::KOTLIN_HOOKS)
-    }
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::KOTLIN_FLOW_CONFIG)
     }

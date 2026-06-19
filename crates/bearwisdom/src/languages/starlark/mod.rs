@@ -5,12 +5,9 @@
 
 pub mod embedded;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::STARLARK_HOOKS;
 pub use profile::STARLARK_PROFILE;
 
 #[cfg(test)]
@@ -75,9 +72,4 @@ impl LanguagePlugin for StarlarkPlugin {
         Some(&profile::STARLARK_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::STARLARK_HOOKS)
-    }
 }

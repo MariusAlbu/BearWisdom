@@ -83,18 +83,7 @@ impl LanguagePlugin for AngularTemplatePlugin {
         Some(&profile::ANGULAR_TEMPLATE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        // angular_template files (`.component.html`) carry component / directive
-        // references that need the same resolver and external-classifier as the
-        // `angular` plugin: selector-map lookup for resolved targets and a
-        // bare-specifier import fallback for refs to third-party Angular libs
-        // whose .d.ts hasn't been pulled into the demand-driven index.
-        Some(&crate::languages::angular::hooks::ANGULAR_HOOKS)
-    }
-
     fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        crate::languages::angular::hooks::paired_ts_for_template(file_path)
+        crate::languages::angular::paired_ts_for_template(file_path)
     }
 }

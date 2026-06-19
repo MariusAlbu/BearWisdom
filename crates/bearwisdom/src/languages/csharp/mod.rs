@@ -13,12 +13,9 @@ mod helpers;
 pub(crate) mod keywords;
 mod symbols;
 mod types;
-
-pub mod hooks;
 mod predicates;
 pub mod profile;
 mod source_gen;
-pub use hooks::CSHARP_HOOKS;
 pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]
@@ -28,10 +25,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "source_gen_tests.rs"]
 mod source_gen_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -147,11 +140,6 @@ impl LanguagePlugin for CSharpPlugin {
         Some(&CSHARP_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&CSHARP_HOOKS)
-    }
 
     fn post_index(
         &self,

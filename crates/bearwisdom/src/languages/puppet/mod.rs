@@ -2,13 +2,10 @@
 
 pub mod definitions;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 mod predicates;
 pub(crate) mod profile;
 pub mod refs;
-
-pub use hooks::PUPPET_HOOKS;
 pub use profile::PUPPET_PROFILE;
 
 #[cfg(test)]
@@ -107,9 +104,4 @@ impl LanguagePlugin for PuppetPlugin {
         Some(&profile::PUPPET_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PUPPET_HOOKS)
-    }
 }

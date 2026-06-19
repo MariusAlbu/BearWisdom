@@ -14,14 +14,7 @@
 //! - `@test fn ...` → Test
 
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::HARE_HOOKS;
 pub use profile::HARE_PROFILE;
 
 #[cfg(test)]
@@ -88,9 +81,4 @@ impl LanguagePlugin for HarePlugin {
         Some(&profile::HARE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::HARE_HOOKS)
-    }
 }

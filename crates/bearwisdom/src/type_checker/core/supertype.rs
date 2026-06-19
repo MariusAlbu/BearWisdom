@@ -13,7 +13,7 @@
 // =============================================================================
 
 use super::types::{GenericParamId, PrimKind, TypeArena, TypeId};
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::generics::{substitute, GenericEnv};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
@@ -1055,7 +1055,7 @@ fn build_structural(
 /// A type is "interface-like" for structural matching when its direct
 /// members are all method / function kinds. Classes with fields can't be
 /// matched structurally because the field signature isn't surfaced.
-fn is_interface_like(syms: &[SymbolInfo]) -> bool {
+fn is_interface_like(syms: &[Symbol]) -> bool {
     syms.iter()
         .all(|s| matches!(s.kind.as_str(), "method" | "function"))
 }

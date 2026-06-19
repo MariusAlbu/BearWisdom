@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/inference_tests.rs — Unit tests for inference.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::Resolution;
+use crate::indexer::resolve::engine::contract::Resolution;
 use crate::type_checker::core::types::{LitValue, PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{CallArg, EdgeKind, ExtractedRef};

@@ -1,15 +1,15 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/symbol_view_tests.rs — SymbolView facade unit tests.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::SymbolInfo;
+use crate::indexer::resolve::engine::contract::Symbol;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{PrimKind, TypeArena};
 use std::sync::Arc;
 
-fn sym(id: i64, name: &str, qname: &str, kind: &str) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, qname: &str, kind: &str) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),

@@ -16,12 +16,11 @@
 // `use TestUtils` reaches `TestUtils`'s `import TestUtils` injection.
 // =============================================================================
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use tree_sitter::{Node, Parser};
 
 use super::helpers::node_text;
-use crate::indexer::resolve::legacy::ImportEntry;
 use crate::types::ParsedFile;
 
 /// One directive a module's `__using__` quote block injects into every caller
@@ -71,88 +70,6 @@ pub fn build_using_injection_map(parsed: &[ParsedFile]) -> ElixirProjectState {
         collect_file_injections(src, &mut injections);
     }
     ElixirProjectState { injections }
-}
-
-/// Collect the module qnames of every `use M` directive in a file's source.
-/// These are the sites whose injection sets the file-context builder expands.
-/// `alias`/`import`/`require` are excluded — only `use` runs `__using__`.
-pub(crate) fn collect_use_sites(src: &str) -> Vec<String> {
-    let language: tree_sitter::Language = tree_sitter_elixir::LANGUAGE.into();
-    let mut parser = Parser::new();
-    if parser.set_language(&language).is_err() {
-        return Vec::new();
-    }
-    let Some(tree) = parser.parse(src, None) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    walk_use_sites(tree.root_node(), src, &mut out);
-    out
-}
-
-fn walk_use_sites(node: Node, src: &str, out: &mut Vec<String>) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "call" {
-            if let Some(callee) = call_head(&child, src) {
-                // A `quote` block holds injection *definitions* (the `use N` a
-                // module re-emits at its own use sites), not use sites of the
-                // file being scanned — don't descend into it.
-                if callee == "quote" {
-                    continue;
-                }
-                if callee == "use" {
-                    if let Some(module) = directive_module(&child, src) {
-                        out.push(module);
-                    }
-                }
-            }
-        }
-        walk_use_sites(child, src, out);
-    }
-}
-
-/// Expand a `use <module>` directive into the import entries it injects, then
-/// recurse through nested `use` directives. `seen` guards the recursion against
-/// `use` cycles (a module whose quote block uses a module that uses it back).
-pub(crate) fn expand_use(
-    module_qname: &str,
-    state: &ElixirProjectState,
-    out: &mut Vec<ImportEntry>,
-    seen: &mut HashSet<String>,
-) {
-    if !seen.insert(module_qname.to_string()) {
-        return;
-    }
-    let Some(injections) = state.injections_for(module_qname) else {
-        return;
-    };
-    for injection in injections {
-        match injection {
-            ElixirInjection::Import { module } => {
-                let local = module.rsplit('.').next().unwrap_or(module).to_string();
-                out.push(ImportEntry {
-                    imported_name: local,
-                    module_path: Some(module.clone()),
-                    alias: None,
-                    is_wildcard: false,
-                });
-            }
-            ElixirInjection::Alias { local, module } => {
-                let last = module.rsplit('.').next().unwrap_or(module);
-                let alias = (local != last).then(|| local.clone());
-                out.push(ImportEntry {
-                    imported_name: local.clone(),
-                    module_path: Some(module.clone()),
-                    alias,
-                    is_wildcard: false,
-                });
-            }
-            ElixirInjection::Use { module } => {
-                expand_use(module, state, out, seen);
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

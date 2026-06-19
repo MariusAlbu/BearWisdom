@@ -15,7 +15,7 @@
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{FileContext, RefContext, SymbolLookup};
 use crate::types::EdgeKind;
 
 /// Check whether a Python package root is an external dependency using the project manifest.

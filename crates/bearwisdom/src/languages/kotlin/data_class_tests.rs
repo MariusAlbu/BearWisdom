@@ -262,12 +262,13 @@ fn synthesized_members_have_method_kind() {
 
 #[test]
 fn copy_return_ref_enables_chain_resolution() {
-    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::engine::compilation::Compilation;
+    use crate::indexer::resolve::engine::contract::SymbolLookup;
     use crate::types::{EdgeKind, FlowMeta, ParsedFile};
     use std::collections::HashMap;
 
     // Build a merged symbol table (real + synthesized) and confirm that the
-    // SymbolIndex sees both User and User.copy, so the chain walker can follow
+    // Compilation sees both User and User.copy, so the chain walker can follow
     // `u.copy()` → (return-type ref to User) → `.name`.
     let source = "data class User(val name: String, val age: Int)";
     let r = super::extract::extract(source);
@@ -328,7 +329,7 @@ fn copy_return_ref_enables_chain_resolution() {
         );
     }
 
-    let index = SymbolIndex::build(&[pf], &id_map);
+    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     // Both User and User.copy must be reachable in the index.
     assert!(

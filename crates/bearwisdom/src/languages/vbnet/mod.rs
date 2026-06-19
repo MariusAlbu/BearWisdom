@@ -14,16 +14,9 @@
 //! - `inherits_clause` → Inherits edge
 
 pub mod extract;
-pub mod hooks;
 pub(crate) mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::VBNET_HOOKS;
 pub use profile::VBNET_PROFILE;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -98,9 +91,4 @@ impl LanguagePlugin for VbNetPlugin {
         Some(&profile::VBNET_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::VBNET_HOOKS)
-    }
 }

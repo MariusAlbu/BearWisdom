@@ -51,7 +51,7 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     // qualifier the extractor dropped resolves under `{short}.{target}` — the
     // same shape the engine's package-short-name strategy binds.
     chain_qualification: ChainQualification::PackageShortName,
-    builtin_skip: Some(super::hooks::is_gleam_operator),
+    builtin_skip: Some(self::is_gleam_operator),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -96,3 +96,13 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
 #[cfg(test)]
 #[path = "profile_tests.rs"]
 mod tests;
+
+/// Returns true when `name` is a Gleam operator symbol that should not be
+/// resolved as a user-defined identifier.
+pub(crate) fn is_gleam_operator(name: &str) -> bool {
+    matches!(
+        name,
+        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | "<="
+            | ">" | ">=" | "&&" | "||" | "!" | "|>" | "<>" | "+." | "-." | "*." | "/."
+    )
+}

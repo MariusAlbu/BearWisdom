@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/supertype_tests.rs — Unit tests for SupertypeGraph.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolSet};
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
@@ -17,9 +17,9 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------
 
 struct TypeLookup {
-    types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
+    types: rustc_hash::FxHashMap<String, Vec<Symbol>>,
     generic_params: rustc_hash::FxHashMap<String, Vec<String>>,
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
 }
 
@@ -41,7 +41,7 @@ impl TypeLookup {
     /// kind-preference tie-break (`KindPreference::matches`) can distinguish a
     /// trait/interface parent from a concrete implementing type.
     fn with_type_kind(mut self, name: &str, qname: &str, kind: &str) -> Self {
-        let info = SymbolInfo {
+        let info = Symbol {
             id: 1,
             name: name.to_string(),
             qualified_name: qname.to_string(),
@@ -73,7 +73,7 @@ impl SymbolLookup for TypeLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -82,7 +82,7 @@ impl SymbolLookup for TypeLookup {
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.types.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -665,8 +665,8 @@ fn build_explicit_keeps_non_namespace_source_unchanged() {
     assert_eq!(graph.parents_of(admin), &[user]);
 }
 
-fn method(id: i64, name: &str, scope: &str) -> SymbolInfo {
-    SymbolInfo {
+fn method(id: i64, name: &str, scope: &str) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: format!("{scope}.{name}"),

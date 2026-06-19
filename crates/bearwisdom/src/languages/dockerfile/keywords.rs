@@ -116,3 +116,9 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "git",
     "jq",
 ];
+
+/// Returns true when `module` looks like a Docker registry image reference
+/// (contains `:` for tags or `/` for registry paths) rather than a user symbol.
+pub(crate) fn is_registry_image_module(module: &str) -> bool {
+    module.contains(':') || module.contains('/')
+}

@@ -6,22 +6,15 @@
 
 pub mod dynamic_keywords;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub mod library_map;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::ROBOT_HOOKS;
 pub use profile::ROBOT_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "library_map_tests.rs"]
@@ -91,11 +84,6 @@ impl LanguagePlugin for RobotPlugin {
         Some(&profile::ROBOT_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ROBOT_HOOKS)
-    }
     fn populate_project_state(
         &self,
         state: &mut PluginStateBag,

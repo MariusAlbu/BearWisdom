@@ -32,13 +32,8 @@ pub(crate) mod selectors;
 mod type_scan;
 
 // Resolution sub-modules
-mod aliases;
-pub(crate) mod flow_detectors;
-pub mod hooks;
 pub(crate) mod predicates;
 pub mod profile;
-
-pub use hooks::TYPESCRIPT_HOOKS;
 pub use profile::TYPESCRIPT_PROFILE;
 
 #[cfg(test)]
@@ -180,11 +175,6 @@ impl LanguagePlugin for TypeScriptPlugin {
         Some(&TYPESCRIPT_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&TYPESCRIPT_HOOKS)
-    }
 
     // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and
     // `connectors::discover_nextjs_routes` into the indexer route-population

@@ -9,12 +9,8 @@ pub(crate) mod keywords;
 pub(crate) mod phoenix_routes;
 mod type_refs;
 pub(crate) mod using_injection;
-
-pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::ELIXIR_HOOKS;
 pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]
@@ -24,10 +20,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
@@ -104,11 +96,6 @@ impl LanguagePlugin for ElixirPlugin {
         Some(&profile::ELIXIR_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ELIXIR_HOOKS)
-    }
 
     fn populate_project_state(
         &self,

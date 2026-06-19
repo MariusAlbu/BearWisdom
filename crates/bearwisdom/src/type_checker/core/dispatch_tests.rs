@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/dispatch_tests.rs — Unit tests for method dispatch.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolSet};
 use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{
@@ -13,8 +13,8 @@ use crate::types::{AliasTarget, CallArg};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -28,7 +28,7 @@ fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Sym
 }
 
 struct EmptyLookup {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
     locals: HashMap<String, String>,
     parents: HashMap<String, String>,
@@ -66,7 +66,7 @@ impl SymbolLookup for EmptyLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -75,7 +75,7 @@ impl SymbolLookup for EmptyLookup {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {

@@ -1,10 +1,9 @@
-// Tests for Swift module classification after the third-party-package purge.
+﻿// Tests for Swift module classification after the third-party-package purge.
 // Apple platform-SDK frameworks stay in `is_external_swift_module`; SwiftPM
 // package modules are classified from `Package.swift` deps at the resolver
 // hooks via `manifest_dep_match` (case-insensitive, `swift-` prefix tolerant).
 
-use super::hooks::_test_manifest_dep_match;
-use super::predicates::is_external_swift_module;
+use super::predicates::{is_external_swift_module, manifest_dep_match};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 
@@ -21,11 +20,11 @@ fn ctx_with_spm(deps: &[&str]) -> ProjectContext {
 #[test]
 fn spm_declared_package_classifies_external() {
     let ctx = ctx_with_spm(&["Alamofire", "RxSwift", "swift-nio"]);
-    assert!(_test_manifest_dep_match(Some(&ctx), "Alamofire"));
+    assert!(manifest_dep_match(Some(&ctx), "Alamofire"));
     // Case-insensitive.
-    assert!(_test_manifest_dep_match(Some(&ctx), "rxswift"));
+    assert!(manifest_dep_match(Some(&ctx), "rxswift"));
     // `swift-` prefix tolerance: dep `swift-nio` matches module `nio`.
-    assert!(_test_manifest_dep_match(Some(&ctx), "nio"));
+    assert!(manifest_dep_match(Some(&ctx), "nio"));
 }
 
 #[test]
@@ -40,7 +39,7 @@ fn package_without_manifest_is_not_external() {
 
     // Empty manifest present but the package isn't declared → not external.
     let ctx = ctx_with_spm(&[]);
-    assert!(!_test_manifest_dep_match(Some(&ctx), "Alamofire"));
+    assert!(!manifest_dep_match(Some(&ctx), "Alamofire"));
 }
 
 #[test]

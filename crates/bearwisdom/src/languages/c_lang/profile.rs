@@ -82,7 +82,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     // brands it `r.c.api`.
     namespace_decline: Some(
         crate::type_checker::profile::language_profile::NamespaceDecline {
-            file_namespace: super::hooks::R_PACKAGE_SENTINEL,
+            file_namespace: super::predicates::R_PACKAGE_SENTINEL,
             is_reserved: predicates::is_r_c_api_symbol,
         },
     ),

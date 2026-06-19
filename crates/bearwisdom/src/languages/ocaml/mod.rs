@@ -10,16 +10,9 @@
 //! - `open_module` → Imports edge
 
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::OCAML_HOOKS;
 pub use profile::OCAML_PROFILE;
 
 #[cfg(test)]
@@ -195,9 +188,4 @@ impl LanguagePlugin for OcamlPlugin {
         Some(&profile::OCAML_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::OCAML_HOOKS)
-    }
 }

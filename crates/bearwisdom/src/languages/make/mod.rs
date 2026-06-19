@@ -1,11 +1,8 @@
 //! Make / Makefile language plugin.
 
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::MAKE_HOOKS;
 pub use profile::MAKE_PROFILE;
 
 #[cfg(test)]
@@ -76,9 +73,4 @@ impl LanguagePlugin for MakePlugin {
         Some(&profile::MAKE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::MAKE_HOOKS)
-    }
 }

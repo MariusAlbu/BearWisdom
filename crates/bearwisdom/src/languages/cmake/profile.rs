@@ -36,7 +36,7 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: CMAKE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_cmake_builtin),
+    builtin_skip: Some(super::keywords::is_cmake_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

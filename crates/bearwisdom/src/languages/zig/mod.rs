@@ -19,17 +19,9 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::ZIG_HOOKS;
 pub use profile::ZIG_PROFILE;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -128,9 +120,4 @@ impl LanguagePlugin for ZigPlugin {
         Some(&profile::ZIG_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ZIG_HOOKS)
-    }
 }

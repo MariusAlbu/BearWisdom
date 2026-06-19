@@ -5,7 +5,6 @@
 //! type synonyms, imports, and function-application calls.
 
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 
 #[cfg(test)]
@@ -14,12 +13,6 @@ mod keywords_tests;
 
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::HASKELL_HOOKS;
 pub use profile::HASKELL_PROFILE;
 mod definitions;
 mod expressions;
@@ -93,9 +86,4 @@ impl LanguagePlugin for HaskellPlugin {
         Some(&profile::HASKELL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::HASKELL_HOOKS)
-    }
 }

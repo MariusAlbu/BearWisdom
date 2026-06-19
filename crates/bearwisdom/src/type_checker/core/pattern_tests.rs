@@ -1,16 +1,16 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/pattern_tests.rs — Unit tests for destructuring binding.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::SymbolInfo;
+use crate::indexer::resolve::engine::contract::Symbol;
 use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use std::sync::Arc;
 
-fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),

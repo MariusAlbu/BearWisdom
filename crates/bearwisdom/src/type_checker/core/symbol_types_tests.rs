@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 
 #[test]
@@ -295,7 +295,7 @@ fn external_callable_param_types_hydrate() {
     // return_type that the externals pipeline already interned. The builder
     // must admit external CALLABLE kinds so SymbolView can query their
     // parameter types — the file-level ext: skip must not bury them.
-    use crate::indexer::resolve::legacy::SymbolInfo;
+    use crate::indexer::resolve::engine::contract::Symbol;
     use crate::type_checker::core::symbol_view::SymbolView;
     use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
     use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
@@ -359,7 +359,7 @@ fn external_callable_param_types_hydrate() {
         &DEFAULT_PROFILE,
     );
 
-    let info = SymbolInfo {
+    let info = Symbol {
         id: 1,
         name: "curl_slist_append".to_string(),
         qualified_name: "curl_slist_append".to_string(),

@@ -24,7 +24,7 @@ pub const MAKE_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_make_builtin),
+    builtin_skip: Some(super::keywords::is_make_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

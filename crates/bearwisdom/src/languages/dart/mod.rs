@@ -7,12 +7,8 @@ pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::DART_HOOKS;
 pub use profile::DART_PROFILE;
 
 #[cfg(test)]
@@ -22,10 +18,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -99,11 +91,6 @@ impl LanguagePlugin for DartPlugin {
         Some(&profile::DART_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::DART_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::DART_FLOW_CONFIG)

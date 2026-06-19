@@ -20,6 +20,10 @@ pub use types::{
     intern_yield_type, FileContext, ImportEntry, RefContext, SymbolInfo, Symbol, TypeInfo,
     RESOLVED_CONFIDENCE,
 };
+
+/// Backward-compatible alias: the old engine used `Resolution`; the engine
+/// contract uses `SymbolInfo` for the same data shape.
+pub type Resolution = SymbolInfo;
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 
 pub(crate) use chain_walker::{

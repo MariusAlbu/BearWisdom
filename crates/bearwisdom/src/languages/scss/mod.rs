@@ -5,13 +5,10 @@
 
 pub mod extract;
 mod handlers;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod predicates;
 pub(crate) mod profile;
 mod recovery;
-
-pub use hooks::SCSS_HOOKS;
 pub use profile::SCSS_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -78,9 +75,4 @@ impl LanguagePlugin for ScssPlugin {
         Some(&profile::SCSS_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::SCSS_HOOKS)
-    }
 }

@@ -6,15 +6,7 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::COBOL_HOOKS;
 pub use profile::COBOL_PROFILE;
 
 #[cfg(test)]
@@ -78,9 +70,4 @@ impl LanguagePlugin for CobolPlugin {
         Some(&profile::COBOL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::COBOL_HOOKS)
-    }
 }

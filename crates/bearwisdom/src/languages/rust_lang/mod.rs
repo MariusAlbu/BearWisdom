@@ -9,16 +9,12 @@ mod derives;
 mod embedded;
 pub mod extract;
 pub(crate) mod flow;
-mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
 mod patterns;
 mod symbols;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-pub use hooks::RUST_HOOKS;
 pub use profile::RUST_PROFILE;
 
 #[cfg(test)]
@@ -28,10 +24,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "derives_tests.rs"]
@@ -151,11 +143,6 @@ impl LanguagePlugin for RustLangPlugin {
         Some(&profile::RUST_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::RUST_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUST_FLOW_CONFIG)

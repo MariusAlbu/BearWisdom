@@ -212,3 +212,12 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "rec",
     "assert",
 ];
+
+/// Returns true when `name` is a Nix stdlib namespace root
+/// (builtins.*, lib.*, pkgs.*, config.*).
+pub(crate) fn is_nix_builtin(name: &str) -> bool {
+    name.starts_with("builtins.")
+        || name.starts_with("lib.")
+        || name.starts_with("pkgs.")
+        || name.starts_with("config.")
+}

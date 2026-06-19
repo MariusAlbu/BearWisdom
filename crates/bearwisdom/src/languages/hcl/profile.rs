@@ -30,7 +30,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     // `terraform.*`) are runtime-provided, not project symbols — decline before
     // the ladder so a same-named local can't be bound and external
     // classification brands them.
-    builtin_skip: Some(super::hooks::is_terraform_meta_ref),
+    builtin_skip: Some(super::keywords::is_terraform_meta_ref),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

@@ -183,3 +183,26 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "ios",
     "android",
 ];
+
+/// Returns true when `name` is a CMake built-in command, variable prefix,
+/// or special argument identifier that should not be treated as a user-defined
+/// symbol reference.
+pub(crate) fn is_cmake_builtin(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let s = lower.as_str();
+    if s.starts_with("cmake_")
+        || s.starts_with("project_")
+        || s.starts_with("cpack_")
+        || s.starts_with("ctest_")
+        || s.starts_with("fetchcontent_")
+        || s.starts_with("cpm_")
+    {
+        return true;
+    }
+    if matches!(s, "argc" | "argn" | "argv")
+        || (s.starts_with("argv") && s[4..].parse::<u8>().is_ok())
+    {
+        return true;
+    }
+    KEYWORDS.contains(&s)
+}

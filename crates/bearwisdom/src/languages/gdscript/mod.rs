@@ -14,11 +14,7 @@
 pub mod extract;
 pub mod flow;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-pub use hooks::GDSCRIPT_HOOKS;
 pub use profile::GDSCRIPT_PROFILE;
 
 #[cfg(test)]
@@ -84,11 +80,6 @@ impl LanguagePlugin for GDScriptPlugin {
         Some(&profile::GDSCRIPT_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::GDSCRIPT_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GDSCRIPT_FLOW_CONFIG)

@@ -9,7 +9,8 @@
 // =============================================================================
 
 use super::CMAKE_PROFILE;
-use crate::indexer::resolve::legacy::{FileContext, RefContext, Resolution, SymbolIndex};
+use crate::indexer::resolve::engine::contract::{FileContext, RefContext, Resolution};
+use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::language_profile::{KindCompatibility, NamespaceScope};
 use crate::types::*;
@@ -145,7 +146,7 @@ fn clone_pf(f: &ParsedFile) -> ParsedFile {
     make_file(&f.path, f.symbols.clone(), f.refs.clone())
 }
 
-fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i64>) {
+fn build_index(files: &[&ParsedFile]) -> (Compilation, HashMap<(String, String), i64>) {
     let mut id_map = HashMap::new();
     let mut next_id = 1i64;
     for pf in files {
@@ -155,7 +156,7 @@ fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String),
         }
     }
     let owned: Vec<ParsedFile> = files.iter().map(|f| clone_pf(f)).collect();
-    let index = SymbolIndex::build(&owned, &id_map);
+    let index = Compilation::build(&owned, &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
     (index, id_map)
 }
 

@@ -10,16 +10,9 @@
 //! - `defmacro` → Function (macro)
 
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::CLOJURE_HOOKS;
 pub use profile::CLOJURE_PROFILE;
 mod method_bodies;
 mod reitit;
@@ -91,9 +84,4 @@ impl LanguagePlugin for ClojurePlugin {
         Some(&profile::CLOJURE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::CLOJURE_HOOKS)
-    }
 }

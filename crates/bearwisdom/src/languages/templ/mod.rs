@@ -8,14 +8,7 @@
 //! interpolation dispatches to Go as a short region.
 
 pub mod extract;
-pub mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::TEMPL_HOOKS;
 pub use profile::TEMPL_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -55,9 +48,4 @@ impl LanguagePlugin for TemplPlugin {
         Some(&profile::TEMPL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::TEMPL_HOOKS)
-    }
 }

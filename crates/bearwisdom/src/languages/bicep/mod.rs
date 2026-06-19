@@ -2,20 +2,13 @@
 
 pub mod embedded;
 pub mod extract;
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::BICEP_HOOKS;
 pub use profile::BICEP_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -103,9 +96,4 @@ impl LanguagePlugin for BicepPlugin {
         Some(&profile::BICEP_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::BICEP_HOOKS)
-    }
 }

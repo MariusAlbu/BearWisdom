@@ -11,15 +11,9 @@
 //! - `type_definition` → Class / Struct / Enum / Interface / TypeAlias
 //! - `module_defn` / `named_module` / `namespace` → Namespace
 //! - `import_decl` → Imports (open declarations)
-
-pub(crate) mod hooks;
 pub(crate) mod keywords;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
@@ -28,8 +22,6 @@ mod predicates_tests;
 #[cfg(test)]
 #[path = "keywords_tests.rs"]
 mod keywords_tests;
-
-pub use hooks::FSHARP_HOOKS;
 pub use profile::FSHARP_PROFILE;
 mod applications;
 pub mod extract;
@@ -94,9 +86,4 @@ impl LanguagePlugin for FSharpPlugin {
         Some(&profile::FSHARP_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::FSHARP_HOOKS)
-    }
 }

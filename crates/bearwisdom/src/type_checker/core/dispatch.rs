@@ -28,7 +28,7 @@
 // =============================================================================
 
 use super::types::{PrimKind, Type, TypeArena, TypeId};
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::inference::unwrap_await;
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -51,7 +51,7 @@ pub struct DispatchQuery<'a> {
 }
 
 /// Select the method that should service this call. Returns the chosen
-/// SymbolInfo, or None when no candidate matches.
+/// Symbol, or None when no candidate matches.
 pub fn select_method(
     query: &DispatchQuery,
     members: &MembersIndex,
@@ -60,7 +60,7 @@ pub fn select_method(
     arena: &TypeArena,
     profile: &LanguageProfile,
     lookup: &dyn SymbolLookup,
-) -> Option<SymbolInfo> {
+) -> Option<Symbol> {
     match profile.dispatch_axis {
         DispatchAxis::Receiver => select_receiver(query, members, supertypes, arena, profile),
         DispatchAxis::MultiArg => select_multi_arg(
@@ -90,7 +90,7 @@ fn select_receiver(
     supertypes: &SupertypeGraph,
     arena: &TypeArena,
     profile: &LanguageProfile,
-) -> Option<SymbolInfo> {
+) -> Option<Symbol> {
     members.lookup(
         query.receiver,
         query.method_name,
@@ -114,9 +114,9 @@ fn select_multi_arg(
     arena: &TypeArena,
     profile: &LanguageProfile,
     lookup: &dyn SymbolLookup,
-) -> Option<SymbolInfo> {
+) -> Option<Symbol> {
     let prims = profile.primitive_mapping;
-    let candidates: Vec<SymbolInfo> = candidates(query, members, supertypes).collect();
+    let candidates: Vec<Symbol> = candidates(query, members, supertypes).collect();
     let mut matches = arg_assignable_candidates(
         candidates,
         query.arg_types,
@@ -150,16 +150,16 @@ fn select_multi_arg(
 /// Shared by the multi-arg dispatch path and the bare-name overload override
 /// so both decide candidate survival the same way.
 pub(crate) fn arg_assignable_candidates(
-    candidates: Vec<SymbolInfo>,
+    candidates: Vec<Symbol>,
     arg_types: &[TypeId],
     members: &MembersIndex,
     symbol_types: &SymbolTypeMap,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
     profile: &LanguageProfile,
-) -> Vec<SymbolInfo> {
+) -> Vec<Symbol> {
     let prims = profile.primitive_mapping;
-    let mut matches: Vec<SymbolInfo> = Vec::new();
+    let mut matches: Vec<Symbol> = Vec::new();
     for candidate in candidates {
         let view = SymbolView::new(&candidate, symbol_types);
         match view.param_types() {
@@ -192,14 +192,14 @@ pub(crate) fn arg_assignable_candidates(
 /// assignable to every other candidate's at each position. Returns 0 when no
 /// candidate dominates the rest (ambiguous overload set).
 fn most_specific_index(
-    matches: &[SymbolInfo],
+    matches: &[Symbol],
     symbol_types: &SymbolTypeMap,
     members: &MembersIndex,
     arena: &TypeArena,
     lookup: &dyn SymbolLookup,
     prims: &[(&str, PrimKind)],
 ) -> usize {
-    let params = |s: &SymbolInfo| {
+    let params = |s: &Symbol| {
         SymbolView::new(s, symbol_types)
             .param_types()
             .map(|p| p.to_vec())
@@ -246,7 +246,7 @@ fn select_return_type(
     arena: &TypeArena,
     profile: &LanguageProfile,
     lookup: &dyn SymbolLookup,
-) -> Option<SymbolInfo> {
+) -> Option<Symbol> {
     if let Some(expected) = query.expected_return {
         for candidate in candidates(query, members, supertypes) {
             let Some(return_ty) = SymbolView::new(&candidate, symbol_types).return_type() else {
@@ -281,7 +281,7 @@ fn candidates<'a>(
     query: &'a DispatchQuery,
     members: &'a MembersIndex,
     supertypes: &'a SupertypeGraph,
-) -> impl Iterator<Item = SymbolInfo> + 'a {
+) -> impl Iterator<Item = Symbol> + 'a {
     supertypes.walk_up(query.receiver).flat_map(move |t| {
         members
             .direct_of(t)

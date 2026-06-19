@@ -31,7 +31,7 @@
 // =============================================================================
 
 use super::types::{GenericParamId, Type, TypeArena, TypeId};
-use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{FileContext, RefContext, Symbol, SymbolLookup};
 use crate::type_checker::alias::{expand_alias_typed, AliasIndex};
 use crate::type_checker::core::dispatch::{
     arg_assignable_candidates, index_into, project_container_slot, resolve_arg_types,
@@ -470,7 +470,7 @@ impl<'a> ChainWalker<'a> {
             });
         }
 
-        let mut last_member: Option<SymbolInfo> = None;
+        let mut last_member: Option<Symbol> = None;
         let last_idx = chain.segments.len() - 1;
 
         // The package-qualified qname the current bare receiver was yielded
@@ -811,7 +811,7 @@ impl<'a> ChainWalker<'a> {
     /// SymbolTypeMap path.
     fn yield_type_of(
         &self,
-        sym: &SymbolInfo,
+        sym: &Symbol,
         seg: &ChainSegment,
         env: &GenericEnv,
         current_ty: TypeId,
@@ -1038,7 +1038,7 @@ impl<'a> ChainWalker<'a> {
     /// symbol index) and intra-project members reachable by qname but not
     /// reachable from `current_ty`'s direct/extension maps (cross-language
     /// shims, embedded-region symbols, etc.). Returns the same
-    /// `SymbolInfo` shape MembersIndex returns so the walker downstream
+    /// `Symbol` shape MembersIndex returns so the walker downstream
     /// can't tell which path produced the member.
     /// Record a chain miss keyed on the type the walker resolved up to but
     /// couldn't step past, mirroring the legacy string walker's bail-out
@@ -1248,7 +1248,7 @@ impl<'a> ChainWalker<'a> {
         seg_name: &str,
         file_ctx: &FileContext,
         prev_member_ns: Option<&str>,
-    ) -> Option<SymbolInfo> {
+    ) -> Option<Symbol> {
         let qname = match self.arena.get(current_ty) {
             Type::Class(q) => q,
             Type::Apply { base, .. } => match self.arena.get(base) {
@@ -1651,7 +1651,7 @@ impl<'a> ChainWalker<'a> {
     /// untyped array) is skipped, so an unbindable receiver is a silent no-op
     /// rather than seeding a junk type. Empty param names (destructuring slots)
     /// are skipped.
-    fn seed_lambda_params(&self, member: &SymbolInfo, call_args: &[CallArg], env: &GenericEnv) {
+    fn seed_lambda_params(&self, member: &Symbol, call_args: &[CallArg], env: &GenericEnv) {
         let has_lambda = call_args
             .iter()
             .any(|a| matches!(a, CallArg::Lambda { .. }));
@@ -1708,7 +1708,7 @@ impl<'a> ChainWalker<'a> {
     /// arguments, has no inferable return, or the bound result is still a bare
     /// generic. It reports only a strict gain over that fallback, never a
     /// regression (the fallback already records the unbound parameter today).
-    pub fn infer_bare_call_yield(&self, sym: &SymbolInfo, call_args: &[CallArg]) -> Option<TypeId> {
+    pub fn infer_bare_call_yield(&self, sym: &Symbol, call_args: &[CallArg]) -> Option<TypeId> {
         if call_args.is_empty()
             || !matches!(sym.kind.as_str(), "method" | "function" | "constructor")
         {
@@ -1775,7 +1775,7 @@ impl<'a> ChainWalker<'a> {
         &self,
         target_name: &str,
         call_args: &[CallArg],
-        current: &SymbolInfo,
+        current: &Symbol,
     ) -> Option<i64> {
         if call_args.is_empty() {
             return None;
@@ -1783,7 +1783,7 @@ impl<'a> ChainWalker<'a> {
         // The overload set is the same-name callables sharing `current`'s
         // enclosing scope (same file AND scope_path) — its true overloads, not
         // every whole-program homonym `by_name` returns.
-        let candidates: Vec<SymbolInfo> = self
+        let candidates: Vec<Symbol> = self
             .lookup
             .by_name(target_name)
             .iter()
@@ -1853,7 +1853,7 @@ impl<'a> ChainWalker<'a> {
 ///   "timeout", &["skip", "retries", "slow"])` returns
 ///   `mocha.Context` / `Mocha.Context`.
 pub fn discover_type_by_canonical_members(
-    lookup: &dyn crate::indexer::resolve::legacy::SymbolLookup,
+    lookup: &dyn crate::indexer::resolve::engine::contract::SymbolLookup,
     seed_method: &str,
     canonical_members: &[&str],
 ) -> Option<String> {
@@ -1906,7 +1906,7 @@ fn is_identifier_like(name: &str) -> bool {
 /// next hop) and for a member whose owner is not itself namespaced (a
 /// top-level external owner `Type.member` has no namespace to project) — so it
 /// only ever supplies a prefix the generated-client delegate shape needs.
-fn external_member_namespace(member: &SymbolInfo) -> Option<String> {
+fn external_member_namespace(member: &Symbol) -> Option<String> {
     if !member.file_path.starts_with("ext:") {
         return None;
     }

@@ -11,15 +11,7 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::MATLAB_HOOKS;
 pub use profile::MATLAB_PROFILE;
 
 #[cfg(test)]
@@ -75,9 +67,4 @@ impl LanguagePlugin for MatlabPlugin {
         Some(&profile::MATLAB_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::MATLAB_HOOKS)
-    }
 }

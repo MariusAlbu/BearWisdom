@@ -3,11 +3,8 @@
 pub mod connectors;
 pub mod embedded;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::DOCKERFILE_HOOKS;
 pub use profile::DOCKERFILE_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -17,10 +14,6 @@ use crate::types::{EmbeddedRegion, ExtractionResult};
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 pub struct DockerfilePlugin;
 
@@ -89,9 +82,4 @@ impl LanguagePlugin for DockerfilePlugin {
         Some(&profile::DOCKERFILE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::DOCKERFILE_HOOKS)
-    }
 }

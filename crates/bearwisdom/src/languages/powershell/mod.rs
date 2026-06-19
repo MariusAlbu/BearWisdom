@@ -15,20 +15,12 @@ mod dotnet_bindings;
 pub mod extract;
 pub mod keywords;
 mod node_helpers;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-pub use hooks::POWERSHELL_HOOKS;
 pub use profile::POWERSHELL_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -85,9 +77,4 @@ impl LanguagePlugin for PowerShellPlugin {
         Some(&profile::POWERSHELL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::POWERSHELL_HOOKS)
-    }
 }

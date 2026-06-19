@@ -13,17 +13,9 @@ mod extractors;
 pub mod fypp;
 pub mod keywords;
 mod walk;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::FORTRAN_HOOKS;
 pub use profile::FORTRAN_PROFILE;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -95,9 +87,4 @@ impl LanguagePlugin for FortranPlugin {
         Some(&profile::FORTRAN_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::FORTRAN_HOOKS)
-    }
 }

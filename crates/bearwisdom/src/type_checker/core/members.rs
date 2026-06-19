@@ -13,7 +13,7 @@
 
 use super::types::{Type, TypeArena, TypeId};
 use crate::indexer::canonical_form::signature_arity;
-use crate::indexer::resolve::legacy::{strip_generic_args, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{strip_generic_args, Symbol, SymbolLookup};
 use crate::type_checker::core::supertype::SupertypeGraph;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::symbol_view::SymbolView;
@@ -49,8 +49,8 @@ pub struct ArgTypes<'a> {
 /// in two passes (direct wins on tie) without re-scanning the body map.
 #[derive(Debug, Default)]
 pub struct MembersIndex {
-    direct: FxHashMap<TypeId, Vec<SymbolInfo>>,
-    extensions: FxHashMap<TypeId, Vec<SymbolInfo>>,
+    direct: FxHashMap<TypeId, Vec<Symbol>>,
+    extensions: FxHashMap<TypeId, Vec<Symbol>>,
 }
 
 impl MembersIndex {
@@ -121,7 +121,7 @@ impl MembersIndex {
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };
-                let info = SymbolInfo {
+                let info = Symbol {
                     id: sym_id,
                     name: sym.name.clone(),
                     qualified_name: sym.qualified_name.clone(),
@@ -213,7 +213,7 @@ impl MembersIndex {
     /// rather than the whole dependency tree.
     ///
     /// Append-only and idempotent like `ingest_files`: re-admitting a type
-    /// whose members are already present re-pushes the same `SymbolInfo`s in
+    /// whose members are already present re-pushes the same `Symbol`s in
     /// the same order, so `find_on_chain`'s first-match is unchanged. The
     /// caller (engine build) runs this once after the supertype graph exists,
     /// and the trait/interface admission from the first pass is untouched.
@@ -270,7 +270,7 @@ impl MembersIndex {
                 let Some(&sym_id) = sym_id_map.get(&(pf.path.clone(), idx)) else {
                     continue;
                 };
-                let info = SymbolInfo {
+                let info = Symbol {
                     id: sym_id,
                     name: sym.name.clone(),
                     qualified_name: sym.qualified_name.clone(),
@@ -301,12 +301,12 @@ impl MembersIndex {
 
     /// All direct members for `ty`, in insertion order. Empty slice when no
     /// members are registered.
-    pub fn direct_of(&self, ty: TypeId) -> &[SymbolInfo] {
+    pub fn direct_of(&self, ty: TypeId) -> &[Symbol] {
         self.direct.get(&ty).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// All extension members for `ty`. Same contract as `direct_of`.
-    pub fn extensions_of(&self, ty: TypeId) -> &[SymbolInfo] {
+    pub fn extensions_of(&self, ty: TypeId) -> &[Symbol] {
         self.extensions
             .get(&ty)
             .map(|v| v.as_slice())
@@ -323,14 +323,14 @@ impl MembersIndex {
     /// Register an extension member against `ty`. Used by per-language hooks
     /// (Rust impl-for-trait, C# extension methods) that discover extension
     /// relationships outside the type's own scope_path.
-    pub fn add_extension(&mut self, ty: TypeId, info: SymbolInfo) {
+    pub fn add_extension(&mut self, ty: TypeId, info: Symbol) {
         self.extensions.entry(ty).or_default().push(info);
     }
 
     /// Register a direct member explicitly. Used by tests and per-language
     /// hooks that synthesize members (decorator-driven, Lua metatable, etc.)
     /// outside the standard scope_path path.
-    pub fn add_direct(&mut self, ty: TypeId, info: SymbolInfo) {
+    pub fn add_direct(&mut self, ty: TypeId, info: Symbol) {
         self.direct.entry(ty).or_default().push(info);
     }
 
@@ -365,7 +365,7 @@ impl MembersIndex {
         supertypes: &SupertypeGraph,
         arena: &TypeArena,
         profile: &LanguageProfile,
-    ) -> Option<SymbolInfo> {
+    ) -> Option<Symbol> {
         self.lookup_with_binding(
             ty,
             name,
@@ -399,7 +399,7 @@ impl MembersIndex {
         profile: &LanguageProfile,
         arg_count: Option<usize>,
         types: Option<ArgTypes>,
-    ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
+    ) -> Option<(Symbol, TypeId, Vec<TypeId>)> {
         match arena.get(ty) {
             Type::Apply { base, .. } => self.lookup_with_binding(
                 base,
@@ -416,7 +416,7 @@ impl MembersIndex {
                 // are unsafe to resolve since the runtime value could land
                 // on a branch missing the member. Returns the first branch's
                 // match; the walker does not yet select a branch by a guard.
-                let mut first: Option<(SymbolInfo, TypeId, Vec<TypeId>)> = None;
+                let mut first: Option<(Symbol, TypeId, Vec<TypeId>)> = None;
                 for b in branches {
                     match self.lookup_with_binding(
                         b,
@@ -542,11 +542,11 @@ impl MembersIndex {
         profile: &LanguageProfile,
         arg_count: Option<usize>,
         types: Option<ArgTypes>,
-    ) -> Option<(SymbolInfo, TypeId, Vec<TypeId>)> {
+    ) -> Option<(Symbol, TypeId, Vec<TypeId>)> {
         for (ancestor, args) in supertypes.linearize_with_args(ty, arena, profile.ancestor_order) {
-            let mut first: Option<&SymbolInfo> = None;
-            let mut arity_hit: Option<&SymbolInfo> = None;
-            let mut type_hit: Option<&SymbolInfo> = None;
+            let mut first: Option<&Symbol> = None;
+            let mut arity_hit: Option<&Symbol> = None;
+            let mut type_hit: Option<&Symbol> = None;
             for s in self
                 .direct_of(ancestor)
                 .iter()
@@ -593,7 +593,7 @@ impl MembersIndex {
     }
 }
 
-/// Map a SymbolInfo's stringified kind back to `SymbolKind` and consult the
+/// Map a Symbol's stringified kind back to `SymbolKind` and consult the
 /// profile's compatibility table. Unrecognized kinds (synthetic strings the
 /// extractor coined for non-standard symbols) default to permissive — a
 /// stricter answer would let an extractor typo silently hide real symbols.

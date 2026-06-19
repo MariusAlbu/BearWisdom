@@ -14,13 +14,8 @@ mod symbols;
 mod types;
 
 mod externals;
-mod flow_detectors;
-pub mod hooks;
 mod predicates;
 pub mod profile;
-
-pub use hooks::PythonResolver;
-pub use hooks::PYTHON_HOOKS;
 pub use profile::PYTHON_PROFILE;
 
 #[cfg(test)]
@@ -38,14 +33,6 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-#[cfg(test)]
-#[path = "flow_tests.rs"]
-mod flow_tests;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
@@ -126,11 +113,6 @@ impl LanguagePlugin for PythonPlugin {
         Some(&PYTHON_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&PYTHON_HOOKS)
-    }
 
     // TODO(routes-dispatch): wire `connectors::discover_django_routes` and
     // `connectors::discover_fastapi_routes` into the indexer route-population

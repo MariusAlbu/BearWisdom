@@ -193,6 +193,27 @@ const STDLIB_MODULES: &[&str] = &[
     "Mix",
 ];
 
+/// Checks whether the CamelCase module root matches a snake_case dep atom in
+/// `mix.exs`, handling underscore-separated names by comparing the first
+/// segment (e.g. `ecto_sql` → `Ecto`).
+pub(crate) fn is_mix_dep_match(
+    module_root: &str,
+    deps: &std::collections::HashSet<String>,
+) -> bool {
+    let root_lower = module_root.to_lowercase();
+    for dep in deps {
+        if dep == &root_lower {
+            return true;
+        }
+        if let Some(prefix) = dep.split('_').next() {
+            if prefix == root_lower {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Check whether an Elixir module alias is a standard-library / OTP runtime
 /// module. Hex-package modules are NOT recognized here — they are classified
 /// from the project's `mix.exs` dependency list at the resolver hooks. A

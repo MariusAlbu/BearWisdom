@@ -54,7 +54,7 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: BICEP_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_azure_resource_type),
+    builtin_skip: Some(super::predicates::is_azure_resource_type),
     namespace_decline: None,
     // `sys`/`az` are namespace aliases over the bicep-runtime ambient symbols
     // (both members land under `bicep.builtins`/`bicep.decorators`), not qname

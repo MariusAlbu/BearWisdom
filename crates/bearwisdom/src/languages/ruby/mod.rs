@@ -9,12 +9,8 @@ mod params;
 mod symbols;
 
 pub mod connectors;
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::RubyResolver;
-pub use hooks::RUBY_HOOKS;
 pub use profile::RUBY_PROFILE;
 
 #[cfg(test)]
@@ -24,10 +20,6 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
@@ -94,11 +86,6 @@ impl LanguagePlugin for RubyPlugin {
         Some(&profile::RUBY_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::RUBY_HOOKS)
-    }
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUBY_FLOW_CONFIG)
     }

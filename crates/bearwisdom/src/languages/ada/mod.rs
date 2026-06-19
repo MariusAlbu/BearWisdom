@@ -11,21 +11,13 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::ADA_HOOKS;
 pub use profile::ADA_PROFILE;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -90,7 +82,7 @@ impl LanguagePlugin for AdaPlugin {
     }
 
     fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        hooks::spec_for_body(file_path)
+        predicates::spec_for_body(file_path)
     }
 
     fn profile(
@@ -99,9 +91,4 @@ impl LanguagePlugin for AdaPlugin {
         Some(&profile::ADA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ADA_HOOKS)
-    }
 }

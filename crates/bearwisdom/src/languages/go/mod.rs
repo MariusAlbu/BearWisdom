@@ -6,7 +6,6 @@ mod chain;
 mod embedded;
 pub mod extract;
 pub(crate) mod flow;
-mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
 mod refs;
@@ -17,11 +16,8 @@ mod type_refs;
 mod types;
 
 pub mod connectors;
-pub mod hooks;
 mod predicates;
 pub mod profile;
-
-pub use hooks::GO_HOOKS;
 pub use profile::GO_PROFILE;
 
 #[cfg(test)]
@@ -31,10 +27,6 @@ mod calls_tests;
 #[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -119,11 +111,6 @@ impl LanguagePlugin for GoPlugin {
         Some(&GO_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&GO_HOOKS)
-    }
 
     // TODO(routes-dispatch): wire `connectors::discover_go_routes` into the
     // indexer route-population stage. The function now writes the `routes` table

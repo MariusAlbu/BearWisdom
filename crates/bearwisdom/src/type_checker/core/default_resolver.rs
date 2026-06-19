@@ -21,8 +21,8 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use super::reexport::follow_reexports;
-use crate::indexer::resolve::legacy::{
-    FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
+use crate::indexer::resolve::engine::contract::{
+    FileContext, RefContext, Resolution, Symbol, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::profile::language_profile::{
     AliasDecode, AmbientGlobals, CandidateDirs, ChainQualification, ExtMatch, ExternalByImport,
@@ -263,7 +263,7 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
 
-        let mut compatible: Vec<&SymbolInfo> = self
+        let mut compatible: Vec<&Symbol> = self
             .lookup
             .by_name(target)
             .into_iter()
@@ -842,7 +842,7 @@ impl<'a> DefaultResolver<'a> {
     ) -> Option<Resolution> {
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let candidates = self.lookup.by_name(name);
-        let ambient: Vec<&SymbolInfo> = candidates
+        let ambient: Vec<&Symbol> = candidates
             .iter()
             .filter(|sym| self.lookup.is_ambient_path(&sym.file_path))
             .filter(|sym| kind(edge_kind, &sym.kind))
@@ -895,7 +895,7 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         let candidates = self.lookup.by_name(target);
-        let mut compatible: Vec<&SymbolInfo> = candidates
+        let mut compatible: Vec<&Symbol> = candidates
             .iter()
             .filter(|sym| !self.lookup.is_external_file(&sym.file_path))
             .filter(|sym| kind(edge_kind, &sym.kind))
@@ -1088,7 +1088,7 @@ impl<'a> DefaultResolver<'a> {
     /// current ref. Walks `scope_chain` innermost-first, then falls back to
     /// the source symbol's `scope_path`. `None` when the ref isn't inside a
     /// type (free function, file scope).
-    fn enclosing_type(&self) -> Option<&'a SymbolInfo> {
+    fn enclosing_type(&self) -> Option<&'a Symbol> {
         let lk = self.lookup;
         // Structured first: the containment edge names the enclosing type by the
         // ancestor's kind, derived from the `parent_index` / `containing_id`
@@ -1636,7 +1636,7 @@ impl<'a> DefaultResolver<'a> {
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let src_parent = parent_dir_basename(&self.file_ctx.file_path)?;
-        let mut compatible: Vec<&SymbolInfo> = self
+        let mut compatible: Vec<&Symbol> = self
             .lookup
             .by_name(target)
             .into_iter()
@@ -1676,7 +1676,7 @@ impl<'a> DefaultResolver<'a> {
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
         let src_prefix = module_subtree_prefix(&self.file_ctx.file_path)?;
-        let mut compatible: Vec<&SymbolInfo> = self
+        let mut compatible: Vec<&Symbol> = self
             .lookup
             .by_name(target)
             .into_iter()
@@ -1987,7 +1987,7 @@ impl<'a> DefaultResolver<'a> {
         let pkg_id = self.lookup.workspace_package_id(specifier)?;
         let sub_path = workspace_sub_path(specifier, self.lookup);
 
-        let mut fallback: Option<&SymbolInfo> = None;
+        let mut fallback: Option<&Symbol> = None;
         for sym in self.lookup.symbols_in_package(pkg_id) {
             if sym.name != target || !kind(edge_kind, &sym.kind) {
                 continue;
@@ -2054,7 +2054,7 @@ impl<'a> DefaultResolver<'a> {
         }
         // Ambient-global lib-file bare-qname probe.
         for candidate in self.lookup.all_by_qualified_name(target) {
-            if !crate::indexer::resolve::legacy::is_ambient_global_lib_path(&candidate.file_path) {
+            if !crate::ecosystem::ambient::is_ambient_global_lib_path(&candidate.file_path) {
                 continue;
             }
             let kind_ok = kind(edge_kind, &candidate.kind)
@@ -2271,7 +2271,7 @@ impl<'a> DefaultResolver<'a> {
         if matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements)
             && r.target_name.contains('<')
         {
-            let head = crate::indexer::resolve::legacy::chain_walker::parse_type_head_and_args(
+            let head = crate::indexer::resolve::engine::contract::parse_type_head_and_args(
                 &r.target_name,
             )
             .0;
@@ -2597,7 +2597,7 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         let target_norm = normalize_name(norm, target);
-        let mut hits: Vec<&SymbolInfo> = Vec::new();
+        let mut hits: Vec<&Symbol> = Vec::new();
         for sym in self.lookup.by_name(target) {
             if !kind(edge_kind, &sym.kind) {
                 continue;
@@ -2681,7 +2681,7 @@ impl<'a> DefaultResolver<'a> {
         // module-prefixed qname. A name local to the importing file is resolved
         // by the same-file / scope rungs upstream and never reaches here, so a
         // glob import cannot shadow a local definition.
-        let mut hit: Option<&SymbolInfo> = None;
+        let mut hit: Option<&Symbol> = None;
         for sym in self.lookup.by_name(target) {
             if !kind(edge_kind, &sym.kind) {
                 continue;
@@ -2740,7 +2740,7 @@ impl<'a> DefaultResolver<'a> {
         // several rows for one symbol (declaration merging, or the same source
         // shipped in more than one jar). Those are the SAME symbol, not an
         // ambiguity — only two DISTINCT member qnames decline.
-        let mut chosen: Option<&SymbolInfo> = None;
+        let mut chosen: Option<&Symbol> = None;
         for sym in self.lookup.by_name(target) {
             if !kind(edge_kind, &sym.kind) {
                 continue;
@@ -2784,7 +2784,7 @@ impl<'a> DefaultResolver<'a> {
             return None;
         }
         let edge_kind = self.ref_ctx.extracted_ref.kind;
-        let candidates: Vec<&SymbolInfo> = self
+        let candidates: Vec<&Symbol> = self
             .lookup
             .by_name(target)
             .into_iter()
@@ -2796,7 +2796,7 @@ impl<'a> DefaultResolver<'a> {
             // strategies already had their chance. Either case: stay out.
             return None;
         }
-        let mut scored: Vec<(i32, &SymbolInfo)> = candidates
+        let mut scored: Vec<(i32, &Symbol)> = candidates
             .iter()
             .map(|sym| (self.score_candidate(sym), *sym))
             .collect();
@@ -2814,7 +2814,7 @@ impl<'a> DefaultResolver<'a> {
     /// Score a candidate against the current ref context. Higher = better.
     /// Built from signals already on the lookup / file_ctx / ref_ctx — no
     /// new state, no hardcoded names.
-    fn score_candidate(&self, sym: &SymbolInfo) -> i32 {
+    fn score_candidate(&self, sym: &Symbol) -> i32 {
         let mut s: i32 = 0;
 
         // Same workspace package as caller. Strongest signal — a workspace
@@ -3018,7 +3018,7 @@ fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
 /// Yield every namespace prefix worth trying for an import: the module
 /// path (when dotted) and the imported name (when dotted and distinct).
 fn candidate_namespace_prefixes(
-    import: &crate::indexer::resolve::legacy::ImportEntry,
+    import: &crate::indexer::resolve::engine::contract::ImportEntry,
 ) -> impl Iterator<Item = &str> {
     let mut prefixes: Vec<&str> = Vec::with_capacity(2);
     if let Some(m) = import.module_path.as_deref() {
@@ -3416,7 +3416,7 @@ fn import_path_candidates(
     target: &str,
     ir: &ImportResolution,
 ) -> Vec<std::path::PathBuf> {
-    use crate::indexer::resolve::legacy::{camel_to_kebab, lexical_normalize};
+    use crate::indexer::resolve::engine::contract::{camel_to_kebab, lexical_normalize};
     use std::path::PathBuf;
 
     let mut out: Vec<PathBuf> = Vec::with_capacity(32);

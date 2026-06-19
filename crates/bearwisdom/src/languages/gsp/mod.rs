@@ -1,11 +1,7 @@
 //! Grails Server Pages (.gsp). `${expr}` → Groovy expression.
 //! `<g:render template="_x">` → Imports ref.
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
 pub(crate) mod taglib;
-
-pub use hooks::GSP_HOOKS;
 pub use profile::GSP_PROFILE;
 
 #[cfg(test)]
@@ -181,11 +177,6 @@ impl LanguagePlugin for GspPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::GSP_PROFILE)
-    }
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::GSP_HOOKS)
     }
 }
 

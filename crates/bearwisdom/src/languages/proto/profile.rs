@@ -28,7 +28,7 @@ pub const PROTO_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: PROTO_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_proto_builtin),
+    builtin_skip: Some(super::keywords::is_proto_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

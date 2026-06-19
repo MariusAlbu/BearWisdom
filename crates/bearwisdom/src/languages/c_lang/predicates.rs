@@ -712,3 +712,8 @@ pub fn is_r_c_api_symbol(name: &str) -> bool {
             | "STRING_PTR"
     )
 }
+
+/// Sentinel namespace used for R extension package files. When a C file
+/// carries this namespace, the C-API classification branch in the profile
+/// brands bare R API symbols as external.
+pub(crate) const R_PACKAGE_SENTINEL: &str = "__r_package__";

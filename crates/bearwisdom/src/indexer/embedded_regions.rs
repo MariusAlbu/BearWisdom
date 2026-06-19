@@ -164,7 +164,7 @@ pub(super) fn dispatch_embedded_regions(
 
         for mut rf in sub.refs {
             if host_is_svelte {
-                crate::languages::svelte::hooks::desugar_store_ref_in_place(&mut rf);
+                crate::languages::svelte::predicates::desugar_store_ref_in_place(&mut rf);
             }
             // Remap source_symbol_index through the sub→final table.
             // If the owning symbol was a synthetic wrapper that was dropped,

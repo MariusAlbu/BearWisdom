@@ -4,17 +4,9 @@
 //! Uses a line scanner over VBA source.
 
 pub mod extract;
-
-pub(crate) mod hooks;
 mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::VBA_HOOKS;
 pub use profile::VBA_PROFILE;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,9 +67,4 @@ impl LanguagePlugin for VbaPlugin {
         Some(&profile::VBA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::VBA_HOOKS)
-    }
 }

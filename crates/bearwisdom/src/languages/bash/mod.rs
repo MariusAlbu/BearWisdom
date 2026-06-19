@@ -2,16 +2,8 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::BASH_HOOKS;
 pub use profile::BASH_PROFILE;
 
 #[cfg(test)]
@@ -94,9 +86,4 @@ impl LanguagePlugin for BashPlugin {
         Some(&profile::BASH_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::BASH_HOOKS)
-    }
 }

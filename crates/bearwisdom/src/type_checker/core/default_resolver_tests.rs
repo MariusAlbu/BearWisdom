@@ -1,10 +1,10 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/default_resolver_tests.rs — unit tests for DefaultResolver.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{
-    FileContext, ImportEntry, RefContext, Resolution, SymbolInfo, SymbolLookup, SymbolSet,
+use crate::indexer::resolve::engine::contract::{
+    FileContext, ImportEntry, RefContext, Resolution, Symbol, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::profile::language_profile::{
     AliasDecode, NameNormalization, NamespaceScope, NormSpec,
@@ -21,14 +21,14 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------
 
 struct Lookup {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_pairs: Vec<(String, String)>,
-    by_name: FxHashMap<String, Vec<SymbolInfo>>,
-    by_qname: FxHashMap<String, SymbolInfo>,
+    by_name: FxHashMap<String, Vec<Symbol>>,
+    by_qname: FxHashMap<String, Symbol>,
     ambient_paths: Vec<String>,
     reexport: FxHashMap<(String, String, String), i64>,
-    in_file: FxHashMap<String, Vec<SymbolInfo>>,
-    members: FxHashMap<String, Vec<SymbolInfo>>,
+    in_file: FxHashMap<String, Vec<Symbol>>,
+    members: FxHashMap<String, Vec<Symbol>>,
     parents: FxHashMap<String, String>,
     path_aliases: FxHashMap<String, String>,
     generics: FxHashMap<String, Vec<String>>,
@@ -37,13 +37,13 @@ struct Lookup {
     /// module_spec → resolved file_path
     module_files: FxHashMap<String, String>,
     /// qname → every overload stored under it (declaration-merging)
-    by_qname_all: FxHashMap<String, Vec<SymbolInfo>>,
+    by_qname_all: FxHashMap<String, Vec<Symbol>>,
     /// raw selector → class qname
     selectors: FxHashMap<String, String>,
     /// workspace declared_name → package_id
     workspace_pkgs: FxHashMap<String, i64>,
     /// package_id → symbols
-    pkg_symbols: FxHashMap<i64, Vec<SymbolInfo>>,
+    pkg_symbols: FxHashMap<i64, Vec<Symbol>>,
 }
 
 impl Lookup {
@@ -71,7 +71,7 @@ impl Lookup {
     /// Register an additional overload under an existing qname (declaration
     /// merging). The first `with` already seeded `by_qname`; this appends the
     /// overload to the all-overloads slice.
-    fn with_overload(mut self, sym: SymbolInfo) -> Self {
+    fn with_overload(mut self, sym: Symbol) -> Self {
         self.by_qname_all
             .entry(sym.qualified_name.clone())
             .or_default()
@@ -88,7 +88,7 @@ impl Lookup {
         self.workspace_pkgs.insert(declared.to_string(), id);
         self
     }
-    fn with_pkg_symbol(mut self, id: i64, sym: SymbolInfo) -> Self {
+    fn with_pkg_symbol(mut self, id: i64, sym: Symbol) -> Self {
         self.pkg_symbols.entry(id).or_default().push(sym);
         self
     }
@@ -110,11 +110,11 @@ impl Lookup {
         );
         self
     }
-    fn with_in_file(mut self, file: &str, sym: SymbolInfo) -> Self {
+    fn with_in_file(mut self, file: &str, sym: Symbol) -> Self {
         self.in_file.entry(file.to_string()).or_default().push(sym);
         self
     }
-    fn with_member(mut self, parent_qname: &str, sym: SymbolInfo) -> Self {
+    fn with_member(mut self, parent_qname: &str, sym: Symbol) -> Self {
         self.members
             .entry(parent_qname.to_string())
             .or_default()
@@ -130,7 +130,7 @@ impl Lookup {
         self.path_aliases.insert(from.to_string(), to.to_string());
         self
     }
-    fn with(mut self, sym: SymbolInfo) -> Self {
+    fn with(mut self, sym: Symbol) -> Self {
         self.by_name
             .entry(sym.name.clone())
             .or_default()
@@ -155,7 +155,7 @@ impl SymbolLookup for Lookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
-    fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, qname: &str) -> Option<&Symbol> {
         self.by_qname.get(qname)
     }
     fn members_of(&self, parent: &str) -> SymbolSet<'_> {
@@ -169,7 +169,7 @@ impl SymbolLookup for Lookup {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, namespace: &str) -> Vec<&Symbol> {
         let prefix = format!("{namespace}.");
         self.by_qname
             .values()
@@ -283,8 +283,8 @@ impl SymbolLookup for Lookup {
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
-fn sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -1794,8 +1794,8 @@ fn sym_full(
     file: &str,
     visibility: Option<&str>,
     package_id: Option<i64>,
-) -> SymbolInfo {
-    SymbolInfo {
+) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -1830,7 +1830,7 @@ impl SymbolLookup for WorkspaceLookup {
     fn by_name(&self, n: &str) -> SymbolSet<'_> {
         self.inner.by_name(n)
     }
-    fn by_qualified_name(&self, q: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, q: &str) -> Option<&Symbol> {
         self.inner.by_qualified_name(q)
     }
     fn members_of(&self, p: &str) -> SymbolSet<'_> {
@@ -1839,7 +1839,7 @@ impl SymbolLookup for WorkspaceLookup {
     fn types_by_name(&self, n: &str) -> SymbolSet<'_> {
         self.inner.types_by_name(n)
     }
-    fn in_namespace(&self, n: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, n: &str) -> Vec<&Symbol> {
         self.inner.in_namespace(n)
     }
     fn has_in_namespace(&self, n: &str) -> bool {

@@ -12,10 +12,7 @@
 
 pub mod embedded;
 pub mod extract;
-pub mod hooks;
 pub(crate) mod profile;
-
-pub use hooks::NUNJUCKS_HOOKS;
 pub use profile::NUNJUCKS_PROFILE;
 
 #[cfg(test)]
@@ -62,9 +59,4 @@ impl LanguagePlugin for NunjucksPlugin {
         Some(&profile::NUNJUCKS_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::NUNJUCKS_HOOKS)
-    }
 }

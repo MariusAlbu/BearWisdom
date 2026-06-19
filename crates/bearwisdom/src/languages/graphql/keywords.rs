@@ -92,3 +92,14 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "SafeInt",
     "BigDecimal",
 ];
+
+/// Returns true when `name` is a GraphQL built-in scalar or introspection type.
+pub(crate) fn is_graphql_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "String" | "Int" | "Float" | "Boolean" | "ID"
+            | "__Schema" | "__Type" | "__Field" | "__InputValue"
+            | "__EnumValue" | "__Directive" | "__DirectiveLocation"
+            | "__TypeKind"
+    )
+}

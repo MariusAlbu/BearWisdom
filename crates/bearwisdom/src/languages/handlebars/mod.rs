@@ -9,14 +9,7 @@
 
 pub mod embedded;
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::HANDLEBARS_HOOKS;
 pub use profile::HANDLEBARS_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -59,9 +52,4 @@ impl LanguagePlugin for HandlebarsPlugin {
         Some(&profile::HANDLEBARS_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::HANDLEBARS_HOOKS)
-    }
 }

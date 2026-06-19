@@ -17,12 +17,8 @@ pub mod extract;
 mod flow;
 pub(crate) mod keywords;
 mod node_helpers;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::GROOVY_HOOKS;
 pub use profile::GROOVY_PROFILE;
 
 #[cfg(test)]
@@ -38,16 +34,8 @@ mod coverage_tests;
 mod flow_tests;
 
 #[cfg(test)]
-#[path = "hooks_tests.rs"]
-mod hooks_tests;
-
-#[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -107,11 +95,6 @@ impl LanguagePlugin for GroovyPlugin {
         Some(&profile::GROOVY_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::GROOVY_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GROOVY_FLOW_CONFIG)

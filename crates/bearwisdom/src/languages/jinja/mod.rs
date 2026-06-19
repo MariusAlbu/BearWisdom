@@ -21,14 +21,7 @@
 
 pub mod expr;
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::JINJA_HOOKS;
 pub use profile::JINJA_PROFILE;
 
 #[cfg(test)]
@@ -78,9 +71,4 @@ impl LanguagePlugin for JinjaPlugin {
         Some(&profile::JINJA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::JINJA_HOOKS)
-    }
 }

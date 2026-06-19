@@ -22,6 +22,17 @@ pub(super) fn is_ada_predefined_type(name: &str) -> bool {
     ) || is_ada_builtin(name)
 }
 
+/// Maps an Ada body file (`.adb`) to its paired spec file (`.ads`).
+pub(super) fn spec_for_body(file_path: &str) -> Option<String> {
+    let normalized = file_path.replace('\\', "/");
+    if normalized.ends_with(".adb") {
+        let stem = &normalized[..normalized.len() - 4];
+        Some(format!("{stem}.ads"))
+    } else {
+        None
+    }
+}
+
 pub(super) fn is_ada_builtin(name: &str) -> bool {
     matches!(
         name,

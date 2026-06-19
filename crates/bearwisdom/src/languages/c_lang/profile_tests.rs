@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use super::predicates;
 use super::C_LANG_PROFILE;
-use crate::indexer::resolve::legacy::{
-    build_scope_chain, FileContext, RefContext, Resolution, SymbolIndex,
+use crate::indexer::resolve::engine::compilation::Compilation;
+use crate::indexer::resolve::engine::contract::{
+    build_scope_chain, FileContext, RefContext, Resolution,
 };
 use crate::type_checker::core::DefaultResolver;
 use crate::type_checker::profile::language_profile::KindCompatibility;
@@ -127,7 +128,7 @@ fn make_file(path: &str, syms: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) ->
     }
 }
 
-fn build_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i64>) {
+fn build_env(files: &[&ParsedFile]) -> (Compilation, HashMap<(String, String), i64>) {
     let mut id_map = HashMap::new();
     let mut next_id = 1i64;
     for pf in files {
@@ -140,13 +141,13 @@ fn build_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i
         .iter()
         .map(|f| make_file(&f.path, f.symbols.clone(), f.refs.clone()))
         .collect();
-    let index = SymbolIndex::build(&owned, &id_map);
+    let index = Compilation::build(&owned, &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
     (index, id_map)
 }
 
 /// Drive the chain-less bare-name ladder the way production does for a single
 /// call ref — gated by the profile's `kind_compatible_table`.
-fn resolve(source: &ParsedFile, index: &SymbolIndex) -> Option<Resolution> {
+fn resolve(source: &ParsedFile, index: &Compilation) -> Option<Resolution> {
     let file_ctx = FileContext {
         file_path: source.path.clone(),
         language: "c".to_string(),
@@ -282,7 +283,7 @@ fn c_profile_namespace_decline_gates_r_c_api() {
         .expect("c profile declares a namespace decline");
     assert_eq!(
         nd.file_namespace,
-        crate::languages::c_lang::hooks::R_PACKAGE_SENTINEL
+        predicates::R_PACKAGE_SENTINEL
     );
     assert!((nd.is_reserved)("Rf_eval"));
     assert!(!(nd.is_reserved)("my_project_fn"));

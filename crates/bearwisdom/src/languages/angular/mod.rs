@@ -15,15 +15,21 @@
 //! angular.json or @angular/* deps in package.json).
 
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::ANGULAR_HOOKS;
 pub use profile::ANGULAR_PROFILE;
+
+/// Maps an Angular template file to its paired TypeScript component file.
+/// `.component.html` → `.component.ts`, etc.
+pub(crate) fn paired_ts_for_template(file_path: &str) -> Option<String> {
+    const SUFFIXES: &[&str] = &[".component.html", ".container.html", ".dialog.html"];
+    for suffix in SUFFIXES {
+        if let Some(stem) = file_path.strip_suffix(suffix) {
+            let ts_suffix = suffix.trim_end_matches(".html").to_string() + ".ts";
+            return Some(format!("{stem}{ts_suffix}"));
+        }
+    }
+    None
+}
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -84,7 +90,7 @@ impl LanguagePlugin for AngularPlugin {
     }
 
     fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        hooks::paired_ts_for_template(file_path)
+        paired_ts_for_template(file_path)
     }
 
     fn profile(
@@ -93,9 +99,4 @@ impl LanguagePlugin for AngularPlugin {
         Some(&profile::ANGULAR_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::ANGULAR_HOOKS)
-    }
 }

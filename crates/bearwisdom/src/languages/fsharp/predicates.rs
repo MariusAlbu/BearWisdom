@@ -2,6 +2,9 @@
 // fsharp/predicates.rs — F# builtin and helper predicates
 // =============================================================================
 
+use crate::ecosystem::manifest::ManifestKind;
+use crate::indexer::project_context::ProjectContext;
+
 /// Fallback external namespace check when no NuGet manifest is available.
 /// The closed set of .NET / F# platform namespace roots: the BCL (`System`),
 /// the Microsoft platform namespace, and `FSharp` (the FSharp.Core root that
@@ -10,4 +13,36 @@
 pub(super) fn is_external_namespace_fallback(ns: &str) -> bool {
     let root = ns.split('.').next().unwrap_or(ns);
     matches!(root, "System" | "Microsoft" | "FSharp")
+}
+
+/// Manifest-aware external namespace check. Matches against declared NuGet
+/// packages when a manifest is present; falls back to the closed BCL/FSharp
+/// set otherwise.
+pub(crate) fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
+    let root = ns.split('.').next().unwrap_or(ns);
+    if matches!(root, "System" | "Microsoft") {
+        return true;
+    }
+    if let Some(m) = ctx.manifest(ManifestKind::NuGet) {
+        if !m.dependencies.is_empty() {
+            if m.dependencies.contains(ns) {
+                return true;
+            }
+            for dep in &m.dependencies {
+                if ns.starts_with(dep.as_str())
+                    && ns.len() > dep.len()
+                    && ns.as_bytes()[dep.len()] == b'.'
+                {
+                    return true;
+                }
+                if let Some(dep_root) = dep.split('.').next() {
+                    if root == dep_root {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+    is_external_namespace_fallback(ns)
 }

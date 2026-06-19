@@ -7,12 +7,8 @@ pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::SCALA_HOOKS;
 pub use profile::SCALA_PROFILE;
 
 #[cfg(test)]
@@ -26,10 +22,6 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -111,11 +103,6 @@ impl LanguagePlugin for ScalaPlugin {
         Some(&profile::SCALA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::SCALA_HOOKS)
-    }
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::SCALA_FLOW_CONFIG)
     }

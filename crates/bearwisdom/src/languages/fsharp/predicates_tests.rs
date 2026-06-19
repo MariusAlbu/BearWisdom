@@ -2,8 +2,7 @@
 // purge: NuGet-declared packages classify external, platform roots stay, and
 // the purged framework namespaces are gone from the fallback.
 
-use super::hooks::is_manifest_external_namespace;
-use super::predicates::is_external_namespace_fallback;
+use super::predicates::{is_external_namespace_fallback, is_manifest_external_namespace};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 

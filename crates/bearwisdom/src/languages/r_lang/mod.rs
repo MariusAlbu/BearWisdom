@@ -6,16 +6,8 @@
 pub mod extract;
 pub mod flow;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::R_HOOKS;
 pub use profile::R_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -80,11 +72,6 @@ impl LanguagePlugin for RLangPlugin {
         Some(&profile::R_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::R_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::R_FLOW_CONFIG)

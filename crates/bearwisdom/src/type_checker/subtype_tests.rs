@@ -1,10 +1,10 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/subtype_tests.rs — Unit tests for the conditional-type
 // subtype check.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 struct SubtypeFixture {
     parents: HashMap<String, String>,
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
 }
 
@@ -42,7 +42,7 @@ impl SymbolLookup for SubtypeFixture {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -51,7 +51,7 @@ impl SymbolLookup for SubtypeFixture {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -542,10 +542,10 @@ fn typed_same_kind_different_primitive_names_assignable() {
 // at Unknown (the load-bearing missing-type-info → Unknown rule).
 // ---------------------------------------------------------------------------
 
-/// Build a member SymbolInfo for the structural fixtures. `name` and `kind` are
+/// Build a member Symbol for the structural fixtures. `name` and `kind` are
 /// the structural-presence key; `id` keys the member's recorded type data.
-fn member(id: i64, name: &str, kind: &str) -> SymbolInfo {
-    SymbolInfo {
+fn member(id: i64, name: &str, kind: &str) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: name.to_string(),

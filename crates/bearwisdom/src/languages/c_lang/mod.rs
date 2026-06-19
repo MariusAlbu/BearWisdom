@@ -19,12 +19,8 @@ mod templates;
 mod type_refs;
 mod typerefs;
 mod visitor;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::C_HOOKS;
 pub use profile::C_LANG_PROFILE;
 
 #[cfg(test)]
@@ -42,10 +38,6 @@ mod declarations_tests;
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "type_refs_tests.rs"]
@@ -163,11 +155,6 @@ impl LanguagePlugin for CLangPlugin {
         Some(&profile::C_LANG_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::C_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::C_FLOW_CONFIG)

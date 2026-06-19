@@ -43,7 +43,7 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: HARE_PRIMITIVES,
     kind_compatible_table: HARE_KIND_TABLE,
     chain_qualification: ChainQualification::PackageShortName,
-    builtin_skip: Some(super::hooks::is_hare_primitive),
+    builtin_skip: Some(self::is_hare_primitive),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -88,3 +88,15 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
 #[cfg(test)]
 #[path = "profile_tests.rs"]
 mod tests;
+
+/// Returns true when `name` is a Hare primitive type keyword.
+pub(crate) fn is_hare_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "bool" | "void" | "never" | "null" | "opaque"
+            | "int" | "i8" | "i16" | "i32" | "i64"
+            | "uint" | "u8" | "u16" | "u32" | "u64"
+            | "uintptr" | "size" | "f32" | "f64"
+            | "rune" | "str" | "nomem"
+    )
+}

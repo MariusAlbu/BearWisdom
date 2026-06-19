@@ -1,4 +1,4 @@
-//! Gate-test for phase 3: the lookup layer must answer "find member X on
+﻿//! Gate-test for phase 3: the lookup layer must answer "find member X on
 //! type T" correctly when MembersIndex + SupertypeGraph are built from a
 //! real ParsedFile produced by an actual extractor.
 //!
@@ -6,7 +6,7 @@
 //! build the index from the resulting symbols, then exercise the public
 //! lookup API on the resulting TypeIds.
 
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
 use crate::languages::typescript::extract;
 use crate::type_checker::core::{
     infer_expression_type, MembersIndex, SupertypeGraph, SymbolIdMap, SymbolTypeMap, Type,
@@ -60,8 +60,8 @@ fn deterministic_ids(pf: &ParsedFile) -> SymbolIdMap {
 /// file's symbol set. The supertype builder consults this to map a ref's
 /// simple `target_name` to the matching type's qualified name.
 struct ParsedFileLookup {
-    types: Vec<SymbolInfo>,
-    empty: Vec<SymbolInfo>,
+    types: Vec<Symbol>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
 }
 
@@ -74,7 +74,7 @@ impl ParsedFileLookup {
                 .get(&(pf.path.clone(), idx))
                 .copied()
                 .unwrap_or(idx as i64 + 1);
-            types.push(SymbolInfo {
+            types.push(Symbol {
                 id,
                 name: sym.name.clone(),
                 qualified_name: sym.qualified_name.clone(),
@@ -98,7 +98,7 @@ impl SymbolLookup for ParsedFileLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -106,7 +106,7 @@ impl SymbolLookup for ParsedFileLookup {
     }
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         // Linear scan — fine for unit-test fixture sizes; not used in prod.
-        let matches: Vec<&SymbolInfo> = self
+        let matches: Vec<&Symbol> = self
             .types
             .iter()
             .filter(|s| {
@@ -123,7 +123,7 @@ impl SymbolLookup for ParsedFileLookup {
             SymbolSet::Borrowed(&self.empty)
         }
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -300,7 +300,7 @@ export class HelloGreeter implements Greeter {
 
 #[test]
 fn members_and_symbol_types_key_consistently_for_same_parsed_file() {
-    // Phase 4 will look up a SymbolInfo via MembersIndex then dereference
+    // Phase 4 will look up a Symbol via MembersIndex then dereference
     // its declared/return TypeId through SymbolTypeMap. Both maps must be
     // built off the same arena and the same sym_id_map; this gate verifies
     // the two halves agree on TypeIds for every type-defining symbol in a

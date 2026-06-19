@@ -1,7 +1,7 @@
 // =============================================================================
 // type_checker/core/symbol_view.rs — unified per-symbol read facade
 //
-// One borrow over a symbol's identity (`SymbolInfo`) and its type bundle
+// One borrow over a symbol's identity (`Symbol`) and its type bundle
 // (`SymbolTypeMap`, keyed by symbol id). Consumers ask `view.param_types()`
 // instead of threading both structures and keying each by hand. Structural
 // containment is an id edge consulted through `SymbolLookup`, not carried here.
@@ -13,20 +13,20 @@
 // args" must branch on the `Option`, never collapse it.
 // =============================================================================
 
-use crate::indexer::resolve::legacy::SymbolInfo;
+use crate::indexer::resolve::engine::contract::Symbol;
 use crate::type_checker::core::symbol_types::{SymbolTypeData, SymbolTypeMap};
 use crate::type_checker::core::types::{GenericParamId, TypeId};
 
 /// Read-only view over one symbol's identity, type bundle, and containment.
 /// Cheap to build (a struct of borrows); construct per query.
 pub struct SymbolView<'a> {
-    pub info: &'a SymbolInfo,
+    pub info: &'a Symbol,
     types: &'a SymbolTypeMap,
 }
 
 impl<'a> SymbolView<'a> {
     /// Construct a view over a symbol's identity and type bundle.
-    pub fn new(info: &'a SymbolInfo, types: &'a SymbolTypeMap) -> Self {
+    pub fn new(info: &'a Symbol, types: &'a SymbolTypeMap) -> Self {
         Self { info, types }
     }
 

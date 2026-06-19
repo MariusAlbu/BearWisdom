@@ -3,11 +3,8 @@
 pub mod connectors;
 pub mod embedded;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::HCL_HOOKS;
 pub use profile::HCL_PROFILE;
 
 #[cfg(test)]
@@ -82,9 +79,4 @@ impl LanguagePlugin for HclPlugin {
         Some(&profile::HCL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::HCL_HOOKS)
-    }
 }

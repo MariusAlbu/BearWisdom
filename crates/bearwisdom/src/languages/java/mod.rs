@@ -6,16 +6,12 @@ pub(crate) mod decorators;
 mod embedded;
 pub mod extract;
 pub(crate) mod flow;
-mod flow_detectors;
 mod helpers;
 pub(crate) mod keywords;
 mod lombok;
 mod symbols;
-
-pub mod hooks;
 mod predicates;
 pub mod profile;
-pub use hooks::JAVA_HOOKS;
 pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]
@@ -25,10 +21,6 @@ mod calls_tests;
 #[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -138,11 +130,6 @@ impl LanguagePlugin for JavaPlugin {
         Some(&JAVA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&JAVA_HOOKS)
-    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::JAVA_FLOW_CONFIG)

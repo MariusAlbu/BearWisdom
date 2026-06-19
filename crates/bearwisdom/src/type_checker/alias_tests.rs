@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/alias_tests.rs — Unit tests for alias expansion
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{SymbolInfo, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::symbol_types::SymbolTypeMap;
 use crate::type_checker::core::types::{LitValue, Type, TypeArena};
@@ -38,8 +38,8 @@ struct AliasFixture {
     generic_params: HashMap<String, Vec<String>>,
     field_types: HashMap<String, String>,
     return_types: HashMap<String, String>,
-    members: HashMap<String, Vec<SymbolInfo>>,
-    empty: Vec<SymbolInfo>,
+    members: HashMap<String, Vec<Symbol>>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
 }
 
@@ -65,7 +65,7 @@ impl AliasFixture {
         self.members
             .entry(owner.to_string())
             .or_default()
-            .push(SymbolInfo {
+            .push(Symbol {
                 id: 0,
                 name: member.to_string(),
                 qualified_name: format!("{owner}.{member}"),
@@ -102,7 +102,7 @@ impl SymbolLookup for AliasFixture {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, name: &str) -> SymbolSet<'_> {
@@ -116,7 +116,7 @@ impl SymbolLookup for AliasFixture {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {

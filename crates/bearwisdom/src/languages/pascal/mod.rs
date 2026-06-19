@@ -8,16 +8,8 @@ pub mod extract;
 pub mod keywords;
 mod normalise;
 mod refs;
-
-pub(crate) mod hooks;
 mod predicates;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::PASCAL_HOOKS;
 pub use profile::PASCAL_PROFILE;
 
 #[cfg(test)]
@@ -82,9 +74,4 @@ impl LanguagePlugin for PascalPlugin {
         Some(&profile::PASCAL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PASCAL_HOOKS)
-    }
 }

@@ -23,3 +23,11 @@ pub(crate) fn is_sass_builtin_module(path: &str) -> bool {
         "math" | "string" | "color" | "list" | "map" | "selector" | "meta"
     )
 }
+
+
+/// Returns true when a SCSS module path should be skipped during resolution —
+/// either an internal CSS hint or a built-in Sass module (@use "sass:math" etc.).
+pub(crate) fn is_scss_skippable_module(module: &str) -> bool {
+    module == super::extract::SCSS_CSS_FN_HINT || is_sass_builtin_module(module)
+}
+

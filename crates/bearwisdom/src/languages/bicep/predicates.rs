@@ -23,3 +23,22 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         _ => true,
     }
 }
+
+/// Returns true when `name` is an Azure resource type string — a slash-separated
+/// provider/type reference, optional Bicep registry prefix, or AZ spec form.
+pub(crate) fn is_azure_resource_type(name: &str) -> bool {
+    let stripped = name.trim_matches('\'');
+    if !stripped.contains('/') {
+        return false;
+    }
+    let lower = stripped.to_ascii_lowercase();
+    if lower.starts_with("br:") || lower.starts_with("br/") || lower.starts_with("az:") {
+        return true;
+    }
+    let head = stripped.split('/').next().unwrap_or("");
+    if head.is_empty() {
+        return false;
+    }
+    head.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '$' | '{' | '}'))
+}

@@ -9,7 +9,7 @@ use super::arguments::{
     collect_arguments, collect_raw_arguments, command_identifier, nth_argument,
 };
 use super::extract::make_symbol;
-use super::hooks::is_cmake_builtin;
+use super::keywords::is_cmake_builtin;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
 

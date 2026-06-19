@@ -181,7 +181,8 @@ fn synthesized_members_are_callable_kinds() {
 
 #[test]
 fn default_chains_through_at_index_level() {
-    use crate::indexer::resolve::legacy::{SymbolIndex, SymbolLookup};
+    use crate::indexer::resolve::engine::compilation::Compilation;
+    use crate::indexer::resolve::engine::contract::SymbolLookup;
     use crate::types::{FlowMeta, ParsedFile};
     use std::collections::HashMap;
 
@@ -245,7 +246,7 @@ fn default_chains_through_at_index_level() {
         );
     }
 
-    let index = SymbolIndex::build(&[pf], &id_map);
+    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     // Config.default must be reachable with return_type == "Config".
     assert!(

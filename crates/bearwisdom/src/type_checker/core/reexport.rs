@@ -16,7 +16,7 @@
 
 use tracing::debug;
 
-use crate::indexer::resolve::legacy::{Resolution, SymbolLookup, RESOLVED_CONFIDENCE};
+use crate::indexer::resolve::engine::contract::{Resolution, SymbolLookup, RESOLVED_CONFIDENCE};
 use crate::types::EdgeKind;
 
 /// Follow re-export chains from `module_path` to the module that defines

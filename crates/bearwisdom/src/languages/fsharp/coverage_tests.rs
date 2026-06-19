@@ -23,7 +23,6 @@
 // =============================================================================
 
 use super::extract::extract;
-use crate::indexer::resolve::legacy::{FileContext, ImportEntry, RefContext};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 // ---------------------------------------------------------------------------
@@ -550,112 +549,6 @@ fn hash_r_directive_emits_imports_ref() {
             .iter()
             .map(|rf| (&rf.target_name, rf.kind))
             .collect::<Vec<_>>()
-    );
-}
-
-/// `#r`-derived imports in `file_ctx` cause bare-name Calls refs from the
-/// same file to be classified as external by `infer_external_namespace`.
-#[test]
-fn infer_external_namespace_from_hash_r_import() {
-    use crate::types::ExtractedRef;
-
-    // Simulate a ParsedFile that has a #r-derived Imports ref for Fornax.Core.
-    // build_file_context converts this to a FileContext with one import entry.
-    let fornax_import = ExtractedRef {
-        is_import_binding: false,
-        is_reexport: false,
-        source_symbol_index: 0,
-        target_name: "Fornax.Core".to_string(),
-        kind: EdgeKind::Imports,
-        line: 0,
-        col: 0,
-        module: Some("Fornax.Core".to_string()),
-        chain: None,
-        byte_offset: 1,
-        namespace_segments: Vec::new(),
-        call_args: Vec::new(),
-    };
-    let file_ctx = FileContext {
-        file_path: "docs/generators/apiref.fsx".to_string(),
-        language: "fsharp".to_string(),
-        imports: vec![ImportEntry {
-            imported_name: "Fornax.Core".to_string(),
-            module_path: Some("Fornax.Core".to_string()),
-            alias: None,
-            is_wildcard: true,
-        }],
-        file_namespace: None,
-    };
-
-    let div_ref = ExtractedRef {
-        is_import_binding: false,
-        is_reexport: false,
-        source_symbol_index: 0,
-        target_name: "div".to_string(),
-        kind: EdgeKind::Calls,
-        line: 20,
-        col: 0,
-        module: None,
-        chain: None,
-        byte_offset: 1,
-        namespace_segments: Vec::new(),
-        call_args: Vec::new(),
-    };
-    let dummy_symbol = ExtractedSymbol {
-        name: "generate".to_string(),
-        qualified_name: "generate".to_string(),
-        kind: SymbolKind::Function,
-        visibility: Some(Visibility::Public),
-        start_line: 10,
-        end_line: 30,
-        start_col: 0,
-        end_col: 0,
-        signature: None,
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-        byte_offset: 0,
-        declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-    };
-    let ref_ctx = RefContext {
-        extracted_ref: &div_ref,
-        source_symbol: &dummy_symbol,
-        scope_chain: vec![],
-        file_package_id: None,
-    };
-
-    // `Fornax` is a NuGet package, not a .NET platform root — it classifies
-    // external only when the NuGet manifest declares it. The `#r "Fornax.Core"`
-    // wildcard import brings `div` into scope from that external assembly.
-    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-    let mut project_ctx = crate::indexer::project_context::ProjectContext::default();
-    let mut nuget = ManifestData::default();
-    nuget.dependencies.insert("Fornax.Core".to_string());
-    project_ctx.manifests.insert(ManifestKind::NuGet, nuget);
-    let ns = {
-        use crate::type_checker::profile::hooks::LanguageEngineHooks;
-        use std::collections::HashMap;
-        let empty_lookup =
-            crate::indexer::resolve::legacy::SymbolIndex::build(&[], &HashMap::new());
-        crate::languages::fsharp::hooks::FsharpHooks.classify_external(
-            &ref_ctx,
-            &file_ctx,
-            Some(&project_ctx),
-            &empty_lookup,
-        )
-    };
-    assert!(
-        ns.is_some(),
-        "expected Some namespace for 'div' with Fornax.Core import; got None"
-    );
-    assert_eq!(
-        ns.as_deref(),
-        Some("Fornax"),
-        "expected 'Fornax' namespace; got {:?}",
-        ns
     );
 }
 

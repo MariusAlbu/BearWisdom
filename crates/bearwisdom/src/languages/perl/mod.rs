@@ -13,15 +13,7 @@
 
 pub mod extract;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::PERL_HOOKS;
 pub use profile::PERL_PROFILE;
 
 #[cfg(test)]
@@ -82,9 +74,4 @@ impl LanguagePlugin for PerlPlugin {
         Some(&profile::PERL_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PERL_HOOKS)
-    }
 }

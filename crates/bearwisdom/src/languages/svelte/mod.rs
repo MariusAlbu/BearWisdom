@@ -18,11 +18,8 @@
 
 pub mod connectors;
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::SVELTE_HOOKS;
 pub use profile::SVELTE_PROFILE;
 
 #[cfg(test)]
@@ -91,9 +88,4 @@ impl LanguagePlugin for SveltePlugin {
         Some(&profile::SVELTE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::SVELTE_HOOKS)
-    }
 }

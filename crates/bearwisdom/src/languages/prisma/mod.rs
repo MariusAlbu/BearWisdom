@@ -18,10 +18,7 @@
 //! - `@relation`   → TypeRef to referenced model
 
 pub mod extract;
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-pub use hooks::PRISMA_HOOKS;
 pub use profile::PRISMA_PROFILE;
 
 #[cfg(test)]
@@ -90,9 +87,4 @@ impl LanguagePlugin for PrismaPlugin {
         Some(&profile::PRISMA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PRISMA_HOOKS)
-    }
 }

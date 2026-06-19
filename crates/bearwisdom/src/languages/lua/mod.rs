@@ -6,15 +6,7 @@
 pub mod extract;
 pub mod flow;
 pub mod keywords;
-
-pub(crate) mod hooks;
 pub(crate) mod profile;
-
-#[cfg(test)]
-#[path = "resolve_tests.rs"]
-mod resolve_tests;
-
-pub use hooks::LUA_HOOKS;
 pub use profile::LUA_PROFILE;
 
 use crate::languages::LanguagePlugin;
@@ -76,11 +68,6 @@ impl LanguagePlugin for LuaPlugin {
         Some(&profile::LUA_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::LUA_HOOKS)
-    }
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::LUA_FLOW_CONFIG)
     }

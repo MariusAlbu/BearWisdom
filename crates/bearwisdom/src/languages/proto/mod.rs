@@ -2,11 +2,8 @@
 
 pub mod connectors;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::PROTO_HOOKS;
 pub use profile::PROTO_PROFILE;
 
 #[cfg(test)]
@@ -77,9 +74,4 @@ impl LanguagePlugin for ProtoPlugin {
         Some(&profile::PROTO_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::PROTO_HOOKS)
-    }
 }

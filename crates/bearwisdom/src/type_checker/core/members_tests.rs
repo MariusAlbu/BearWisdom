@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/members_tests.rs — Unit tests for MembersIndex.
 // =============================================================================
 
@@ -8,11 +8,11 @@ use crate::type_checker::core::symbol_types::SymbolTypeData;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{AliasTarget, EdgeKind};
-use crate::indexer::resolve::legacy::SymbolSet;
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolSet};
 use std::sync::Arc;
 
-fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
-    SymbolInfo {
+fn sym(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -32,8 +32,8 @@ fn sym_sig(
     kind: &str,
     scope: Option<&str>,
     sig: &str,
-) -> SymbolInfo {
-    SymbolInfo {
+) -> Symbol {
+    Symbol {
         signature: Some(sig.to_string()),
         ..sym(id, name, qname, kind, scope)
     }
@@ -135,7 +135,7 @@ fn overload_selected_by_arity() {
 /// and parameter types are primitives (disjointness decides without an
 /// inheritance walk).
 struct NullLookup {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
 }
 
@@ -152,7 +152,7 @@ impl SymbolLookup for NullLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -161,7 +161,7 @@ impl SymbolLookup for NullLookup {
     fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -1738,14 +1738,14 @@ fn external_non_trait_member_still_skipped() {
 /// test can drive `resolve_target_qname`'s ambiguity tightening end-to-end
 /// through `SupertypeGraph::build`. Everything else mirrors `NullLookup`.
 struct TypePoolLookup {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
-    by_short: FxHashMap<String, Vec<SymbolInfo>>,
+    by_short: FxHashMap<String, Vec<Symbol>>,
 }
 
 impl TypePoolLookup {
-    fn new(pool: Vec<SymbolInfo>) -> Self {
-        let mut by_short: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+    fn new(pool: Vec<Symbol>) -> Self {
+        let mut by_short: FxHashMap<String, Vec<Symbol>> = FxHashMap::default();
         for s in pool {
             by_short.entry(s.name.clone()).or_default().push(s);
         }
@@ -1761,7 +1761,7 @@ impl SymbolLookup for TypePoolLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
         None
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -1775,7 +1775,7 @@ impl SymbolLookup for TypePoolLookup {
                 .unwrap_or(&self.empty),
         )
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {

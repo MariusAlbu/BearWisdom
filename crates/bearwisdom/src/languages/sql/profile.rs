@@ -45,7 +45,7 @@ pub const SQL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: &[],
     kind_compatible_table: SQL_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: Some(super::hooks::is_sql_builtin_type),
+    builtin_skip: Some(super::keywords::is_sql_builtin_type),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

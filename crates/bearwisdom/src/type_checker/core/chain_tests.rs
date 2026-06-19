@@ -1,9 +1,9 @@
-// =============================================================================
+﻿// =============================================================================
 // type_checker/core/chain_tests.rs — Unit + gate tests for ChainWalker.
 // =============================================================================
 
 use super::*;
-use crate::indexer::resolve::legacy::{FileContext, RefContext, SymbolInfo, SymbolSet};
+use crate::indexer::resolve::engine::contract::{FileContext, RefContext, Symbol, SymbolSet};
 use crate::type_checker::alias::{build_alias_index, AliasIndex};
 use crate::type_checker::core::members::MembersIndex;
 use crate::type_checker::core::supertype::SupertypeGraph;
@@ -35,8 +35,8 @@ fn seg(name: &str, kind: SegmentKind) -> ChainSegment {
     }
 }
 
-fn sym_info(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> SymbolInfo {
-    SymbolInfo {
+fn sym_info(id: i64, name: &str, qname: &str, kind: &str, scope: Option<&str>) -> Symbol {
+    Symbol {
         id,
         name: name.to_string(),
         qualified_name: qname.to_string(),
@@ -56,8 +56,8 @@ fn sym_info_sig(
     kind: &str,
     scope: Option<&str>,
     sig: &str,
-) -> SymbolInfo {
-    SymbolInfo {
+) -> Symbol {
+    Symbol {
         signature: Some(sig.to_string()),
         ..sym_info(id, name, qname, kind, scope)
     }
@@ -112,14 +112,14 @@ fn file_ctx() -> FileContext {
 }
 
 struct EmptyLookup {
-    empty: Vec<SymbolInfo>,
+    empty: Vec<Symbol>,
     empty_reexports: Vec<(String, String)>,
-    types: rustc_hash::FxHashMap<String, Vec<SymbolInfo>>,
+    types: rustc_hash::FxHashMap<String, Vec<Symbol>>,
     locals: rustc_hash::FxHashMap<String, String>,
     local_unions: rustc_hash::FxHashMap<String, Vec<String>>,
     field_types: rustc_hash::FxHashMap<String, String>,
     return_types: rustc_hash::FxHashMap<String, String>,
-    by_qname: rustc_hash::FxHashMap<String, SymbolInfo>,
+    by_qname: rustc_hash::FxHashMap<String, Symbol>,
     parents: rustc_hash::FxHashMap<String, String>,
     generic_param_type_ids: rustc_hash::FxHashMap<String, Vec<TypeId>>,
     discriminants: rustc_hash::FxHashMap<String, (String, String, bool)>,
@@ -187,7 +187,7 @@ impl EmptyLookup {
             .push(info);
         self
     }
-    fn with_qname_symbol(mut self, qname: &str, info: SymbolInfo) -> Self {
+    fn with_qname_symbol(mut self, qname: &str, info: Symbol) -> Self {
         self.by_qname.insert(qname.to_string(), info);
         self
     }
@@ -226,7 +226,7 @@ impl SymbolLookup for EmptyLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
     }
-    fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
+    fn by_qualified_name(&self, qname: &str) -> Option<&Symbol> {
         self.by_qname.get(qname)
     }
     fn members_of(&self, _: &str) -> SymbolSet<'_> {
@@ -247,7 +247,7 @@ impl SymbolLookup for EmptyLookup {
     fn local_discriminant(&self, name: &str) -> Option<(String, String, bool)> {
         self.discriminants.get(name).cloned()
     }
-    fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> {
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
         Vec::new()
     }
     fn has_in_namespace(&self, _: &str) -> bool {
@@ -4205,7 +4205,7 @@ fn wildcard_import_fallback_prepends_namespace_to_member_qname() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::legacy::ImportEntry {
+        .push(crate::indexer::resolve::engine::contract::ImportEntry {
             imported_name: "Newtonsoft.Json".to_string(),
             module_path: Some("Newtonsoft.Json".to_string()),
             alias: None,
@@ -6233,7 +6233,7 @@ fn wildcard_using_promotes_root_receiver_to_fqn() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::legacy::ImportEntry {
+        .push(crate::indexer::resolve::engine::contract::ImportEntry {
             imported_name: "System.Windows.Controls".to_string(),
             module_path: Some("System.Windows.Controls".to_string()),
             alias: None,
@@ -6297,7 +6297,7 @@ fn wildcard_using_promotes_only_when_fqn_keys() {
     };
     let mut fc = file_ctx();
     fc.imports
-        .push(crate::indexer::resolve::legacy::ImportEntry {
+        .push(crate::indexer::resolve::engine::contract::ImportEntry {
             imported_name: "System.Windows.Controls".to_string(),
             module_path: Some("System.Windows.Controls".to_string()),
             alias: None,

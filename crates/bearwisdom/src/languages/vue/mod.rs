@@ -17,11 +17,8 @@ pub mod auto_import_dts;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;
-pub(crate) mod hooks;
 pub(crate) mod predicates;
 pub(crate) mod profile;
-
-pub use hooks::VUE_HOOKS;
 pub use profile::VUE_PROFILE;
 
 #[cfg(test)]
@@ -95,11 +92,6 @@ impl LanguagePlugin for VuePlugin {
         Some(&profile::VUE_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::VUE_HOOKS)
-    }
     fn populate_project_state(
         &self,
         state: &mut PluginStateBag,

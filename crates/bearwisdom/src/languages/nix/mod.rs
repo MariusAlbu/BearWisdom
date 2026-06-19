@@ -3,11 +3,8 @@
 pub mod bindings;
 pub mod calls;
 pub mod extract;
-pub(crate) mod hooks;
 pub mod keywords;
 pub(crate) mod profile;
-
-pub use hooks::NIX_HOOKS;
 pub use profile::NIX_PROFILE;
 
 #[cfg(test)]
@@ -73,9 +70,4 @@ impl LanguagePlugin for NixPlugin {
         Some(&profile::NIX_PROFILE)
     }
 
-    fn language_hooks(
-        &self,
-    ) -> Option<&'static dyn crate::type_checker::profile::hooks::LanguageEngineHooks> {
-        Some(&hooks::NIX_HOOKS)
-    }
 }

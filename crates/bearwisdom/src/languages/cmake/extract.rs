@@ -20,7 +20,7 @@ use super::arguments::{
     collect_arguments, command_identifier, first_argument_text, normalize_argument,
 };
 use super::commands::{collect_all_normal_commands, extract_normal_command};
-use super::hooks::is_cmake_builtin;
+use super::keywords::is_cmake_builtin;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 

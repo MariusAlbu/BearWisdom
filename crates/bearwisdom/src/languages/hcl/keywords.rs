@@ -174,3 +174,12 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "error_message",
     "statement",
 ];
+
+/// Returns true when `name` is a Terraform meta-argument or expression root
+/// that should be skipped as a builtin (each, count, self, path, terraform).
+pub(crate) fn is_terraform_meta_ref(name: &str) -> bool {
+    matches!(
+        name.splitn(2, '.').next().unwrap_or(name),
+        "each" | "count" | "self" | "path" | "terraform"
+    )
+}
