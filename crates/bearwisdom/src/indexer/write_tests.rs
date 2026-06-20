@@ -610,6 +610,44 @@ fn full_index_cross_file_containment_resolved_by_post_write_pass() {
     );
 }
 
+/// When a member's scope_path matches MORE THAN ONE same-origin parent (the same
+/// non-mergeable qname declared in two files), the pass must leave containing_id
+/// NULL rather than bind to an arbitrary, run-varying winner. Binding happens
+/// only when the parent is unambiguous.
+#[test]
+fn full_index_ambiguous_cross_file_parent_left_null() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    // Two files each declare a non-mergeable `Dup` sharing one qualified name.
+    write_full(&db, "a.rs", "rust", vec![esym("Dup", SymbolKind::Class, None, 1)], &arena);
+    write_full(&db, "b.rs", "rust", vec![esym("Dup", SymbolKind::Class, None, 1)], &arena);
+
+    // A third file declares a method whose scope_path = "Dup" — ambiguous parent.
+    write_full(
+        &db,
+        "c.rs",
+        "rust",
+        vec![esym_with_scope("Dup.run", SymbolKind::Method, Some("Dup"), 1)],
+        &arena,
+    );
+
+    resolve_cross_file_containment_and_merge(&db).unwrap();
+
+    let after: Option<i64> = db
+        .conn()
+        .query_row(
+            "SELECT containing_id FROM symbols WHERE qualified_name = 'Dup.run'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        after.is_none(),
+        "ambiguous parent must leave containing_id NULL, got {after:?}"
+    );
+}
+
 /// A full-index of two files declaring the same mergeable namespace produces
 /// two rows before the post-write pass. After the pass, they collapse to one
 /// canonical row with two symbol_locations entries.

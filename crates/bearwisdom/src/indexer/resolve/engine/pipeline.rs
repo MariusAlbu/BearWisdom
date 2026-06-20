@@ -192,8 +192,13 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.local_type(name).map(|t| vec![t])
     }
 
-    /// Bind `name` to `type_name` in the String forward-inference cache.
+    /// Bind `name` to `type_name` in the String forward-inference cache. Evicts
+    /// any prior TypeId binding for `name` so the two caches never both hold a
+    /// stale entry for the same name — a reassignment's latest write wins
+    /// regardless of which cache it lands in (`resolve_root` probes `locals_id`
+    /// before `locals`).
     fn record_local_type(&self, name: String, type_name: String) {
+        self.locals_id.borrow_mut().remove(&name);
         self.locals.borrow_mut().insert(name, type_name);
     }
 
@@ -205,7 +210,11 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     /// Bind `name` directly to a TypeId, bypassing `format_type` serialization.
+    /// Evicts any prior String binding for `name` so a later reassignment that
+    /// resolves to a TypeId supersedes an earlier String binding (and vice
+    /// versa via `record_local_type`).
     fn record_local_type_id(&self, name: String, id: TypeId) {
+        self.locals.borrow_mut().remove(&name);
         self.locals_id.borrow_mut().insert(name, id);
     }
 

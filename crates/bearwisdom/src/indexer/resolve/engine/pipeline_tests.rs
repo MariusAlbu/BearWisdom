@@ -135,11 +135,10 @@ fn arc_clone(a: &Arc<TypeArena>) -> Arc<TypeArena> {
 /// back via `local_type_id` must return the exact same TypeId — not a
 /// `Class("Int")` nominalization that `intern_type_str("Int")` would produce.
 ///
-/// Before the fix: no `record_local_type_id` existed; the only write path was
-/// `record_local_type(name, arena.format_type(id))`, which serializes
-/// `Primitive(Int)` as `"Int"`.  `local_type_id` would return `None`, and the
-/// chain walker would call `arena.intern_type_str("Int")` → `Class("Int")`.
-/// This test is RED in that state and GREEN after the TypeId cache lands.
+/// The corruption this guards: serializing `Primitive(Int)` via
+/// `arena.format_type` yields `"Int"`, and `arena.intern_type_str("Int")`
+/// re-interns it as `Class("Int")` — a distinct, member-less nominal type. The
+/// TypeId cache stores the id directly, so the primitive survives intact.
 #[test]
 fn local_type_id_round_trips_primitive_without_nominalization() {
     use crate::type_checker::core::types::{PrimKind, Type};
@@ -186,9 +185,9 @@ fn local_type_id_round_trips_primitive_without_nominalization() {
 /// Same guarantee for `Optional<User>`: `record_local_type_id` with an
 /// `Optional` TypeId and `local_type_id` must return it intact.
 ///
-/// The old path serialized `Optional(User)` as `"User?"` via `format_type`,
-/// then `intern_type_str("User?")` fell through the suffix/bracket paths and
-/// landed in `class("User?")` — a `Class` named `"User?"`, with no members.
+/// Serializing `Optional(User)` via `format_type` yields `"User?"`, and
+/// `intern_type_str("User?")` falls through to `class("User?")` — a member-less
+/// `Class` named `"User?"`. The TypeId cache stores the id directly instead.
 #[test]
 fn local_type_id_round_trips_optional_without_nominalization() {
     use crate::type_checker::core::types::Type;
@@ -222,6 +221,38 @@ fn local_type_id_round_trips_optional_without_nominalization() {
         matches!(arena.get(got.unwrap()), Type::Optional(_)),
         "cached TypeId must be Optional, not a nominalized Class"
     );
+}
+
+/// A reassigned local binds the same name twice. The cache must honor the LATEST
+/// write across both lanes: `resolve_root` probes `local_type_id` before
+/// `local_type`, so a stale TypeId left beside a newer String binding (or the
+/// reverse) would win incorrectly. Each writer evicts the other lane's entry for
+/// the name, so exactly one binding — the most recent — survives.
+#[test]
+fn reassignment_latest_write_wins_across_both_caches() {
+    use crate::type_checker::core::types::{PrimKind, Type};
+
+    let arena = Arc::new(TypeArena::new());
+    let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &[],
+        &symbol_id_map,
+        arc_clone(&arena),
+    );
+    let lookup = FileLookup::new(&tree);
+    let prim_id = arena.intern(Type::Primitive(PrimKind::Int));
+
+    // TypeId binding, then a String reassignment for the same name.
+    lookup.record_local_type_id("x".to_string(), prim_id);
+    lookup.record_local_type("x".to_string(), "Repo".to_string());
+    assert_eq!(lookup.local_type_id("x"), None, "String reassignment must evict the stale TypeId");
+    assert_eq!(lookup.local_type("x").as_deref(), Some("Repo"), "latest String write must be visible");
+
+    // The reverse: String binding, then a TypeId reassignment for the same name.
+    lookup.record_local_type("y".to_string(), "Repo".to_string());
+    lookup.record_local_type_id("y".to_string(), prim_id);
+    assert_eq!(lookup.local_type("y"), None, "TypeId reassignment must evict the stale String");
+    assert_eq!(lookup.local_type_id("y"), Some(prim_id), "latest TypeId write must be visible");
 }
 
 #[test]

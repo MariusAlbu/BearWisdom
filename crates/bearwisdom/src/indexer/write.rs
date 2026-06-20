@@ -1421,24 +1421,32 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
 
     // (a) Cross-file containing_id resolution.
     //
-    // For every symbol with containing_id IS NULL and a non-empty scope_path,
-    // look up the symbol whose qualified_name equals scope_path and is visible
-    // in the same DB (internal or external). The first match wins; non-mergeable
-    // parents are unique by (file_id, qname); mergeable parents have one
-    // canonical row after step (b).
+    // For a symbol with containing_id IS NULL and a non-empty scope_path, bind
+    // it to the parent whose qualified_name equals scope_path — but ONLY when
+    // that parent is unambiguous: same origin (an internal member never attaches
+    // to an external same-name type), not itself, and exactly ONE such candidate
+    // exists. The exactly-one guard makes the result independent of row id /
+    // insert order (no ORDER BY, no LIMIT): a unique parent binds; an ambiguous
+    // scope_path (e.g. the same non-mergeable qname in two packages) is left
+    // NULL rather than bound to an arbitrary, run-varying winner. Mergeable
+    // duplicates are collapsed to one canonical row in step (b), which then
+    // re-points any containing_id that referenced a deleted duplicate.
     tx.execute(
         "UPDATE symbols
          SET containing_id = (
              SELECT p.id FROM symbols p
              WHERE p.qualified_name = symbols.scope_path
-             LIMIT 1
+               AND p.origin = symbols.origin
+               AND p.id <> symbols.id
          )
          WHERE containing_id IS NULL
            AND scope_path IS NOT NULL
-           AND EXISTS (
-               SELECT 1 FROM symbols p
+           AND (
+               SELECT COUNT(*) FROM symbols p
                WHERE p.qualified_name = symbols.scope_path
-           )",
+                 AND p.origin = symbols.origin
+                 AND p.id <> symbols.id
+           ) = 1",
         [],
     )
     .context("Failed to resolve cross-file containing_id")?;
