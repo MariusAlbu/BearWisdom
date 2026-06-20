@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BearWisdom — Resolution Engine Architecture</title>
+<style>
+/* ── Reset & Base ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0e0f14; font-family: 'Segoe UI', system-ui, sans-serif; color: #c9cdd8; overflow: hidden; }
+
+/* ── Canvas ─────────────────────────────────────────────────────────── */
+#canvas-wrap {
+  position: fixed; inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+#canvas-wrap.grabbing { cursor: grabbing; }
+#canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  /* size is content-driven; the background-image gives the grid */
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: 0 0;
+  min-width: 3600px; min-height: 2000px;
+}
+
+/* ── Node Cards ─────────────────────────────────────────────────────── */
+.node {
+  position: absolute;
+  width: 240px;
+  background: #1a1d27;
+  border: 1px solid #2c2f3e;
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  overflow: visible;
+}
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #2c2f3e;
+  border-radius: 10px 10px 0 0;
+}
+.node-accent {
+  width: 4px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  align-self: stretch;
+}
+.node-title { font-size: 12px; font-weight: 700; color: #e8eaf0; line-height: 1.2; }
+.node-rust  { font-size: 9px; font-family: 'Cascadia Code','Consolas',monospace; color: #5a6070; margin-top: 2px; }
+.node-body  { padding: 8px 12px 10px; }
+.node-role  { font-size: 10.5px; color: #8892a4; line-height: 1.4; margin-bottom: 8px; }
+
+/* ── Ports ───────────────────────────────────────────────────────────── */
+.ports { display: flex; flex-direction: column; gap: 4px; }
+.port-row { display: flex; align-items: center; gap: 6px; font-size: 9.5px; }
+.port-row.in  { justify-content: flex-start; }
+.port-row.out { justify-content: flex-end; }
+.port-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 2px solid; flex-shrink: 0;
+}
+.port-row.in  .port-dot { background: transparent; }
+.port-row.out .port-dot { }
+.port-label { color: #6a738a; max-width: 190px; }
+.port-label strong { color: #a8b2c4; font-weight: 600; }
+
+/* ── Badges ──────────────────────────────────────────────────────────── */
+.badge-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.badge {
+  font-size: 9px; padding: 1px 6px; border-radius: 3px;
+  font-family: 'Cascadia Code','Consolas',monospace;
+  font-weight: 600; letter-spacing: 0.03em;
+}
+.badge-ok     { background: #1a2f1f; color: #4ece75; border: 1px solid #2d5038; }
+.badge-warn   { background: #2f2710; color: #e0a840; border: 1px solid #504020; }
+.badge-bad    { background: #2f1010; color: #e04040; border: 1px solid #501818; }
+
+/* ── Divider ─────────────────────────────────────────────────────────── */
+.divider { height: 1px; background: #23263a; margin: 6px 0; }
+
+/* ── SVG connector layer ─────────────────────────────────────────────── */
+#svg-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ── Category colours (accent + port + header bg tint) ───────────────── */
+/* PARSING     */ .cat-parse  .node-accent { background: #4a90e2; }
+.cat-parse  .port-dot  { border-color: #4a90e2; }
+.cat-parse  .port-row.out .port-dot { background: #4a90e2; }
+/* TYPE ARENA  */ .cat-arena  .node-accent { background: #a855f7; }
+.cat-arena  .port-dot  { border-color: #a855f7; }
+.cat-arena  .port-row.out .port-dot { background: #a855f7; }
+/* COMPILATION */ .cat-comp   .node-accent { background: #22d3ee; }
+.cat-comp   .port-dot  { border-color: #22d3ee; }
+.cat-comp   .port-row.out .port-dot { background: #22d3ee; }
+/* PIPELINE    */ .cat-pipe   .node-accent { background: #f59e0b; }
+.cat-pipe   .port-dot  { border-color: #f59e0b; }
+.cat-pipe   .port-row.out .port-dot { background: #f59e0b; }
+/* CONTRACT    */ .cat-contract .node-accent { background: #10b981; }
+.cat-contract .port-dot  { border-color: #10b981; }
+.cat-contract .port-row.out .port-dot { background: #10b981; }
+/* RULES       */ .cat-rules  .node-accent { background: #f97316; }
+.cat-rules  .port-dot  { border-color: #f97316; }
+.cat-rules  .port-row.out .port-dot { background: #f97316; }
+/* CHAIN       */ .cat-chain  .node-accent { background: #ec4899; }
+.cat-chain  .port-dot  { border-color: #ec4899; }
+.cat-chain  .port-row.out .port-dot { background: #ec4899; }
+/* OUTPUTS     */ .cat-out    .node-accent { background: #84cc16; }
+.cat-out    .port-dot  { border-color: #84cc16; }
+.cat-out    .port-row.out .port-dot { background: #84cc16; }
+
+/* ── Legend panel ─────────────────────────────────────────────────────── */
+#legend {
+  position: fixed; bottom: 20px; left: 20px;
+  background: #12141e; border: 1px solid #2c2f3e;
+  border-radius: 10px; padding: 14px 18px;
+  z-index: 100;
+  min-width: 220px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+#legend h3 { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #5a6070; margin-bottom: 10px; }
+.legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 10.5px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.legend-sep { height: 1px; background: #23263a; margin: 8px 0; }
+.legend-badge-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+#controls {
+  position: fixed; top: 16px; right: 16px;
+  display: flex; gap: 8px; z-index: 100;
+}
+.ctrl-btn {
+  background: #1a1d27; border: 1px solid #2c2f3e;
+  color: #8892a4; border-radius: 6px;
+  width: 34px; height: 34px;
+  cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.ctrl-btn:hover { background: #22263a; color: #c9cdd8; }
+
+/* ── Title bar ───────────────────────────────────────────────────────── */
+#titlebar {
+  position: fixed; top: 16px; left: 20px;
+  z-index: 100;
+}
+#titlebar h1 { font-size: 14px; font-weight: 700; color: #e8eaf0; }
+#titlebar p  { font-size: 10px; color: #4a5060; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <h1>BearWisdom — Resolution Engine</h1>
+  <p>feat/resolution-engine &nbsp;·&nbsp; Left-to-right data flow &nbsp;·&nbsp; .NET developer view</p>
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-zoom-in"  title="Zoom in">+</button>
+  <button class="ctrl-btn" id="btn-zoom-out" title="Zoom out">−</button>
+  <button class="ctrl-btn" id="btn-fit"      title="Fit to screen">⊡</button>
+</div>
+
+<div id="canvas-wrap">
+<div id="canvas">
+
+  <!-- SVG connector layer (drawn by JS after layout) -->
+  <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 0 — Parsing / Extraction layer  (x≈60, y≈60)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N1 · Language Extractors -->
+  <div class="node cat-parse" id="n-extractor" style="left:60px;top:60px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Language Extractors</div>
+        <div class="node-rust">languages/&lt;lang&gt;/extractor.rs · 94 plugins</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">One plugin per language. Runs tree-sitter on every source file and emits structured data. Equivalent to a <strong>Roslyn SyntaxWalker</strong> — visits every node and produces typed output records.</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Source files (disk paths)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ParsedFile</strong> list — symbols + refs</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ No strings in output types</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N2 · ParsedFile -->
+  <div class="node cat-parse" id="n-parsedfile" style="left:360px;top:60px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">ParsedFile</div>
+        <div class="node-rust">types.rs · struct ParsedFile</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">A single file's parse output: a <strong>List&lt;ExtractedSymbol&gt;</strong> + <strong>List&lt;ExtractedRef&gt;</strong> + scope tree, alias targets, and flow graph. The hand-off record between parsing and resolution — immutable after construction.</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">From Language Extractors</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ExtractedSymbol[ ]</strong> → Compilation</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ExtractedRef[ ]</strong> → resolve loop</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>alias_targets</strong> → Compilation</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 1 — Type Arena  (y≈260)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N3 · TypeArena -->
+  <div class="node cat-arena" id="n-arena" style="left:60px;top:290px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">TypeArena (Type Intern Pool)</div>
+        <div class="node-rust">type_checker/core/types.rs · Arc&lt;RwLock&lt;TypeArenaInner&gt;&gt;</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Workspace-wide, thread-safe type intern table. Equivalent to a <strong>thread-safe singleton ConcurrentDictionary cache</strong> (Arc&lt;RwLock&lt;T&gt;&gt; ≈ static readonly lock-guarded singleton). Deduplicates every Type value by identity: equal types share one <strong>TypeId</strong> (a non-zero integer — think <em>intern key</em>).</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">Key methods: <code>class(qname)</code> → TypeId · <code>intern(Type)</code> → TypeId · <code>intern_type_str("List&lt;User&gt;")</code> → TypeId · <code>format_type(id)</code> → String · <code>rebind_class_params(id, map)</code> → TypeId</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">qname strings from extractors</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>TypeId</strong> tokens → everywhere</span></div>
+      </div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9px;color:#5a6070">Type enum arms (≈ sealed class hierarchy):</div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ Class(String) — qname, not SymbolId</span>
+        <span class="badge badge-ok">✅ Apply{base,args} — TypeId refs</span>
+        <span class="badge badge-ok">✅ Optional/AsyncWrapper/Iterator(TypeId)</span>
+        <span class="badge badge-ok">✅ Union/Intersection/Tuple(Vec&lt;TypeId&gt;)</span>
+        <span class="badge badge-ok">✅ Generic{param: GenericParamId}</span>
+        <span class="badge badge-ok">✅ Primitive(PrimKind) / Unknown</span>
+        <span class="badge badge-bad">❌ LitValue::Str — dead, no constructors</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 2 — Compilation  (y≈590)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N4 · Compilation (Symbol Store) -->
+  <div class="node cat-comp" id="n-compilation" style="left:60px;top:600px;width:280px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Compilation (Symbol Store)</div>
+        <div class="node-rust">engine/compilation.rs · struct Compilation : SymbolLookup</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The engine's <strong>Roslyn Compilation</strong> equivalent. Built once per resolution pass from ParsedFile output. Owns all indexed symbols and implements the read-only <strong>ISymbolLookup</strong> interface. Shared across parallel workers via an immutable reference.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">Key lookup maps (all ≈ <code>Dictionary&lt;K, List&lt;Symbol&gt;&gt;</code>):</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">ParsedFile[ ] + symbol_id_map</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Arc&lt;TypeArena&gt; shared reference</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">ProjectContext (workspace pkgs)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>by_name</strong> — simple name → Symbol list</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>by_qname</strong> — qualified name → Symbol</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>members_by_parent</strong> — parent qname → children</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>by_id / members_by_id</strong> — id-keyed twins</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>inherits / inherits_by_id</strong> — supertype DAG</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>alias_target</strong> — type alias RHS map</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>type_info</strong> — TypeInfo per qname</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ambient_scope</strong> — global declares</span></div>
+      </div>
+      <div class="divider"></div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ Symbol.kind: String (S1 deferred)</span>
+        <span class="badge badge-warn">⚠️ TypeInfo string twins (S5 — persist)</span>
+        <span class="badge badge-ok">✅ field_type_id / return_type_id canonical</span>
+        <span class="badge badge-ok">✅ generic_params: Vec&lt;String&gt; — load-bearing names</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N5 · TypeInfo (per-symbol type metadata) -->
+  <div class="node cat-comp" id="n-typeinfo" style="left:400px;top:600px;width:250px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">TypeInfo (Per-Symbol Metadata)</div>
+        <div class="node-rust">contract/types.rs · struct TypeInfo</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Holds every type fact known about one symbol: field type, return type, and generic parameter names. Keyed by qualified name inside <code>Compilation.type_info</code>. Analogous to <strong>ITypeSymbol metadata in Roslyn</strong>.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Built by Compilation.ingest()</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>field_type_id</strong> (TypeId) — canonical</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>return_type_id</strong> (TypeId) — canonical</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>generic_params</strong> (String names) — load-bearing</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>field_type / return_type</strong> (String) — persist</span></div>
+      </div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9px">Persisted to <code>symbol_type_info</code> table as strings (TypeIds are arena-local, not DB-stable). On incremental reload: string → <code>intern_type_str</code> → TypeId.</div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ *_id fields: TypeId-canonical</span>
+        <span class="badge badge-warn">⚠️ field_type/return_type strings: persist-only</span>
+        <span class="badge badge-warn">⚠️ generic_params: String names (substitution keys)</span>
+        <span class="badge badge-bad">❌ type_arg_ids / return_type_arg_ids — dead, never written</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 3 — Contract (ISymbolLookup interface)  (y≈940)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N6 · SymbolLookup trait -->
+  <div class="node cat-contract" id="n-lookup" style="left:60px;top:990px;width:280px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">ISymbolLookup Contract</div>
+        <div class="node-rust">contract/lookup.rs · trait SymbolLookup</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The injected <strong>read-only interface</strong> (≈ <code>interface ISymbolLookup</code>) that decouples the rule ladder and chain walker from the Compilation store. Synthetic test doubles implement only the methods they care about — all others have a default no-op. Production: <code>Compilation</code> is the real implementation; <code>FileLookup</code> wraps it with a per-file forward-inference cache.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">Key methods grouped by concern:</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Implemented by: Compilation, FileLookup</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>by_name / by_qname / all_by_qname</strong></span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>members_of / members_of_id</strong></span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>types_by_name / in_namespace</strong></span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>field_type_id / return_type_id</strong> (TypeId)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>field_type_name / return_type_name</strong> (String fallback)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>generic_params</strong> → param names</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>alias_target</strong> → AliasTarget enum</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>inherits / parent_class_qname</strong></span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>local_type / record_local_type</strong> (flow cache)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>type_arena</strong> → &amp;TypeArena</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ambient_symbols</strong> → global scope</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ field/return_type_name: string fallback for synthetics</span>
+        <span class="badge badge-bad">❌ intern_yield_type helper — DEAD, zero callers</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N7 · FileLookup overlay -->
+  <div class="node cat-contract" id="n-filelookup" style="left:400px;top:990px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">FileLookup (Per-File Overlay)</div>
+        <div class="node-rust">engine/pipeline.rs · struct FileLookup</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">A <strong>decorator / wrapper</strong> around <code>Compilation</code> that adds a per-file forward-inference cache. Implements <code>ISymbolLookup</code> by delegating 22 structural methods to the underlying Compilation and adding a flat <code>Dictionary&lt;String, String&gt;</code> (locals cache) for inferred local variable types.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">&amp;Compilation (shared read-only ref)</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label"><strong>record_local_type</strong> (name, type_str)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>local_type(name)</strong> → yield-type String</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">All structural methods → delegates to tree</span></div>
+      </div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9px">Flow-cache round-trip: resolved TypeId → <code>format_type(id)</code> → String stored → <code>local_type()</code> returns String → <code>intern_type_str()</code> back to TypeId at the next chain root. <em>(S5 debt: cache could carry TypeId directly.)</em></div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ local_type cache: String-typed (TypeId→String→TypeId round-trip)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 4 — Pipeline entry  (y≈1320)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N8 · resolve_single_pass (Pipeline) -->
+  <div class="node cat-pipe" id="n-pipeline" style="left:60px;top:1340px;width:280px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">resolve_single_pass</div>
+        <div class="node-rust">engine/pipeline.rs · pub fn resolve_single_pass()</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The top-level orchestrator — analogous to running a <strong>Roslyn compilation build pipeline</strong>. Builds the Compilation store, materialises external symbols (node_modules / NuGet / site-packages etc.), then fans out resolution across all internal files in parallel via <strong>rayon</strong> (≈ <code>Parallel.ForEach / PLINQ</code>). Single-pass; no fixpoint.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">ParsedFile[ ] + symbol_id_map</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Arc&lt;TypeArena&gt; + Arc&lt;SymbolLocationIndex&gt;</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">ProjectContext (workspace package names)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">Spawns one <strong>resolve_one_file</strong> per internal file (rayon)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">Bulk-writes <strong>edges + unresolved_refs</strong> to SQLite</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">Calls <strong>persist_type_info</strong> → symbol_type_info table</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ Tree is immutable during parallel phase</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N9 · resolve_one_file -->
+  <div class="node cat-pipe" id="n-onefile" style="left:400px;top:1340px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">resolve_one_file</div>
+        <div class="node-rust">engine/pipeline.rs · fn resolve_one_file()</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Processes one <code>ParsedFile</code>. Creates a <code>FileLookup</code> overlay, iterates every <code>ExtractedRef</code> in ORDER (important: forward inference is order-dependent), calls <code>SemanticModel.get_symbol_info()</code> per ref, and accumulates (edges, unresolved) row lists.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">&amp;ParsedFile + &amp;Compilation</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">LanguageProfile (kind table + separators)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>Vec&lt;Edge&gt;</strong> — (src_id, tgt_id, kind, line, 1.0, rule)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>Vec&lt;Unresolved&gt;</strong> — (src_id, target_name, kind, line…)</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ confidence always 1.0 (binary bind)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 5 — SemanticModel + BinderContext  (y≈1640)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N10 · SemanticModel -->
+  <div class="node cat-pipe" id="n-semantic" style="left:60px;top:1660px;width:270px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">SemanticModel</div>
+        <div class="node-rust">engine/semantic_model.rs · struct SemanticModel</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The per-ref resolver. Analogous to <strong>Roslyn's SemanticModel.GetSymbolInfo()</strong>. Owns the ordered <code>Binder</code> rule ladder. For each ref: if it has a member-access chain (<code>a.b.c()</code>), delegates first to the Chain Walker; if the chain declines (or the root is a namespace), falls through to the rule ladder.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">RefContext + FileContext</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">&amp;dyn ISymbolLookup (FileLookup)</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">LanguageProfile</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">→ <strong>Chain Walker</strong> (if chain ref)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">→ <strong>Rule Ladder</strong> (chain-less refs)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>Option&lt;SymbolInfo&gt;</strong> → pipeline</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- N11 · BinderContext -->
+  <div class="node cat-pipe" id="n-binderctx" style="left:390px;top:1660px;width:250px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">BinderContext</div>
+        <div class="node-rust">engine/mod.rs · struct BinderContext&lt;'a&gt;</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The <strong>ambient context object</strong> every rule receives — analogous to an <code>IServiceProvider</code> or a compiler context passed to every visitor. Built fresh per ref by SemanticModel. Borrows everything; never owns heap data.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>file_ctx</strong> — imports, namespace, language</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>ref_ctx</strong> — ExtractedRef + scope chain</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>lookup</strong> — &amp;dyn ISymbolLookup</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>kind</strong> — kind-compat predicate closure</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>profile</strong> — LanguageProfile data</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ kind closure takes &amp;str (from Symbol.kind String)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 6 — Rule Ladder  (y≈1960)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N12 · Rule Ladder (Binder) -->
+  <div class="node cat-rules" id="n-rules" style="left:60px;top:1970px;width:320px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Rule Ladder (Binder)</div>
+        <div class="node-rust">engine/mod.rs · struct Binder + trait LookupRule · rules/ (37 rules)</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">An ordered <strong>chain-of-responsibility</strong> (≈ <code>IEnumerable&lt;ILookupRule&gt;</code> iterated in order). Each rule is a single-responsibility class: examine BinderContext, return <strong>Resolved / Pass / Stop</strong>. First <code>Resolved</code> wins; <code>Stop</code> halts the ladder (module-decline guard). Adding a resolution case = adding one file with one <code>impl LookupRule</code>.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">Canonical ladder order (most-specific first):</div>
+      <div style="font-size:9px;color:#6a738a;line-height:1.7;margin:4px 0;">
+        1. ModuleSkip (guard) &nbsp;·&nbsp; 2. ImportPath &nbsp;·&nbsp; 3. WorkspacePackage<br>
+        4. SelectorMap &nbsp;·&nbsp; 5. ModuleAnchor + Terminal (Stop)<br>
+        6. ScopeVisible &nbsp;·&nbsp; 7. SameFile &nbsp;·&nbsp; 8. FileScopedImport<br>
+        9. SelfKeyword &nbsp;·&nbsp; 10. EnclosingMember &nbsp;·&nbsp; 11. RefModule<br>
+        12. QnameExact &nbsp;·&nbsp; 13. HeadAlias &nbsp;·&nbsp; 14. AliasModuleQname<br>
+        15. ChainPrefix &nbsp;·&nbsp; 16. ReexportChain &nbsp;·&nbsp; 17. ExplicitMemberImport<br>
+        18. FileImport &nbsp;·&nbsp; 19. ComponentImport &nbsp;·&nbsp; 20. ReexportFollowing<br>
+        21. AliasedImport &nbsp;·&nbsp; 22. NamespaceImport &nbsp;·&nbsp; 23. PackageShortName<br>
+        24. AmbientNamespacePath &nbsp;·&nbsp; 25. SameNamespace<br>
+        26. ImportedNamespace &nbsp;·&nbsp; 27. AmbientPrefixStrip<br>
+        28. WildcardBuiltinFold &nbsp;·&nbsp; 29. ExternalByImport<br>
+        30. ModuleScope &nbsp;·&nbsp; 31. WildcardImport &nbsp;·&nbsp; 32. RelativeModuleWildcard<br>
+        33. ImplicitPrelude &nbsp;·&nbsp; 34. GenericParam<br>
+        35. AmbientScope &nbsp;·&nbsp; 36. NamespacelessGlobal &nbsp;·&nbsp; 37. RankedCandidates
+      </div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">BinderContext (per ref)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>Option&lt;SymbolInfo&gt;</strong> + rule name tag</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ kind compat: &amp;str → from_str → SymbolKind each call (S1)</span>
+        <span class="badge badge-ok">✅ each rule is isolated, individually testable</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 7 — Chain Walker  (parallel to rules, right column, y≈1970)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N13 · Chain Walker -->
+  <div class="node cat-chain" id="n-chain" style="left:440px;top:1970px;width:280px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Chain Walker</div>
+        <div class="node-rust">engine/chain.rs · pub fn bind_member_access()</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Resolves member-access chains (<code>a.b.c()</code>). Entity-based walk: holds a <strong>TypeId</strong> at each hop — never re-parses type strings mid-chain. Analogous to Roslyn's <strong>DataFlowAnalysis + symbol-info binding on member access expressions</strong>. The walk threads a <code>Receiver</code> (TypeId + optional symbol id) hop-by-hop.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">Walk steps:</div>
+      <div style="font-size:9px;color:#6a738a;line-height:1.7;margin:4px 0;">
+        1. <strong>resolve_root</strong>: local_type cache → declared annotation → callee_return_type → value_root_type<br>
+        2. <strong>expand_receiver</strong>: alias::expand (AliasTarget) → head_symbol_id<br>
+        3. <strong>lookup_member_on</strong>: by id (members_by_id) → by qname (members_by_parent) → mapped-type source<br>
+        4. <strong>yield_through</strong>: return_type_id / field_type_id → substitute generic params → TypeId for next hop
+      </div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">RefContext (chain segments)</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">&amp;dyn ISymbolLookup</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>Option&lt;SymbolInfo&gt;</strong> with resolved_yield_type</span></div>
+      </div>
+      <div class="divider"></div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ head_qname: TypeId→String→by_qname on every hop (S4)</span>
+        <span class="badge badge-warn">⚠️ lookup_member(qname fallback) — string-keyed</span>
+        <span class="badge badge-ok">✅ lookup_member_by_id — id-keyed (preferred)</span>
+        <span class="badge badge-warn">⚠️ substitute_through: generic_params are String keys (S4+S5)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N14 · Alias Expander -->
+  <div class="node cat-chain" id="n-alias" style="left:780px;top:1970px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Alias Expander</div>
+        <div class="node-rust">engine/alias.rs · pub fn expand()</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Expands type aliases structurally before each member hop. Analogous to <strong>Roslyn reducing a type alias to its underlying type</strong> before symbol resolution. Bounded to 8 hops; self-referential alias detection prevents infinite loops.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">AliasTarget arms handled (≈ discriminated union / sealed class hierarchy):</div>
+      <div style="font-size:9px;color:#6a738a;line-height:1.6;margin:4px 0;">
+        Application{root,args} → structural Apply TypeId (generic sub)<br>
+        Mapped{source} → source-param bound to receiver's arg<br>
+        Typeof / IndexedAccess / Conditional → transparent_alias_target (field_type_id fallback)<br>
+        Object / Union / Intersection / Other → no expansion (members direct)
+      </div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">TypeId (to expand)</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">&amp;dyn ISymbolLookup + &amp;TypeArena</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>TypeId</strong> (expanded, or input unchanged)</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ Application target root+args still String (from extractor)</span>
+        <span class="badge badge-ok">✅ Result is always TypeId (no string returned)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N15 · Generic Substitutor -->
+  <div class="node cat-chain" id="n-subst" style="left:1080px;top:1970px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Generic Substitutor</div>
+        <div class="node-rust">chain.rs · substitute_through() + types.rs · rebind_class_params()</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">Binds generic type parameters. When walking <code>Repository&lt;User&gt;.find()</code> whose return type is <code>T</code>, substitutes <code>T → User</code>. Equivalent to <strong>Roslyn's TypeSubstitution when resolving bound generic types</strong>.</div>
+      <div class="divider"></div>
+      <div class="node-role" style="font-size:9.5px">substitute_through: builds <code>HashMap&lt;String,TypeId&gt;</code> (param_names zipped with apply_args TypeIds), then calls <code>rebind_class_params</code> to rewrite every <code>Class(name)</code> leaf that matches a param name.</div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">yielded TypeId + receiver TypeId</span></div>
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">generic_params (String names) from lookup</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>TypeId</strong> — T substituted with concrete arg</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ param map keyed by String (matches Class(String) leaf)</span>
+        <span class="badge badge-bad">❌ generic_param_type_ids (the id twin) never populated</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N16 · String Parser Library (chain_walker.rs) -->
+  <div class="node cat-chain" id="n-strparser" style="left:780px;top:2270px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">Signature String Parsers</div>
+        <div class="node-rust">contract/chain_walker.rs (misnamed — NOT the chain walker)</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">A <strong>utility library of string → structured-data parsers</strong> for type signatures and JVM descriptors. Called only by <code>Compilation.ingest()</code> at index-build time — never during chain walking. Legitimate boundary: extractor signatures are source strings; this layer parses them once into head+args that become TypeIds.</div>
+      <div class="divider"></div>
+      <div style="font-size:9px;color:#6a738a;line-height:1.6;margin:4px 0;">
+        parse_return_type_from_signature · parse_type_head_and_args<br>
+        parse_return_type_from_jvm_descriptor · parse_generic_param_clause<br>
+        resolve_type_name_in_scope · strip_generic_args · first_generic_arg<br>
+        is_jvm_language · is_plain_type_name · merge_where_bounds
+      </div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Raw signature strings from ExtractedSymbol</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label">head: &amp;str + args: Vec&lt;String&gt; → intern_head_and_args</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ Strings enter here once at build time, not at walk time</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       ROW 8 — Outputs (y≈2270, left side)
+  ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- N17 · SymbolInfo (Resolution Result) -->
+  <div class="node cat-out" id="n-syminfo" style="left:60px;top:2270px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">SymbolInfo (Resolution Result)</div>
+        <div class="node-rust">contract/types.rs · struct SymbolInfo</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The resolution verdict for one ref. Binary: either a structural bind succeeded (confidence always 1.0) or it didn't (<code>None</code>). No fractional scores. Analogous to <strong>Roslyn's SymbolInfo</strong> from <code>GetSymbolInfo()</code>.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>target_symbol_id</strong> — DB row id (i64)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>confidence</strong> — always 1.0</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>strategy</strong> — rule name string (diagnostics)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>resolved_yield_type</strong> — Option&lt;TypeId&gt; for forward inference</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>flow_emit</strong> — Option&lt;FlowEmission&gt; for flow edges</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-ok">✅ TypeId-native yield type</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- N18 · DB Outputs -->
+  <div class="node cat-out" id="n-dbout" style="left:360px;top:2270px;width:240px;">
+    <div class="node-header">
+      <div class="node-accent"></div>
+      <div>
+        <div class="node-title">SQLite Output Tables</div>
+        <div class="node-rust">db/schema.rs · edges + unresolved_refs + flow_edges</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-role">The durable resolution artifacts written to SQLite at the end of each pass. Analogous to <strong>emitting an assembly after compilation</strong>. All MCP/CLI/Web queries read these tables.</div>
+      <div class="divider"></div>
+      <div class="ports">
+        <div class="port-row in"><div class="port-dot"></div><span class="port-label">Vec&lt;Edge&gt; from resolve_one_file × N files</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>edges</strong> — (src_id, tgt_id, kind, line, 1.0, rule)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>unresolved_refs</strong> — (src_id, target_name, kind…)</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>flow_edges</strong> — cross-tier data-flow paths</span></div>
+        <div class="port-row out"><div class="port-dot"></div><span class="port-label"><strong>symbol_type_info</strong> — TypeInfo persisted as strings</span></div>
+      </div>
+      <div class="badge-row">
+        <span class="badge badge-warn">⚠️ TypeInfo persisted as strings (TypeIds arena-local)</span>
+        <span class="badge badge-ok">✅ Full pass: REPLACE all rows (atomic transaction)</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #canvas -->
+</div><!-- #canvas-wrap -->
+
+<!-- ══════════════════════════════════════════════════════════════════
+     Legend
+════════════════════════════════════════════════════════════════════ -->
+<div id="legend">
+  <h3>Legend</h3>
+  <div class="legend-row"><div class="legend-swatch" style="background:#4a90e2"></div>Parsing / Extraction</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#a855f7"></div>Type Arena (TypeId algebra)</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#22d3ee"></div>Compilation (Symbol Store)</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#f59e0b"></div>Pipeline / Orchestration</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#10b981"></div>Contract (ISymbolLookup interface)</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#f97316"></div>Rule Ladder (37 rules)</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#ec4899"></div>Chain Walker + Alias + Substitution</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#84cc16"></div>Outputs (SymbolInfo + SQLite)</div>
+  <div class="legend-sep"></div>
+  <div style="font-size:9px;color:#5a6070;margin-bottom:6px">String surface state:</div>
+  <div class="legend-badge-row">
+    <span class="badge badge-ok">✅ TypeId-canonical</span>
+    <span class="badge badge-warn">⚠️ String-derived / deferred</span>
+    <span class="badge badge-bad">❌ String-structural or dead</span>
+  </div>
+  <div class="legend-sep"></div>
+  <div style="font-size:9px;color:#5a6070">Scroll to pan · +/− to zoom · ⊡ to fit</div>
+</div>
+
+<script>
+// ── Connector data ────────────────────────────────────────────────────────────
+// Each entry: [fromId, toId, label, color]
+const EDGES = [
+  // Extractors → ParsedFile
+  ['n-extractor',   'n-parsedfile',   'ParsedFile[ ]',          '#4a90e2'],
+  // ParsedFile → TypeArena (class() calls during extract)
+  ['n-parsedfile',  'n-arena',        'arena.class(qname)',      '#a855f7'],
+  // ParsedFile → Compilation
+  ['n-parsedfile',  'n-compilation',  'ExtractedSymbol[ ] + refs','#22d3ee'],
+  // TypeArena → Compilation (shared Arc<TypeArena>)
+  ['n-arena',       'n-compilation',  'Arc<TypeArena> (shared)',  '#a855f7'],
+  // Compilation → TypeInfo
+  ['n-compilation', 'n-typeinfo',     'ingest() populates type_info', '#22d3ee'],
+  // Compilation → SymbolLookup (implements)
+  ['n-compilation', 'n-lookup',       'implements ISymbolLookup','#10b981'],
+  // SymbolLookup → FileLookup
+  ['n-lookup',      'n-filelookup',   'wrapped by FileLookup',   '#10b981'],
+  // TypeInfo → SymbolLookup (served via accessors)
+  ['n-typeinfo',    'n-lookup',       'field/return type_id accessors','#10b981'],
+  // Pipeline → Compilation (builds it)
+  ['n-pipeline',    'n-compilation',  'build_with_context()',    '#22d3ee'],
+  // Pipeline → resolve_one_file (rayon par_iter)
+  ['n-pipeline',    'n-onefile',      'par_iter (Parallel.ForEach)','#f59e0b'],
+  // resolve_one_file → SemanticModel
+  ['n-onefile',     'n-semantic',     'get_symbol_info() per ref','#f59e0b'],
+  // resolve_one_file → FileLookup
+  ['n-onefile',     'n-filelookup',   'FileLookup::new(&tree)',  '#10b981'],
+  // SemanticModel → Chain Walker
+  ['n-semantic',    'n-chain',        'chain ref → bind_member_access()','#ec4899'],
+  // SemanticModel → Rule Ladder
+  ['n-semantic',    'n-rules',        'chain-less ref → Binder.bind()','#f97316'],
+  // SemanticModel → BinderContext
+  ['n-semantic',    'n-binderctx',    'builds BinderContext',    '#f59e0b'],
+  // BinderContext → Rule Ladder
+  ['n-binderctx',   'n-rules',        'ctx passed to each rule', '#f97316'],
+  // Chain Walker → Alias Expander
+  ['n-chain',       'n-alias',        'expand_receiver() → alias::expand()','#ec4899'],
+  // Chain Walker → Generic Substitutor
+  ['n-chain',       'n-subst',        'yield_through() → substitute_through()','#ec4899'],
+  // Chain Walker → ISymbolLookup (reads members etc)
+  ['n-chain',       'n-lookup',       'members_of_id / by_qname / type_arena','#10b981'],
+  // Alias Expander → ISymbolLookup
+  ['n-alias',       'n-lookup',       'alias_target / generic_params','#10b981'],
+  // Alias Expander → TypeArena
+  ['n-alias',       'n-arena',        'arena.class() / rebind_class_params()','#a855f7'],
+  // Generic Substitutor → TypeArena
+  ['n-subst',       'n-arena',        'arena.rebind_class_params()','#a855f7'],
+  // String Parser → Compilation
+  ['n-strparser',   'n-compilation',  'intern_head_and_args() at build time','#22d3ee'],
+  // Chain Walker → SymbolInfo (output)
+  ['n-chain',       'n-syminfo',      'Option<SymbolInfo>',      '#84cc16'],
+  // Rule Ladder → SymbolInfo (output)
+  ['n-rules',       'n-syminfo',      'Option<SymbolInfo>',      '#84cc16'],
+  // SymbolInfo → resolve_one_file (collected)
+  ['n-syminfo',     'n-onefile',      'collected per ref',       '#f59e0b'],
+  // resolve_one_file → DB outputs
+  ['n-onefile',     'n-dbout',        'Vec<Edge> + Vec<Unresolved>','#84cc16'],
+  // Pipeline → DB outputs (flush_to_db + persist_type_info)
+  ['n-pipeline',    'n-dbout',        'flush_to_db + persist_type_info','#84cc16'],
+];
+
+// ── Pan / Zoom ────────────────────────────────────────────────────────────────
+const wrap  = document.getElementById('canvas-wrap');
+const canvas = document.getElementById('canvas');
+let scale = 0.42, tx = 40, ty = 20;
+let dragging = false, startX = 0, startY = 0, startTX = 0, startTY = 0;
+
+function applyTransform() {
+  canvas.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+}
+applyTransform();
+
+wrap.addEventListener('mousedown', e => {
+  dragging = true;
+  startX = e.clientX; startY = e.clientY;
+  startTX = tx; startTY = ty;
+  wrap.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx = startTX + (e.clientX - startX);
+  ty = startTY + (e.clientY - startY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging = false; wrap.classList.remove('grabbing'); });
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const delta = e.deltaY < 0 ? 1.1 : 0.91;
+  const newScale = Math.max(0.15, Math.min(2.5, scale * delta));
+  tx = mx - (mx - tx) * (newScale / scale);
+  ty = my - (my - ty) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('btn-zoom-in').onclick  = () => { scale = Math.min(2.5, scale * 1.15); applyTransform(); };
+document.getElementById('btn-zoom-out').onclick = () => { scale = Math.max(0.15, scale / 1.15); applyTransform(); };
+document.getElementById('btn-fit').onclick = () => {
+  scale = 0.42; tx = 40; ty = 20; applyTransform();
+};
+
+// ── SVG connector drawing ─────────────────────────────────────────────────────
+function midRight(el) {
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return {
+    x: (r.right - cr.left) / scale - tx / scale,
+    y: (r.top + r.height / 2 - cr.top) / scale - ty / scale
+  };
+}
+function midLeft(el) {
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return {
+    x: (r.left - cr.left) / scale - tx / scale,
+    y: (r.top + r.height / 2 - cr.top) / scale - ty / scale
+  };
+}
+function midBottom(el) {
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return {
+    x: (r.left + r.width / 2 - cr.left) / scale - tx / scale,
+    y: (r.bottom - cr.top) / scale - ty / scale
+  };
+}
+function midTop(el) {
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return {
+    x: (r.left + r.width / 2 - cr.left) / scale - tx / scale,
+    y: (r.top - cr.top) / scale - ty / scale
+  };
+}
+
+function nodeCenter(el) {
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return {
+    x: (r.left + r.width/2 - cr.left) / scale - tx/scale,
+    y: (r.top + r.height/2 - cr.top) / scale - ty/scale
+  };
+}
+
+function pickPorts(fromEl, toEl) {
+  const fc = nodeCenter(fromEl);
+  const tc = nodeCenter(toEl);
+  const dx = tc.x - fc.x;
+  const dy = tc.y - fc.y;
+  let from, to;
+  if (Math.abs(dx) > Math.abs(dy) * 0.6) {
+    // Primarily horizontal
+    from = dx > 0 ? midRight(fromEl) : midLeft(fromEl);
+    to   = dx > 0 ? midLeft(toEl)   : midRight(toEl);
+  } else {
+    // Primarily vertical
+    from = dy > 0 ? midBottom(fromEl) : midTop(fromEl);
+    to   = dy > 0 ? midTop(toEl)     : midBottom(toEl);
+  }
+  return { from, to, dx, dy };
+}
+
+function bezierPath(from, to, dx, dy) {
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  let cx1, cy1, cx2, cy2;
+  if (absDx > absDy * 0.6) {
+    // Horizontal bezier
+    const offset = Math.max(60, absDx * 0.45);
+    cx1 = from.x + (dx > 0 ?  offset : -offset);
+    cy1 = from.y;
+    cx2 = to.x   + (dx > 0 ? -offset :  offset);
+    cy2 = to.y;
+  } else {
+    // Vertical bezier
+    const offset = Math.max(60, absDy * 0.45);
+    cx1 = from.x;
+    cy1 = from.y + (dy > 0 ?  offset : -offset);
+    cx2 = to.x;
+    cy2 = to.y   + (dy > 0 ? -offset :  offset);
+  }
+  return `M${from.x},${from.y} C${cx1},${cy1} ${cx2},${cy2} ${to.x},${to.y}`;
+}
+
+function drawConnectors() {
+  const svg = document.getElementById('svg-layer');
+  // Clear old
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // Arrowhead defs
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const colors = [...new Set(EDGES.map(e => e[3]))];
+  colors.forEach(color => {
+    const safeId = 'arrow-' + color.replace('#','');
+    const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+    marker.setAttribute('id', safeId);
+    marker.setAttribute('markerWidth','8');
+    marker.setAttribute('markerHeight','6');
+    marker.setAttribute('refX','7');
+    marker.setAttribute('refY','3');
+    marker.setAttribute('orient','auto');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    poly.setAttribute('points','0 0, 8 3, 0 6');
+    poly.setAttribute('fill', color);
+    poly.setAttribute('opacity','0.9');
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
+  // Group for paths
+  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+
+  EDGES.forEach(([fromId, toId, label, color]) => {
+    const fromEl = document.getElementById(fromId);
+    const toEl   = document.getElementById(toId);
+    if (!fromEl || !toEl) return;
+
+    const { from, to, dx, dy } = pickPorts(fromEl, toEl);
+    const d = bezierPath(from, to, dx, dy);
+    const safeId = 'arrow-' + color.replace('#','');
+
+    // Glow pass
+    const glowPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+    glowPath.setAttribute('d', d);
+    glowPath.setAttribute('fill', 'none');
+    glowPath.setAttribute('stroke', color);
+    glowPath.setAttribute('stroke-width', '4');
+    glowPath.setAttribute('stroke-opacity', '0.10');
+    g.appendChild(glowPath);
+
+    // Main path
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', color);
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('stroke-opacity', '0.75');
+    path.setAttribute('marker-end', `url(#${safeId})`);
+    g.appendChild(path);
+
+    // Label at midpoint
+    if (label) {
+      const t = 0.5;
+      // Approximate bezier midpoint
+      const mx = from.x * 0.125 + (from.x + (dx>0?Math.max(60,Math.abs(dx)*0.45):-Math.max(60,Math.abs(dx)*0.45))) * 0.375
+                 + (to.x + (dx>0?-Math.max(60,Math.abs(dx)*0.45):Math.max(60,Math.abs(dx)*0.45))) * 0.375 + to.x * 0.125;
+      const my = from.y * 0.125 + from.y * 0.375 + to.y * 0.375 + to.y * 0.125;
+      // simpler: lerp
+      const lx = (from.x + to.x) / 2;
+      const ly = (from.y + to.y) / 2;
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('x', lx - label.length*2.7 - 4);
+      rect.setAttribute('y', ly - 7);
+      rect.setAttribute('width', label.length * 5.4 + 8);
+      rect.setAttribute('height', 13);
+      rect.setAttribute('rx', '3');
+      rect.setAttribute('fill', '#0e0f14');
+      rect.setAttribute('opacity', '0.85');
+      g.appendChild(rect);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x', lx);
+      text.setAttribute('y', ly + 3.5);
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('font-size','8');
+      text.setAttribute('font-family','Cascadia Code,Consolas,monospace');
+      text.setAttribute('fill', color);
+      text.setAttribute('opacity','0.85');
+      text.textContent = label;
+      g.appendChild(text);
+    }
+  });
+
+  svg.appendChild(g);
+}
+
+// Draw after layout is complete
+window.addEventListener('load', () => { setTimeout(drawConnectors, 120); });
+window.addEventListener('resize', () => { setTimeout(drawConnectors, 60); });
+
+// Redraw on zoom/pan to keep labels correct
+const origApply = applyTransform;
+function applyTransformAndRedraw() {
+  canvas.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+  setTimeout(drawConnectors, 30);
+}
+document.getElementById('btn-zoom-in').onclick  = () => { scale = Math.min(2.5, scale * 1.15); applyTransformAndRedraw(); };
+document.getElementById('btn-zoom-out').onclick = () => { scale = Math.max(0.15, scale / 1.15); applyTransformAndRedraw(); };
+document.getElementById('btn-fit').onclick = () => { scale = 0.42; tx = 40; ty = 20; applyTransformAndRedraw(); };
+</script>
+
+</body>
+</html>
