@@ -412,6 +412,18 @@ fn resolve_one_file(
             continue;
         }
 
+        // Propagate the source symbol's snippet flag so unresolved rows from
+        // Markdown fence code, Rust doctests, and Python doctests carry
+        // from_snippet=true. The CODE_REF_FILTER in query/stats.rs excludes
+        // such rows from resolution-rate aggregates — snippets are sample code
+        // that typically lacks imports, so their unresolved refs are expected
+        // and must not drag the project's resolution rate down.
+        let ref_is_snippet = pf
+            .symbol_from_snippet
+            .get(r.source_symbol_index)
+            .copied()
+            .unwrap_or(false);
+
         let ref_ctx = RefContext {
             extracted_ref: r,
             source_symbol: source_sym,
@@ -479,7 +491,7 @@ fn resolve_one_file(
                     r.line,
                     r.module.clone(),
                     pf.package_id,
-                    false,
+                    ref_is_snippet,
                 ));
             }
         }

@@ -538,3 +538,117 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
         "package B's chain must NOT bind package A's ReactDevtoolsImpl.mount (id {mount_a})"
     );
 }
+
+/// A ref whose source symbol is tagged `symbol_from_snippet = true` (e.g. from
+/// a Markdown fenced code block) must produce an unresolved row with
+/// `from_snippet = true` when the target cannot be resolved.  The
+/// `CODE_REF_FILTER` in `query/stats.rs` excludes `from_snippet=1` rows from
+/// resolution-rate aggregates; the propagation here is what makes snippet refs
+/// invisible to those aggregates.
+#[test]
+fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
+    use crate::types::{
+        EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
+    };
+    fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+    fn eref(src: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 5,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: 50,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+
+    // Symbol 0: the markdown file's own host symbol (not a snippet).
+    // Symbol 1: a TS symbol spliced from a ``ts fence — tagged from_snippet.
+    let symbols = vec![
+        esym("README", "README", SymbolKind::Class),  // 0 — host, not snippet
+        esym("fetchData", "fetchData", SymbolKind::Function), // 1 — in-fence, snippet
+    ];
+    // One ref from the snippet symbol to an unresolvable target.
+    let refs = vec![eref(1, "NonexistentApi", EdgeKind::Calls)];
+
+    let pf = ParsedFile {
+        path: "README.md".into(),
+        language: "markdown".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 10,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        // Symbol 0 is not a snippet; symbol 1 is (spliced from a Markdown fence).
+        symbol_from_snippet: vec![false, true],
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = std::collections::HashMap::new();
+    id_map.insert(("README.md".to_string(), "README".to_string()), 1i64);
+    id_map.insert(("README.md".to_string(), "fetchData".to_string()), 2i64);
+
+    let arena = Arc::new(crate::type_checker::core::types::TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+
+    let (_edges, unresolved) =
+        super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+
+    // The ref to "NonexistentApi" must be unresolved (no matching symbol in the
+    // compilation tree) and the unresolved row must carry from_snippet=true.
+    assert!(
+        !unresolved.is_empty(),
+        "NonexistentApi must be unresolved; got no unresolved rows"
+    );
+    let row = unresolved.iter().find(|(_, name, _, _, _, _, _)| name == "NonexistentApi");
+    assert!(row.is_some(), "unresolved row for NonexistentApi not found");
+    let (_, _, _, _, _, _, from_snippet) = row.unwrap();
+    assert!(
+        *from_snippet,
+        "unresolved ref from a snippet source symbol must have from_snippet=true"
+    );
+}
