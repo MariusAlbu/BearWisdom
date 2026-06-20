@@ -238,6 +238,17 @@ fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_intersection(lookup, arena, &head, member, accept, depth) {
         return Some(m);
     }
+    // Primitive-name capitalization: a head like `"string"` / `"number"` /
+    // `"boolean"` has no members keyed under the lowercase name, but the
+    // nominal wrapper class (`"String"`, `"Number"`, `"Boolean"`) carries the
+    // full member index. When the lowercase head has no indexed members, try
+    // its capitalized form. This is universally sound — a head with an
+    // UPPERCASE first letter is already handled by the ordinary member walk
+    // above; only a lowercase-first head that looks like a built-in primitive
+    // triggers this. A capitalized probe that finds nothing is a no-op.
+    if let Some(m) = lookup_member_on_capitalized_primitive(lookup, &head, member, accept) {
+        return Some(m);
+    }
     let source_ty = mapped_source_type(lookup, arena, recv.ty, &head)?;
     let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
     // A mapped source that resolves back to the mapped type itself makes no
@@ -246,6 +257,35 @@ fn lookup_member_on_bounded(
         return None;
     }
     lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+}
+
+/// When `head` begins with a lowercase letter, probe the same name with its
+/// first letter uppercased. Covers the primitive-to-nominal promotion for
+/// languages (TypeScript, Java, Kotlin, Swift, …) where lowercase primitive
+/// names (`string`, `int`, `boolean`) have a corresponding boxed/nominal
+/// class (`String`, `Int`, `Boolean`) that carries the member index.
+///
+/// Only fires when the regular lowercase lookup already missed — this is a
+/// last-resort fallback before the mapped-source hop, not a pre-pass.
+/// Returns `None` when the head is already uppercase or the capitalized probe
+/// finds no member.
+fn lookup_member_on_capitalized_primitive(
+    lookup: &dyn SymbolLookup,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    let first = head.chars().next()?;
+    if !first.is_lowercase() {
+        return None;
+    }
+    let capitalized = {
+        let mut s = String::with_capacity(head.len());
+        s.extend(first.to_uppercase());
+        s.push_str(&head[first.len_utf8()..]);
+        s
+    };
+    lookup_member(lookup, &capitalized, member, accept)
 }
 
 /// Resolve `member` on the named branches of an intersection alias. A branch is
@@ -417,6 +457,12 @@ pub(crate) fn apply_args(arena: &TypeArena, id: TypeId) -> Vec<TypeId> {
 /// interned `*_id` first; falls back to interning the string accessor (the
 /// storage format) when only a string is recorded. `None` when the index has no
 /// type for it.
+///
+/// Callable-property fallback: when `is_call=true` and no explicit return type
+/// is recorded, the member may be a property whose declared type is a function
+/// signature (e.g. `fn: () => Mock<T>`). In that case the field type is
+/// returned unchanged; `yield_through` peels the `Type::Function` wrapper to
+/// extract the call result.
 pub(crate) fn member_yield_type(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -427,8 +473,17 @@ pub(crate) fn member_yield_type(
         if let Some(id) = lookup.return_type_id(member_qname) {
             return Some(id);
         }
+        if let Some(s) = lookup.return_type_name(member_qname) {
+            return Some(arena.intern_type_str(s));
+        }
+        // No explicit return type — the member may be a property whose
+        // declared type is a callable interface or function type. Return
+        // the field type so `yield_through` can unwrap it.
+        if let Some(id) = lookup.field_type_id(member_qname) {
+            return Some(id);
+        }
         return lookup
-            .return_type_name(member_qname)
+            .field_type_name(member_qname)
             .map(|s| arena.intern_type_str(s));
     }
     if let Some(id) = lookup.field_type_id(member_qname) {
@@ -442,6 +497,17 @@ pub(crate) fn member_yield_type(
 /// The type a member yields when accessed through `receiver`, with the
 /// receiver's applied type arguments substituted for the declaring type's
 /// generic parameters: `Repository<User>` receiver + `find(): T` → `User`.
+///
+/// Fluent-chain rebind: when the substituted yield type's head is `"this"` or
+/// `"Self"`, the member is a fluent step that returns the receiver itself.
+/// Substitute the receiver type directly so the next member lookup stays on
+/// the receiver's type rather than dead-ending on a nominal `Class("this")`
+/// that has no members.
+///
+/// Callable-property unwrap: when `is_call=true` and the member's declared
+/// yield type is a function type (`Type::Function { return_ }`), the call
+/// result is the function's own return type — a property whose declared type
+/// is a call signature (`fn: () => Mock<T>`) yields `Mock<T>` when called.
 fn yield_through(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -449,8 +515,37 @@ fn yield_through(
     is_call: bool,
     receiver: TypeId,
 ) -> Option<TypeId> {
-    let yielded = member_yield_type(lookup, arena, &member.qualified_name, is_call)?;
-    Some(substitute_through(lookup, arena, yielded, receiver))
+    let raw = member_yield_type(lookup, arena, &member.qualified_name, is_call)?;
+    // Callable-property unwrap: if the raw yield is a function type and the
+    // member is being called, peel off one call layer to get the return type.
+    // This covers `fn: () => Mock<T>` properties: the field type interns as
+    // `Type::Function { return_: Mock<T> }`; calling the property yields
+    // `Mock<T>`, not the function-type descriptor itself.
+    let raw = if is_call {
+        match arena.get(raw) {
+            crate::type_checker::core::types::Type::Function { return_, .. } => return_,
+            _ => raw,
+        }
+    } else {
+        raw
+    };
+    let substituted = substitute_through(lookup, arena, raw, receiver);
+    // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
+    if is_self_head(arena, substituted) {
+        return Some(receiver);
+    }
+    Some(substituted)
+}
+
+/// `true` when the type's nominal head is the `this` or `Self` keyword —
+/// the fluent-return convention across TypeScript (`this`), Rust (`Self`),
+/// Swift (`Self`), and Kotlin (`this`). When a member's yield type has this
+/// head, the chain advances to the RECEIVER's type instead.
+fn is_self_head(arena: &TypeArena, id: TypeId) -> bool {
+    match head_qname(arena, id) {
+        Some(h) => h == "this" || h == "Self",
+        None => false,
+    }
 }
 
 /// Substitute the receiver's applied type arguments for the declaring type's

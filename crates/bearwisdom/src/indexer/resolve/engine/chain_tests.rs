@@ -883,3 +883,136 @@ fn intermediate_hop_threads_use_site_id_not_first_winner() {
         "expected pkg-a's status (110) but got pkg-b's first-winner (210)"
     );
 }
+
+// --- Sub-fix 1: this/Self yield rebind (fluent / builder chains) -------------
+
+/// A member whose declared return type is the string `"this"` is a fluent
+/// builder step. `builder.set(x).build()` must resolve `build` on the
+/// RECEIVER type (`Builder`), not on a non-existent class literally named
+/// `"this"`. `yield_through` must substitute the receiver type when the
+/// yielded type's head is `"this"` or `"Self"`.
+#[test]
+fn this_return_rebinds_to_receiver_for_fluent_chain() {
+    let lookup = Lookup::new()
+        .with_local_type("builder", "Builder")
+        .with_member("Builder", sym(10, "set", "Builder.set", "method", "a.ts"))
+        .with_return_type("Builder.set", "this")
+        .with_member("Builder", sym(20, "build", "Builder.build", "method", "a.ts"));
+    let segs = vec![
+        seg("builder", false, SegmentKind::Identifier),
+        seg("set", true, SegmentKind::Property),
+        seg("build", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
+}
+
+/// The `Self` keyword (Rust/Swift) follows the same rebind rule as `this`.
+#[test]
+fn self_return_rebinds_to_receiver_for_fluent_chain() {
+    let lookup = Lookup::new()
+        .with_local_type("qb", "QueryBuilder")
+        .with_member("QueryBuilder", sym(10, "where_", "QueryBuilder.where_", "method", "a.ts"))
+        .with_return_type("QueryBuilder.where_", "Self")
+        .with_member("QueryBuilder", sym(20, "execute", "QueryBuilder.execute", "method", "a.ts"));
+    let segs = vec![
+        seg("qb", false, SegmentKind::Identifier),
+        seg("where_", true, SegmentKind::Property),
+        seg("execute", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
+}
+
+// --- Sub-fix 2: callable-property root (vi.fn case) -------------------------
+
+/// `vi.fn()` where `fn` is a PROPERTY whose field type is a function type
+/// `() => Mock<T>`. Calling `vi.fn()` must unwrap the call signature's
+/// return type (`Mock<T>`), not stop at the property's declared type
+/// `() => Mock<T>` (which has no members). The member is a property
+/// (kind="property"), but `is_call=true` at the segment — `yield_through`
+/// must detect the function-type field and return its return type.
+#[test]
+fn callable_property_field_type_yields_call_signature_return() {
+    let lookup = Lookup::new()
+        .with_local_type("vi", "Vi")
+        // `fn` property on Vi whose field type is a function type
+        .with_member("Vi", sym(5, "fn", "Vi.fn", "property", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("Vi.fn", "() => MockInstance")
+        .with_member(
+            "MockInstance",
+            sym(80, "mockReturnValue", "MockInstance.mockReturnValue", "method", "ext:ts:vitest/index.d.ts"),
+        );
+    let segs = vec![
+        seg("vi", false, SegmentKind::Identifier),
+        seg("fn", true, SegmentKind::Property),
+        seg("mockReturnValue", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(80));
+}
+
+/// A generic callable property: `fn: <T>() => Mock<T>`. The call-site's
+/// type arg threads through to resolve the next member on the bound type.
+#[test]
+fn callable_property_field_type_with_generic_arg_substitutes_type() {
+    // `vi.fn<User>()` — the call yields `Mock<User>`, and `mock.results[0].value`
+    // would type as User. Simplified: fn is `() => Mock<T>`, fn<User>() → Mock<User>.
+    let lookup = Lookup::new()
+        .with_local_type("vi", "Vi")
+        .with_generics("Vi.fn", &["T"])
+        .with_member("Vi", sym(5, "fn", "Vi.fn", "property", "ext:ts:vitest/index.d.ts"))
+        .with_field_type("Vi.fn", "() => MockInstance")
+        .with_member(
+            "MockInstance",
+            sym(80, "mockResolvedValue", "MockInstance.mockResolvedValue", "method", "ext:ts:vitest/index.d.ts"),
+        );
+    let segs = vec![
+        seg("vi", false, SegmentKind::Identifier),
+        seg("fn", true, SegmentKind::Property),
+        seg("mockResolvedValue", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(80));
+}
+
+// --- Sub-fix 3: mid-chain stdlib receiver typing (Array/String) --------------
+
+/// `getItems()` returns `User[]`; the chain walker must advance through the
+/// yielded array type to `Array.map`. This validates that `return_type = "User[]"`
+/// interns correctly as `Apply(Array, [User])` and `head_qname` returns `Array`
+/// for the next member lookup. If this already works, it confirms the path; if
+/// it was broken, the test finds it.
+#[test]
+fn mid_chain_array_return_type_reaches_array_members() {
+    let lookup = Lookup::new()
+        .with(sym(1, "getItems", "getItems", "function", "a.ts"))
+        .with_return_type("getItems", "User[]")
+        .with_member(
+            "Array",
+            sym(60, "map", "Array.map", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("getItems", true, SegmentKind::Identifier),
+        seg("map", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(60));
+}
+
+/// `str.split(".")` where `str: string` — the receiver typed as stdlib
+/// `string` (primitive) reaches `String.split`. The flow cache records a
+/// declared param type `string`; the chain walker must route the primitive
+/// through to `String`'s member index. Tests the primitive-to-nominal bridge
+/// for string receivers.
+#[test]
+fn string_typed_receiver_reaches_string_members() {
+    // The receiver is a local typed as `string`. The member lookup must
+    // find `split` on the `String` class (the nominal form of the primitive).
+    let lookup = Lookup::new()
+        .with_local_type("str", "string")
+        .with_member(
+            "String",
+            sym(70, "split", "String.split", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("str", false, SegmentKind::Identifier),
+        seg("split", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
+}
