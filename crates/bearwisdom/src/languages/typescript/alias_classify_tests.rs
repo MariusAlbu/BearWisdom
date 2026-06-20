@@ -90,3 +90,68 @@ fn conditional_infer_in_second_slot_records_slot_index() {
         other => panic!("expected Conditional, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Intersection with anonymous mapped branch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn standalone_mapped_type_classifies_as_mapped() {
+    // `type T<Q> = { [P in keyof Q]: string }` — a standalone mapped type.
+    // Should classify as `Mapped { source: "Q", ... }`.
+    let src = "type T<Q> = { [P in keyof Q]: string };";
+    let target = classify(src);
+    match target {
+        AliasTarget::Mapped { source, .. } => {
+            assert_eq!(source, "Q");
+        }
+        other => panic!("expected Mapped(Q) for standalone mapped type, got {other:?}"),
+    }
+}
+
+#[test]
+fn intersection_with_only_anonymous_mapped_branch_classifies_as_mapped() {
+    // `type T<Q> = { own: string } & { [P in keyof Q]: V }` — both branches
+    // are anonymous (no head name). The mapped branch's source `Q` is surfaced
+    // as a `Mapped` alias so the chain walker's `mapped_source_type` can follow
+    // through to `Q`'s concrete type rather than silently dropping the branch.
+    let src = "type T<Q> = { own: string } & { [P in keyof Q]: string };";
+    let target = classify(src);
+    match target {
+        AliasTarget::Mapped { source, .. } => {
+            assert_eq!(source, "Q");
+        }
+        other => panic!("expected Mapped(Q), got {other:?}"),
+    }
+}
+
+#[test]
+fn intersection_with_named_branch_and_mapped_stays_intersection() {
+    // `type T = Named & { [K in keyof Named]: V }` — has a NAMED branch
+    // (`Named`), so the result stays `Intersection` to preserve the named
+    // branch for `lookup_member_on_intersection`. The mapped source is only
+    // surfaced when every branch is anonymous and there's no other head to
+    // climb.
+    let src = "type T = Named & { [K in keyof Named]: string };";
+    let target = classify(src);
+    match target {
+        AliasTarget::Intersection(branches) => {
+            assert!(branches.contains(&"Named".to_string()), "expected Named in branches, got {branches:?}");
+        }
+        other => panic!("expected Intersection, got {other:?}"),
+    }
+}
+
+#[test]
+fn intersection_with_all_anonymous_object_branches_and_no_mapped_stays_object() {
+    // `type T = { a: string } & { b: number }` — two anonymous object branches,
+    // no mapped clause. Stays `Object` since both branches' members are already
+    // flattened onto `T` by `recurse_for_object_types`.
+    let src = "type T = { a: string } & { b: number };";
+    let target = classify(src);
+    // Should NOT be Mapped (no mapped clause) — either Object or Intersection([]).
+    assert!(
+        !matches!(target, AliasTarget::Mapped { .. }),
+        "plain anonymous intersection should not be Mapped; got {target:?}"
+    );
+}

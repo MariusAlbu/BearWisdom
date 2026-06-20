@@ -128,6 +128,11 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         }
         "intersection_type" => {
             let mut branches = Vec::new();
+            // Track any mapped branch found in an anonymous (unnamed) child.
+            // Used as a fallback when no named branch exists: `{ own } & { [K in keyof T]: V }`
+            // has no nameable head on either side, but the mapped source `T` is still
+            // reachable for member resolution via `mapped_source_type`.
+            let mut mapped_fallback: Option<AliasTarget> = None;
             for i in 0..node.child_count() {
                 let Some(child) = node.child(i) else { continue };
                 if child.kind() == "&" {
@@ -136,6 +141,29 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 let name = head_type_name(&child, src);
                 if !name.is_empty() {
                     branches.push(name);
+                } else if matches!(child.kind(), "object_type" | "mapped_type")
+                    && mapped_fallback.is_none()
+                {
+                    // Anonymous mapped branch — record it so we can surface the
+                    // source if no named branch exists at all.
+                    if let Some(AliasTarget::Mapped { source, value_template }) =
+                        classify_mapped_object(&child, src)
+                    {
+                        if !source.is_empty() {
+                            mapped_fallback =
+                                Some(AliasTarget::Mapped { source, value_template });
+                        }
+                    }
+                }
+            }
+            // When every branch is anonymous and one of them is a mapped type,
+            // surface the mapped source so the chain walker can follow through
+            // to the source type's members. Named branches take priority: an
+            // intersection that has at least one named branch stays `Intersection`
+            // so `lookup_member_on_intersection` can climb each named branch.
+            if branches.is_empty() {
+                if let Some(mapped) = mapped_fallback {
+                    return mapped;
                 }
             }
             AliasTarget::Intersection(branches)
@@ -293,48 +321,80 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
 /// the TS grammar wraps it in. `source` is the keyof target (the `Src`);
 /// `value_template` is the index value as written. Returns `None` when the node
 /// holds no mapped clause, so a plain object type stays `Object`.
+///
+/// The TS grammar wraps mapped types as:
+///   `object_type → index_signature → mapped_type_clause`
+/// The `mapped_type_clause` is never a direct child of `object_type`; it always
+/// sits one level deeper inside an `index_signature`. This function descends
+/// through `index_signature` to find the clause, and reads the value template
+/// from the `index_signature`'s `type_annotation` child (the `: V` after `]`).
 fn classify_mapped_object(node: &Node, src: &[u8]) -> Option<AliasTarget> {
     let mut has_clause = false;
     let mut source = String::new();
     let mut value_template = String::new();
     for i in 0..node.child_count() {
         let Some(child) = node.child(i) else { continue };
-        match child.kind() {
-            "mapped_type_clause" => {
-                has_clause = true;
-                // The clause's `type` field is the iteration source — a
-                // `keyof_type` / `index_type_query` whose operand is the object
-                // whose keys are mapped.
-                if let Some(type_node) = child.child_by_field_name("type") {
-                    if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
-                        for j in 0..type_node.child_count() {
-                            let Some(op) = type_node.child(j) else { continue };
-                            if op.kind() == "keyof" {
-                                continue;
-                            }
-                            let name = head_type_name(&op, src);
-                            if !name.is_empty() {
-                                source = name;
-                                break;
-                            }
+        // The grammar nests mapped_type_clause under index_signature, not
+        // directly under object_type. Descend one level when we see it.
+        if child.kind() == "index_signature" {
+            for j in 0..child.child_count() {
+                let Some(sig_child) = child.child(j) else { continue };
+                if sig_child.kind() == "mapped_type_clause" {
+                    has_clause = true;
+                    extract_mapped_source(&sig_child, src, &mut source);
+                } else if sig_child.kind() == "type_annotation" && value_template.is_empty() {
+                    // `type_annotation` holds the `:` plus the value type; skip
+                    // the colon token and grab the first named type child.
+                    for k in 0..sig_child.child_count() {
+                        let Some(ann_child) = sig_child.child(k) else { continue };
+                        if ann_child.kind() == ":" {
+                            continue;
+                        }
+                        if ann_child.is_named() {
+                            value_template = node_text(ann_child, src).trim().to_string();
+                            break;
                         }
                     }
                 }
             }
-            // Syntactic noise; the first remaining named child is the value
-            // template (the type after `:`).
-            "{" | "}" | ":" | "?" | "+" | "-" | "readonly" | ";" | "," => {}
-            _ => {
-                if child.is_named() && value_template.is_empty() {
-                    value_template = node_text(child, src).trim().to_string();
-                }
-            }
+        } else if child.kind() == "mapped_type_clause" {
+            // Direct child — top-level `mapped_type` node (grammar variant).
+            has_clause = true;
+            extract_mapped_source(&child, src, &mut source);
+        } else if child.is_named()
+            && value_template.is_empty()
+            && !matches!(child.kind(), "{" | "}" | ":" | "?" | "+" | "-" | "readonly" | ";" | ",")
+        {
+            // Fallback for direct-child value template in top-level `mapped_type`.
+            value_template = node_text(child, src).trim().to_string();
         }
     }
     has_clause.then_some(AliasTarget::Mapped {
         source,
         value_template,
     })
+}
+
+/// Fill `source` with the keyof operand from a `mapped_type_clause`.
+///
+/// Reads the clause's `type` field (a `keyof_type` / `index_type_query`) and
+/// extracts the type identifier that follows `keyof`.
+fn extract_mapped_source(clause: &Node, src: &[u8], source: &mut String) {
+    if let Some(type_node) = clause.child_by_field_name("type") {
+        if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
+            for j in 0..type_node.child_count() {
+                let Some(op) = type_node.child(j) else { continue };
+                if op.kind() == "keyof" {
+                    continue;
+                }
+                let name = head_type_name(&op, src);
+                if !name.is_empty() {
+                    *source = name;
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// Best-effort head name of a type expression. Returns the simple name
