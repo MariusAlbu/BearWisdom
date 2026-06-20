@@ -1282,3 +1282,58 @@ fn kotlin_smartcast_dropped_on_reassignment() {
         n.byte_end
     );
 }
+
+/// Single-segment chain call ref, the shape the TS extractor emits for both a
+/// bare call (`render(...)`) and a JSX component tag — a `chain` that wins the
+/// assignment ref selection's chain-preference over chain-less candidates.
+fn mk_chain_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
+    use crate::types::{ChainSegment, MemberChain, SegmentKind};
+    ExtractedRef {
+        chain: Some(MemberChain {
+            segments: vec![ChainSegment {
+                name: target.to_string(),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset,
+                declared_type_id: None,
+                type_arg_ids: Vec::new(),
+                is_call: false,
+                call_args: Vec::new(),
+            }],
+        }),
+        ..mk_call_ref(target, line, byte_offset)
+    }
+}
+
+#[test]
+fn flow_assignment_skips_refs_inside_callback_argument() {
+    // `const rendered = render(() => f());` — the RHS is the `render(...)` call;
+    // the `f()` ref lives inside the arrow ARGUMENT, so it belongs to the
+    // callback body, not to the value bound to `rendered`. Both refs carry a
+    // chain (the shape the TS extractor emits for calls and JSX tags), and `f`
+    // sits further right than `render`, so the rightmost-chain selection would
+    // wrongly bind `rendered` to `f`'s return without the nested-callback skip.
+    let source = "const rendered = render(() => f());\n";
+    let render_off = source.find("render(").unwrap() as u32;
+    let f_off = source.find("f()").unwrap() as u32;
+    let symbols = vec![mk_sym("rendered", SymbolKind::Variable, 0)];
+    let mut refs = vec![
+        mk_chain_call_ref("render", 0, render_off),
+        mk_chain_call_ref("f", 0, f_off),
+    ];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_lhs.get(&0),
+        Some(&0),
+        "`rendered` must bind to ref 0 (the outer `render` call), not the callback-nested `f`"
+    );
+    assert!(
+        !meta.flow_binding_lhs.contains_key(&1),
+        "the `f` ref inside the arrow argument must not be the binding initializer"
+    );
+}

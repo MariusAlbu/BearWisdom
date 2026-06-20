@@ -82,6 +82,10 @@ fn cached_parse_serde_roundtrip() {
         package_id: Some(4),
         symbols: vec![CachedSym::from_extracted(&sample_symbol())],
         refs: vec![CachedRef::from_extracted(&sample_ref())],
+        alias_targets: vec![(
+            "Foo".to_string(),
+            crate::types::AliasTarget::Intersection(vec!["Bar".to_string()]),
+        )],
     };
     let json = serde_json::to_string(&cp).expect("serialize");
     let back: CachedParse = serde_json::from_str(&json).expect("deserialize");
@@ -91,6 +95,14 @@ fn cached_parse_serde_roundtrip() {
     assert_eq!(back.symbols[0].qualified_name, "db.Open");
     assert_eq!(back.refs.len(), 1);
     assert_eq!(back.refs[0].target_name, "Conn");
+    assert_eq!(
+        back.alias_targets,
+        vec![(
+            "Foo".to_string(),
+            crate::types::AliasTarget::Intersection(vec!["Bar".to_string()])
+        )],
+        "alias_targets must survive the cache round-trip"
+    );
 }
 
 #[test]

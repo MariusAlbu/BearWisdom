@@ -375,6 +375,17 @@ fn run_assignment_query(
         if let Some(rhs) = rhs {
             let r_start = rhs.start_byte() as u32;
             let r_end = rhs.end_byte() as u32;
+            // Refs inside a function/closure nested in the RHS belong to that
+            // callback's body, not to the value of the RHS expression — a
+            // `const x = render(() => <Page/>)` initializer is typed by
+            // `render`'s return, never by the `Page` ref inside the arrow.
+            // Exclude those, mirroring the nested-callback exclusion in
+            // `attribute_return_expr`. A RHS that IS itself a function
+            // (`const f = () => g()`) keeps its body's direct refs: the ranges
+            // cover only functions nested STRICTLY inside the RHS node.
+            let nested_fn_ranges = cfg_node_kinds_for(cfg.strategy_prefix)
+                .map(|kinds| nested_function_ranges(&rhs, kinds))
+                .unwrap_or_default();
             // A chain-bearing ref carries the whole receiver chain, so its
             // trailing-call byte_offset is the furthest-right in the RHS — bind
             // a `let x = a.b().c()` initializer to its outer call by preferring
@@ -385,7 +396,13 @@ fn run_assignment_query(
             let ref_idx = refs
                 .iter()
                 .enumerate()
-                .filter(|(_, r)| r.byte_offset >= r_start && r.byte_offset < r_end)
+                .filter(|(_, r)| {
+                    r.byte_offset >= r_start
+                        && r.byte_offset < r_end
+                        && !nested_fn_ranges
+                            .iter()
+                            .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
+                })
                 .max_by_key(|(_, r)| {
                     let signed = if r.chain.is_some() {
                         r.byte_offset as i64

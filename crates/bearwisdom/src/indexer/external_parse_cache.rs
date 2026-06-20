@@ -28,12 +28,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
+    AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind,
+    Visibility,
 };
 
 /// Bumped whenever the cached extraction shape changes. It is part of the key,
 /// so a bump makes every prior entry un-matchable (effectively a full flush).
-const EXTRACTOR_SCHEMA_VERSION: u32 = 2;
+const EXTRACTOR_SCHEMA_VERSION: u32 = 3;
 
 #[cfg(test)]
 #[path = "external_parse_cache_tests.rs"]
@@ -156,6 +157,13 @@ struct CachedParse {
     package_id: Option<i64>,
     symbols: Vec<CachedSym>,
     refs: Vec<CachedRef>,
+    /// Type-alias targets, qualified by `ts_post_process_external` before the
+    /// cache `put`. The chain walker reads these (intersection / mapped /
+    /// typeof expansion) to resolve members reached THROUGH an external alias
+    /// (`RenderResult`'s `BoundFunctions` branch); dropping them on a cache hit
+    /// silently breaks those chains while own-member lookup still works.
+    #[serde(default)]
+    alias_targets: Vec<(String, AliasTarget)>,
 }
 
 static CACHE: Lazy<Option<Mutex<Connection>>> = Lazy::new(open_cache);
@@ -231,7 +239,7 @@ pub fn get(
         has_errors: false,
         flow: FlowMeta::default(),
         demand_contributions: Vec::new(),
-        alias_targets: Vec::new(),
+        alias_targets: cp.alias_targets,
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
     })
@@ -246,6 +254,7 @@ pub fn put(abs_path: &Path, content_hash: &str, pf: &ParsedFile) {
         package_id: pf.package_id,
         symbols: pf.symbols.iter().map(CachedSym::from_extracted).collect(),
         refs: pf.refs.iter().map(CachedRef::from_extracted).collect(),
+        alias_targets: pf.alias_targets.clone(),
     };
     if let Ok(payload) = serde_json::to_string(&cp) {
         let _ = conn.execute(

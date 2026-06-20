@@ -76,6 +76,24 @@ fn first_non_literal_descendant_text(node: tree_sitter::Node, src: &[u8]) -> Opt
     None
 }
 
+/// The value-space operand of a `typeof X` type query — the referenced name,
+/// not the `typeof` keyword. `typeof movies` → `movies`. Prefers the `name`
+/// field, falling back to the first non-`typeof` child. Returns `None` for
+/// `typeof import('m')` (a module-namespace query the main annotation path
+/// emits as a module ref) and for empty operands.
+fn type_query_operand_text(tn: tree_sitter::Node, src: &[u8]) -> Option<String> {
+    let operand = tn.child_by_field_name("name").or_else(|| {
+        let mut cursor = tn.walk();
+        let found = tn.children(&mut cursor).find(|c| c.kind() != "typeof");
+        found
+    })?;
+    let text = helpers::node_text(operand, src);
+    if text.is_empty() || text.starts_with("import") {
+        return None;
+    }
+    Some(text)
+}
+
 /// The coverage-ref target for a type node `tn`: the real root type name for
 /// reference-bearing forms, or the `_primitive` sentinel for forms whose first
 /// identifier is NOT a type reference — primitives, literal types, and
@@ -107,7 +125,13 @@ fn coverage_target_for_type_node(tn: tree_sitter::Node, src: &[u8]) -> String {
         // classification (primitives list, React namespace check) can match.
         "nested_type_identifier" | "member_expression" => name,
         // Reference-bearing leaf — its own text is the type name.
-        "type_identifier" | "identifier" | "generic_type" | "type_query" => root_of(&name),
+        "type_identifier" | "identifier" | "generic_type" => root_of(&name),
+        // `typeof X` — the value-space operand is the ref, NOT the `typeof`
+        // keyword. `root_of("typeof movies")` would grab `typeof`; extract the
+        // operand instead (`movies`), mirroring the main annotation path.
+        "type_query" => type_query_operand_text(tn, src)
+            .map(|o| root_of(&o))
+            .unwrap_or_else(|| "_primitive".to_string()),
         // Literal type by itself (`true`, `42`, `'x'`) — never a real ref.
         "literal_type" => "_primitive".to_string(),
         // Composites: a real type name only if some member is reference-bearing

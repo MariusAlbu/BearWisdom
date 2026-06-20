@@ -165,4 +165,16 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
             None => Some(package.to_string()),
         };
     }
+    // Alias targets are keyed by the bare type name the extractor recorded
+    // (`Result`), but the chain walker looks them up by the receiver's
+    // package-qualified head (`@scope/pkg.Result`, derived from a method's
+    // qualified return type). Qualify the keys to match. Without this,
+    // member lookup THROUGH an external alias (intersection / mapped — e.g.
+    // `RenderResult`'s `BoundFunctions` branch) misses, while own-member
+    // lookup still works because members key on the already-qualified parent.
+    for (name, _) in pf.alias_targets.iter_mut() {
+        if !name.starts_with(&prefix) && !name.starts_with(&globals_prefix) {
+            *name = format!("{prefix}{name}");
+        }
+    }
 }

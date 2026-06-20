@@ -231,6 +231,13 @@ fn lookup_member_on_bounded(
     if depth == 0 {
         return None;
     }
+    // Intersection alias `A & B & {…}` carries every member of every branch (TS
+    // `&` semantics). After the direct / id / supertype climbs miss, resolve the
+    // member on each NAMED branch — anonymous object branches are already
+    // flattened into the alias's own members, so only the named heads remain.
+    if let Some(m) = lookup_member_on_intersection(lookup, arena, &head, member, accept, depth) {
+        return Some(m);
+    }
     let source_ty = mapped_source_type(lookup, arena, recv.ty, &head)?;
     let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
     // A mapped source that resolves back to the mapped type itself makes no
@@ -239,6 +246,50 @@ fn lookup_member_on_bounded(
         return None;
     }
     lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+}
+
+/// Resolve `member` on the named branches of an intersection alias. A branch is
+/// the head name of an `&` member (`BoundFunctions` for `BoundFunctions<Q> & {…}`);
+/// anonymous object branches contribute no name and are skipped (their members are
+/// flattened onto the alias itself). Each branch name is resolved to its
+/// declaration(s) by simple name, then the member walk recurses by symbol id so a
+/// branch shared across packages stays distinct and the branch's own supertypes
+/// climb. Returns the first branch that carries `member`. `None` when `head` is
+/// not an intersection alias or no branch carries the member.
+fn lookup_member_on_intersection(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+) -> Option<Symbol> {
+    let branches = match lookup.alias_target(head)? {
+        AliasTarget::Intersection(branches) => branches.clone(),
+        _ => return None,
+    };
+    for branch in &branches {
+        if branch.is_empty() || branch == head {
+            continue;
+        }
+        for cand in lookup.types_by_name(branch).iter() {
+            let recv = expand_receiver(
+                Receiver::new(arena.class(&cand.qualified_name), cand.id),
+                lookup,
+                arena,
+            );
+            // A branch that resolves back to the intersection itself makes no
+            // progress — skip rather than recurse to the depth bound.
+            if head_qname(arena, recv.ty).as_deref() == Some(head) {
+                continue;
+            }
+            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
+            {
+                return Some(m);
+            }
+        }
+    }
+    None
 }
 
 /// The source object type of a mapped alias `{ [K in keyof Src]: … }`, with the

@@ -2368,3 +2368,28 @@ declare namespace dayjs {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn coverage_type_query_emits_operand_not_keyword() {
+    // `typeof movies` is a value-space ref to `movies`; the coverage scan must
+    // emit the operand, never the `typeof` keyword (which can never resolve).
+    let src = "const movies = [1, 2]\n\
+               function f(): { movies: typeof movies } {\n\
+               return { movies }\n\
+               }";
+    let r = extract::extract(src, false);
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|x| x.kind == EdgeKind::TypeRef)
+        .map(|x| x.target_name.as_str())
+        .collect();
+    assert!(
+        !type_refs.contains(&"typeof"),
+        "type_query must not emit the `typeof` keyword as a TypeRef; got: {type_refs:?}"
+    );
+    assert!(
+        type_refs.contains(&"movies"),
+        "typeof movies should emit `movies` as the operand TypeRef; got: {type_refs:?}"
+    );
+}

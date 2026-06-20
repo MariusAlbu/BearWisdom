@@ -283,7 +283,7 @@ pub struct ScopeNode {
 /// and rely on the engine to derive an `Application` from their first
 /// `TypeRef`. The `Other` arm is the conservative bucket — chain walkers
 /// must not expand it, since the underlying shape is unknown.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AliasTarget {
     /// Single type application: `type Foo = Bar` or `type Foo<T> = Map<string, T>`.
     /// `root` is the head type's name; `args` are the in-source type arguments

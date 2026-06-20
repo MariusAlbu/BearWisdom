@@ -107,6 +107,42 @@ fn roots_member_on_array_typed_receiver() {
 }
 
 #[test]
+fn binds_member_through_named_intersection_branch() {
+    // `const r = render(...)` types `r` as `Result`, an intersection alias
+    // `BoundFunctions<typeof queries> & { container; ... }`. `getByText` is NOT a
+    // member of `Result`; it lives on the NAMED branch `BoundFunctions`. The walk
+    // must follow the named branch to bind it. (solid-testing-library shape.)
+    let lookup = Lookup::new()
+        .with_local_type("r", "@solidjs/testing-library.Result")
+        .with_alias(
+            "@solidjs/testing-library.Result",
+            AliasTarget::Intersection(vec!["BoundFunctions".to_string()]),
+        )
+        .with(sym(
+            2,
+            "BoundFunctions",
+            "@testing-library/dom.BoundFunctions",
+            "interface",
+            "ext:ts:@testing-library/dom/get-queries-for-element.d.ts",
+        ))
+        .with_member_id(
+            2,
+            sym(
+                90,
+                "getByText",
+                "@testing-library/dom.BoundFunctions.getByText",
+                "method",
+                "ext:ts:@testing-library/dom/get-queries-for-element.d.ts",
+            ),
+        );
+    let segs = vec![
+        seg("r", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(90));
+}
+
+#[test]
 fn roots_on_imported_value_declared_type() {
     // `initTRPC.create()` — the root is an imported VALUE (a `declare const`)
     // whose declaration carries a type. Rooting on that type lets the member
