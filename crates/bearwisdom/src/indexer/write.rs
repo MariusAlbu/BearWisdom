@@ -1431,63 +1431,95 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
     // sharing one symbol_key. Keep the row with the smallest id as the
     // canonical row; move each non-canonical row's symbol_locations to the
     // canonical row, then delete the non-canonical rows.
-    let dup_keys: Vec<String> = tx
-        .prepare(
-            "SELECT symbol_key
-             FROM symbols
-             WHERE mergeable = 1 AND symbol_key IS NOT NULL
-             GROUP BY symbol_key
-             HAVING COUNT(*) > 1",
-        )
-        .context("Failed to prepare duplicate-key query")?
-        .query_map([], |r| r.get::<_, String>(0))
-        .context("Failed to query duplicate keys")?
-        .collect::<std::result::Result<_, _>>()
-        .context("Failed to collect duplicate keys")?;
-
     let mut remapped: HashMap<i64, i64> = HashMap::new();
 
-    for key in &dup_keys {
-        // Collect all row ids sharing this key, ascending (first = canonical).
-        let ids: Vec<i64> = tx
-            .prepare("SELECT id FROM symbols WHERE symbol_key = ?1 ORDER BY id")
-            .context("Failed to prepare id query for key")?
-            .query_map([key], |r| r.get::<_, i64>(0))
-            .context("Failed to query ids for key")?
-            .collect::<std::result::Result<_, _>>()
-            .context("Failed to collect ids")?;
-
-        let canonical = ids[0];
-
-        for &dup_id in &ids[1..] {
-            // Move declaration sites: upsert each non-canonical location into
-            // the canonical row. ON CONFLICT ignores a site already present.
-            tx.execute(
-                "INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col)
-                 SELECT ?1, file_id, line, col
-                 FROM symbol_locations
-                 WHERE symbol_id = ?2",
-                rusqlite::params![canonical, dup_id],
+    // Compute the dup_id -> canonical map in ONE ordered scan: rows sharing a
+    // mergeable symbol_key are consecutive, the smallest id per group is the
+    // canonical row, the rest are duplicates. Uses the partial index on
+    // (symbol_key WHERE mergeable=1) for both the filter and the ordering — one
+    // pass instead of a GROUP-BY plus a prepared id query per duplicate key.
+    // Canonical ids are never themselves dup_ids, so the remap is single-level
+    // (no reparent chaining).
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT symbol_key, id FROM symbols
+                 WHERE mergeable = 1 AND symbol_key IS NOT NULL
+                 ORDER BY symbol_key, id",
             )
-            .context("Failed to migrate symbol_locations")?;
-
-            // Re-point any containing_id references that point at the duplicate.
-            tx.execute(
-                "UPDATE symbols SET containing_id = ?1 WHERE containing_id = ?2",
-                rusqlite::params![canonical, dup_id],
-            )
-            .context("Failed to reparent contained symbols")?;
-
-            // Deleting the duplicate cascades its symbol_locations, edges,
-            // unresolved_refs, and external_refs rows.
-            tx.execute(
-                "DELETE FROM symbols WHERE id = ?1",
-                rusqlite::params![dup_id],
-            )
-            .context("Failed to delete duplicate symbol")?;
-
-            remapped.insert(dup_id, canonical);
+            .context("Failed to prepare mergeable-rows query")?;
+        let mut rows = stmt.query([]).context("Failed to query mergeable rows")?;
+        let mut cur_key: Option<String> = None;
+        let mut canonical: i64 = 0;
+        while let Some(row) = rows.next().context("Failed to read mergeable row")? {
+            let key: String = row.get(0)?;
+            let id: i64 = row.get(1)?;
+            if cur_key.as_deref() != Some(key.as_str()) {
+                cur_key = Some(key);
+                canonical = id; // first id in the group (ORDER BY id) is canonical
+            } else {
+                remapped.insert(id, canonical);
+            }
         }
+    }
+
+    // Apply the collapse SET-based. A per-duplicate `UPDATE symbols SET
+    // containing_id = ? WHERE containing_id = ?` full-scans `symbols` once per
+    // duplicate, so N duplicates cost O(N × table). Stage the map in a temp
+    // table keyed by dup_id and rewrite declaration sites, containment, and the
+    // duplicate rows in one pass each instead.
+    if !remapped.is_empty() {
+        tx.execute_batch(
+            "CREATE TEMP TABLE _dup_remap (dup_id INTEGER PRIMARY KEY, canonical_id INTEGER NOT NULL);",
+        )
+        .context("Failed to create dup remap temp table")?;
+        {
+            let mut ins = tx
+                .prepare("INSERT INTO _dup_remap (dup_id, canonical_id) VALUES (?1, ?2)")
+                .context("Failed to prepare dup remap insert")?;
+            for (&dup_id, &canonical) in &remapped {
+                ins.execute(rusqlite::params![dup_id, canonical])
+                    .context("Failed to insert dup remap row")?;
+            }
+        }
+        // Transient index on the self-referential `containing_id` for the delete
+        // below. `containing_id REFERENCES symbols(id) ON DELETE SET NULL` makes
+        // SQLite scan the whole `symbols` table per deleted row to find children
+        // to NULL (O(dups × table)) — even though the reparent below repoints
+        // every child off the duplicates, so the scan only confirms zero. A
+        // persistent index on this column is avoided (it serializes the
+        // concurrent write pipeline), but a single-threaded create/drop around
+        // this one bulk delete is safe.
+        tx.execute_batch("CREATE INDEX _idx_containing_tmp ON symbols(containing_id);")
+            .context("Failed to create transient containing_id index")?;
+        // Move declaration sites to the canonical row (skip any already present)
+        // BEFORE deleting the duplicates, whose sites would otherwise cascade.
+        tx.execute(
+            "INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col)
+             SELECT r.canonical_id, sl.file_id, sl.line, sl.col
+             FROM symbol_locations sl JOIN _dup_remap r ON sl.symbol_id = r.dup_id",
+            [],
+        )
+        .context("Failed to migrate symbol_locations")?;
+        // Re-point children of every collapsed duplicate to its canonical row.
+        tx.execute(
+            "UPDATE symbols
+             SET containing_id = (SELECT canonical_id FROM _dup_remap WHERE dup_id = symbols.containing_id)
+             WHERE containing_id IN (SELECT dup_id FROM _dup_remap)",
+            [],
+        )
+        .context("Failed to reparent contained symbols")?;
+        // Delete the duplicates (cascades their symbol_locations, edges,
+        // unresolved_refs, and external_refs rows).
+        tx.execute(
+            "DELETE FROM symbols WHERE id IN (SELECT dup_id FROM _dup_remap)",
+            [],
+        )
+        .context("Failed to delete duplicate symbols")?;
+        tx.execute_batch("DROP INDEX _idx_containing_tmp;")
+            .context("Failed to drop transient containing_id index")?;
+        tx.execute_batch("DROP TABLE _dup_remap;")
+            .context("Failed to drop dup remap temp table")?;
     }
 
     // (2) Cross-file containing_id resolution (on the post-collapse symbol set).

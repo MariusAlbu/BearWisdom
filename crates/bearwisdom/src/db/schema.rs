@@ -518,6 +518,13 @@ CREATE TABLE IF NOT EXISTS symbols (
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_qualified ON symbols(qualified_name);
+-- Composite for the cross-file containment subquery, which matches a parent on
+-- (qualified_name = scope_path AND origin = origin). Cross-file containment runs
+-- before Stage-3 ANALYZE, so with no statistics SQLite's planner picks the
+-- 2-value idx_symbols_origin and scans half the table per correlated subquery
+-- (O(rows × table) — minutes on a large externals set). This composite is
+-- selected as a covering search regardless of statistics, keeping the pass O(n log n).
+CREATE INDEX IF NOT EXISTS idx_symbols_qname_origin ON symbols(qualified_name, origin);
 -- Covering index for name-based lookups: returns file, kind, and position
 -- without a table lookup.
 CREATE INDEX IF NOT EXISTS idx_symbols_name_cov
