@@ -1419,39 +1419,12 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
         .unchecked_transaction()
         .context("Failed to begin containment/merge transaction")?;
 
-    // (a) Cross-file containing_id resolution.
+    // (1) Mergeable duplicate collapse — runs BEFORE containment (2) below.
     //
-    // For a symbol with containing_id IS NULL and a non-empty scope_path, bind
-    // it to the parent whose qualified_name equals scope_path — but ONLY when
-    // that parent is unambiguous: same origin (an internal member never attaches
-    // to an external same-name type), not itself, and exactly ONE such candidate
-    // exists. The exactly-one guard makes the result independent of row id /
-    // insert order (no ORDER BY, no LIMIT): a unique parent binds; an ambiguous
-    // scope_path (e.g. the same non-mergeable qname in two packages) is left
-    // NULL rather than bound to an arbitrary, run-varying winner. Mergeable
-    // duplicates are collapsed to one canonical row in step (b), which then
-    // re-points any containing_id that referenced a deleted duplicate.
-    tx.execute(
-        "UPDATE symbols
-         SET containing_id = (
-             SELECT p.id FROM symbols p
-             WHERE p.qualified_name = symbols.scope_path
-               AND p.origin = symbols.origin
-               AND p.id <> symbols.id
-         )
-         WHERE containing_id IS NULL
-           AND scope_path IS NOT NULL
-           AND (
-               SELECT COUNT(*) FROM symbols p
-               WHERE p.qualified_name = symbols.scope_path
-                 AND p.origin = symbols.origin
-                 AND p.id <> symbols.id
-           ) = 1",
-        [],
-    )
-    .context("Failed to resolve cross-file containing_id")?;
-
-    // (b) Mergeable duplicate collapse.
+    // Order matters: collapsing N same-key rows to one canonical row makes a
+    // mergeable parent unambiguous, so a cross-file member whose scope_path names
+    // it then resolves to exactly one candidate in (2) instead of being left NULL
+    // by the unique-parent guard.
     //
     // On a full index, N files that each declare the same mergeable symbol
     // (namespace, partial class, reopened Ruby class) produce N rows all
@@ -1516,6 +1489,36 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
             remapped.insert(dup_id, canonical);
         }
     }
+
+    // (2) Cross-file containing_id resolution (on the post-collapse symbol set).
+    //
+    // For a symbol with containing_id IS NULL and a non-empty scope_path, bind it
+    // to the parent whose qualified_name equals scope_path — but ONLY when that
+    // parent is unambiguous: same origin (an internal member never attaches to an
+    // external same-name type), not itself, and exactly ONE such candidate. The
+    // exactly-one guard makes the result independent of row id / insert order (no
+    // ORDER BY, no LIMIT): a unique parent binds; a genuinely ambiguous scope_path
+    // (the same non-mergeable qname in two packages) is left NULL rather than
+    // bound to an arbitrary, run-varying winner.
+    tx.execute(
+        "UPDATE symbols
+         SET containing_id = (
+             SELECT p.id FROM symbols p
+             WHERE p.qualified_name = symbols.scope_path
+               AND p.origin = symbols.origin
+               AND p.id <> symbols.id
+         )
+         WHERE containing_id IS NULL
+           AND scope_path IS NOT NULL
+           AND (
+               SELECT COUNT(*) FROM symbols p
+               WHERE p.qualified_name = symbols.scope_path
+                 AND p.origin = symbols.origin
+                 AND p.id <> symbols.id
+           ) = 1",
+        [],
+    )
+    .context("Failed to resolve cross-file containing_id")?;
 
     tx.commit()
         .context("Failed to commit containment/merge transaction")?;

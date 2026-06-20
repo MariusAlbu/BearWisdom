@@ -715,3 +715,46 @@ fn full_index_mergeable_namespace_collapsed_by_post_write_pass() {
         .unwrap();
     assert_eq!(loc_cnt, 2, "two declaration sites recorded");
 }
+
+/// A cross-file member of a MERGEABLE parent must bind after the pass: the
+/// collapse step runs first, reducing the two namespace rows to one canonical
+/// row, so the containment step then sees a single unambiguous parent (rather
+/// than two and leaving the member NULL).
+#[test]
+fn full_index_cross_file_member_of_mergeable_parent_binds() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    // Two files declare the same mergeable namespace `App.Models`.
+    write_full(&db, "a.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+    write_full(&db, "b.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+
+    // A third file declares a member whose scope_path = "App.Models".
+    write_full(
+        &db,
+        "c.cs",
+        "csharp",
+        vec![esym_with_scope("App.Models.User", SymbolKind::Class, Some("App.Models"), 1)],
+        &arena,
+    );
+
+    resolve_cross_file_containment_and_merge(&db).unwrap();
+
+    let ns_id: i64 = db
+        .conn()
+        .query_row("SELECT id FROM symbols WHERE qualified_name = 'App.Models'", [], |r| r.get(0))
+        .unwrap();
+    let after: Option<i64> = db
+        .conn()
+        .query_row(
+            "SELECT containing_id FROM symbols WHERE qualified_name = 'App.Models.User'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        after,
+        Some(ns_id),
+        "cross-file member of a collapsed mergeable parent must bind to the canonical row"
+    );
+}
