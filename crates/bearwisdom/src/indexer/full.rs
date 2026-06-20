@@ -163,6 +163,10 @@ fn full_index_inner(
             // Derived tables (routes, flow_edges, db_mappings, code_chunks,
             // lsp_edge_meta) must also be cleared — they reference file/symbol
             // IDs that become stale after DROP TABLE files/symbols.
+            // symbol_locations / symbol_type_info MUST be dropped explicitly:
+            // with FK enforcement off the symbols/files drop does not cascade to
+            // them, so their rows orphan; since symbols.id is a reusable rowid, a
+            // later insert reusing a freed id then collides with the stale row.
             let _ = db.conn().execute_batch(
                 "PRAGMA foreign_keys = OFF;
                  DROP TABLE IF EXISTS lsp_edge_meta;
@@ -174,6 +178,8 @@ fn full_index_inner(
                  DROP TABLE IF EXISTS imports;
                  DROP TABLE IF EXISTS unresolved_refs;
                  DROP TABLE IF EXISTS external_refs;
+                 DROP TABLE IF EXISTS symbol_type_info;
+                 DROP TABLE IF EXISTS symbol_locations;
                  DROP TABLE IF EXISTS symbols;
                  DROP TABLE IF EXISTS files;
                  DROP TABLE IF EXISTS package_deps;
