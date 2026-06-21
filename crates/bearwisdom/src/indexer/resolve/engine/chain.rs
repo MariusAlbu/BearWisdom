@@ -476,15 +476,21 @@ pub(crate) fn member_yield_type(
         if let Some(s) = lookup.return_type_name(member_qname) {
             return Some(arena.intern_type_str(s));
         }
-        // No explicit return type — the member may be a property whose
-        // declared type is a callable interface or function type. Return
-        // the field type so `yield_through` can unwrap it.
-        if let Some(id) = lookup.field_type_id(member_qname) {
-            return Some(id);
+        // No explicit return type — the member's declared (field) type may be
+        // callable. An inline function type (`fn: () => Mock`) is returned as-is
+        // for `yield_through` to peel its `Type::Function` wrapper. A field type
+        // that NAMES a function/method symbol (a property typed `typeof someFn`)
+        // interns as a nominal head, not a `Type::Function`, so resolve it to
+        // the named function's own return type here.
+        let ft = lookup
+            .field_type_id(member_qname)
+            .or_else(|| lookup.field_type_name(member_qname).map(|s| arena.intern_type_str(s)))?;
+        if let Some(head) = head_qname(arena, ft) {
+            if let Some(rt) = callable_named_return(lookup, arena, &head) {
+                return Some(rt);
+            }
         }
-        return lookup
-            .field_type_name(member_qname)
-            .map(|s| arena.intern_type_str(s));
+        return Some(ft);
     }
     if let Some(id) = lookup.field_type_id(member_qname) {
         return Some(id);
@@ -943,6 +949,34 @@ fn with_segment_args(arena: &TypeArena, id: TypeId, type_args: &[String]) -> Typ
 /// method whose return type carries the chain forward.
 fn is_callable(kind: &str) -> bool {
     matches!(kind, "function" | "method")
+}
+
+/// When a called member's field type NAMES a function/method symbol — the shape
+/// a property typed `typeof someFn` produces — the call result is that named
+/// function's return type. Prefers a qualified-name hit, then the first callable
+/// of that simple name. `None` when `head` doesn't resolve to a callable.
+fn callable_named_return(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    head: &str,
+) -> Option<TypeId> {
+    let callee_qname = lookup
+        .by_qualified_name(head)
+        .filter(|s| is_callable(&s.kind))
+        .map(|s| s.qualified_name.clone())
+        .or_else(|| {
+            lookup
+                .by_name(head)
+                .iter()
+                .find(|s| is_callable(&s.kind))
+                .map(|s| s.qualified_name.clone())
+        })?;
+    if let Some(id) = lookup.return_type_id(&callee_qname) {
+        return Some(id);
+    }
+    lookup
+        .return_type_name(&callee_qname)
+        .map(|s| arena.intern_type_str(s))
 }
 
 #[cfg(test)]

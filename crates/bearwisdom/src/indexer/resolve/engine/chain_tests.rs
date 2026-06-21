@@ -78,6 +78,55 @@ fn walks_two_hops_advancing_through_return_type() {
 }
 
 #[test]
+fn probe_typeof_callable_property_yields_referenced_fn_return() {
+    // vi.fn().mockImplementation(): VitestUtils.fn is typed `typeof fn` where
+    // fn is a function returning Mock. Calling vi.fn() must yield Mock so the
+    // next hop (.mockImplementation) resolves on Mock.
+    let lookup = Lookup::new()
+        .with_local_type("vi", "VitestUtils")
+        .with(sym(1, "fn", "fn", "function", "a.ts"))
+        .with_return_type("fn", "Mock")
+        .with_member("VitestUtils", sym(2, "fn", "VitestUtils.fn", "property", "a.ts"))
+        .with_field_type("VitestUtils.fn", "fn")
+        .with(sym(5, "Mock", "Mock", "interface", "a.ts"))
+        .with_member(
+            "Mock",
+            sym(3, "mockImplementation", "Mock.mockImplementation", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("vi", false, SegmentKind::Identifier),
+        seg("fn", true, SegmentKind::Property),
+        seg("mockImplementation", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(3));
+}
+
+#[test]
+fn probe_intersection_alias_with_own_members_finds_branch_member() {
+    // screen.getByText: screen: Screen, Screen = BoundFunctions & { debug },
+    // getByText lives on the BoundFunctions branch. Screen having its OWN
+    // member (debug) must not block resolving getByText on the branch.
+    let lookup = Lookup::new()
+        .with_local_type("screen", "Screen")
+        .with(sym(1, "Screen", "Screen", "type", "a.ts"))
+        .with_alias(
+            "Screen",
+            crate::types::AliasTarget::Intersection(vec!["BoundFunctions".to_string()]),
+        )
+        .with_member("Screen", sym(2, "debug", "Screen.debug", "property", "a.ts"))
+        .with(sym(3, "BoundFunctions", "BoundFunctions", "type", "a.ts"))
+        .with_member(
+            "BoundFunctions",
+            sym(4, "getByText", "BoundFunctions.getByText", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("screen", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(4));
+}
+
+#[test]
 fn roots_at_bare_type_name_for_static_access() {
     let lookup = Lookup::new()
         .with(sym(1, "Math", "Math", "class", "a.ts"))
