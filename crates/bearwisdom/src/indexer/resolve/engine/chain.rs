@@ -1028,7 +1028,7 @@ fn callee_return_type(
 /// `callee_return_type` so the correct overload / package is selected. `None`
 /// when `ty_str` is not such an application, or the callee or its return type
 /// can't be resolved.
-fn resolve_return_type_extraction(
+pub(crate) fn resolve_return_type_extraction(
     ty: TypeId,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,

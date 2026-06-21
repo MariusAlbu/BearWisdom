@@ -15,8 +15,8 @@ use rustc_hash::FxHashMap;
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope, Symbol,
-    SymbolLookup, SymbolSet, TypeInfo,
+    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
+    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::indexer::project_context::ProjectContext;
@@ -952,6 +952,79 @@ impl Compilation {
         }
     }
 
+    /// Resolve `ReturnType<typeof fn>`-shaped declared return types in their
+    /// DECLARING file's import scope, rewriting `type_info` in place.
+    ///
+    /// A wrapper `function renderWithClient(...): ReturnType<typeof render>` must
+    /// resolve `typeof render` against the file that declares the wrapper — that
+    /// file imports `render` — not a use site, which may import only the wrapper
+    /// and would bind `render` to a same-named value elsewhere. Resolving once
+    /// here stores the concrete return type, so forward inference and the chain
+    /// walker both read it with no per-use-site handling.
+    ///
+    /// Two-phase to satisfy the borrow checker: collect `(qname, type, id)`
+    /// rewrites while the tree is read-only, then apply them. Order-independent —
+    /// the resolution reads the wrapped function's already-populated return type,
+    /// which is never itself a `ReturnType<typeof …>` rewrite target.
+    ///
+    /// Called by the pipeline AFTER external materialization, so a wrapper of an
+    /// external function (`ReturnType<typeof render>` where `render` is
+    /// `@testing-library/react`'s) sees that function's return type.
+    pub(crate) fn resolve_wrapper_return_types(&mut self, parsed: &[ParsedFile]) {
+        let mut rewrites: Vec<(String, String, TypeId)> = Vec::new();
+        for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
+            // Import bindings (name → module) for this file. `typeof X` resolves
+            // `X` to `{module}.X` via these. TS is the only producer of the
+            // `ReturnType<typeof …>` shape, and its import bindings carry `module`.
+            let imports: Vec<ImportEntry> = pf
+                .refs
+                .iter()
+                .filter(|r| r.is_import_binding)
+                .filter_map(|r| {
+                    let module = r.module.clone()?;
+                    Some(ImportEntry {
+                        imported_name: r.target_name.clone(),
+                        module_path: Some(module),
+                        alias: None,
+                        is_wildcard: r.target_name == "*",
+                    })
+                })
+                .collect();
+            if imports.is_empty() {
+                continue;
+            }
+            let file_ctx = FileContext {
+                file_path: pf.path.clone(),
+                language: pf.language.clone(),
+                imports,
+                file_namespace: None,
+            };
+            for sym in &pf.symbols {
+                // Cheap pre-filter: only a `typeof`-bearing return type can match.
+                let Some(rt) = self
+                    .type_info
+                    .get(&sym.qualified_name)
+                    .and_then(|ti| ti.return_type.clone())
+                    .filter(|rt| rt.contains("typeof"))
+                else {
+                    continue;
+                };
+                let id = self.arena.intern_type_str(&rt);
+                if let Some(resolved) =
+                    super::chain::resolve_return_type_extraction(id, self, &self.arena, &file_ctx)
+                {
+                    let s = self.arena.format_type(resolved);
+                    rewrites.push((sym.qualified_name.clone(), s, resolved));
+                }
+            }
+        }
+        for (qname, s, id) in rewrites {
+            if let Some(ti) = self.type_info.get_mut(&qname) {
+                ti.return_type = Some(s);
+                ti.return_type_id = Some(id);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

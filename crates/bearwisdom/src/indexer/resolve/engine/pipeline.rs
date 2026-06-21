@@ -276,6 +276,11 @@ pub fn resolve_single_pass(
     materialize_externals(db, &mut tree, parsed, &loc, &arena)
         .context("Failed to materialize external symbols")?;
 
+    // Resolve `ReturnType<typeof fn>` declared return types now that the wrapped
+    // (possibly external) functions are materialized, so a wrapper's return type
+    // is concrete before forward inference reads it.
+    tree.resolve_wrapper_return_types(parsed);
+
     let profiles = build_profiles();
     let solver = SemanticModel::production();
 
@@ -344,6 +349,10 @@ pub fn resolve_incremental_pass(
     for (k, v) in tree.ingest_from_db(db.conn()) {
         full_id_map.entry(k).or_insert(v);
     }
+
+    // Wrapped functions are now loaded from the DB; resolve `ReturnType<typeof fn>`
+    // return types before forward inference reads them.
+    tree.resolve_wrapper_return_types(parsed);
 
     let profiles = build_profiles();
     let solver = SemanticModel::production();
