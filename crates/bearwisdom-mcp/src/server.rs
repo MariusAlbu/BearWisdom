@@ -343,6 +343,19 @@ pub struct QualityCheckParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct UnresolvedParams {
+    /// Top-N example identifiers kept per (language, category) group (default: 10)
+    pub samples: Option<usize>,
+    /// Output format: "json" (default) or "compact" (token-optimized text)
+    pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct PatternSearchParams {
     /// Tree-sitter S-expression query, e.g. `(function_definition name: (identifier) @fn)`.
     /// See https://tree-sitter.github.io/tree-sitter/using-parsers/queries/index.html.
@@ -1183,6 +1196,39 @@ impl BearWisdomServer {
                     .and_then(|r| {
                         if compact {
                             Ok(crate::compact::quality_check(&r))
+                        } else {
+                            Self::to_json(&r)
+                        }
+                    })
+            },
+        )
+    }
+
+    /// Architectural cause-classifier for unresolved references in the
+    /// indexed project. Buckets every internal unresolved ref by
+    /// (language, kind, category) across causes — external_member_call,
+    /// external_api_unknown, module_resolution_miss, local_false_positive,
+    /// extractor_bug, real_missing_symbol, embedded_region_issue,
+    /// generated_or_vendor_noise, unsupported_syntax — with top-N example
+    /// identifiers per group. The first tool to reach for when driving down
+    /// unresolved-ref counts: it names WHY refs fail, not just which ones.
+    #[tool(name = "bw_unresolved")]
+    fn unresolved(
+        &self,
+        Parameters(params): Parameters<UnresolvedParams>,
+    ) -> Result<String, String> {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool(
+            "bw_unresolved",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                let samples = params.samples.unwrap_or(10);
+                bearwisdom::classify_unresolved(db, samples)
+                    .map_err(Self::query_err)
+                    .and_then(|r| {
+                        if compact {
+                            Ok(crate::compact::unresolved_classify(&r))
                         } else {
                             Self::to_json(&r)
                         }

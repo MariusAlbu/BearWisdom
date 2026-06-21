@@ -13,6 +13,7 @@ use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
 use bearwisdom::query::dead_code::{DeadCodeReport, EntryPointKind, EntryPointsReport};
 use bearwisdom::query::diagnostics::{FileDiagnostics, WorkspaceDiagnostics};
+use bearwisdom::query::unresolved_classify::ClassificationReport;
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::types::ReferenceResult;
 use bearwisdom::{
@@ -837,6 +838,67 @@ pub fn workspace_diagnostics(rep: &WorkspaceDiagnostics) -> String {
 /// Surface: headline rate, per-language file counts, per-(lang,kind)
 /// unresolved breakdown, top unresolved targets. Drives the "which
 /// extractor / resolver is leaking?" question without leaving MCP.
+/// Compact rendering of the unresolved-ref architectural classifier.
+/// Sections: category totals (count desc), language totals (count desc),
+/// full (language, kind, category) bucket worklist, and top-N example
+/// identifiers per `<language>.<category>` group.
+pub fn unresolved_classify(report: &ClassificationReport) -> String {
+    let mut out = start(&format!("total:{}", report.total));
+
+    if !report.by_category.is_empty() {
+        out.push_str("#categories\n");
+        let mut cats: Vec<(&String, &u64)> = report.by_category.iter().collect();
+        cats.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        for (cat, n) in cats {
+            let _ = writeln!(out, "{cat}|{n}");
+        }
+        out.push('\n');
+    }
+
+    if !report.by_language.is_empty() {
+        out.push_str("#languages\n");
+        let mut langs: Vec<(&String, &u64)> = report.by_language.iter().collect();
+        langs.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        for (lang, n) in langs {
+            let _ = writeln!(out, "{lang}|{n}");
+        }
+        out.push('\n');
+    }
+
+    if !report.buckets.is_empty() {
+        out.push_str("#buckets\n");
+        for b in &report.buckets {
+            let _ = writeln!(out, "{}|{}|{}|{}", b.language, b.kind, b.category, b.count);
+        }
+        out.push('\n');
+    }
+
+    if !report.samples.is_empty() {
+        out.push_str("#samples\n");
+        for (key, entries) in &report.samples {
+            let _ = write!(out, "{key}|");
+            for (i, e) in entries.iter().enumerate() {
+                if i > 0 {
+                    out.push(' ');
+                }
+                // Flatten whitespace/newlines and drop the field delimiter so
+                // pathological extractor-bug targets (multi-line generic-type
+                // residue) can't break the row format.
+                let name: String = e
+                    .target_name
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join("")
+                    .replace('|', "");
+                let _ = write!(out, "{name}:{}", e.count);
+            }
+            out.push('\n');
+        }
+    }
+
+    out
+}
+
 pub fn quality_check(rb: &ResolutionBreakdown) -> String {
     let mut body = String::with_capacity(2048);
 
