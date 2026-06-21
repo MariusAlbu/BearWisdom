@@ -102,6 +102,32 @@ fn probe_typeof_callable_property_yields_referenced_fn_return() {
 }
 
 #[test]
+fn probe_vitest_fn_mock_chain_end_to_end() {
+    // vi.fn().mockImplementation(): vi: VitestUtils; VitestUtils.fn typed as the
+    // spy.fn function (typeof fn); spy.fn returns Mock; Mock is a transparent
+    // alias to MockInstance; MockInstance.mockImplementation is the leaf.
+    let lookup = Lookup::new()
+        .with_local_type("vi", "VitestUtils")
+        .with_member("VitestUtils", sym(1, "fn", "VitestUtils.fn", "property", "a.ts"))
+        .with_field_type("VitestUtils.fn", "spy.fn")
+        .with(sym(2, "fn", "spy.fn", "function", "a.ts"))
+        .with_return_type("spy.fn", "Mock")
+        .with(sym(3, "Mock", "Mock", "type_alias", "a.ts"))
+        .with_field_type("Mock", "MockInstance")
+        .with(sym(4, "MockInstance", "MockInstance", "interface", "a.ts"))
+        .with_member(
+            "MockInstance",
+            sym(5, "mockImplementation", "MockInstance.mockImplementation", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("vi", false, SegmentKind::Identifier),
+        seg("fn", true, SegmentKind::Property),
+        seg("mockImplementation", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(5));
+}
+
+#[test]
 fn probe_intersection_alias_with_own_members_finds_branch_member() {
     // screen.getByText: screen: Screen, Screen = BoundFunctions & { debug },
     // getByText lives on the BoundFunctions branch. Screen having its OWN

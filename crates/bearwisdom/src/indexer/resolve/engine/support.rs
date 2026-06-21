@@ -54,6 +54,18 @@ pub(crate) fn resolve_module_exported_value_type(
     if declaring_qname == typed_qname {
         return None;
     }
+    // A `typeof <value>` whose declared value is a function/method: the value IS
+    // that callable, so its type is the function's own qname — calling the typed
+    // property then yields the function's return type (the chain walker's
+    // callable-named unwrap). A function carries no `field_type` of its own, so
+    // the field-type read below would otherwise drop it. A non-callable value's
+    // type is its declared field_type.
+    if by_qname
+        .get(&declaring_qname)
+        .is_some_and(|s| matches!(s.kind.as_str(), "function" | "method"))
+    {
+        return Some((declaring_qname, None));
+    }
     let ti = type_info.get(&declaring_qname)?;
     let field_type = ti.field_type.clone()?;
     Some((field_type, ti.field_type_id))
