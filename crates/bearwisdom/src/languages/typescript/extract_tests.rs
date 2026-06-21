@@ -46,6 +46,36 @@ fn mapped_type_key_binder_not_leaked_across_multiline_body() {
 }
 
 #[test]
+fn probe_typeof_property_emits_typeref_to_value() {
+    let src = "interface V {\n  fn: typeof someFn;\n}\n";
+    let r = refs(src);
+    let has = r
+        .iter()
+        .any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "someFn");
+    assert!(
+        has,
+        "typeof-typed property should emit a TypeRef to the referenced value: {r:?}"
+    );
+}
+
+#[test]
+fn probe_typeof_imported_samename_member_emits_ref() {
+    // The exact vitest shape: `fn` is imported AND the interface member is also
+    // named `fn`, typed `typeof fn`. The TypeRef to fn must still be emitted (and
+    // not import-binding, so Phase B can derive the field type).
+    let src = "import { fn } from 'spy'\ninterface V {\n  fn: typeof fn\n}\n";
+    let r = refs(src);
+    let trefs: Vec<_> = r
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "fn" && !rf.is_import_binding)
+        .collect();
+    assert!(
+        !trefs.is_empty(),
+        "typeof of an imported same-named value should emit a non-import TypeRef: {r:?}"
+    );
+}
+
+#[test]
 fn function_typed_property_records_signature_for_return_inference() {
     // An interface property whose type is a callable (`fn: <T>(...) => Mock<T>`)
     // must carry the arrow type as its signature so the resolve-time return-type

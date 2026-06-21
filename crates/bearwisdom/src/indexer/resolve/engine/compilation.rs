@@ -625,6 +625,30 @@ impl Compilation {
                                 });
                                 continue;
                             }
+                            // A non-module type-ref that resolves to the property
+                            // ITSELF is a `typeof <same-named value>` collision:
+                            // scope qualification matched this member, not the
+                            // referenced value (`fn: typeof fn` inside an interface
+                            // whose member is also `fn`). Re-bind to a non-self
+                            // callable of that bare name so a call on the property
+                            // yields the named function's return type.
+                            let resolved = if resolved == sym.qualified_name {
+                                self.by_name
+                                    .get(first)
+                                    .and_then(|cands| {
+                                        cands.iter().find(|c| {
+                                            c.qualified_name != sym.qualified_name
+                                                && matches!(
+                                                    c.kind.as_str(),
+                                                    "function" | "method"
+                                                )
+                                        })
+                                    })
+                                    .map(|c| c.qualified_name.clone())
+                                    .unwrap_or(resolved)
+                            } else {
+                                resolved
+                            };
                             let arg_strs: Vec<String> = if type_refs.len() > 1 {
                                 type_refs[1..].iter().map(|(s, _)| s.to_string()).collect()
                             } else {
