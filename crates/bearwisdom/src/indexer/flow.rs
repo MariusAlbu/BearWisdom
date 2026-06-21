@@ -39,8 +39,8 @@
 
 use crate::indexer::resolve::engine::contract::chain_walker::strip_generic_args;
 use crate::types::{
-    ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
-    SymbolKind,
+    ChainSegment, DiscriminantNarrowing, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta,
+    Narrowing, SymbolKind,
 };
 use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
@@ -386,13 +386,31 @@ fn run_assignment_query(
             let nested_fn_ranges = cfg_node_kinds_for(cfg.strategy_prefix)
                 .map(|kinds| nested_function_ranges(&rhs, kinds))
                 .unwrap_or_default();
-            // A chain-bearing ref carries the whole receiver chain, so its
-            // trailing-call byte_offset is the furthest-right in the RHS — bind
-            // a `let x = a.b().c()` initializer to its outer call by preferring
-            // a chain ref and, among chain refs, the rightmost. With no chain
-            // ref the candidates are bare calls / constructions whose OUTERMOST
-            // is the LEFTMOST start (`new Outer(new Inner())` anchors `Outer`
-            // before `Inner`), so the smallest byte_offset wins there.
+            // The binding's value is the OUTERMOST expression of the RHS, which
+            // begins at the RHS start. A ref's `byte_offset` is its callee / tag
+            // node start, so the outer expression's ref is the LEFTMOST in range:
+            // the outer call of `a.b().c()` anchors at `a`; an argument call/JSX
+            // (`render(<App/>)`, `render(p1(), p2())`) anchors to the RIGHT of the
+            // outer call and must not win.
+            //
+            // The selection key, minimized:
+            //   1. leftmost callee start — the outer expression begins at the RHS
+            //      start; its arguments (`render(<App/>)`, `render(p1(), p2())`)
+            //      anchor to the RIGHT and must not win.
+            //   2. longest chain — at a shared start, the outermost expression
+            //      carries the most segments: `a.b().field` (member access on a
+            //      call result) over the inner `a.b()` call, so the binding takes
+            //      the field's type, not the call's return.
+            //   3. value-producing kind — a bare call emits both a `Calls`/
+            //      `Instantiates` ref (whose return / construction types the
+            //      binding) AND a co-located, equal-length `TypeRef` for type
+            //      tracking; only kind separates them, and the value ref wins.
+            let value_rank = |k: EdgeKind| -> u8 {
+                match k {
+                    EdgeKind::Calls | EdgeKind::Instantiates => 0,
+                    _ => 1,
+                }
+            };
             let ref_idx = refs
                 .iter()
                 .enumerate()
@@ -403,13 +421,9 @@ fn run_assignment_query(
                             .iter()
                             .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
                 })
-                .max_by_key(|(_, r)| {
-                    let signed = if r.chain.is_some() {
-                        r.byte_offset as i64
-                    } else {
-                        -(r.byte_offset as i64)
-                    };
-                    (r.chain.is_some(), signed)
+                .min_by_key(|(_, r)| {
+                    let segments = r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0);
+                    (r.byte_offset, std::cmp::Reverse(segments), value_rank(r.kind))
                 })
                 .map(|(i, _)| i);
             if let Some(ref_idx) = ref_idx {

@@ -396,6 +396,71 @@ fn binds_member_through_a_mapped_type_to_its_source() {
 }
 
 #[test]
+fn binds_member_through_unbound_mapped_source_via_reexport_closure() {
+    // testing-library `RenderResult`:
+    //   type RenderResult<Q extends Queries = typeof queries> =
+    //     { ... } & { [P in keyof Q]: BoundFunction<Q[P]> };
+    //   const rendered: RenderResult;  rendered.getByText(...)
+    // `Q` is an UNBOUND parameter (the receiver supplies no type argument), so it
+    // defaults to `typeof queries` — a value namespace whose keys (`getByText`)
+    // live in `@testing-library/dom`, which `@testing-library/react` re-exports
+    // wholesale. The member resolves through that wildcard re-export closure.
+    let barrel = "ext:ts:@testing-library/react/types/index.d.ts";
+    let lookup = Lookup::new()
+        .with_local_type("rendered", "RenderResult")
+        .with(sym(1, "RenderResult", "RenderResult", "type_alias", barrel))
+        .with_alias(
+            "RenderResult",
+            crate::types::AliasTarget::Mapped {
+                source: "Q".to_string(),
+                value_template: "BoundFunction<Q[P]>".to_string(),
+            },
+        )
+        .with_generics("RenderResult", &["Q"])
+        .with_reexport(barrel, "*", "@testing-library/dom")
+        .with(sym(
+            42,
+            "getByText",
+            "@testing-library/dom.getByText",
+            "function",
+            "ext:ts:@testing-library/dom/types/queries.d.ts",
+        ));
+    let segs = vec![
+        seg("rendered", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(42));
+}
+
+#[test]
+fn unbound_mapped_source_declines_when_receiver_is_internal() {
+    // The same unbound-mapped shape but the receiver type is declared in an
+    // INTERNAL file: the namespace + wholesale-re-export shape only occurs in
+    // library `.d.ts`, so the re-export-closure fallback must NOT fire for
+    // project code (guards against false resolves on internal utility mapped
+    // types used without a type argument).
+    let internal = "src/types.ts";
+    let lookup = Lookup::new()
+        .with_local_type("x", "Local")
+        .with(sym(1, "Local", "Local", "type_alias", internal))
+        .with_alias(
+            "Local",
+            crate::types::AliasTarget::Mapped {
+                source: "Q".to_string(),
+                value_template: "Q[P]".to_string(),
+            },
+        )
+        .with_generics("Local", &["Q"])
+        .with_reexport(internal, "*", "other")
+        .with(sym(42, "getByText", "other.getByText", "function", internal));
+    let segs = vec![
+        seg("x", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
+}
+
+#[test]
 fn roots_a_call_at_the_callee_return_type() {
     // function makeRepo(): Repo {...};  makeRepo().save()  →  Repo.save (id 30)
     let lookup = Lookup::new()

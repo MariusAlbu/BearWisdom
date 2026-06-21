@@ -249,14 +249,22 @@ fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_capitalized_primitive(lookup, &head, member, accept) {
         return Some(m);
     }
-    let source_ty = mapped_source_type(lookup, arena, recv.ty, &head)?;
-    let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
-    // A mapped source that resolves back to the mapped type itself makes no
-    // progress — stop rather than spin to the depth bound.
-    if head_qname(arena, source_recv.ty).as_deref() == Some(head.as_str()) {
-        return None;
+    if let Some(source_ty) = mapped_source_type(lookup, arena, recv.ty, &head) {
+        let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
+        // A mapped source that resolves back to the mapped type itself makes no
+        // progress — skip rather than spin to the depth bound.
+        if head_qname(arena, source_recv.ty).as_deref() != Some(head.as_str()) {
+            if let Some(m) =
+                lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+            {
+                return Some(m);
+            }
+        }
     }
-    lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+    // The mapped source is an UNBOUND parameter: it falls back to its declared
+    // default (a `typeof <namespace>`) whose keys are the mapped object's members,
+    // resolved through the receiver's wildcard re-export closure.
+    lookup_member_via_unbound_mapped_source(lookup, arena, recv.ty, &head, member, accept)
 }
 
 /// When `head` begins with a lowercase letter, probe the same name with its
@@ -363,8 +371,76 @@ fn mapped_source_type(
         if let Some(&arg) = args.get(pos) {
             return Some(arg);
         }
+        // Source names a parameter with NO applied argument — unbound. The bare
+        // parameter name carries no members; its default (a `typeof <namespace>`)
+        // is resolved by `lookup_member_via_unbound_mapped_source` through the
+        // receiver's re-export closure instead.
+        return None;
     }
     Some(arena.intern_type_str(&source))
+}
+
+/// Resolve `member` on a mapped alias whose source parameter is UNBOUND — the
+/// receiver supplied no type argument, so the parameter falls back to its
+/// declared default. The canonical shape is testing-library's `RenderResult`:
+/// `{ [P in keyof Q]: BoundFunction<Q[P]> }` with `Q extends Queries = typeof
+/// queries`. `keyof Q`'s keys are the query functions (`getByText`, …) of the
+/// value namespace `queries`, and the receiver type's package re-exports that
+/// whole namespace (`export * from '@testing-library/dom'`). Walk the receiver
+/// declaration's wildcard re-exports and resolve `member` by qualified name in
+/// each re-exported module.
+///
+/// Gated to: a Mapped / IntersectionMapped alias whose source is one of the
+/// type's own generic parameters with NO applied argument (a bound source is
+/// handled by `mapped_source_type`), declared in an EXTERNAL file (the namespace
+/// + wholesale re-export shape this targets only occurs in library `.d.ts`).
+/// `None` outside that shape or when no re-exported module carries the member.
+fn lookup_member_via_unbound_mapped_source(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    ty: TypeId,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    let source = match lookup.alias_target(head)? {
+        AliasTarget::Mapped { source, .. } | AliasTarget::IntersectionMapped { source, .. }
+            if !source.is_empty() =>
+        {
+            source.clone()
+        }
+        _ => return None,
+    };
+    let params = lookup.generic_params(head).unwrap_or(&[]);
+    let pos = params.iter().position(|p| *p == source)?;
+    // A source param with a CONCRETE applied argument is bound — `mapped_source_type`
+    // resolved it already. But a self-applied return type echoes its own parameters
+    // as arguments (`render(): RenderResult<Q, Container, BaseElement>`), so the arg
+    // at `pos` is the parameter name itself — still unbound, still defaulted. Treat
+    // an argument whose head is one of the type's own parameters as unbound.
+    let bound = apply_args(arena, ty)
+        .get(pos)
+        .and_then(|&a| head_qname(arena, a))
+        .is_some_and(|h| !params.iter().any(|p| *p == h));
+    if bound {
+        return None;
+    }
+    let decl_file = lookup.by_qualified_name(head)?.file_path.clone();
+    if !lookup.is_external_file(&decl_file) {
+        return None;
+    }
+    for (orig, module) in lookup.reexports_from(&decl_file) {
+        if orig.as_str() != "*" {
+            continue;
+        }
+        let want = format!("{module}.{member}");
+        for cand in lookup.by_name(member).iter() {
+            if cand.qualified_name == want && accept(&cand.kind) {
+                return Some(cand.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Resolve `member` on `type_qname`, climbing its supertypes up to

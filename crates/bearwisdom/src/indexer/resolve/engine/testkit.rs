@@ -39,6 +39,9 @@ pub(crate) struct Lookup {
     local_types: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
+    /// File path → its re-export entries `(original_name, source_module)`, with
+    /// `"*"` for an `export * from 'm'` wildcard. Backs `reexports_from`.
+    reexports: FxHashMap<String, Vec<(String, String)>>,
     ambient: FxHashMap<String, Vec<Symbol>>,
     /// Package id → symbols, the id-keyed counterpart of the real `by_package`
     /// map. Backs `symbols_in_package` for workspace-scoped rule tests.
@@ -69,6 +72,7 @@ impl Lookup {
             local_types: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
+            reexports: Default::default(),
             ambient: Default::default(),
             by_package: Default::default(),
             workspace_pkgs: Default::default(),
@@ -179,6 +183,16 @@ impl Lookup {
         self
     }
 
+    /// Register a re-export entry from `file`: `original_name` (`"*"` for a
+    /// wildcard `export * from 'module'`) re-exported from `module`.
+    pub(crate) fn with_reexport(mut self, file: &str, original_name: &str, module: &str) -> Self {
+        self.reexports
+            .entry(file.to_string())
+            .or_default()
+            .push((original_name.to_string(), module.to_string()));
+        self
+    }
+
     /// Register a symbol as a member of ambient scope, keyed by its simple name.
     pub(crate) fn with_ambient(mut self, sym: Symbol) -> Self {
         self.ambient
@@ -278,8 +292,11 @@ impl SymbolLookup for Lookup {
     fn alias_target(&self, name: &str) -> Option<&AliasTarget> {
         self.aliases.get(name)
     }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] {
-        &self.empty_pairs
+    fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
+        self.reexports
+            .get(file_path)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty_pairs)
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
