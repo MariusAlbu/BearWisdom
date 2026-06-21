@@ -46,6 +46,27 @@ fn mapped_type_key_binder_not_leaked_across_multiline_body() {
 }
 
 #[test]
+fn function_typed_property_records_signature_for_return_inference() {
+    // An interface property whose type is a callable (`fn: <T>(...) => Mock<T>`)
+    // must carry the arrow type as its signature so the resolve-time return-type
+    // pass can derive the call result — `obj.fn()` then yields `Mock`. Without
+    // it `push_ts_field` leaves the signature empty and the call chain dies at
+    // the first hop.
+    let src = "interface VitestUtils {\n  fn: <T>(implementation?: T) => Mock<T>;\n}\n";
+    let s = sym(src);
+    let prop = s
+        .iter()
+        .find(|s| s.name == "fn" && s.kind == SymbolKind::Property)
+        .expect("function-typed property `fn` should be extracted");
+    let sig = prop.signature.as_deref().unwrap_or("");
+    assert!(
+        sig.contains("=>") && sig.contains("Mock"),
+        "function-typed property should record its arrow type as signature, got {:?}",
+        prop.signature
+    );
+}
+
+#[test]
 fn arrow_const_params_emitted_as_scoped_symbols() {
     // `const useQueryClient = (queryClient?: QueryClient) => …` — the arrow's
     // params must be emitted as Property symbols qualified under the function

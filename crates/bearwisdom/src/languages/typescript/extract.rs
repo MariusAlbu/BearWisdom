@@ -621,6 +621,16 @@ fn extract_node(
                             found
                         };
                         if let Some(tv) = type_value {
+                            // A callable-typed property (`fn: <T>(...) => Mock<T>`)
+                            // carries its call result in the arrow type. push_ts_field
+                            // leaves such a property's signature empty, so the resolve-
+                            // time return-type pass has nothing to read — record the
+                            // function type as the signature so `obj.fn()` yields the
+                            // arrow's return type.
+                            if tv.kind() == "function_type" {
+                                symbols[prop_idx].signature =
+                                    Some(helpers::node_text(tv, src).to_string());
+                            }
                             recurse_for_object_types(
                                 tv,
                                 src,

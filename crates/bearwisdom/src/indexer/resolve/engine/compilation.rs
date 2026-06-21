@@ -650,6 +650,27 @@ impl Compilation {
                             }
                         }
                     }
+                    // A callable-typed property (`fn: () => Mock`) yields its
+                    // function's return type when CALLED — captured here so
+                    // `obj.fn().member` chains continue past the call. The
+                    // field-type pass above set the property's static type; the
+                    // signature (recorded by the extractor for a function-typed
+                    // property) carries the arrow form this parse reads.
+                    if ti.return_type.is_none() {
+                        if let Some(rt) = sym
+                            .signature
+                            .as_deref()
+                            .and_then(parse_return_type_from_signature)
+                        {
+                            let resolved = resolve_type_name_in_scope(
+                                &rt,
+                                sym.scope_path.as_deref(),
+                                &self.by_qname,
+                            );
+                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
+                            ti.return_type = Some(resolved);
+                        }
+                    }
                 }
                 SymbolKind::TypeAlias => {
                     if let Some(&(first, _)) = type_refs.first() {
