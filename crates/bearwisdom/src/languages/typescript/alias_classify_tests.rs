@@ -126,19 +126,43 @@ fn intersection_with_only_anonymous_mapped_branch_classifies_as_mapped() {
 }
 
 #[test]
-fn intersection_with_named_branch_and_mapped_stays_intersection() {
-    // `type T = Named & { [K in keyof Named]: V }` — has a NAMED branch
-    // (`Named`), so the result stays `Intersection` to preserve the named
-    // branch for `lookup_member_on_intersection`. The mapped source is only
-    // surfaced when every branch is anonymous and there's no other head to
-    // climb.
-    let src = "type T = Named & { [K in keyof Named]: string };";
+fn intersection_with_named_branch_and_mapped_carries_both() {
+    // `type T = Named & { [K in keyof Q]: V }` has a NAMED branch (`Named`) AND a
+    // mapped branch — classify as `IntersectionMapped` so member lookup tries the
+    // named branch (`lookup_member_on_intersection`) AND the mapped source
+    // (`mapped_source_type`), dropping neither half.
+    let src = "type T = Named & { [K in keyof Q]: string };";
     let target = classify(src);
     match target {
-        AliasTarget::Intersection(branches) => {
-            assert!(branches.contains(&"Named".to_string()), "expected Named in branches, got {branches:?}");
+        AliasTarget::IntersectionMapped {
+            branches, source, ..
+        } => {
+            assert!(
+                branches.contains(&"Named".to_string()),
+                "expected Named branch, got {branches:?}"
+            );
+            assert_eq!(source, "Q", "expected mapped source Q, got {source:?}");
         }
-        other => panic!("expected Intersection, got {other:?}"),
+        other => panic!("expected IntersectionMapped, got {other:?}"),
+    }
+}
+
+#[test]
+fn nested_intersection_captures_deep_named_branch() {
+    // The vitest `Mock` shape: `A & (cond) & { [P in keyof T]: T[P] }` parses
+    // left-associatively as `(A & cond) & {mapped}`. The flatten must reach the
+    // nested named branch `A` (e.g. MockInstance) and still surface the mapped
+    // source — IntersectionMapped carrying both.
+    let src = "type T = A & (X extends Y ? P : Q) & { [P in keyof K]: K[P] };";
+    let target = classify(src);
+    match target {
+        AliasTarget::IntersectionMapped { branches, .. } => {
+            assert!(
+                branches.contains(&"A".to_string()),
+                "nested named branch A must survive the flatten, got {branches:?}"
+            );
+        }
+        other => panic!("expected IntersectionMapped, got {other:?}"),
     }
 }
 

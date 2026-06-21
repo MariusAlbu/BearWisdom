@@ -128,45 +128,28 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         }
         "intersection_type" => {
             let mut branches = Vec::new();
-            // Track any mapped branch found in an anonymous (unnamed) child.
-            // Used as a fallback when no named branch exists: `{ own } & { [K in keyof T]: V }`
-            // has no nameable head on either side, but the mapped source `T` is still
-            // reachable for member resolution via `mapped_source_type`.
+            // A mapped branch found among the anonymous (unnamed) children, kept
+            // alongside any named branches so member lookup can try BOTH halves of
+            // `Named & { [K in keyof T]: V }`.
             let mut mapped_fallback: Option<AliasTarget> = None;
-            for i in 0..node.child_count() {
-                let Some(child) = node.child(i) else { continue };
-                if child.kind() == "&" {
-                    continue;
-                }
-                let name = head_type_name(&child, src);
-                if !name.is_empty() {
-                    branches.push(name);
-                } else if matches!(child.kind(), "object_type" | "mapped_type")
-                    && mapped_fallback.is_none()
-                {
-                    // Anonymous mapped branch — record it so we can surface the
-                    // source if no named branch exists at all.
-                    if let Some(AliasTarget::Mapped { source, value_template }) =
-                        classify_mapped_object(&child, src)
-                    {
-                        if !source.is_empty() {
-                            mapped_fallback =
-                                Some(AliasTarget::Mapped { source, value_template });
-                        }
+            collect_intersection_branches(&node, src, &mut branches, &mut mapped_fallback);
+            match (branches.is_empty(), mapped_fallback) {
+                // No named branch, only a mapped one — surface the mapped source so
+                // the chain walker follows through to the source type's members.
+                (true, Some(mapped)) => mapped,
+                // Named branch(es) AND a mapped branch — carry both so neither is
+                // dropped: `lookup_member_on_intersection` climbs the named
+                // branches and `mapped_source_type` follows the mapped source.
+                (false, Some(AliasTarget::Mapped { source, value_template })) => {
+                    AliasTarget::IntersectionMapped {
+                        branches,
+                        source,
+                        value_template,
                     }
                 }
+                // Only named branches (or a non-mapped fallback) — plain intersection.
+                (_, _) => AliasTarget::Intersection(branches),
             }
-            // When every branch is anonymous and one of them is a mapped type,
-            // surface the mapped source so the chain walker can follow through
-            // to the source type's members. Named branches take priority: an
-            // intersection that has at least one named branch stays `Intersection`
-            // so `lookup_member_on_intersection` can climb each named branch.
-            if branches.is_empty() {
-                if let Some(mapped) = mapped_fallback {
-                    return mapped;
-                }
-            }
-            AliasTarget::Intersection(branches)
         }
         // A `{ [K in keyof T]: V }` mapped type parses as an `object_type`
         // wrapping a `mapped_type_clause` in this grammar — not a top-level
@@ -313,6 +296,48 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         // shape we don't expand yet. Recorded as `Other` so callers
         // don't fall back to the field_type heuristic.
         _ => AliasTarget::Other,
+    }
+}
+
+/// Collect the named-type branches of an intersection into `branches`, recursing
+/// into nested `intersection_type` children. `A & B & C` parses left-
+/// associatively as `(A & B) & C`, so the outer node's first child is itself an
+/// intersection whose named branches (`A`, `B`) would be lost without recursion.
+/// The first anonymous mapped branch is recorded in `mapped_fallback`.
+fn collect_intersection_branches(
+    node: &Node,
+    src: &[u8],
+    branches: &mut Vec<String>,
+    mapped_fallback: &mut Option<AliasTarget>,
+) {
+    for i in 0..node.child_count() {
+        let Some(child) = node.child(i) else { continue };
+        if child.kind() == "&" {
+            continue;
+        }
+        if child.kind() == "intersection_type" {
+            collect_intersection_branches(&child, src, branches, mapped_fallback);
+            continue;
+        }
+        let name = head_type_name(&child, src);
+        if !name.is_empty() {
+            branches.push(name);
+        } else if matches!(child.kind(), "object_type" | "mapped_type")
+            && mapped_fallback.is_none()
+        {
+            if let Some(AliasTarget::Mapped {
+                source,
+                value_template,
+            }) = classify_mapped_object(&child, src)
+            {
+                if !source.is_empty() {
+                    *mapped_fallback = Some(AliasTarget::Mapped {
+                        source,
+                        value_template,
+                    });
+                }
+            }
+        }
     }
 }
 

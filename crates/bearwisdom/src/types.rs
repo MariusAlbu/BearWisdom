@@ -296,6 +296,16 @@ pub enum AliasTarget {
     Union(Vec<String>),
     /// `type Foo = A & B` — branch types stored for the same future use.
     Intersection(Vec<String>),
+    /// `type Foo = A & B & { [K in keyof T]: V }` — an intersection that carries
+    /// BOTH named branches AND an anonymous mapped branch. Member lookup must try
+    /// the named branches (`MockInstance.mockImplementation`) AND the mapped
+    /// source (`T`'s own members), so neither half is dropped. `branches` are the
+    /// named heads; `source` / `value_template` mirror [`AliasTarget::Mapped`].
+    IntersectionMapped {
+        branches: Vec<String>,
+        source: String,
+        value_template: String,
+    },
     /// `type Foo = { ... }` — members are emitted as Property/Method
     /// symbols by the existing `recurse_for_object_types` walk, so chain
     /// walking against the alias name already finds them via members_of.

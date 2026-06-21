@@ -305,7 +305,8 @@ fn lookup_member_on_intersection(
     depth: usize,
 ) -> Option<Symbol> {
     let branches = match lookup.alias_target(head)? {
-        AliasTarget::Intersection(branches) => branches.clone(),
+        AliasTarget::Intersection(branches)
+        | AliasTarget::IntersectionMapped { branches, .. } => branches.clone(),
         _ => return None,
     };
     for branch in &branches {
@@ -345,7 +346,12 @@ fn mapped_source_type(
     head: &str,
 ) -> Option<TypeId> {
     let source = match lookup.alias_target(head) {
-        Some(AliasTarget::Mapped { source, .. }) if !source.is_empty() => source.clone(),
+        Some(AliasTarget::Mapped { source, .. })
+        | Some(AliasTarget::IntersectionMapped { source, .. })
+            if !source.is_empty() =>
+        {
+            source.clone()
+        }
         _ => return None,
     };
     let args = apply_args(arena, ty);
