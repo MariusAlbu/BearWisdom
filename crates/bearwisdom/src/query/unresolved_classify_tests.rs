@@ -321,21 +321,111 @@ fn priority_extractor_bug_beats_module_miss() {
 }
 
 #[test]
-fn priority_module_miss_beats_external_api() {
-    let mut externals = HashSet::new();
-    externals.insert("Observable".to_string());
+fn bare_external_module_is_external_api() {
+    // `module = 'rxjs'` is a bare specifier into an external dependency
+    // (not a workspace package), so the ref is external — not a generic
+    // internal module-resolution miss.
     let cat = _test_classify_row(
         "Observable",
         "type_ref",
         Some("rxjs"),
         "src/a.ts",
         "typescript",
-        &externals,
+        &empty_externals(),
         None,
     );
-    // module IS NOT NULL means we identified the import path; external
-    // catch-all should NOT win here.
+    assert_eq!(cat, UnresolvedCategory::ExternalApiUnknown);
+}
+
+#[test]
+fn workspace_module_is_module_miss() {
+    // A bare specifier that names a workspace package is an internal cross-
+    // package import that failed to bind — a real module-resolution miss.
+    let mut workspace = HashSet::new();
+    workspace.insert("@tanstack/query-core".to_string());
+    let cat = _test_classify_row_ext(
+        "QueryClient",
+        "type_ref",
+        Some("@tanstack/query-core"),
+        "packages/react-query/src/a.ts",
+        "typescript",
+        &empty_externals(),
+        &empty_externals(),
+        &workspace,
+        None,
+    );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
+}
+
+#[test]
+fn relative_module_is_module_miss() {
+    // Relative specifiers are always internal regardless of workspace set.
+    let cat = _test_classify_row(
+        "thing",
+        "calls",
+        Some("../shared/util"),
+        "src/a.ts",
+        "typescript",
+        &empty_externals(),
+        None,
+    );
+    assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
+}
+
+#[test]
+fn external_member_call_via_member_set() {
+    // A member-access ref whose target names an external member symbol is
+    // attributed to the externals-member frontier, beating the lowercase
+    // locals heuristic that would otherwise tag `getByText` as a local.
+    let mut members = HashSet::new();
+    members.insert("getByText".to_string());
+    let cat = _test_classify_row_ext(
+        "getByText",
+        "calls",
+        None,
+        "src/a.test.ts",
+        "typescript",
+        &empty_externals(),
+        &members,
+        &empty_externals(),
+        None,
+    );
+    assert_eq!(cat, UnresolvedCategory::ExternalMemberCall);
+}
+
+#[test]
+fn external_member_set_does_not_fire_on_type_ref() {
+    // Type-level kinds are not member accesses; matching the member set on
+    // a type_ref would be meaningless, so it must not flip to member-call.
+    let mut members = HashSet::new();
+    members.insert("getByText".to_string());
+    let cat = _test_classify_row_ext(
+        "getByText",
+        "type_ref",
+        None,
+        "src/a.ts",
+        "typescript",
+        &empty_externals(),
+        &members,
+        &empty_externals(),
+        None,
+    );
+    assert_ne!(cat, UnresolvedCategory::ExternalMemberCall);
+}
+
+#[test]
+fn is_external_module_classification() {
+    let mut workspace = HashSet::new();
+    workspace.insert("@tanstack/query-core".to_string());
+    // Bare external deps.
+    assert!(_test_is_external_module("vitest", &workspace));
+    assert!(_test_is_external_module("@testing-library/react", &workspace));
+    assert!(_test_is_external_module("preact/hooks", &workspace));
+    // Relative + workspace + workspace-subpath are internal.
+    assert!(!_test_is_external_module("./util", &workspace));
+    assert!(!_test_is_external_module("../util", &workspace));
+    assert!(!_test_is_external_module("@tanstack/query-core", &workspace));
+    assert!(!_test_is_external_module("@tanstack/query-core/build", &workspace));
 }
 
 // ---------------------------------------------------------------------------

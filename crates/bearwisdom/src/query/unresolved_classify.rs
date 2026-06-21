@@ -43,6 +43,11 @@ pub enum UnresolvedCategory {
     /// project (`external_refs`); strong hint this row should be too. Fires
     /// only when no stronger signal applies.
     ExternalApiUnknown,
+    /// Member-access ref (`x.foo()`) whose target names a member symbol
+    /// defined in external dependency code (`origin='external'`). The member
+    /// is indexed as a lookup target but the chain walk never bound the
+    /// receiver to it — the externals-member-return-type frontier.
+    ExternalMemberCall,
     /// Source file's language is a host/template language and the row's
     /// shape suggests an embedded-region routing or scope-rebasing miss.
     EmbeddedRegionIssue,
@@ -68,6 +73,7 @@ impl UnresolvedCategory {
             UnresolvedCategory::GeneratedOrVendorNoise => "generated_or_vendor_noise",
             UnresolvedCategory::ModuleResolutionMiss => "module_resolution_miss",
             UnresolvedCategory::ExternalApiUnknown => "external_api_unknown",
+            UnresolvedCategory::ExternalMemberCall => "external_member_call",
             UnresolvedCategory::EmbeddedRegionIssue => "embedded_region_issue",
             UnresolvedCategory::LocalFalsePositive => "local_false_positive",
             UnresolvedCategory::UnsupportedSyntax => "unsupported_syntax",
@@ -145,6 +151,44 @@ pub fn classify_unresolved(
         rows.filter_map(|r| r.ok()).collect()
     };
 
+    // Member-kind symbol names defined in external dependency code. A
+    // member-access unresolved ref whose target matches one of these is a
+    // call into an external library member whose return-type / member
+    // surface the engine didn't expose — distinct from a genuinely missing
+    // project symbol. Restricted to member kinds so top-level external
+    // function/variable exports don't shadow built-in receiver methods.
+    let external_member_names: HashSet<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT s.name FROM symbols s \
+                 JOIN files f ON f.id = s.file_id \
+                 WHERE f.origin = 'external' \
+                   AND s.kind IN ('method','property','field','getter','setter','accessor')",
+            )
+            .context("classify_unresolved: prepare external member scan")?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .context("classify_unresolved: execute external member scan")?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    // Workspace-internal package names (manifest-declared + folder-derived).
+    // A bare module specifier matching one of these is an internal cross-
+    // package import that failed to bind — a real module-resolution miss —
+    // not a reference into an external dependency.
+    let workspace_packages: HashSet<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT declared_name FROM packages WHERE declared_name IS NOT NULL \
+                 UNION SELECT name FROM packages",
+            )
+            .context("classify_unresolved: prepare workspace package scan")?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .context("classify_unresolved: execute workspace package scan")?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
     // Per-file imported names — a target appearing here flips the
     // category toward module_resolution_miss even when `module` is null
     // on the unresolved row itself.
@@ -214,7 +258,13 @@ pub fn classify_unresolved(
             file_path: &file_path,
             language: &language,
         };
-        let category = classify_row(&row, &external_names, imports_by_file.get(&file_id));
+        let category = classify_row(
+            &row,
+            &external_names,
+            &external_member_names,
+            &workspace_packages,
+            imports_by_file.get(&file_id),
+        );
 
         total += 1;
         *by_language.entry(language.clone()).or_default() += 1;
@@ -294,6 +344,8 @@ struct ClassifyRow<'a> {
 fn classify_row(
     row: &ClassifyRow<'_>,
     external_names: &HashSet<String>,
+    external_member_names: &HashSet<String>,
+    workspace_packages: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
 ) -> UnresolvedCategory {
     // 1. Extractor bug — the cheapest checks first.
@@ -309,9 +361,14 @@ fn classify_row(
         return UnresolvedCategory::GeneratedOrVendorNoise;
     }
 
-    // 3. Module resolution miss — explicit `module` column on the row, or
-    //    the target appears in this file's imports table but didn't resolve.
-    if row.module.is_some() {
+    // 3. Module resolution — a bare specifier pointing into an external
+    //    dependency is an external-API ref; a relative path or a workspace
+    //    package name is a genuine internal import-binding miss. The target
+    //    appearing in this file's imports table is likewise an internal miss.
+    if let Some(module) = row.module {
+        if is_external_module(module, workspace_packages) {
+            return UnresolvedCategory::ExternalApiUnknown;
+        }
         return UnresolvedCategory::ModuleResolutionMiss;
     }
     if let Some(imports) = imports_for_file {
@@ -331,6 +388,13 @@ fn classify_row(
     //    don't get demoted to "local var" by the lowercase test below.
     if external_names.contains(row.target_name) {
         return UnresolvedCategory::ExternalApiUnknown;
+    }
+    // 5b. External member call — a member-access ref whose target names a
+    //     member symbol defined in external dependency code. Run before the
+    //     lowercase locals test so `x.getByText()` / `q.refetch()` attribute
+    //     to the externals-member frontier, not to a locals miss.
+    if is_member_access_kind(row.kind) && external_member_names.contains(row.target_name) {
+        return UnresolvedCategory::ExternalMemberCall;
     }
 
     // 6. Local false positive — locals.scm / scope-tree miss.
@@ -633,6 +697,32 @@ fn looks_like_unsupported_syntax(name: &str) -> bool {
         || name.contains(' ')
 }
 
+/// True when `module` is a bare specifier resolving into an external
+/// dependency rather than project code. Relative/absolute paths are
+/// internal; a bare specifier is external unless it names a workspace
+/// package — exact, or a subpath under one (`@scope/pkg/sub`).
+fn is_external_module(module: &str, workspace_packages: &HashSet<String>) -> bool {
+    if module.starts_with('.') || module.starts_with('/') {
+        return false;
+    }
+    if workspace_packages.contains(module) {
+        return false;
+    }
+    let is_workspace_subpath = workspace_packages.iter().any(|p| {
+        module.len() > p.len()
+            && module.starts_with(p.as_str())
+            && module.as_bytes()[p.len()] == b'/'
+    });
+    !is_workspace_subpath
+}
+
+/// Member-access ref kinds — the row reads or calls a member off a
+/// receiver, so matching an external member-symbol name is meaningful.
+/// Type-level kinds (`type_ref`, `instantiates`, `inherits`) are excluded.
+fn is_member_access_kind(kind: &str) -> bool {
+    matches!(kind, "calls" | "field" | "reads" | "writes")
+}
+
 #[cfg(test)]
 #[path = "unresolved_classify_tests.rs"]
 mod tests;
@@ -647,6 +737,7 @@ pub(super) fn _test_classify_row(
     external_names: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
 ) -> UnresolvedCategory {
+    let empty = HashSet::new();
     let row = ClassifyRow {
         target_name,
         kind,
@@ -654,10 +745,44 @@ pub(super) fn _test_classify_row(
         file_path,
         language,
     };
-    classify_row(&row, external_names, imports_for_file)
+    classify_row(&row, external_names, &empty, &empty, imports_for_file)
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn _test_classify_row_ext(
+    target_name: &str,
+    kind: &str,
+    module: Option<&str>,
+    file_path: &str,
+    language: &str,
+    external_names: &HashSet<String>,
+    external_member_names: &HashSet<String>,
+    workspace_packages: &HashSet<String>,
+    imports_for_file: Option<&HashSet<String>>,
+) -> UnresolvedCategory {
+    let row = ClassifyRow {
+        target_name,
+        kind,
+        module,
+        file_path,
+        language,
+    };
+    classify_row(
+        &row,
+        external_names,
+        external_member_names,
+        workspace_packages,
+        imports_for_file,
+    )
 }
 
 #[cfg(test)]
 pub(super) fn _test_looks_like_local(name: &str, kind: &str, language: &str) -> bool {
     looks_like_local(name, kind, language)
+}
+
+#[cfg(test)]
+pub(super) fn _test_is_external_module(module: &str, workspace_packages: &HashSet<String>) -> bool {
+    is_external_module(module, workspace_packages)
 }
