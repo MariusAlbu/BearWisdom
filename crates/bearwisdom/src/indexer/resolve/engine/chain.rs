@@ -688,11 +688,22 @@ fn resolve_root(
     // Fall back to the String cache and intern once at this boundary when no
     // TypeId binding exists (e.g. bindings recorded via the String path or by
     // synthetic test doubles that only implement `local_type`).
+    // A binding typed `ReturnType<typeof fn>` (or any return-type-extraction alias
+    // of that shape) roots on `fn`'s return type, resolved in this file's import
+    // scope so the right overload is chosen. Applies to both the TypeId-cached and
+    // String-cached local bindings.
     if let Some(id) = lookup.local_type_id(&seg.name) {
+        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
+            return Some(Receiver::untyped(r));
+        }
         return Some(Receiver::untyped(id));
     }
     if let Some(ty) = lookup.local_type(&seg.name) {
-        return Some(Receiver::untyped(arena.intern_type_str(&ty)));
+        let id = arena.intern_type_str(&ty);
+        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
+            return Some(Receiver::untyped(r));
+        }
+        return Some(Receiver::untyped(id));
     }
     if let Some(ty) = &seg.declared_type {
         return Some(Receiver::untyped(with_segment_args(
@@ -1006,6 +1017,89 @@ fn callee_return_type(
     lookup
         .return_type_name(&callee.qualified_name)
         .map(|s| arena.intern_type_str(s))
+}
+
+/// Resolve a return-type-extraction application — `ReturnType<typeof fn>`, and
+/// any user alias of the same shape — to `fn`'s return type.
+///
+/// The shape is structural, not name-based (see `is_return_type_extraction`).
+/// Applied to `typeof fn`, the checked type is `fn`'s value, so the result is
+/// `fn`'s return type, resolved in the use site's import scope via
+/// `callee_return_type` so the correct overload / package is selected. `None`
+/// when `ty_str` is not such an application, or the callee or its return type
+/// can't be resolved.
+fn resolve_return_type_extraction(
+    ty: TypeId,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+) -> Option<TypeId> {
+    let head = head_qname(arena, ty)?;
+    if !is_return_type_extraction(lookup.alias_target(&head)?) {
+        return None;
+    }
+    let arg = apply_args(arena, ty).first().copied()?;
+    let value = head_qname(arena, arg)?
+        .strip_prefix("typeof ")
+        .map(str::trim)?
+        .to_string();
+    typeof_value_return_type(&value, lookup, arena, file_ctx)
+}
+
+/// The return type of the function bound to `value` at the use site. The binding
+/// is scoped to the module `value` is IMPORTED from (`import { render } from
+/// '@testing-library/react'` → `@testing-library/react.render`), so an externally
+/// imported callee resolves to the correct overload rather than a same-named
+/// function in another package — `callee_return_type`'s name-only fallback (which
+/// only package-scopes WORKSPACE imports) would otherwise pick a first-winner.
+/// Falls back to that name-only resolution for a value with no matching import.
+fn typeof_value_return_type(
+    value: &str,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+) -> Option<TypeId> {
+    for import in &file_ctx.imports {
+        let names = import.imported_name == value || import.alias.as_deref() == Some(value);
+        if !names {
+            continue;
+        }
+        let Some(module) = import.module_path.as_deref() else {
+            continue;
+        };
+        let qname = format!("{module}.{}", import.imported_name);
+        if let Some(id) = lookup.return_type_id(&qname) {
+            return Some(id);
+        }
+        if let Some(s) = lookup.return_type_name(&qname) {
+            return Some(arena.intern_type_str(s));
+        }
+    }
+    callee_return_type(lookup, arena, file_ctx, value)
+}
+
+/// A `Conditional` of the return-type-extraction shape: `T extends (...) => infer
+/// R ? R : …`. Recognised structurally — `extends` ends in `=> infer <V>` and the
+/// true branch is `<V>` — so it matches the lib `ReturnType<T>` and any alias
+/// written the same way, regardless of name.
+fn is_return_type_extraction(target: &AliasTarget) -> bool {
+    let AliasTarget::Conditional {
+        extends,
+        true_branch,
+        ..
+    } = target
+    else {
+        return false;
+    };
+    let Some((_, infer_tail)) = extends.rsplit_once("=> infer ") else {
+        return false;
+    };
+    let infer_var = infer_tail
+        .trim_start()
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .next()
+        .unwrap_or("");
+    !infer_var.is_empty() && infer_var == true_branch.trim()
 }
 
 /// Attach a segment's in-source type arguments to a freshly-interned bare head

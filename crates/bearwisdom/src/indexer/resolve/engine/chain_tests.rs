@@ -433,6 +433,70 @@ fn binds_member_through_unbound_mapped_source_via_reexport_closure() {
 }
 
 #[test]
+fn roots_binding_typed_return_type_of_typeof_fn() {
+    // const rendered: ReturnType<typeof render>;  rendered.getByText()
+    // `ReturnType<T> = T extends (...) => infer R ? R : any` — a return-type
+    // extraction. Applied to `typeof render`, it roots `rendered` on `render`'s
+    // return type (RenderResult), so the member resolves there.
+    let lookup = Lookup::new()
+        .with_local_type("rendered", "ReturnType<typeof render>")
+        .with_alias(
+            "ReturnType",
+            crate::types::AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "(...args: any) => infer R".to_string(),
+                true_branch: "R".to_string(),
+                false_branch: "any".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with(sym(1, "render", "render", "function", "ext:ts:tl.d.ts"))
+        .with_return_type("render", "RenderResult")
+        .with_member(
+            "RenderResult",
+            sym(42, "getByText", "RenderResult.getByText", "method", "ext:ts:tl.d.ts"),
+        );
+    let segs = vec![
+        seg("rendered", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(42));
+}
+
+#[test]
+fn return_type_of_typeof_fn_scopes_to_the_imported_overload() {
+    // Two same-named `render` in different packages. `typeof render` must bind to
+    // the one the file IMPORTS (react), not a first-winner (vue) — so
+    // `rendered: ReturnType<typeof render>` roots on react's RenderResult.
+    let lookup = Lookup::new()
+        .with_local_type("rendered", "ReturnType<typeof render>")
+        .with_alias(
+            "ReturnType",
+            crate::types::AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "(...args: any) => infer R".to_string(),
+                true_branch: "R".to_string(),
+                false_branch: "any".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with(sym(1, "render", "@testing-library/vue.render", "function", "ext:ts:vue.d.ts"))
+        .with_return_type("@testing-library/vue.render", "Vue")
+        .with(sym(2, "render", "@testing-library/react.render", "function", "ext:ts:react.d.ts"))
+        .with_return_type("@testing-library/react.render", "RenderResult")
+        .with_member(
+            "RenderResult",
+            sym(42, "getByText", "RenderResult.getByText", "method", "ext:ts:react.d.ts"),
+        );
+    let fc = file_ctx(vec![import("render", Some("@testing-library/react"))], None);
+    let segs = vec![
+        seg("rendered", false, SegmentKind::Identifier),
+        seg("getByText", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve_with_fc(&lookup, segs, "caller", &fc), Some(42));
+}
+
+#[test]
 fn unbound_mapped_source_declines_when_receiver_is_internal() {
     // The same unbound-mapped shape but the receiver type is declared in an
     // INTERNAL file: the namespace + wholesale-re-export shape only occurs in
