@@ -81,10 +81,15 @@ pub(crate) fn scan_for_type_decl(
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten() {
+    // read_dir yields entries in filesystem order, which is not stable; sort so
+    // file discovery — and the find_by_name insertion order it feeds — is a
+    // deterministic function of the tree.
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
         if *scanned >= MAX_FILES_SCANNED {
             return;
         }
@@ -253,10 +258,15 @@ pub(crate) fn walk_ts_dir_bounded(
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten() {
+    // read_dir yields entries in filesystem order, which is not stable; sort so
+    // file discovery — and the find_by_name insertion order it feeds — is a
+    // deterministic function of the tree.
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
         let Ok(file_type) = entry.file_type() else {
             continue;
         };

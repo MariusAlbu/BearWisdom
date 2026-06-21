@@ -189,8 +189,42 @@ fn open_cache() -> Option<Mutex<Connection>> {
 fn cache_key(abs_path: &Path, content_hash: &str) -> String {
     format!(
         "{EXTRACTOR_SCHEMA_VERSION}:{}:{content_hash}",
-        abs_path.to_string_lossy()
+        normalize_path_key(abs_path)
     )
+}
+
+/// Canonical, route-independent string for a path used as a cache key. The same
+/// logical external file can arrive with different separators (`\` vs `/`) and
+/// unfolded `.`/`..` segments depending on which locate / re-export route built
+/// the `PathBuf` (`base.join("../dist/./x.d.ts")`). Without normalization the
+/// same file keys under several strings, so a warm cache accumulates duplicate
+/// rows across runs/binaries and a fresh run materializes a different file set.
+/// Fold `.`/`..` and emit `/`-separated segments so one file maps to one key —
+/// purely string-based (no filesystem access, works for non-existent paths and
+/// resolves no symlinks).
+fn normalize_path_key(abs_path: &Path) -> String {
+    use std::path::Component;
+    let mut prefix = String::new();
+    let mut rooted = false;
+    let mut segs: Vec<String> = Vec::new();
+    for comp in abs_path.components() {
+        match comp {
+            Component::Prefix(p) => prefix = p.as_os_str().to_string_lossy().replace('\\', "/"),
+            Component::RootDir => rooted = true,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                segs.pop();
+            }
+            Component::Normal(c) => segs.push(c.to_string_lossy().to_string()),
+        }
+    }
+    let body = segs.join("/");
+    match (prefix.is_empty(), rooted) {
+        (false, true) => format!("{prefix}/{body}"),
+        (false, false) => format!("{prefix}{body}"),
+        (true, true) => format!("/{body}"),
+        (true, false) => body,
+    }
 }
 
 /// SHA-256 hex of file bytes — the same content hash `parse_file` records.

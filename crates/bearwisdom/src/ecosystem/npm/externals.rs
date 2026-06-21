@@ -110,7 +110,11 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
     // them, leaving their mixins unresolvable.
     let project_has_scss = scan_for_scss_bounded(project_root, 0);
 
-    for dep in &data.dependencies {
+    // Sort the dep set before iterating: a HashSet's order is not stable, and
+    // the order steers the first-writer-wins dep-root selection downstream.
+    let mut deps: Vec<&String> = data.dependencies.iter().collect();
+    deps.sort();
+    for dep in deps {
         if builtins.contains(dep.as_str()) {
             continue;
         }
@@ -295,6 +299,13 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
         }
         next_pass_start = roots.len();
 
+        // Sort before iterating: a HashSet's iteration order is not stable, and
+        // the order here decides the first-writer-wins winner among same-name
+        // externals downstream, which steers the whole transitive closure into a
+        // different file set run-to-run. A total order keeps the materialized
+        // set a deterministic function of the inputs.
+        let mut transitive_specs: Vec<(String, PathBuf)> = transitive_specs.into_iter().collect();
+        transitive_specs.sort();
         for (spec, parent_local_nm) in transitive_specs {
             // Deep re-export specs like `export * from 'playwright/test'` point
             // at a submodule of a transitive package — the package name is the

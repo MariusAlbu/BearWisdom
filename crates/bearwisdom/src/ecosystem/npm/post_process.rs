@@ -164,6 +164,19 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
             Some(sp) => Some(sp),
             None => Some(package.to_string()),
         };
+        // The extractor stamps declared_type / return_type / param_types /
+        // generic_params with TypeIds keyed on the symbol's BARE (pre-prefix)
+        // qname. After prefixing, those TypeIds reference a name no symbol
+        // carries, so Phase A would write a self/return type the chain walker
+        // can't resolve and Phase B (which only fills empty slots) couldn't
+        // correct it — a fresh parse then resolves FEWER chains than a warm
+        // cache hit, which drops these fields. Clear them so the two paths
+        // ingest identically and Phase B re-derives the correctly-qualified
+        // types from refs/signatures.
+        sym.declared_type = None;
+        sym.return_type = None;
+        sym.param_types.clear();
+        sym.generic_params.clear();
     }
     // Alias targets are keyed by the bare type name the extractor recorded
     // (`Result`), but the chain walker looks them up by the receiver's
