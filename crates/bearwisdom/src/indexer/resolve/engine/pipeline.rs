@@ -425,6 +425,18 @@ fn resolve_one_file(
     // are visible to later refs in the same file only.
     let file_lookup = FileLookup::new(tree);
 
+    // Seed locals whose type is declared at the binding site — an explicit
+    // annotation (`const x: Array<T> = …`) or a bare literal initializer
+    // (`const x = []`). Neither form produces a resolvable RHS ref, so the
+    // ref-driven forward inference below would never type them. Seeded before
+    // the ref loop so a ref-driven binding for the same name encountered later
+    // in the loop still wins (record_local_type overwrites the seeded entry).
+    for (&lhs_idx, decl_ty) in &pf.flow.flow_binding_decl_type {
+        if let Some(sym) = pf.symbols.get(lhs_idx) {
+            file_lookup.record_local_type(sym.name.clone(), decl_ty.clone());
+        }
+    }
+
     for (ref_idx, r) in pf.refs.iter().enumerate() {
         let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
             continue;

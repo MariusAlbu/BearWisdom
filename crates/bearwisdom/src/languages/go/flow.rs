@@ -106,6 +106,7 @@ pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
     // releases; leave empty in v1 to avoid compilation failures. The chain
     // walker already honors seg.type_args if extractors populate them.
     type_args_query: "",
+    literal_type_kinds: &[],
 };
 
 // ---------------------------------------------------------------------------

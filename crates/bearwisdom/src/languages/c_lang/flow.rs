@@ -31,4 +31,5 @@ pub static C_FLOW_CONFIG: FlowConfig = FlowConfig {
     // this empty — cross-dialect query support is future work.
     discriminant_guard_query: "",
     type_args_query: "",
+    literal_type_kinds: &[],
 };

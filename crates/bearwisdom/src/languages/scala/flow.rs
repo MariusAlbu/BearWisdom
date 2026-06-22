@@ -51,4 +51,5 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
             type_arguments: (type_arguments
                 (type_identifier) @call.type_arg))
     "#,
+    literal_type_kinds: &[],
 };

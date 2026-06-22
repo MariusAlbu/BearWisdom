@@ -14,6 +14,7 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
     assignment_query: r#"
         (variable_declarator
             name: (identifier) @lhs
+            type: (type_annotation (_) @type)?
             value: (_) @rhs)
 
         (assignment_expression
@@ -55,6 +56,14 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
             type_arguments: (type_arguments
                 (type_identifier) @call.type_arg))
     "#,
+    literal_type_kinds: &[
+        ("array", "Array"),
+        ("object", "Object"),
+        ("string", "String"),
+        ("template_string", "String"),
+        ("number", "Number"),
+        ("regex", "RegExp"),
+    ],
 };
 
 fn ts_grammar() -> tree_sitter::Language {
@@ -717,6 +726,7 @@ fn assert_nested_if_return_binds(
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let build_off = src.find("build").unwrap() as u32;
     let build_line = src[..build_off as usize].matches('\n').count() as u32;
@@ -876,6 +886,7 @@ fn assert_concise_body_return_binds(
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let build_off = src.find("build").unwrap() as u32;
     let build_line = src[..build_off as usize].matches('\n').count() as u32;
@@ -947,6 +958,7 @@ fn flow_return_ts_block_body_tail_is_not_captured() {
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let src = "const f = () => {\n  return build();\n};\n";
     let build_off = src.find("build").unwrap() as u32;
@@ -978,6 +990,7 @@ fn flow_return_nested_lambda_not_attributed_cross_lang() {
             type_guard_query: "",
             discriminant_guard_query: "",
             type_args_query: "",
+            literal_type_kinds: &[],
         };
         let g_off = src.find("inner(").unwrap() as u32;
         let g_line = src[..g_off as usize].matches('\n').count() as u32;
@@ -1065,6 +1078,7 @@ fn assert_tail_block_return_binds(
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let build_off = src.find("build").unwrap() as u32;
     let build_line = src[..build_off as usize].matches('\n').count() as u32;
@@ -1153,6 +1167,7 @@ fn flow_return_rust_trailing_semicolon_not_a_return() {
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let src = "fn make_user() -> T {\n    build();\n}\n";
     let build_off = src.find("build").unwrap() as u32;
@@ -1178,6 +1193,7 @@ fn flow_return_rust_trailing_let_not_a_return() {
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let src = "fn make_user() -> T {\n    let r = build();\n}\n";
     let build_off = src.find("build").unwrap() as u32;
@@ -1201,6 +1217,7 @@ fn flow_return_ts_block_tail_not_a_return() {
         type_guard_query: "",
         discriminant_guard_query: "",
         type_args_query: "",
+        literal_type_kinds: &[],
     };
     let src = "function f() {\n  build();\n}\n";
     let build_off = src.find("build").unwrap() as u32;
@@ -1335,5 +1352,53 @@ fn flow_assignment_skips_refs_inside_callback_argument() {
     assert!(
         !meta.flow_binding_lhs.contains_key(&1),
         "the `f` ref inside the arrow argument must not be the binding initializer"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Declared-type seeding — annotation capture + literal-kind table
+// ---------------------------------------------------------------------------
+
+/// Run the TS assignment query over a single-declaration source line and
+/// return the populated `FlowMeta`. The declared variable name is extracted
+/// from the source by scanning for the first identifier that follows
+/// `const ` or `let ` or `var `.
+fn run_ts_assignment(source: &str) -> crate::types::FlowMeta {
+    // Extract the variable name: first word after let/const/var.
+    let var_name = source
+        .split_whitespace()
+        .skip(1)
+        .next()
+        .unwrap_or("x")
+        .trim_end_matches(':');
+    let symbols = vec![mk_sym(var_name, SymbolKind::Variable, 0)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+    run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs)
+}
+
+#[test]
+fn ts_array_annotation_seeds_decl_type() {
+    // `const queries: Array<unknown> = []` — the @type capture lands the
+    // annotation in flow_binding_decl_type stripped to its bare base. The RHS
+    // `[]` has no resolvable ref, so without the annotation capture this binding
+    // would produce no type at all.
+    let meta = run_ts_assignment("const queries: Array<unknown> = []");
+    assert_eq!(
+        meta.flow_binding_decl_type.get(&0).map(String::as_str),
+        Some("Array"),
+        "annotated Array<unknown> must seed flow_binding_decl_type with \"Array\""
+    );
+}
+
+#[test]
+fn ts_array_literal_no_annotation_seeds_decl_type() {
+    // `let list = ['a','b']` — no annotation, no resolvable ref. The
+    // literal-kind table maps the `array` node kind to `Array` so the chain
+    // walker can type `list.push(...)` without an explicit annotation.
+    let meta = run_ts_assignment("let list = ['a', 'b']");
+    assert_eq!(
+        meta.flow_binding_decl_type.get(&0).map(String::as_str),
+        Some("Array"),
+        "bare array literal must seed flow_binding_decl_type with \"Array\""
     );
 }

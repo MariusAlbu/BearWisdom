@@ -35,12 +35,15 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "ts",
 
     // Matches `let/const/var x = <expr>` and `x = <expr>` reassignment.
-    // The @rhs capture is the raw value expression; the flow runner finds the
-    // chain/call ref whose byte_offset lies in [rhs.start_byte, rhs.end_byte)
-    // and binds its resolved_yield_type to the symbol named by @lhs.
+    // The optional `type: (type_annotation (_) @type)` capture records the
+    // declared type for annotated locals (`const x: Array<T> = …`); the generic
+    // runner strips generic args and writes `flow_binding_decl_type` so the
+    // chain walker sees the receiver type even when the RHS has no resolvable ref.
+    // The @rhs capture drives forward inference as before.
     assignment_query: r#"
         (variable_declarator
             name: (identifier) @lhs
+            type: (type_annotation (_) @type)?
             value: (_) @rhs)
 
         (assignment_expression
@@ -128,4 +131,18 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             type_arguments: (type_arguments
                 (type_identifier) @call.type_arg))
     "#,
+
+    // Maps bare literal RHS node kinds to the wrapper type they imply when no
+    // annotation and no resolvable ref are present. Mirrors the same mapping in
+    // `languages/typescript/calls.rs` that stamps the wrapper at a literal
+    // call site; this variant covers `const x = []; x.map()` where the local
+    // is declared with a literal but called through an identifier.
+    literal_type_kinds: &[
+        ("array", "Array"),
+        ("object", "Object"),
+        ("string", "String"),
+        ("template_string", "String"),
+        ("number", "Number"),
+        ("regex", "RegExp"),
+    ],
 };

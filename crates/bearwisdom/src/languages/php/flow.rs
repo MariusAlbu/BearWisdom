@@ -42,4 +42,5 @@ pub static PHP_FLOW_CONFIG: FlowConfig = FlowConfig {
     // PHP has no call-site generic arguments.
     discriminant_guard_query: "",
     type_args_query: "",
+    literal_type_kinds: &[],
 };

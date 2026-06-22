@@ -60,4 +60,5 @@ pub static CSHARP_FLOW_CONFIG: FlowConfig = FlowConfig {
                     (type_argument_list
                         (identifier) @call.type_arg))))
     "#,
+    literal_type_kinds: &[],
 };

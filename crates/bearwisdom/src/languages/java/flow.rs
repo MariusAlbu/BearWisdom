@@ -58,4 +58,5 @@ pub static JAVA_FLOW_CONFIG: FlowConfig = FlowConfig {
                 (type_identifier) @call.type_arg)
             name: (identifier) @call.method)
     "#,
+    literal_type_kinds: &[],
 };

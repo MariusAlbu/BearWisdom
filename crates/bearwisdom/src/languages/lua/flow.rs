@@ -56,4 +56,5 @@ pub static LUA_FLOW_CONFIG: FlowConfig = FlowConfig {
     // Lua has no call-site generic arguments.
     discriminant_guard_query: "",
     type_args_query: "",
+    literal_type_kinds: &[],
 };

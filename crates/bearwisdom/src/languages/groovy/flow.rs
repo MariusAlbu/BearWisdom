@@ -34,4 +34,5 @@ pub static GROOVY_FLOW_CONFIG: FlowConfig = FlowConfig {
     // `obj.<T>method()` style; leave this empty.
     discriminant_guard_query: "",
     type_args_query: "",
+    literal_type_kinds: &[],
 };

@@ -65,6 +65,12 @@ pub struct FlowConfig {
     /// Tree-sitter query matching explicit call-site type arguments.
     /// Captures `@call.method` and one `@call.type_arg` per generic argument.
     pub type_args_query: &'static str,
+    /// Maps RHS tree-sitter node kinds to the wrapper type name they imply when
+    /// no `@type` annotation and no resolvable ref are present. Empty for
+    /// languages that do not use this inference. Populated by each language's
+    /// `FlowConfig` literal; the runner inserts into `flow_binding_decl_type`
+    /// when the RHS kind matches and no entry already exists for the binding.
+    pub literal_type_kinds: &'static [(&'static str, &'static str)],
 }
 
 /// Skip flow queries on files larger than this threshold. Huge files are
@@ -430,6 +436,19 @@ fn run_assignment_query(
                 meta.flow_binding_lhs.insert(ref_idx, lhs_idx);
                 if is_unwrap {
                     meta.flow_binding_unwrap.insert(lhs_idx);
+                }
+            } else if !meta.flow_binding_decl_type.contains_key(&lhs_idx) {
+                // No resolvable RHS ref and no annotation: classify the literal
+                // node kind against the language's wrapper-type table. Skips
+                // bindings that already have a declared type from the `@type`
+                // capture above so the annotation always wins.
+                if let Some((_, wrapper)) = cfg
+                    .literal_type_kinds
+                    .iter()
+                    .find(|(k, _)| *k == rhs.kind())
+                {
+                    meta.flow_binding_decl_type
+                        .insert(lhs_idx, (*wrapper).to_string());
                 }
             }
         }

@@ -182,6 +182,31 @@ fn roots_member_on_array_typed_receiver() {
 }
 
 #[test]
+fn roots_member_on_array_annotated_local() {
+    // `const queries: Array<unknown> = []` then `queries.forEach(...)`.
+    // The annotation seeds the local type as Array; forEach must resolve
+    // against Array's members. Regression guard for the annotation-capture +
+    // flow_binding_decl_type seeding path.
+    let lookup = Lookup::new()
+        .with_local_type("queries", "Array<unknown>")
+        .with_member(
+            "Array",
+            sym(
+                61,
+                "forEach",
+                "Array.forEach",
+                "method",
+                "ext:ts:__ts_lib__/lib.es5.d.ts",
+            ),
+        );
+    let segs = vec![
+        seg("queries", false, SegmentKind::Identifier),
+        seg("forEach", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(61));
+}
+
+#[test]
 fn binds_member_through_named_intersection_branch() {
     // `const r = render(...)` types `r` as `Result`, an intersection alias
     // `BoundFunctions<typeof queries> & { container; ... }`. `getByText` is NOT a
