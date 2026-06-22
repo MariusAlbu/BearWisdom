@@ -131,6 +131,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.return_type_id(method_qname)
     }
 
+    fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.tree.return_type_id_of(symbol_id)
+    }
+
     fn type_arena(&self) -> Option<&TypeArena> {
         self.tree.type_arena()
     }

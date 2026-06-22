@@ -1069,17 +1069,36 @@ fn callee_return_type(
     name: &str,
 ) -> Option<TypeId> {
     let candidates = lookup.by_name(name);
-    let scoped = import_scoped_package_id(file_ctx, lookup, name).and_then(|pkg| {
-        candidates
+    // Import-scoped overload set: when `name` is imported from a specific
+    // package, the chain heads on THAT package's declaration. An OVERLOADED
+    // function records its return on ONE specific signature (often the
+    // implementation, not the first overload), so scan the scoped callables for
+    // the one carrying a per-id return rather than blindly taking the first —
+    // the root-typing parity the call-ref path gets by binding the arg-matched
+    // overload. Prefer the id-keyed return over the qname slot, which a
+    // same-named declaration in another package may have won.
+    if let Some(pkg) = import_scoped_package_id(file_ctx, lookup, name) {
+        let scoped: Vec<_> = candidates
             .iter()
-            .find(|s| is_callable(&s.kind) && s.package_id == Some(pkg))
-    });
-    let callee = match scoped {
-        Some(c) => c,
-        None => candidates.iter().find(|s| is_callable(&s.kind))?,
-    };
-    // Prefer the resolved callee's OWN return (id-keyed) over the qname slot,
-    // which a same-named declaration in another package may have won.
+            .filter(|s| is_callable(&s.kind) && s.package_id == Some(pkg))
+            .collect();
+        for s in &scoped {
+            if let Some(id) = lookup.return_type_id_of(s.id) {
+                return Some(id);
+            }
+        }
+        if let Some(callee) = scoped.first() {
+            if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
+                return Some(id);
+            }
+            if let Some(n) = lookup.return_type_name(&callee.qualified_name) {
+                return Some(arena.intern_type_str(n));
+            }
+        }
+    }
+    // No import attribution (or the scoped set yielded no return): the first
+    // callable declaration of this name.
+    let callee = candidates.iter().find(|s| is_callable(&s.kind))?;
     if let Some(id) = lookup.return_type_id_of(callee.id) {
         return Some(id);
     }
