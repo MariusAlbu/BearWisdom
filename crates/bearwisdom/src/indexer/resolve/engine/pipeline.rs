@@ -289,6 +289,9 @@ pub fn resolve_single_pass(
     // `const { data } = usePost()` destructure roots on the result type. Runs
     // after externals materialize so a wrapper of an external call resolves too.
     tree.infer_call_wrapper_returns(parsed);
+    // Type class fields from their call/new initializer — `m = injectMutation(...)`,
+    // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
+    tree.infer_field_init_types(parsed);
 
     let profiles = build_profiles();
     let solver = SemanticModel::production();
@@ -367,6 +370,9 @@ pub fn resolve_incremental_pass(
     // `const { data } = usePost()` destructure roots on the result type. Runs
     // after externals materialize so a wrapper of an external call resolves too.
     tree.infer_call_wrapper_returns(parsed);
+    // Type class fields from their call/new initializer — `m = injectMutation(...)`,
+    // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
+    tree.infer_field_init_types(parsed);
 
     let profiles = build_profiles();
     let solver = SemanticModel::production();

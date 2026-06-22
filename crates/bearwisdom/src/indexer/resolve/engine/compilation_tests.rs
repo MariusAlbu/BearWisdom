@@ -273,6 +273,38 @@ fn call_wrapper_return_inferred_from_returned_call() {
     );
 }
 
+/// `class C { svc = makeThing() }` — the field's type is the initializer call's
+/// return, so `this.svc.member()` can root on it.
+#[test]
+fn field_init_call_types_the_field() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+
+    let arena = Arc::new(TypeArena::new());
+    let mut mk = make_symbol("makeThing", "makeThing", SymbolKind::Function, None, None, None);
+    mk.signature = Some("function makeThing(): Thing".to_string());
+    let c = make_symbol("C", "C", SymbolKind::Class, None, None, None);
+    let svc = make_symbol("svc", "C.svc", SymbolKind::Property, Some(1), None, None);
+
+    // `svc = makeThing()` — the initializer call, attributed to the field (idx 2).
+    let mut r = call_ref("makeThing");
+    r.source_symbol_index = 2;
+    let pf = make_parsed_file("src/c.ts", vec![mk, c, svc], vec![r]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/c.ts".to_string(), "makeThing".to_string()), 1);
+    id_map.insert(("src/c.ts".to_string(), "C".to_string()), 2);
+    id_map.insert(("src/c.ts".to_string(), "C.svc".to_string()), 3);
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    assert_eq!(tree.field_type_name("C.svc"), None, "no field type before the pass");
+    tree.infer_field_init_types(std::slice::from_ref(&pf));
+    assert_eq!(
+        tree.field_type_name("C.svc"),
+        Some("Thing"),
+        "field typed from its initializer call's return",
+    );
+}
+
 #[test]
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();

@@ -1170,6 +1170,104 @@ impl Compilation {
             ti.return_type = Some(ty);
         }
     }
+
+    /// Type a class field from its CALL/NEW initializer: `readonly m =
+    /// injectMutation(...)` / `#http = inject(HttpClient)` makes the field's type
+    /// the call's return (or the constructed class), so `this.m.mutate()` /
+    /// `this.#http.get()` roots on it. The field-initializer call is already
+    /// emitted as a Calls/Instantiates ref attributed to the field symbol; the
+    /// OUTERMOST one (leftmost byte offset) is the initializer (its arguments,
+    /// including a callback's inner calls, anchor to the right). Resolved in the
+    /// declaring file's import scope so the right package's overload is read.
+    /// Only fills a genuine gap and only for a DIRECT call/new initializer — a
+    /// chained `field = a.b().c()` is left to the chain walker.
+    pub(crate) fn infer_field_init_types(&mut self, parsed: &[ParsedFile]) {
+        let mut updates: Vec<(String, String, TypeId)> = Vec::new();
+        for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
+            let imports: Vec<ImportEntry> = pf
+                .refs
+                .iter()
+                .filter(|r| r.is_import_binding)
+                .filter_map(|r| {
+                    let module = r.module.clone()?;
+                    Some(ImportEntry {
+                        imported_name: r.target_name.clone(),
+                        module_path: Some(module),
+                        alias: None,
+                        is_wildcard: r.target_name == "*",
+                    })
+                })
+                .collect();
+            let file_ctx = FileContext {
+                file_path: pf.path.clone(),
+                language: pf.language.clone(),
+                imports,
+                file_namespace: None,
+            };
+            // Per field symbol, the outermost (leftmost) call/new ref = its
+            // initializer. A chained initializer's leftmost ref is multi-segment;
+            // skip it (the chain walker types those).
+            let mut field_init: FxHashMap<usize, &crate::types::ExtractedRef> = FxHashMap::default();
+            for r in &pf.refs {
+                if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
+                    continue;
+                }
+                if r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(1) > 1 {
+                    continue;
+                }
+                let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
+                    continue;
+                };
+                if !matches!(sym.kind, SymbolKind::Property | SymbolKind::Field) {
+                    continue;
+                }
+                field_init
+                    .entry(r.source_symbol_index)
+                    .and_modify(|cur| {
+                        if r.byte_offset < cur.byte_offset {
+                            *cur = r;
+                        }
+                    })
+                    .or_insert(r);
+            }
+            for (field_idx, r) in field_init {
+                let field = &pf.symbols[field_idx];
+                if field.declared_type.is_some() {
+                    continue;
+                }
+                if self
+                    .type_info
+                    .get(&field.qualified_name)
+                    .and_then(|ti| ti.field_type.as_deref())
+                    .is_some()
+                {
+                    continue;
+                }
+                let ty_id = match r.kind {
+                    // `new X()` — the field IS X.
+                    EdgeKind::Instantiates => Some(self.arena.class(&r.target_name)),
+                    // `call(...)` — the field is the callee's return.
+                    _ => super::chain::callee_return_type(self, &self.arena, &file_ctx, &r.target_name),
+                };
+                let Some(id) = ty_id else {
+                    continue;
+                };
+                let s = self.arena.format_type(id);
+                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                    continue;
+                }
+                updates.push((field.qualified_name.clone(), s, id));
+            }
+        }
+        for (qname, s, id) in updates {
+            let ti = self.type_info.entry(qname).or_default();
+            if ti.field_type.is_some() {
+                continue;
+            }
+            ti.field_type = Some(s);
+            ti.field_type_id = Some(id);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
