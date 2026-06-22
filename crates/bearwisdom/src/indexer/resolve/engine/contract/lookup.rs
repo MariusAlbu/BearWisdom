@@ -123,6 +123,16 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Return type keyed by the callable's SYMBOL ID rather than its qualified
+    /// name. A public API duplicated across packages shares one qname, so
+    /// `return_type_id` (qname-keyed) returns the first-winner's type for every
+    /// copy; this id-keyed form lets a caller that has resolved the import-scoped
+    /// callee read THAT declaration's return. Default `None` so synthetic test
+    /// lookups need not opt in.
+    fn return_type_id_of(&self, _symbol_id: i64) -> Option<TypeId> {
+        None
+    }
+
     /// Borrow the workspace TypeArena that owns every TypeId returned by
     /// `field_type_id` / `return_type_id`. Returns
     /// `None` for synthetic test lookups that haven't opted into the

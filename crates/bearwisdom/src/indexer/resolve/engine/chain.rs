@@ -238,6 +238,13 @@ fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_intersection(lookup, arena, &head, member, accept, depth) {
         return Some(m);
     }
+    // Union alias `A | B | …`: TS union member access is valid only for members
+    // present on EVERY arm — typically all arms extend a shared base that
+    // declares the member. Resolve it on each arm; the shared declaration is the
+    // result.
+    if let Some(m) = lookup_member_on_union(lookup, arena, &head, member, accept, depth) {
+        return Some(m);
+    }
     // Primitive-name capitalization: a head like `"string"` / `"number"` /
     // `"boolean"` has no members keyed under the lowercase name, but the
     // nominal wrapper class (`"String"`, `"Number"`, `"Boolean"`) carries the
@@ -339,6 +346,66 @@ fn lookup_member_on_intersection(
         }
     }
     None
+}
+
+/// Resolve `member` on a UNION alias `A | B | …`. TS union member access is
+/// valid only for members present on EVERY arm, so the member resolves on the
+/// union iff every named branch carries it — the canonical shape is a tagged
+/// result union whose arms all `extends` a common base that declares the member.
+/// Each branch head is resolved to its declaration(s) and the member walk
+/// recurses by symbol id (climbing the branch's supertypes); the first arm's
+/// resolution is returned once every arm has agreed it carries the member.
+/// `None` when `head` is not a union alias, a branch is unnameable (a
+/// primitive/literal arm that cannot carry the member), or any arm lacks it.
+fn lookup_member_on_union(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+) -> Option<Symbol> {
+    let branches = match lookup.alias_target(head)? {
+        AliasTarget::Union(branches) => branches.clone(),
+        _ => return None,
+    };
+    if branches.is_empty() {
+        return None;
+    }
+    let mut resolved: Option<Symbol> = None;
+    for branch in &branches {
+        if branch.is_empty() || branch == head {
+            // A primitive/literal/self arm cannot carry the member; union access
+            // requires it on every arm, so the access is invalid.
+            return None;
+        }
+        let mut branch_hit: Option<Symbol> = None;
+        for cand in lookup.types_by_name(branch).iter() {
+            let recv = expand_receiver(
+                Receiver::new(arena.class(&cand.qualified_name), cand.id),
+                lookup,
+                arena,
+            );
+            // A branch that resolves back to the union itself makes no progress.
+            if head_qname(arena, recv.ty).as_deref() == Some(head) {
+                continue;
+            }
+            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
+            {
+                branch_hit = Some(m);
+                break;
+            }
+        }
+        match branch_hit {
+            None => return None,
+            Some(m) => {
+                if resolved.is_none() {
+                    resolved = Some(m);
+                }
+            }
+        }
+    }
+    resolved
 }
 
 /// The source object type of a mapped alias `{ [K in keyof Src]: … }`, with the
@@ -1011,6 +1078,11 @@ fn callee_return_type(
         Some(c) => c,
         None => candidates.iter().find(|s| is_callable(&s.kind))?,
     };
+    // Prefer the resolved callee's OWN return (id-keyed) over the qname slot,
+    // which a same-named declaration in another package may have won.
+    if let Some(id) = lookup.return_type_id_of(callee.id) {
+        return Some(id);
+    }
     if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
         return Some(id);
     }

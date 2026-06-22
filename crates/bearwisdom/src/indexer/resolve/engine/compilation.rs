@@ -77,6 +77,15 @@ pub struct Compilation {
     types_by_name: FxHashMap<String, Vec<Symbol>>,
     /// Per-symbol type metadata: field type, return type, generic params.
     type_info: FxHashMap<String, TypeInfo>,
+    /// Per-symbol type metadata keyed by SYMBOL ID — the id-keyed counterpart to
+    /// `type_info` (which keys on the qualified-name string). A public API copied
+    /// across monorepo packages shares one qname, so the qname slot is
+    /// first-writer-wins and binds one package's return type for every copy; the
+    /// id slot keeps each declaration's own return distinct, so a chain walker
+    /// holding the resolved import-scoped callee id reads that callee's return
+    /// rather than the colliding qname winner. Same relationship as
+    /// `members_by_id` ↔ `members_by_parent`.
+    type_info_by_id: FxHashMap<i64, TypeInfo>,
     /// Re-export map: file_path → [(original_name, source_module)].
     /// Populated from `pf.refs` where `is_reexport` is true.
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
@@ -191,6 +200,7 @@ impl Compilation {
             members_by_id: FxHashMap::default(),
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
+            type_info_by_id: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
             export_alias_by_module: FxHashMap::default(),
             inherits: FxHashMap::default(),
@@ -363,6 +373,21 @@ impl Compilation {
                         ti.return_type = Some(self.arena.format_type(type_id));
                         ti.return_type_id = Some(type_id);
                     }
+                    // Mirror extractor-set types onto the id-keyed slot (info.id),
+                    // so an id-driven read sees the same extractor-wins precedence
+                    // as the qname slot.
+                    let tid = self
+                        .type_info_by_id
+                        .entry(info.id)
+                        .or_insert_with(TypeInfo::default);
+                    if let Some(type_id) = sym.declared_type {
+                        tid.field_type = Some(self.arena.format_type(type_id));
+                        tid.field_type_id = Some(type_id);
+                    }
+                    if let Some(type_id) = sym.return_type {
+                        tid.return_type = Some(self.arena.format_type(type_id));
+                        tid.return_type_id = Some(type_id);
+                    }
                 }
             }
 
@@ -484,7 +509,7 @@ impl Compilation {
         // -----------------------------------------------------------------------
         let mut pending_module_values: Vec<PendingModuleValue> = Vec::new();
         for pf in parsed {
-            self.derive_type_info_from_refs(pf, &mut pending_module_values);
+            self.derive_type_info_from_refs(pf, symbol_id_map, &mut pending_module_values);
         }
 
         // -----------------------------------------------------------------------
@@ -577,7 +602,12 @@ impl Compilation {
     /// Mirrors `populate_materialized_type_info` in `engine/index/lazy.rs`,
     /// using `self.by_qname` (a `BTreeMap`) in place of the eager index's
     /// `self.by_qname`.
-    fn derive_type_info_from_refs(&mut self, pf: &ParsedFile, pending: &mut Vec<PendingModuleValue>) {
+    fn derive_type_info_from_refs(
+        &mut self,
+        pf: &ParsedFile,
+        symbol_id_map: &HashMap<(String, String), i64>,
+        pending: &mut Vec<PendingModuleValue>,
+    ) {
         // Collect TypeRef refs (excluding import bindings) per symbol index. The
         // module tag is preserved alongside the name so the value arm can tell a
         // `typeof import('m')['k']` value-export ref (which self-resolves to the
@@ -755,42 +785,72 @@ impl Compilation {
                             }
                         });
 
-                    let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                    if ti.return_type.is_none() {
+                    // This symbol's OWN return type, computed independent of the
+                    // shared qname slot — so a same-qname overload in another
+                    // package (the qname slot's first-winner) does not hide it.
+                    let computed: Option<(String, Option<TypeId>)> =
                         if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
                                 &head,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            ti.return_type_id =
-                                Some(intern_head_and_args(&self.arena, &resolved, &args));
-                            ti.return_type = Some(resolved);
+                            let rid = intern_head_and_args(&self.arena, &resolved, &args);
+                            Some((resolved, Some(rid)))
                         } else if let Some(&(last, _)) = type_refs.last() {
                             let resolved = resolve_type_name_in_scope(
                                 last,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
-                            ti.return_type = Some(resolved);
+                            let rid = self.arena.intern_type_str(&resolved);
+                            Some((resolved, Some(rid)))
                         } else if let Some(rt) = &sig_rt {
                             let resolved = resolve_type_name_in_scope(
                                 rt,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
-                            ti.return_type = Some(resolved);
+                            let rid = self.arena.intern_type_str(&resolved);
+                            Some((resolved, Some(rid)))
+                        } else {
+                            None
+                        };
+                    if let Some((resolved, rid)) = computed {
+                        // Qname slot — first-writer-wins (unchanged).
+                        let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                        if ti.return_type.is_none() {
+                            ti.return_type_id = rid;
+                            ti.return_type = Some(resolved.clone());
+                        }
+                        // Id slot — keyed by this symbol's id; no qname collision.
+                        if let Some(&id) =
+                            symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                        {
+                            let tid = self.type_info_by_id.entry(id).or_default();
+                            if tid.return_type.is_none() {
+                                tid.return_type_id = rid;
+                                tid.return_type = Some(resolved);
+                            }
                         }
                     }
                 }
                 SymbolKind::Class => {
                     // Constructor call yields the class itself.
+                    let class_id = self.arena.class(&sym.qualified_name);
                     let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                     if ti.return_type.is_none() {
-                        ti.return_type_id = Some(self.arena.class(&sym.qualified_name));
+                        ti.return_type_id = Some(class_id);
                         ti.return_type = Some(sym.qualified_name.clone());
+                    }
+                    if let Some(&id) =
+                        symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                    {
+                        let tid = self.type_info_by_id.entry(id).or_default();
+                        if tid.return_type.is_none() {
+                            tid.return_type_id = Some(class_id);
+                            tid.return_type = Some(sym.qualified_name.clone());
+                        }
                     }
                 }
                 _ => {}
@@ -1136,6 +1196,12 @@ impl SymbolLookup for Compilation {
     fn return_type_id(&self, method_qname: &str) -> Option<TypeId> {
         self.type_info
             .get(method_qname)
+            .and_then(|ti| ti.return_type_id)
+    }
+
+    fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.type_info_by_id
+            .get(&symbol_id)
             .and_then(|ti| ti.return_type_id)
     }
 

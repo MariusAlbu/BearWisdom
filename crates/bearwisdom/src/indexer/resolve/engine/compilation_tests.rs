@@ -195,6 +195,52 @@ fn members_of_id_matches_members_of() {
     );
 }
 
+/// A public API duplicated across monorepo packages shares one qname, so the
+/// qname-keyed `type_info` return slot is first-writer-wins. The id-keyed slot
+/// (`return_type_id_of`) must keep each declaration's own return distinct.
+#[test]
+fn colliding_qname_return_types_are_kept_per_id() {
+    let arena = Arc::new(TypeArena::new());
+
+    let mut react_fn =
+        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    react_fn.signature = Some("function useQuery(): ReactResult".to_string());
+    let mut preact_fn =
+        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    preact_fn.signature = Some("function useQuery(): PreactResult".to_string());
+
+    let react_pf = make_parsed_file("packages/react/useQuery.ts", vec![react_fn], vec![]);
+    let preact_pf = make_parsed_file("packages/preact/useQuery.ts", vec![preact_fn], vec![]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        ("packages/react/useQuery.ts".to_string(), "useQuery".to_string()),
+        10,
+    );
+    id_map.insert(
+        ("packages/preact/useQuery.ts".to_string(), "useQuery".to_string()),
+        20,
+    );
+
+    let tree = Compilation::build(&[react_pf, preact_pf], &id_map, Arc::clone(&arena));
+
+    // Qname slot is first-writer-wins (one type for both copies); the id slot
+    // must keep each declaration's OWN return.
+    let react_ret = tree
+        .return_type_id_of(10)
+        .expect("react useQuery should have a return type by id");
+    let preact_ret = tree
+        .return_type_id_of(20)
+        .expect("preact useQuery should have a return type by id");
+
+    assert_eq!(arena.format_type(react_ret), "ReactResult");
+    assert_eq!(arena.format_type(preact_ret), "PreactResult");
+    assert_ne!(
+        react_ret, preact_ret,
+        "same-qname overloads must keep distinct returns by id"
+    );
+}
+
 #[test]
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();

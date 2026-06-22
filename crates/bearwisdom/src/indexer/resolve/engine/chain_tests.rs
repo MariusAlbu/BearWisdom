@@ -643,6 +643,55 @@ fn callee_return_root_prefers_import_scoped_declaration_for_overloaded_name() {
 }
 
 #[test]
+fn union_member_forwards_when_every_arm_carries_it() {
+    // `type QOR = ArmA | ArmB`, both `extends Base`; Base declares `data`.
+    //   useQ(): QOR ; useQ().data  → Base.data (id 99)
+    // A tagged result union (e.g. TanStack's QueryObserverResult) resolves a
+    // shared-base member because every arm carries it via inheritance.
+    let lookup = Lookup::new()
+        .with(sym(1, "useQ", "useQ", "function", "pkg/q.ts"))
+        .with_return_type("useQ", "QOR")
+        .with(sym(2, "QOR", "QOR", "type_alias", "pkg/q.ts"))
+        .with_alias(
+            "QOR",
+            crate::types::AliasTarget::Union(vec!["ArmA".into(), "ArmB".into()]),
+        )
+        .with(sym(3, "ArmA", "ArmA", "interface", "pkg/q.ts"))
+        .with_parent("ArmA", "Base")
+        .with(sym(4, "ArmB", "ArmB", "interface", "pkg/q.ts"))
+        .with_parent("ArmB", "Base")
+        .with(sym(5, "Base", "Base", "interface", "pkg/q.ts"))
+        .with_member("Base", sym(99, "data", "Base.data", "property", "pkg/q.ts"));
+    let segs = vec![
+        seg("useQ", true, SegmentKind::Identifier),
+        seg("data", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(99));
+}
+
+#[test]
+fn union_member_declines_when_an_arm_lacks_it() {
+    // Only ArmA carries `data`; union member access requires it on EVERY arm,
+    // so `useQ().data` does not resolve.
+    let lookup = Lookup::new()
+        .with(sym(1, "useQ", "useQ", "function", "pkg/q.ts"))
+        .with_return_type("useQ", "QOR")
+        .with(sym(2, "QOR", "QOR", "type_alias", "pkg/q.ts"))
+        .with_alias(
+            "QOR",
+            crate::types::AliasTarget::Union(vec!["ArmA".into(), "ArmB".into()]),
+        )
+        .with(sym(3, "ArmA", "ArmA", "interface", "pkg/q.ts"))
+        .with_member("ArmA", sym(99, "data", "ArmA.data", "property", "pkg/q.ts"))
+        .with(sym(4, "ArmB", "ArmB", "interface", "pkg/q.ts"));
+    let segs = vec![
+        seg("useQ", true, SegmentKind::Identifier),
+        seg("data", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
+}
+
+#[test]
 fn function_and_callable_value_roots_cascade_to_further_members() {
     // The same generic root-typing mechanism that binds `toBe` / `getByText`
     // binds any further member on the rooted interface without per-member code:
