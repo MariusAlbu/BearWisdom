@@ -20,6 +20,8 @@ bench-archive/
 bench-results/
 
 # Local / session
+# Resolution fix-specs / plans / analyses — working notes, not source.
+resolution-documents/
 # Subset baselines must NOT be created — update baseline-all.json directly.
 baseline-*.json
 !baseline-all.json
