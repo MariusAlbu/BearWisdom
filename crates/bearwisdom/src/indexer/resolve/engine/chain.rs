@@ -1062,7 +1062,7 @@ const CALL_SIGNATURE_MEMBER: &str = "call";
 /// when no candidate sits in the imported package, the first callable wins. This
 /// is the same import-scoped declaration pick the bare-type-name root uses; no
 /// per-library knowledge enters here.
-fn callee_return_type(
+pub(crate) fn callee_return_type(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     file_ctx: &FileContext,

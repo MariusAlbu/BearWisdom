@@ -284,6 +284,11 @@ pub fn resolve_single_pass(
     // (possibly external) functions are materialized, so a wrapper's return type
     // is concrete before forward inference reads it.
     tree.resolve_wrapper_return_types(parsed);
+    // Infer a wrapper hook's return from `return <call>` — `function usePost() {
+    // return useQuery(...) }` makes usePost's return useQuery's, so a
+    // `const { data } = usePost()` destructure roots on the result type. Runs
+    // after externals materialize so a wrapper of an external call resolves too.
+    tree.infer_call_wrapper_returns(parsed);
 
     let profiles = build_profiles();
     let solver = SemanticModel::production();
@@ -357,6 +362,11 @@ pub fn resolve_incremental_pass(
     // Wrapped functions are now loaded from the DB; resolve `ReturnType<typeof fn>`
     // return types before forward inference reads them.
     tree.resolve_wrapper_return_types(parsed);
+    // Infer a wrapper hook's return from `return <call>` — `function usePost() {
+    // return useQuery(...) }` makes usePost's return useQuery's, so a
+    // `const { data } = usePost()` destructure roots on the result type. Runs
+    // after externals materialize so a wrapper of an external call resolves too.
+    tree.infer_call_wrapper_returns(parsed);
 
     let profiles = build_profiles();
     let solver = SemanticModel::production();

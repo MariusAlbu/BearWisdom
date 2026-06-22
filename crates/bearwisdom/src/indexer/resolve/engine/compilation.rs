@@ -1085,6 +1085,91 @@ impl Compilation {
             }
         }
     }
+
+    /// Infer a function's return type from a `return <call>` whose value IS the
+    /// call's return: `function usePost() { return useQuery(...) }` makes
+    /// `usePost`'s return `useQuery`'s. `flow.flow_return_lhs` links the returned
+    /// call's ref to its enclosing function; this resolves that call's return in
+    /// the function's own import scope (so the right package's overload is read)
+    /// and fills the function's return slot. The call-return mirror of
+    /// `infer_bare_identifier_returns` (a returned IDENTIFIER), folded through the
+    /// same cross-owner agreement gate. Only fills a genuine gap, and only for a
+    /// DIRECT call return — a chained `return a.b()` is left to the chain walker.
+    pub(crate) fn infer_call_wrapper_returns(&mut self, parsed: &[ParsedFile]) {
+        let mut candidates: Vec<(String, String, Option<TypeId>, Vec<String>)> = Vec::new();
+        for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
+            if pf.flow.flow_return_lhs.is_empty() {
+                continue;
+            }
+            let imports: Vec<ImportEntry> = pf
+                .refs
+                .iter()
+                .filter(|r| r.is_import_binding)
+                .filter_map(|r| {
+                    let module = r.module.clone()?;
+                    Some(ImportEntry {
+                        imported_name: r.target_name.clone(),
+                        module_path: Some(module),
+                        alias: None,
+                        is_wildcard: r.target_name == "*",
+                    })
+                })
+                .collect();
+            let file_ctx = FileContext {
+                file_path: pf.path.clone(),
+                language: pf.language.clone(),
+                imports,
+                file_namespace: None,
+            };
+            for (ref_idx, fn_idx) in &pf.flow.flow_return_lhs {
+                let Some(fn_sym) = pf.symbols.get(*fn_idx) else {
+                    continue;
+                };
+                // A declared/extractor return or an already-derived slot wins.
+                if fn_sym.return_type.is_some() {
+                    continue;
+                }
+                if self
+                    .type_info
+                    .get(&fn_sym.qualified_name)
+                    .and_then(|ti| ti.return_type.as_deref())
+                    .is_some()
+                {
+                    continue;
+                }
+                let Some(call_ref) = pf.refs.get(*ref_idx) else {
+                    continue;
+                };
+                // Direct call only; a chained `return a.b()` (multi-segment) is
+                // the chain walker's job, not this single-callee inference.
+                if call_ref.chain.as_ref().map(|c| c.segments.len()).unwrap_or(1) > 1 {
+                    continue;
+                }
+                let Some(ret_id) = super::chain::callee_return_type(
+                    self,
+                    &self.arena,
+                    &file_ctx,
+                    &call_ref.target_name,
+                ) else {
+                    continue;
+                };
+                let s = self.arena.format_type(ret_id);
+                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                    continue;
+                }
+                candidates.push((fn_sym.qualified_name.clone(), s, Some(ret_id), Vec::new()));
+            }
+        }
+        for (qname, ty, ty_id, type_args) in agree_inferred_returns(candidates) {
+            let ti = self.type_info.entry(qname).or_default();
+            if ti.return_type.is_some() {
+                continue;
+            }
+            ti.return_type_id =
+                Some(ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)));
+            ti.return_type = Some(ty);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -241,6 +241,38 @@ fn colliding_qname_return_types_are_kept_per_id() {
     );
 }
 
+/// `function usePost() { return useQuery() }` — usePost's return is inferred
+/// from the returned call's return type, so a `usePost().data` chain can root.
+#[test]
+fn call_wrapper_return_inferred_from_returned_call() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+
+    let arena = Arc::new(TypeArena::new());
+    let mut uq = make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    uq.signature = Some("function useQuery(): UQR".to_string());
+    let usepost = make_symbol("usePost", "usePost", SymbolKind::Function, None, None, None);
+
+    // The returned `useQuery()` call (ref 0), whose enclosing function is usePost.
+    let mut r = call_ref("useQuery");
+    r.source_symbol_index = 1;
+    let mut pf = make_parsed_file("src/hooks.ts", vec![uq, usepost], vec![r]);
+    pf.flow.flow_return_lhs.insert(0, 1);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/hooks.ts".to_string(), "useQuery".to_string()), 1);
+    id_map.insert(("src/hooks.ts".to_string(), "usePost".to_string()), 2);
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    // useQuery's own return derives from its signature; usePost's is inferred.
+    assert_eq!(tree.return_type_name("usePost"), None, "no return before the pass");
+    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
+    assert_eq!(
+        tree.return_type_name("usePost"),
+        Some("UQR"),
+        "usePost's return inferred from `return useQuery()`"
+    );
+}
+
 #[test]
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();
