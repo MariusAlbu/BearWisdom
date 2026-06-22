@@ -1333,6 +1333,31 @@ impl Compilation {
                 ])?;
             }
         }
+        // Per-id rows from `type_info_by_id`. The qname loop above writes one row
+        // per qualified name (first-winner), so a same-qname overload set — every
+        // `HttpClient.get`, every `inject` — persists only one declaration's
+        // return. Upsert each symbol id's OWN field/return here so an incremental
+        // reload restores the overload-accurate metadata the resolver reads by id;
+        // COALESCE keeps the qname loop's `generic_params` / `type_args` columns.
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO symbol_type_info (symbol_id, field_type, return_type) \
+                 VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(symbol_id) DO UPDATE SET \
+                   field_type = COALESCE(excluded.field_type, field_type), \
+                   return_type = COALESCE(excluded.return_type, return_type)",
+            )?;
+            for (id, ti) in &self.type_info_by_id {
+                if ti.field_type.is_none() && ti.return_type.is_none() {
+                    continue;
+                }
+                stmt.execute(rusqlite::params![
+                    id,
+                    ti.field_type.as_deref(),
+                    ti.return_type.as_deref(),
+                ])?;
+            }
+        }
         tx.commit()
     }
 
@@ -1432,7 +1457,7 @@ impl Compilation {
         // 2) Persisted type_info, re-interned into this build's fresh arena.
         if let Ok(mut ti_stmt) = conn.prepare(
             "SELECT s.qualified_name, s.name, t.field_type, t.return_type, \
-                    t.type_args, t.generic_params \
+                    t.type_args, t.generic_params, t.symbol_id \
              FROM symbol_type_info t JOIN symbols s ON s.id = t.symbol_id",
         ) {
             if let Ok(ti_rows) = ti_stmt.query_map([], |r| {
@@ -1443,9 +1468,10 @@ impl Compilation {
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, Option<String>>(4)?,
                     r.get::<_, Option<String>>(5)?,
+                    r.get::<_, i64>(6)?,
                 ))
             }) {
-                for (qname, name, field_type, return_type, type_args_j, generic_params_j) in
+                for (qname, name, field_type, return_type, type_args_j, generic_params_j, symbol_id) in
                     ti_rows.flatten()
                 {
                     // A changed symbol's type_info is the fresh parse's, not the
@@ -1481,6 +1507,23 @@ impl Compilation {
                         let sti = self.type_info.entry(name).or_default();
                         if sti.generic_params.is_empty() {
                             sti.generic_params = generic_params;
+                        }
+                    }
+                    // Id-keyed slot — the persisted row is per-symbol-id, so this
+                    // restores the overload-accurate return the resolver reads by
+                    // id (`return_type_id_of`) on an incremental reload, with no
+                    // qname-collapse.
+                    let tid = self.type_info_by_id.entry(symbol_id).or_default();
+                    if tid.field_type.is_none() {
+                        if let Some(ft) = &field_type {
+                            tid.field_type_id = Some(self.arena.intern_type_str(ft));
+                            tid.field_type = Some(ft.clone());
+                        }
+                    }
+                    if tid.return_type.is_none() {
+                        if let Some(rt) = &return_type {
+                            tid.return_type_id = Some(self.arena.intern_type_str(rt));
+                            tid.return_type = Some(rt.clone());
                         }
                     }
                 }
