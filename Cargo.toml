@@ -8,6 +8,7 @@ members = [
     "crates/bearwisdom-mcp",
     "crates/bearwisdom-profile",
     "crates/bearwisdom-web",
+    "crates/code-grammars",
     "crates/tree-sitter-dockerfile-0-25",
     "crates/tree-sitter-scss-local",
     "tests",
@@ -93,6 +94,7 @@ tree-sitter-pascal    = "0.10"   # Pascal/Delphi — real grammar, LANGUAGE cons
 tree-sitter-cobol     = "0.1"    # COBOL — stub crate (0.1.0), no grammar yet; plugin uses line scanner
 tree-sitter-puppet    = "1.3"    # Puppet DSL grammar
 tree-sitter-scss-local = { path = "crates/tree-sitter-scss-local" }
+code-grammars         = { path = "crates/code-grammars" }
 bearwisdom-profile    = { path = "crates/bearwisdom-profile" }
 rusqlite              = { version = "0.33", features = ["bundled-full"] }
 sqlite-vec            = "0.1.7"

@@ -228,6 +228,7 @@ dependencies = [
  "anyhow",
  "bearwisdom-profile",
  "boxcar",
+ "code-grammars",
  "dashmap",
  "dirs",
  "dotscope",
@@ -609,6 +610,65 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "code-grammars"
+version = "0.1.0"
+dependencies = [
+ "tree-sitter 0.25.10",
+ "tree-sitter-ada",
+ "tree-sitter-bash",
+ "tree-sitter-bicep",
+ "tree-sitter-c",
+ "tree-sitter-c-sharp",
+ "tree-sitter-clojure",
+ "tree-sitter-cmake",
+ "tree-sitter-cpp",
+ "tree-sitter-css",
+ "tree-sitter-dart",
+ "tree-sitter-dockerfile-0-25",
+ "tree-sitter-elixir",
+ "tree-sitter-erlang",
+ "tree-sitter-fortran",
+ "tree-sitter-fsharp",
+ "tree-sitter-gdscript",
+ "tree-sitter-gleam",
+ "tree-sitter-go",
+ "tree-sitter-graphql",
+ "tree-sitter-groovy",
+ "tree-sitter-haskell",
+ "tree-sitter-hcl",
+ "tree-sitter-html",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-kotlin-ng",
+ "tree-sitter-language",
+ "tree-sitter-lua",
+ "tree-sitter-make",
+ "tree-sitter-matlab",
+ "tree-sitter-md",
+ "tree-sitter-nix",
+ "tree-sitter-ocaml",
+ "tree-sitter-odin",
+ "tree-sitter-pascal",
+ "tree-sitter-php",
+ "tree-sitter-powershell",
+ "tree-sitter-proto",
+ "tree-sitter-python",
+ "tree-sitter-r",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-scala",
+ "tree-sitter-sequel",
+ "tree-sitter-starlark",
+ "tree-sitter-swift",
+ "tree-sitter-typescript",
+ "tree-sitter-vb-dotnet",
+ "tree-sitter-xml",
+ "tree-sitter-yaml",
+ "tree-sitter-zig",
+]
 
 [[package]]
 name = "colorchoice"

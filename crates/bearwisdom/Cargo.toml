@@ -85,6 +85,7 @@ tree-sitter-pascal    = { workspace = true }
 tree-sitter-cobol     = { workspace = true }
 tree-sitter-puppet    = { workspace = true }
 tree-sitter-scss-local = { workspace = true }
+code-grammars          = { workspace = true }
 bearwisdom-profile     = { workspace = true }
 rusqlite               = { workspace = true }
 sqlite-vec             = { workspace = true }
