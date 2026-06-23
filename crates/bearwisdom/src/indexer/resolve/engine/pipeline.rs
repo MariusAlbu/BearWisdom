@@ -438,13 +438,14 @@ fn resolve_one_file(
         }
     }
 
-    // Snapshot the trace filter once per file, outside the per-ref loop.
+    // Snapshot the trace filters once per file, outside the per-ref loop.
     // The relaxed load is the zero-cost gate; the filter read (Mutex) only
-    // happens when TRACE_ACTIVE is true.
-    let trace_filter = if trace::TRACE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
-        trace::get_filter()
+    // happens when TRACE_ACTIVE is true. A single index pass traces every ref
+    // matching any filter in the set.
+    let trace_filters = if trace::TRACE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+        trace::get_filters()
     } else {
-        None
+        Vec::new()
     };
 
     for (ref_idx, r) in pf.refs.iter().enumerate() {
@@ -484,38 +485,37 @@ fn resolve_one_file(
 
         let kind_str = edge_kind_str(r.kind);
 
-        // Activate per-ref tracing when the filter matches this file + line + target.
-        if let Some((ref suffix, filter_line, ref filter_target)) = trace_filter {
-            // Ref lines are 0-based tree-sitter rows; accept the editor's 1-based
-            // line too so either convention matches.
-            if pf.path.ends_with(suffix.as_str())
-                && (r.line == filter_line || r.line + 1 == filter_line)
+        // Activate per-ref tracing when any filter matches this file + line + target.
+        // Ref lines are 0-based tree-sitter rows; accept the editor's 1-based line
+        // too so either convention matches.
+        if trace_filters.iter().any(|(suffix, filter_line, filter_target)| {
+            pf.path.ends_with(suffix.as_str())
+                && (r.line == *filter_line || r.line + 1 == *filter_line)
                 && (filter_target.is_empty() || r.target_name == *filter_target)
-            {
-                // Install the collector first so the REF header lands in it.
-                trace::begin_ref();
-                let chain_desc = r.chain.as_ref().map(|c| {
-                    c.segments
-                        .iter()
-                        .map(|s| {
-                            if s.is_call {
-                                format!("{}(call)", s.name)
-                            } else {
-                                s.name.clone()
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(".")
-                });
-                crate::tracef!(
-                    "REF target='{}' kind={} line={} source='{}' chain=[{}]",
-                    r.target_name,
-                    kind_str,
-                    r.line,
-                    source_sym.qualified_name,
-                    chain_desc.as_deref().unwrap_or(""),
-                );
-            }
+        }) {
+            // Install the collector first so the REF header lands in it.
+            trace::begin_ref();
+            let chain_desc = r.chain.as_ref().map(|c| {
+                c.segments
+                    .iter()
+                    .map(|s| {
+                        if s.is_call {
+                            format!("{}(call)", s.name)
+                        } else {
+                            s.name.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(".")
+            });
+            crate::tracef!(
+                "REF target='{}' kind={} line={} source='{}' chain=[{}]",
+                r.target_name,
+                kind_str,
+                r.line,
+                source_sym.qualified_name,
+                chain_desc.as_deref().unwrap_or(""),
+            );
         }
 
         match solver.get_symbol_info(&ref_ctx, &file_ctx, &file_lookup, profile) {

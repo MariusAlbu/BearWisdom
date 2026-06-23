@@ -588,21 +588,30 @@ enum Commands {
 
     /// Trace why a reference did not resolve.
     ///
-    /// Re-runs the full resolution pipeline with tracing active for one specific
-    /// ref, dumping the complete ROOT / MEMBER / YIELD / RESULT decision path.
+    /// Re-runs the full resolution pipeline with tracing active, dumping the
+    /// complete ROOT / MEMBER / YIELD / RESULT decision path for each traced
+    /// ref. Trace one ref via --file/--line, or many in a single index pass
+    /// via --refs-file.
     WhyUnresolved {
         /// Absolute path to the project root.
         path: String,
         /// Relative file path containing the unresolved ref (suffix match).
+        /// Required unless --refs-file is given.
         #[arg(long)]
-        file: String,
+        file: Option<String>,
         /// Source line number of the ref (1-based).
+        /// Required unless --refs-file is given.
         #[arg(long)]
-        line: u32,
+        line: Option<u32>,
         /// Target name to disambiguate when multiple refs share the same line.
         /// Empty string matches any ref on the line.
         #[arg(long, default_value = "")]
         target: String,
+        /// Path to a JSONL file of refs to trace in a single index pass. Each
+        /// line is `{"file":"...","line":N,"target":"..."}` (target optional).
+        /// One full reindex collects a trace for every listed ref.
+        #[arg(long)]
+        refs_file: Option<String>,
     },
 }
 
@@ -828,8 +837,8 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::UnresolvedClassify { path, samples } => cmd_unresolved_classify(&path, samples),
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
         Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
-        Commands::WhyUnresolved { path, file, line, target } => {
-            cmd_why_unresolved(&path, &file, line, &target)
+        Commands::WhyUnresolved { path, file, line, target, refs_file } => {
+            cmd_why_unresolved(&path, file.as_deref(), line, &target, refs_file.as_deref())
         }
     }
 }
@@ -2417,22 +2426,40 @@ fn cmd_resolution_gate(project_path: &str) -> Result<String> {
 // Resolution trace
 // ---------------------------------------------------------------------------
 
-/// Re-run the full index with a per-ref trace active for the specified
-/// file + line + target, then return the collected decision path.
+/// Re-run the full index with per-ref tracing active for one or more
+/// file + line + target filters, then return the collected decision paths.
+/// A single index pass collects a trace for every matching ref.
 fn cmd_why_unresolved(
     project_path: &str,
-    file: &str,
-    line: u32,
+    file: Option<&str>,
+    line: Option<u32>,
     target: &str,
+    refs_file: Option<&str>,
 ) -> Result<String> {
     use bearwisdom::trace;
+
+    // Build the filter set from --refs-file (batch) or --file/--line (single).
+    let filters: Vec<(String, u32, String)> = match refs_file {
+        Some(path) => parse_refs_file(path)?,
+        None => {
+            let file = file.context("--file is required when --refs-file is not given")?;
+            let line = line.context("--line is required when --refs-file is not given")?;
+            vec![(file.to_string(), line, target.to_string())]
+        }
+    };
+    if filters.is_empty() {
+        return ok_json(serde_json::json!({
+            "message": "no refs to trace — --refs-file was empty",
+            "traces": [],
+        }));
+    }
 
     let root = PathBuf::from(project_path);
     let db_path = bearwisdom::resolve_db_path(&root)?;
     let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
 
-    trace::set_filter(file.to_string(), line, target.to_string());
+    trace::set_filters(filters);
     trace::activate();
 
     let result = bearwisdom::full_index(&mut db, &root, None, None, None)
@@ -2467,6 +2494,40 @@ fn cmd_why_unresolved(
         .collect();
 
     ok_json(serde_json::json!({ "traces": traces }))
+}
+
+/// Parse a JSONL refs file into `(file_suffix, line, target)` filter tuples.
+/// Each non-blank line is `{"file":"...","line":N,"target":"..."}`; `target`
+/// is optional and defaults to empty (match any ref on the line).
+fn parse_refs_file(path: &str) -> Result<Vec<(String, u32, String)>> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read refs file {path}"))?;
+    let mut out = Vec::new();
+    for (i, raw) in content.lines().enumerate() {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_str(raw)
+            .with_context(|| format!("{path}:{}: invalid ref JSON", i + 1))?;
+        let file = v
+            .get("file")
+            .and_then(|x| x.as_str())
+            .with_context(|| format!("{path}:{}: missing string \"file\"", i + 1))?
+            .to_string();
+        let line = v
+            .get("line")
+            .and_then(|x| x.as_u64())
+            .with_context(|| format!("{path}:{}: missing integer \"line\"", i + 1))?
+            as u32;
+        let target = v
+            .get("target")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        out.push((file, line, target));
+    }
+    Ok(out)
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

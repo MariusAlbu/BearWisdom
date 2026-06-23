@@ -265,3 +265,88 @@ fn trace_inactive_produces_no_lines() {
     let collected = trace::drain_collected();
     assert!(collected.is_empty(), "drain_collected must be empty when trace was never active");
 }
+
+/// Two filters over distinct refs are both honored in one resolve pass — a
+/// single index pass collects a trace for every matching ref, not just the
+/// first. This is the batch path the `--refs-file` CLI mode drives.
+#[test]
+fn trace_batch_filters_collect_multiple_refs() {
+    let _guard = TRACE_TEST_LOCK.lock().unwrap();
+    let symbols = vec![
+        esym("caller", "caller", SymbolKind::Function), // 0
+        esym("TargetA", "TargetA", SymbolKind::Class),  // 1
+        esym("TargetB", "TargetB", SymbolKind::Class),  // 2
+    ];
+    let mk_typeref = |target: &str, line: u32| ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: target.into(),
+        kind: EdgeKind::TypeRef,
+        line,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: 10,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let refs = vec![mk_typeref("TargetA", 2), mk_typeref("TargetB", 3)];
+    let pf = ParsedFile {
+        path: "trace_batch.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 5,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("trace_batch.ts".to_string(), "caller".to_string()), 30i64);
+    id_map.insert(("trace_batch.ts".to_string(), "TargetA".to_string()), 31i64);
+    id_map.insert(("trace_batch.ts".to_string(), "TargetB".to_string()), 32i64);
+
+    let arena = Arc::new(TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+
+    trace::set_filters(vec![
+        ("trace_batch.ts".to_string(), 2, "TargetA".to_string()),
+        ("trace_batch.ts".to_string(), 3, "TargetB".to_string()),
+    ]);
+    trace::activate();
+    super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    trace::deactivate();
+    let collected = trace::drain_collected();
+    trace::clear_filter();
+
+    assert_eq!(
+        collected.len(),
+        2,
+        "one index pass must collect a trace per matching filter; got {}",
+        collected.len()
+    );
+    let targets: Vec<&str> = collected.iter().map(|t| t.target.as_str()).collect();
+    assert!(targets.contains(&"TargetA"), "missing TargetA trace; got {targets:?}");
+    assert!(targets.contains(&"TargetB"), "missing TargetB trace; got {targets:?}");
+}

@@ -67,31 +67,44 @@ struct TraceFilter {
     target: String,
 }
 
-static TRACE_FILTER: Mutex<Option<TraceFilter>> = Mutex::new(None);
+static TRACE_FILTERS: Mutex<Vec<TraceFilter>> = Mutex::new(Vec::new());
 
-/// Set the file/line/target filter before activating trace.
-/// `file_suffix` is matched with `str::ends_with` against the ParsedFile path.
-/// `target` is empty to match any ref on that line.
+/// Set a batch of file/line/target filters before activating trace.
+/// Each `file_suffix` is matched with `str::ends_with` against the ParsedFile
+/// path; `target` is empty to match any ref on that line. A single index pass
+/// collects a trace for every ref matching any filter.
+pub fn set_filters(filters: Vec<(String, u32, String)>) {
+    if let Ok(mut f) = TRACE_FILTERS.lock() {
+        *f = filters
+            .into_iter()
+            .map(|(file_suffix, line, target)| TraceFilter { file_suffix, line, target })
+            .collect();
+    }
+}
+
+/// Set a single file/line/target filter. Convenience over `set_filters` for the
+/// one-ref case.
 pub fn set_filter(file_suffix: String, line: u32, target: String) {
-    if let Ok(mut f) = TRACE_FILTER.lock() {
-        *f = Some(TraceFilter { file_suffix, line, target });
-    }
+    set_filters(vec![(file_suffix, line, target)]);
 }
 
-/// Clear the filter after the index run completes.
+/// Clear all filters after the index run completes.
 pub fn clear_filter() {
-    if let Ok(mut f) = TRACE_FILTER.lock() {
-        *f = None;
+    if let Ok(mut f) = TRACE_FILTERS.lock() {
+        f.clear();
     }
 }
 
-/// Returns `(file_suffix, line, target)` when a filter is installed, else `None`.
-pub fn get_filter() -> Option<(String, u32, String)> {
-    TRACE_FILTER
+/// Returns the installed `(file_suffix, line, target)` filters; empty when none.
+pub fn get_filters() -> Vec<(String, u32, String)> {
+    TRACE_FILTERS
         .lock()
-        .ok()?
-        .as_ref()
-        .map(|f| (f.file_suffix.clone(), f.line, f.target.clone()))
+        .map(|f| {
+            f.iter()
+                .map(|t| (t.file_suffix.clone(), t.line, t.target.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
