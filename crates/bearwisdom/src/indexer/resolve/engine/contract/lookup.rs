@@ -331,6 +331,16 @@ pub trait SymbolLookup {
         None
     }
 
+    /// ALL direct parent heads for a class — the multi-parent, qname-keyed
+    /// counterpart of `parent_class_qname` (which yields only the first). A type
+    /// extending several supertypes (`interface A extends X, Y, Z`) exposes each,
+    /// so a member walk that must inspect a SPECIFIC supertype (e.g. a mapped-type
+    /// alias parent whose members come from its source) can find it regardless of
+    /// declaration order. Default empty; the real store overrides it.
+    fn parent_class_qnames(&self, _class_qname: &str) -> &[String] {
+        &[]
+    }
+
     /// The direct parent class's symbol id for a child symbol id — the id-keyed
     /// counterpart of `parent_class_qname`. A chain walker that has typed a
     /// receiver to a symbol id climbs its supertype chain by identity, so a

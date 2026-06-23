@@ -32,7 +32,7 @@ pub(crate) struct Lookup {
     generics: FxHashMap<String, Vec<String>>,
     field_types: FxHashMap<String, String>,
     return_types: FxHashMap<String, String>,
-    parents: FxHashMap<String, String>,
+    parents: FxHashMap<String, Vec<String>>,
     /// Id-keyed inherits: child symbol id → ALL parent symbol ids. The id-keyed
     /// counterpart of `parents`; a child may have several supertypes.
     parents_by_id: FxHashMap<i64, Vec<i64>>,
@@ -164,7 +164,9 @@ impl Lookup {
     /// Register `child`'s direct parent type qname (an `extends`/`implements` link).
     pub(crate) fn with_parent(mut self, child_qname: &str, parent_qname: &str) -> Self {
         self.parents
-            .insert(child_qname.to_string(), parent_qname.to_string());
+            .entry(child_qname.to_string())
+            .or_default()
+            .push(parent_qname.to_string());
         self
     }
 
@@ -287,7 +289,10 @@ impl SymbolLookup for Lookup {
         self.return_types.get(qname).map(|s| s.as_str())
     }
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
-        self.parents.get(class_qname).map(|s| s.as_str())
+        self.parents.get(class_qname).and_then(|v| v.first()).map(|s| s.as_str())
+    }
+    fn parent_class_qnames(&self, class_qname: &str) -> &[String] {
+        self.parents.get(class_qname).map(|v| v.as_slice()).unwrap_or(&[])
     }
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
         self.parents_by_id.get(&child_id).and_then(|v| v.first()).copied()

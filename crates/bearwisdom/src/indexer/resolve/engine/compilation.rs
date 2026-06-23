@@ -1455,6 +1455,10 @@ impl SymbolLookup for Compilation {
             .map(|s| s.as_str())
     }
 
+    fn parent_class_qnames(&self, class_qname: &str) -> &[String] {
+        self.inherits.get(class_qname).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
         self.inherits_by_id
             .get(&child_id)

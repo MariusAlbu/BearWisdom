@@ -447,6 +447,39 @@ fn member_on_generic_supertype_binds_args_from_extends_edge() {
 }
 
 #[test]
+fn member_climbs_into_mapped_alias_supertype() {
+    // interface Assertion extends VitestAssertion<ChaiAssertion>;
+    // type VitestAssertion<A> = { [K in keyof A]: A[K] };   ChaiAssertion has `not`.
+    // x: Assertion;  x.not resolves to ChaiAssertion.not — the mapped-alias supertype
+    // declares no own members, so the flat climb misses; the member comes from the
+    // mapped source, bound from the `extends VitestAssertion<ChaiAssertion>` edge.
+    let lookup = Lookup::new()
+        .with_local_type("x", "Assertion")
+        .with(sym(1, "Assertion", "Assertion", "interface", "ext:ts:v.d.ts"))
+        .with_parent("Assertion", "VitestAssertion")
+        .with_parent_args("Assertion", "VitestAssertion", &["ChaiAssertion"])
+        .with(sym(2, "VitestAssertion", "VitestAssertion", "type_alias", "ext:ts:v.d.ts"))
+        .with_alias(
+            "VitestAssertion",
+            crate::types::AliasTarget::Mapped {
+                source: "A".to_string(),
+                value_template: "A[K]".to_string(),
+            },
+        )
+        .with_generics("VitestAssertion", &["A"])
+        .with(sym(3, "ChaiAssertion", "ChaiAssertion", "interface", "ext:ts:c.d.ts"))
+        .with_member(
+            "ChaiAssertion",
+            sym(50, "not", "ChaiAssertion.not", "property", "ext:ts:c.d.ts"),
+        );
+    let segs = vec![
+        seg("x", false, SegmentKind::Identifier),
+        seg("not", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
 fn binds_member_through_unbound_mapped_source_via_reexport_closure() {
     // testing-library `RenderResult`:
     //   type RenderResult<Q extends Queries = typeof queries> =

@@ -284,10 +284,69 @@ fn lookup_member_on_bounded(
             }
         }
     }
+    // A MAPPED-ALIAS supertype: the receiver `extends` a mapped-type alias
+    // (`interface Assertion extends VitestAssertion<Chai.Assertion, T>`), which
+    // declares no own members, so the flat supertype climb above missed it.
+    // Resolve through the supertype's mapped source, carrying the edge args.
+    if let Some(m) = lookup_member_on_mapped_supertype(lookup, arena, &head, member, accept, depth) {
+        return Some(m);
+    }
     // The mapped source is an UNBOUND parameter: it falls back to its declared
     // default (a `typeof <namespace>`) whose keys are the mapped object's members,
     // resolved through the receiver's wildcard re-export closure.
     lookup_member_via_unbound_mapped_source(lookup, arena, recv.ty, &head, member, accept)
+}
+
+/// Resolve `member` on a MAPPED-ALIAS supertype of the receiver. A type can
+/// `extends` a mapped-type alias (`interface Assertion extends VitestAssertion<
+/// Chai.Assertion, T>`); the alias declares no members of its own, so the
+/// ordinary supertype climb (flat `members_of`) misses it. Build the
+/// supertype's applied type from the `extends` edge args and resolve `member`
+/// through its mapped source — the same path a mapped RECEIVER takes. `None`
+/// when no direct parent is a mapped alias or none carries the member.
+fn lookup_member_on_mapped_supertype(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+) -> Option<Symbol> {
+    for parent_head in lookup.parent_class_qnames(head) {
+        let is_mapped = matches!(
+            lookup.alias_target(parent_head),
+            Some(AliasTarget::Mapped { .. }) | Some(AliasTarget::IntersectionMapped { .. })
+        );
+        if !is_mapped {
+            continue;
+        }
+        // The supertype's applied type, carrying the `extends Parent<Arg>` edge
+        // args so its mapped source param binds to the concrete argument.
+        let base = arena.class(parent_head);
+        let args = lookup.parent_class_args(head, parent_head);
+        let parent_ty = if args.is_empty() {
+            base
+        } else {
+            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+            arena.intern(Type::Apply { base, args: arg_ids })
+        };
+        if let Some(source_ty) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
+            let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
+            if head_qname(arena, source_recv.ty).as_deref() != Some(parent_head.as_str()) {
+                if let Some(m) =
+                    lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
+                {
+                    return Some(m);
+                }
+            }
+        }
+        if let Some(m) = lookup_member_via_unbound_mapped_source(
+            lookup, arena, parent_ty, parent_head, member, accept,
+        ) {
+            return Some(m);
+        }
+    }
+    None
 }
 
 /// When `head` begins with a lowercase letter, probe the same name with its

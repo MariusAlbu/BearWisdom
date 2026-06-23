@@ -211,6 +211,9 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.tree.parent_class_qname(class_qname)
     }
+    fn parent_class_qnames(&self, class_qname: &str) -> &[String] {
+        self.tree.parent_class_qnames(class_qname)
+    }
 
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
         self.tree.parent_class_id(child_id)
