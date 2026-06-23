@@ -306,6 +306,71 @@ fn field_init_call_types_the_field() {
 }
 
 #[test]
+fn local_var_init_call_types_the_variable_not_the_callee() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+    use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+
+    let arena = Arc::new(TypeArena::new());
+    let mut mk = make_symbol("makeThing", "makeThing", SymbolKind::Function, None, None, None);
+    mk.signature = Some("function makeThing(): Thing".to_string());
+    // `const r = makeThing()` — a local variable (idx 1).
+    let r_sym = make_symbol("r", "r", SymbolKind::Variable, None, None, None);
+
+    // The extractor emits BOTH: a chain-bearing TypeRef (target = callee name)
+    // AND the call's Calls ref, both attributed to the variable.
+    let chain_typeref = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 1,
+        target_name: "makeThing".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![ChainSegment {
+                name: "makeThing".to_string(),
+                node_kind: String::new(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                is_call: true,
+                call_args: Vec::new(),
+                type_arg_ids: Vec::new(),
+            }],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    let mut calls = call_ref("makeThing");
+    calls.source_symbol_index = 1;
+    let pf = make_parsed_file("src/m.ts", vec![mk, r_sym], vec![chain_typeref, calls]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/m.ts".to_string(), "makeThing".to_string()), 1);
+    id_map.insert(("src/m.ts".to_string(), "r".to_string()), 2);
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    // derive_type_info_from_refs (run during build) must SKIP the chain-bearing
+    // TypeRef — `r` must NOT be mis-typed to the callee name "makeThing".
+    assert_eq!(
+        tree.field_type_name("r"),
+        None,
+        "chain-bearing initializer must not type the variable to the callee name",
+    );
+    tree.infer_field_init_types(std::slice::from_ref(&pf));
+    assert_eq!(
+        tree.field_type_name("r"),
+        Some("Thing"),
+        "local variable typed from its initializer call's return",
+    );
+}
+
+#[test]
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();
     assert_eq!(

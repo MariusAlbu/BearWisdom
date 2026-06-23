@@ -633,6 +633,13 @@ impl Compilation {
             if r.kind != EdgeKind::TypeRef || r.is_import_binding {
                 continue;
             }
+            // A chain-bearing TypeRef is a `const x = f(...)` initializer signal:
+            // x's type is the call's RETURN type, not the bare callee name `f`.
+            // `infer_field_init_types` resolves it from the call's Calls ref; if
+            // typed here from `target_name` it would mis-root `x` on the callee.
+            if r.chain.is_some() {
+                continue;
+            }
             if r.source_symbol_index < type_refs_by_sym.len() {
                 type_refs_by_sym[r.source_symbol_index]
                     .push((r.target_name.as_str(), r.module.as_deref()));
@@ -1206,10 +1213,13 @@ impl Compilation {
         }
     }
 
-    /// Type a class field from its CALL/NEW initializer: `readonly m =
-    /// injectMutation(...)` / `#http = inject(HttpClient)` makes the field's type
-    /// the call's return (or the constructed class), so `this.m.mutate()` /
-    /// `this.#http.get()` roots on it. The field-initializer call is already
+    /// Type a class field OR local variable from its CALL/NEW initializer:
+    /// `readonly m = injectMutation(...)` / `#http = inject(HttpClient)` /
+    /// `const router = useRouter()` makes the symbol's type the call's return (or
+    /// the constructed class), so `this.m.mutate()` / `this.#http.get()` /
+    /// `router.push()` roots on it. (`derive_type_info_from_refs` skips the
+    /// chain-bearing initializer TypeRef so it doesn't mis-type the symbol to the
+    /// callee name; this pass supplies the resolved return type instead.) The field-initializer call is already
     /// emitted as a Calls/Instantiates ref attributed to the field symbol; the
     /// OUTERMOST one (leftmost byte offset) is the initializer (its arguments,
     /// including a callback's inner calls, anchor to the right). Resolved in the
@@ -1253,7 +1263,10 @@ impl Compilation {
                 let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
                     continue;
                 };
-                if !matches!(sym.kind, SymbolKind::Property | SymbolKind::Field) {
+                if !matches!(
+                    sym.kind,
+                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
+                ) {
                     continue;
                 }
                 field_init
