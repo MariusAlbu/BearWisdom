@@ -352,6 +352,17 @@ pub trait SymbolLookup {
         self.parent_class_id(child_id).into_iter().collect()
     }
 
+    /// The generic type arguments on the `extends`/`implements` edge from
+    /// `child_head` to its direct supertype `parent_head`: `["User"]` for
+    /// `class Child extends Base<User>`. Empty when the edge carries no
+    /// arguments or no such edge is recorded. Lets a member found on a generic
+    /// supertype bind that supertype's parameters (`Base.m: T` → `User`), since
+    /// the arguments live on the edge, not on the receiver. Default empty; the
+    /// real store overrides it.
+    fn parent_class_args(&self, _child_head: &str, _parent_head: &str) -> &[String] {
+        &[]
+    }
+
     /// The qualified name of the nearest type (class/struct/interface/trait/enum)
     /// that structurally encloses the symbol named `source_qname`, excluding the
     /// symbol itself — Roslyn's `ContainingType`.

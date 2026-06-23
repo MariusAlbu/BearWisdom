@@ -103,6 +103,13 @@ pub struct Compilation {
     /// (`interface A extends X, Y, Z`), so each child keeps every direct parent —
     /// the chain walker must reach a member declared on ANY of them.
     inherits: FxHashMap<String, Vec<String>>,
+    /// Generic arguments on each `extends`/`implements` edge: child_qname → ALL
+    /// `(parent_head, args)` for that child. `class Child extends Base<User>`
+    /// records `("Base", ["User"])`. Parallel to `inherits` (which keeps only the
+    /// heads); kept separate so the head-keyed supertype climb is untouched. A
+    /// member found on a generic supertype binds that supertype's parameters from
+    /// these edge arguments — the arguments live on the edge, not on the receiver.
+    inherits_args: FxHashMap<String, Vec<(String, Vec<String>)>>,
     /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → ALL parent
     /// symbol ids — the id-keyed counterpart of `inherits`. Derived at the end of
     /// `ingest` / `ingest_from_db` by resolving each `inherits` child qname to its
@@ -204,6 +211,7 @@ impl Compilation {
             reexport_map: FxHashMap::default(),
             export_alias_by_module: FxHashMap::default(),
             inherits: FxHashMap::default(),
+            inherits_args: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
@@ -431,16 +439,23 @@ impl Compilation {
                 let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
                     continue;
                 };
-                // Strip generic args so the inherits map keys on the bare head.
-                let parent_head = r
-                    .target_name
-                    .split('<')
-                    .next()
-                    .unwrap_or(&r.target_name)
-                    .to_string();
+                // Split the head from any generic args. The head keys the inherits
+                // map (the supertype climb is head/id-based); the args ride on
+                // `inherits_args` so a member found on a generic supertype can bind
+                // that supertype's parameters from the `extends Base<Arg>` edge.
+                let (parent_head_raw, parent_args) =
+                    super::contract::chain_walker::parse_type_head_and_args(&r.target_name);
+                let parent_head = parent_head_raw.to_string();
                 let parents = self.inherits.entry(child_sym.qualified_name.clone()).or_default();
                 if !parents.contains(&parent_head) {
-                    parents.push(parent_head);
+                    parents.push(parent_head.clone());
+                }
+                if !parent_args.is_empty() {
+                    let args = parent_args.iter().map(|a| a.trim().to_string()).collect();
+                    self.inherits_args
+                        .entry(child_sym.qualified_name.clone())
+                        .or_default()
+                        .push((parent_head, args));
                 }
             }
 
@@ -1451,6 +1466,14 @@ impl SymbolLookup for Compilation {
         self.inherits_by_id.get(&child_id).cloned().unwrap_or_default()
     }
 
+    fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
+        self.inherits_args
+            .get(child_head)
+            .and_then(|edges| edges.iter().find(|(h, _)| h == parent_head))
+            .map(|(_, args)| args.as_slice())
+            .unwrap_or(&[])
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing_type
             .get(source_qname)
@@ -1747,6 +1770,11 @@ impl Compilation {
                 inh.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
             {
                 for (child, parent) in inh_rows.flatten() {
+                    // `edges.target` is the RESOLVED parent symbol's qname (the bare
+                    // head); the `extends Base<Arg>` generic args are not on the edge
+                    // row, so `inherits_args` cannot be recovered on this incremental
+                    // reload path — the supertype-arg binding is populated only by the
+                    // full-reindex Pass 3 (which reads `r.target_name` with its args).
                     let head = parent.split('<').next().unwrap_or(&parent).to_string();
                     let parents = self.inherits.entry(child).or_default();
                     if !parents.contains(&head) {

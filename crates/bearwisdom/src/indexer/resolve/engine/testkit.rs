@@ -36,6 +36,9 @@ pub(crate) struct Lookup {
     /// Id-keyed inherits: child symbol id → ALL parent symbol ids. The id-keyed
     /// counterpart of `parents`; a child may have several supertypes.
     parents_by_id: FxHashMap<i64, Vec<i64>>,
+    /// Generic args on an `extends`/`implements` edge: `(child_head, parent_head)`
+    /// → args. Backs `parent_class_args` for the supertype-arg binding tests.
+    inherits_args: FxHashMap<(String, String), Vec<String>>,
     local_types: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTarget>,
@@ -69,6 +72,7 @@ impl Lookup {
             return_types: Default::default(),
             parents: Default::default(),
             parents_by_id: Default::default(),
+            inherits_args: Default::default(),
             local_types: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
@@ -161,6 +165,17 @@ impl Lookup {
     pub(crate) fn with_parent(mut self, child_qname: &str, parent_qname: &str) -> Self {
         self.parents
             .insert(child_qname.to_string(), parent_qname.to_string());
+        self
+    }
+
+    /// Register the generic args on `child`'s `extends`/`implements` edge to
+    /// `parent_head`: `with_parent_args("Child", "Base", &["User"])` for
+    /// `class Child extends Base<User>`. Backs `parent_class_args`.
+    pub(crate) fn with_parent_args(mut self, child_head: &str, parent_head: &str, args: &[&str]) -> Self {
+        self.inherits_args.insert(
+            (child_head.to_string(), parent_head.to_string()),
+            args.iter().map(|s| s.to_string()).collect(),
+        );
         self
     }
 
@@ -279,6 +294,12 @@ impl SymbolLookup for Lookup {
     }
     fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
         self.parents_by_id.get(&child_id).cloned().unwrap_or_default()
+    }
+    fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
+        self.inherits_args
+            .get(&(child_head.to_string(), parent_head.to_string()))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.local_types.get(name).cloned()

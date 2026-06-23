@@ -672,6 +672,12 @@ fn yield_through_impl(
     } else {
         raw
     };
+    // Bind a generic supertype's parameters from the `extends Base<Arg>` edge
+    // BEFORE the receiver substitution: a member found on `Base` in
+    // `Child extends Base<User>` yields `T`, which the edge args bind to `User`.
+    // Those args live on the edge, not the receiver, so `substitute_through`
+    // (receiver-args only) cannot see them.
+    let raw = substitute_supertype_args(lookup, arena, member, raw, receiver);
     let substituted = substitute_through(lookup, arena, raw, receiver);
     // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
     if is_self_head(arena, substituted) {
@@ -759,6 +765,50 @@ fn substitute_through(
     }
     let map: FxHashMap<String, TypeId> =
         params.iter().cloned().zip(args.iter().copied()).collect();
+    arena.rebind_class_params(yielded, &map)
+}
+
+/// Bind a generic SUPERTYPE's parameters from the `extends`/`implements` edge
+/// when `member` was found on that supertype, not on the receiver itself:
+/// `class Child extends Base<User>` + `Base.m: T` yields `T`, which the edge
+/// args `[User]` bind to `User`. The args ride on the edge (`inherits_args`),
+/// not on the receiver type, so `substitute_through` — which reads only the
+/// receiver's own applied args — cannot supply them.
+///
+/// No-op when the receiver has no nominal head, the member is declared on the
+/// receiver type itself (then `substitute_through` already handles it), the edge
+/// records no args, or the supertype has no generic parameters. Single-hop: the
+/// member's declaring type must be a DIRECT supertype of the receiver head.
+fn substitute_supertype_args(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    yielded: TypeId,
+    receiver: TypeId,
+) -> TypeId {
+    let Some(recv_head) = head_qname(arena, receiver) else {
+        return yielded;
+    };
+    // The member's declaring type qname is its own qname minus the final segment.
+    let Some((decl_head, _)) = member.qualified_name.rsplit_once('.') else {
+        return yielded;
+    };
+    if decl_head == recv_head {
+        return yielded;
+    }
+    let args = lookup.parent_class_args(&recv_head, decl_head);
+    if args.is_empty() {
+        return yielded;
+    }
+    let params = lookup.generic_params(decl_head).unwrap_or(&[]);
+    if params.is_empty() {
+        return yielded;
+    }
+    let map: FxHashMap<String, TypeId> = params
+        .iter()
+        .cloned()
+        .zip(args.iter().map(|a| arena.intern_type_str(a)))
+        .collect();
     arena.rebind_class_params(yielded, &map)
 }
 

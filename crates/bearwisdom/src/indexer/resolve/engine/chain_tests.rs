@@ -421,6 +421,32 @@ fn binds_member_through_a_mapped_type_to_its_source() {
 }
 
 #[test]
+fn member_on_generic_supertype_binds_args_from_extends_edge() {
+    // class Child extends Base<User>;  interface Base<T> { m: T }   const c: Child;
+    // c.m yields T, which the `extends Base<User>` edge binds to User, so c.m.firstName
+    // resolves to User.firstName. The args live on the supertype edge, not on the
+    // receiver (Child has none), so substitute_through alone leaves m's yield as
+    // unbound T and .firstName misses — the supertype-edge bind is what types it.
+    let lookup = Lookup::new()
+        .with_local_type("c", "Child")
+        .with(sym(1, "Child", "Child", "class", "a.ts"))
+        .with(sym(2, "Base", "Base", "interface", "a.ts"))
+        .with_parent_id(1, 2)
+        .with_parent_args("Child", "Base", &["User"])
+        .with_generics("Base", &["T"])
+        .with_member_id(2, sym(30, "m", "Base.m", "property", "a.ts"))
+        .with_field_type("Base.m", "T")
+        .with(sym(3, "User", "User", "class", "a.ts"))
+        .with_member("User", sym(40, "firstName", "User.firstName", "property", "a.ts"));
+    let segs = vec![
+        seg("c", false, SegmentKind::Identifier),
+        seg("m", false, SegmentKind::Property),
+        seg("firstName", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(40));
+}
+
+#[test]
 fn binds_member_through_unbound_mapped_source_via_reexport_closure() {
     // testing-library `RenderResult`:
     //   type RenderResult<Q extends Queries = typeof queries> =
