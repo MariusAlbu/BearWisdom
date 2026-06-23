@@ -27,6 +27,7 @@ use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet};
 use crate::indexer::resolve::engine::{semantic_model::SemanticModel, compilation::Compilation};
+use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::{ImportModulePath, LanguageProfile};
@@ -437,6 +438,15 @@ fn resolve_one_file(
         }
     }
 
+    // Snapshot the trace filter once per file, outside the per-ref loop.
+    // The relaxed load is the zero-cost gate; the filter read (Mutex) only
+    // happens when TRACE_ACTIVE is true.
+    let trace_filter = if trace::TRACE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+        trace::get_filter()
+    } else {
+        None
+    };
+
     for (ref_idx, r) in pf.refs.iter().enumerate() {
         let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
             continue;
@@ -474,6 +484,40 @@ fn resolve_one_file(
 
         let kind_str = edge_kind_str(r.kind);
 
+        // Activate per-ref tracing when the filter matches this file + line + target.
+        if let Some((ref suffix, filter_line, ref filter_target)) = trace_filter {
+            // Ref lines are 0-based tree-sitter rows; accept the editor's 1-based
+            // line too so either convention matches.
+            if pf.path.ends_with(suffix.as_str())
+                && (r.line == filter_line || r.line + 1 == filter_line)
+                && (filter_target.is_empty() || r.target_name == *filter_target)
+            {
+                // Install the collector first so the REF header lands in it.
+                trace::begin_ref();
+                let chain_desc = r.chain.as_ref().map(|c| {
+                    c.segments
+                        .iter()
+                        .map(|s| {
+                            if s.is_call {
+                                format!("{}(call)", s.name)
+                            } else {
+                                s.name.clone()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(".")
+                });
+                crate::tracef!(
+                    "REF target='{}' kind={} line={} source='{}' chain=[{}]",
+                    r.target_name,
+                    kind_str,
+                    r.line,
+                    source_sym.qualified_name,
+                    chain_desc.as_deref().unwrap_or(""),
+                );
+            }
+        }
+
         match solver.get_symbol_info(&ref_ctx, &file_ctx, &file_lookup, profile) {
             Some(res) => {
                 // Forward inference: when this ref is the RHS of a local binding,
@@ -487,9 +531,31 @@ fn resolve_one_file(
                 // nominalizes those types to `Class`. The String path is kept as a
                 // fallback for bindings that carry no `resolved_yield_type` (the
                 // `return_type_str` / `field_type_str` / `Instantiates` branches).
+                let target_qname = tree
+                    .by_name(&r.target_name)
+                    .iter()
+                    .find(|s| s.id == res.target_symbol_id)
+                    .map(|s| s.qualified_name.clone())
+                    .unwrap_or_else(|| format!("id={}", res.target_symbol_id));
+                let yield_type_fmt = res
+                    .resolved_yield_type
+                    .map(|id| format!("{id:?}"))
+                    .unwrap_or_else(|| "None".to_string());
+                crate::tracef!(
+                    "RESULT resolved -> '{}' strategy={} yield_type={}",
+                    target_qname,
+                    res.strategy,
+                    yield_type_fmt,
+                );
+
                 if let Some(&lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx) {
                     if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
                         if let Some(yield_id) = res.resolved_yield_type {
+                            crate::tracef!(
+                                "SEED bound_lhs='{}' yield_type_id={:?} string_fallback=None -> recorded=TypeId",
+                                lhs_sym.name,
+                                yield_id,
+                            );
                             // TypeId available: store it directly. No format/intern.
                             file_lookup.record_local_type_id(lhs_sym.name.clone(), yield_id);
                         } else {
@@ -508,11 +574,19 @@ fn resolve_one_file(
                                         _ => tree.field_type_str(&s.qualified_name),
                                     })
                             };
+                            crate::tracef!(
+                                "SEED bound_lhs='{}' yield_type_id=None string_fallback={} -> recorded={}",
+                                lhs_sym.name,
+                                yield_ty.as_deref().unwrap_or("None"),
+                                if yield_ty.is_some() { "String" } else { "nothing" },
+                            );
                             if let Some(ty) = yield_ty {
                                 file_lookup.record_local_type(lhs_sym.name.clone(), ty);
                             }
                         }
                     }
+                } else {
+                    crate::tracef!("SEED none (ref is not a binding RHS)");
                 }
 
                 edges.push((
@@ -525,6 +599,8 @@ fn resolve_one_file(
                 ));
             }
             None => {
+                crate::tracef!("RESULT UNRESOLVED");
+
                 unresolved.push((
                     source_id,
                     r.target_name.clone(),
@@ -535,6 +611,17 @@ fn resolve_one_file(
                     ref_is_snippet,
                 ));
             }
+        }
+
+        // Collect trace lines for this ref, if any were captured.
+        let trace_lines = trace::take_ref();
+        if !trace_lines.is_empty() {
+            trace::push_traced(trace::TracedRef {
+                file: pf.path.clone(),
+                line: r.line,
+                target: r.target_name.clone(),
+                trace_lines,
+            });
         }
     }
 
@@ -953,3 +1040,7 @@ fn virtual_path_for_indexed_file(path: &Path, language: &str) -> String {
 #[cfg(test)]
 #[path = "pipeline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_trace_tests.rs"]
+mod trace_tests;

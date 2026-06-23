@@ -585,6 +585,25 @@ enum Commands {
         /// Absolute path to the project root.
         path: String,
     },
+
+    /// Trace why a reference did not resolve.
+    ///
+    /// Re-runs the full resolution pipeline with tracing active for one specific
+    /// ref, dumping the complete ROOT / MEMBER / YIELD / RESULT decision path.
+    WhyUnresolved {
+        /// Absolute path to the project root.
+        path: String,
+        /// Relative file path containing the unresolved ref (suffix match).
+        #[arg(long)]
+        file: String,
+        /// Source line number of the ref (1-based).
+        #[arg(long)]
+        line: u32,
+        /// Target name to disambiguate when multiple refs share the same line.
+        /// Empty string matches any ref on the line.
+        #[arg(long, default_value = "")]
+        target: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -809,6 +828,9 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::UnresolvedClassify { path, samples } => cmd_unresolved_classify(&path, samples),
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
         Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
+        Commands::WhyUnresolved { path, file, line, target } => {
+            cmd_why_unresolved(&path, &file, line, &target)
+        }
     }
 }
 
@@ -2389,6 +2411,62 @@ fn cmd_resolution_gate(project_path: &str) -> Result<String> {
         "health": dead.resolution_health,
     });
     ok_json(payload)
+}
+
+// ---------------------------------------------------------------------------
+// Resolution trace
+// ---------------------------------------------------------------------------
+
+/// Re-run the full index with a per-ref trace active for the specified
+/// file + line + target, then return the collected decision path.
+fn cmd_why_unresolved(
+    project_path: &str,
+    file: &str,
+    line: u32,
+    target: &str,
+) -> Result<String> {
+    use bearwisdom::trace;
+
+    let root = PathBuf::from(project_path);
+    let db_path = bearwisdom::resolve_db_path(&root)?;
+    let mut db = Database::open(&db_path)
+        .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
+
+    trace::set_filter(file.to_string(), line, target.to_string());
+    trace::activate();
+
+    let result = bearwisdom::full_index(&mut db, &root, None, None, None)
+        .with_context(|| format!("Index failed for {}", root.display()));
+
+    trace::deactivate();
+    let collected = trace::drain_collected();
+    trace::clear_filter();
+
+    // Surface the index error after cleaning up trace state.
+    result?;
+
+    if collected.is_empty() {
+        return ok_json(serde_json::json!({
+            "message": "no refs matched the filter — check --file and --line",
+            "traces": [],
+        }));
+    }
+
+    let traces: Vec<_> = collected
+        .into_iter()
+        .map(|tr| {
+            serde_json::json!({
+                "ref": {
+                    "file": tr.file,
+                    "line": tr.line,
+                    "target": tr.target,
+                },
+                "trace": tr.trace_lines,
+            })
+        })
+        .collect();
+
+    ok_json(serde_json::json!({ "traces": traces }))
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

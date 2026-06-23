@@ -69,8 +69,15 @@ pub fn bind_member_access(
             // The final member's yield type (with the receiver's type arguments
             // substituted) records x's type for `const x = a.b.c()` so a later
             // `x.method()` can root on it — forward inference compounds.
+            //
+            // A terminal call (`obj.method(args)`) carries the call on the ref
+            // itself (`kind=Calls`), not on the last segment, so `seg.is_call` is
+            // false there. Apply it: a binding `const x = obj.method(args)` must
+            // yield the method's RETURN type, not the method-as-value field type.
+            let terminal_is_call = seg.is_call
+                || matches!(ref_ctx.extracted_ref.kind, crate::types::EdgeKind::Calls);
             let resolved_yield_type =
-                yield_through(lookup, arena, &member, seg.is_call, current.ty);
+                yield_through(lookup, arena, &member, terminal_is_call, current.ty);
             return Some(SymbolInfo {
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
@@ -198,7 +205,16 @@ fn lookup_member_on(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    lookup_member_on_bounded(lookup, arena, recv, member, accept, MAX_MAPPED_DEPTH)
+    let result = lookup_member_on_bounded(lookup, arena, recv, member, accept, MAX_MAPPED_DEPTH);
+    let recv_head = head_qname(arena, recv.ty).unwrap_or_default();
+    crate::tracef!(
+        "  MEMBER '{}' on receiver={} (recv.id={:?}) -> {}",
+        member,
+        recv_head,
+        recv.id,
+        result.as_ref().map(|s| s.qualified_name.as_str()).unwrap_or("NOT FOUND"),
+    );
+    result
 }
 
 /// Upper bound on mapped-type source hops — a mapped type whose source is itself
@@ -601,6 +617,69 @@ pub(crate) fn apply_args(arena: &TypeArena, id: TypeId) -> Vec<TypeId> {
     }
 }
 
+/// The type `member` yields when accessed through `receiver`, with the
+/// receiver's applied type arguments substituted for the declaring type's
+/// generic parameters: `Repository<User>` receiver + `find(): T` → `User`.
+///
+/// Fluent-chain rebind: when the substituted yield type's head is `"this"` or
+/// `"Self"`, the member is a fluent step that returns the receiver itself.
+/// Substitute the receiver type directly so the next member lookup stays on
+/// the receiver's type rather than dead-ending on a nominal `Class("this")`
+/// that has no members.
+///
+/// Callable-property unwrap: when `is_call=true` and the member's declared
+/// yield type is a function type (`Type::Function { return_ }`), the call
+/// result is the function's own return type — a property whose declared type
+/// is a call signature (`fn: () => Mock<T>`) yields `Mock<T>` when called.
+fn yield_through(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    is_call: bool,
+    receiver: TypeId,
+) -> Option<TypeId> {
+    let result = yield_through_impl(lookup, arena, member, is_call, receiver);
+    crate::tracef!(
+        "  YIELD '{}' is_call={}: return_type_id={} field_type_id={} -> {}",
+        member.qualified_name,
+        is_call,
+        lookup.return_type_id(&member.qualified_name).map(|id| format!("{id:?}")).as_deref().unwrap_or("None"),
+        lookup.field_type_id(&member.qualified_name).map(|id| format!("{id:?}")).as_deref().unwrap_or("None"),
+        result.map(|id| format!("{id:?}")).as_deref().unwrap_or("None"),
+    );
+    result
+}
+
+/// Inner body of `yield_through`. See `yield_through` for the contract.
+fn yield_through_impl(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    is_call: bool,
+    receiver: TypeId,
+) -> Option<TypeId> {
+    let raw = member_yield_type(lookup, arena, &member.qualified_name, is_call)?;
+    // Callable-property unwrap: if the raw yield is a function type and the
+    // member is being called, peel off one call layer to get the return type.
+    // This covers `fn: () => Mock<T>` properties: the field type interns as
+    // `Type::Function { return_: Mock<T> }`; calling the property yields
+    // `Mock<T>`, not the function-type descriptor itself.
+    let raw = if is_call {
+        match arena.get(raw) {
+            crate::type_checker::core::types::Type::Function { return_, .. } => return_,
+            _ => raw,
+        }
+    } else {
+        raw
+    };
+    let substituted = substitute_through(lookup, arena, raw, receiver);
+    // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
+    if is_self_head(arena, substituted) {
+        return Some(receiver);
+    }
+    Some(substituted)
+}
+
 /// The type `member` yields when used in a chain, as a canonical TypeId: its
 /// return type for a call, else its declared field/property type. Reads the
 /// interned `*_id` first; falls back to interning the string accessor (the
@@ -647,49 +726,6 @@ pub(crate) fn member_yield_type(
     lookup
         .field_type_name(member_qname)
         .map(|s| arena.intern_type_str(s))
-}
-
-/// The type a member yields when accessed through `receiver`, with the
-/// receiver's applied type arguments substituted for the declaring type's
-/// generic parameters: `Repository<User>` receiver + `find(): T` → `User`.
-///
-/// Fluent-chain rebind: when the substituted yield type's head is `"this"` or
-/// `"Self"`, the member is a fluent step that returns the receiver itself.
-/// Substitute the receiver type directly so the next member lookup stays on
-/// the receiver's type rather than dead-ending on a nominal `Class("this")`
-/// that has no members.
-///
-/// Callable-property unwrap: when `is_call=true` and the member's declared
-/// yield type is a function type (`Type::Function { return_ }`), the call
-/// result is the function's own return type — a property whose declared type
-/// is a call signature (`fn: () => Mock<T>`) yields `Mock<T>` when called.
-fn yield_through(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    member: &Symbol,
-    is_call: bool,
-    receiver: TypeId,
-) -> Option<TypeId> {
-    let raw = member_yield_type(lookup, arena, &member.qualified_name, is_call)?;
-    // Callable-property unwrap: if the raw yield is a function type and the
-    // member is being called, peel off one call layer to get the return type.
-    // This covers `fn: () => Mock<T>` properties: the field type interns as
-    // `Type::Function { return_: Mock<T> }`; calling the property yields
-    // `Mock<T>`, not the function-type descriptor itself.
-    let raw = if is_call {
-        match arena.get(raw) {
-            crate::type_checker::core::types::Type::Function { return_, .. } => return_,
-            _ => raw,
-        }
-    } else {
-        raw
-    };
-    let substituted = substitute_through(lookup, arena, raw, receiver);
-    // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
-    if is_self_head(arena, substituted) {
-        return Some(receiver);
-    }
-    Some(substituted)
 }
 
 /// `true` when the type's nominal head is the `this` or `Self` keyword —
@@ -743,6 +779,32 @@ fn substitute_through(
 /// from the type's head. The id is what keeps a same-named receiver type in one
 /// package distinct from another's during the member walk.
 fn resolve_root(
+    ref_ctx: &RefContext,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    seg: &crate::types::ChainSegment,
+) -> Option<Receiver> {
+    let result = resolve_root_impl(ref_ctx, file_ctx, lookup, arena, seg);
+    let result_str = result.as_ref().map_or_else(|| "UNTYPABLE".to_string(), |r| {
+        head_qname(arena, r.ty)
+            .map(|h| format!("typed {h}"))
+            .unwrap_or_else(|| "typed (structural)".to_string())
+    });
+    crate::tracef!(
+        "  ROOT '{}': local_type_id={} local_type={} declared_type={} is_call={} -> {}",
+        seg.name,
+        lookup.local_type_id(&seg.name).map(|id| format!("{id:?}")).as_deref().unwrap_or("None"),
+        lookup.local_type(&seg.name).as_deref().unwrap_or("None"),
+        seg.declared_type.as_deref().unwrap_or("None"),
+        seg.is_call,
+        result_str,
+    );
+    result
+}
+
+/// Inner body of `resolve_root`. See `resolve_root` for the contract.
+fn resolve_root_impl(
     ref_ctx: &RefContext,
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,

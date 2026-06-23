@@ -36,6 +36,7 @@ pub mod rules;
 pub mod support;
 pub mod compilation;
 pub mod module_identity;
+pub mod trace;
 
 #[cfg(test)]
 pub(crate) mod testkit;
