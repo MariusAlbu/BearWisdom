@@ -336,19 +336,35 @@ pub(crate) fn parse_external_sources(
     // keep the permissive extract path.
     let results: Vec<Result<ParsedFile>> = {
         let _t = crate::indexer::phase_timer::scope("externals.parse_walked_files");
-        walked
-            .par_iter()
-            .map(|w| {
-                let per_file_demand =
-                    lookup_demand_for_walked(&w.relative_path, demand, &ambient_globals_packages);
-                super::full::parse_file_with_arena_and_demand(
-                    w,
-                    registry,
-                    per_file_demand,
-                    type_arena,
-                )
-            })
-            .collect()
+        // External `.d.ts` — bundled/generated types (tRPC's inferred routers,
+        // deeply recursive mapped types) nest the CST far past the ~8 MB default
+        // stack, overflowing the extractor's recursive type walk. Parse on the
+        // deep PARSE_STACK_SIZE pool, same as the project parse. (A bare
+        // `par_iter` runs on the global default-stack pool and can execute items
+        // on the calling thread via work-stealing — which is why the overflow
+        // surfaced on `main`.)
+        let parse = || {
+            walked
+                .par_iter()
+                .map(|w| {
+                    let per_file_demand = lookup_demand_for_walked(
+                        &w.relative_path,
+                        demand,
+                        &ambient_globals_packages,
+                    );
+                    super::full::parse_file_with_arena_and_demand(
+                        w,
+                        registry,
+                        per_file_demand,
+                        type_arena,
+                    )
+                })
+                .collect()
+        };
+        match crate::indexer::parse_file::build_parse_pool() {
+            Ok(pool) => pool.install(parse),
+            Err(_) => parse(),
+        }
     };
 
     let mut parsed = Vec::with_capacity(results.len() + metadata_parsed.len());

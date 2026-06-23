@@ -978,14 +978,21 @@ fn full_index_inner(
     // iteration_0 + return-inference fixpoint, no old resolve loop.
     let mut rstats: resolve::ResolutionStats = {
         let _t = phase_timer::scope("resolve.single_pass");
-        let stats = resolve::engine::pipeline::resolve_single_pass(
-            db,
-            &parsed,
-            &symbol_id_map,
-            Some(&project_ctx),
-            std::sync::Arc::clone(&workspace_arena),
-            std::sync::Arc::clone(&symbol_index),
-        )
+        // Run the whole pass on the deep-stack resolve pool: it builds the
+        // Compilation and walks chains over external `.d.ts` whose CSTs nest far
+        // past the ~8 MB default stack (bundled/generated types — tRPC routers,
+        // recursive mapped types). Without this the build overflows on `main`.
+        let db_ref = &mut *db;
+        let parsed_ref = &parsed;
+        let sid_ref = &symbol_id_map;
+        let pctx_ref = &project_ctx;
+        let arena_c = std::sync::Arc::clone(&workspace_arena);
+        let index_c = std::sync::Arc::clone(&symbol_index);
+        let stats = crate::indexer::parse_file::with_resolve_pool(move || {
+            resolve::engine::pipeline::resolve_single_pass(
+                db_ref, parsed_ref, sid_ref, Some(pctx_ref), arena_c, index_c,
+            )
+        })
         .context("SemanticModel single-pass resolve failed")?;
         info!(
             "SemanticModel single pass: {} edges, {} unresolved",
