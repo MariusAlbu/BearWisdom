@@ -26,15 +26,71 @@ use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
 use crate::indexer::resolve::engine::{semantic_model::SemanticModel, compilation::Compilation};
 use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
-use crate::type_checker::core::types::{TypeArena, TypeId};
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::{ImportModulePath, LanguageProfile};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile};
 use crate::walker::WalkedFile;
 
 use crate::indexer::resolve::engine::contract::build_scope_chain;
+
+// ---------------------------------------------------------------------------
+// Async-wrapper unwrap helper
+// ---------------------------------------------------------------------------
+
+/// Peel one async-wrapper layer from `yield_id` when the binding was `await`-ed.
+///
+/// Handles two forms:
+///   - `Type::Apply { base: <wrapper-class>, args: [T] }` where the wrapper
+///     class name is in `profile.async_wrappers` — returns `args[0]` (T).
+///   - Bare wrapper head with no applied arg — returns `yield_id` unchanged.
+///
+/// The unwrap fires ONLY at the binding seed (the binding's await flag gates it);
+/// a non-awaited `Promise<T>` variable is never touched.
+fn unwrap_async_yield_id(
+    yield_id: TypeId,
+    arena: &TypeArena,
+    async_wrappers: &[&str],
+) -> TypeId {
+    if async_wrappers.is_empty() {
+        return yield_id;
+    }
+    if let Type::Apply { base, args } = arena.get(yield_id) {
+        if !args.is_empty() {
+            if let Type::Class(head) = arena.get(base) {
+                if async_wrappers.contains(&head.as_str()) {
+                    return args[0];
+                }
+            }
+        }
+    }
+    yield_id
+}
+
+/// Peel one async-wrapper layer from a type string (the String seed path).
+///
+/// `"Promise<Response>"` → `"Response"` when `"Promise"` is in `async_wrappers`.
+/// Returns `None` when the string has no wrapper head or the first arg is empty,
+/// so the caller keeps the original string unchanged.
+fn unwrap_async_yield_str<'a>(ty: &'a str, async_wrappers: &[&str]) -> Option<&'a str> {
+    if async_wrappers.is_empty() {
+        return None;
+    }
+    let (head, args) = parse_type_head_and_args(ty);
+    if args.is_empty() {
+        return None;
+    }
+    if async_wrappers.contains(&head) {
+        let inner = args[0].trim();
+        if !inner.is_empty() {
+            return Some(inner);
+        }
+    }
+    None
+}
 
 // ---------------------------------------------------------------------------
 // FileLookup — per-file SymbolLookup overlay with a forward-inference cache
@@ -550,14 +606,27 @@ fn resolve_one_file(
 
                 if let Some(&lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx) {
                     if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                        let is_awaited = pf.flow.flow_binding_await.contains(&lhs_idx);
                         if let Some(yield_id) = res.resolved_yield_type {
-                            crate::tracef!(
-                                "SEED bound_lhs='{}' yield_type_id={:?} string_fallback=None -> recorded=TypeId",
-                                lhs_sym.name,
-                                yield_id,
-                            );
                             // TypeId available: store it directly. No format/intern.
-                            file_lookup.record_local_type_id(lhs_sym.name.clone(), yield_id);
+                            // When the binding was awaited, strip one async-wrapper
+                            // layer so `Promise<T>` → `T` before recording.
+                            let final_id = if is_awaited {
+                                if let Some(arena) = tree.type_arena() {
+                                    unwrap_async_yield_id(yield_id, arena, profile.async_wrappers)
+                                } else {
+                                    yield_id
+                                }
+                            } else {
+                                yield_id
+                            };
+                            crate::tracef!(
+                                "SEED bound_lhs='{}' yield_type_id={:?} awaited={} -> recorded=TypeId",
+                                lhs_sym.name,
+                                final_id,
+                                is_awaited,
+                            );
+                            file_lookup.record_local_type_id(lhs_sym.name.clone(), final_id);
                         } else {
                             // No TypeId from the resolver; derive a String binding
                             // from the target symbol's stored type metadata.
@@ -574,13 +643,25 @@ fn resolve_one_file(
                                         _ => tree.field_type_str(&s.qualified_name),
                                     })
                             };
+                            // When the binding was awaited, strip one async-wrapper
+                            // layer from the string type before recording.
+                            let final_ty = yield_ty.as_deref().and_then(|ty| {
+                                if is_awaited {
+                                    unwrap_async_yield_str(ty, profile.async_wrappers)
+                                        .map(|s| s.to_string())
+                                        .or_else(|| Some(ty.to_string()))
+                                } else {
+                                    Some(ty.to_string())
+                                }
+                            });
                             crate::tracef!(
-                                "SEED bound_lhs='{}' yield_type_id=None string_fallback={} -> recorded={}",
+                                "SEED bound_lhs='{}' yield_type_id=None awaited={} string_fallback={} -> recorded={}",
                                 lhs_sym.name,
-                                yield_ty.as_deref().unwrap_or("None"),
-                                if yield_ty.is_some() { "String" } else { "nothing" },
+                                is_awaited,
+                                final_ty.as_deref().unwrap_or("None"),
+                                if final_ty.is_some() { "String" } else { "nothing" },
                             );
-                            if let Some(ty) = yield_ty {
+                            if let Some(ty) = final_ty {
                                 file_lookup.record_local_type(lhs_sym.name.clone(), ty);
                             }
                         }

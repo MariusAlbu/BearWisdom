@@ -41,6 +41,10 @@ pub mod trace;
 #[cfg(test)]
 pub(crate) mod testkit;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
+
 /// Everything a rule needs to resolve one ref. Borrowed; built fresh per ref by
 /// the engine. Mirrors the inputs the old `DefaultResolver` strategies read —
 /// the file's imports/namespace, the ref + its scope chain, the symbol index,
@@ -69,9 +73,27 @@ impl<'a> BinderContext<'a> {
     }
 
     /// The ref's target name.
+    ///
+    /// For nominal-binding edge kinds (Inherits, Implements, TypeRef,
+    /// Instantiates) returns the bare head of the generic application:
+    /// `QueryObserverBaseResult<TData, TError>` → `QueryObserverBaseResult`.
+    /// No-op for non-generic targets (no `<` or `[` → whole string returned).
+    /// Other edge kinds return the raw target_name unchanged.
     #[inline]
     pub fn target(&self) -> &str {
-        self.ref_ctx.extracted_ref.target_name.as_str()
+        let raw = self.ref_ctx.extracted_ref.target_name.as_str();
+        match self.ref_ctx.extracted_ref.kind {
+            EdgeKind::Inherits
+            | EdgeKind::Implements
+            | EdgeKind::TypeRef
+            | EdgeKind::Instantiates => {
+                crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args(
+                    raw,
+                )
+                .0
+            }
+            _ => raw,
+        }
     }
 
     /// The ref's edge kind.

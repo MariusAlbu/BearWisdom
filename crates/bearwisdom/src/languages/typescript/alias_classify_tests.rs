@@ -179,3 +179,55 @@ fn intersection_with_all_anonymous_object_branches_and_no_mapped_stays_object() 
         "plain anonymous intersection should not be Mapped; got {target:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Callable alias — function_type return-head capture
+// ---------------------------------------------------------------------------
+
+#[test]
+fn callable_alias_captures_return_head_as_application() {
+    // `type Accessor<T> = () => T` — the call result is the generic param `T`.
+    // Capturing it as `Application { root: "T", args: [] }` lets alias-expansion
+    // substitute the application's arg, so `Accessor<QueryClient>` → `QueryClient`.
+    let target = classify("type Accessor<T> = () => T;");
+    match target {
+        AliasTarget::Application { root, args } => {
+            assert_eq!(root, "T");
+            assert!(args.is_empty());
+        }
+        other => panic!("expected Application {{ root: \"T\" }}, got {other:?}"),
+    }
+}
+
+#[test]
+fn callable_alias_with_nominal_return_captures_that_head() {
+    // `type Lazy = () => User` — nominal return type captured as the root.
+    let target = classify("type Lazy = () => User;");
+    match target {
+        AliasTarget::Application { root, args } => {
+            assert_eq!(root, "User");
+            assert!(args.is_empty());
+        }
+        other => panic!("expected Application {{ root: \"User\" }}, got {other:?}"),
+    }
+}
+
+#[test]
+fn callable_alias_with_params_still_captures_return() {
+    // `type Mapper<T> = (x: number) => T` — params don't change the return head.
+    let target = classify("type Mapper<T> = (x: number) => T;");
+    match target {
+        AliasTarget::Application { root, .. } => assert_eq!(root, "T"),
+        other => panic!("expected Application {{ root: \"T\" }}, got {other:?}"),
+    }
+}
+
+#[test]
+fn non_single_head_return_stays_opaque() {
+    // `type F = () => A | B` — union return has no single root; must stay Other.
+    let target = classify("type F = () => A | B;");
+    assert!(
+        matches!(target, AliasTarget::Other),
+        "union return should stay Other, got {target:?}"
+    );
+}

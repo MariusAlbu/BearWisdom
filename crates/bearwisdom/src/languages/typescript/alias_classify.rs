@@ -290,11 +290,33 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             }
             AliasTarget::Other
         }
+        // `type F<T> = (...) => T` — callable alias whose call result is a
+        // single nominal or generic-param head. Capture that head as
+        // `Application { root, args: [] }` so the generic alias-expansion
+        // path can substitute the application's type arg for `root` and
+        // resolve members on the call result (e.g. `Accessor<QueryClient>`
+        // → `QueryClient`). Declines when the return type reduces to
+        // multiple heads (union, intersection, etc.) — those have no
+        // unique application root and must stay opaque.
+        "function_type" => {
+            let return_head = node
+                .child_by_field_name("return_type")
+                .map(|n| head_type_name(&n, src))
+                .unwrap_or_default();
+            if return_head.is_empty() {
+                AliasTarget::Other
+            } else {
+                AliasTarget::Application {
+                    root: return_head,
+                    args: Vec::new(),
+                }
+            }
+        }
         // Everything else — `keyof T`, mapped, conditional,
-        // indexed-access, template-literal, function types, tuples,
-        // type predicates, infer, this, literals — is a non-application
-        // shape we don't expand yet. Recorded as `Other` so callers
-        // don't fall back to the field_type heuristic.
+        // indexed-access, template-literal, tuples, type predicates,
+        // infer, this, literals — is a non-application shape we don't
+        // expand yet. Recorded as `Other` so callers don't fall back
+        // to the field_type heuristic.
         _ => AliasTarget::Other,
     }
 }

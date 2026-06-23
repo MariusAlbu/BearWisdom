@@ -946,6 +946,10 @@ pub struct DiscriminantNarrowing {
 ///   fallible-unwrap operator (Rust `?`). The operator guarantees the RHS is a
 ///   single-arg fallible wrapper (`Result<T>` / `Option<T>`), so the resolver
 ///   peels one generic layer off the resolved yield before recording it.
+/// - `flow_binding_await`: set of `lhs_symbol_idx` whose initializer is an
+///   `await` expression. The resolver strips one async-wrapper layer off the
+///   resolved yield type before recording it: `Promise<T>` → `T` (head in
+///   `LanguageProfile::async_wrappers`), bare wrapper with no arg → unchanged.
 /// - `flow_return_lhs`: sparse map `ref_idx → fn_symbol_idx`. Present when a
 ///   ref is a `return <expr>` expression in a function/method body; the
 ///   resolver records the resolved yield type as a candidate return type for
@@ -963,6 +967,7 @@ pub struct FlowMeta {
     pub flow_binding_lhs: HashMap<usize, usize>,
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
+    pub flow_binding_await: std::collections::HashSet<usize>,
     pub flow_return_lhs: HashMap<usize, usize>,
     /// `(fn_symbol_idx, identifier)` for a `return <bare-identifier>` whose
     /// expression carries no ref — `return queryClient` / `return client`. The

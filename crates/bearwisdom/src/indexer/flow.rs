@@ -437,6 +437,9 @@ fn run_assignment_query(
                 if is_unwrap {
                     meta.flow_binding_unwrap.insert(lhs_idx);
                 }
+                if rhs.kind() == "await_expression" {
+                    meta.flow_binding_await.insert(lhs_idx);
+                }
             } else if !meta.flow_binding_decl_type.contains_key(&lhs_idx) {
                 // No resolvable RHS ref and no annotation: classify the literal
                 // node kind against the language's wrapper-type table. Skips

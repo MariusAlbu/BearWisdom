@@ -702,6 +702,26 @@ impl Compilation {
                                 ti.field_type_id = Some(self.arena.class(&resolved));
                                 ti.field_type = Some(resolved);
                             }
+                        } else if pf.language == "typescript" || pf.language == "tsx" {
+                            // A bare type-param field (`value: T` on `class Wrapper<T>`)
+                            // has no TypeRef (the post-filter drops it to keep T off
+                            // the unresolved-ref surface) but records the param name
+                            // as the field's signature. Use it as the field type so
+                            // substitute_through can rebind T to the applied argument.
+                            // Guard: bare identifier only — discriminant literals set
+                            // signature to a quoted string and are excluded.
+                            if let Some(sig) = sym.signature.as_deref() {
+                                if is_bare_type_identifier(sig) {
+                                    let resolved = resolve_type_name_in_scope(
+                                        sig,
+                                        sym.scope_path.as_deref(),
+                                        &self.by_qname,
+                                    );
+                                    ti.field_type_id =
+                                        Some(self.arena.intern_type_str(&resolved));
+                                    ti.field_type = Some(resolved);
+                                }
+                            }
                         }
                     }
                     // A callable-typed property (`fn: () => Mock`) yields its
@@ -1811,6 +1831,23 @@ fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeI
         let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
         arena.intern(Type::Apply { base, args: arg_ids })
     }
+}
+
+/// Returns `true` when `s` is a bare type-identifier: starts with an ASCII
+/// letter or underscore, contains only `[A-Za-z0-9_]`, and is not a
+/// TypeScript primitive-value literal (`true`, `false`, `null`, `undefined`).
+/// Excludes quoted string discriminants, numeric literals, and arrow-type
+/// signatures (`() => T`).
+fn is_bare_type_identifier(s: &str) -> bool {
+    if matches!(s, "true" | "false" | "null" | "undefined") {
+        return false;
+    }
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Test-only re-export of the type-like predicate so `tree_tests.rs` can

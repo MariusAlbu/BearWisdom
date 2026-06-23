@@ -183,18 +183,44 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
     // a local variable. Works uniformly across every emission path (main
     // walker, type helper modules, scan_all post-scan) because it operates
     // on the finished refs vec.
+    //
+    // Exception: when the source symbol is a Property or Field and its type
+    // annotation IS the bare param (e.g. `class Wrapper<T> { value: T }`),
+    // the param name is recorded as the field's signature so Phase B can
+    // derive field_type and the chain walker can substitute through it.
+    // The TypeRef is still dropped — no unresolved edge is emitted.
     {
         let mut scopes: Vec<(String, u32, u32)> = Vec::new();
         collect_type_param_scopes(root, src_bytes, &mut scopes);
         if !scopes.is_empty() {
-            refs.retain(|r| {
-                if r.kind != EdgeKind::TypeRef {
-                    return true;
+            let mut i = 0;
+            while i < refs.len() {
+                let matched = if refs[i].kind == EdgeKind::TypeRef {
+                    scopes.iter().find(|(name, start, end)| {
+                        &refs[i].target_name == name
+                            && refs[i].line >= *start
+                            && refs[i].line <= *end
+                    }).map(|(name, _, _)| (refs[i].source_symbol_index, name.clone()))
+                } else {
+                    None
+                };
+                if let Some((src_idx, param_name)) = matched {
+                    refs.remove(i);
+                    // Seed the param name on a Property/Field whose type is
+                    // exactly the bare param (signature currently None —
+                    // literal-type and arrow-type fields set signature
+                    // before this post-filter runs).
+                    if let Some(sym) = symbols.get_mut(src_idx) {
+                        if matches!(sym.kind, SymbolKind::Property | SymbolKind::Field)
+                            && sym.signature.is_none()
+                        {
+                            sym.signature = Some(param_name);
+                        }
+                    }
+                } else {
+                    i += 1;
                 }
-                !scopes.iter().any(|(name, start, end)| {
-                    &r.target_name == name && r.line >= *start && r.line <= *end
-                })
-            });
+            }
         }
     }
 

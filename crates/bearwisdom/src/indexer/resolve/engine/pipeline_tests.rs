@@ -652,3 +652,333 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
         "unresolved ref from a snippet source symbol must have from_snippet=true"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Await-unwrap seed tests (slice A_stdlib fix)
+// ---------------------------------------------------------------------------
+
+/// When a binding's initializer is an `await` expression
+/// (`const res = await fetch(url)`), the seed records the UNWRAPPED inner type
+/// (`Response`) rather than the async-wrapper (`Promise<Response>`), so a
+/// subsequent member call `res.json()` walks `Response`'s members and resolves.
+///
+/// Exercises the `flow_binding_await` path in `resolve_one_file`'s seed block.
+#[test]
+fn awaited_binding_strips_promise_wrapper_at_seed() {
+    use crate::type_checker::core::types::{Type, TypeArena};
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+
+    fn esym(
+        name: &str,
+        qname: &str,
+        kind: SymbolKind,
+        parent: Option<usize>,
+        scope: Option<&str>,
+        return_type: Option<crate::type_checker::core::types::TypeId>,
+    ) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: scope.map(Into::into),
+            parent_index: parent,
+            declared_type: None,
+            return_type,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+    fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
+        ChainSegment {
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
+        }
+    }
+    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: byte,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+
+    let arena = Arc::new(TypeArena::new());
+
+    // Build `Promise<Response>` as a TypeId in the shared arena so the
+    // Compilation ingests it as `fetch`'s return type.
+    let response_id = arena.class("Response");
+    let promise_id = arena.class("Promise");
+    let promise_response_id = arena.intern(Type::Apply {
+        base: promise_id,
+        args: vec![response_id],
+    });
+
+    let symbols = vec![
+        // 0: enclosing function `getEpisodes`
+        esym("getEpisodes", "getEpisodes", SymbolKind::Function, None, None, None),
+        // 1: local `res` — bound by `await fetch(url)`
+        esym("res", "getEpisodes.res", SymbolKind::Variable, Some(0), Some("getEpisodes"), None),
+        // 2: `Response` class
+        esym("Response", "Response", SymbolKind::Class, None, None, None),
+        // 3: `Response.json` method
+        esym("json", "Response.json", SymbolKind::Method, Some(2), Some("Response"), None),
+        // 4: `fetch` function, return type = Promise<Response>
+        esym("fetch", "fetch", SymbolKind::Function, None, None, Some(promise_response_id)),
+    ];
+
+    let refs = vec![
+        // ref 0: `const res = await fetch(url)` — Calls ref on `fetch`.
+        // byte_offset=5 places it inside the rhs range the flow runner would
+        // record; here flow_binding_lhs is set manually.
+        eref(0, "fetch", EdgeKind::Calls, None, 5),
+        // ref 1: `res.json()` chain — the member call we expect to resolve.
+        eref(0, "json", EdgeKind::Calls, Some(MemberChain {
+            segments: vec![
+                cseg("res", SegmentKind::Identifier, false),
+                cseg("json", SegmentKind::Property, true),
+            ],
+        }), 20),
+    ];
+
+    let mut flow = FlowMeta::default();
+    // ref 0's LHS is symbol 1 (`res`).
+    flow.flow_binding_lhs.insert(0, 1);
+    // `res` was awaited — strip one async-wrapper layer at the seed.
+    flow.flow_binding_await.insert(1);
+
+    let pf = ParsedFile {
+        path: "api.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("api.ts".to_string(), "getEpisodes".to_string()), 1i64);
+    id_map.insert(("api.ts".to_string(), "getEpisodes.res".to_string()), 2i64);
+    id_map.insert(("api.ts".to_string(), "Response".to_string()), 3i64);
+    id_map.insert(("api.ts".to_string(), "Response.json".to_string()), 4i64);
+    id_map.insert(("api.ts".to_string(), "fetch".to_string()), 5i64);
+
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+
+    let (edges, _unresolved) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+
+    // `res.json()` must resolve to `Response.json` (id 4).
+    assert!(
+        edges.iter().any(|e| e.1 == 4),
+        "awaited binding `res` must be typed as Response (not Promise), so res.json resolves; edges={edges:?}"
+    );
+}
+
+/// Regression guard: a non-awaited `Promise<T>` binding must keep its
+/// `Promise` head so `.then`/`.catch` still resolve on it.
+///
+/// Without `flow_binding_await`, the seed records `Promise<Response>` intact,
+/// and a `then` member on `Promise` resolves while `json` (on `Response`) does not.
+#[test]
+fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
+    use crate::type_checker::core::types::{Type, TypeArena};
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+
+    fn esym(
+        name: &str,
+        qname: &str,
+        kind: SymbolKind,
+        parent: Option<usize>,
+        scope: Option<&str>,
+        return_type: Option<crate::type_checker::core::types::TypeId>,
+    ) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: scope.map(Into::into),
+            parent_index: parent,
+            declared_type: None,
+            return_type,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+    fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
+        ChainSegment {
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
+        }
+    }
+    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: byte,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+
+    let arena = Arc::new(TypeArena::new());
+
+    let response_id = arena.class("Response");
+    let promise_id = arena.class("Promise");
+    let promise_response_id = arena.intern(Type::Apply {
+        base: promise_id,
+        args: vec![response_id],
+    });
+
+    let symbols = vec![
+        // 0: enclosing function
+        esym("usePromise", "usePromise", SymbolKind::Function, None, None, None),
+        // 1: `p` — non-awaited binding, keeps Promise head
+        esym("p", "usePromise.p", SymbolKind::Variable, Some(0), Some("usePromise"), None),
+        // 2: `Promise` class with `then`
+        esym("Promise", "Promise", SymbolKind::Class, None, None, None),
+        // 3: `Promise.then`
+        esym("then", "Promise.then", SymbolKind::Method, Some(2), Some("Promise"), None),
+        // 4: `fetch` returns Promise<Response>
+        esym("fetch", "fetch", SymbolKind::Function, None, None, Some(promise_response_id)),
+    ];
+
+    let refs = vec![
+        // ref 0: `const p = fetch(url)` — NOT awaited
+        eref(0, "fetch", EdgeKind::Calls, None, 5),
+        // ref 1: `p.then(...)` — should resolve to Promise.then
+        eref(0, "then", EdgeKind::Calls, Some(MemberChain {
+            segments: vec![
+                cseg("p", SegmentKind::Identifier, false),
+                cseg("then", SegmentKind::Property, true),
+            ],
+        }), 20),
+    ];
+
+    let mut flow = FlowMeta::default();
+    // ref 0's LHS is symbol 1 (`p`).
+    flow.flow_binding_lhs.insert(0, 1);
+    // No flow_binding_await — this binding is NOT awaited.
+
+    let pf = ParsedFile {
+        path: "use_promise.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+
+    let mut id_map = HashMap::new();
+    id_map.insert(("use_promise.ts".to_string(), "usePromise".to_string()), 1i64);
+    id_map.insert(("use_promise.ts".to_string(), "usePromise.p".to_string()), 2i64);
+    id_map.insert(("use_promise.ts".to_string(), "Promise".to_string()), 3i64);
+    id_map.insert(("use_promise.ts".to_string(), "Promise.then".to_string()), 4i64);
+    id_map.insert(("use_promise.ts".to_string(), "fetch".to_string()), 5i64);
+
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+
+    let (edges, _unresolved) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+
+    // `p.then()` must resolve to `Promise.then` (id 4) — Promise head is preserved.
+    assert!(
+        edges.iter().any(|e| e.1 == 4),
+        "non-awaited binding `p` must keep Promise head so p.then resolves to Promise.then; edges={edges:?}"
+    );
+}

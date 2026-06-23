@@ -1806,6 +1806,75 @@ fn function_type_parameter_suppressed_inside_function_body_annotations() {
 }
 
 // ---------------------------------------------------------------------------
+// E_yield_none: bare type-param field exposes its param name via signature
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_param_field_records_signature_without_leaking_ref() {
+    // `value: T` where T is a type parameter of `Box<T>`.
+    // Contract: the type-param suppression must hold (no T TypeRef →
+    // no unresolved_refs pollution), AND the `value` property must carry
+    // `T` as its signature so Phase B can derive field_type and the chain
+    // walker can substitute through it.
+    let src = r#"
+        export interface Box<T> { value: T }
+    "#;
+
+    // Suppression invariant: T must not appear as a TypeRef in refs.
+    let r = refs(src);
+    let leaked: Vec<_> = r
+        .iter()
+        .filter(|rf| rf.target_name == "T" && rf.kind == EdgeKind::TypeRef)
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "type-param `T` must not leak as a TypeRef: {leaked:?}"
+    );
+
+    // Signature carrier: the `value` property must expose `T` so field_type
+    // can be derived and substitute_through can rebind it.
+    let s = sym(src);
+    let value_prop = s
+        .iter()
+        .find(|s| s.qualified_name == "Box.value")
+        .expect("Box.value property must be extracted");
+    assert_eq!(
+        value_prop.signature.as_deref(),
+        Some("T"),
+        "bare type-param field `value: T` must record `T` as its signature; \
+         got {:?}",
+        value_prop.signature
+    );
+}
+
+#[test]
+fn non_param_field_annotation_does_not_set_signature() {
+    // A field annotated with a concrete type must not have its type name
+    // written to `signature` — that slot is reserved for discriminant
+    // literals and arrow types on callable properties.
+    let src = r#"
+        export interface Repo { db: Database }
+    "#;
+    let s = sym(src);
+    let db_prop = s
+        .iter()
+        .find(|s| s.qualified_name == "Repo.db")
+        .expect("Repo.db property must be extracted");
+    assert!(
+        db_prop.signature.is_none(),
+        "concrete-type annotation must not set signature; got {:?}",
+        db_prop.signature
+    );
+    // The concrete type IS emitted as a resolvable TypeRef.
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|rf| rf.target_name == "Database" && rf.kind == EdgeKind::TypeRef),
+        "concrete type annotation must emit a TypeRef: {r:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Triple-slash directive following (`/// <reference path|types="..." />`)
 // ---------------------------------------------------------------------------
 
