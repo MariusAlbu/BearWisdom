@@ -23,7 +23,7 @@
 // own code imports from a path, we want it indexed regardless of gitignore.
 // =============================================================================
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 use regex::Regex;
@@ -55,6 +55,8 @@ pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> V
     let mut queue: std::collections::VecDeque<PathBuf> =
         primary.iter().map(|f| f.absolute_path.clone()).collect();
 
+    let mut alias_cache: HashMap<PathBuf, Vec<(String, String)>> = HashMap::new();
+
     while let Some(from_path) = queue.pop_front() {
         // Only EcmaScript-family files carry module specifiers worth following.
         if !crate::walker::detect_language(&from_path).is_some_and(is_ecmascript_family) {
@@ -64,6 +66,8 @@ pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> V
             continue;
         };
         for spec in scan_import_specifiers(&content) {
+            let spec = rewrite_alias_specifier(&from_path, project_root, &spec, &mut alias_cache)
+                .unwrap_or(spec);
             // Skip bare specifiers (`react`, `@scope/pkg`) — those go through
             // the externals walker. We're only interested in project-relative
             // paths that may have hit a gitignored directory.
@@ -96,11 +100,19 @@ pub fn pull_gitignored_imports(project_root: &Path, primary: &[WalkedFile]) -> V
             // it entered `found`, so `strip_prefix` against the raw (non-
             // canonicalized) `project_root` is a plain textual prefix match —
             // no verbatim-path mismatch on Windows.
-            let relative_path = path
+            let rel = path
                 .strip_prefix(project_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
+            // Tag with an `ext:gen:` scheme: these are gitignored generated /
+            // vendored files (Prisma client, codegen) the project imports. They
+            // must be ingested as lookup TARGETS so a project ref into them binds,
+            // but their OWN refs are noise nobody outside references — the resolve
+            // loop's `ext:` filter excludes them from edges + unresolved, while the
+            // real path stays in the scheme so segment-run import resolution finds
+            // them.
+            let relative_path = format!("ext:gen:{rel}");
             let language_id = crate::walker::detect_language(&path)?;
             Some(WalkedFile {
                 relative_path,
@@ -139,6 +151,41 @@ fn is_path_specifier(spec: &str) -> bool {
         return true;
     }
     false
+}
+
+/// Rewrite a tsconfig path-alias specifier (`@/x`) to a project-root-relative
+/// specifier so the on-disk resolver can find a target in a gitignored alias root.
+fn rewrite_alias_specifier(
+    from_file: &Path,
+    project_root: &Path,
+    spec: &str,
+    cache: &mut HashMap<PathBuf, Vec<(String, String)>>,
+) -> Option<String> {
+    if spec.starts_with('.') || spec.starts_with('/') {
+        return None;
+    }
+    let ts_dir = nearest_tsconfig_dir(from_file, project_root)?;
+    let aliases = cache.entry(ts_dir.clone()).or_insert_with(|| {
+        crate::ecosystem::manifest::npm::parse_tsconfig_paths_with_extends(&ts_dir.join("tsconfig.json"))
+    });
+    let (alias, target) = aliases
+        .iter()
+        .filter(|(a, _)| spec.starts_with(a.as_str()))
+        .max_by_key(|(a, _)| a.len())?;
+    let remainder = &spec[alias.len()..];
+    let abs = lexically_normalize(&ts_dir.join(format!("{target}{remainder}")));
+    let rel = abs.strip_prefix(project_root).ok()?;
+    Some(format!("/{}", rel.to_string_lossy().replace('\\', "/")))
+}
+
+/// Nearest ancestor dir of `from_file` (up to `project_root`) holding a tsconfig.json.
+fn nearest_tsconfig_dir(from_file: &Path, project_root: &Path) -> Option<PathBuf> {
+    let mut dir = from_file.parent()?;
+    loop {
+        if !dir.starts_with(project_root) { return None; }
+        if dir.join("tsconfig.json").is_file() { return Some(dir.to_path_buf()); }
+        dir = dir.parent()?;
+    }
 }
 
 /// Try every conventional resolution of `spec` against `from_file`'s dir

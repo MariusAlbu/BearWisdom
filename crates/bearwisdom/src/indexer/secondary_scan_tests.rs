@@ -334,7 +334,7 @@ fn relative_parent_import_stores_canonical_path() {
 
     assert_eq!(extra.len(), 1, "expected one extra file; got {extra:?}");
     assert_eq!(
-        extra[0].relative_path, "a/service/x.ts",
+        extra[0].relative_path, "ext:gen:a/service/x.ts",
         "stored path must be canonical, not '/../'-bearing: {}",
         extra[0].relative_path
     );
@@ -397,6 +397,41 @@ fn bare_and_root_relative_specifiers_unaffected_by_folding() {
     let extra = pull_gitignored_imports(root, &primary);
 
     assert_eq!(extra.len(), 1, "expected only the project-relative file; got {extra:?}");
-    assert_eq!(extra[0].relative_path, "src/generated/db.ts");
+    assert_eq!(extra[0].relative_path, "ext:gen:src/generated/db.ts");
     assert!(extra.iter().all(|f| !f.relative_path.contains("node_modules")));
+}
+
+#[test]
+fn pulls_tsconfig_alias_import_tagged_generated() {
+    // Prisma-7 shape: source imports the generated client via the `@/` alias into a
+    // gitignored output dir. The bare `@/…` specifier resolves only through alias
+    // rewrite, and the pulled file is tagged `ext:gen:` so its own refs are filtered
+    // (the resolve loop's `ext:` gate) while it stays a lookup target.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("apps/web/generated/prisma")).unwrap();
+    fs::write(
+        root.join("apps/web/tsconfig.json"),
+        r#"{"compilerOptions":{"paths":{"@/*":["./*"]}}}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("apps/web/app.ts"),
+        "import { PrismaClient } from '@/generated/prisma/client';\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("apps/web/generated/prisma/client.ts"),
+        "export class PrismaClient {}\n",
+    )
+    .unwrap();
+
+    let primary = vec![make_walked(root, "apps/web/app.ts", "typescript")];
+    let extra = pull_gitignored_imports(root, &primary);
+
+    assert_eq!(extra.len(), 1, "expected the aliased generated client; got {extra:?}");
+    assert_eq!(
+        extra[0].relative_path,
+        "ext:gen:apps/web/generated/prisma/client.ts"
+    );
 }

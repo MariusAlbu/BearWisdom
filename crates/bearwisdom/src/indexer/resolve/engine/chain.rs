@@ -297,6 +297,13 @@ fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_capitalized_primitive(lookup, &head, member, accept) {
         return Some(m);
     }
+    // Namespace-qualified receiver: a head like `Prisma.UserDelegate` whose
+    // interface is indexed under the bare last segment (`UserDelegate`) — common
+    // for codegen that re-exports a per-file type through a wrapper namespace.
+    // After the dotted head misses, resolve the member on the bare segment.
+    if let Some(m) = lookup_member_on_namespaced(lookup, &head, member, accept) {
+        return Some(m);
+    }
     if let Some(source_ty) = mapped_source_type(lookup, arena, recv.ty, &head) {
         let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
         // A mapped source that resolves back to the mapped type itself makes no
@@ -401,6 +408,24 @@ fn lookup_member_on_capitalized_primitive(
         s
     };
     lookup_member(lookup, &capitalized, member, accept)
+}
+
+/// Namespace-qualified receiver fallback: a head like `Prisma.UserDelegate` whose
+/// members are indexed under the bare last segment (`UserDelegate`) — the type is
+/// declared in its own file and surfaced through a wrapper namespace's re-export,
+/// so its members are keyed on the bare name. Resolve `member` on the last
+/// `.`-segment. `None` for an unqualified head or an empty trailing segment.
+fn lookup_member_on_namespaced(
+    lookup: &dyn SymbolLookup,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    let (_, last) = head.rsplit_once('.')?;
+    if last.is_empty() {
+        return None;
+    }
+    lookup_member(lookup, last, member, accept)
 }
 
 /// Resolve `member` on the named branches of an intersection alias. A branch is
@@ -833,7 +858,21 @@ pub(crate) fn member_yield_type(
     {
         return Some(id);
     }
-    lookup.field_type_name(qname).map(|s| arena.intern_type_str(s))
+    if let Some(s) = lookup.field_type_name(qname) {
+        return Some(arena.intern_type_str(s));
+    }
+    // A getter (`get user(): T`) is indexed as a `method` but accessed as a
+    // PROPERTY — `obj.user` (no call) yields its declared RETURN type, not a
+    // field type. A member with a return type but no field type is a getter; a
+    // bare method reference whose chain continues roots on the same return, so
+    // this fallback only adds yields, never replaces a field/return a call needs.
+    if let Some(id) = lookup
+        .return_type_id_of(member.id)
+        .or_else(|| lookup.return_type_id(qname))
+    {
+        return Some(id);
+    }
+    lookup.return_type_name(qname).map(|s| arena.intern_type_str(s))
 }
 
 /// `true` when the type's nominal head is the `this` or `Self` keyword —

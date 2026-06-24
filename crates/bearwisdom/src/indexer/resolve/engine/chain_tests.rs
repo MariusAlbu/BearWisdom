@@ -122,6 +122,50 @@ fn call_root_falls_back_to_synthetic_ret_interface() {
 }
 
 #[test]
+fn member_resolves_on_namespace_qualified_receiver_via_bare_segment() {
+    // A receiver typed `Prisma.UserDelegate` (namespace-qualified) whose interface
+    // is indexed under the bare last segment (`UserDelegate`) — codegen surfaces a
+    // per-file type through a wrapper namespace. The member binds on the bare name.
+    let lookup = Lookup::new()
+        .with_local_type("d", "Prisma.UserDelegate")
+        .with(sym(1, "UserDelegate", "UserDelegate", "interface", "a.ts"))
+        .with_member(
+            "UserDelegate",
+            sym(10, "findUnique", "UserDelegate.findUnique", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("d", false, SegmentKind::Identifier),
+        seg("findUnique", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(10));
+}
+
+#[test]
+fn getter_accessed_as_property_yields_its_return_type() {
+    // `client.user.findUnique` — `user` is a getter (indexed as a `method`)
+    // accessed WITHOUT a call; property access yields its RETURN type (UserDelegate),
+    // on which the next hop resolves. A Prisma `get user(): UserDelegate` shape.
+    let lookup = Lookup::new()
+        .with_local_type("client", "PrismaClient")
+        .with_member(
+            "PrismaClient",
+            sym(1, "user", "PrismaClient.user", "method", "a.ts"),
+        )
+        .with_return_type("PrismaClient.user", "UserDelegate")
+        .with(sym(2, "UserDelegate", "UserDelegate", "interface", "a.ts"))
+        .with_member(
+            "UserDelegate",
+            sym(10, "findUnique", "UserDelegate.findUnique", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("client", false, SegmentKind::Identifier),
+        seg("user", false, SegmentKind::Property),
+        seg("findUnique", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(10));
+}
+
+#[test]
 fn walks_two_hops_advancing_through_return_type() {
     let lookup = Lookup::new()
         .with_local_type("repo", "Repo")
