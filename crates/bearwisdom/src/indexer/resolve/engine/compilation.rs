@@ -653,105 +653,142 @@ impl Compilation {
                 | SymbolKind::Field
                 | SymbolKind::Variable
                 | SymbolKind::Parameter => {
-                    let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                    if ti.field_type.is_none() {
-                        if let Some(&(first, module)) = type_refs.first() {
+                    // A value whose qname is ALSO an indexed type — the builtin
+                    // `declare var Array: ArrayConstructor` paired with `interface
+                    // Array` shares the single qname `Array` — must not write its
+                    // field_type into the qname slot the type owns. That slot is
+                    // read to type INSTANCES of the type (which carry `push` /
+                    // `includes` / `map`), so the constructor type mis-binds them.
+                    let qname_owned_by_type =
+                        self.by_name.get(sym.name.as_str()).is_some_and(|cands| {
+                            cands.iter().any(|c| {
+                                c.qualified_name == sym.qualified_name && is_type_like(&c.kind)
+                            })
+                        });
+                    // Derive the field type from the first TypeRef (or the jvm /
+                    // bare-type-param signature fallbacks) independent of the qname
+                    // slot's occupancy, so a second declaration sharing the qname
+                    // still records ITS own type in the id slot. Each branch interns
+                    // the head with its own semantics (generic args / nominal class /
+                    // type-param string). A module-tagged self-resolve defers.
+                    let mut derived: Option<(String, Vec<String>, TypeId)> = None;
+                    if let Some(&(first, module)) = type_refs.first() {
+                        let resolved = resolve_type_name_in_scope(
+                            first,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                        );
+                        // A module-tagged ref that scope-resolves to the symbol
+                        // ITSELF is the `typeof import('m')['k']` value-export shape:
+                        // `k` names a value module `m` exports, not a type, so the
+                        // bare-name resolution self-matched. Defer to the post-pass,
+                        // which follows the export to the declared value's type once
+                        // every module is typed.
+                        if module.is_some() && resolved == sym.qualified_name {
+                            pending.push(PendingModuleValue {
+                                typed_qname: sym.qualified_name.clone(),
+                                module: module.unwrap_or_default().to_string(),
+                                key: first.to_string(),
+                            });
+                            continue;
+                        }
+                        // A non-module type-ref that resolves to the property ITSELF
+                        // is a `typeof <same-named value>` collision: scope
+                        // qualification matched this member, not the referenced value
+                        // (`fn: typeof fn` inside an interface whose member is also
+                        // `fn`). Re-bind to a non-self callable of that bare name so a
+                        // call on the property yields the named function's return type.
+                        let resolved = if resolved == sym.qualified_name {
+                            self.by_name
+                                .get(first)
+                                .and_then(|cands| {
+                                    cands.iter().find(|c| {
+                                        c.qualified_name != sym.qualified_name
+                                            && matches!(c.kind.as_str(), "function" | "method")
+                                    })
+                                })
+                                .map(|c| c.qualified_name.clone())
+                                .unwrap_or(resolved)
+                        } else {
+                            resolved
+                        };
+                        let arg_strs: Vec<String> = if type_refs.len() > 1 {
+                            type_refs[1..].iter().map(|(s, _)| s.to_string()).collect()
+                        } else {
+                            Vec::new()
+                        };
+                        let fid = intern_head_and_args(&self.arena, &resolved, &arg_strs);
+                        derived = Some((resolved, arg_strs, fid));
+                    } else if is_jvm_language(&pf.language) {
+                        if let Some(decoded) = sym
+                            .signature
+                            .as_deref()
+                            .and_then(parse_return_type_from_jvm_descriptor)
+                        {
                             let resolved = resolve_type_name_in_scope(
-                                first,
+                                &decoded,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            // A module-tagged ref that scope-resolves to the symbol
-                            // ITSELF is the `typeof import('m')['k']` value-export
-                            // shape: `k` names a value module `m` exports, not a
-                            // type, so the bare-name resolution self-matched. Defer
-                            // it to the post-pass, which follows the export to the
-                            // declared value's type once every module is typed. A
-                            // module-tagged ref that resolves elsewhere is an
-                            // ordinary imported type and is kept.
-                            if module.is_some() && resolved == sym.qualified_name {
-                                pending.push(PendingModuleValue {
-                                    typed_qname: sym.qualified_name.clone(),
-                                    module: module.unwrap_or_default().to_string(),
-                                    key: first.to_string(),
-                                });
-                                continue;
-                            }
-                            // A non-module type-ref that resolves to the property
-                            // ITSELF is a `typeof <same-named value>` collision:
-                            // scope qualification matched this member, not the
-                            // referenced value (`fn: typeof fn` inside an interface
-                            // whose member is also `fn`). Re-bind to a non-self
-                            // callable of that bare name so a call on the property
-                            // yields the named function's return type.
-                            let resolved = if resolved == sym.qualified_name {
-                                self.by_name
-                                    .get(first)
-                                    .and_then(|cands| {
-                                        cands.iter().find(|c| {
-                                            c.qualified_name != sym.qualified_name
-                                                && matches!(
-                                                    c.kind.as_str(),
-                                                    "function" | "method"
-                                                )
-                                        })
-                                    })
-                                    .map(|c| c.qualified_name.clone())
-                                    .unwrap_or(resolved)
-                            } else {
-                                resolved
-                            };
-                            let arg_strs: Vec<String> = if type_refs.len() > 1 {
-                                type_refs[1..].iter().map(|(s, _)| s.to_string()).collect()
-                            } else {
-                                Vec::new()
-                            };
-                            ti.field_type_id =
-                                Some(intern_head_and_args(&self.arena, &resolved, &arg_strs));
-                            ti.field_type = Some(resolved);
-                            ti.type_args = arg_strs;
-                        } else if is_jvm_language(&pf.language) {
-                            if let Some(decoded) = sym
-                                .signature
-                                .as_deref()
-                                .and_then(parse_return_type_from_jvm_descriptor)
-                            {
+                            let fid = self.arena.class(&resolved);
+                            derived = Some((resolved, Vec::new(), fid));
+                        }
+                    } else if pf.language == "typescript" || pf.language == "tsx" {
+                        // A bare type-param field (`value: T` on `class Wrapper<T>`)
+                        // has no TypeRef (the post-filter drops it to keep T off the
+                        // unresolved-ref surface) but records the param name as the
+                        // field's signature. Use it so substitute_through can rebind T
+                        // to the applied argument. Guard: bare identifier only —
+                        // discriminant literals set signature to a quoted string.
+                        if let Some(sig) = sym.signature.as_deref() {
+                            if is_bare_type_identifier(sig) {
                                 let resolved = resolve_type_name_in_scope(
-                                    &decoded,
+                                    sig,
                                     sym.scope_path.as_deref(),
                                     &self.by_qname,
                                 );
-                                ti.field_type_id = Some(self.arena.class(&resolved));
-                                ti.field_type = Some(resolved);
+                                let fid = self.arena.intern_type_str(&resolved);
+                                derived = Some((resolved, Vec::new(), fid));
                             }
-                        } else if pf.language == "typescript" || pf.language == "tsx" {
-                            // A bare type-param field (`value: T` on `class Wrapper<T>`)
-                            // has no TypeRef (the post-filter drops it to keep T off
-                            // the unresolved-ref surface) but records the param name
-                            // as the field's signature. Use it as the field type so
-                            // substitute_through can rebind T to the applied argument.
-                            // Guard: bare identifier only — discriminant literals set
-                            // signature to a quoted string and are excluded.
-                            if let Some(sig) = sym.signature.as_deref() {
-                                if is_bare_type_identifier(sig) {
-                                    let resolved = resolve_type_name_in_scope(
-                                        sig,
-                                        sym.scope_path.as_deref(),
-                                        &self.by_qname,
-                                    );
-                                    ti.field_type_id =
-                                        Some(self.arena.intern_type_str(&resolved));
-                                    ti.field_type = Some(resolved);
+                        }
+                    }
+
+                    // A value whose qname is ALSO an indexed type — the builtin
+                    // `declare var Array: ArrayConstructor` paired with `interface
+                    // Array` shares the single qname `Array` — must not write its
+                    // field_type into either slot the type owns: `id_map` can't tell
+                    // the two same-qname symbols apart, and the qname slot types
+                    // INSTANCES of the type (which carry `push` / `includes` / `map`).
+                    if !qname_owned_by_type {
+                        if let Some((resolved, arg_strs, fid)) = derived {
+                            // Qname slot — first-writer-wins.
+                            let ti =
+                                self.type_info.entry(sym.qualified_name.clone()).or_default();
+                            if ti.field_type.is_none() {
+                                ti.field_type_id = Some(fid);
+                                ti.field_type = Some(resolved.clone());
+                                ti.type_args = arg_strs.clone();
+                            }
+                            // Id slot — keyed by this symbol's id, kept distinct from a
+                            // same-qname first-winner so a caller holding the resolved
+                            // id reads THIS field's type.
+                            if let Some(&id) = symbol_id_map
+                                .get(&(pf.path.clone(), sym.qualified_name.clone()))
+                            {
+                                let tid = self.type_info_by_id.entry(id).or_default();
+                                if tid.field_type.is_none() {
+                                    tid.field_type_id = Some(fid);
+                                    tid.field_type = Some(resolved);
+                                    tid.type_args = arg_strs;
                                 }
                             }
                         }
                     }
+
                     // A callable-typed property (`fn: () => Mock`) yields its
                     // function's return type when CALLED — captured here so
-                    // `obj.fn().member` chains continue past the call. The
-                    // field-type pass above set the property's static type; the
-                    // signature (recorded by the extractor for a function-typed
-                    // property) carries the arrow form this parse reads.
+                    // `obj.fn().member` chains continue past the call.
+                    let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
                     if ti.return_type.is_none() {
                         if let Some(rt) = sym
                             .signature
@@ -858,6 +895,19 @@ impl Compilation {
                         } else {
                             None
                         };
+                    // A function that returns an object literal (no signature
+                    // return type) yields its synthesized `{fn}$Ret` object type,
+                    // materialized at parse time — so a call resolves the object's
+                    // members.
+                    let computed = computed.or_else(|| {
+                        let synth = format!("{}$Ret", sym.qualified_name);
+                        if self.by_qname.contains_key(&synth) {
+                            let tid = self.arena.class(&synth);
+                            Some((synth, Some(tid)))
+                        } else {
+                            None
+                        }
+                    });
                     if let Some((resolved, rid)) = computed {
                         // Qname slot — first-writer-wins (unchanged).
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
@@ -1434,6 +1484,16 @@ impl SymbolLookup for Compilation {
         self.type_info_by_id
             .get(&symbol_id)
             .and_then(|ti| ti.return_type_id)
+    }
+
+    fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.type_info_by_id
+            .get(&symbol_id)
+            .and_then(|ti| ti.field_type_id)
+    }
+
+    fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
+        self.by_id.get(&id)
     }
 
     fn type_arena(&self) -> Option<&TypeArena> {

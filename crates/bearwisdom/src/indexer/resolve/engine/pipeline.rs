@@ -192,6 +192,14 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.return_type_id_of(symbol_id)
     }
 
+    fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.tree.field_type_id_of(symbol_id)
+    }
+
+    fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
+        self.tree.symbol_by_id(id)
+    }
+
     fn type_arena(&self) -> Option<&TypeArena> {
         self.tree.type_arena()
     }
@@ -635,41 +643,73 @@ fn resolve_one_file(
                             );
                             file_lookup.record_local_type_id(lhs_sym.name.clone(), final_id);
                         } else {
-                            // No TypeId from the resolver; derive a String binding
-                            // from the target symbol's stored type metadata.
-                            let yield_ty = {
-                                let target_id = res.target_symbol_id;
-                                tree.by_name(&r.target_name)
-                                    .iter()
-                                    .find(|s| s.id == target_id)
-                                    .and_then(|s| match r.kind {
+                            // No TypeId from the resolver — derive one from the target
+                            // symbol's id-keyed type metadata. Recover the symbol by id
+                            // (not a by_name scan) and read its type by id (not a qname
+                            // string), so a callee whose qname is shared across packages
+                            // seeds THIS declaration's type, and record the TypeId so the
+                            // binding keeps identity rather than nominalizing to a string.
+                            let target_id = res.target_symbol_id;
+                            // A call / construction yields the callee's return type (a
+                            // class's own return is itself); any other binding RHS yields
+                            // the value's field type.
+                            let yield_id = match r.kind {
+                                EdgeKind::Calls | EdgeKind::Instantiates => {
+                                    tree.return_type_id_of(target_id)
+                                }
+                                _ => tree.field_type_id_of(target_id),
+                            };
+                            if let Some(id) = yield_id {
+                                let final_id = if is_awaited {
+                                    if let Some(arena) = tree.type_arena() {
+                                        unwrap_async_yield_id(id, arena, profile.async_wrappers)
+                                    } else {
+                                        id
+                                    }
+                                } else {
+                                    id
+                                };
+                                crate::tracef!(
+                                    "SEED bound_lhs='{}' meta_type_id={:?} awaited={} -> recorded=TypeId",
+                                    lhs_sym.name,
+                                    final_id,
+                                    is_awaited,
+                                );
+                                file_lookup.record_local_type_id(lhs_sym.name.clone(), final_id);
+                            } else {
+                                // Id-keyed metadata absent (id-less external, or a class
+                                // whose return slot the index didn't populate) — fall
+                                // back to the qname-string type, the symbol recovered by id.
+                                let yield_ty = tree.symbol_by_id(target_id).and_then(|s| {
+                                    match r.kind {
                                         // `const x = f()` — x is f's return type.
                                         EdgeKind::Calls => tree.return_type_str(&s.qualified_name),
                                         // `const x = new Foo()` — x IS Foo.
                                         EdgeKind::Instantiates => Some(s.qualified_name.clone()),
                                         _ => tree.field_type_str(&s.qualified_name),
-                                    })
-                            };
-                            // When the binding was awaited, strip one async-wrapper
-                            // layer from the string type before recording.
-                            let final_ty = yield_ty.as_deref().and_then(|ty| {
-                                if is_awaited {
-                                    unwrap_async_yield_str(ty, profile.async_wrappers)
-                                        .map(|s| s.to_string())
-                                        .or_else(|| Some(ty.to_string()))
-                                } else {
-                                    Some(ty.to_string())
+                                    }
+                                });
+                                // When the binding was awaited, strip one async-wrapper
+                                // layer from the string type before recording.
+                                let final_ty = yield_ty.as_deref().and_then(|ty| {
+                                    if is_awaited {
+                                        unwrap_async_yield_str(ty, profile.async_wrappers)
+                                            .map(|s| s.to_string())
+                                            .or_else(|| Some(ty.to_string()))
+                                    } else {
+                                        Some(ty.to_string())
+                                    }
+                                });
+                                crate::tracef!(
+                                    "SEED bound_lhs='{}' yield_type_id=None awaited={} string_fallback={} -> recorded={}",
+                                    lhs_sym.name,
+                                    is_awaited,
+                                    final_ty.as_deref().unwrap_or("None"),
+                                    if final_ty.is_some() { "String" } else { "nothing" },
+                                );
+                                if let Some(ty) = final_ty {
+                                    file_lookup.record_local_type(lhs_sym.name.clone(), ty);
                                 }
-                            });
-                            crate::tracef!(
-                                "SEED bound_lhs='{}' yield_type_id=None awaited={} string_fallback={} -> recorded={}",
-                                lhs_sym.name,
-                                is_awaited,
-                                final_ty.as_deref().unwrap_or("None"),
-                                if final_ty.is_some() { "String" } else { "nothing" },
-                            );
-                            if let Some(ty) = final_ty {
-                                file_lookup.record_local_type(lhs_sym.name.clone(), ty);
                             }
                         }
                     }
@@ -687,17 +727,29 @@ fn resolve_one_file(
                 ));
             }
             None => {
-                crate::tracef!("RESULT UNRESOLVED");
-
-                unresolved.push((
-                    source_id,
-                    r.target_name.clone(),
-                    kind_str,
-                    r.line,
-                    r.module.clone(),
-                    pf.package_id,
-                    ref_is_snippet,
-                ));
+                // A type annotation naming a language primitive (`: string`) is a
+                // builtin, not a missing symbol: it's captured as the binding's
+                // field type (the compilation pass reads the TypeRef) but must not
+                // count as unresolved. Drop it via the profile's primitive set.
+                let is_primitive_type = r.kind == EdgeKind::TypeRef
+                    && profile
+                        .primitive_mapping
+                        .iter()
+                        .any(|(name, _)| *name == r.target_name);
+                if is_primitive_type {
+                    crate::tracef!("RESULT PRIMITIVE (builtin, not unresolved)");
+                } else {
+                    crate::tracef!("RESULT UNRESOLVED");
+                    unresolved.push((
+                        source_id,
+                        r.target_name.clone(),
+                        kind_str,
+                        r.line,
+                        r.module.clone(),
+                        pf.package_id,
+                        ref_is_snippet,
+                    ));
+                }
             }
         }
 

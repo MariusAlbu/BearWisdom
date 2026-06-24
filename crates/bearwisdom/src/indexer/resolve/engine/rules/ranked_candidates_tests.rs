@@ -240,21 +240,4 @@ fn resolves_closer_path_candidate() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// path_proximity_score unit tests (via the module-private fn)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn path_proximity_score_shared_dir() {
-    assert_eq!(path_proximity_score("src/views/Page.ts", "src/views/Helper.ts"), 20);
-}
-
-#[test]
-fn path_proximity_score_no_overlap() {
-    assert_eq!(path_proximity_score("src/a/X.ts", "lib/b/Y.ts"), 0);
-}
-
-#[test]
-fn path_proximity_score_partial_overlap() {
-    assert_eq!(path_proximity_score("src/a/b/X.ts", "src/a/c/Y.ts"), 20);
-}
+// path_proximity_score (used by score_candidate) is exercised in support_tests.rs.

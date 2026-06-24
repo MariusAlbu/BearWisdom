@@ -63,6 +63,23 @@ fn inherits_ref(source_symbol_index: usize, parent_name: &str) -> ExtractedRef {
     }
 }
 
+fn type_ref(source_symbol_index: usize, type_name: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index,
+        target_name: type_name.to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: false,
+    }
+}
+
 /// Build a minimal `ParsedFile` with the given path, symbols, and refs.
 fn make_parsed_file(
     path: &str,
@@ -193,6 +210,78 @@ fn members_of_id_matches_members_of() {
         by_id.contains(&"find"),
         "members_of_id(Repo) should contain `find`; got {by_id:?}"
     );
+}
+
+/// `lib.es5.d.ts` declares every builtin as BOTH an instance `interface Array`
+/// and a constructor-typed `declare var Array: ArrayConstructor`, sharing the
+/// single qname `Array`. The value's `ArrayConstructor` field_type must not land
+/// in the qname-keyed `type_info` slot the instance interface owns: reading
+/// `field_type("Array")` to seed a literal-typed local (`const xs = []`) would
+/// otherwise bind the receiver to `ArrayConstructor`, which has `from`/`of` but
+/// none of `push`/`includes`/`map`.
+#[test]
+fn constructor_var_does_not_poison_instance_type_field_slot() {
+    let arena = Arc::new(TypeArena::new());
+    let symbols = vec![
+        make_symbol("Array", "Array", SymbolKind::Interface, None, None, None),
+        make_symbol("push", "Array.push", SymbolKind::Method, Some(0), None, None),
+        make_symbol("Array", "Array", SymbolKind::Variable, None, None, None),
+    ];
+    // `declare var Array: ArrayConstructor` — the value's declared type.
+    let refs = vec![type_ref(2, "ArrayConstructor")];
+    let pf = make_parsed_file("lib.es5.d.ts", symbols, refs);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("lib.es5.d.ts".to_string(), "Array".to_string()), 1);
+    id_map.insert(("lib.es5.d.ts".to_string(), "Array.push".to_string()), 2);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_ne!(
+        tree.field_type_name("Array"),
+        Some("ArrayConstructor"),
+        "the constructor value's field_type must not poison the instance \
+         interface's qname slot"
+    );
+}
+
+/// A field/value type duplicated across packages shares one qname, so the
+/// qname-keyed `type_info` field slot is first-writer-wins. The id-keyed slot
+/// (`field_type_id_of`) must keep each declaration's own field type distinct.
+#[test]
+fn colliding_qname_field_types_are_kept_per_id() {
+    let arena = Arc::new(TypeArena::new());
+
+    let cfg_a = make_symbol("config", "config", SymbolKind::Variable, None, None, None);
+    let cfg_b = make_symbol("config", "config", SymbolKind::Variable, None, None, None);
+
+    let pf_a =
+        make_parsed_file("packages/a/config.ts", vec![cfg_a], vec![type_ref(0, "ConfigA")]);
+    let pf_b =
+        make_parsed_file("packages/b/config.ts", vec![cfg_b], vec![type_ref(0, "ConfigB")]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("packages/a/config.ts".to_string(), "config".to_string()), 10);
+    id_map.insert(("packages/b/config.ts".to_string(), "config".to_string()), 20);
+
+    let tree = Compilation::build(&[pf_a, pf_b], &id_map, Arc::clone(&arena));
+
+    let id10 = tree.field_type_id_of(10).expect("field_type_id_of(10) populated");
+    let id20 = tree.field_type_id_of(20).expect("field_type_id_of(20) populated");
+    assert_ne!(
+        id10, id20,
+        "id-keyed field types of a colliding qname must stay distinct"
+    );
+    assert_eq!(arena.format_type(id10), "ConfigA");
+    assert_eq!(arena.format_type(id20), "ConfigB");
+}
+
+#[test]
+fn symbol_by_id_recovers_the_record() {
+    let (tree, _) = build_fixture();
+    let repo_id = tree.by_qualified_name("Repo").expect("Repo indexed").id;
+    let recovered = tree.symbol_by_id(repo_id).expect("symbol_by_id recovers Repo");
+    assert_eq!(recovered.qualified_name, "Repo");
 }
 
 /// A public API duplicated across monorepo packages shares one qname, so the

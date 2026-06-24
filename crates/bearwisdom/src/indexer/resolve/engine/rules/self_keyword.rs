@@ -66,12 +66,14 @@ impl LookupRule for SelfKeywordRule {
                 }
             }
             "super" | "base" => {
-                let Some(parent_qname) =
-                    ctx.lookup.parent_class_qname(&enclosing.qualified_name)
+                // The direct parent by id, not a qname re-search: a base whose
+                // qname is shared with an unrelated type in another package binds
+                // the SPECIFIC parent recorded for this child.
+                let Some(parent) = ctx
+                    .lookup
+                    .parent_class_id(enclosing.id)
+                    .and_then(|pid| ctx.lookup.symbol_by_id(pid))
                 else {
-                    return LookupResult::Pass;
-                };
-                let Some(parent) = ctx.lookup.by_qualified_name(parent_qname) else {
                     return LookupResult::Pass;
                 };
                 if (ctx.kind)(edge_kind, &parent.kind) {

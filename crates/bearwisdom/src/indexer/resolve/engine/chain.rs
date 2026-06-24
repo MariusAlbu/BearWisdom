@@ -26,7 +26,7 @@ use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTarget, SegmentKind};
 
 use super::alias;
-use super::support::import_scoped_package_id;
+use super::support::{import_scoped_package_id, pick_ranked_candidate};
 
 /// Strategy tag for a member-chain bind produced by the new engine.
 const STRATEGY: &str = "rule_chain";
@@ -60,7 +60,7 @@ pub fn bind_member_access(
     // with no indexed declaration (external/ambient/string-parsed), and the walk
     // falls back to the qname-string member lookup there.
     let root = resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0])?;
-    let mut current = expand_receiver(root, lookup, arena);
+    let mut current = expand_receiver(root, lookup, arena, Some(file_ctx));
     let last = chain.segments.len() - 1;
 
     for (i, seg) in chain.segments.iter().enumerate().skip(1) {
@@ -93,7 +93,7 @@ pub fn bind_member_access(
         // chain stays anchored to the package the use site established rather
         // than falling back to a first-winner by_qname re-search.
         let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty)?;
-        current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena);
+        current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena, Some(file_ctx));
     }
     None
 }
@@ -130,30 +130,55 @@ impl Receiver {
 /// carried. This prevents a same-qname collision in another package from
 /// overwriting an id that was pinned at the use site or by prior-hop package
 /// context.
-fn expand_receiver(recv: Receiver, lookup: &dyn SymbolLookup, arena: &TypeArena) -> Receiver {
+fn expand_receiver(
+    recv: Receiver,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: Option<&FileContext>,
+) -> Receiver {
     let pre_head = head_qname(arena, recv.ty);
     let ty = alias::expand(recv.ty, lookup, arena);
     let post_head = head_qname(arena, ty);
     let id = if pre_head != post_head {
         // Alias rewrote the head — re-derive from the new head, fall back to
         // the carried id when the new head has no indexed declaration.
-        head_symbol_id(arena, lookup, ty).or(recv.id)
+        head_symbol_id(arena, lookup, ty, file_ctx).or(recv.id)
     } else {
         // Head unchanged — the caller's id is the authoritative identity; the
         // by_qname first-winner is only a fallback for id-less (external/ambient)
         // receivers.
-        recv.id.or_else(|| head_symbol_id(arena, lookup, ty))
+        recv.id.or_else(|| head_symbol_id(arena, lookup, ty, file_ctx))
     };
     Receiver { ty, id }
 }
 
-/// The symbol id of the declaration a type's nominal head names, resolved
-/// through `by_qualified_name`. `None` for a head with no indexed declaration
-/// (external/ambient/string-parsed) — the walk then falls back to qname-string
-/// member lookup.
-fn head_symbol_id(arena: &TypeArena, lookup: &dyn SymbolLookup, ty: TypeId) -> Option<i64> {
+/// The symbol id of the declaration a type's nominal head names: the exact-qname
+/// declaration, or — for a simple-name head (an annotation root like `Page`) that
+/// matches several type declarations across packages — the one the use site's
+/// imports scope to. `None` for a head with no indexed declaration
+/// (external/ambient/string-parsed) or when imports don't disambiguate; the walk
+/// then falls back to qname-string member lookup.
+fn head_symbol_id(
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    ty: TypeId,
+    file_ctx: Option<&FileContext>,
+) -> Option<i64> {
     let head = head_qname(arena, ty)?;
-    lookup.by_qualified_name(&head).map(|s| s.id)
+    if let Some(s) = lookup.by_qualified_name(&head) {
+        return Some(s.id);
+    }
+    // A simple-name head names no exact qname but may match several type
+    // declarations; bind the import-scoped one when the use site disambiguates
+    // rather than leaving it id-less (where a later step would pick a first-winner).
+    let fc = file_ctx?;
+    let simple = head.rsplit('.').next().unwrap_or(&head);
+    let types = lookup.types_by_name(simple);
+    let candidates: Vec<&Symbol> = types.iter().collect();
+    if candidates.len() < 2 {
+        return None;
+    }
+    pick_ranked_candidate(fc, None, lookup, &candidates).map(|s| s.id)
 }
 
 /// Build a `Receiver` for the type a member yielded, pinning the declaration id
@@ -273,7 +298,7 @@ fn lookup_member_on_bounded(
         return Some(m);
     }
     if let Some(source_ty) = mapped_source_type(lookup, arena, recv.ty, &head) {
-        let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
+        let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
         // A mapped source that resolves back to the mapped type itself makes no
         // progress — skip rather than spin to the depth bound.
         if head_qname(arena, source_recv.ty).as_deref() != Some(head.as_str()) {
@@ -331,7 +356,7 @@ fn lookup_member_on_mapped_supertype(
             arena.intern(Type::Apply { base, args: arg_ids })
         };
         if let Some(source_ty) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
-            let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena);
+            let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
             if head_qname(arena, source_recv.ty).as_deref() != Some(parent_head.as_str()) {
                 if let Some(m) =
                     lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
@@ -408,6 +433,7 @@ fn lookup_member_on_intersection(
                 Receiver::new(arena.class(&cand.qualified_name), cand.id),
                 lookup,
                 arena,
+                None,
             );
             // A branch that resolves back to the intersection itself makes no
             // progress — skip rather than recurse to the depth bound.
@@ -460,6 +486,7 @@ fn lookup_member_on_union(
                 Receiver::new(arena.class(&cand.qualified_name), cand.id),
                 lookup,
                 arena,
+                None,
             );
             // A branch that resolves back to the union itself makes no progress.
             if head_qname(arena, recv.ty).as_deref() == Some(head) {
@@ -717,7 +744,7 @@ fn yield_through_impl(
     is_call: bool,
     receiver: TypeId,
 ) -> Option<TypeId> {
-    let raw = member_yield_type(lookup, arena, &member.qualified_name, is_call)?;
+    let raw = member_yield_type(lookup, arena, member, is_call)?;
     // Callable-property unwrap: if the raw yield is a function type and the
     // member is being called, peel off one call layer to get the return type.
     // This covers `fn: () => Mock<T>` properties: the field type interns as
@@ -746,10 +773,13 @@ fn yield_through_impl(
 }
 
 /// The type `member` yields when used in a chain, as a canonical TypeId: its
-/// return type for a call, else its declared field/property type. Reads the
-/// interned `*_id` first; falls back to interning the string accessor (the
-/// storage format) when only a string is recorded. `None` when the index has no
-/// type for it.
+/// return type for a call, else its declared field/property type.
+///
+/// Reads the id-keyed `*_id_of` slot FIRST so a member whose qname is shared
+/// across packages yields THIS declaration's type, not the qname first-winner;
+/// falls back to the qname string accessors for an id-less member (external /
+/// ambient, with no id-slot type recorded). `None` when the index has no type
+/// for it.
 ///
 /// Callable-property fallback: when `is_call=true` and no explicit return type
 /// is recorded, the member may be a property whose declared type is a function
@@ -759,15 +789,26 @@ fn yield_through_impl(
 pub(crate) fn member_yield_type(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
-    member_qname: &str,
+    member: &Symbol,
     is_call: bool,
 ) -> Option<TypeId> {
+    let qname = member.qualified_name.as_str();
     if is_call {
-        if let Some(id) = lookup.return_type_id(member_qname) {
+        if let Some(id) = lookup
+            .return_type_id_of(member.id)
+            .or_else(|| lookup.return_type_id(qname))
+        {
             return Some(id);
         }
-        if let Some(s) = lookup.return_type_name(member_qname) {
+        if let Some(s) = lookup.return_type_name(qname) {
             return Some(arena.intern_type_str(s));
+        }
+        // A synthesized object-literal return type (`{fn}$Ret`): the function's
+        // body returned an object literal, materialized post-extract as a type
+        // whose members are the object's properties. A call yields that type.
+        let synth_ret = format!("{qname}$Ret");
+        if lookup.by_qualified_name(&synth_ret).is_some() {
+            return Some(arena.class(&synth_ret));
         }
         // No explicit return type — the member's declared (field) type may be
         // callable. An inline function type (`fn: () => Mock`) is returned as-is
@@ -776,8 +817,9 @@ pub(crate) fn member_yield_type(
         // interns as a nominal head, not a `Type::Function`, so resolve it to
         // the named function's own return type here.
         let ft = lookup
-            .field_type_id(member_qname)
-            .or_else(|| lookup.field_type_name(member_qname).map(|s| arena.intern_type_str(s)))?;
+            .field_type_id_of(member.id)
+            .or_else(|| lookup.field_type_id(qname))
+            .or_else(|| lookup.field_type_name(qname).map(|s| arena.intern_type_str(s)))?;
         if let Some(head) = head_qname(arena, ft) {
             if let Some(rt) = callable_named_return(lookup, arena, &head) {
                 return Some(rt);
@@ -785,12 +827,13 @@ pub(crate) fn member_yield_type(
         }
         return Some(ft);
     }
-    if let Some(id) = lookup.field_type_id(member_qname) {
+    if let Some(id) = lookup
+        .field_type_id_of(member.id)
+        .or_else(|| lookup.field_type_id(qname))
+    {
         return Some(id);
     }
-    lookup
-        .field_type_name(member_qname)
-        .map(|s| arena.intern_type_str(s))
+    lookup.field_type_name(qname).map(|s| arena.intern_type_str(s))
 }
 
 /// `true` when the type's nominal head is the `this` or `Self` keyword —
@@ -993,8 +1036,12 @@ fn resolve_root_impl(
     // receiver's declaration, so bind its id directly rather than round-tripping
     // its qname back through `by_qualified_name`.
     let candidates = lookup.types_by_name(&seg.name);
-    let s = import_scoped_package_id(file_ctx, lookup, &seg.name)
-        .and_then(|pkg| candidates.iter().find(|c| c.package_id == Some(pkg)))
+    let cand_refs: Vec<&Symbol> = candidates.iter().collect();
+    // Prefer the import-scoped declaration — the package/module the use site
+    // imports `name` from — over a first-winner same-name pick (Page from
+    // playwright, not csstype's Page). Ranked + ascending-id deterministic; when
+    // no candidate clearly wins, the first same-named type is the fallback.
+    let s = pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &cand_refs)
         .or_else(|| candidates.first())?;
     let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
     Some(Receiver::new(ty, s.id))
@@ -1026,12 +1073,11 @@ fn value_root_type(
         } else {
             format!("{scope}.{name}")
         };
-        if lookup
-            .by_qualified_name(&qn)
-            .is_some_and(|s| is_value_kind(&s.kind))
-        {
-            if let Some(id) = field_type_of(lookup, arena, &qn) {
-                return Some(id);
+        if let Some(s) = lookup.by_qualified_name(&qn) {
+            if is_value_kind(&s.kind) {
+                if let Some(id) = field_type_of(lookup, arena, s.id, &qn) {
+                    return Some(id);
+                }
             }
         }
         if scope.is_empty() {
@@ -1042,14 +1088,48 @@ fn value_root_type(
             None => "",
         };
     }
+    // First a value whose field type is a real (non-primitive) type: a same-name
+    // external property typed by a bare primitive (an HTTP header's `expect:
+    // string`) must not shadow the ambient/imported value (`vitest`'s `expect`)
+    // the chain actually roots on. Only fall back to a primitive-typed value when
+    // nothing richer carries the name.
+    let mut primitive_fallback: Option<TypeId> = None;
     for cand in lookup.by_name(name) {
-        if is_value_kind(&cand.kind) {
-            if let Some(id) = field_type_of(lookup, arena, &cand.qualified_name) {
+        if !is_value_kind(&cand.kind) {
+            continue;
+        }
+        if let Some(id) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) {
+            if is_primitive_head(arena, id) {
+                primitive_fallback.get_or_insert(id);
+            } else {
                 return Some(id);
             }
         }
     }
-    None
+    primitive_fallback
+}
+
+/// `true` when the type's nominal head is a language primitive — a value typed by
+/// one of these is a poor chain root, so a same-name primitive-typed property
+/// must not shadow a richer same-name value.
+fn is_primitive_head(arena: &TypeArena, id: TypeId) -> bool {
+    matches!(
+        head_qname(arena, id).as_deref(),
+        Some(
+            "string"
+                | "number"
+                | "boolean"
+                | "bigint"
+                | "symbol"
+                | "void"
+                | "never"
+                | "undefined"
+                | "null"
+                | "unknown"
+                | "any"
+                | "object"
+        )
+    )
 }
 
 /// The interned field/property type of `qname`: the `field_type_id` if present,
@@ -1061,21 +1141,33 @@ fn value_root_type(
 /// exports — the value's *own* declared type is the real receiver. Follow that
 /// indirection so the chain roots on the referenced export's type, not on the
 /// (non-existent) type named by the export's identifier.
-fn field_type_of(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> Option<TypeId> {
-    let id = raw_field_type_of(lookup, arena, qname)?;
+fn field_type_of(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    sym_id: i64,
+    qname: &str,
+) -> Option<TypeId> {
+    let id = raw_field_type_of(lookup, arena, sym_id, qname)?;
     Some(deref_value_typed(lookup, arena, id, qname))
 }
 
-/// The interned field/property type of `qname` without value-indirection
-/// following: the `field_type_id` if present, else the string accessor interned
-/// at this boundary.
-fn raw_field_type_of(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> Option<TypeId> {
-    if let Some(id) = lookup.field_type_id(qname) {
+/// The interned field/property type of the value with id `sym_id` / qname
+/// `qname`, without value-indirection following: the id-keyed `field_type_id_of`
+/// first so a value whose qname is shared across packages reads ITS own field
+/// type, then the qname accessors as the id-less fallback.
+fn raw_field_type_of(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    sym_id: i64,
+    qname: &str,
+) -> Option<TypeId> {
+    if let Some(id) = lookup
+        .field_type_id_of(sym_id)
+        .or_else(|| lookup.field_type_id(qname))
+    {
         return Some(id);
     }
-    lookup
-        .field_type_name(qname)
-        .map(|s| arena.intern_type_str(s))
+    lookup.field_type_name(qname).map(|s| arena.intern_type_str(s))
 }
 
 /// Upper bound on value-indirection hops when a field type names a value whose
@@ -1111,6 +1203,12 @@ fn deref_value_typed(
         let Some(head) = head_qname(arena, current) else {
             return current;
         };
+        // A primitive head (`string` / `number`) has no value-indirection — a
+        // value coincidentally named `string` (zod's `string`) must not hijack the
+        // deref and re-root the chain onto an unrelated type.
+        if is_primitive_head(arena, current) {
+            return current;
+        }
         // The maps are simple-name keyed; a qualified head (`vitest.ExpectStatic`)
         // probes them by its trailing segment.
         let simple = head.rsplit('.').next().unwrap_or(&head);
@@ -1136,7 +1234,7 @@ fn deref_value_typed(
         else {
             return current;
         };
-        let Some(next) = raw_field_type_of(lookup, arena, &value.qualified_name) else {
+        let Some(next) = raw_field_type_of(lookup, arena, value.id, &value.qualified_name) else {
             return current;
         };
         if next == current {
@@ -1214,7 +1312,7 @@ fn call_value_root_type(
     source_qname: &str,
 ) -> Option<TypeId> {
     let value_ty = value_root_type(lookup, arena, name, source_qname)?;
-    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena);
+    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
     yield_through(lookup, arena, &call, true, recv.ty)
 }
@@ -1393,23 +1491,26 @@ fn is_callable(kind: &str) -> bool {
 /// a property typed `typeof someFn` produces — the call result is that named
 /// function's return type. Prefers a qualified-name hit, then the first callable
 /// of that simple name. `None` when `head` doesn't resolve to a callable.
-fn callable_named_return(
+pub(crate) fn callable_named_return(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     head: &str,
 ) -> Option<TypeId> {
-    let callee_qname = lookup
-        .by_qualified_name(head)
-        .filter(|s| is_callable(&s.kind))
-        .map(|s| s.qualified_name.clone())
-        .or_else(|| {
-            lookup
-                .by_name(head)
-                .iter()
-                .find(|s| is_callable(&s.kind))
-                .map(|s| s.qualified_name.clone())
-        })?;
-    if let Some(id) = lookup.return_type_id(&callee_qname) {
+    // Keep the callee's id so a function whose qname is shared across packages
+    // reads THIS declaration's return, not a first-winner qname re-search.
+    let (callee_id, callee_qname) = {
+        if let Some(s) = lookup.by_qualified_name(head).filter(|s| is_callable(&s.kind)) {
+            (s.id, s.qualified_name.clone())
+        } else {
+            let set = lookup.by_name(head);
+            let s = set.iter().find(|s| is_callable(&s.kind))?;
+            (s.id, s.qualified_name.clone())
+        }
+    };
+    if let Some(id) = lookup
+        .return_type_id_of(callee_id)
+        .or_else(|| lookup.return_type_id(&callee_qname))
+    {
         return Some(id);
     }
     lookup

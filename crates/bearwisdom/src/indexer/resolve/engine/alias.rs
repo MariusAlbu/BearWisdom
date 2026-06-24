@@ -19,7 +19,7 @@ use rustc_hash::FxHashMap;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::AliasTarget;
 
-use super::chain::{apply_args, head_qname};
+use super::chain::{apply_args, callable_named_return, head_qname};
 use super::contract::SymbolLookup;
 
 /// Upper bound on alias-of-alias chaining; guards against a cyclic alias.
@@ -40,6 +40,18 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
         // to `root<args…>`; any other alias kind is transparent through its
         // flattened RHS head when it carries no members of its own.
         let target = match lookup.alias_target(&head) {
+            // `ReturnType<typeof f>` / `ReturnType<F>` intrinsic — the return type
+            // of the function value/type the single argument names. A captured
+            // return is required; an uncaptured one (`break`) leaves the alias
+            // unresolved rather than dereferencing a dead `ReturnType` class.
+            Some(AliasTarget::Application { root, args })
+                if root == "ReturnType" && args.len() == 1 =>
+            {
+                match callable_named_return(lookup, arena, &args[0]) {
+                    Some(t) => t,
+                    None => break,
+                }
+            }
             Some(AliasTarget::Application { root, args }) => application_target(arena, root, args),
             _ => match transparent_alias_target(lookup, arena, &head) {
                 Some(t) => t,
@@ -96,8 +108,8 @@ fn transparent_alias_target(
     if !is_alias || !lookup.members_of_id(id).is_empty() {
         return None;
     }
-    if let Some(id) = lookup.field_type_id(head) {
-        return Some(id);
+    if let Some(t) = lookup.field_type_id_of(id).or_else(|| lookup.field_type_id(head)) {
+        return Some(t);
     }
     lookup
         .field_type_name(head)

@@ -975,6 +975,11 @@ pub struct FlowMeta {
     /// ref), so the resolver types the identifier against the function's
     /// parameters / locals and records the result as a return-type candidate.
     pub flow_return_ident: Vec<(usize, String)>,
+    /// `(fn_symbol_idx, member_names)` for a function whose body returns an object
+    /// literal (`return { info, error }`). A synthetic `{fn}$Ret` object type
+    /// carrying these members is materialized post-extract, and a call to the
+    /// function yields that type — so `fn().info` resolves to the synthesized member.
+    pub flow_return_object: Vec<(usize, Vec<String>)>,
     pub ref_byte_offsets: Vec<u32>,
     /// Per-function control-flow graphs for the file, built at extract time
     /// from the same tree the query runner uses. Empty when the language has

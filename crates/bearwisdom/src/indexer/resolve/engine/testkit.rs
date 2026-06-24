@@ -25,6 +25,8 @@ pub(crate) struct Lookup {
     by_name: FxHashMap<String, Vec<Symbol>>,
     by_qname: FxHashMap<String, Symbol>,
     by_qname_all: FxHashMap<String, Vec<Symbol>>,
+    /// Id → symbol record. Backs `symbol_by_id` for the id-keyed parent climb.
+    by_id: FxHashMap<i64, Symbol>,
     members: FxHashMap<String, Vec<Symbol>>,
     /// Id-keyed members: parent symbol id → member symbols. The id-keyed
     /// counterpart of `members`, exercising the chain walker's identity path.
@@ -65,6 +67,7 @@ impl Lookup {
             by_name: Default::default(),
             by_qname: Default::default(),
             by_qname_all: Default::default(),
+            by_id: Default::default(),
             members: Default::default(),
             members_by_id: Default::default(),
             generics: Default::default(),
@@ -94,6 +97,7 @@ impl Lookup {
             .entry(sym.qualified_name.clone())
             .or_default()
             .push(sym.clone());
+        self.by_id.insert(sym.id, sym.clone());
         self.by_qname.insert(sym.qualified_name.clone(), sym);
         self
     }
@@ -235,6 +239,9 @@ impl SymbolLookup for Lookup {
     }
     fn by_qualified_name(&self, qname: &str) -> Option<&Symbol> {
         self.by_qname.get(qname)
+    }
+    fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
+        self.by_id.get(&id)
     }
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(

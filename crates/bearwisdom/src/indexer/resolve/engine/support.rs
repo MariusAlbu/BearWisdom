@@ -146,6 +146,104 @@ pub(crate) fn qname_directly_under(qualified_name: &str, module_path: &str) -> b
     !rest.contains('.')
 }
 
+/// Minimum score margin the top candidate must beat the runner-up by for
+/// `pick_ranked_candidate` to commit; a smaller margin is too ambiguous to guess.
+pub(crate) const RANK_MARGIN: i32 = 100;
+
+/// Score a same-name candidate for import-scoped selection — higher is better.
+/// Reads only the candidate row and the use site's file context (its package,
+/// imports, path): same workspace package +1000, an import naming the candidate's
+/// package +500 or its namespace +300, ambient +200, shared path prefix
+/// +10/segment, an external-depth penalty, and a visibility hint.
+pub(crate) fn score_candidate(
+    file_ctx: &FileContext,
+    file_package_id: Option<i64>,
+    lookup: &dyn SymbolLookup,
+    sym: &Symbol,
+) -> i32 {
+    let mut s: i32 = 0;
+    if let (Some(caller_pkg), Some(sym_pkg)) = (file_package_id, sym.package_id) {
+        if caller_pkg == sym_pkg {
+            s += 1000;
+        }
+    }
+    for import in &file_ctx.imports {
+        let Some(mod_path) = import.module_path.as_deref() else {
+            continue;
+        };
+        if let Some(wp_id) = lookup.workspace_package_id(mod_path) {
+            if Some(wp_id) == sym.package_id {
+                s += 500;
+            }
+        }
+        if qname_under_module(&sym.qualified_name, mod_path) {
+            s += 300;
+        }
+    }
+    if lookup.is_ambient_path(&sym.file_path) {
+        s += 200;
+    }
+    s += path_proximity_score(&file_ctx.file_path, &sym.file_path);
+    if lookup.is_external_file(&sym.file_path) {
+        let depth = sym.file_path.matches('/').count() as i32;
+        s -= depth.min(20);
+    }
+    match sym.visibility.as_deref() {
+        Some("public") => s += 50,
+        Some("private") => s -= 200,
+        _ => {}
+    }
+    s
+}
+
+/// The shared import-scoped candidate chokepoint. Returns the top scorer when it
+/// beats the runner-up by `RANK_MARGIN`, the sole candidate when there is one, or
+/// `None` when the field is empty or too ambiguous to commit (the caller keeps
+/// its own fallback). Deterministic: equal scores break by ascending id, so the
+/// pick never depends on candidate insertion order.
+pub(crate) fn pick_ranked_candidate<'a>(
+    file_ctx: &FileContext,
+    file_package_id: Option<i64>,
+    lookup: &dyn SymbolLookup,
+    candidates: &[&'a Symbol],
+) -> Option<&'a Symbol> {
+    match candidates.len() {
+        0 => return None,
+        1 => return Some(candidates[0]),
+        _ => {}
+    }
+    let mut scored: Vec<(i32, &'a Symbol)> = candidates
+        .iter()
+        .map(|sym| (score_candidate(file_ctx, file_package_id, lookup, sym), *sym))
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
+    let (top_score, top) = scored[0];
+    let (runner_score, _) = scored[1];
+    if top_score - runner_score < RANK_MARGIN {
+        return None;
+    }
+    Some(top)
+}
+
+/// Shared-directory-prefix score between two file paths: 10 × the number of
+/// shared leading directory segments. Separators normalise to `/`; the filename
+/// is dropped before comparing.
+fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
+    let caller_norm = caller_path.replace('\\', "/");
+    let candidate_norm = candidate_path.replace('\\', "/");
+    let caller_dir = caller_norm.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let candidate_dir = candidate_norm.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let caller_segs: Vec<&str> = caller_dir.split('/').filter(|s| !s.is_empty()).collect();
+    let candidate_segs: Vec<&str> =
+        candidate_dir.split('/').filter(|s| !s.is_empty()).collect();
+    caller_segs
+        .iter()
+        .zip(candidate_segs.iter())
+        .take_while(|(a, b)| a == b)
+        .count() as i32
+        * 10
+}
+
 /// The full directory portion of a file path (everything before the final
 /// segment). Path separators are normalized to `/`. Returns `None` for a bare
 /// filename. For `schema/users/model.prisma` returns `Some("schema/users")`.

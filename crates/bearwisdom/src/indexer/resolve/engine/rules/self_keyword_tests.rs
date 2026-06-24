@@ -62,3 +62,15 @@ fn declines_when_no_enclosing_type_in_scope_chain() {
     let got = resolve(&lookup, "this", vec!["freeFunc".to_string()]);
     assert_eq!(got, None);
 }
+
+#[test]
+fn binds_super_to_direct_parent_by_id() {
+    // `Child extends Base`; `super` binds Base by the id-keyed direct-parent edge,
+    // not a first-winner qname re-search.
+    let lookup = Lookup::new()
+        .with(sym(10, "Child", "Child", "class", "src/child.ts"))
+        .with(sym(20, "Base", "Base", "class", "src/base.ts"))
+        .with_parent_id(10, 20);
+    let got = resolve(&lookup, "super", vec!["Child".to_string()]);
+    assert_eq!(got, Some(20));
+}

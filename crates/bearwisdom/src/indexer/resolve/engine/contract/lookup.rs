@@ -133,6 +133,26 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Field type keyed by the property/field's SYMBOL ID rather than its
+    /// qualified name — the id-keyed counterpart of `field_type_id`. A value and a
+    /// type sharing a qname, or a field duplicated across packages, collide in the
+    /// qname slot, so the string form returns the first-winner's type for every
+    /// copy; this id-keyed form reads THAT declaration's field type for a caller
+    /// that has resolved the import-scoped symbol. Default `None` so synthetic test
+    /// lookups need not opt in.
+    fn field_type_id_of(&self, _symbol_id: i64) -> Option<TypeId> {
+        None
+    }
+
+    /// Recover a symbol record from its id — the id-keyed counterpart of
+    /// `by_qualified_name`. A caller holding a resolved id (a parent from
+    /// `parent_class_id`, a member from the id spine) reads the record without
+    /// round-tripping its qname through a first-winner string lookup. Default
+    /// `None`; the real store overrides it.
+    fn symbol_by_id(&self, _id: i64) -> Option<&Symbol> {
+        None
+    }
+
     /// Borrow the workspace TypeArena that owns every TypeId returned by
     /// `field_type_id` / `return_type_id`. Returns
     /// `None` for synthetic test lookups that haven't opted into the

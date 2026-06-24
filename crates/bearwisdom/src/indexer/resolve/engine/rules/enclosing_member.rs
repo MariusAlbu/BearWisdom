@@ -61,19 +61,32 @@ impl LookupRule for EnclosingMemberRule {
         let Some(enc) = enclosing_type(ctx) else {
             return LookupResult::Pass;
         };
-        let mut current = enc.qualified_name.clone();
+        // Climb the inheritance DAG by symbol id, not by qname string: a base
+        // whose qname is shared with an unrelated type in another package would
+        // otherwise resolve the wrong type's members via a first-winner re-search.
+        // BFS over `parent_class_ids` reaches a member declared on ANY supertype.
+        let mut seen: Vec<i64> = Vec::new();
+        let mut frontier: Vec<i64> = vec![enc.id];
         for _ in 0..MAX_INHERITANCE_DEPTH {
-            for member in ctx.lookup.members_of(&current) {
-                if member.name == target && (ctx.kind)(edge_kind, &member.kind) {
-                    return LookupResult::Resolved(
-                        ctx.resolved(member.id, "engine_enclosing_member"),
-                    );
+            if frontier.is_empty() {
+                break;
+            }
+            let mut next: Vec<i64> = Vec::new();
+            for id in frontier.drain(..) {
+                if seen.contains(&id) {
+                    continue;
                 }
+                seen.push(id);
+                for member in ctx.lookup.members_of_id(id) {
+                    if member.name == target && (ctx.kind)(edge_kind, &member.kind) {
+                        return LookupResult::Resolved(
+                            ctx.resolved(member.id, "engine_enclosing_member"),
+                        );
+                    }
+                }
+                next.extend(ctx.lookup.parent_class_ids(id));
             }
-            match ctx.lookup.parent_class_qname(&current) {
-                Some(parent) => current = parent.to_string(),
-                None => break,
-            }
+            frontier = next;
         }
         LookupResult::Pass
     }

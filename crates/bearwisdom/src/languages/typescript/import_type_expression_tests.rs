@@ -66,6 +66,20 @@ fn lookup_type_import_emits_export_key_with_module() {
 }
 
 #[test]
+fn predefined_primitive_annotation_is_captured_as_typeref() {
+    // `: string` is captured as the binding's type so a member call on the value
+    // (`text.replace(...)`) resolves via the capitalized-wrapper lookup; the
+    // resolve loop drops the primitive target from unresolved, and the primitive
+    // never hijacks value-deref (it can't re-root onto a same-named value).
+    assert_eq!(
+        refs_for_annotation("let s: string;"),
+        vec![("string".to_string(), None)]
+    );
+    assert_eq!(
+        refs_for_annotation("let n: number;"),
+        vec![("number".to_string(), None)]
+    );
+}#[test]
 fn type_query_import_emits_module_as_target() {
     // `typeof import('vitest')` (whole namespace) → the module name doubles
     // as the target, module-tagged. No raw `import('vitest')` text leaks.

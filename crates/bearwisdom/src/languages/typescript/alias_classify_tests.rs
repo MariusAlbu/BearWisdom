@@ -223,6 +223,23 @@ fn callable_alias_with_params_still_captures_return() {
 }
 
 #[test]
+fn returntype_of_typeof_captures_the_value_as_arg() {
+    // `type Logger = ReturnType<typeof createScopedLogger>` — the `typeof` arg is
+    // captured as the single argument so the ReturnType intrinsic resolves it to
+    // createScopedLogger's return type (rather than a dead `ReturnType` class).
+    let target = classify("type Logger = ReturnType<typeof createScopedLogger>;");
+    match target {
+        AliasTarget::Application { root, args } => {
+            assert_eq!(root, "ReturnType");
+            assert_eq!(args, vec!["createScopedLogger".to_string()]);
+        }
+        other => panic!(
+            "expected Application {{ root: \"ReturnType\", args: [createScopedLogger] }}, got {other:?}"
+        ),
+    }
+}
+
+#[test]
 fn non_single_head_return_stays_opaque() {
     // `type F = () => A | B` — union return has no single root; must stay Other.
     let target = classify("type F = () => A | B;");

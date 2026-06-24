@@ -28,7 +28,7 @@ fn binds_member_of_enclosing_class() {
     // `Foo` is the enclosing class (in scope chain) and has a `doWork` member.
     let lookup = Lookup::new()
         .with(sym(1, "Foo", "Foo", "class", "src/foo.ts"))
-        .with_member("Foo", sym(2, "doWork", "Foo.doWork", "function", "src/foo.ts"));
+        .with_member_id(1, sym(2, "doWork", "Foo.doWork", "function", "src/foo.ts"));
     let got = resolve(&lookup, "doWork", vec!["Foo".to_string()]);
     assert_eq!(got, Some(2));
 }

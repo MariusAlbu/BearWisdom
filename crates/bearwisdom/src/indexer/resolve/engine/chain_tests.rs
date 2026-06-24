@@ -344,14 +344,19 @@ fn member_yield_type_reads_return_for_calls_and_field_otherwise() {
         .with_field_type("Repo.db", "Database");
     let arena = lookup.type_arena().unwrap();
     assert_eq!(
-        member_yield_type(&lookup, arena, "Repo.find", true).map(|id| arena.format_type(id)),
+        member_yield_type(&lookup, arena, &sym(1, "find", "Repo.find", "method", "a.ts"), true)
+            .map(|id| arena.format_type(id)),
         Some("User".to_string())
     );
     assert_eq!(
-        member_yield_type(&lookup, arena, "Repo.db", false).map(|id| arena.format_type(id)),
+        member_yield_type(&lookup, arena, &sym(2, "db", "Repo.db", "field", "a.ts"), false)
+            .map(|id| arena.format_type(id)),
         Some("Database".to_string())
     );
-    assert_eq!(member_yield_type(&lookup, arena, "Repo.unknown", true), None);
+    assert_eq!(
+        member_yield_type(&lookup, arena, &sym(3, "unknown", "Repo.unknown", "method", "a.ts"), true),
+        None
+    );
 }
 
 #[test]

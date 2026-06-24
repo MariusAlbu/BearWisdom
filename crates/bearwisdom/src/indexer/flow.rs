@@ -608,6 +608,18 @@ fn attribute_return_expr(
         .map(|(i, _)| i);
     let Some(fn_idx) = fn_idx else { return };
 
+    // An object-literal return (`return { info, error }`) IS the function's
+    // structural return type. Record its property names so a synthetic `{fn}$Ret`
+    // type carrying those members is materialized, rather than mis-attributing the
+    // return to the last property's ref below.
+    if expr.kind() == "object" {
+        let members = object_property_names(expr, src);
+        if !members.is_empty() {
+            meta.flow_return_object.push((fn_idx, members));
+        }
+        return;
+    }
+
     // A ref inside a NESTED function within the return expression belongs to
     // that nested scope, not the owner — `return makeThing(x => x.foo())`
     // returns `makeThing`'s type, not `x.foo`'s. Exclude any ref whose offset
@@ -646,6 +658,37 @@ fn attribute_return_expr(
             }
         }
     }
+}
+
+/// The property names declared directly in an object literal — `info`, `error`
+/// from `{ info, error, warn }`. Covers shorthand (`info`), keyed pairs
+/// (`info: x`), and method shorthand (`info() {}`); skips spreads / computed keys.
+fn object_property_names(object_node: &Node, src: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor = object_node.walk();
+    for child in object_node.named_children(&mut cursor) {
+        let name = match child.kind() {
+            "shorthand_property_identifier" | "property_identifier" => {
+                child.utf8_text(src).ok().map(|s| s.to_string())
+            }
+            "pair" => child
+                .child_by_field_name("key")
+                .filter(|k| matches!(k.kind(), "property_identifier" | "identifier"))
+                .and_then(|k| k.utf8_text(src).ok())
+                .map(|s| s.to_string()),
+            "method_definition" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(src).ok())
+                .map(|s| s.to_string()),
+            _ => None,
+        };
+        if let Some(n) = name {
+            if !n.is_empty() {
+                names.push(n);
+            }
+        }
+    }
+    names
 }
 
 /// Byte ranges of every `function_kinds` node nested inside `expr` (lambdas /

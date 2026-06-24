@@ -9,7 +9,7 @@
 // =============================================================================
 
 use crate::languages::LanguageRegistry;
-use crate::types::ParsedFile;
+use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use crate::walker::WalkedFile;
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
@@ -341,7 +341,7 @@ fn parse_file_internal(
     // Populates FlowMeta (forward-inference binding map, conditional narrowings,
     // call-site type_args on chain segments). Plugins without flow_config pay
     // zero cost here.
-    let flow_meta = match plugin.flow_config() {
+    let mut flow_meta = match plugin.flow_config() {
         Some(flow_cfg) => {
             if let Some(tree) = shared_tree.as_ref() {
                 crate::indexer::flow::run_flow_queries_with_tree(
@@ -365,6 +365,65 @@ fn parse_file_internal(
         }
         None => crate::types::FlowMeta::default(),
     };
+
+    // Materialize a `{fn}$Ret` object type for each function that returns an object
+    // literal (recorded by the flow pass). A call to the function yields this type,
+    // so `createLogger().info` resolves to the synthesized member. The members
+    // carry no type of their own — their presence under `{fn}$Ret` is the resolve.
+    if !flow_meta.flow_return_object.is_empty() {
+        let mk = |name: &str,
+                  qname: &str,
+                  kind: SymbolKind,
+                  parent: Option<usize>,
+                  line: u32| ExtractedSymbol {
+            name: name.to_string(),
+            qualified_name: qname.to_string(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: line,
+            end_line: line,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        };
+        for (fn_idx, members) in std::mem::take(&mut flow_meta.flow_return_object) {
+            let (ret_qname, ret_name, line) = match r.symbols.get(fn_idx) {
+                Some(s) => (
+                    format!("{}$Ret", s.qualified_name),
+                    format!("{}$Ret", s.name),
+                    s.start_line,
+                ),
+                None => continue,
+            };
+            let iface_idx = r.symbols.len();
+            r.symbols
+                .push(mk(&ret_name, &ret_qname, SymbolKind::Interface, None, line));
+            for m in &members {
+                let m_qname = format!("{}.{}", ret_qname, m);
+                r.symbols.push(mk(
+                    m.as_str(),
+                    &m_qname,
+                    SymbolKind::Property,
+                    Some(iface_idx),
+                    line,
+                ));
+            }
+        }
+        // Keep the parallel origin vectors aligned when they were populated
+        // (embedded-region files); empty vectors mean "all host language".
+        if !symbol_origin_languages.is_empty() {
+            symbol_origin_languages.resize(r.symbols.len(), None);
+            symbol_from_snippet.resize(r.symbols.len(), false);
+        }
+    }
 
     // Extractor-time `FlowEmission`s for plugins whose flow detection is
     // file-structure-based (SDL parsing, `.proto` file scan) and can't move

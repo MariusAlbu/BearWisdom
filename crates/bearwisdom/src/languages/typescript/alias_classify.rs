@@ -482,6 +482,21 @@ fn head_type_name(node: &Node, src: &[u8]) -> String {
             }
             String::new()
         }
+        // `typeof value` — the value's name, so `ReturnType<typeof v>` carries `v`
+        // as its single argument for the ReturnType intrinsic to resolve.
+        "type_query" => {
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if child.kind() == "typeof" {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            String::new()
+        }
         _ => String::new(),
     }
 }

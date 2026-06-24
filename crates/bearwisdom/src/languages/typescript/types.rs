@@ -28,7 +28,7 @@ pub(super) fn extract_type_ref_from_annotation(
     let Some(type_node) = type_node else { return };
 
     match type_node.kind() {
-        "type_identifier" | "identifier" => {
+        "type_identifier" | "identifier" | "predefined_type" => {
             let type_name = node_text(type_node, src);
             refs.push(ExtractedRef {
                 is_import_binding: false,
