@@ -242,6 +242,26 @@ fn lookup_member_on(
     result
 }
 
+/// The type of `field` accessed on a receiver of type `recv_ty` (declaration id
+/// `recv_id` when known) — `R.field`'s type for a destructured binding
+/// `const { field } = <expr-of-type-R>`. Expands R through any alias, finds the
+/// member, and yields its field type with R's type arguments substituted. `None`
+/// when R carries no such field or its type can't be walked. Reuses the full
+/// member walk (supertype climb, intersection / union / mapped / constructor
+/// fallbacks), so a field on a destructured binding resolves exactly as a member
+/// step in a chain would.
+pub(crate) fn field_type_on(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv_ty: TypeId,
+    recv_id: Option<i64>,
+    field: &str,
+) -> Option<TypeId> {
+    let recv = expand_receiver(Receiver { ty: recv_ty, id: recv_id }, lookup, arena, None);
+    let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
+    yield_through(lookup, arena, &member, false, recv.ty)
+}
+
 /// Upper bound on mapped-type source hops — a mapped type whose source is itself
 /// a mapped type chains here. Bounds the rare nesting and guards a cyclic alias.
 const MAX_MAPPED_DEPTH: usize = 6;
@@ -295,6 +315,16 @@ fn lookup_member_on_bounded(
     // above; only a lowercase-first head that looks like a built-in primitive
     // triggers this. A capitalized probe that finds nothing is a no-op.
     if let Some(m) = lookup_member_on_capitalized_primitive(lookup, &head, member, accept) {
+        return Some(m);
+    }
+    // Static-member receiver: a builtin value `Foo` (`Object`, `Promise`, `Date`,
+    // `Array`, `Number`, …) carries its static members on the co-named
+    // `${Foo}Constructor` interface, not on the instance `interface Foo`. TS encodes
+    // the value/type split as `declare var Foo: FooConstructor`, so `Foo.staticM`
+    // resolves on the constructor interface. After the instance side misses, retry on
+    // `${head}Constructor`. A head with no indexed `${head}Constructor` (every
+    // non-builtin head) finds nothing — a no-op.
+    if let Some(m) = lookup_member_on_constructor_interface(lookup, &head, member, accept) {
         return Some(m);
     }
     // Namespace-qualified receiver: a head like `Prisma.UserDelegate` whose
@@ -408,6 +438,26 @@ fn lookup_member_on_capitalized_primitive(
         s
     };
     lookup_member(lookup, &capitalized, member, accept)
+}
+
+/// Static-member fallback: a builtin value `Foo` carries its static members on the
+/// co-named `${Foo}Constructor` interface (`Object.keys` → `ObjectConstructor.keys`,
+/// `Promise.resolve` → `PromiseConstructor.resolve`, `Date.now` → `DateConstructor.now`).
+/// TS declares the value as `declare var Foo: FooConstructor`; the instance
+/// `interface Foo` holds none of these. Resolve `member` on `${head}Constructor`.
+/// `None` when the head already ends in `Constructor` (no double-suffix probe) or no
+/// such interface is indexed.
+fn lookup_member_on_constructor_interface(
+    lookup: &dyn SymbolLookup,
+    head: &str,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    if head.ends_with("Constructor") {
+        return None;
+    }
+    let ctor = format!("{head}Constructor");
+    lookup_member(lookup, &ctor, member, accept)
 }
 
 /// Namespace-qualified receiver fallback: a head like `Prisma.UserDelegate` whose

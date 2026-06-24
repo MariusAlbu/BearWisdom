@@ -721,6 +721,46 @@ fn resolve_one_file(
                     crate::tracef!("SEED none (ref is not a binding RHS)");
                 }
 
+                // Destructured bindings of this RHS: `const { a, b: c } = f()`.
+                // Each binding types from the FIELD on the call's yield type R,
+                // not from R itself. R is the resolver's yield TypeId, or the
+                // target's id-keyed return / field metadata when the resolver
+                // produced no yield.
+                if let Some(entries) = pf.flow.flow_binding_destructure.get(&ref_idx) {
+                    if let Some(arena) = tree.type_arena() {
+                        let recv_ty = res.resolved_yield_type.or_else(|| match r.kind {
+                            EdgeKind::Calls | EdgeKind::Instantiates => {
+                                tree.return_type_id_of(res.target_symbol_id)
+                            }
+                            _ => tree.field_type_id_of(res.target_symbol_id),
+                        });
+                        if let Some(recv_ty) = recv_ty {
+                            for (lhs_idx, field_key) in entries {
+                                let Some(lhs_sym) = pf.symbols.get(*lhs_idx) else {
+                                    continue;
+                                };
+                                if let Some(field_ty) =
+                                    crate::indexer::resolve::engine::chain::field_type_on(
+                                        &file_lookup,
+                                        arena,
+                                        recv_ty,
+                                        None,
+                                        field_key,
+                                    )
+                                {
+                                    crate::tracef!(
+                                        "SEED destructure lhs='{}' field='{}' -> recorded=TypeId",
+                                        lhs_sym.name,
+                                        field_key,
+                                    );
+                                    file_lookup
+                                        .record_local_type_id(lhs_sym.name.clone(), field_ty);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 edges.push((
                     source_id,
                     res.target_symbol_id,

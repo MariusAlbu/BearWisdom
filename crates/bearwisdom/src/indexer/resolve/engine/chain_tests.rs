@@ -63,6 +63,53 @@ fn binds_member_on_local_variable_type() {
 }
 
 #[test]
+fn binds_static_member_on_constructor_interface() {
+    // `Promise.resolve(...)` — the VALUE `Promise` has type `PromiseConstructor`
+    // (`declare var Promise: PromiseConstructor`), so the static `resolve` lives on
+    // the constructor interface, not the instance `interface Promise`. The bare root
+    // types to `interface Promise`; the member must fall through to the co-named
+    // `${head}Constructor`. Same shape for `Object.keys` / `Date.now` / `Array.from`.
+    let lookup = Lookup::new()
+        .with(sym(1, "Promise", "Promise", "interface", "ext:ts:lib.es5.d.ts"))
+        .with(sym(
+            2,
+            "PromiseConstructor",
+            "PromiseConstructor",
+            "interface",
+            "ext:ts:lib.es5.d.ts",
+        ))
+        .with_member(
+            "PromiseConstructor",
+            sym(3, "resolve", "PromiseConstructor.resolve", "method", "ext:ts:lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("Promise", false, SegmentKind::Identifier),
+        seg("resolve", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(3));
+}
+
+#[test]
+fn field_type_on_resolves_destructured_field_type() {
+    // `const { data } = usePost()` — usePost(): UsePostResult, UsePostResult.data: User.
+    // field_type_on(UsePostResult, "data") yields User, so the destructured `data`
+    // binding types from the field, not the whole result object.
+    let lookup = Lookup::new()
+        .with(sym(1, "UsePostResult", "UsePostResult", "interface", "a.ts"))
+        .with(sym(2, "User", "User", "interface", "a.ts"))
+        .with_member(
+            "UsePostResult",
+            sym(3, "data", "UsePostResult.data", "property", "a.ts"),
+        )
+        .with_field_type("UsePostResult.data", "User");
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.class("UsePostResult");
+    let ty = field_type_on(&lookup, arena, recv, Some(1), "data")
+        .expect("destructured field `data` type must resolve");
+    assert_eq!(head_qname(arena, ty).as_deref(), Some("User"));
+}
+
+#[test]
 fn value_root_declines_foreign_internal_same_name_unless_imported() {
     // `logger.map` where THIS file owns an untyped `logger` (its initializer's
     // return was not inferred) and a DIFFERENT internal file declares a `logger`

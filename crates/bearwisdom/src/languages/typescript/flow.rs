@@ -49,6 +49,14 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (variable_declarator
+            name: (object_pattern
+                [(shorthand_property_identifier_pattern) @destruct.bind
+                 (pair_pattern
+                    key: (property_identifier) @destruct.key
+                    value: (identifier) @destruct.bind)])
+            value: (_) @rhs)
     "#,
 
     // Two block-scoped narrowing forms:

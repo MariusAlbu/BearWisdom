@@ -290,6 +290,58 @@ fn kill_narrowings_at_reassignments(meta: &mut FlowMeta, reassignments: &[(Strin
     }
 }
 
+/// Correlate an LHS binding name to its extractor symbol index: the symbol of
+/// that name whose start line is closest to (but not after) `line`. Shared by the
+/// identifier-binding and destructure-binding paths.
+fn correlate_lhs_symbol(name: &str, line: u32, symbols: &[ExtractedSymbol]) -> Option<usize> {
+    symbols
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.name == name && s.start_line <= line)
+        .max_by_key(|(_, s)| s.start_line)
+        .map(|(i, _)| i)
+}
+
+/// Find the ref whose value is the OUTERMOST expression of `rhs` — the one whose
+/// type the binding takes. Excludes refs inside functions nested STRICTLY within
+/// `rhs` (callback bodies: `const x = render(() => <Page/>)` is typed by `render`,
+/// not by `Page`). The selection key, minimized:
+///   1. leftmost callee start — the outer expression begins at the RHS start; its
+///      arguments (`render(<App/>)`, `render(p1(), p2())`) anchor to the RIGHT.
+///   2. longest chain — at a shared start, the outermost expression carries the
+///      most segments: `a.b().field` over the inner `a.b()`, so the binding takes
+///      the field's type, not the call's return.
+///   3. value-producing kind — a bare call emits both a `Calls`/`Instantiates` ref
+///      AND a co-located equal-length `TypeRef`; the value ref wins.
+/// Shared by the identifier-binding and destructure-binding paths.
+fn correlate_rhs_ref(refs: &[ExtractedRef], rhs: &Node, strategy_prefix: &str) -> Option<usize> {
+    let r_start = rhs.start_byte() as u32;
+    let r_end = rhs.end_byte() as u32;
+    let nested_fn_ranges = cfg_node_kinds_for(strategy_prefix)
+        .map(|kinds| nested_function_ranges(rhs, kinds))
+        .unwrap_or_default();
+    let value_rank = |k: EdgeKind| -> u8 {
+        match k {
+            EdgeKind::Calls | EdgeKind::Instantiates => 0,
+            _ => 1,
+        }
+    };
+    refs.iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            r.byte_offset >= r_start
+                && r.byte_offset < r_end
+                && !nested_fn_ranges
+                    .iter()
+                    .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
+        })
+        .min_by_key(|(_, r)| {
+            let segments = r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0);
+            (r.byte_offset, std::cmp::Reverse(segments), value_rank(r.kind))
+        })
+        .map(|(i, _)| i)
+}
+
 fn run_assignment_query(
     root: &Node,
     src: &[u8],
@@ -315,6 +367,12 @@ fn run_assignment_query(
     // operator (Rust `?`). Correlated to a ref like `@rhs`, but the binding is
     // additionally flagged so the resolver peels one wrapper layer.
     let unwrap_cap = query.capture_index_for_name("rhs_unwrap");
+    // Object-destructure bindings: `@destruct.bind` is the bound identifier,
+    // `@destruct.key` the source field name (absent for shorthand `{ a }`, where
+    // the field equals the bound name). Languages whose query omits these
+    // captures get `None` here and the destructure branch never fires.
+    let bind_cap = query.capture_index_for_name("destruct.bind");
+    let key_cap = query.capture_index_for_name("destruct.key");
 
     let mut cursor = QueryCursor::new();
     let mut it = cursor.matches(&*query, *root, src);
@@ -323,6 +381,8 @@ fn run_assignment_query(
         let mut rhs_node: Option<Node> = None;
         let mut type_node: Option<Node> = None;
         let mut unwrap_node: Option<Node> = None;
+        let mut bind_node: Option<Node> = None;
+        let mut key_node: Option<Node> = None;
         for cap in m.captures {
             if cap.index == lhs_cap {
                 lhs_node = Some(cap.node);
@@ -332,7 +392,34 @@ fn run_assignment_query(
                 type_node = Some(cap.node);
             } else if Some(cap.index) == unwrap_cap {
                 unwrap_node = Some(cap.node);
+            } else if Some(cap.index) == bind_cap {
+                bind_node = Some(cap.node);
+            } else if Some(cap.index) == key_cap {
+                key_node = Some(cap.node);
             }
+        }
+
+        // Object-destructure binding: `const { a, b: c } = f()`. Each match carries
+        // one bound identifier; type it from the FIELD on the RHS's yield type
+        // (`R["a"]`), recorded against the RHS ref for the seeding loop to resolve.
+        if let Some(bind) = bind_node {
+            if let (Ok(bind_name), Some(rhs)) = (bind.utf8_text(src), rhs_node) {
+                let bind_line = bind.start_position().row as u32;
+                if let Some(lhs_idx) = correlate_lhs_symbol(bind_name, bind_line, symbols) {
+                    // Shorthand `{ a }` → field == bound name; `{ b: c }` → `@destruct.key`.
+                    let field_key = key_node
+                        .and_then(|k| k.utf8_text(src).ok())
+                        .unwrap_or(bind_name)
+                        .to_string();
+                    if let Some(ref_idx) = correlate_rhs_ref(refs, &rhs, cfg.strategy_prefix) {
+                        meta.flow_binding_destructure
+                            .entry(ref_idx)
+                            .or_default()
+                            .push((lhs_idx, field_key));
+                    }
+                }
+            }
+            continue;
         }
         let Some(lhs) = lhs_node else { continue };
         let lhs_name = match lhs.utf8_text(src) {
@@ -340,17 +427,10 @@ fn run_assignment_query(
             Err(_) => continue,
         };
 
-        // Correlate LHS name → symbol_idx. For a local variable the extractor
-        // emits a Variable symbol at the LHS start line; match by name and
-        // closest start-line ≤ lhs row.
+        // Correlate LHS name → symbol_idx: the same-named symbol whose start line
+        // is closest to (not after) the LHS row.
         let lhs_line = lhs.start_position().row as u32;
-        let lhs_symbol_idx = symbols
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.name == lhs_name && s.start_line <= lhs_line)
-            .max_by_key(|(_, s)| s.start_line)
-            .map(|(i, _)| i);
-        let Some(lhs_idx) = lhs_symbol_idx else {
+        let Some(lhs_idx) = correlate_lhs_symbol(lhs_name, lhs_line, symbols) else {
             continue;
         };
 
@@ -379,59 +459,7 @@ fn run_assignment_query(
             (None, None) => (None, false),
         };
         if let Some(rhs) = rhs {
-            let r_start = rhs.start_byte() as u32;
-            let r_end = rhs.end_byte() as u32;
-            // Refs inside a function/closure nested in the RHS belong to that
-            // callback's body, not to the value of the RHS expression — a
-            // `const x = render(() => <Page/>)` initializer is typed by
-            // `render`'s return, never by the `Page` ref inside the arrow.
-            // Exclude those, mirroring the nested-callback exclusion in
-            // `attribute_return_expr`. A RHS that IS itself a function
-            // (`const f = () => g()`) keeps its body's direct refs: the ranges
-            // cover only functions nested STRICTLY inside the RHS node.
-            let nested_fn_ranges = cfg_node_kinds_for(cfg.strategy_prefix)
-                .map(|kinds| nested_function_ranges(&rhs, kinds))
-                .unwrap_or_default();
-            // The binding's value is the OUTERMOST expression of the RHS, which
-            // begins at the RHS start. A ref's `byte_offset` is its callee / tag
-            // node start, so the outer expression's ref is the LEFTMOST in range:
-            // the outer call of `a.b().c()` anchors at `a`; an argument call/JSX
-            // (`render(<App/>)`, `render(p1(), p2())`) anchors to the RIGHT of the
-            // outer call and must not win.
-            //
-            // The selection key, minimized:
-            //   1. leftmost callee start — the outer expression begins at the RHS
-            //      start; its arguments (`render(<App/>)`, `render(p1(), p2())`)
-            //      anchor to the RIGHT and must not win.
-            //   2. longest chain — at a shared start, the outermost expression
-            //      carries the most segments: `a.b().field` (member access on a
-            //      call result) over the inner `a.b()` call, so the binding takes
-            //      the field's type, not the call's return.
-            //   3. value-producing kind — a bare call emits both a `Calls`/
-            //      `Instantiates` ref (whose return / construction types the
-            //      binding) AND a co-located, equal-length `TypeRef` for type
-            //      tracking; only kind separates them, and the value ref wins.
-            let value_rank = |k: EdgeKind| -> u8 {
-                match k {
-                    EdgeKind::Calls | EdgeKind::Instantiates => 0,
-                    _ => 1,
-                }
-            };
-            let ref_idx = refs
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| {
-                    r.byte_offset >= r_start
-                        && r.byte_offset < r_end
-                        && !nested_fn_ranges
-                            .iter()
-                            .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
-                })
-                .min_by_key(|(_, r)| {
-                    let segments = r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0);
-                    (r.byte_offset, std::cmp::Reverse(segments), value_rank(r.kind))
-                })
-                .map(|(i, _)| i);
+            let ref_idx = correlate_rhs_ref(refs, &rhs, cfg.strategy_prefix);
             if let Some(ref_idx) = ref_idx {
                 meta.flow_binding_lhs.insert(ref_idx, lhs_idx);
                 if is_unwrap {

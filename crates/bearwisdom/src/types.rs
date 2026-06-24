@@ -938,6 +938,10 @@ pub struct DiscriminantNarrowing {
 /// - `flow_binding_lhs`: sparse map `ref_idx → lhs_symbol_idx`. Present when
 ///   a ref is the RHS of `<lhs> = <chain>`; the resolver records the resolved
 ///   yield type against the named LHS symbol in the file's local-type cache.
+/// - `flow_binding_destructure`: sparse map `ref_idx → [(lhs_symbol_idx,
+///   field_key)]`. Present when a ref is the RHS of an object-destructure
+///   `const { a, b: c } = <chain>`; the resolver types each binding from the
+///   FIELD `field_key` on the resolved yield type, not from the whole object.
 /// - `flow_binding_decl_type`: sparse map `lhs_symbol_idx → declared type text`.
 ///   Present when a binding carries an explicit annotation (`let x: T`). Unlike
 ///   `flow_binding_lhs` this needs no RHS resolution — the annotation is the
@@ -965,6 +969,13 @@ pub struct FlowMeta {
     pub narrowings: Vec<Narrowing>,
     pub discriminant_narrowings: Vec<DiscriminantNarrowing>,
     pub flow_binding_lhs: HashMap<usize, usize>,
+    /// Destructured bindings of an RHS expression: `const { a, b: c } = f()`.
+    /// Maps the RHS `ref_idx` to each binding's `(lhs_symbol_idx, field_key)` —
+    /// `a` → `(idx_a, "a")`, `b: c` → `(idx_c, "b")`. Distinct from
+    /// `flow_binding_lhs` because each binding types from the named FIELD on the
+    /// RHS's yield type (`R["a"]`), not from the whole object `R`. A single RHS
+    /// ref carries one entry per destructured binding.
+    pub flow_binding_destructure: HashMap<usize, Vec<(usize, String)>>,
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
     pub flow_binding_await: std::collections::HashSet<usize>,

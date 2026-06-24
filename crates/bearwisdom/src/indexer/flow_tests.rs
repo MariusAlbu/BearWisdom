@@ -20,6 +20,14 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (variable_declarator
+            name: (object_pattern
+                [(shorthand_property_identifier_pattern) @destruct.bind
+                 (pair_pattern
+                    key: (property_identifier) @destruct.key
+                    value: (identifier) @destruct.bind)])
+            value: (_) @rhs)
     "#,
     type_guard_query: r#"
         (if_statement
@@ -135,6 +143,35 @@ fn flow_assignment_binds_lhs_to_rhs_ref() {
         meta.flow_binding_lhs.get(&0),
         Some(&0),
         "flow runner should bind ref 0 (foo call) to symbol 0 (x)"
+    );
+}
+
+#[test]
+fn flow_object_destructure_binds_each_field() {
+    // `const { hits, total: count } = useAlgolia();` — each destructured binding
+    // maps the RHS ref to its (symbol, source-field): shorthand `hits` → field
+    // "hits"; renamed `total: count` → binding `count`, field "total".
+    let source = "const { hits, total: count } = useAlgolia();\n";
+    // byte positions: 'hits' = 8, 'count' = 21, 'useAlgolia' = 31, '()' = 41..43
+    let symbols = vec![
+        mk_sym("hits", SymbolKind::Variable, 0),
+        mk_sym("count", SymbolKind::Variable, 0),
+    ];
+    let mut refs = vec![mk_call_ref("useAlgolia", 0, 31)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    let entries = meta
+        .flow_binding_destructure
+        .get(&0)
+        .expect("RHS ref 0 (useAlgolia call) must carry destructure entries");
+    assert!(
+        entries.contains(&(0, "hits".to_string())),
+        "shorthand `hits` must bind symbol 0 to field \"hits\"; got {entries:?}"
+    );
+    assert!(
+        entries.contains(&(1, "total".to_string())),
+        "renamed `total: count` must bind symbol 1 (count) to field \"total\"; got {entries:?}"
     );
 }
 

@@ -505,6 +505,28 @@ fn check_flow_meta(file: &ParsedFile, out: &mut Vec<ContractViolation>) {
             });
         }
     }
+    for (&ref_idx, entries) in &file.flow.flow_binding_destructure {
+        if ref_idx >= nref {
+            out.push(ContractViolation {
+                code: "FILE-004",
+                message: format!(
+                    "flow.flow_binding_destructure key {ref_idx} is out of bounds (refs.len() = {nref})",
+                ),
+                location: file_loc(file),
+            });
+        }
+        for (lhs_idx, _) in entries {
+            if *lhs_idx >= nsym {
+                out.push(ContractViolation {
+                    code: "FILE-004",
+                    message: format!(
+                        "flow.flow_binding_destructure value {lhs_idx} is out of bounds (symbols.len() = {nsym})",
+                    ),
+                    location: file_loc(file),
+                });
+            }
+        }
+    }
     for (&lhs_idx, _) in &file.flow.flow_binding_decl_type {
         if lhs_idx >= nsym {
             out.push(ContractViolation {
