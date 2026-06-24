@@ -1394,6 +1394,16 @@ pub(crate) fn callee_return_type(
     name: &str,
 ) -> Option<TypeId> {
     let candidates = lookup.by_name(name);
+    // An object-literal return synthesized as `{qname}$Ret` (the flow-return-object
+    // pass) IS the function's structural return — authoritative over any stored
+    // return inferred from a param annotation (`Record`) or a body expression
+    // (`Promise`). Prefer it before reading the stored slot.
+    for cand in candidates.iter().filter(|s| is_callable(&s.kind)) {
+        let ret_qname = format!("{}$Ret", cand.qualified_name);
+        if lookup.by_qualified_name(&ret_qname).is_some() {
+            return Some(arena.class(&ret_qname));
+        }
+    }
     // Import-scoped overload set: when `name` is imported from a specific
     // package, the chain heads on THAT package's declaration. An OVERLOADED
     // function records its return on ONE specific signature (often the

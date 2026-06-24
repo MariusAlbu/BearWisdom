@@ -102,6 +102,26 @@ fn value_root_declines_foreign_internal_same_name_unless_imported() {
 }
 
 #[test]
+fn call_root_falls_back_to_synthetic_ret_interface() {
+    // `makeLogger().info` where `makeLogger` carries no stored return type but its
+    // object-literal return was synthesized as the `makeLogger$Ret` interface (the
+    // flow-return-object pass). callee_return_type roots the call on it by name
+    // convention so the member binds.
+    let lookup = Lookup::new()
+        .with(sym(1, "makeLogger", "makeLogger", "function", "a.ts"))
+        .with(sym(2, "makeLogger$Ret", "makeLogger$Ret", "interface", "a.ts"))
+        .with_member(
+            "makeLogger$Ret",
+            sym(10, "info", "makeLogger$Ret.info", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("makeLogger", true, SegmentKind::Identifier),
+        seg("info", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(10));
+}
+
+#[test]
 fn walks_two_hops_advancing_through_return_type() {
     let lookup = Lookup::new()
         .with_local_type("repo", "Repo")

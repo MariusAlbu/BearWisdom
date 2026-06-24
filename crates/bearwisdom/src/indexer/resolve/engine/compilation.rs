@@ -1241,16 +1241,12 @@ impl Compilation {
                 let Some(fn_sym) = pf.symbols.get(*fn_idx) else {
                     continue;
                 };
-                // A declared/extractor return or an already-derived slot wins.
+                // A declared/extractor return annotation wins. An already-INFERRED
+                // slot does NOT short-circuit: a factory's object-literal-builder
+                // return (`{…}$Ret`) is authoritative and overrides a slot
+                // mis-inferred from a param (`Record`) / body (`Promise`) — decided
+                // in the grouping pass below.
                 if fn_sym.return_type.is_some() {
-                    continue;
-                }
-                if self
-                    .type_info
-                    .get(&fn_sym.qualified_name)
-                    .and_then(|ti| ti.return_type.as_deref())
-                    .is_some()
-                {
                     continue;
                 }
                 let Some(call_ref) = pf.refs.get(*ref_idx) else {
@@ -1276,14 +1272,85 @@ impl Compilation {
                 candidates.push((fn_sym.qualified_name.clone(), s, Some(ret_id), Vec::new()));
             }
         }
-        for (qname, ty, ty_id, type_args) in agree_inferred_returns(candidates) {
-            let ti = self.type_info.entry(qname).or_default();
-            if ti.return_type.is_some() {
+        // Group candidates by function. Object-literal-builder returns (`{…}$Ret`)
+        // are authoritative: a factory returning one or more local builders HAS
+        // that (union of) object shape(s) as its return, overriding any stored
+        // return mis-inferred from a param/body. A non-builder single return keeps
+        // the agreement-gated, slot-respecting behaviour.
+        let mut by_fn: FxHashMap<String, Vec<(String, Option<TypeId>, Vec<String>)>> =
+            FxHashMap::default();
+        for (qname, ty, ty_id, type_args) in candidates {
+            by_fn.entry(qname).or_default().push((ty, ty_id, type_args));
+        }
+        for (qname, variants) in by_fn {
+            // Distinct return-type strings, first occurrence kept.
+            let mut distinct: Vec<(String, Option<TypeId>, Vec<String>)> = Vec::new();
+            for v in variants {
+                if !distinct.iter().any(|d| d.0 == v.0) {
+                    distinct.push(v);
+                }
+            }
+            let mut ret_branches: Vec<String> = distinct
+                .iter()
+                .filter(|d| d.0.ends_with("$Ret"))
+                .map(|d| d.0.clone())
+                .collect();
+            if !ret_branches.is_empty() {
+                let (ret_str, ret_id) = if ret_branches.len() == 1 {
+                    let n = ret_branches.pop().unwrap();
+                    let id = self.arena.class(&n);
+                    (n, id)
+                } else {
+                    ret_branches.sort(); // member-on-all-branches is order-free
+                    ret_branches.dedup();
+                    let union_name = format!("{qname}$Ret");
+                    self.alias_target
+                        .insert(union_name.clone(), AliasTarget::Union(ret_branches));
+                    let id = self.arena.class(&union_name);
+                    (union_name, id)
+                };
+                self.set_return_both(&qname, ret_str, ret_id);
                 continue;
             }
-            ti.return_type_id =
-                Some(ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)));
-            ti.return_type = Some(ty);
+            // No object-literal builder branch: keep a single agreed non-synthetic
+            // return, not overriding an existing slot (the wrapper-hook case).
+            if self
+                .type_info
+                .get(&qname)
+                .and_then(|ti| ti.return_type.as_deref())
+                .is_some()
+            {
+                continue;
+            }
+            if distinct.len() == 1 {
+                let (ty, ty_id, type_args) = distinct.into_iter().next().unwrap();
+                let ti = self.type_info.entry(qname).or_default();
+                ti.return_type_id = Some(
+                    ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)),
+                );
+                ti.return_type = Some(ty);
+            }
+        }
+    }
+
+    /// Write a resolved return type to BOTH stores: the qname slot and every
+    /// same-qname symbol's id slot, overriding what is there. The resolver reads
+    /// the id slot (`return_type_id_of`) BEFORE the qname slot, and persist
+    /// COALESCEs the id store over the qname store — so a qname-only write is
+    /// shadowed by a stale id-keyed value.
+    fn set_return_both(&mut self, qname: &str, ret_str: String, ret_id: TypeId) {
+        let ids: Vec<i64> = self
+            .by_qname_all
+            .get(qname)
+            .map(|v| v.iter().map(|s| s.id).collect())
+            .unwrap_or_default();
+        let ti = self.type_info.entry(qname.to_string()).or_default();
+        ti.return_type_id = Some(ret_id);
+        ti.return_type = Some(ret_str.clone());
+        for id in ids {
+            let tid = self.type_info_by_id.entry(id).or_default();
+            tid.return_type_id = Some(ret_id);
+            tid.return_type = Some(ret_str.clone());
         }
     }
 
