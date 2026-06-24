@@ -255,6 +255,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_workspace_declared_name(name)
     }
 
+    fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
+        self.tree.resolve_path_alias(package_id, specifier)
+    }
+
     // -- Flow cache: methods implemented over `locals` and `locals_id`. ------
 
     /// Return the inferred type of `name` from the per-file forward-inference

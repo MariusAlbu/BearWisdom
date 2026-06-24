@@ -63,6 +63,45 @@ fn binds_member_on_local_variable_type() {
 }
 
 #[test]
+fn value_root_declines_foreign_internal_same_name_unless_imported() {
+    // `logger.map` where THIS file owns an untyped `logger` (its initializer's
+    // return was not inferred) and a DIFFERENT internal file declares a `logger`
+    // typed `Array`. The owned-but-untyped binding wins: the chain declines rather
+    // than borrowing the foreign `Array` — the first-winner leak that mis-typed
+    // `logger`/`z`/`response`. With an explicit import the foreign file IS the
+    // source, so its type roots the chain.
+    let lookup = Lookup::new()
+        .with(sym(1, "logger", "main.logger", "variable", "src/main.ts"))
+        .with(sym(2, "logger", "logger", "variable", "other.ts"))
+        .with_field_type("logger", "Array")
+        .with(sym(3, "Array", "Array", "interface", "ext:ts:lib.es5.d.ts"))
+        .with_member("Array", sym(4, "map", "Array.map", "method", "ext:ts:lib.es5.d.ts"));
+    let segs = || {
+        vec![
+            seg("logger", false, SegmentKind::Identifier),
+            seg("map", true, SegmentKind::Property),
+        ]
+    };
+    // No import → the owned untyped in-file binding blocks the foreign `Array`.
+    assert_eq!(
+        resolve_with_fc(&lookup, segs(), "caller", &file_ctx(vec![], None)),
+        None,
+        "owned-but-untyped in-file binding must not be overridden by a foreign value"
+    );
+    // Imported → the foreign file is the genuine source → its type roots the chain.
+    assert_eq!(
+        resolve_with_fc(
+            &lookup,
+            segs(),
+            "caller",
+            &file_ctx(vec![import("logger", Some("./other"))], None)
+        ),
+        Some(4),
+        "an imported same-name value still roots the chain"
+    );
+}
+
+#[test]
 fn walks_two_hops_advancing_through_return_type() {
     let lookup = Lookup::new()
         .with_local_type("repo", "Repo")

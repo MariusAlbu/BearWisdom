@@ -1016,6 +1016,7 @@ fn resolve_root_impl(
             arena,
             &seg.name,
             &ref_ctx.source_symbol.qualified_name,
+            file_ctx,
         ) {
             return Some(Receiver::untyped(ty));
         }
@@ -1025,7 +1026,7 @@ fn resolve_root_impl(
     // the chain on that type — `initTRPC.create()` roots on `initTRPC`'s builder
     // type even though `initTRPC` is not itself a type name.
     if let Some(ty) =
-        value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name)
+        value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name, file_ctx)
     {
         return Some(Receiver::untyped(ty));
     }
@@ -1065,7 +1066,34 @@ fn value_root_type(
     arena: &TypeArena,
     name: &str,
     source_qname: &str,
+    file_ctx: &FileContext,
 ) -> Option<TypeId> {
+    // A value root's type comes from a binding this file is entitled to root on
+    // ("owned"): a scope-qualified match, the same file, an imported name, or an
+    // external/ambient declaration (`ext:` — where imports and globals resolve). A
+    // *different* internal file's same-name value is only a fallback when this file
+    // has NO owned binding of the name (a sole declaration, or a language with
+    // implicit cross-file scope). Borrowing it OVER an owned-but-untyped binding is
+    // the first-winner leak that mis-typed `logger`/`z`/`response` to an unrelated
+    // same-name value (a foreign `logger` typed `Array`).
+    let name_imported = file_ctx
+        .imports
+        .iter()
+        .any(|i| i.imported_name == name || i.alias.as_deref() == Some(name));
+    let src_file = file_ctx.file_path.as_str();
+    let is_owned =
+        |s: &Symbol| name_imported || s.file_path.starts_with("ext:") || &*s.file_path == src_file;
+
+    // True once an owned same-name binding is seen (even untyped) — then a foreign
+    // value's type is never borrowed over it.
+    let mut owned_seen = false;
+    // Non-primitive type from a foreign-internal same-name value, used only when no
+    // owned binding exists.
+    let mut foreign_fallback: Option<TypeId> = None;
+    // A value typed by a bare primitive (an HTTP header's `expect: string`) is a
+    // poor chain root; taken only when nothing richer carries the name.
+    let mut primitive_fallback: Option<TypeId> = None;
+
     let mut scope = source_qname;
     loop {
         let qn = if scope.is_empty() {
@@ -1075,8 +1103,22 @@ fn value_root_type(
         };
         if let Some(s) = lookup.by_qualified_name(&qn) {
             if is_value_kind(&s.kind) {
-                if let Some(id) = field_type_of(lookup, arena, s.id, &qn) {
-                    return Some(id);
+                // A scope-qualified hit carries the source's own scope, so it is
+                // owned regardless of file; a bare-name hit (scope exhausted) is a
+                // global pick subject to the owned/foreign split.
+                let owned = !scope.is_empty() || is_owned(s);
+                let ft = field_type_of(lookup, arena, s.id, &qn);
+                if owned {
+                    if let Some(id) = ft {
+                        return Some(id);
+                    }
+                    owned_seen = true;
+                } else if let Some(id) = ft {
+                    if is_primitive_head(arena, id) {
+                        primitive_fallback.get_or_insert(id);
+                    } else {
+                        foreign_fallback.get_or_insert(id);
+                    }
                 }
             }
         }
@@ -1088,25 +1130,38 @@ fn value_root_type(
             None => "",
         };
     }
-    // First a value whose field type is a real (non-primitive) type: a same-name
-    // external property typed by a bare primitive (an HTTP header's `expect:
-    // string`) must not shadow the ambient/imported value (`vitest`'s `expect`)
-    // the chain actually roots on. Only fall back to a primitive-typed value when
-    // nothing richer carries the name.
-    let mut primitive_fallback: Option<TypeId> = None;
     for cand in lookup.by_name(name) {
         if !is_value_kind(&cand.kind) {
             continue;
         }
-        if let Some(id) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) {
-            if is_primitive_head(arena, id) {
-                primitive_fallback.get_or_insert(id);
-            } else {
-                return Some(id);
+        let owned = is_owned(cand);
+        let ft = field_type_of(lookup, arena, cand.id, &cand.qualified_name);
+        match ft {
+            Some(id) if owned => {
+                if is_primitive_head(arena, id) {
+                    primitive_fallback.get_or_insert(id);
+                    owned_seen = true;
+                } else {
+                    return Some(id);
+                }
             }
+            Some(id) => {
+                if is_primitive_head(arena, id) {
+                    primitive_fallback.get_or_insert(id);
+                } else {
+                    foreign_fallback.get_or_insert(id);
+                }
+            }
+            None if owned => owned_seen = true,
+            None => {}
         }
     }
-    primitive_fallback
+    // An owned same-name binding exists ⇒ it roots the chain; never borrow a
+    // foreign-internal value's type over it.
+    if owned_seen {
+        return primitive_fallback;
+    }
+    foreign_fallback.or(primitive_fallback)
 }
 
 /// `true` when the type's nominal head is a language primitive — a value typed by
@@ -1310,8 +1365,9 @@ fn call_value_root_type(
     arena: &TypeArena,
     name: &str,
     source_qname: &str,
+    file_ctx: &FileContext,
 ) -> Option<TypeId> {
-    let value_ty = value_root_type(lookup, arena, name, source_qname)?;
+    let value_ty = value_root_type(lookup, arena, name, source_qname, file_ctx)?;
     let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
     yield_through(lookup, arena, &call, true, recv.ty)

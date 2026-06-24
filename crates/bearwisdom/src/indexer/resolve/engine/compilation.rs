@@ -19,6 +19,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTarget, EdgeKind, ParsedFile, SymbolKind};
@@ -130,6 +131,13 @@ pub struct Compilation {
     /// Workspace-package declared name → package id — ecosystem-agnostic (npm,
     /// cargo, go workspaces). Snapshot of `ProjectContext::workspace_pkg_by_declared_name`.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
+    /// Per-package tsconfig/jsconfig path aliases (`@/` → `./`), snapshot of the
+    /// npm manifest's `path_aliases`. A package present here is per-package
+    /// isolated — its own aliases apply (even when empty), never the global set —
+    /// mirroring `ProjectContext::manifests_for`.
+    path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
+    /// Workspace-wide path aliases, for files not under a per-package manifest.
+    path_aliases_global: Vec<(String, String)>,
     /// Symbols grouped by their owning workspace package id, for package-scoped
     /// lookups. Built from each symbol's `package_id` during ingest.
     by_package: FxHashMap<i64, Vec<Symbol>>,
@@ -186,13 +194,27 @@ impl Compilation {
     }
 
     /// Copy the generic, ecosystem-agnostic project data the engine resolves
-    /// against: the workspace-package declared-name → id map.
+    /// against: the workspace-package declared-name → id map and the tsconfig /
+    /// jsconfig path aliases (per-package and workspace-wide).
     fn snapshot_project_context(&mut self, ctx: &ProjectContext) {
         self.workspace_pkg_by_declared_name = ctx
             .workspace_pkg_by_declared_name
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
+        // One entry per isolated package (so an alias-less package declines rather
+        // than borrowing the global set) plus the workspace-wide fallback. The
+        // `AliasedImportRule` consults these via `resolve_path_alias`.
+        for (&pkg_id, manifests) in &ctx.by_package {
+            let aliases = manifests
+                .get(&ManifestKind::Npm)
+                .map(|m| m.path_aliases.clone())
+                .unwrap_or_default();
+            self.path_aliases_by_pkg.insert(pkg_id, aliases);
+        }
+        if let Some(npm) = ctx.manifests.get(&ManifestKind::Npm) {
+            self.path_aliases_global = npm.path_aliases.clone();
+        }
     }
 
     /// An empty store sharing `arena`. Symbols are added via `ingest`.
@@ -217,6 +239,8 @@ impl Compilation {
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
             workspace_pkg_by_declared_name: FxHashMap::default(),
+            path_aliases_by_pkg: FxHashMap::default(),
+            path_aliases_global: Vec::new(),
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
             arena,
@@ -1584,6 +1608,26 @@ impl SymbolLookup for Compilation {
 
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.workspace_pkg_by_declared_name.contains_key(name)
+    }
+
+    fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
+        // Per-package isolation: an isolated package uses its own aliases (even
+        // when empty); a file outside the per-package map uses the global set.
+        // Mirrors `ProjectContext::resolve_path_alias` — longest alias prefix wins.
+        let aliases = match package_id.and_then(|id| self.path_aliases_by_pkg.get(&id)) {
+            Some(per_pkg) => per_pkg.as_slice(),
+            None => self.path_aliases_global.as_slice(),
+        };
+        let mut best: Option<&(String, String)> = None;
+        for entry in aliases {
+            if specifier.starts_with(entry.0.as_str())
+                && best.map_or(true, |(b, _)| entry.0.len() > b.len())
+            {
+                best = Some(entry);
+            }
+        }
+        let (alias, target) = best?;
+        Some(format!("{target}{}", &specifier[alias.len()..]))
     }
 
     fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {

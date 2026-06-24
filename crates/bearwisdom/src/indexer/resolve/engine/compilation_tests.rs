@@ -1130,6 +1130,33 @@ fn inferred_return_lets_call_root_chain_resolve() {
     );
 }
 
+/// The keystone for `@/`-aliased imports: `Compilation` must expose the tsconfig
+/// path aliases snapshotted from `ProjectContext`. Without this override the trait
+/// default returns `None` and every `import … from "@/…"` falls through
+/// `AliasedImportRule` unresolved.
+#[test]
+fn resolve_path_alias_honors_per_package_isolation_and_global() {
+    let arena = Arc::new(TypeArena::new());
+    let mut c = Compilation::empty(Arc::clone(&arena));
+    c.path_aliases_by_pkg
+        .insert(8, vec![("@/".to_string(), "./".to_string())]);
+    c.path_aliases_global = vec![("~/".to_string(), "lib/".to_string())];
+
+    // Per-package alias, longest-prefix rewrite.
+    assert_eq!(
+        c.resolve_path_alias(Some(8), "@/utils/types").as_deref(),
+        Some("./utils/types")
+    );
+    // A specifier matching no alias in the package → None (not a global borrow).
+    assert_eq!(c.resolve_path_alias(Some(8), "react"), None);
+    // A ref with no package id uses the workspace-wide aliases.
+    assert_eq!(c.resolve_path_alias(None, "~/db").as_deref(), Some("lib/db"));
+    // An isolated package that declares NO aliases declines — it never borrows the
+    // global set (mirrors ProjectContext::manifests_for isolation).
+    c.path_aliases_by_pkg.insert(9, Vec::new());
+    assert_eq!(c.resolve_path_alias(Some(9), "~/db"), None);
+}
+
 /// A TypeRef the extractor tagged with a module — `typeof import('m')['k']`
 /// stores `{ target_name: k, module: Some(m) }` on the value it types — must
 /// resolve to the type of the VALUE module `m` exports as `k`, not to a
