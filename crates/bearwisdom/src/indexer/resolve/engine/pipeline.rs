@@ -1110,15 +1110,19 @@ fn materialize_externals(
     let mut to_parse = frontier;
     let mut depth = 0;
     while !to_parse.is_empty() && depth < MAX_CLOSURE_DEPTH {
-        let batch: Vec<ParsedFile> = to_parse
+        // Pair each pulled file with its on-disk path so the closure can also
+        // follow the file's RELATIVE imports (resolved against this directory) —
+        // a member-declaring sibling module the package's export map never named.
+        let batch: Vec<(PathBuf, ParsedFile)> = to_parse
             .iter()
-            .filter_map(|f| parse_external_file(f, arena))
+            .filter_map(|f| parse_external_file(f, arena).map(|pf| (f.clone(), pf)))
             .collect();
         let mut next: Vec<PathBuf> = Vec::new();
-        for pf in &batch {
+        for (abs, pf) in &batch {
             collect_external_files(&pf.refs, tree, loc, &mut seen, &mut next);
+            collect_relative_supertype_imports(abs, &pf.refs, &mut seen, &mut next);
         }
-        ext_parsed.extend(batch);
+        ext_parsed.extend(batch.into_iter().map(|(_, pf)| pf));
         to_parse = next;
         depth += 1;
     }
@@ -1203,6 +1207,143 @@ fn collect_external_files(
             None => {}
         }
     }
+}
+
+/// Follow a materialized external file's RELATIVE imports that bring in a type
+/// the file `extends`/`implements`, resolving the specifier against the importing
+/// file's own directory and pulling the target into the closure.
+///
+/// A package's member-declaring interface often lives in a sibling module its
+/// export map never named — a matcher interface in `types/matchers.d.ts` reached
+/// only through the augmentation shell's `import { TestingLibraryMatchers } from
+/// './matchers'`, where `interface Assertion extends TestingLibraryMatchers`. The
+/// `(module, name)` location index keys on package specifiers, so it cannot place
+/// an intra-package relative path — but the on-disk path resolves directly.
+///
+/// Scoped to imports whose bound name feeds a supertype clause: those carry the
+/// members a receiver's supertype climb needs. A value-only relative import is
+/// NOT followed — chasing every relative specifier drags a package's whole
+/// sibling `.d.ts` tree into the closure (a qname-collision and slowdown source).
+fn collect_relative_supertype_imports(
+    importer: &Path,
+    refs: &[crate::types::ExtractedRef],
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    let Some(dir) = importer.parent() else {
+        return;
+    };
+    // The supertypes this file's declarations extend/implement, by head name.
+    let inherited: HashSet<&str> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements))
+        .map(|r| supertype_head(&r.target_name))
+        .collect();
+    if inherited.is_empty() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(importer) else {
+        return;
+    };
+    for (spec, names) in relative_named_imports(&content) {
+        if !names.iter().any(|n| inherited.contains(n.as_str())) {
+            continue;
+        }
+        if let Some(file) = resolve_relative_ts_module(dir, &spec) {
+            if seen.insert(file.clone()) {
+                out.push(file);
+            }
+        }
+    }
+}
+
+/// The head of a supertype reference: `TestingLibraryMatchers` for
+/// `TestingLibraryMatchers<any, T>` — the generic args don't name the symbol.
+fn supertype_head(target: &str) -> &str {
+    target.split('<').next().unwrap_or(target).trim()
+}
+
+/// Parse `content`'s `import { … } from '<relative-spec>'` statements into
+/// `(spec, imported-names)` pairs, keeping only relative specifiers. Each name in
+/// a `{ … }` group is reduced to the local binding: a `type ` modifier and an
+/// `as <alias>` rename are stripped. Default and namespace imports carry no
+/// brace group and are skipped — a supertype is referenced by a named binding.
+fn relative_named_imports(content: &str) -> Vec<(String, Vec<String>)> {
+    use crate::ecosystem::npm::extract_quoted_after;
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    for line in content.lines() {
+        let t = line.trim();
+        if !(t.starts_with("import ") || t.starts_with("export ") || t.starts_with("import\t")) {
+            continue;
+        }
+        let Some(spec) = extract_quoted_after(t, " from ") else {
+            continue;
+        };
+        if !spec.starts_with('.') {
+            continue;
+        }
+        let Some(open) = t.find('{') else { continue };
+        let Some(close) = t[open..].find('}') else { continue };
+        let names: Vec<String> = t[open + 1..open + close]
+            .split(',')
+            .filter_map(|part| {
+                let p = part.trim().strip_prefix("type ").unwrap_or(part.trim()).trim();
+                // The LOCAL binding (after `as`) is what an `extends` clause names.
+                let local = p.rsplit(" as ").next().unwrap_or(p).trim();
+                (!local.is_empty()).then(|| local.to_string())
+            })
+            .collect();
+        if !names.is_empty() {
+            out.push((spec.to_string(), names));
+        }
+    }
+    out
+}
+
+/// Resolve a relative TS/JS module specifier against `dir`, trying the
+/// declaration-first extension order a `.d.ts`-shipping package uses. A spec may
+/// carry an ESM `.js`/`.mjs` extension that actually names a `.d.ts` sibling, so
+/// the bare stem is probed first; a directory spec resolves to its `index`.
+fn resolve_relative_ts_module(dir: &Path, spec: &str) -> Option<PathBuf> {
+    const EXTS: &[&str] = &[".d.ts", ".ts", ".tsx", ".d.mts", ".mts", ".d.cts"];
+    // Strip a trailing ESM extension so `./matchers.js` probes `./matchers.d.ts`.
+    let stem = spec
+        .strip_suffix(".js")
+        .or_else(|| spec.strip_suffix(".mjs"))
+        .or_else(|| spec.strip_suffix(".cjs"))
+        .unwrap_or(spec);
+    // Drop the leading `./` so the joined path stays `dir/matchers`, not
+    // `dir/./matchers` (which would leak `/./` into the virtual path).
+    let stem = stem.strip_prefix("./").unwrap_or(stem);
+    let base = dir.join(stem);
+    for ext in EXTS {
+        let cand = append_ext(&base, ext);
+        if cand.is_file() {
+            return Some(cand);
+        }
+    }
+    // The spec already named a concrete file (`./types.d.ts`).
+    let direct = dir.join(spec);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    // Directory index module.
+    for ext in EXTS {
+        let cand = base.join(format!("index{ext}"));
+        if cand.is_file() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+/// `path` with `ext` (a leading-dot extension) appended to its final component —
+/// `dir/matchers` + `.d.ts` → `dir/matchers.d.ts`. Unlike `Path::with_extension`,
+/// this never replaces an existing dotted suffix in the stem.
+fn append_ext(path: &Path, ext: &str) -> PathBuf {
+    let mut s = path.as_os_str().to_os_string();
+    s.push(ext);
+    PathBuf::from(s)
 }
 
 /// Parse one external source file into a `ParsedFile`, consulting the persistent
