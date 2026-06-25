@@ -1312,11 +1312,10 @@ fn collect_external_files(
 /// file's own directory and pulling the target into the closure.
 ///
 /// A package's member-declaring interface often lives in a sibling module its
-/// export map never named — a matcher interface in `types/matchers.d.ts` reached
-/// only through the augmentation shell's `import { TestingLibraryMatchers } from
-/// './matchers'`, where `interface Assertion extends TestingLibraryMatchers`. The
-/// `(module, name)` location index keys on package specifiers, so it cannot place
-/// an intra-package relative path — but the on-disk path resolves directly.
+/// export map never named — reached only through a shell file's `import { S }
+/// from './sub'`, where `interface I extends S`. The `(module, name)` location
+/// index keys on package specifiers, so it cannot place an intra-package relative
+/// path — but the on-disk path resolves directly.
 ///
 /// Scoped to imports whose bound name feeds a supertype clause: those carry the
 /// members a receiver's supertype climb needs. A value-only relative import is
@@ -1355,8 +1354,8 @@ fn collect_relative_supertype_imports(
     }
 }
 
-/// The head of a supertype reference: `TestingLibraryMatchers` for
-/// `TestingLibraryMatchers<any, T>` — the generic args don't name the symbol.
+/// The head of a supertype reference: `Base` for `Base<X, Y>` — the generic
+/// args don't name the symbol.
 fn supertype_head(target: &str) -> &str {
     target.split('<').next().unwrap_or(target).trim()
 }
@@ -1404,14 +1403,14 @@ fn relative_named_imports(content: &str) -> Vec<(String, Vec<String>)> {
 /// the bare stem is probed first; a directory spec resolves to its `index`.
 fn resolve_relative_ts_module(dir: &Path, spec: &str) -> Option<PathBuf> {
     const EXTS: &[&str] = &[".d.ts", ".ts", ".tsx", ".d.mts", ".mts", ".d.cts"];
-    // Strip a trailing ESM extension so `./matchers.js` probes `./matchers.d.ts`.
+    // Strip a trailing ESM extension so `./sub.js` probes `./sub.d.ts`.
     let stem = spec
         .strip_suffix(".js")
         .or_else(|| spec.strip_suffix(".mjs"))
         .or_else(|| spec.strip_suffix(".cjs"))
         .unwrap_or(spec);
-    // Drop the leading `./` so the joined path stays `dir/matchers`, not
-    // `dir/./matchers` (which would leak `/./` into the virtual path).
+    // Drop the leading `./` so the joined path stays `dir/sub`, not `dir/./sub`
+    // (which would leak `/./` into the virtual path).
     let stem = stem.strip_prefix("./").unwrap_or(stem);
     let base = dir.join(stem);
     for ext in EXTS {
@@ -1436,8 +1435,8 @@ fn resolve_relative_ts_module(dir: &Path, spec: &str) -> Option<PathBuf> {
 }
 
 /// `path` with `ext` (a leading-dot extension) appended to its final component —
-/// `dir/matchers` + `.d.ts` → `dir/matchers.d.ts`. Unlike `Path::with_extension`,
-/// this never replaces an existing dotted suffix in the stem.
+/// `dir/sub` + `.d.ts` → `dir/sub.d.ts`. Unlike `Path::with_extension`, this
+/// never replaces an existing dotted suffix in the stem.
 fn append_ext(path: &Path, ext: &str) -> PathBuf {
     let mut s = path.as_os_str().to_os_string();
     s.push(ext);

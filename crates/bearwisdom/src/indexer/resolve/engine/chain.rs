@@ -521,11 +521,11 @@ fn lookup_member_on_namespaced(
         return None;
     }
     // Suffix-qualify: an external extends-clause / mapped-source arg names a type
-    // by its package-LOCAL dotted name (`Chai.Assertion` inside @vitest/expect),
-    // but the type is indexed package-prefixed (`@types/chai.Chai.Assertion`).
-    // Resolve `member` on the type-like symbol whose qname IS `head` or ends with
-    // `.head`, climbing its supertypes by id. More specific than the bare-segment
-    // fallback below, so it runs first.
+    // by its package-LOCAL dotted name (`Ns.Type`, where `Ns` is imported from
+    // another package), but the type is indexed package-prefixed
+    // (`@scope/pkg.Ns.Type`). Resolve `member` on the type-like symbol whose qname
+    // IS `head` or ends with `.head`, climbing its supertypes by id. More specific
+    // than the bare-segment fallback below, so it runs first.
     let suffix = format!(".{head}");
     for cand in lookup.types_by_name(last).iter() {
         if cand.qualified_name == head || cand.qualified_name.ends_with(&suffix) {
@@ -904,13 +904,11 @@ fn yield_through_impl(
     if is_self_head(arena, substituted) {
         return Some(receiver);
     }
-    // Covariant mapped-fluent rebind: a chaining getter resolved through a mapped
-    // supertype that returns its OWN declaring type yields the receiver, not that
-    // type. chai's `.not: Assertion` reached via `Assertion extends VitestAssertion
-    // <Chai.Assertion>` returns `Chai.Assertion`; the mapped value template maps
-    // such members to the receiver's `Assertion<T>`, so the next chain step
-    // (`.not.toBe`) must continue on the vitest Assertion (which carries the jest
-    // matchers), not the chai one (which doesn't).
+    // Covariant mapped-fluent rebind: a chaining getter `g(): Src` declared on
+    // `Src`, reached via `interface Recv extends Mapped<Src>` whose mapped value
+    // maps such members to `Recv`, must continue the chain on `Recv` — not on the
+    // `Src` its signature names. `Recv` carries the members the next step looks up;
+    // `Src` (the mapped source) does not.
     if let Some(rebound) = mapped_fluent_rebind(lookup, arena, member, substituted, receiver) {
         return Some(rebound);
     }
@@ -946,18 +944,17 @@ fn mapped_fluent_rebind(
 }
 
 /// Whether two type names denote the same type, tolerating a package-prefix
-/// difference: `Chai.Assertion` (an extends-clause local name) and
-/// `@types/chai.Chai.Assertion` (its indexed qname) match. Exact, or one is the
-/// dotted suffix of the other.
+/// difference: a package-local name `Ns.Type` and its indexed qname
+/// `@scope/pkg.Ns.Type` match. Exact, or one is the dotted suffix of the other.
 fn qnames_same_type(a: &str, b: &str) -> bool {
     a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}"))
 }
 
 /// Whether `receiver_head` has a MAPPED supertype whose bound mapped source is
 /// `target` — i.e. the receiver reaches `target` through a mapped `extends`
-/// (`Assertion extends VitestAssertion<Chai.Assertion>`, mapped source
-/// `Chai.Assertion`). Builds each mapped parent's applied type from its edge args
-/// so the source binds to the concrete argument.
+/// (`interface Recv extends Mapped<Src>`, mapped source `Src`). Builds each
+/// mapped parent's applied type from its edge args so the source binds to the
+/// concrete argument.
 fn receiver_mapped_supertype_has_source(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,

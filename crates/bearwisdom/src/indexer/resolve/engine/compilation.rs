@@ -610,13 +610,11 @@ impl Compilation {
     }
 
     /// Merge TypeScript module-augmentation supertypes into the augmented
-    /// interface. A `declare module 'vitest' { interface Assertion extends
-    /// TestingLibraryMatchers {} }` (jest-dom) declares its `Assertion` under the
-    /// augmenting package, disconnected from the `Assertion` the augmented module
-    /// exports — which is what `expect()` returns. Resolve the target through the
-    /// augmented module's re-export and graft the augmentation's supertypes onto
-    /// it, so a member declared on the augmenting interface's base
-    /// (`toBeInTheDocument` on `TestingLibraryMatchers`) resolves on the receiver.
+    /// interface. A `declare module 'M' { interface I extends S {} }` in one
+    /// package declares its `I` under THAT package, disconnected from the `I`
+    /// module `M` exports — which is the type a value of `M`'s API carries.
+    /// Resolve the target through `M`'s re-export and graft the augmentation's
+    /// supertypes onto it, so a member declared on `S` resolves on the receiver.
     ///
     /// Each tuple is `(augmented_module, interface_name, augmenting_qname)`. The
     /// augmenting interface's own supertypes are read from `self.inherits`.
@@ -648,11 +646,10 @@ impl Compilation {
 
     /// The qualified name of the interface that `module` exports as `iface` —
     /// resolved through a re-export declared in a file belonging to `module`
-    /// (`vitest`'s `export { Assertion } from '@vitest/expect'` → the
-    /// `@vitest/expect.Assertion` interface). Falls back to an interface the
-    /// module declares directly under its own package. `None` when neither names
-    /// an indexed symbol — the augmentation then merges nowhere rather than
-    /// guessing a same-named interface in an unrelated package.
+    /// (`export { I } from '@scope/pkg'` → the `@scope/pkg.I` interface). Falls
+    /// back to an interface the module declares directly under its own package.
+    /// `None` when neither names an indexed symbol — the augmentation then merges
+    /// nowhere rather than guessing a same-named interface in an unrelated package.
     fn resolve_module_export_interface(&self, module: &str, iface: &str) -> Option<String> {
         for (file, entries) in &self.reexport_map {
             if ts_package_from_virtual_path(file) != Some(module) {
@@ -959,10 +956,10 @@ impl Compilation {
                     // package (the qname slot's first-winner) does not hide it.
                     let computed: Option<(String, Option<TypeId>)> =
                         if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
-                            // A fluent self-returning method (`mockImplementation(
-                            // fn): this`) yields the receiver. Its `this` return
-                            // emits no TypeRef, so the `type_refs.last()` arm below
-                            // would otherwise pick the LAST PARAMETER type — capture
+                            // A fluent self-returning method (`m(fn: P): this`)
+                            // yields the receiver. Its `this` return emits no
+                            // TypeRef, so the `type_refs.last()` arm below would
+                            // otherwise pick the LAST PARAMETER type — capture
                             // `this` verbatim so the chain walker's self-head rebind
                             // returns the receiver instead.
                             let rid = self.arena.intern_type_str("this");
