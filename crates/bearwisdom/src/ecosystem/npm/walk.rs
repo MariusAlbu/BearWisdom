@@ -483,6 +483,8 @@ pub(crate) fn resolve_exports_types(exports: &serde_json::Value) -> Option<Strin
 
 pub(crate) fn extract_types_from_conditions(v: &serde_json::Value) -> Option<String> {
     let obj = v.as_object()?;
+    // An explicit `types`/`typings` condition names the declaration entry —
+    // a string, or a further-nested conditions object.
     for key in ["types", "typings"] {
         if let Some(child) = obj.get(key) {
             if let Some(s) = child.as_str() {
@@ -493,16 +495,33 @@ pub(crate) fn extract_types_from_conditions(v: &serde_json::Value) -> Option<Str
             }
         }
     }
-    // No direct `types` — look for it nested under conditional siblings
-    // ordered most-likely-first. Stops at the first hit.
-    for cond in ["node", "import", "require", "default", "browser"] {
+    // No `types` key — but a runtime/module condition may itself name a
+    // declaration file. TS's newer per-condition type maps put the `.d.ts`
+    // directly under `module`/`import`/`require` inside a `types` object
+    // (`"types": { "import": "./x.d.ts", "require": "./x.d.cts" }`). A
+    // condition string is a type source ONLY when it IS a declaration file —
+    // a `.js` runtime entry is not. A nested object recurses.
+    for cond in [
+        "node", "module-sync", "module", "import", "require", "default", "browser",
+    ] {
         if let Some(child) = obj.get(cond) {
-            if let Some(s) = extract_types_from_conditions(child) {
+            if let Some(s) = child.as_str() {
+                if is_ts_declaration_file(s) {
+                    return Some(s.to_string());
+                }
+            } else if let Some(s) = extract_types_from_conditions(child) {
                 return Some(s);
             }
         }
     }
     None
+}
+
+/// Whether `path` names a TypeScript declaration file (`.d.ts` / `.d.mts` /
+/// `.d.cts`) — the only condition strings `extract_types_from_conditions` may
+/// return as a type source.
+fn is_ts_declaration_file(path: &str) -> bool {
+    path.ends_with(".d.ts") || path.ends_with(".d.mts") || path.ends_with(".d.cts")
 }
 
 pub(super) const REEXPORT_MAX_DEPTH: u32 = 3;

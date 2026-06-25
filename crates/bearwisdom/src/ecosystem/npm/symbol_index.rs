@@ -62,6 +62,11 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // the `probe_global_decl_files` set. Files reachable only through
     // deep import paths stay locatable on demand via `resolve_symbol`.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    // Each package's own published subpath entries, keyed by full specifier
+    // (`pkg/sub` → its entry file). A barrel entry that does `export * from
+    // 'pkg/sub'` (a self-subpath wildcard, not a relative one) needs this to
+    // surface the subpath's names under the main module too.
+    let mut subpath_entry: HashMap<String, PathBuf> = HashMap::new();
     for dep in dep_roots {
         let walked = if package_declares_globals(&dep.root) {
             union_entry_and_globals(dep)
@@ -77,6 +82,7 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         // deep module — which import resolution preserves — locates the symbol.
         for (suffix, entry) in resolve_package_subpath_entries(dep) {
             let module = format!("{}{}", dep.module_path, suffix);
+            subpath_entry.insert(module.clone(), entry.clone());
             let mut seen: HashSet<PathBuf> = HashSet::new();
             let mut walked = Vec::new();
             expand_reexports_into(dep, &entry, &mut walked, &mut seen, 0);
@@ -143,13 +149,23 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         let mut wc_seen: HashSet<PathBuf> = HashSet::new();
         let mut wc_names: HashMap<String, PathBuf> = HashMap::new();
         for wc in &exports.wildcards {
-            if !wc.starts_with('.') {
-                continue;
-            }
-            let Some(parent) = file.parent() else {
-                continue;
-            };
-            let Some(wc_path) = resolve_relative_in_set(parent, wc, &known_paths) else {
+            let wc_path = if wc.starts_with('.') {
+                let Some(parent) = file.parent() else {
+                    continue;
+                };
+                match resolve_relative_in_set(parent, wc, &known_paths) {
+                    Some(p) => p,
+                    None => continue,
+                }
+            } else if let Some(entry) = subpath_entry.get(wc) {
+                // `export * from 'pkg/sub'` where `pkg/sub` is one of THIS
+                // package's own published subpath entries (a barrel re-exporting
+                // a subpath). The subpath's names are indexed under `pkg/sub`,
+                // but the user imports them from `pkg` — surface them here too.
+                // A cross-package wildcard is still skipped (that package's own
+                // scan indexes its names under its own module).
+                entry.clone()
+            } else {
                 continue;
             };
             collect_wildcard_names(

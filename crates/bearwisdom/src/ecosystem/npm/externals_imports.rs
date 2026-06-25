@@ -289,6 +289,18 @@ pub(crate) fn extract_user_imports_from_source(
                 push_user_import(spec, out);
             }
         }
+        // A multi-line import/export puts its `from '<spec>'` clause on a
+        // continuation line (`} from 'pkg'`) the leading-keyword check above
+        // misses. A bare `from '<spec>'` clause occurs only in import/export, so a
+        // line that is just that clause (after an optional closing `}`) names a
+        // user import — without it, any package imported across multiple lines is
+        // invisible to the demand set and never materialized.
+        let cont = t.strip_prefix('}').map(str::trim_start).unwrap_or(t);
+        if cont.starts_with("from ") || cont.starts_with("from\t") {
+            if let Some(spec) = extract_first_quoted(cont["from".len()..].trim_start()) {
+                push_user_import(spec, out);
+            }
+        }
         // SCSS `@use`, `@import`, and `@forward` — line-oriented scan.
         // Sass built-in modules (`sass:*`) and relative paths are filtered
         // by `push_user_import` (starts with `.`) or the explicit sass: check.

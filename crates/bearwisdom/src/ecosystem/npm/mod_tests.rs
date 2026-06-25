@@ -36,6 +36,16 @@ fn user_imports_picks_up_static_from_clauses() {
 }
 
 #[test]
+fn user_imports_picks_up_multiline_from_clause() {
+    // A multi-line import puts `from '<spec>'` on a `}`-leading continuation
+    // line the leading-keyword scan misses; the package must still be detected.
+    let src = "import {\n  a,\n  b,\n} from '@scope/multi';\nexport {\n  c,\n} from 'multi-reexport';\n";
+    let got = extract(src);
+    assert!(got.contains("@scope/multi"), "multi-line import spec missed: {got:?}");
+    assert!(got.contains("multi-reexport"), "multi-line re-export spec missed: {got:?}");
+}
+
+#[test]
 fn user_imports_picks_up_bare_side_effect_imports() {
     let src = r#"
         import 'some-pkg/style.css';
@@ -1039,6 +1049,39 @@ fn resolve_exports_types_handles_nested_under_import_or_require() {
         resolve_exports_types(&exports),
         Some("./dist/pkg.d.mts".to_string())
     );
+}
+
+#[test]
+fn resolve_exports_types_handles_per_condition_dts_under_types_object() {
+    // TS's newer shape: a `types` condition object whose per-condition values
+    // ARE the `.d.ts` files (not a nested `{types: ...}`). The walker must
+    // return the declaration string named directly under module/import.
+    let exports = serde_json::json!({
+        ".": {
+            "types": {
+                "module-sync": "./dist/index.d.ts",
+                "module": "./dist/index.d.ts",
+                "import": "./dist/index.d.ts",
+                "require": "./dist/index.d.cts"
+            },
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs"
+        }
+    });
+    assert_eq!(
+        resolve_exports_types(&exports),
+        Some("./dist/index.d.ts".to_string())
+    );
+}
+
+#[test]
+fn resolve_exports_types_ignores_js_runtime_condition_strings() {
+    // A condition pointing at a `.js`/`.cjs` runtime entry is NOT a type
+    // source — without a `types` condition there is no declaration to return.
+    let exports = serde_json::json!({
+        ".": { "import": "./dist/index.js", "require": "./dist/index.cjs" }
+    });
+    assert_eq!(resolve_exports_types(&exports), None);
 }
 
 #[test]
