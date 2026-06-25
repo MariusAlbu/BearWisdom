@@ -883,6 +883,42 @@ fn signature_derived_return_type_for_method() {
     );
 }
 
+/// A fluent self-returning method (`m(p: P): this`) must capture `this` as its
+/// return type. The `this` return emits no TypeRef, so the param's TypeRef is the
+/// only one present — the return-type derivation must NOT pick that parameter
+/// type. Reproduces the vitest `mockImplementation(fn: NormalizedProcedure): this`
+/// chain break where the receiver typed to the parameter instead of the receiver.
+#[test]
+fn this_return_is_captured_over_parameter_typeref() {
+    let arena = Arc::new(TypeArena::new());
+
+    let symbols = vec![
+        make_symbol("Proc", "Proc", SymbolKind::Class, None, None, None),
+        make_symbol_with_sig(
+            "mockImpl",
+            "Mock.mockImpl",
+            SymbolKind::Method,
+            None,
+            Some("mockImpl(fn: Proc): this"),
+        ),
+    ];
+    // The parameter type emits a TypeRef; the `this` return emits none.
+    let refs = vec![typeref_ref(1, "Proc")];
+    let pf = make_parsed_file("src/mock.ts", symbols, refs);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/mock.ts".to_string(), "Proc".to_string()), 1);
+    id_map.insert(("src/mock.ts".to_string(), "Mock.mockImpl".to_string()), 2);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_name("Mock.mockImpl"),
+        Some("this"),
+        "a `: this` return must be captured verbatim, not the parameter type"
+    );
+}
+
 /// An extractor-set TypeId must NOT be overwritten by a TypeRef ref for the
 /// same symbol. The TypeId-derived value from Phase A wins.
 #[test]

@@ -892,7 +892,16 @@ impl Compilation {
                     // shared qname slot — so a same-qname overload in another
                     // package (the qname slot's first-winner) does not hide it.
                     let computed: Option<(String, Option<TypeId>)> =
-                        if let Some((head, args)) = sig_generic {
+                        if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
+                            // A fluent self-returning method (`mockImplementation(
+                            // fn): this`) yields the receiver. Its `this` return
+                            // emits no TypeRef, so the `type_refs.last()` arm below
+                            // would otherwise pick the LAST PARAMETER type — capture
+                            // `this` verbatim so the chain walker's self-head rebind
+                            // returns the receiver instead.
+                            let rid = self.arena.intern_type_str("this");
+                            Some(("this".to_string(), Some(rid)))
+                        } else if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
                                 &head,
                                 sym.scope_path.as_deref(),
