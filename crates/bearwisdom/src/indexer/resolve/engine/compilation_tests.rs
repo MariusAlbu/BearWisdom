@@ -330,6 +330,42 @@ fn colliding_qname_return_types_are_kept_per_id() {
     );
 }
 
+/// `useQuery` declared with generic signatures in two packages: the qname slot
+/// collapses to one first-winner, but each declaration's id must keep its OWN
+/// params — the fix for a name shared across packages / doc fences losing the
+/// real declarations' generics to whichever wins the qname slot.
+#[test]
+fn same_qname_overload_generics_survive_by_id() {
+    let arena = Arc::new(TypeArena::new());
+    let mut react_fn =
+        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    react_fn.signature = Some("function useQuery<TData, TError>(): ReactResult".to_string());
+    let mut preact_fn =
+        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    preact_fn.signature = Some("function useQuery<TData, TError>(): PreactResult".to_string());
+
+    let react_pf = make_parsed_file("packages/react/useQuery.ts", vec![react_fn], vec![]);
+    let preact_pf = make_parsed_file("packages/preact/useQuery.ts", vec![preact_fn], vec![]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("packages/react/useQuery.ts".to_string(), "useQuery".to_string()), 10);
+    id_map.insert(("packages/preact/useQuery.ts".to_string(), "useQuery".to_string()), 20);
+
+    let tree = Compilation::build(&[react_pf, preact_pf], &id_map, Arc::clone(&arena));
+
+    let expected = ["TData".to_string(), "TError".to_string()];
+    assert_eq!(
+        tree.generic_params_of(10),
+        Some(&expected[..]),
+        "react useQuery must keep its generics by id despite the shared qname"
+    );
+    assert_eq!(
+        tree.generic_params_of(20),
+        Some(&expected[..]),
+        "preact useQuery must keep its generics by id despite the shared qname"
+    );
+}
+
 /// `function usePost() { return useQuery() }` — usePost's return is inferred
 /// from the returned call's return type, so a `usePost().data` chain can root.
 #[test]

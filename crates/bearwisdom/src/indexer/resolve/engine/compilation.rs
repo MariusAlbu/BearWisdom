@@ -1011,6 +1011,22 @@ impl Compilation {
                                     ti.generic_param_bounds = bounds.clone();
                                 }
                             }
+                            // Id slot — immune to the qname collision that collapses a
+                            // name like `useQuery` (shared by several packages and doc
+                            // fences) to a single first-winner in the qname slot, so
+                            // the real source declarations lose their params. The
+                            // (path,qname) map resolves an overload set to its
+                            // implementation id, co-locating the overloads' params with
+                            // the return the resolver reads there.
+                            if let Some(&id) =
+                                symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                            {
+                                let tid = self.type_info_by_id.entry(id).or_default();
+                                if tid.generic_params.is_empty() {
+                                    tid.generic_params = params.clone();
+                                    tid.generic_param_bounds = bounds.clone();
+                                }
+                            }
                             break;
                         }
                     }
@@ -1352,6 +1368,16 @@ impl Compilation {
             tid.return_type_id = Some(ret_id);
             tid.return_type = Some(ret_str.clone());
         }
+    }
+
+    /// Generic parameter names for a declaration BY ID, immune to the qname-slot
+    /// collapse that loses an overload's params when its name is shared across
+    /// packages. `None` when the id carries no params.
+    pub(crate) fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
+        self.type_info_by_id
+            .get(&symbol_id)
+            .filter(|ti| !ti.generic_params.is_empty())
+            .map(|ti| ti.generic_params.as_slice())
     }
 
     /// Type a class field OR local variable from its CALL/NEW initializer:
@@ -1755,20 +1781,25 @@ impl Compilation {
         // COALESCE keeps the qname loop's `generic_params` / `type_args` columns.
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO symbol_type_info (symbol_id, field_type, return_type) \
-                 VALUES (?1, ?2, ?3) \
+                "INSERT INTO symbol_type_info (symbol_id, field_type, return_type, generic_params) \
+                 VALUES (?1, ?2, ?3, ?4) \
                  ON CONFLICT(symbol_id) DO UPDATE SET \
                    field_type = COALESCE(excluded.field_type, field_type), \
-                   return_type = COALESCE(excluded.return_type, return_type)",
+                   return_type = COALESCE(excluded.return_type, return_type), \
+                   generic_params = COALESCE(excluded.generic_params, generic_params)",
             )?;
             for (id, ti) in &self.type_info_by_id {
-                if ti.field_type.is_none() && ti.return_type.is_none() {
+                if ti.field_type.is_none() && ti.return_type.is_none() && ti.generic_params.is_empty()
+                {
                     continue;
                 }
+                let generic_params = (!ti.generic_params.is_empty())
+                    .then(|| json_string_array(&ti.generic_params));
                 stmt.execute(rusqlite::params![
                     id,
                     ti.field_type.as_deref(),
                     ti.return_type.as_deref(),
+                    generic_params,
                 ])?;
             }
         }
@@ -1920,7 +1951,7 @@ impl Compilation {
                     if !generic_params.is_empty() && name != qname {
                         let sti = self.type_info.entry(name).or_default();
                         if sti.generic_params.is_empty() {
-                            sti.generic_params = generic_params;
+                            sti.generic_params = generic_params.clone();
                         }
                     }
                     // Id-keyed slot — the persisted row is per-symbol-id, so this
@@ -1939,6 +1970,9 @@ impl Compilation {
                             tid.return_type_id = Some(self.arena.intern_type_str(rt));
                             tid.return_type = Some(rt.clone());
                         }
+                    }
+                    if tid.generic_params.is_empty() && !generic_params.is_empty() {
+                        tid.generic_params = generic_params;
                     }
                 }
             }

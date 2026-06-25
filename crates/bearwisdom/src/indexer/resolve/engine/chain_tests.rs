@@ -110,6 +110,30 @@ fn field_type_on_resolves_destructured_field_type() {
 }
 
 #[test]
+fn field_type_on_substitutes_receiver_type_arg_into_field() {
+    // `const { data } = useQuery<Movie>()` reduced to its core: receiver
+    // `Result<Movie>`, `Result<T> { data: T }`. field_type_on must substitute
+    // the receiver's type arg (Movie) for the field's generic param (T) → Movie.
+    // If this passes, generic substitution works and the remaining gap is purely
+    // producing `Result<Movie>` as R (call-arg application onto the return).
+    let lookup = Lookup::new()
+        .with(sym(1, "Result", "Result", "interface", "a.ts"))
+        .with(sym(2, "Movie", "Movie", "interface", "a.ts"))
+        .with_generics("Result", &["T"])
+        .with_member("Result", sym(3, "data", "Result.data", "property", "a.ts"))
+        .with_field_type("Result.data", "T");
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.intern_type_str("Result<Movie>");
+    let ty = field_type_on(&lookup, arena, recv, Some(1), "data")
+        .expect("data field resolves");
+    assert_eq!(
+        head_qname(arena, ty).as_deref(),
+        Some("Movie"),
+        "T must substitute to Movie via the receiver's type arg"
+    );
+}
+
+#[test]
 fn value_root_declines_foreign_internal_same_name_unless_imported() {
     // `logger.map` where THIS file owns an untyped `logger` (its initializer's
     // return was not inferred) and a DIFFERENT internal file declares a `logger`
