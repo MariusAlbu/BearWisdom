@@ -1289,6 +1289,17 @@ fn resolve_root_impl(
         let id = lookup.by_qualified_name(enc_qname).map(|s| s.id);
         return Some(Receiver { ty, id });
     }
+    // An externally-imported root binds to the imported module's declaration of
+    // the name, never a same-named symbol from a different external package: a `z`
+    // imported from `zod` roots on zod's `z`, not a DOM `CSSRotate.z`; an `expect`
+    // from `vitest` on vitest's, not playwright's. The import names both the
+    // identifier AND its source module, so it disambiguates a collision the bare
+    // by-name fallbacks below cannot. Fires only when the imported module actually
+    // declares the name (an `ext:` file under that module); otherwise those
+    // fallbacks run unchanged.
+    if let Some(recv) = import_scoped_external_root(file_ctx, lookup, arena, seg) {
+        return Some(recv);
+    }
     if seg.is_call {
         if let Some(ty) = callee_return_type(lookup, arena, file_ctx, &seg.name) {
             return Some(Receiver::untyped(ty));
@@ -1334,6 +1345,123 @@ fn resolve_root_impl(
         .or_else(|| candidates.first())?;
     let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
     Some(Receiver::new(ty, s.id))
+}
+
+/// Reduce an import specifier to its package root: `next/server` → `next`,
+/// `@scope/pkg/sub` → `@scope/pkg`, `zod` → `zod`. A scoped package keeps its
+/// first two slash segments; an unscoped one keeps the first.
+fn package_root(specifier: &str) -> &str {
+    if specifier.starts_with('@') {
+        // `@scope/pkg…` — the root is everything up to the second `/`.
+        let mut slashes = 0;
+        for (i, c) in specifier.char_indices() {
+            if c == '/' {
+                slashes += 1;
+                if slashes == 2 {
+                    return &specifier[..i];
+                }
+            }
+        }
+        specifier
+    } else {
+        match specifier.find('/') {
+            Some(i) => &specifier[..i],
+            None => specifier,
+        }
+    }
+}
+
+/// `true` when an external symbol's `ext:<lang>:<modpath>` file path sits under
+/// the package `root`: `ext:ts:vitest/globals.d.ts` is under `vitest`,
+/// `ext:ts:@tanstack/react-query/build/x.d.ts` under `@tanstack/react-query`. The
+/// module path keeps the literal specifier (slashes included), so this match is
+/// uniform across scoped and unscoped packages where a qname-prefix test is not.
+fn ext_file_under_module(file_path: &str, root: &str) -> bool {
+    let Some(rest) = file_path.strip_prefix("ext:") else {
+        return false;
+    };
+    // Drop the `<lang>:` segment (`ts:`, `js:`, …) to reach the module path.
+    let Some(colon) = rest.find(':') else {
+        return false;
+    };
+    let modpath = &rest[colon + 1..];
+    modpath == root || modpath.strip_prefix(root).is_some_and(|r| r.starts_with('/'))
+}
+
+/// The package root the chain-root `name` is imported from, when the import is an
+/// EXTERNAL bare specifier (not a relative `./…` path). Relative imports return
+/// None — their declarations are not `ext:` files, so the scoped filter would be
+/// empty anyway; skipping them avoids the work.
+fn external_import_root<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a str> {
+    for import in &file_ctx.imports {
+        if import.imported_name == name || import.alias.as_deref() == Some(name) {
+            let spec = import.module_path.as_deref()?;
+            if spec.starts_with('.') {
+                return None;
+            }
+            return Some(package_root(spec));
+        }
+    }
+    None
+}
+
+/// Root a chain on the imported module's declaration of `name`. See the call site
+/// in `resolve_root_impl` for why an import attribution gates the pick. Returns the
+/// typed receiver, or None when `name` is not externally imported or the module's
+/// declaration of it can't be typed (the caller keeps its generic fallbacks).
+fn import_scoped_external_root(
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    seg: &crate::types::ChainSegment,
+) -> Option<Receiver> {
+    let root = external_import_root(file_ctx, &seg.name)?;
+    let by_name = lookup.by_name(&seg.name);
+    let scoped: Vec<&Symbol> = by_name
+        .iter()
+        .filter(|s| ext_file_under_module(&s.file_path, root))
+        .collect();
+    if scoped.is_empty() {
+        return None;
+    }
+    if seg.is_call {
+        // A callable declaration in the module yields its return type.
+        for s in scoped.iter().filter(|s| is_callable(&s.kind)) {
+            if let Some(id) = lookup
+                .return_type_id_of(s.id)
+                .or_else(|| lookup.return_type_id(&s.qualified_name))
+            {
+                return Some(Receiver::untyped(id));
+            }
+        }
+        // A value whose declared type is a callable interface (`const expect:
+        // ExpectStatic`) yields that interface's call-signature return.
+        for s in scoped.iter().filter(|s| is_value_kind(&s.kind)) {
+            let Some(vty) = field_type_of(lookup, arena, s.id, &s.qualified_name) else {
+                continue;
+            };
+            let recv = expand_receiver(Receiver::untyped(vty), lookup, arena, None);
+            if let Some(call) =
+                lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_| true)
+            {
+                if let Some(r) = yield_through(lookup, arena, &call, true, recv.ty) {
+                    return Some(Receiver::untyped(r));
+                }
+            }
+        }
+        return None;
+    }
+    // Non-call root: the imported value's own declared type, else the namespace /
+    // type declaration itself (its members are walked for `z.string`).
+    for s in &scoped {
+        if is_value_kind(&s.kind) {
+            if let Some(id) = field_type_of(lookup, arena, s.id, &s.qualified_name) {
+                return Some(Receiver::untyped(id));
+            }
+        }
+    }
+    let s = scoped.first()?;
+    Some(Receiver::new(arena.class(&s.qualified_name), s.id))
 }
 
 /// Type a chain root that is a *value* by the declared type on its declaration.

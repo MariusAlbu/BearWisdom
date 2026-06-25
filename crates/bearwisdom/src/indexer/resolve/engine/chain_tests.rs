@@ -775,6 +775,51 @@ fn chaining_getter_through_mapped_supertype_yields_receiver() {
 }
 
 #[test]
+fn root_binds_to_imported_external_module_not_same_name_dom_property() {
+    // `import { z } from "zod"; z.string()` — the chain root `z` must bind to
+    // zod's `z` namespace, NOT a same-named DOM `CSSRotate.z` property (typed
+    // `CSSNumberish`, which carries no `string` member). The DOM property is
+    // `ext:`-owned and would win the bare-name value-root pick; the import
+    // attribution to `zod` is what disambiguates.
+    let lookup = Lookup::new()
+        .with(sym(1, "z", "zod.z", "namespace", "ext:ts:zod/index.d.cts"))
+        .with_member(
+            "zod.z",
+            sym(50, "string", "zod.z.string", "function", "ext:ts:zod/index.d.cts"),
+        )
+        // The same-named DOM property that currently mis-wins the root.
+        .with(sym(99, "z", "CSSRotate.z", "property", "ext:ts:typescript/lib/lib.dom.d.ts"))
+        .with_field_type("CSSRotate.z", "CSSNumberish");
+    let fc = file_ctx(vec![import("z", Some("zod"))], None);
+    let segs = vec![
+        seg("z", false, SegmentKind::Identifier),
+        seg("string", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve_with_fc(&lookup, segs, "caller", &fc), Some(50));
+}
+
+#[test]
+fn root_ignores_import_scope_when_module_absent() {
+    // No `ext:` symbol under the imported module → the scoped branch declines and
+    // the generic value-root fallback still runs, so an unrelated same-name pick
+    // is unchanged (the fix only ADDS a scoped pick; it does not block fallbacks).
+    let lookup = Lookup::new()
+        .with(sym(99, "z", "CSSRotate.z", "property", "ext:ts:typescript/lib/lib.dom.d.ts"))
+        .with_field_type("CSSRotate.z", "CSSNumberish")
+        .with_member(
+            "CSSNumberish",
+            sym(50, "valueOf", "CSSNumberish.valueOf", "method", "ext:ts:typescript/lib/lib.dom.d.ts"),
+        );
+    // `z` imported from a module with no indexed `z` symbol.
+    let fc = file_ctx(vec![import("z", Some("zod"))], None);
+    let segs = vec![
+        seg("z", false, SegmentKind::Identifier),
+        seg("valueOf", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve_with_fc(&lookup, segs, "caller", &fc), Some(50));
+}
+
+#[test]
 fn qnames_same_type_tolerates_package_prefix() {
     assert!(super::qnames_same_type("@types/chai.Chai.Assertion", "Chai.Assertion"));
     assert!(super::qnames_same_type("Chai.Assertion", "@types/chai.Chai.Assertion"));
