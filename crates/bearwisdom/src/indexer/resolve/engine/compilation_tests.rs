@@ -366,6 +366,28 @@ fn same_qname_overload_generics_survive_by_id() {
     );
 }
 
+/// `<TData = string, TError = TData>` — a parameter's default binds it when the
+/// call site leaves it unbound; `TError` defaults to the earlier `TData`. Captured
+/// index-aligned with the params.
+#[test]
+fn generic_param_defaults_are_captured_by_id() {
+    let arena = Arc::new(TypeArena::new());
+    let mut f = make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    f.signature = Some("function useQuery<TData = string, TError = TData>(): R".to_string());
+    let pf = make_parsed_file("a.ts", vec![f], vec![]);
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("a.ts".to_string(), "useQuery".to_string()), 10);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    let expected = [Some("string".to_string()), Some("TData".to_string())];
+    assert_eq!(
+        tree.generic_param_defaults_of(10),
+        Some(&expected[..]),
+        "defaults `= string` / `= TData` must be captured index-aligned"
+    );
+}
+
 /// `function usePost() { return useQuery() }` — usePost's return is inferred
 /// from the returned call's return type, so a `usePost().data` chain can root.
 #[test]

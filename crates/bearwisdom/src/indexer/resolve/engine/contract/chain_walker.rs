@@ -90,7 +90,7 @@ pub(crate) fn find_matching_bracket(s: &str, open: char, close: char) -> Option<
 /// identical to a name-only parse so generic-param positions stay aligned with
 /// `type_args`. A `where`-clause bound (C#, Rust) lives outside this clause; see
 /// `merge_where_bounds`.
-pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<String>)> {
+pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<String>, Option<String>)> {
     clause
         .split(',')
         .filter_map(|part| {
@@ -105,7 +105,7 @@ pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<St
                 None => (part, false),
             };
             let name = body
-                .split(|c: char| c == '[' || c == '<' || c == ':')
+                .split(|c: char| c == '[' || c == '<' || c == ':' || c == '=')
                 .next()
                 .unwrap_or("")
                 .split_whitespace()
@@ -115,8 +115,16 @@ pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<St
             if name.is_empty() {
                 return None;
             }
+            // Default type: the text after `=` (a param's `extends` bound precedes
+            // it: `K extends Q = Q` → "Q"). Drives binding a param the call site
+            // leaves unbound to an earlier param (`TData = TQueryFnData`) or a
+            // concrete type. The bound parser below strips this `= …` tail.
+            let default = body
+                .split_once('=')
+                .map(|(_, d)| d.trim().to_string())
+                .filter(|d| !d.is_empty());
             if variance {
-                return Some((name, None));
+                return Some((name, None, default));
             }
             let bound = body
                 .find(" extends ")
@@ -135,7 +143,7 @@ pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<St
                         .filter(|t| t.starts_with(|c: char| c.is_alphabetic() || c == '_'))
                         .map(str::to_string)
                 });
-            Some((name, bound))
+            Some((name, bound, default))
         })
         .collect()
 }
@@ -148,11 +156,14 @@ pub(crate) fn parse_generic_param_clause(clause: &str) -> Vec<(String, Option<St
 /// wins. C# special constraints (`class`, `struct`, `new()`, `unmanaged`,
 /// `notnull`) and lifetimes are not member-bearing types and are skipped, so
 /// such a param stays unbounded (member lookup then fails closed).
-pub(crate) fn merge_where_bounds(params: &mut [(String, Option<String>)], sig: &str) {
+pub(crate) fn merge_where_bounds(
+    params: &mut [(String, Option<String>, Option<String>)],
+    sig: &str,
+) {
     let Some(region) = where_clause_region(sig) else {
         return;
     };
-    for (name, bound) in params.iter_mut() {
+    for (name, bound, _default) in params.iter_mut() {
         if bound.is_none() {
             *bound = where_bound_for(region, name);
         }

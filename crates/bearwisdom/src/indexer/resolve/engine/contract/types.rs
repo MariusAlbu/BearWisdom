@@ -146,6 +146,11 @@ pub struct TypeInfo {
     /// unbounded parameter; `Some("Animal")` for `<T extends Animal>` / `<T: Animal>`.
     /// Resolved to `GenericParamData.bound` when the param's `Type::Generic` is interned.
     pub generic_param_bounds: Vec<Option<String>>,
+    /// Declared defaults for `generic_params`, index-aligned. `None` for a
+    /// parameter with no default; `Some("string")` for `<T = string>`, `Some("T")`
+    /// for `<U = T>` (a reference to an earlier param). Binds a parameter the call
+    /// site leaves unbound when substituting a callee's type args into its return.
+    pub generic_param_defaults: Vec<Option<String>>,
     /// Canonical TypeId form of `field_type`.
     pub field_type_id: Option<TypeId>,
     /// Canonical TypeId form of `return_type`.

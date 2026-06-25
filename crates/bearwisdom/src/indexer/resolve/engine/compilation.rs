@@ -999,8 +999,14 @@ impl Compilation {
                         let mut gparams = parse_generic_param_clause(&sig[start + 1..end]);
                         merge_where_bounds(&mut gparams, sig);
                         if !gparams.is_empty() {
-                            let (params, bounds): (Vec<String>, Vec<Option<String>>) =
-                                gparams.into_iter().unzip();
+                            let mut params = Vec::with_capacity(gparams.len());
+                            let mut bounds = Vec::with_capacity(gparams.len());
+                            let mut defaults = Vec::with_capacity(gparams.len());
+                            for (n, b, d) in gparams {
+                                params.push(n);
+                                bounds.push(b);
+                                defaults.push(d);
+                            }
                             // Key on both simple name and qname so callers
                             // using either form get the params.
                             for key in [&sym.name, &sym.qualified_name] {
@@ -1009,6 +1015,7 @@ impl Compilation {
                                 if ti.generic_params.is_empty() {
                                     ti.generic_params = params.clone();
                                     ti.generic_param_bounds = bounds.clone();
+                                    ti.generic_param_defaults = defaults.clone();
                                 }
                             }
                             // Id slot — immune to the qname collision that collapses a
@@ -1025,6 +1032,7 @@ impl Compilation {
                                 if tid.generic_params.is_empty() {
                                     tid.generic_params = params.clone();
                                     tid.generic_param_bounds = bounds.clone();
+                                    tid.generic_param_defaults = defaults.clone();
                                 }
                             }
                             break;
@@ -1378,6 +1386,16 @@ impl Compilation {
             .get(&symbol_id)
             .filter(|ti| !ti.generic_params.is_empty())
             .map(|ti| ti.generic_params.as_slice())
+    }
+
+    /// Declared defaults for a declaration's generic params BY ID, index-aligned
+    /// with `generic_params_of`. `None` when the id carries no params (callers
+    /// treat a shorter/empty list as "no default" per index).
+    pub(crate) fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
+        self.type_info_by_id
+            .get(&symbol_id)
+            .filter(|ti| !ti.generic_params.is_empty())
+            .map(|ti| ti.generic_param_defaults.as_slice())
     }
 
     /// Type a class field OR local variable from its CALL/NEW initializer:
