@@ -20,6 +20,42 @@ fn seg(name: &str, is_call: bool, kind: SegmentKind) -> ChainSegment {
     }
 }
 
+/// A positional tuple-access segment (`const [a, b] = x` → element `idx`), as the
+/// array-destructure extractor emits it: a ComputedAccess carrying `tuple_index:N`.
+fn seg_tuple(name: &str, idx: usize) -> ChainSegment {
+    let mut s = seg(name, false, SegmentKind::ComputedAccess);
+    s.node_kind = format!("tuple_index:{idx}");
+    s
+}
+
+#[test]
+fn array_destructure_binds_tuple_element_by_position() {
+    // const [getter] = createSignal<number>();  Signal<T> = [Accessor<T>, Setter<T>].
+    // The first binding selects tuple element 0 — Accessor — NOT a `.getter`
+    // member (Signal has none).
+    let lookup = Lookup::new()
+        .with_local_type("s", "Signal<number>")
+        .with(sym(1, "Signal", "Signal", "type_alias", "ext:ts:solid.d.ts"))
+        .with_alias(
+            "Signal",
+            crate::types::AliasTarget::Tuple(vec!["Accessor".to_string(), "Setter".to_string()]),
+        )
+        .with_generics("Signal", &["T"])
+        .with(sym(40, "Accessor", "Accessor", "type_alias", "ext:ts:solid.d.ts"))
+        .with(sym(50, "Setter", "Setter", "type_alias", "ext:ts:solid.d.ts"));
+    let segs = vec![
+        seg("s", false, SegmentKind::Identifier),
+        seg_tuple("getter", 0),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(40));
+    // The second binding selects element 1 — Setter.
+    let segs2 = vec![
+        seg("s", false, SegmentKind::Identifier),
+        seg_tuple("setter", 1),
+    ];
+    assert_eq!(resolve(&lookup, segs2, "caller"), Some(50));
+}
+
 /// A root segment carrying a split declared annotation: head + type args, the
 /// form the extractor emits for `repo: Repository<User>`.
 fn seg_declared(name: &str, declared: &str, type_args: &[&str]) -> ChainSegment {

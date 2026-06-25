@@ -64,6 +64,29 @@ pub fn bind_member_access(
     let last = chain.segments.len() - 1;
 
     for (i, seg) in chain.segments.iter().enumerate().skip(1) {
+        // Positional tuple access from an array-destructure binding
+        // (`const [a, b] = x`, emitted as a `tuple_index:N` ComputedAccess
+        // segment): select the receiver tuple's element N, not a named member.
+        if let Some(idx) = tuple_index_of(seg) {
+            let elem_ty = tuple_element_type(lookup, arena, current.ty, idx)?;
+            let elem_recv = expand_receiver(
+                yielded_receiver(lookup, arena, elem_ty, None),
+                lookup,
+                arena,
+                Some(file_ctx),
+            );
+            if i == last {
+                return Some(SymbolInfo {
+                    target_symbol_id: elem_recv.id?,
+                    confidence: RESOLVED_CONFIDENCE,
+                    strategy: STRATEGY,
+                    resolved_yield_type: Some(elem_recv.ty),
+                    flow_emit: None,
+                });
+            }
+            current = elem_recv;
+            continue;
+        }
         let member = lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true)?;
         if i == last {
             // The final member's yield type (with the receiver's type arguments
@@ -807,6 +830,41 @@ pub(crate) fn lookup_member_by_id(
         frontier = next;
     }
     None
+}
+
+/// The positional index a `tuple_index:N` ComputedAccess segment selects, or
+/// `None` for any other segment. Emitted by the array-destructure extractor.
+fn tuple_index_of(seg: &crate::types::ChainSegment) -> Option<usize> {
+    seg.node_kind.strip_prefix("tuple_index:")?.parse().ok()
+}
+
+/// The type of element `idx` of a tuple receiver — a direct `Type::Tuple`, or an
+/// alias to one (`Signal<T> = [Accessor<T>, Setter<T>]`). The alias's own generic
+/// params are substituted with the receiver's applied arguments so the element
+/// carries the bound type (`Signal<boolean>` → element 0 = `Accessor<boolean>`).
+/// `None` when the receiver is not a tuple or has no element at `idx`.
+fn tuple_element_type(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv_ty: TypeId,
+    idx: usize,
+) -> Option<TypeId> {
+    if let Type::Tuple(elems) = arena.get(recv_ty) {
+        return elems.get(idx).copied();
+    }
+    let head = head_qname(arena, recv_ty)?;
+    let AliasTarget::Tuple(elem_strs) = lookup.alias_target(&head)? else {
+        return None;
+    };
+    let elem = elem_strs.get(idx)?;
+    let elem_ty = arena.intern_type_str(elem);
+    let params = lookup.generic_params(&head).map(|p| p.to_vec()).unwrap_or_default();
+    let args = apply_args(arena, recv_ty);
+    if params.is_empty() || args.is_empty() {
+        return Some(elem_ty);
+    }
+    let map: rustc_hash::FxHashMap<String, TypeId> = params.into_iter().zip(args).collect();
+    Some(arena.rebind_class_params(elem_ty, &map))
 }
 
 /// The qualified-name head of a type: `Repository` for `Repository<User>`.

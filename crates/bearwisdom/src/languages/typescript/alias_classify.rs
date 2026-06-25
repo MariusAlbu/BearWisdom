@@ -97,6 +97,24 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 },
             }
         }
+        // `[A, B]` / `[get: A, set: B]` — a tuple. Each element's head type is
+        // recorded by position so an array-destructure `const [a, b] = x` selects
+        // the right slot. A labeled element (`get: A`) parses as a parameter node;
+        // a rest/optional element wraps its type. Labels are dropped.
+        "tuple_type" => {
+            let mut elements = Vec::new();
+            let mut tc = node.walk();
+            for child in node.children(&mut tc) {
+                if matches!(child.kind(), "[" | "]" | ",") {
+                    continue;
+                }
+                let head = tuple_element_head(&child, src);
+                if !head.is_empty() {
+                    elements.push(head);
+                }
+            }
+            AliasTarget::Tuple(elements)
+        }
         "union_type" => {
             let mut branches = Vec::new();
             let mut has_object_branch = false;
@@ -451,6 +469,42 @@ fn extract_mapped_source(clause: &Node, src: &[u8], source: &mut String) {
 /// head for `array_type`, and an empty string for shapes whose head
 /// can't be reduced to a single name (unions, intersections, mapped,
 /// conditional, etc.).
+/// The head type name of one tuple element node. A labeled element parses as a
+/// `required_parameter`/`optional_parameter` whose `type` field is a
+/// `type_annotation` (`: T`); a `rest_type`/`optional_type` wraps the type as a
+/// child; an unlabeled element IS the type node.
+fn tuple_element_head(child: &Node, src: &[u8]) -> String {
+    match child.kind() {
+        "required_parameter" | "optional_parameter" => child
+            .child_by_field_name("type")
+            .map(|ta| type_annotation_head(&ta, src))
+            .unwrap_or_default(),
+        "optional_type" | "rest_type" => {
+            for i in 0..child.child_count() {
+                if let Some(n) = child.child(i) {
+                    if n.is_named() {
+                        return head_type_name(&n, src);
+                    }
+                }
+            }
+            String::new()
+        }
+        _ => head_type_name(child, src),
+    }
+}
+
+/// The head type name inside a `type_annotation` (`: T` → `T`'s head).
+fn type_annotation_head(ta: &Node, src: &[u8]) -> String {
+    for i in 0..ta.child_count() {
+        if let Some(c) = ta.child(i) {
+            if c.kind() != ":" {
+                return head_type_name(&c, src);
+            }
+        }
+    }
+    String::new()
+}
+
 fn head_type_name(node: &Node, src: &[u8]) -> String {
     match node.kind() {
         "type_identifier" | "identifier" => node_text(*node, src),

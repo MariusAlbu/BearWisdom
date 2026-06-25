@@ -296,6 +296,12 @@ pub enum AliasTarget {
     Union(Vec<String>),
     /// `type Foo = A & B` — branch types stored for the same future use.
     Intersection(Vec<String>),
+    /// `type Foo = [A, B]` — a tuple type. Each element's head type is stored by
+    /// position, so a positional access (an array-destructure `const [a, b] = x`,
+    /// emitted as a `tuple_index:N` ComputedAccess segment) selects element N.
+    /// A labeled tuple (`[get: A, set: B]`) drops the labels — only the element
+    /// types matter for positional access.
+    Tuple(Vec<String>),
     /// `type Foo = A & B & { [K in keyof T]: V }` — an intersection that carries
     /// BOTH named branches AND an anonymous mapped branch. Member lookup must try
     /// the named branches (`MockInstance.mockImplementation`) AND the mapped

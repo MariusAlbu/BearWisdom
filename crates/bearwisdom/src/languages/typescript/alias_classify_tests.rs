@@ -23,6 +23,21 @@ fn classify(src: &str) -> AliasTarget {
 }
 
 #[test]
+fn tuple_captures_element_heads_by_position() {
+    // Unlabeled tuple — each named element's head type, in order.
+    assert_eq!(
+        classify("type Pair = [Foo, Bar];"),
+        AliasTarget::Tuple(vec!["Foo".to_string(), "Bar".to_string()])
+    );
+    // Labeled tuple (`[get: Accessor<T>, set: Setter<T>]`) — labels dropped, the
+    // generic element heads kept. This is the solid-js `Signal<T>` shape.
+    assert_eq!(
+        classify("type Signal<T> = [get: Accessor<T>, set: Setter<T>];"),
+        AliasTarget::Tuple(vec!["Accessor".to_string(), "Setter".to_string()])
+    );
+}
+
+#[test]
 fn conditional_captures_infer_binding_in_generic_extends() {
     // `type Elem<T> = T extends Array<infer U> ? U : never` — the `infer U`
     // in the extends clause's generic argument is captured as ("U", 0): the
