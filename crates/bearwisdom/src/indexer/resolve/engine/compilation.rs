@@ -19,6 +19,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
+use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
@@ -606,6 +607,71 @@ impl Compilation {
             }
         }
         self.inherits_by_id = inherits_by_id;
+    }
+
+    /// Merge TypeScript module-augmentation supertypes into the augmented
+    /// interface. A `declare module 'vitest' { interface Assertion extends
+    /// TestingLibraryMatchers {} }` (jest-dom) declares its `Assertion` under the
+    /// augmenting package, disconnected from the `Assertion` the augmented module
+    /// exports — which is what `expect()` returns. Resolve the target through the
+    /// augmented module's re-export and graft the augmentation's supertypes onto
+    /// it, so a member declared on the augmenting interface's base
+    /// (`toBeInTheDocument` on `TestingLibraryMatchers`) resolves on the receiver.
+    ///
+    /// Each tuple is `(augmented_module, interface_name, augmenting_qname)`. The
+    /// augmenting interface's own supertypes are read from `self.inherits`.
+    pub(crate) fn apply_module_augmentations(&mut self, augs: &[(String, String, String)]) {
+        let mut changed = false;
+        for (module, iface, aug_qname) in augs {
+            let supertypes = match self.inherits.get(aug_qname) {
+                Some(v) if !v.is_empty() => v.clone(),
+                _ => continue,
+            };
+            let Some(target) = self.resolve_module_export_interface(module, iface) else {
+                continue;
+            };
+            if &target == aug_qname {
+                continue;
+            }
+            let entry = self.inherits.entry(target).or_default();
+            for s in supertypes {
+                if !entry.contains(&s) {
+                    entry.push(s);
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.rebuild_inherits_by_id();
+        }
+    }
+
+    /// The qualified name of the interface that `module` exports as `iface` —
+    /// resolved through a re-export declared in a file belonging to `module`
+    /// (`vitest`'s `export { Assertion } from '@vitest/expect'` → the
+    /// `@vitest/expect.Assertion` interface). Falls back to an interface the
+    /// module declares directly under its own package. `None` when neither names
+    /// an indexed symbol — the augmentation then merges nowhere rather than
+    /// guessing a same-named interface in an unrelated package.
+    fn resolve_module_export_interface(&self, module: &str, iface: &str) -> Option<String> {
+        for (file, entries) in &self.reexport_map {
+            if ts_package_from_virtual_path(file) != Some(module) {
+                continue;
+            }
+            for (name, src_module) in entries {
+                if name == iface {
+                    let target = format!("{src_module}.{iface}");
+                    if self.by_qname.contains_key(&target) {
+                        return Some(target);
+                    }
+                }
+            }
+        }
+        let direct = format!("{module}.{iface}");
+        if self.by_qname.contains_key(&direct) {
+            return Some(direct);
+        }
+        None
     }
 
     /// Resolve a parent head (a qualified or simple name from an `extends` /
