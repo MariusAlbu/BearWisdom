@@ -171,13 +171,27 @@ pub(crate) fn logical_import_export_lines(src: &str) -> Vec<String> {
 /// scan skips test trees by default.
 pub(crate) fn collect_ts_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
     let mut imports = std::collections::HashSet::new();
-    scan_ts_user_imports_recursive(project_root, &mut imports, 0);
+    let mut subpaths = std::collections::HashSet::new();
+    scan_ts_user_imports_recursive(project_root, &mut imports, &mut subpaths, 0);
     imports
+}
+
+/// Both the package-root demand set AND the full subpath specifiers the project
+/// imports (`next/server`, `@scope/pkg/sub`), in a single scan. The package set
+/// drives the demand gate; the subpaths drive flat-file subpath materialization.
+pub(crate) fn collect_ts_user_imports_and_subpaths(
+    project_root: &Path,
+) -> (std::collections::HashSet<String>, std::collections::HashSet<String>) {
+    let mut imports = std::collections::HashSet::new();
+    let mut subpaths = std::collections::HashSet::new();
+    scan_ts_user_imports_recursive(project_root, &mut imports, &mut subpaths, 0);
+    (imports, subpaths)
 }
 
 pub(crate) fn scan_ts_user_imports_recursive(
     dir: &Path,
     out: &mut std::collections::HashSet<String>,
+    subpaths: &mut std::collections::HashSet<String>,
     depth: usize,
 ) {
     if depth > 12 {
@@ -218,7 +232,7 @@ pub(crate) fn scan_ts_user_imports_recursive(
                     continue;
                 }
             }
-            scan_ts_user_imports_recursive(&path, out, depth + 1);
+            scan_ts_user_imports_recursive(&path, out, subpaths, depth + 1);
         } else if ft.is_file() {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
@@ -234,7 +248,7 @@ pub(crate) fn scan_ts_user_imports_recursive(
             let Ok(content) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            extract_user_imports_from_source(&content, out);
+            extract_user_imports_into(&content, out, subpaths);
         }
     }
 }
@@ -271,6 +285,17 @@ pub(crate) fn extract_user_imports_from_source(
     content: &str,
     out: &mut std::collections::HashSet<String>,
 ) {
+    let mut subpaths = std::collections::HashSet::new();
+    extract_user_imports_into(content, out, &mut subpaths);
+}
+
+/// Core of `extract_user_imports_from_source` that also records full subpath
+/// specifiers into `subpaths` (the 2-arg form discards them).
+pub(crate) fn extract_user_imports_into(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+    subpaths: &mut std::collections::HashSet<String>,
+) {
     // Strategy: line-oriented scan picks up `from 'spec'` cheaply.
     // For `require('spec')` and `import('spec')` we additionally do a
     // single forward pass over the file content matching the `(` form,
@@ -284,9 +309,9 @@ pub(crate) fn extract_user_imports_from_source(
         }
         if t.starts_with("import ") || t.starts_with("export ") || t.starts_with("import\t") {
             if let Some(spec) = extract_quoted_after(t, " from ") {
-                push_user_import(spec, out);
+                push_import_spec(spec, out, subpaths);
             } else if let Some(spec) = extract_bare_import_spec(t) {
-                push_user_import(spec, out);
+                push_import_spec(spec, out, subpaths);
             }
         }
         // A multi-line import/export puts its `from '<spec>'` clause on a
@@ -298,7 +323,7 @@ pub(crate) fn extract_user_imports_from_source(
         let cont = t.strip_prefix('}').map(str::trim_start).unwrap_or(t);
         if cont.starts_with("from ") || cont.starts_with("from\t") {
             if let Some(spec) = extract_first_quoted(cont["from".len()..].trim_start()) {
-                push_user_import(spec, out);
+                push_import_spec(spec, out, subpaths);
             }
         }
         // SCSS `@use`, `@import`, and `@forward` — line-oriented scan.
@@ -308,15 +333,15 @@ pub(crate) fn extract_user_imports_from_source(
             let after_keyword = t.splitn(2, ' ').nth(1).unwrap_or("").trim_start();
             if let Some(spec) = extract_first_quoted(after_keyword) {
                 if !spec.starts_with("sass:") {
-                    push_user_import(spec, out);
+                    push_import_spec(spec, out, subpaths);
                 }
             }
         }
     }
 
     // require('spec') and import('spec') — anywhere in the file.
-    push_call_imports(content, "require(", out);
-    push_call_imports(content, "import(", out);
+    push_call_imports(content, "require(", out, subpaths);
+    push_call_imports(content, "import(", out, subpaths);
 }
 
 /// `import 'pkg';` — no `from` clause. Returns the inner string of the
@@ -351,6 +376,7 @@ pub(crate) fn push_call_imports(
     content: &str,
     marker: &str,
     out: &mut std::collections::HashSet<String>,
+    subpaths: &mut std::collections::HashSet<String>,
 ) {
     let mut cursor = 0usize;
     while let Some(rel) = content[cursor..].find(marker) {
@@ -359,8 +385,27 @@ pub(crate) fn push_call_imports(
         let rest = &content[absolute..];
         let trimmed = rest.trim_start();
         if let Some(spec) = extract_first_quoted(trimmed) {
-            push_user_import(spec, out);
+            push_import_spec(spec, out, subpaths);
         }
+    }
+}
+
+/// Record a raw specifier into both the package-root demand set (via
+/// `push_user_import`) and — when it names a subpath of a valid package
+/// (`next/server`, `@scope/pkg/sub`) — the full-specifier subpath set, so a dep
+/// root can materialize a flat-file subpath entry no `exports` map declares.
+fn push_import_spec(
+    spec: &str,
+    out: &mut std::collections::HashSet<String>,
+    subpaths: &mut std::collections::HashSet<String>,
+) {
+    push_user_import(spec, out);
+    if spec.starts_with('.') || spec.starts_with('/') || spec.starts_with("node:") {
+        return;
+    }
+    let pkg = npm_package_name_from_spec(spec);
+    if is_valid_npm_module_path(pkg) && spec != pkg && !spec.contains('*') {
+        subpaths.insert(spec.to_string());
     }
 }
 

@@ -37,7 +37,7 @@ use crate::ecosystem::manifest::ManifestReader;
 
 use super::walk::resolve_package_entry_path;
 use super::{
-    collect_bare_reexports_recursive, collect_ts_user_imports, find_node_modules,
+    collect_bare_reexports_recursive, collect_ts_user_imports_and_subpaths, find_node_modules,
     find_node_modules_with_ancestors, is_valid_npm_module_path, node_builtins,
     npm_package_name_from_spec, package_declares_globals, package_ships_scss,
     read_nested_package_json_deps, read_single_package_json_deps, scan_for_scss_bounded,
@@ -58,6 +58,22 @@ use super::{
 /// 3. For each declared dep, resolve to `node_modules/{name}/` plus the
 ///    DefinitelyTyped `@types/` fallback for untyped packages.
 /// 4. Skip Node builtins.
+/// The full subpath import specifiers the project uses under `module_path`
+/// (`next` → `["next/server"]`), drawn from the demand set. A dep root carries
+/// these so a flat-file subpath entry (`pkg/sub.d.ts`, which no `exports` map
+/// declares) is materialized when the project imports it.
+fn subpath_imports_under(
+    module_path: &str,
+    user_imports: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let prefix = format!("{module_path}/");
+    user_imports
+        .iter()
+        .filter(|s| s.starts_with(prefix.as_str()))
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let manifest = NpmManifest;
     let Some(data) = manifest.read(project_root) else {
@@ -86,7 +102,7 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
     // regardless of whether the user wrote `import { describe } from
     // 'vitest'`. The companion `@types/<pkg>` package follows automatically
     // when the runtime package matches a user import.
-    let user_imports = collect_ts_user_imports(project_root);
+    let (user_imports, user_subpaths) = collect_ts_user_imports_and_subpaths(project_root);
     debug!(
         "User-import gate: {} bare specifiers found in user source",
         user_imports.len()
@@ -225,13 +241,14 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
 
         for (pkg_dir, module_path) in pkg_roots {
             if seen.insert(pkg_dir.clone()) {
+                let requested_imports = subpath_imports_under(&module_path, &user_subpaths);
                 roots.push(ExternalDepRoot {
                     module_path,
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports,
                 });
             }
         }
@@ -534,7 +551,7 @@ pub(crate) fn discover_ts_externals_scoped(
     // own source tree (not the entire workspace) so the import set reflects
     // what THIS package consumes — a sibling package's React import
     // doesn't make React relevant here.
-    let user_imports = collect_ts_user_imports(package_abs_path);
+    let (user_imports, user_subpaths) = collect_ts_user_imports_and_subpaths(package_abs_path);
 
     // SCSS dep survival: when workspace root (or the package itself) has SCSS
     // source, any dep that ships .scss files is kept. Mirrors the logic in
@@ -633,13 +650,14 @@ pub(crate) fn discover_ts_externals_scoped(
         }
         for (pkg_dir, module_path) in pkg_roots {
             if seen.insert(pkg_dir.clone()) {
+                let requested_imports = subpath_imports_under(&module_path, &user_subpaths);
                 roots.push(ExternalDepRoot {
                     module_path,
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports,
                 });
             }
         }

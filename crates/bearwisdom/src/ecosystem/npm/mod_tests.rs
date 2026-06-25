@@ -1159,6 +1159,28 @@ fn resolve_package_subpath_entries_resolves_concrete_subpaths_skips_root_and_wil
 }
 
 #[test]
+fn resolve_package_subpath_entries_probes_flat_file_subpath_from_demand() {
+    // `next/server` shape: a flat-file subpath `<root>/server.d.ts` with no
+    // `exports` map. Only the demanded subpath (`requested_imports`) is probed,
+    // so an undemanded sibling stays out of the index.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("node_modules").join("next");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("package.json"), r#"{"name":"next","types":"index.d.ts"}"#).unwrap();
+    std::fs::write(root.join("index.d.ts"), "export const x: 1;").unwrap();
+    std::fs::write(root.join("server.d.ts"), "export declare class NextRequest {}").unwrap();
+    std::fs::write(root.join("navigation.d.ts"), "export declare function redirect(): void;")
+        .unwrap();
+
+    let mut dep = mkdep(root.clone(), "next");
+    dep.requested_imports = vec!["next/server".to_string()];
+    let entries = resolve_package_subpath_entries(&dep);
+    assert_eq!(entries.len(), 1, "only the demanded subpath is probed");
+    assert_eq!(entries[0].0, "/server");
+    assert_eq!(entries[0].1, root.join("server.d.ts"));
+}
+
+#[test]
 fn resolve_relative_ts_path_strips_js_extension_for_dts_companion() {
     // Rollup-bundled type-entry shells re-export from `./chunk.js`
     // companions whose actual types live at `./chunk.d.ts`. The

@@ -426,28 +426,57 @@ pub(crate) fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBu
 /// declared concrete entry points, so the set stays bounded to the package's
 /// published API surface.
 pub(crate) fn resolve_package_subpath_entries(dep: &ExternalDepRoot) -> Vec<(String, PathBuf)> {
-    let pkg_json_path = dep.root.join("package.json");
-    let Some(json_str) = std::fs::read_to_string(&pkg_json_path).ok() else {
-        return Vec::new();
-    };
-    let Some(pj) = serde_json::from_str::<serde_json::Value>(&json_str).ok() else {
-        return Vec::new();
-    };
-    let Some(exports) = pj.get("exports").and_then(|e| e.as_object()) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for (key, cond) in exports {
-        if key == "." || !key.starts_with("./") || key.contains('*') {
-            continue;
+    // `exports`-map subpaths — authoritative when the package declares them.
+    if let Ok(json_str) = std::fs::read_to_string(dep.root.join("package.json")) {
+        if let Ok(pj) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(exports) = pj.get("exports").and_then(|e| e.as_object()) {
+                for (key, cond) in exports {
+                    if key == "." || !key.starts_with("./") || key.contains('*') {
+                        continue;
+                    }
+                    let Some(rel) = extract_types_from_conditions(cond) else {
+                        continue;
+                    };
+                    let entry = dep.root.join(rel.trim_start_matches("./"));
+                    if entry.is_file() {
+                        out.push((key.strip_prefix('.').unwrap_or(key).to_string(), entry));
+                    }
+                }
+            }
         }
-        let Some(rel) = extract_types_from_conditions(cond) else {
+    }
+    // Flat-file subpaths the project imports that no `exports` map declares: a
+    // package may publish `pkg/sub` as a sibling `<root>/sub.d.ts` resolved by
+    // TypeScript's classic file lookup (next's `next/server`). Probe only the
+    // demanded subpaths (`dep.requested_imports`) so the set stays bounded to the
+    // project's actual API surface — not every `.d.ts` at the package root.
+    for spec in &dep.requested_imports {
+        let Some(rest) = spec
+            .strip_prefix(dep.module_path.as_str())
+            .and_then(|r| r.strip_prefix('/'))
+        else {
             continue;
         };
-        let entry = dep.root.join(rel.trim_start_matches("./"));
-        if entry.is_file() {
-            let suffix = key.strip_prefix('.').unwrap_or(key).to_string();
-            out.push((suffix, entry));
+        // Single-segment subpaths only: `pkg/sub`, not `pkg/a/b` (deeper paths
+        // are rare flat-file shapes and the entry-walk reaches nested re-exports).
+        if rest.is_empty() || rest.contains('/') {
+            continue;
+        }
+        let suffix = format!("/{rest}");
+        if out.iter().any(|(s, _)| *s == suffix) {
+            continue;
+        }
+        for cand in [
+            dep.root.join(format!("{rest}.d.ts")),
+            dep.root.join(format!("{rest}.d.mts")),
+            dep.root.join(format!("{rest}.d.cts")),
+            dep.root.join(rest).join("index.d.ts"),
+        ] {
+            if cand.is_file() {
+                out.push((suffix.clone(), cand));
+                break;
+            }
         }
     }
     out
