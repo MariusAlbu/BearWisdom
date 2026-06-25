@@ -96,6 +96,70 @@ fn intern_type_str_preserves_function_param_types() {
 }
 
 #[test]
+fn intern_type_str_parses_union() {
+    let mut arena = TypeArena::new();
+    let a = arena.intern_type_str("A");
+    let b = arena.intern_type_str("B");
+    // A top-level `|` makes a union, not an opaque class named "A | B".
+    match arena.get(arena.intern_type_str("A | B")) {
+        Type::Union(arms) => assert_eq!(arms, vec![a, b]),
+        other => panic!("expected Union, got {other:?}"),
+    }
+    // TS pretty-prints unions with a leading pipe; the empty first piece drops.
+    match arena.get(arena.intern_type_str("| A | B")) {
+        Type::Union(arms) => assert_eq!(arms, vec![a, b]),
+        other => panic!("expected Union, got {other:?}"),
+    }
+    // The arms keep their own structure — a generic arm is an Apply, not a Class.
+    match arena.get(arena.intern_type_str("UseQueryReturnType<TData, TError> | UseQueryDefinedReturnType<TData, TError>")) {
+        Type::Union(arms) => {
+            assert_eq!(arms.len(), 2);
+            assert!(matches!(arena.get(arms[0]), Type::Apply { .. }));
+            assert!(matches!(arena.get(arms[1]), Type::Apply { .. }));
+        }
+        other => panic!("expected Union of applies, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_parses_intersection() {
+    let mut arena = TypeArena::new();
+    let a = arena.intern_type_str("MockInstance");
+    let b = arena.intern_type_str("Procedure");
+    match arena.get(arena.intern_type_str("MockInstance & Procedure")) {
+        Type::Intersection(arms) => assert_eq!(arms, vec![a, b]),
+        other => panic!("expected Intersection, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_union_intersection_respect_nesting_and_precedence() {
+    let mut arena = TypeArena::new();
+    // An interior `|` inside generic brackets is NOT a top-level union.
+    assert!(matches!(
+        arena.get(arena.intern_type_str("Record<string, A | B>")),
+        Type::Apply { .. }
+    ));
+    // `&` binds tighter than `|`: `A & B | C` parses as `(A & B) | C` — a union
+    // whose first arm is an intersection.
+    match arena.get(arena.intern_type_str("A & B | C")) {
+        Type::Union(arms) => {
+            assert_eq!(arms.len(), 2);
+            assert!(matches!(arena.get(arms[0]), Type::Intersection(_)));
+            assert!(matches!(arena.get(arms[1]), Type::Class(q) if q == "C"));
+        }
+        other => panic!("expected Union, got {other:?}"),
+    }
+    // A leading `&` at byte 0 is the reference sigil, not an intersection.
+    assert!(matches!(
+        arena.get(arena.intern_type_str("&User")),
+        Type::Class(q) if q == "User"
+    ));
+    // A single nominal type with no top-level operator is untouched.
+    assert!(matches!(arena.get(arena.intern_type_str("User")), Type::Class(_)));
+}
+
+#[test]
 fn rebind_canonicalizes_higher_kinded_base() {
     use rustc_hash::FxHashMap;
     // `F<A>` interned nominally rebinds BOTH the base and the arg to their
@@ -433,13 +497,19 @@ fn intern_type_str_drops_leading_lifetime_arg() {
 }
 
 #[test]
-fn intern_type_str_leaves_interior_ampersand_alone() {
+fn intern_type_str_distinguishes_interior_ampersand_from_sigil() {
     let arena = TypeArena::new();
-    // An interior `&` is a TS intersection operator, not a reference sigil —
-    // only a byte-0 `&` is stripped, so `A & B` still falls through to the
-    // class fallback unchanged.
-    let id = arena.intern_type_str("A & B");
-    assert!(matches!(arena.get(id), Type::Class(q) if q == "A & B"));
+    // An interior `&` is a TS intersection operator — `A & B` decomposes into an
+    // Intersection of both branches.
+    let a = arena.intern_type_str("A");
+    let b = arena.intern_type_str("B");
+    match arena.get(arena.intern_type_str("A & B")) {
+        Type::Intersection(arms) => assert_eq!(arms, vec![a, b]),
+        other => panic!("expected Intersection, got {other:?}"),
+    }
+    // A byte-0 `&` is the reference sigil and is peeled before the operator
+    // split, so `&User` interns as the bare referent.
+    assert!(matches!(arena.get(arena.intern_type_str("&User")), Type::Class(q) if q == "User"));
 }
 
 #[test]

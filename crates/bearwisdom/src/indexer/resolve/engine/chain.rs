@@ -288,6 +288,48 @@ fn lookup_member_on_bounded(
             return Some(m);
         }
     }
+    // Composite receiver: a union / intersection TYPE (not a named alias) has no
+    // nominal head, so the head-keyed walks below cannot see it. Resolve the
+    // member across the arms directly. An INTERSECTION carries every branch's
+    // members (TS `&`), so the member resolves on any one arm. A UNION admits only
+    // members present on every arm (TS union access), so each arm must carry it;
+    // the first arm's resolution is returned once all agree. The depth budget
+    // bounds a cyclic arm that re-expands to the composite.
+    if depth > 0 {
+        match arena.get(recv.ty) {
+            Type::Intersection(arms) => {
+                for arm in arms {
+                    let arm_recv = expand_receiver(Receiver::untyped(arm), lookup, arena, None);
+                    if let Some(m) =
+                        lookup_member_on_bounded(lookup, arena, arm_recv, member, accept, depth - 1)
+                    {
+                        return Some(m);
+                    }
+                }
+                return None;
+            }
+            Type::Union(arms) => {
+                if arms.is_empty() {
+                    return None;
+                }
+                let mut resolved: Option<Symbol> = None;
+                for arm in arms {
+                    let arm_recv = expand_receiver(Receiver::untyped(arm), lookup, arena, None);
+                    match lookup_member_on_bounded(lookup, arena, arm_recv, member, accept, depth - 1)
+                    {
+                        None => return None,
+                        Some(m) => {
+                            if resolved.is_none() {
+                                resolved = Some(m);
+                            }
+                        }
+                    }
+                }
+                return resolved;
+            }
+            _ => {}
+        }
+    }
     let head = head_qname(arena, recv.ty)?;
     if let Some(m) = lookup_member(lookup, &head, member, accept) {
         return Some(m);

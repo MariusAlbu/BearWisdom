@@ -280,6 +280,23 @@ impl TypeArena {
                 return self.intern(Type::Apply { base, args: vec![inner] });
             }
         }
+        // Union / intersection: a top-level `|` (union) or `&` (intersection) at
+        // bracket depth 0 makes this a composite type, not a nominal class. `|`
+        // binds looser than `&` (TS: `A & B | C` == `(A & B) | C`), so the union
+        // split runs first and each arm is re-interned — an arm may itself be an
+        // intersection. A leading operator (TS pretty-prints unions as `| A | B`)
+        // leaves an empty first piece that the split drops; a single arm (no
+        // top-level operator) returns `None` and falls through to the nominal
+        // parse. The byte-0 `&` reference sigil is already peeled above, so only
+        // an interior `&` reaches here.
+        if let Some(arms) = split_top_level(trimmed, '|') {
+            let args = arms.iter().map(|a| self.intern_type_str(a)).collect();
+            return self.intern(Type::Union(args));
+        }
+        if let Some(arms) = split_top_level(trimmed, '&') {
+            let args = arms.iter().map(|a| self.intern_type_str(a)).collect();
+            return self.intern(Type::Intersection(args));
+        }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
         let (open_idx, open_char, close_char) = {
@@ -690,6 +707,41 @@ fn split_depth_zero_commas(s: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Split `s` on `delim` (`|` or `&`) at bracket depth 0, returning the trimmed
+/// non-empty pieces — but ONLY when the split yields two or more arms, marking a
+/// genuine composite type. A string with no top-level `delim`, or only a leading
+/// one (`| A`), collapses to a single arm and returns `None`, so the caller falls
+/// through to the nominal / generic parse. Recognizes `<>[]{}()` nesting so an
+/// operator inside generic arguments (`Record<string, A | B>`) is not split.
+fn split_top_level(s: &str, delim: char) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start: usize = 0;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            c if c == delim && depth == 0 => {
+                let piece = s[start..i].trim();
+                if !piece.is_empty() {
+                    out.push(piece.to_string());
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let piece = s[start..].trim();
+    if !piece.is_empty() {
+        out.push(piece.to_string());
+    }
+    if out.len() >= 2 {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
