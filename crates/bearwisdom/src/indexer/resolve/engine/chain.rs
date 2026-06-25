@@ -520,6 +520,21 @@ fn lookup_member_on_namespaced(
     if last.is_empty() {
         return None;
     }
+    // Suffix-qualify: an external extends-clause / mapped-source arg names a type
+    // by its package-LOCAL dotted name (`Chai.Assertion` inside @vitest/expect),
+    // but the type is indexed package-prefixed (`@types/chai.Chai.Assertion`).
+    // Resolve `member` on the type-like symbol whose qname IS `head` or ends with
+    // `.head`, climbing its supertypes by id. More specific than the bare-segment
+    // fallback below, so it runs first.
+    let suffix = format!(".{head}");
+    for cand in lookup.types_by_name(last).iter() {
+        if cand.qualified_name == head || cand.qualified_name.ends_with(&suffix) {
+            if let Some(m) = lookup_member_by_id(lookup, cand.id, member, accept) {
+                return Some(m);
+            }
+        }
+    }
+    // Bare last segment as a qname (`Prisma.UserDelegate` → `UserDelegate`).
     lookup_member(lookup, last, member, accept)
 }
 
@@ -889,7 +904,91 @@ fn yield_through_impl(
     if is_self_head(arena, substituted) {
         return Some(receiver);
     }
+    // Covariant mapped-fluent rebind: a chaining getter resolved through a mapped
+    // supertype that returns its OWN declaring type yields the receiver, not that
+    // type. chai's `.not: Assertion` reached via `Assertion extends VitestAssertion
+    // <Chai.Assertion>` returns `Chai.Assertion`; the mapped value template maps
+    // such members to the receiver's `Assertion<T>`, so the next chain step
+    // (`.not.toBe`) must continue on the vitest Assertion (which carries the jest
+    // matchers), not the chai one (which doesn't).
+    if let Some(rebound) = mapped_fluent_rebind(lookup, arena, member, substituted, receiver) {
+        return Some(rebound);
+    }
     Some(substituted)
+}
+
+/// Rebind a member's yield to the RECEIVER when the member is a fluent chaining
+/// getter (returns its own declaring type) reached through one of the receiver's
+/// MAPPED supertypes. Gated on both conditions so a plain supertype method that
+/// returns a fixed base type is unaffected: the yield must equal the member's
+/// declaring type, and that type must be the mapped source of a receiver
+/// supertype. `None` when either gate fails.
+fn mapped_fluent_rebind(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    yielded: TypeId,
+    receiver: TypeId,
+) -> Option<TypeId> {
+    let decl = member.qualified_name.rsplit_once('.')?.0;
+    let yield_head = head_qname(arena, yielded)?;
+    if !qnames_same_type(decl, &yield_head) {
+        return None;
+    }
+    let recv_head = head_qname(arena, receiver)?;
+    if qnames_same_type(decl, &recv_head) {
+        return None;
+    }
+    if receiver_mapped_supertype_has_source(lookup, arena, &recv_head, decl) {
+        return Some(receiver);
+    }
+    None
+}
+
+/// Whether two type names denote the same type, tolerating a package-prefix
+/// difference: `Chai.Assertion` (an extends-clause local name) and
+/// `@types/chai.Chai.Assertion` (its indexed qname) match. Exact, or one is the
+/// dotted suffix of the other.
+fn qnames_same_type(a: &str, b: &str) -> bool {
+    a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}"))
+}
+
+/// Whether `receiver_head` has a MAPPED supertype whose bound mapped source is
+/// `target` — i.e. the receiver reaches `target` through a mapped `extends`
+/// (`Assertion extends VitestAssertion<Chai.Assertion>`, mapped source
+/// `Chai.Assertion`). Builds each mapped parent's applied type from its edge args
+/// so the source binds to the concrete argument.
+fn receiver_mapped_supertype_has_source(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    receiver_head: &str,
+    target: &str,
+) -> bool {
+    for parent_head in lookup.parent_class_qnames(receiver_head) {
+        let is_mapped = matches!(
+            lookup.alias_target(parent_head),
+            Some(AliasTarget::Mapped { .. }) | Some(AliasTarget::IntersectionMapped { .. })
+        );
+        if !is_mapped {
+            continue;
+        }
+        let base = arena.class(parent_head);
+        let args = lookup.parent_class_args(receiver_head, parent_head);
+        let parent_ty = if args.is_empty() {
+            base
+        } else {
+            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+            arena.intern(Type::Apply { base, args: arg_ids })
+        };
+        if let Some(src) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
+            if let Some(src_head) = head_qname(arena, src) {
+                if qnames_same_type(target, &src_head) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The type `member` yields when used in a chain, as a canonical TypeId: its

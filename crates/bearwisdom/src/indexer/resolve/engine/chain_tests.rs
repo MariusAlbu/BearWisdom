@@ -698,6 +698,57 @@ fn member_climbs_into_mapped_alias_supertype() {
 }
 
 #[test]
+fn chaining_getter_through_mapped_supertype_yields_receiver() {
+    // interface Assertion extends VitestAssertion<ChaiAssertion> { toBe(): void }
+    // ChaiAssertion.not returns ChaiAssertion (a chaining getter). The mapped value
+    // maps such a member to the receiver Assertion, so `x.not.toBe` must continue
+    // on Assertion (where toBe lives) — NOT on ChaiAssertion, which has no toBe.
+    // Without the covariant rebind, `.not` would yield ChaiAssertion and `.toBe`
+    // would miss.
+    let lookup = Lookup::new()
+        .with_local_type("x", "Assertion")
+        .with(sym(1, "Assertion", "Assertion", "interface", "ext:ts:v.d.ts"))
+        .with_parent("Assertion", "VitestAssertion")
+        .with_parent_args("Assertion", "VitestAssertion", &["ChaiAssertion"])
+        .with(sym(2, "VitestAssertion", "VitestAssertion", "type_alias", "ext:ts:v.d.ts"))
+        .with_alias(
+            "VitestAssertion",
+            crate::types::AliasTarget::Mapped {
+                source: "A".to_string(),
+                value_template: "A[K]".to_string(),
+            },
+        )
+        .with_generics("VitestAssertion", &["A"])
+        .with(sym(3, "ChaiAssertion", "ChaiAssertion", "interface", "ext:ts:c.d.ts"))
+        .with_member(
+            "ChaiAssertion",
+            sym(50, "not", "ChaiAssertion.not", "property", "ext:ts:c.d.ts"),
+        )
+        // The chaining getter returns its own declaring type.
+        .with_field_type("ChaiAssertion.not", "ChaiAssertion")
+        .with_member(
+            "Assertion",
+            sym(60, "toBe", "Assertion.toBe", "method", "ext:ts:v.d.ts"),
+        );
+    let segs = vec![
+        seg("x", false, SegmentKind::Identifier),
+        seg("not", false, SegmentKind::Property),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(60));
+}
+
+#[test]
+fn qnames_same_type_tolerates_package_prefix() {
+    assert!(super::qnames_same_type("@types/chai.Chai.Assertion", "Chai.Assertion"));
+    assert!(super::qnames_same_type("Chai.Assertion", "@types/chai.Chai.Assertion"));
+    assert!(super::qnames_same_type("Foo", "Foo"));
+    assert!(!super::qnames_same_type("Foo.Assertion", "Bar.Assertion"));
+    // A shared simple-name suffix is not enough — the dotted boundary must align.
+    assert!(!super::qnames_same_type("XAssertion", "Assertion"));
+}
+
+#[test]
 fn binds_member_through_unbound_mapped_source_via_reexport_closure() {
     // testing-library `RenderResult`:
     //   type RenderResult<Q extends Queries = typeof queries> =
