@@ -138,6 +138,11 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
                 property: (property_identifier) @call.method)
             type_arguments: (type_arguments
                 (type_identifier) @call.type_arg))
+
+        (call_expression
+            function: (identifier) @call.method
+            type_arguments: (type_arguments
+                (_) @call.type_arg))
     "#,
 
     // Maps bare literal RHS node kinds to the wrapper type they imply when no

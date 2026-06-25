@@ -63,6 +63,11 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
                 property: (property_identifier) @call.method)
             type_arguments: (type_arguments
                 (type_identifier) @call.type_arg))
+
+        (call_expression
+            function: (identifier) @call.method
+            type_arguments: (type_arguments
+                (_) @call.type_arg))
     "#,
     literal_type_kinds: &[
         ("array", "Array"),
@@ -513,6 +518,55 @@ fn flow_type_args_populate_chain_segment() {
         last.type_args,
         vec!["User".to_string()],
         "type-args query should populate the chain segment's type_args"
+    );
+}
+
+#[test]
+fn flow_bare_call_type_args_populate_segment() {
+    use crate::types::{ChainSegment, MemberChain, SegmentKind};
+
+    // `useQuery<DogsResp>()` — a bare (non-member) generic call. Its single chain
+    // segment must receive the type arg so the resolver can bind it into the
+    // callee's return.
+    let source = "const x = useQuery<DogsResp>();\n";
+    //   'const x = ' = 0..10, 'useQuery' = 10..18, '<DogsResp>' = 18..28
+    let symbols: Vec<ExtractedSymbol> = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut refs = vec![ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "useQuery".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![ChainSegment {
+                name: "useQuery".to_string(),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args: Vec::new(),
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                is_call: false,
+                call_args: Vec::new(),
+                type_arg_ids: Vec::new(),
+            }],
+        }),
+        byte_offset: 10, // start of `useQuery`
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    }];
+
+    let _ = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    let last = refs[0].chain.as_ref().unwrap().segments.last().unwrap();
+    assert_eq!(
+        last.type_args,
+        vec!["DogsResp".to_string()],
+        "bare-call type-args query should populate the chain segment's type_args"
     );
 }
 

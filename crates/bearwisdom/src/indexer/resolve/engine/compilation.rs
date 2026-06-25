@@ -1378,26 +1378,6 @@ impl Compilation {
         }
     }
 
-    /// Generic parameter names for a declaration BY ID, immune to the qname-slot
-    /// collapse that loses an overload's params when its name is shared across
-    /// packages. `None` when the id carries no params.
-    pub(crate) fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
-        self.type_info_by_id
-            .get(&symbol_id)
-            .filter(|ti| !ti.generic_params.is_empty())
-            .map(|ti| ti.generic_params.as_slice())
-    }
-
-    /// Declared defaults for a declaration's generic params BY ID, index-aligned
-    /// with `generic_params_of`. `None` when the id carries no params (callers
-    /// treat a shorter/empty list as "no default" per index).
-    pub(crate) fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
-        self.type_info_by_id
-            .get(&symbol_id)
-            .filter(|ti| !ti.generic_params.is_empty())
-            .map(|ti| ti.generic_param_defaults.as_slice())
-    }
-
     /// Type a class field OR local variable from its CALL/NEW initializer:
     /// `readonly m = injectMutation(...)` / `#http = inject(HttpClient)` /
     /// `const router = useRouter()` makes the symbol's type the call's return (or
@@ -1619,6 +1599,20 @@ impl SymbolLookup for Compilation {
         self.type_info_by_id
             .get(&symbol_id)
             .and_then(|ti| ti.return_type_id)
+    }
+
+    fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
+        self.type_info_by_id
+            .get(&symbol_id)
+            .filter(|ti| !ti.generic_params.is_empty())
+            .map(|ti| ti.generic_params.as_slice())
+    }
+
+    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
+        self.type_info_by_id
+            .get(&symbol_id)
+            .filter(|ti| !ti.generic_params.is_empty())
+            .map(|ti| ti.generic_param_defaults.as_slice())
     }
 
     fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {

@@ -259,7 +259,10 @@ pub(crate) fn field_type_on(
 ) -> Option<TypeId> {
     let recv = expand_receiver(Receiver { ty: recv_ty, id: recv_id }, lookup, arena, None);
     let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
-    yield_through(lookup, arena, &member, false, recv.ty)
+    let yielded = yield_through(lookup, arena, &member, false, recv.ty)?;
+    // Normalize the field's type — peel a `NoInfer<T>` intrinsic wrapper (and any
+    // transparent alias) so the recorded binding type is the concrete `T`.
+    Some(alias::expand(yielded, lookup, arena))
 }
 
 /// Upper bound on mapped-type source hops — a mapped type whose source is itself
@@ -1482,6 +1485,20 @@ pub(crate) fn callee_return_type(
     file_ctx: &FileContext,
     name: &str,
 ) -> Option<TypeId> {
+    resolve_callee_return_and_id(lookup, arena, file_ctx, name).map(|(ret, _)| ret)
+}
+
+/// The return type the callable `name` resolves to in this file's import scope,
+/// paired with the SYMBOL ID of the declaration it was read from. The id lets a
+/// caller read that declaration's generic params (to bind a call's type
+/// arguments). See `callee_return_type` for the resolution order — this is its
+/// id-carrying form.
+fn resolve_callee_return_and_id(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+    name: &str,
+) -> Option<(TypeId, i64)> {
     let candidates = lookup.by_name(name);
     // An object-literal return synthesized as `{qname}$Ret` (the flow-return-object
     // pass) IS the function's structural return — authoritative over any stored
@@ -1490,7 +1507,7 @@ pub(crate) fn callee_return_type(
     for cand in candidates.iter().filter(|s| is_callable(&s.kind)) {
         let ret_qname = format!("{}$Ret", cand.qualified_name);
         if lookup.by_qualified_name(&ret_qname).is_some() {
-            return Some(arena.class(&ret_qname));
+            return Some((arena.class(&ret_qname), cand.id));
         }
     }
     // Import-scoped overload set: when `name` is imported from a specific
@@ -1508,15 +1525,15 @@ pub(crate) fn callee_return_type(
             .collect();
         for s in &scoped {
             if let Some(id) = lookup.return_type_id_of(s.id) {
-                return Some(id);
+                return Some((id, s.id));
             }
         }
         if let Some(callee) = scoped.first() {
             if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
-                return Some(id);
+                return Some((id, callee.id));
             }
             if let Some(n) = lookup.return_type_name(&callee.qualified_name) {
-                return Some(arena.intern_type_str(n));
+                return Some((arena.intern_type_str(n), callee.id));
             }
         }
     }
@@ -1524,14 +1541,69 @@ pub(crate) fn callee_return_type(
     // callable declaration of this name.
     let callee = candidates.iter().find(|s| is_callable(&s.kind))?;
     if let Some(id) = lookup.return_type_id_of(callee.id) {
-        return Some(id);
+        return Some((id, callee.id));
     }
     if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
-        return Some(id);
+        return Some((id, callee.id));
     }
     lookup
         .return_type_name(&callee.qualified_name)
-        .map(|s| arena.intern_type_str(s))
+        .map(|s| (arena.intern_type_str(s), callee.id))
+}
+
+/// The return type of a call `name<args>(…)`, with the call's explicit type
+/// arguments bound to the callee's generic parameters and substituted into the
+/// declared return. A parameter the call leaves unbound takes its default,
+/// resolved against parameters already bound (`TData = TQueryFnData`), so a single
+/// `useQuery<Movie>` arg flows through to a `TData`-typed return. Falls back to the
+/// unsubstituted return when the callee carries no generic params or the call
+/// supplies no type arguments.
+pub(crate) fn call_return_with_type_args(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+    name: &str,
+    call_args: &[TypeId],
+) -> Option<TypeId> {
+    let (ret, callee_id) = resolve_callee_return_and_id(lookup, arena, file_ctx, name)?;
+    // The return propagates to every same-qname overload id, but the params are
+    // stored only on the declaration that parsed them — which may be a SIBLING of
+    // the id whose return was read. Use the callee's own params when present, else
+    // borrow an overload sibling's (overloads share their type parameters).
+    let params_id = if lookup.generic_params_of(callee_id).is_some() {
+        callee_id
+    } else {
+        lookup
+            .by_name(name)
+            .iter()
+            .find(|s| is_callable(&s.kind) && lookup.generic_params_of(s.id).is_some())
+            .map(|s| s.id)
+            .unwrap_or(callee_id)
+    };
+    let Some(params) = lookup.generic_params_of(params_id) else {
+        return Some(ret);
+    };
+    if params.is_empty() || call_args.is_empty() {
+        return Some(ret);
+    }
+    let defaults = lookup.generic_param_defaults_of(params_id).unwrap_or(&[]);
+    let mut subst: FxHashMap<String, TypeId> = FxHashMap::default();
+    for (i, param) in params.iter().enumerate() {
+        // Positional arg, else the param's default — which may name an earlier
+        // param (`TData = TQueryFnData`), resolved against the bindings so far.
+        let bound = call_args.get(i).copied().or_else(|| {
+            defaults.get(i).and_then(|d| d.as_ref()).map(|d| {
+                subst
+                    .get(d)
+                    .copied()
+                    .unwrap_or_else(|| arena.intern_type_str(d))
+            })
+        });
+        if let Some(ty) = bound {
+            subst.insert(param.clone(), ty);
+        }
+    }
+    Some(arena.rebind_class_params(ret, &subst))
 }
 
 /// Resolve a return-type-extraction application — `ReturnType<typeof fn>`, and

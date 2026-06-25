@@ -196,6 +196,14 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.field_type_id_of(symbol_id)
     }
 
+    fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
+        self.tree.generic_params_of(symbol_id)
+    }
+
+    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
+        self.tree.generic_param_defaults_of(symbol_id)
+    }
+
     fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
         self.tree.symbol_by_id(id)
     }
@@ -728,7 +736,38 @@ fn resolve_one_file(
                 // produced no yield.
                 if let Some(entries) = pf.flow.flow_binding_destructure.get(&ref_idx) {
                     if let Some(arena) = tree.type_arena() {
-                        let recv_ty = res.resolved_yield_type.or_else(|| match r.kind {
+                        // Explicit call type args (`useQuery<Movie>()`), interned for
+                        // binding into the callee's return.
+                        let call_arg_ids: Vec<TypeId> = r
+                            .chain
+                            .as_ref()
+                            .and_then(|c| c.segments.last())
+                            .map(|s| {
+                                s.type_args.iter().map(|t| arena.intern_type_str(t)).collect()
+                            })
+                            .unwrap_or_default();
+                        // When the call carries explicit type args (`useQuery<Movie>()`),
+                        // bind them into the import-scoped callee's return FIRST — the
+                        // substituted result types a destructured field concretely. This
+                        // must precede the stored-return slot: `set_return_both` copies a
+                        // callee's return onto every same-qname id (including the re-export
+                        // barrel), so the unsubstituted return would otherwise win and the
+                        // field would type to a bare generic param.
+                        let recv_ty = (if !call_arg_ids.is_empty()
+                            && matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates)
+                        {
+                            crate::indexer::resolve::engine::chain::call_return_with_type_args(
+                                &file_lookup,
+                                arena,
+                                &file_ctx,
+                                &r.target_name,
+                                &call_arg_ids,
+                            )
+                        } else {
+                            None
+                        })
+                        .or(res.resolved_yield_type)
+                        .or_else(|| match r.kind {
                             EdgeKind::Calls | EdgeKind::Instantiates => {
                                 tree.return_type_id_of(res.target_symbol_id)
                             }

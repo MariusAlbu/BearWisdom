@@ -144,6 +144,22 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Generic parameter names keyed by the declaration's SYMBOL ID. A name shared
+    /// across packages / doc fences collides in the qname slot, so the id-keyed form
+    /// reads THIS declaration's params for a caller that has resolved the
+    /// import-scoped callee (used to bind a call's type arguments). Default `None`.
+    fn generic_params_of(&self, _symbol_id: i64) -> Option<&[String]> {
+        None
+    }
+
+    /// Declared defaults for a declaration's generic params BY ID, index-aligned
+    /// with `generic_params_of`. A default may name an earlier param
+    /// (`TData = TQueryFnData`), letting a partially-applied call bind the rest.
+    /// Default `None`.
+    fn generic_param_defaults_of(&self, _symbol_id: i64) -> Option<&[Option<String>]> {
+        None
+    }
+
     /// Recover a symbol record from its id — the id-keyed counterpart of
     /// `by_qualified_name`. A caller holding a resolved id (a parent from
     /// `parent_class_id`, a member from the id spine) reads the record without

@@ -134,6 +134,45 @@ fn field_type_on_substitutes_receiver_type_arg_into_field() {
 }
 
 #[test]
+fn field_type_on_threads_arg_through_alias_union_chain() {
+    // `const { data } = useQuery<Movie>()` reduced to its type chain:
+    //   UseQueryResult<T> = QueryObserverResult<T>   (Application alias)
+    //   QueryObserverResult<T> = Success<T>          (Union alias, one arm)
+    //   interface Success<T> { data: T }
+    // field_type_on(UseQueryResult<Movie>, "data") must thread Movie through the
+    // alias + union hops so data resolves to Movie, not the formal T.
+    let lookup = Lookup::new()
+        .with(sym(1, "UseQueryResult", "UseQueryResult", "type_alias", "a.ts"))
+        .with_generics("UseQueryResult", &["T"])
+        .with_alias(
+            "UseQueryResult",
+            AliasTarget::Application {
+                root: "QueryObserverResult".to_string(),
+                args: vec!["T".to_string()],
+            },
+        )
+        .with(sym(2, "QueryObserverResult", "QueryObserverResult", "type_alias", "a.ts"))
+        .with_generics("QueryObserverResult", &["T"])
+        .with_alias("QueryObserverResult", AliasTarget::Union(vec!["Success".to_string()]))
+        .with(sym(3, "Success", "Success", "interface", "a.ts"))
+        .with_generics("Success", &["T"])
+        .with_member("Success", sym(4, "data", "Success.data", "property", "a.ts"))
+        .with_field_type("Success.data", "T")
+        .with(sym(5, "Movie", "Movie", "interface", "a.ts"));
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.intern_type_str("UseQueryResult<NoInfer<Movie>>");
+    let ty = field_type_on(&lookup, arena, recv, Some(1), "data")
+        .expect("data resolves through the alias+union chain");
+    assert_eq!(
+        head_qname(arena, ty).as_deref(),
+        Some("Movie"),
+        "Movie must thread through UseQueryResult→QueryObserverResult union→Success.data \
+         (NoInfer<Movie> must be transparent); got {:?}",
+        head_qname(arena, ty)
+    );
+}
+
+#[test]
 fn value_root_declines_foreign_internal_same_name_unless_imported() {
     // `logger.map` where THIS file owns an untyped `logger` (its initializer's
     // return was not inferred) and a DIFFERENT internal file declares a `logger`

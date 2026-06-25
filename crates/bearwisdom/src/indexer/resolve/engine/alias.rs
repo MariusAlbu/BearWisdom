@@ -35,6 +35,15 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
         let Some(head) = head_qname(arena, ty) else {
             break;
         };
+        // `NoInfer<T>` is a TypeScript intrinsic identity wrapper — it only blocks
+        // inference and carries `T`'s members transparently. Unwrap it so a member
+        // walk on a `NoInfer<T>`-typed receiver sees `T`.
+        if head == "NoInfer" {
+            if let Some(inner) = apply_args(arena, ty).first().copied() {
+                ty = inner;
+                continue;
+            }
+        }
         // The alias's target as a TypeId, computed as owned data so the lookup
         // borrow ends before `ty` is reassigned. An `Application` alias reduces
         // to `root<args…>`; any other alias kind is transparent through its
@@ -53,6 +62,11 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
                 }
             }
             Some(AliasTarget::Application { root, args }) => application_target(arena, root, args),
+            // A union alias has no members of its own; reducing it transparently to
+            // a single arm (via a recorded field type) drops the receiver's type
+            // arguments. Stop here so the member walk resolves the member on each
+            // arm WITH those args bound (`lookup_member_on_union` + `substitute_through`).
+            Some(AliasTarget::Union(_)) => break,
             _ => match transparent_alias_target(lookup, arena, &head) {
                 Some(t) => t,
                 None => break,
