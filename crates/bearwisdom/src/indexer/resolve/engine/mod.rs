@@ -16,8 +16,8 @@
 // repeats across rules lives in `support`.
 //
 // Validation: the new engine reproduces the old ladder's resolutions exactly on
-// react-tanstack-query (a differential gate), then the remaining gap to a 99%
-// resolution rate is closed by adding/fixing one rule at a time.
+// a differential-gate fixture, then the remaining gap to a 99% resolution rate is
+// closed by adding/fixing one rule at a time.
 // =============================================================================
 
 use crate::type_checker::profile::language_profile::LanguageProfile;

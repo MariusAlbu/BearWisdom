@@ -260,10 +260,10 @@ pub struct LanguageProfile {
     /// scan ALL same-qname overloads for the first kind-compatible one rather
     /// than taking `by_qualified_name`'s first-wins winner. `false` (the
     /// default) keeps first-wins. `true` opts a language in for declaration
-    /// merging — TS exposes interface + variable under one qname
-    /// (`@angular/core.Injectable`), and a `Calls` ref must skip the interface
-    /// to reach the callable variable. Generic correctness fix, scoped by the
-    /// flag so first-wins languages are byte-identical.
+    /// merging — TS exposes interface + variable under one qname (a decorator
+    /// that is both a callable and a same-named interface), and a `Calls` ref must
+    /// skip the interface to reach the callable variable. Generic correctness fix,
+    /// scoped by the flag so first-wins languages are byte-identical.
     pub overload_pick_all: bool,
     /// Argument-dependent lookup. `false` (the default) leaves the probe inert.
     /// `true` opts a language in (C++): when the regular bare-name ladder
@@ -308,8 +308,8 @@ pub struct LanguageProfile {
     /// single-identifier call/typeref/instantiation that no import binds.
     /// `Off` (the default) leaves the probe inert. `On` checks the synthetic
     /// `__npm_globals__.<name>` namespace and the bare qname when the defining
-    /// file is an ambient-global lib file (jest `describe`, jQuery `$`, DOM
-    /// constructors). See `AmbientGlobals`.
+    /// file is an ambient-global lib file (test-runner globals, library globals
+    /// installed under `$`, DOM constructors). See `AmbientGlobals`.
     pub ambient_globals: AmbientGlobals,
     /// How the chain walker's root resolver discovers the type a bare `self`/
     /// `this` receiver refers to. `ScopePathThenDefault` (the default) is the
@@ -686,10 +686,10 @@ pub enum ModulePrefixRewrites {
         /// when the specifier already starts with `@types/`.
         definitely_typed: bool,
         /// Peel trailing `/seg` segments off a `/`-bearing specifier
-        /// (`rxjs/operators` → `rxjs`), retrying the qname probe at each
-        /// shorter prefix. Stops before a bare `@scope` (a scoped package
-        /// always keeps its package segment: `@angular/core/testing` peels to
-        /// `@angular/core`, never `@angular`).
+        /// (`pkg/sub` → `pkg`), retrying the qname probe at each shorter prefix.
+        /// Stops before a bare `@scope` (a scoped package always keeps its
+        /// package segment: `@scope/pkg/sub` peels to `@scope/pkg`, never
+        /// `@scope`).
         deep_import_peel: bool,
         /// Decline the directory-containment fallback for a bare specifier.
         /// `true` for TS/JS — a bare package name (`react`) must resolve

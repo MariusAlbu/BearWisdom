@@ -1240,8 +1240,8 @@ impl Compilation {
     /// which is never itself a `ReturnType<typeof …>` rewrite target.
     ///
     /// Called by the pipeline AFTER external materialization, so a wrapper of an
-    /// external function (`ReturnType<typeof render>` where `render` is
-    /// `@testing-library/react`'s) sees that function's return type.
+    /// external function (`ReturnType<typeof f>` where `f` is an external
+    /// package's) sees that function's return type.
     pub(crate) fn resolve_wrapper_return_types(&mut self, parsed: &[ParsedFile]) {
         let mut rewrites: Vec<(String, String, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {

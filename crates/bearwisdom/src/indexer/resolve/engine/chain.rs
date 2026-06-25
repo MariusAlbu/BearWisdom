@@ -271,7 +271,7 @@ const MAX_MAPPED_DEPTH: usize = 6;
 
 /// `lookup_member_on` with a mapped-type recursion budget. After the direct and
 /// supertype-climb lookups miss, a receiver that is a MAPPED type
-/// (`{ [K in keyof T]: V }` — `Override<A, B>`, `BoundFunctions<Q>`) resolves the
+/// (`{ [K in keyof T]: V }` — `Mapped<Src>`) resolves the
 /// member on its SOURCE object: the mapped type's keys ARE the source's keys, so
 /// `mapped.member` IS `source.member`. The source param is bound to the
 /// receiver's applied type argument, then the member walk recurses on it.
@@ -372,10 +372,10 @@ fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_constructor_interface(lookup, &head, member, accept) {
         return Some(m);
     }
-    // Namespace-qualified receiver: a head like `Prisma.UserDelegate` whose
-    // interface is indexed under the bare last segment (`UserDelegate`) — common
-    // for codegen that re-exports a per-file type through a wrapper namespace.
-    // After the dotted head misses, resolve the member on the bare segment.
+    // Namespace-qualified receiver: a head like `Ns.Type` whose interface is
+    // indexed under the bare last segment (`Type`) — common for codegen that
+    // re-exports a per-file type through a wrapper namespace. After the dotted
+    // head misses, resolve the member on the bare segment.
     if let Some(m) = lookup_member_on_namespaced(lookup, &head, member, accept) {
         return Some(m);
     }
@@ -392,9 +392,9 @@ fn lookup_member_on_bounded(
         }
     }
     // A MAPPED-ALIAS supertype: the receiver `extends` a mapped-type alias
-    // (`interface Assertion extends VitestAssertion<Chai.Assertion, T>`), which
-    // declares no own members, so the flat supertype climb above missed it.
-    // Resolve through the supertype's mapped source, carrying the edge args.
+    // (`interface Recv extends Mapped<Src, T>`), which declares no own members, so
+    // the flat supertype climb above missed it. Resolve through the supertype's
+    // mapped source, carrying the edge args.
     if let Some(m) = lookup_member_on_mapped_supertype(lookup, arena, &head, member, accept, depth) {
         return Some(m);
     }
@@ -405,8 +405,8 @@ fn lookup_member_on_bounded(
 }
 
 /// Resolve `member` on a MAPPED-ALIAS supertype of the receiver. A type can
-/// `extends` a mapped-type alias (`interface Assertion extends VitestAssertion<
-/// Chai.Assertion, T>`); the alias declares no members of its own, so the
+/// `extends` a mapped-type alias (`interface Recv extends Mapped<Src, T>`); the
+/// alias declares no members of its own, so the
 /// ordinary supertype climb (flat `members_of`) misses it. Build the
 /// supertype's applied type from the `extends` edge args and resolve `member`
 /// through its mapped source — the same path a mapped RECEIVER takes. `None`
@@ -505,11 +505,11 @@ fn lookup_member_on_constructor_interface(
     lookup_member(lookup, &ctor, member, accept)
 }
 
-/// Namespace-qualified receiver fallback: a head like `Prisma.UserDelegate` whose
-/// members are indexed under the bare last segment (`UserDelegate`) — the type is
-/// declared in its own file and surfaced through a wrapper namespace's re-export,
-/// so its members are keyed on the bare name. Resolve `member` on the last
-/// `.`-segment. `None` for an unqualified head or an empty trailing segment.
+/// Namespace-qualified receiver fallback: a head like `Ns.Type` whose members are
+/// indexed under the bare last segment (`Type`) — the type is declared in its own
+/// file and surfaced through a wrapper namespace's re-export, so its members are
+/// keyed on the bare name. Resolve `member` on the last `.`-segment. `None` for an
+/// unqualified head or an empty trailing segment.
 fn lookup_member_on_namespaced(
     lookup: &dyn SymbolLookup,
     head: &str,
@@ -534,12 +534,12 @@ fn lookup_member_on_namespaced(
             }
         }
     }
-    // Bare last segment as a qname (`Prisma.UserDelegate` → `UserDelegate`).
+    // Bare last segment as a qname (`Ns.Type` → `Type`).
     lookup_member(lookup, last, member, accept)
 }
 
 /// Resolve `member` on the named branches of an intersection alias. A branch is
-/// the head name of an `&` member (`BoundFunctions` for `BoundFunctions<Q> & {…}`);
+/// the head name of an `&` member (`Mapped` for `Mapped<Q> & {…}`);
 /// anonymous object branches contribute no name and are skipped (their members are
 /// flattened onto the alias itself). Each branch name is resolved to its
 /// declaration(s) by simple name, then the member walk recurses by symbol id so a
@@ -686,13 +686,12 @@ fn mapped_source_type(
 
 /// Resolve `member` on a mapped alias whose source parameter is UNBOUND — the
 /// receiver supplied no type argument, so the parameter falls back to its
-/// declared default. The canonical shape is testing-library's `RenderResult`:
-/// `{ [P in keyof Q]: BoundFunction<Q[P]> }` with `Q extends Queries = typeof
-/// queries`. `keyof Q`'s keys are the query functions (`getByText`, …) of the
-/// value namespace `queries`, and the receiver type's package re-exports that
-/// whole namespace (`export * from '@testing-library/dom'`). Walk the receiver
-/// declaration's wildcard re-exports and resolve `member` by qualified name in
-/// each re-exported module.
+/// declared default. The shape: `{ [P in keyof Q]: Wrap<Q[P]> }` with
+/// `Q extends Cons = typeof ns`. `keyof Q`'s keys are the members of the value
+/// namespace `ns`, and the receiver type's package re-exports that whole
+/// namespace (`export * from '@scope/pkg'`). Walk the receiver declaration's
+/// wildcard re-exports and resolve `member` by qualified name in each re-exported
+/// module.
 ///
 /// Gated to: a Mapped / IntersectionMapped alias whose source is one of the
 /// type's own generic parameters with NO applied argument (a bound source is
@@ -719,9 +718,9 @@ fn lookup_member_via_unbound_mapped_source(
     let pos = params.iter().position(|p| *p == source)?;
     // A source param with a CONCRETE applied argument is bound — `mapped_source_type`
     // resolved it already. But a self-applied return type echoes its own parameters
-    // as arguments (`render(): RenderResult<Q, Container, BaseElement>`), so the arg
-    // at `pos` is the parameter name itself — still unbound, still defaulted. Treat
-    // an argument whose head is one of the type's own parameters as unbound.
+    // as arguments (`f(): Mapped<Q, A, B>`), so the arg at `pos` is the parameter
+    // name itself — still unbound, still defaulted. Treat an argument whose head is
+    // one of the type's own parameters as unbound.
     let bound = apply_args(arena, ty)
         .get(pos)
         .and_then(|&a| head_qname(arena, a))
@@ -1237,10 +1236,10 @@ fn resolve_root_impl(
             return Some(Receiver::untyped(ty));
         }
         // The callee is not a callable declaration (function/method) but may be
-        // a VALUE whose declared type is a callable interface — `const expect:
-        // ExpectStatic` where `ExpectStatic` carries a call signature. Calling
-        // it yields the call signature's return, not the interface type itself,
-        // so this must precede the value-root fallthrough below.
+        // a VALUE whose declared type is a callable interface — `const v: I`
+        // where `I` carries a call signature. Calling it yields the call
+        // signature's return, not the interface type itself, so this must precede
+        // the value-root fallthrough below.
         if let Some(ty) = call_value_root_type(
             lookup,
             arena,
@@ -1253,8 +1252,8 @@ fn resolve_root_impl(
     }
     // Import-of-value / typed-value root: a value (a `declare const`, an
     // imported binding, a typed field) whose declaration carries a type roots
-    // the chain on that type — `initTRPC.create()` roots on `initTRPC`'s builder
-    // type even though `initTRPC` is not itself a type name.
+    // the chain on that type — `builder.create()` roots on `builder`'s declared
+    // type even though `builder` is not itself a type name.
     if let Some(ty) =
         value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name, file_ctx)
     {
@@ -1269,9 +1268,10 @@ fn resolve_root_impl(
     let candidates = lookup.types_by_name(&seg.name);
     let cand_refs: Vec<&Symbol> = candidates.iter().collect();
     // Prefer the import-scoped declaration — the package/module the use site
-    // imports `name` from — over a first-winner same-name pick (Page from
-    // playwright, not csstype's Page). Ranked + ascending-id deterministic; when
-    // no candidate clearly wins, the first same-named type is the fallback.
+    // imports `name` from — over a first-winner same-name pick (a `Page` from the
+    // package the file imports, not a same-named `Page` in another). Ranked +
+    // ascending-id deterministic; when no candidate clearly wins, the first
+    // same-named type is the fallback.
     let s = pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &cand_refs)
         .or_else(|| candidates.first())?;
     let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
@@ -1464,9 +1464,9 @@ const MAX_VALUE_TYPE_DEREF: usize = 4;
 /// declares the members. Two indirections collapse here:
 ///
 ///   - A head whose own declaration is a member-less value re-export shim — a
-///     `vitest.ExpectStatic` variable with no members, re-exporting an interface
-///     of the same simple name declared under a different qname — re-roots onto
-///     that same-simple-name type declaration, where the members are keyed.
+///     `Ns.I` variable with no members, re-exporting an interface of the same
+///     simple name declared under a different qname — re-roots onto that
+///     same-simple-name type declaration, where the members are keyed.
 ///   - A head that names no type but names a value whose own field type differs
 ///     (`const x: typeof import('m')['k']` lowered to the bare export name)
 ///     follows that value's declared type.
@@ -1489,13 +1489,13 @@ fn deref_value_typed(
             return current;
         };
         // A primitive head (`string` / `number`) has no value-indirection — a
-        // value coincidentally named `string` (zod's `string`) must not hijack the
-        // deref and re-root the chain onto an unrelated type.
+        // value coincidentally named `string` (an exported `string` helper) must
+        // not hijack the deref and re-root the chain onto an unrelated type.
         if is_primitive_head(arena, current) {
             return current;
         }
-        // The maps are simple-name keyed; a qualified head (`vitest.ExpectStatic`)
-        // probes them by its trailing segment.
+        // The maps are simple-name keyed; a qualified head (`Ns.I`) probes them by
+        // its trailing segment.
         let simple = head.rsplit('.').next().unwrap_or(&head);
         // A nominal head whose declaration is a member-bearing type is already
         // the receiver. When a same-simple-name type exists but the head's own
@@ -1583,8 +1583,8 @@ fn is_value_kind(kind: &str) -> bool {
 }
 
 /// Type a call root whose callee is a VALUE of a callable-interface type, by the
-/// return of that interface's call signature: `const expect: ExpectStatic` where
-/// `ExpectStatic` carries `(x): Assertion` types `expect(x)` as `Assertion`. The
+/// return of that interface's call signature: `const v: I` where `I` carries
+/// `(x): R` types `v(x)` as `R`. The
 /// extractor synthesises that call signature as a member named `call` on the
 /// interface; this types the value to its declared interface, then yields the
 /// `call` member's return with the receiver's type arguments substituted — the
@@ -1772,10 +1772,10 @@ pub(crate) fn resolve_return_type_extraction(
 }
 
 /// The return type of the function bound to `value` at the use site. The binding
-/// is scoped to the module `value` is IMPORTED from (`import { render } from
-/// '@testing-library/react'` → `@testing-library/react.render`), so an externally
-/// imported callee resolves to the correct overload rather than a same-named
-/// function in another package — `callee_return_type`'s name-only fallback (which
+/// is scoped to the module `value` is IMPORTED from (`import { f } from
+/// '@scope/pkg'` → `@scope/pkg.f`), so an externally imported callee resolves to
+/// the correct overload rather than a same-named function in another package —
+/// `callee_return_type`'s name-only fallback (which
 /// only package-scopes WORKSPACE imports) would otherwise pick a first-winner.
 /// Falls back to that name-only resolution for a value with no matching import.
 fn typeof_value_return_type(

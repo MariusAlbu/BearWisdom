@@ -28,7 +28,7 @@ use crate::types::EdgeKind;
 /// rename (`export { local as k }`, captured in `export_alias`) maps `k` to the
 /// local declaration's qname; otherwise the direct export `m.k` is the
 /// declaration. The declaration's own `field_type` / `field_type_id` is the
-/// resolved type (`globalExpect: ExpectStatic` → `ExpectStatic`).
+/// resolved type (`globalV: I` → `I`).
 ///
 /// `typed_qname` is the symbol the ref is being resolved FOR; a declaration that
 /// resolves back to it is the self-referential `m.k` case and is declined so the

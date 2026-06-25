@@ -28,8 +28,8 @@ pub trait SymbolLookup {
     /// order. Default returns the one-winner slice of `by_qualified_name`.
     ///
     /// TypeScript declaration merging exports interface + variable under the
-    /// same qname (e.g. `@angular/core.Injectable` is both the decorator
-    /// function AND the options-type interface). `by_qualified_name` picks
+    /// same qname (e.g. a decorator that is both the decorator function AND a
+    /// same-named options-type interface). `by_qualified_name` picks
     /// whichever lost the first-wins race; when the caller needs a specific
     /// kind (e.g. a `Calls` ref against a `variable`/`function`/`class`),
     /// the interface overload is useless. This lookup exposes all
