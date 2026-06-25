@@ -122,6 +122,33 @@ fn intern_type_str_parses_union() {
 }
 
 #[test]
+fn intern_type_str_parses_tuple() {
+    let mut arena = TypeArena::new();
+    // A bracket-enclosed, comma-separated `[A, B]` is a tuple, not a class.
+    match arena.get(arena.intern_type_str("[Accessor, Setter]")) {
+        Type::Tuple(elems) => {
+            assert_eq!(elems.len(), 2);
+            assert!(matches!(arena.get(elems[0]), Type::Class(q) if q == "Accessor"));
+            assert!(matches!(arena.get(elems[1]), Type::Class(q) if q == "Setter"));
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+    // Labeled elements drop their label; nested generics stay structured.
+    match arena.get(arena.intern_type_str("[get: Accessor<T>, set: Setter<T>]")) {
+        Type::Tuple(elems) => {
+            assert_eq!(elems.len(), 2);
+            assert!(matches!(arena.get(elems[0]), Type::Apply { .. }));
+        }
+        other => panic!("expected Tuple of applies, got {other:?}"),
+    }
+    // A `T[]` array suffix is NOT a tuple — it stays `Array<T>`.
+    assert!(matches!(
+        arena.get(arena.intern_type_str("User[]")),
+        Type::Apply { .. }
+    ));
+}
+
+#[test]
 fn intern_type_str_parses_intersection() {
     let mut arena = TypeArena::new();
     let a = arena.intern_type_str("MockInstance");

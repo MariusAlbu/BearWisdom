@@ -297,6 +297,21 @@ impl TypeArena {
             let args = arms.iter().map(|a| self.intern_type_str(a)).collect();
             return self.intern(Type::Intersection(args));
         }
+        // Tuple `[A, B, …]` — fully bracket-enclosed with two or more depth-0
+        // elements. A `T[]` array suffix is handled above; a single-element `[T]`
+        // and a leading-bracket generic (Scala `List[T]`) fall through to the
+        // bracket parse below. Each element drops a `label:` prefix (labeled
+        // tuple `[get: A, set: B]`) so the element type is what interns.
+        if let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            let elems = split_depth_zero_commas(inner);
+            if elems.len() >= 2 {
+                let ids = elems
+                    .iter()
+                    .map(|e| self.intern_type_str(strip_tuple_label(e)))
+                    .collect();
+                return self.intern(Type::Tuple(ids));
+            }
+        }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
         let (open_idx, open_char, close_char) = {
@@ -707,6 +722,24 @@ fn split_depth_zero_commas(s: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Strip a `label:` / `label?:` prefix from one tuple element (`get: Accessor<T>`
+/// → `Accessor<T>`). The label must be a plain identifier; an element with no
+/// such prefix — or a type that merely contains `:` (an object literal, a mapped
+/// type) — is returned unchanged.
+fn strip_tuple_label(elem: &str) -> &str {
+    let e = elem.trim();
+    if let Some((label, rest)) = e.split_once(':') {
+        let label = label.trim_end_matches('?').trim();
+        if !label.is_empty()
+            && label.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && !rest.trim_start().starts_with(':')
+        {
+            return rest.trim();
+        }
+    }
+    e
 }
 
 /// Split `s` on `delim` (`|` or `&`) at bracket depth 0, returning the trimmed

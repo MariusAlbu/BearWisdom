@@ -964,6 +964,17 @@ impl Compilation {
                             // returns the receiver instead.
                             let rid = self.arena.intern_type_str("this");
                             Some(("this".to_string(), Some(rid)))
+                        } else if let Some(rt) = sig_rt.as_deref().filter(|s| {
+                            let t = s.trim();
+                            t.starts_with('[') && t.ends_with(']')
+                        }) {
+                            // A tuple return (`useState(): [S, Dispatch<…>]`) interns
+                            // directly as `Type::Tuple`; `parse_type_head_and_args`
+                            // (the `sig_generic` arm) would mis-read the `[A, B]` as a
+                            // generic application and drop the positional structure a
+                            // destructure binding indexes.
+                            let rid = self.arena.intern_type_str(rt);
+                            Some((self.arena.format_type(rid), Some(rid)))
                         } else if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
                                 &head,
