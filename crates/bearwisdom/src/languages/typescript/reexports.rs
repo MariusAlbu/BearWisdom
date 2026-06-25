@@ -89,19 +89,6 @@ pub(super) fn extract_bare_reexports_via_imports(
                     continue;
                 };
 
-                // The canonical name in the source module — for renamed
-                // imports (`import { X as Y }`), the source's export
-                // list has `X`, not `Y`. The Imports ref must encode the
-                // source-side name so cross-package chain following
-                // matches the actual export.
-                let exported_in_source = match &import.kind {
-                    ImportKind::Named { exported_name } => exported_name.clone(),
-                    ImportKind::Default => name.clone(),
-                    // Namespace re-exports of a `import * as ns`-style binding
-                    // are too ambiguous to resolve generically — skip.
-                    ImportKind::Namespace | ImportKind::SideEffect => continue,
-                };
-
                 let alias = spec
                     .child_by_field_name("alias")
                     .map(|n| helpers::node_text(n, src))
@@ -110,6 +97,46 @@ pub(super) fn extract_bare_reexports_via_imports(
                     alias.clone()
                 } else {
                     name.clone()
+                };
+
+                // The canonical name in the source module — for renamed
+                // imports (`import { X as Y }`), the source's export
+                // list has `X`, not `Y`. The Imports ref must encode the
+                // source-side name so cross-package chain following
+                // matches the actual export.
+                let exported_in_source = match &import.kind {
+                    ImportKind::Named { exported_name } => exported_name.clone(),
+                    ImportKind::Default => name.clone(),
+                    ImportKind::SideEffect => continue,
+                    // `import * as ns; export { ns }` (zod's `z`): `ns` is a
+                    // namespace aggregating the source module's exports. Emit it as
+                    // a Namespace symbol so a consumer's `ns.member` roots on it and
+                    // falls through to the module-scoped bare-name ladder, which
+                    // binds the member under the re-exporting package.
+                    ImportKind::Namespace => {
+                        if !symbols.iter().any(|s| s.qualified_name == exposed) {
+                            symbols.push(ExtractedSymbol {
+                                name: exposed.clone(),
+                                qualified_name: exposed,
+                                kind: SymbolKind::Namespace,
+                                visibility: Some(Visibility::Public),
+                                start_line: spec.start_position().row as u32 + 1,
+                                end_line: spec.end_position().row as u32 + 1,
+                                start_col: spec.start_position().column as u32,
+                                end_col: spec.end_position().column as u32,
+                                signature: None,
+                                doc_comment: None,
+                                scope_path: None,
+                                parent_index: None,
+                                byte_offset: 0,
+                                declared_type: None,
+                                return_type: None,
+                                param_types: Vec::new(),
+                                generic_params: Vec::new(),
+                            });
+                        }
+                        continue;
+                    }
                 };
 
                 // Per-specifier `type` modifier: `export { type X }`.

@@ -1455,6 +1455,22 @@ fn reexport_star_as_emits_wildcard_ref() {
 }
 
 #[test]
+fn namespace_import_reexport_emits_namespace_symbol() {
+    // import * as z from './external'; export { z };  — zod's `z` shape. The
+    // re-exported namespace binding must surface as a Namespace symbol so a
+    // consumer's `z.string()` roots on it and resolves the member module-scoped.
+    let result = extract::extract("import * as z from './external';\nexport { z };", false);
+    let ns = result
+        .symbols
+        .iter()
+        .find(|s| s.name == "z" && s.kind == SymbolKind::Namespace);
+    assert!(
+        ns.is_some(),
+        "`import * as z; export {{ z }}` should emit a Namespace symbol for z"
+    );
+}
+
+#[test]
 fn reexport_without_from_emits_no_imports_ref() {
     // export { Foo } — no `from`, so this is a re-export of a local symbol.
     // Should NOT emit an Imports ref (no module to follow).
