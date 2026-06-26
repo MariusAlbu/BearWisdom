@@ -764,6 +764,7 @@ fn extract_node(
 
             "import_statement" => {
                 imports::push_import(&child, src, symbols.len(), refs);
+                imports::push_namespace_import_symbol(&child, src, symbols);
             }
 
             "for_in_statement" => {

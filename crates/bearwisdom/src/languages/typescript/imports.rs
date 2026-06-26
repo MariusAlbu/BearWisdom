@@ -1,6 +1,6 @@
 use super::helpers::node_text;
 use crate::ecosystem::ecmascript_imports::{push_import_refs, PushImportOpts};
-use crate::types::{EdgeKind, ExtractedRef};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 pub(super) fn push_import(
@@ -16,6 +16,62 @@ pub(super) fn push_import(
         refs,
         PushImportOpts::TYPESCRIPT,
     );
+}
+
+/// `import * as ns from 'm'` binds `ns` as a module-namespace alias, not a value.
+/// Emit a Namespace symbol so a consumer chain `ns.member` roots on a namespace
+/// (the resolver's namespace gate) and falls through to the module-scoped
+/// bare-name ladder, which binds the member as an export of `m`. Without it `ns`
+/// value-types to a foreign same-name binding and `ns.member` is a hard miss.
+/// Mirrors the `export * as ns` re-export case in `reexports.rs`.
+pub(super) fn push_namespace_import_symbol(
+    node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let Some(clause) = first_child_of_kind(node, "import_clause") else {
+        return;
+    };
+    let Some(ns) = first_child_of_kind(&clause, "namespace_import") else {
+        return;
+    };
+    let Some(ident) = first_child_of_kind(&ns, "identifier") else {
+        return;
+    };
+    let name = node_text(ident, src);
+    if name.is_empty() || symbols.iter().any(|s| s.qualified_name == name) {
+        return;
+    }
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: ident.start_position().row as u32 + 1,
+        end_line: ident.end_position().row as u32 + 1,
+        start_col: ident.start_position().column as u32,
+        end_col: ident.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        byte_offset: ident.start_byte() as u32,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
+}
+
+fn first_child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    for i in 0..node.child_count() {
+        if let Some(ch) = node.child(i) {
+            if ch.kind() == kind {
+                return Some(ch);
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

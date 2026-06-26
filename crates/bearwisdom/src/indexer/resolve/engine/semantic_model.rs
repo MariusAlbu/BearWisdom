@@ -53,14 +53,18 @@ impl SemanticModel {
                 return Some(res);
             }
             // A multi-segment chain the walk declined is normally a genuine miss:
-            // a same-named sibling must not hijack `a.b.c`. The exception is
-            // NAMESPACE-qualified member access — `React.useState` where `React`
-            // names a namespace/module, not a value. The chain walker can't root
-            // on a namespace, but the bare-name ladder resolves the member under
-            // the imported module (`imported_namespace` / `ref_module`), and the
-            // module scope keeps it from binding an unrelated sibling. A
-            // single-segment "chain" carries no receiver and always falls through.
-            if chain.segments.len() > 1 && !chain_root_is_namespace(chain, lookup) {
+            // a same-named sibling must not hijack `a.b.c`. Two exceptions both
+            // root on a MODULE the chain walker can't type as a value, so the
+            // bare-name ladder resolves the member under that module (scoped, so it
+            // can't bind an unrelated sibling):
+            //   - a namespace/module SYMBOL root (`React.useState`);
+            //   - a wildcard/namespace IMPORT root (`import * as v from 'm'; v.x`)
+            //     — the alias names no value, and the member is a module export.
+            // A single-segment "chain" carries no receiver and always falls through.
+            if chain.segments.len() > 1
+                && !chain_root_is_namespace(chain, lookup)
+                && !chain_root_is_wildcard_import(chain, file_ctx)
+            {
                 return None;
             }
         }
@@ -105,6 +109,23 @@ fn chain_root_is_namespace(chain: &crate::types::MemberChain, lookup: &dyn Symbo
         .by_name(&root.name)
         .iter()
         .any(|s| matches!(s.kind.as_str(), "namespace" | "module"))
+}
+
+/// `true` when the chain's root segment names a wildcard/namespace import in this
+/// file (`import * as v from 'm'` — `is_wildcard`, matched by alias or imported
+/// name). The alias names a module, not a value, so `v.member` resolves against
+/// the module's exports through the bare-name ladder rather than the value walk.
+fn chain_root_is_wildcard_import(
+    chain: &crate::types::MemberChain,
+    file_ctx: &FileContext,
+) -> bool {
+    let Some(root) = chain.segments.first() else {
+        return false;
+    };
+    file_ctx.imports.iter().any(|i| {
+        i.is_wildcard
+            && (i.alias.as_deref() == Some(root.name.as_str()) || i.imported_name == root.name)
+    })
 }
 
 /// Profile-table-driven kind compatibility. An unrecognised symbol-kind string

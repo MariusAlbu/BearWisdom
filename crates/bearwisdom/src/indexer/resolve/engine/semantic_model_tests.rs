@@ -1,5 +1,5 @@
-use super::{chain_root_is_namespace, kind_ok_table_for_test};
-use crate::indexer::resolve::engine::testkit::{sym, Lookup};
+use super::{chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test};
+use crate::indexer::resolve::engine::testkit::{file_ctx, import, sym, Lookup};
 use crate::languages::javascript::profile::JAVASCRIPT_PROFILE;
 use crate::languages::typescript::profile::TYPESCRIPT_PROFILE;
 use crate::types::{ChainSegment, EdgeKind, MemberChain, SegmentKind};
@@ -43,6 +43,33 @@ fn value_rooted_chain_is_not_a_namespace() {
         segments: vec![nseg("rendered"), nseg("getByText")],
     };
     assert!(!chain_root_is_namespace(&chain, &lookup));
+}
+
+/// `import * as v from 'valibot'; v.object(...)` — the wildcard alias `v` names
+/// the module, not a value. A declined chain falls through to the bare-name
+/// ladder, which resolves `object` as a valibot export; without this `v` is
+/// value-typed to a foreign same-name binding and the member is a hard miss.
+#[test]
+fn wildcard_import_rooted_chain_is_detected() {
+    let mut imp = import("*", Some("valibot"));
+    imp.alias = Some("v".to_string());
+    imp.is_wildcard = true;
+    let fc = file_ctx(vec![imp], None);
+    let chain = MemberChain {
+        segments: vec![nseg("v"), nseg("object")],
+    };
+    assert!(chain_root_is_wildcard_import(&chain, &fc));
+}
+
+/// A named (non-wildcard) import is a value the chain walker owns — a decline
+/// stays a hard miss, no ladder fall-through.
+#[test]
+fn named_import_rooted_chain_is_not_wildcard() {
+    let fc = file_ctx(vec![import("foo", Some("m"))], None);
+    let chain = MemberChain {
+        segments: vec![nseg("foo"), nseg("bar")],
+    };
+    assert!(!chain_root_is_wildcard_import(&chain, &fc));
 }
 
 /// The extractor emits `namespace X {}` / `declare namespace X` as a `Module`
