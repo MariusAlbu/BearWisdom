@@ -26,7 +26,9 @@ use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet};
-use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
+use crate::indexer::resolve::engine::contract::chain_walker::{
+    parse_return_type_from_signature, parse_type_head_and_args,
+};
 use crate::indexer::resolve::engine::{semantic_model::SemanticModel, compilation::Compilation};
 use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
@@ -1124,6 +1126,7 @@ fn materialize_externals(
         let mut next: Vec<PathBuf> = Vec::new();
         for (abs, pf) in &batch {
             collect_external_files(&pf.refs, tree, loc, &mut seen, &mut next);
+            collect_return_type_files(&pf.symbols, &pf.language, tree, loc, &mut seen, &mut next);
             collect_relative_supertype_imports(abs, &pf.refs, &mut seen, &mut next);
             collect_module_augmentations(abs, &pf.path, &mut augmentations);
         }
@@ -1303,6 +1306,45 @@ fn collect_external_files(
                 }
             }
             None => {}
+        }
+    }
+}
+
+/// Pull the files that DEFINE a materialized external file's callables' RETURN
+/// types. A method's return type is captured from its signature, not emitted as a
+/// TypeRef edge, so `collect_external_files` (which follows refs) misses it — yet
+/// `db.delete(t)` yields `PgDeleteBase`, whose member `.where(...)` the chain then
+/// walks. This is the same next-hop reachability as following an import, sourced
+/// from the signature: pull only an un-materialized, externally-defined head, so a
+/// return type already indexed (internal or pulled) adds nothing.
+fn collect_return_type_files(
+    symbols: &[crate::types::ExtractedSymbol],
+    lang: &str,
+    tree: &Compilation,
+    loc: &SymbolLocationIndex,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    if lang != "typescript" && lang != "tsx" {
+        return;
+    }
+    for s in symbols {
+        let Some(sig) = s.signature.as_deref() else {
+            continue;
+        };
+        let Some(ret) = parse_return_type_from_signature(sig) else {
+            continue;
+        };
+        let (head, _args) = parse_type_head_and_args(&ret);
+        let head = head.rsplit('.').next().unwrap_or(head);
+        if head.is_empty() || !tree.by_name(head).is_empty() {
+            continue;
+        }
+        for (_module, file) in loc.find_by_name(head) {
+            let file = file.to_path_buf();
+            if seen.insert(file.clone()) {
+                out.push(file);
+            }
         }
     }
 }
