@@ -820,6 +820,30 @@ fn root_ignores_import_scope_when_module_absent() {
 }
 
 #[test]
+fn member_resolves_through_omit_utility_to_wrapped_type() {
+    // type R = Omit<Base, 'gone'>;  interface Base { data }  const r: R;  r.data
+    // `Omit` is a member-less intrinsic; the wrapped `Base` carries `data`, and a
+    // non-removed member must resolve on it instead of dead-ending on `Omit`.
+    let lookup = Lookup::new()
+        .with_local_type("r", "R")
+        .with(sym(1, "R", "R", "type_alias", "ext:ts:m.d.ts"))
+        .with_alias(
+            "R",
+            crate::types::AliasTarget::Application {
+                root: "Omit".to_string(),
+                args: vec!["Base".to_string(), "'gone'".to_string()],
+            },
+        )
+        .with(sym(2, "Base", "Base", "interface", "ext:ts:m.d.ts"))
+        .with_member("Base", sym(50, "data", "Base.data", "property", "ext:ts:m.d.ts"));
+    let segs = vec![
+        seg("r", false, SegmentKind::Identifier),
+        seg("data", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
 fn qnames_same_type_tolerates_package_prefix() {
     assert!(super::qnames_same_type("@types/chai.Chai.Assertion", "Chai.Assertion"));
     assert!(super::qnames_same_type("Chai.Assertion", "@types/chai.Chai.Assertion"));

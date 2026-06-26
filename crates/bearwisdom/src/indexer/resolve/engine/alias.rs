@@ -61,6 +61,18 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
                     None => break,
                 }
             }
+            // Member-preserving / key-narrowing utility wrappers carry the wrapped
+            // type's members: `Omit<T,K>` / `Pick<T,K>` narrow the key set, the
+            // modifier utilities (`Partial` / `Required` / `Readonly` /
+            // `NonNullable` / `Awaited`) keep every member. The utility itself is a
+            // member-less intrinsic, so a walk on `Omit<Base,K>` finds nothing;
+            // redirect to the wrapped type `T` (the conservative receiver for member
+            // resolution) so the member resolves on it.
+            Some(AliasTarget::Application { root, args })
+                if is_member_preserving_utility(&root) && !args.is_empty() =>
+            {
+                arena.intern_type_str(&args[0])
+            }
             Some(AliasTarget::Application { root, args }) => application_target(arena, root, args),
             // A union alias has no members of its own; reducing it transparently to
             // a single arm (via a recorded field type) drops the receiver's type
@@ -91,6 +103,18 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
         };
     }
     ty
+}
+
+/// `true` when `root` is a TypeScript intrinsic utility whose result carries (a
+/// subset of) the wrapped type's members, so a member walk sees THROUGH it to the
+/// first type argument. `Omit` / `Pick` narrow the key set; the modifier
+/// utilities keep every member. Same transparent treatment the `NoInfer`
+/// intrinsic already gets, extended to the member-shape-preserving wrappers.
+fn is_member_preserving_utility(root: &str) -> bool {
+    matches!(
+        root,
+        "Omit" | "Pick" | "Partial" | "Required" | "Readonly" | "NonNullable" | "Awaited"
+    )
 }
 
 /// The `Application` alias target `root<args…>` as a TypeId.
