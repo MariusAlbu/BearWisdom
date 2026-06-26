@@ -1953,6 +1953,16 @@ pub(crate) fn resolve_return_type_extraction(
     file_ctx: &FileContext,
 ) -> Option<TypeId> {
     let head = head_qname(arena, ty)?;
+    // Flat-interned `ReturnType<typeof f>` — a single Class head rather than an
+    // `Apply{ReturnType,[…]}` (the inferred `const x = f()` field type, whose
+    // `<…>` payload the type-ref capture does not decompose). Parse the wrapped
+    // value off the head string and resolve f's return directly.
+    if let Some(inner) = head
+        .strip_prefix("ReturnType<typeof ")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        return typeof_value_return_type(inner.trim(), lookup, arena, file_ctx);
+    }
     // Either a named alias whose RHS is `ReturnType<…>` (`type Logger =
     // ReturnType<typeof createScopedLogger>`), or the raw `ReturnType` intrinsic
     // applied directly — a variable inferred as `ReturnType<typeof f>` from a
