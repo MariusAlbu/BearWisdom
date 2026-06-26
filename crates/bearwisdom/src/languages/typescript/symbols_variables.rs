@@ -118,6 +118,34 @@ pub(super) fn push_variable_decl(
                         };
                         if init_node.kind() == "call_expression" {
                             if let Some(func) = init_node.child_by_field_name("function") {
+                                // `const x = f(...)` with a plain-identifier callee:
+                                // emit a non-chain TypeRef `ReturnType<typeof f>` so the
+                                // index builder records it as x's field_type. The in-file
+                                // flow seed types x for same-file use but is evicted per
+                                // file; this persisted field_type lets a CROSS-FILE
+                                // importer of x derive f's return on demand
+                                // (`resolve_return_type_extraction`), f resolved globally
+                                // by name. A member-expression callee keeps only the
+                                // chain TypeRef below.
+                                if func.kind() == "identifier" {
+                                    let callee = node_text(func, src);
+                                    if !callee.is_empty() {
+                                        refs.push(ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
+                                            source_symbol_index: idx,
+                                            target_name: format!("ReturnType<typeof {callee}>"),
+                                            kind: EdgeKind::TypeRef,
+                                            line: init_node.start_position().row as u32,
+                                            col: 0,
+                                            module: None,
+                                            chain: None,
+                                            byte_offset: init_node.start_byte() as u32,
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
+                                    }
+                                }
                                 if let Some(chain) = build_chain(func, src) {
                                     // Use the last segment as the target_name.
                                     let target = chain

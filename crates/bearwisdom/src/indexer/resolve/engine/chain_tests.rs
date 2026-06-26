@@ -922,6 +922,25 @@ fn roots_binding_typed_return_type_of_typeof_fn() {
 }
 
 #[test]
+fn roots_binding_typed_raw_return_type_without_alias_registration() {
+    // A `const x = f(...)` binding inferred as `ReturnType<typeof f>` carries the
+    // RAW ReturnType intrinsic on its type — NO `type … = ReturnType<…>` alias is
+    // registered (the path the sibling test above exercises). The head
+    // `ReturnType` is recognized directly, so `x.run()` still roots on f's return
+    // type — the cross-file `const x = f()` inference an importer of `x` relies on.
+    let lookup = Lookup::new()
+        .with_local_type("x", "ReturnType<typeof make>")
+        .with(sym(1, "make", "make", "function", "ext:ts:m.d.ts"))
+        .with_return_type("make", "Made")
+        .with_member("Made", sym(7, "run", "Made.run", "method", "ext:ts:m.d.ts"));
+    let segs = vec![
+        seg("x", false, SegmentKind::Identifier),
+        seg("run", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(7));
+}
+
+#[test]
 fn return_type_of_typeof_fn_scopes_to_the_imported_overload() {
     // Two same-named `render` in different packages. `typeof render` must bind to
     // the one the file IMPORTS (react), not a first-winner (vue) — so

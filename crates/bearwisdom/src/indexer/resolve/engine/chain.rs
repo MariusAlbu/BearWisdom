@@ -1326,6 +1326,13 @@ fn resolve_root_impl(
     if let Some(ty) =
         value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name, file_ctx)
     {
+        // A value whose declared type is `ReturnType<typeof f>` — an inferred
+        // `const x = f(...)` binding imported from the file that declares it —
+        // roots on f's return type (f resolved globally by name), deriving the
+        // cross-file type the per-file flow seed could not carry.
+        if let Some(r) = resolve_return_type_extraction(ty, lookup, arena, file_ctx) {
+            return Some(Receiver::untyped(r));
+        }
         return Some(Receiver::untyped(ty));
     }
     // Bare type name used as a static-access / construction root. When the same
@@ -1946,7 +1953,16 @@ pub(crate) fn resolve_return_type_extraction(
     file_ctx: &FileContext,
 ) -> Option<TypeId> {
     let head = head_qname(arena, ty)?;
-    if !is_return_type_extraction(lookup.alias_target(&head)?) {
+    // Either a named alias whose RHS is `ReturnType<…>` (`type Logger =
+    // ReturnType<typeof createScopedLogger>`), or the raw `ReturnType` intrinsic
+    // applied directly — a variable inferred as `ReturnType<typeof f>` from a
+    // `const x = f(...)` initializer, which an importing file resolves on demand.
+    let is_rt = head == "ReturnType"
+        || lookup
+            .alias_target(&head)
+            .map(is_return_type_extraction)
+            .unwrap_or(false);
+    if !is_rt {
         return None;
     }
     let arg = apply_args(arena, ty).first().copied()?;
