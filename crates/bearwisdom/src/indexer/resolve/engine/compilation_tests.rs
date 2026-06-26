@@ -1358,3 +1358,51 @@ fn ambient_scope_indexes_materialization_flagged_globals() {
         "nested members stay out of ambient scope"
     );
 }
+
+// ---------------------------------------------------------------------------
+// enclosing_chain — parent_index ancestry walk, cycle-guarded
+// ---------------------------------------------------------------------------
+
+#[test]
+fn enclosing_chain_terminates_on_self_parent() {
+    // A symbol whose parent_index points at its own slot. A name-based merge of
+    // a same-named SCSS selector parent/descendant produces exactly this. The
+    // walk must terminate (the self is type-like, so it is its own enclosing
+    // type; there is no namespace), not spin forever.
+    let symbols = vec![make_symbol(
+        "fixed-top",
+        "fixed-top",
+        SymbolKind::Class,
+        Some(0),
+        None,
+        None,
+    )];
+    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[0].parent_index);
+    assert_eq!(found_type.as_deref(), Some("fixed-top"));
+    assert_eq!(found_ns, None);
+}
+
+#[test]
+fn enclosing_chain_terminates_on_two_cycle() {
+    // A → B → A parent_index loop with no namespace anywhere in it.
+    let symbols = vec![
+        make_symbol("a", "a", SymbolKind::Class, Some(1), None, None),
+        make_symbol("b", "b", SymbolKind::Class, Some(0), None, None),
+    ];
+    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[0].parent_index);
+    assert_eq!(found_type.as_deref(), Some("b"));
+    assert_eq!(found_ns, None);
+}
+
+#[test]
+fn enclosing_chain_finds_nearest_type_and_namespace() {
+    // method ⊂ class ⊂ namespace — an acyclic chain still resolves both.
+    let symbols = vec![
+        make_symbol("App", "App", SymbolKind::Namespace, None, None, None),
+        make_symbol("Svc", "App.Svc", SymbolKind::Class, Some(0), None, None),
+        make_symbol("run", "App.Svc.run", SymbolKind::Method, Some(1), None, None),
+    ];
+    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[2].parent_index);
+    assert_eq!(found_type.as_deref(), Some("App.Svc"));
+    assert_eq!(found_ns.as_deref(), Some("App"));
+}

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
@@ -23,7 +23,7 @@ use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::types::{AliasTarget, EdgeKind, ParsedFile, SymbolKind};
+use crate::types::{AliasTarget, EdgeKind, ExtractedSymbol, ParsedFile, SymbolKind};
 
 // ---------------------------------------------------------------------------
 // `is_type_like` is the single canonical type-name-surface predicate, owned by
@@ -426,33 +426,12 @@ impl Compilation {
 
             // Pass 2 — enclosing_type / enclosing_namespace via parent_index.
             for sym in &pf.symbols {
-                let qname = &sym.qualified_name;
-                let mut cursor = sym.parent_index;
-                let mut found_type: Option<String> = None;
-                let mut found_ns: Option<String> = None;
-                while let Some(idx) = cursor {
-                    let Some(ancestor) = pf.symbols.get(idx) else {
-                        break;
-                    };
-                    let ancestor_kind = ancestor.kind.as_str();
-                    if found_type.is_none() && is_type_like(ancestor_kind) {
-                        found_type = Some(ancestor.qualified_name.clone());
-                    }
-                    if found_ns.is_none()
-                        && matches!(ancestor_kind, "namespace" | "module")
-                    {
-                        found_ns = Some(ancestor.qualified_name.clone());
-                    }
-                    if found_type.is_some() && found_ns.is_some() {
-                        break;
-                    }
-                    cursor = ancestor.parent_index;
-                }
+                let (found_type, found_ns) = enclosing_chain(&pf.symbols, sym.parent_index);
                 if let Some(t) = found_type {
-                    self.enclosing_type.insert(qname.clone(), t);
+                    self.enclosing_type.insert(sym.qualified_name.clone(), t);
                 }
                 if let Some(n) = found_ns {
-                    self.enclosing_namespace.insert(qname.clone(), n);
+                    self.enclosing_namespace.insert(sym.qualified_name.clone(), n);
                 }
             }
 
@@ -2193,6 +2172,47 @@ fn is_bare_type_identifier(s: &str) -> bool {
         _ => return false,
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Walk a symbol's `parent_index` ancestry to the nearest enclosing type-like
+/// symbol and the nearest enclosing namespace/module, returning their qualified
+/// names as `(enclosing_type, enclosing_namespace)`. Stops as soon as both are
+/// found.
+///
+/// Cycle-guarded: a `parent_index` chain that revisits an index — a self-parent
+/// (`parent_index` == the symbol's own slot) or a longer loop, which a
+/// name-based symbol merge can produce when a same-named parent and descendant
+/// collapse onto one slot — terminates at the first repeat. Without the guard a
+/// self-parented symbol that never reaches both a type AND a namespace ancestor
+/// spins forever.
+fn enclosing_chain(
+    symbols: &[ExtractedSymbol],
+    start: Option<usize>,
+) -> (Option<String>, Option<String>) {
+    let mut cursor = start;
+    let mut found_type: Option<String> = None;
+    let mut found_ns: Option<String> = None;
+    let mut visited: FxHashSet<usize> = FxHashSet::default();
+    while let Some(idx) = cursor {
+        if !visited.insert(idx) {
+            break;
+        }
+        let Some(ancestor) = symbols.get(idx) else {
+            break;
+        };
+        let ancestor_kind = ancestor.kind.as_str();
+        if found_type.is_none() && is_type_like(ancestor_kind) {
+            found_type = Some(ancestor.qualified_name.clone());
+        }
+        if found_ns.is_none() && matches!(ancestor_kind, "namespace" | "module") {
+            found_ns = Some(ancestor.qualified_name.clone());
+        }
+        if found_type.is_some() && found_ns.is_some() {
+            break;
+        }
+        cursor = ancestor.parent_index;
+    }
+    (found_type, found_ns)
 }
 
 /// Test-only re-export of the type-like predicate so `tree_tests.rs` can
