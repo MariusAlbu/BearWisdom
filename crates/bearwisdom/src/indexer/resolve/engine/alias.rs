@@ -44,6 +44,18 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
                 continue;
             }
         }
+        // A member-preserving / key-narrowing utility applied DIRECTLY (`Omit<T,K>`
+        // / `Pick<T,K>` / `Partial<T>` / …, not via a named alias) carries the
+        // wrapped type's members — unwrap to `T` like `NoInfer` so a walk on
+        // `Omit<Base,K>` resolves on `Base`. This catches the form produced
+        // mid-expansion (a decided conditional's branch, a method's return); the
+        // aliased form (`type X = Omit<…>`) is handled in the match below.
+        if is_member_preserving_utility(&head) {
+            if let Some(inner) = apply_args(arena, ty).first().copied() {
+                ty = inner;
+                continue;
+            }
+        }
         // The alias's target as a TypeId, computed as owned data so the lookup
         // borrow ends before `ty` is reassigned. An `Application` alias reduces
         // to `root<args…>`; any other alias kind is transparent through its
@@ -79,6 +91,34 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
             // arguments. Stop here so the member walk resolves the member on each
             // arm WITH those args bound (`lookup_member_on_union` + `substitute_through`).
             Some(AliasTarget::Union(_)) => break,
+            // A conditional `C extends E ? T : F`. Evaluate it only when binding the
+            // alias's params to the application's args reduces `C extends E` to a
+            // DECIDABLE literal comparison (`TDynamic extends true` with
+            // `TDynamic=false` → the false branch). The `… => infer R` return-type
+            // shape is resolved at the root (`resolve_return_type_extraction`), not
+            // here; an undecidable guard keeps the prior transparent behaviour —
+            // never a guessed branch.
+            Some(AliasTarget::Conditional {
+                check,
+                extends,
+                true_branch,
+                false_branch,
+                ..
+            }) if !extends.contains("=> infer ") => {
+                let params = lookup
+                    .generic_params(&head)
+                    .map(|p| p.to_vec())
+                    .unwrap_or_default();
+                let arg_ids = apply_args(arena, ty);
+                match decide_conditional(arena, &params, &arg_ids, &check, &extends) {
+                    Some(true) => arena.intern_type_str(&true_branch),
+                    Some(false) => arena.intern_type_str(&false_branch),
+                    None => match transparent_alias_target(lookup, arena, &head) {
+                        Some(t) => t,
+                        None => break,
+                    },
+                }
+            }
             _ => match transparent_alias_target(lookup, arena, &head) {
                 Some(t) => t,
                 None => break,
@@ -115,6 +155,44 @@ fn is_member_preserving_utility(root: &str) -> bool {
         root,
         "Omit" | "Pick" | "Partial" | "Required" | "Readonly" | "NonNullable" | "Awaited"
     )
+}
+
+/// Decide a conditional's `check extends extends_ty` after binding the alias's
+/// generic params to the application's args. `Some(true/false)` only when both
+/// sides reduce to concrete, comparable literals; `None` when undecidable — the
+/// caller must not pick a branch then.
+fn decide_conditional(
+    arena: &TypeArena,
+    params: &[String],
+    arg_ids: &[TypeId],
+    check: &str,
+    extends: &str,
+) -> Option<bool> {
+    let bind = |name: &str| -> String {
+        let n = name.trim();
+        params
+            .iter()
+            .position(|p| p == n)
+            .and_then(|i| arg_ids.get(i))
+            .and_then(|&a| head_qname(arena, a))
+            .unwrap_or_else(|| n.to_string())
+    };
+    literal_extends(&bind(check), &bind(extends))
+}
+
+/// Minimal, SOUND subtype decision for the literal forms a captured conditional
+/// guard uses. Identical types are assignable; `true`/`false` are distinct boolean
+/// literals. Anything else is undecidable here — there is no full subtype lattice,
+/// so `None` rather than a guess.
+fn literal_extends(check: &str, extends: &str) -> Option<bool> {
+    if check == extends {
+        return Some(true);
+    }
+    const BOOL_LITS: [&str; 2] = ["true", "false"];
+    if BOOL_LITS.contains(&check) && BOOL_LITS.contains(&extends) {
+        return Some(false);
+    }
+    None
 }
 
 /// The `Application` alias target `root<args…>` as a TypeId.

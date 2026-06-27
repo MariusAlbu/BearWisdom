@@ -77,3 +77,55 @@ fn keeps_an_object_literal_alias_that_carries_its_own_members() {
     let foo = arena.class("Foo");
     assert_eq!(expand(foo, &lookup, arena), foo);
 }
+
+#[test]
+fn evaluates_a_decidable_conditional_to_its_false_branch() {
+    // type Upd<T, D, K> = D extends true ? T : Omit<Base, K>
+    // Upd<Base, false, "x"> — `false extends true` is decidably false, so the
+    // false branch Omit<Base,"x"> is taken, then the direct member-preserving
+    // Omit unwraps to Base (the query-builder `.set()` shape: a `TDynamic` toggle
+    // whose false arm is the concrete builder).
+    let lookup = Lookup::new()
+        .with_alias(
+            "Upd",
+            AliasTarget::Conditional {
+                check: "D".to_string(),
+                extends: "true".to_string(),
+                true_branch: "T".to_string(),
+                false_branch: "Omit<Base, K>".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with_generics("Upd", &["T", "D", "K"]);
+    let arena = lookup.type_arena().unwrap();
+    let applied = arena.intern(Type::Apply {
+        base: arena.class("Upd"),
+        args: vec![arena.class("Base"), arena.class("false"), arena.class("x")],
+    });
+    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "Base");
+}
+
+#[test]
+fn leaves_an_undecidable_conditional_unevaluated() {
+    // type Cond<T> = T extends string ? A : B — `T extends string` is undecidable
+    // without a subtype lattice, so neither branch is guessed; with no recorded
+    // field type the type stays put.
+    let lookup = Lookup::new()
+        .with_alias(
+            "Cond",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "string".to_string(),
+                true_branch: "A".to_string(),
+                false_branch: "B".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with_generics("Cond", &["T"]);
+    let arena = lookup.type_arena().unwrap();
+    let applied = arena.intern(Type::Apply {
+        base: arena.class("Cond"),
+        args: vec![arena.class("User")],
+    });
+    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "Cond<User>");
+}
