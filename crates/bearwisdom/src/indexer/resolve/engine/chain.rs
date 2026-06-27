@@ -1471,6 +1471,18 @@ fn import_scoped_external_root(
     Some(Receiver::new(arena.class(&s.qualified_name), s.id))
 }
 
+/// The package that DECLARES `name` as an ambient global — read off the declaring
+/// file of the ambient-scope registration (`__npm_globals__.<name>` sourced from
+/// `vitest/globals.d.ts` → `vitest`). `None` when `name` is not a registered
+/// global. Lets an unimported chain root prefer that package's own typed
+/// declaration over a same-named export of an unrelated package.
+fn ambient_global_package(lookup: &dyn SymbolLookup, name: &str) -> Option<String> {
+    lookup.ambient_symbols(name).iter().find_map(|s| {
+        crate::ecosystem::externals::ts_package_from_virtual_path(&s.file_path)
+            .map(|p| p.to_string())
+    })
+}
+
 /// Type a chain root that is a *value* by the declared type on its declaration.
 /// Runs after the flow-cache and annotation roots, so a local's inferred type
 /// still wins; this catches values whose type lives on the declaration rather
@@ -1506,6 +1518,28 @@ fn value_root_type(
     let src_file = file_ctx.file_path.as_str();
     let is_owned =
         |s: &Symbol| name_imported || s.file_path.starts_with("ext:") || &*s.file_path == src_file;
+
+    // Ambient-global scope: a name used WITHOUT an import that is registered as a
+    // global resolves to the package that DECLARES the global, not a same-named
+    // export of an unrelated package — `expect` is globalized by vitest, so it
+    // roots on vitest's `ExpectStatic`, not playwright's imported `expect`. Prefer
+    // that package's own typed value declaration. The ambient registry IS a scope
+    // (like import scope), so this never reorders an unscoped multi-candidate root.
+    if !name_imported {
+        if let Some(pkg) = ambient_global_package(lookup, name) {
+            let prefix = format!("{pkg}.");
+            for cand in lookup.by_name(name) {
+                if !is_value_kind(&cand.kind) || !cand.qualified_name.starts_with(&prefix) {
+                    continue;
+                }
+                if let Some(id) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) {
+                    if !is_primitive_head(arena, id) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+    }
 
     // True once an owned same-name binding is seen (even untyped) — then a foreign
     // value's type is never borrowed over it.
@@ -1751,6 +1785,20 @@ fn receiver_type_for_head(
         .find(|c| c.qualified_name == head && type_has_members(lookup, c))
     {
         return Some(exact.clone());
+    }
+    // A re-export shell (`vitest.ExpectStatic` re-exporting `@vitest/expect`'s)
+    // resolves to the RE-EXPORTED declaration, not an arbitrary same-simple-name
+    // type — the re-export names the authoritative source, so `vitest`'s `expect`
+    // reaches `@vitest/expect.ExpectStatic`, not a foreign `@types/chai` one.
+    if let Some(shell) = lookup.by_qualified_name(head) {
+        for (orig, module) in lookup.reexports_from(&shell.file_path) {
+            if orig.as_str() == simple {
+                let want = format!("{module}.{simple}");
+                if let Some(c) = candidates.iter().find(|c| c.qualified_name == want) {
+                    return Some(c.clone());
+                }
+            }
+        }
     }
     // Otherwise prefer a member-bearing type declaration (the interface that holds
     // the call signature / members), falling back to the first type candidate.
