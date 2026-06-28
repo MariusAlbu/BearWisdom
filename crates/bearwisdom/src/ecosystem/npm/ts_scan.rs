@@ -97,6 +97,12 @@ pub(crate) fn scan_ts_file_exports(source: &str, language: &str) -> FileExports 
     // to a regex sweep of the source.
     out.globals = scan_declare_global_blocks(source);
 
+    // A global-script `.d.ts` (no top-level import/export) also contributes its
+    // top-level `declare const`/`var`/`function`/… to the ambient scope — the
+    // shape `@types/jest` uses for `expect`, `describe`, `it`, … which the
+    // `declare global` / `declare namespace` sweep above does not reach.
+    out.globals.extend(scan_global_script_top_level_decls(source));
+
     // `declare module 'vue' { interface GlobalComponents { ... } }` —
     // member names are auto-registered as global Vue template components
     // by `app.use(<plugin>)`. Source forms covered:
@@ -312,6 +318,46 @@ pub(crate) fn scan_declare_global_blocks(source: &str) -> Vec<String> {
     }
 
     out
+}
+
+/// Top-level value declarations of a *global-script* `.d.ts` — a file with no
+/// top-level `import`/`export`, whose top-level `declare` statements therefore
+/// land in the global ambient scope. This is the DefinitelyTyped convention for
+/// global packages: `@types/jest`'s `index.d.ts` declares `declare const expect`,
+/// `declare var describe`, … as ambient globals callable without an `import`.
+///
+/// A module file (any top-level `import`/`export`) scopes its declarations to
+/// the module, so it contributes nothing and returns empty. `declare namespace`
+/// is intentionally excluded — `scan_declare_global_blocks` already emits its
+/// (dotted) members; this covers the flat value globals it misses: `const` /
+/// `let` / `var` / `function` / `class` / `enum`.
+pub(crate) fn scan_global_script_top_level_decls(source: &str) -> Vec<String> {
+    // A top-level `import`/`export` marks the file a module — its top-level
+    // declares are module-scoped, not global, so there is nothing to lift.
+    if has_top_level_module_marker(source) {
+        return Vec::new();
+    }
+    static DECL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?m)^declare\s+(?:const|let|var|function|async\s+function|class|abstract\s+class|enum)\s+([A-Za-z_$][\w$]*)",
+        )
+        .expect("global-script decl regex")
+    });
+    DECL_RE
+        .captures_iter(source)
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
+/// True when `source` has a column-0 `import` or `export` statement — the signal
+/// that a `.d.ts` is a module (declarations module-scoped) rather than a global
+/// script. Anchored to column 0 so inline type imports (`typeof import('x')`)
+/// and an `export` nested inside a `declare global { … }` body don't count.
+fn has_top_level_module_marker(source: &str) -> bool {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?m)^(?:import|export)\b").expect("module marker regex")
+    });
+    RE.is_match(source)
 }
 
 /// Given a source byte offset pointing at an opening `{`, return the offset

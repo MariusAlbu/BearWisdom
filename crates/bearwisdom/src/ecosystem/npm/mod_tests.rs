@@ -512,6 +512,42 @@ fn declare_global_source_without_marker_returns_empty() {
 }
 
 #[test]
+fn global_script_top_level_decls_lifted_as_globals() {
+    // @types/jest shape — a global-script `.d.ts` (no top-level import/export)
+    // whose top-level `declare const`/`declare var` are ambient globals.
+    let src = r#"
+declare var beforeAll: jest.Lifecycle;
+declare var describe: jest.Describe;
+declare var it: jest.It;
+declare const expect: jest.Expect;
+declare function spyOn(o: object, m: string): jest.SpyInstance;
+declare namespace jest {
+  interface Expect { <T>(actual: T): Matchers<void, T>; }
+  interface Matchers<R, T> { toBe<E>(expected: E): R; }
+}
+"#;
+    let names = scan_global_script_top_level_decls(src);
+    assert!(names.iter().any(|n| n == "expect"), "expect lifted: {names:?}");
+    assert!(names.iter().any(|n| n == "describe"));
+    assert!(names.iter().any(|n| n == "it"));
+    assert!(names.iter().any(|n| n == "beforeAll"));
+    assert!(names.iter().any(|n| n == "spyOn"));
+    // `declare namespace` members are emitted (dotted) by
+    // scan_declare_global_blocks, not here.
+    assert!(!names.iter().any(|n| n == "jest"));
+}
+
+#[test]
+fn module_file_top_level_decls_not_lifted() {
+    // A module (`.d.ts` with a top-level `export`/`import`) scopes its declares
+    // to the module — nothing is an ambient global.
+    let src = "export {};\ndeclare const notGlobal: number;\n";
+    assert!(scan_global_script_top_level_decls(src).is_empty());
+    let src2 = "import { X } from './x';\ndeclare const alsoNot: number;\n";
+    assert!(scan_global_script_top_level_decls(src2).is_empty());
+}
+
+#[test]
 fn declare_global_namespace_emits_dotted_names() {
     // @types/express shape — `Express.Multer.File` is the user-visible name.
     let src = r#"

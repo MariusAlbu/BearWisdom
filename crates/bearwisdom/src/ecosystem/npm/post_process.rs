@@ -5,7 +5,7 @@
 use crate::ecosystem::externals::ts_package_from_virtual_path;
 
 use super::symbol_index::NPM_GLOBALS_MODULE;
-use super::ts_scan::scan_declare_global_blocks;
+use super::ts_scan::{scan_declare_global_blocks, scan_global_script_top_level_decls};
 use super::{normalize_virtual_rel, LEGACY_ECOSYSTEM_TAG};
 
 // ---------------------------------------------------------------------------
@@ -29,7 +29,12 @@ use super::{normalize_virtual_rel, LEGACY_ECOSYSTEM_TAG};
 pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &str) {
     use crate::types::{ExtractedSymbol, SymbolKind};
 
-    let globals = scan_declare_global_blocks(source);
+    let mut globals = scan_declare_global_blocks(source);
+    // A global-script `.d.ts` (no top-level import/export) contributes its
+    // top-level `declare const`/`var`/`function`/… as ambient globals too —
+    // the `@types/jest` shape (`declare const expect: jest.Expect`) the block /
+    // namespace sweep above misses.
+    globals.extend(scan_global_script_top_level_decls(source));
     if globals.is_empty() {
         return;
     }
@@ -135,7 +140,11 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
     }
     let source_snapshot = pf.content.clone();
     if let Some(source) = source_snapshot.as_deref() {
-        if source.contains("declare global") || source.contains("declare namespace") {
+        // `declare ` is the necessary precondition for any ambient contribution —
+        // `declare global { … }`, `declare namespace`, and the global-script
+        // top-level `declare const/var/…` all carry it; a file without it can
+        // produce no globals, so the backfill would no-op.
+        if source.contains("declare ") {
             backfill_declare_global_symbols(pf, source);
         }
     }
