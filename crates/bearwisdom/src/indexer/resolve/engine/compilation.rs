@@ -14,9 +14,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
-    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
-    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
+    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args,
+    resolve_type_name_in_scope, FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet,
+    TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::ecosystem::externals::ts_package_from_virtual_path;
@@ -962,7 +963,19 @@ impl Compilation {
                             );
                             let rid = intern_head_and_args(&self.arena, &resolved, &args);
                             Some((resolved, Some(rid)))
-                        } else if let Some(&(last, _)) = type_refs.last() {
+                        } else if let Some(&(last, _)) = type_refs.last().filter(|_| {
+                            // The trailing TypeRef is the return type only when the
+                            // signature expresses one (`sig_rt`). For a params-first
+                            // callable with an inferred return, the last TypeRef is
+                            // the last PARAMETER type, which must not be mistaken for
+                            // the return (`m(opts: O) { return … }` is not `(): O`).
+                            sig_rt.is_some()
+                                || sym
+                                    .signature
+                                    .as_deref()
+                                    .and_then(parse_param_types_from_signature)
+                                    .map_or(true, |params| params.is_empty())
+                        }) {
                             let resolved = resolve_type_name_in_scope(
                                 last,
                                 sym.scope_path.as_deref(),

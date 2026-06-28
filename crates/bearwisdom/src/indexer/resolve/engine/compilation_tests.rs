@@ -527,6 +527,47 @@ fn return_type_name_for_find() {
     );
 }
 
+/// A params-first method with NO explicit return annotation (TS infers it from
+/// the body) must NOT capture its last PARAMETER type as the return type. The
+/// trailing-TypeRef fallback exists for a return-position TypeRef; for a callable
+/// with no expressible return, the trailing TypeRef is a parameter.
+#[test]
+fn inferred_return_method_does_not_capture_last_param_as_return() {
+    let arena = Arc::new(TypeArena::new());
+    let mut method = make_symbol(
+        "elementByCss",
+        "Browser.elementByCss",
+        SymbolKind::Method,
+        Some(0),
+        None,
+        None,
+    );
+    method.signature = Some("elementByCss(selector: string, opts?: ElementByCssOpts)".to_string());
+    let symbols = vec![
+        make_symbol("Browser", "Browser", SymbolKind::Class, None, None, None),
+        method,
+    ];
+    // The method's TypeRefs are its two PARAMETER types, in source order.
+    let refs = vec![type_ref(1, "string"), type_ref(1, "ElementByCssOpts")];
+    let pf = make_parsed_file("src/browser.ts", symbols, refs);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/browser.ts".to_string(), "Browser".to_string()), 1);
+    id_map.insert(
+        ("src/browser.ts".to_string(), "Browser.elementByCss".to_string()),
+        2,
+    );
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_name("Browser.elementByCss"),
+        None,
+        "a params-first method with no return annotation must have no derived \
+         return type, not its last parameter's type"
+    );
+}
+
 #[test]
 fn field_type_name_for_db() {
     let (tree, _) = build_fixture();
