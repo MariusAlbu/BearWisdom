@@ -1033,7 +1033,7 @@ fn observable_property_resolves_through_index() {
     // chain `vm.Current.Id` rides), the same as a record's positional property.
     // The head `User` resolves in scope to the declaring class `App.User`.
     assert_eq!(
-        index.field_type_name("App.VM.Current"),
+        index.field_type_str("App.VM.Current").as_deref(),
         Some("App.User"),
         "the synthesized Current property must carry field type User so `vm.Current.Id` types through"
     );

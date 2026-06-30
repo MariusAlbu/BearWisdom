@@ -8,7 +8,7 @@
 // =============================================================================
 
 use crate::type_checker::core::types::{TypeArena, TypeId};
-use crate::types::AliasTarget;
+use crate::types::AliasTargetIds;
 
 use super::{Symbol, SymbolSet};
 
@@ -107,7 +107,7 @@ pub trait SymbolLookup {
 
     /// Get the generic type parameter names for a type declaration.
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
-    fn generic_params(&self, type_name: &str) -> Option<&[String]>;
+    fn generic_params(&self, type_name: &str) -> Option<Vec<String>>;
 
     /// Canonical TypeId form of `field_type_name`. Returns `Some(id)` when
     /// the property's field type has been interned into the workspace arena.
@@ -148,7 +148,7 @@ pub trait SymbolLookup {
     /// across packages / doc fences collides in the qname slot, so the id-keyed form
     /// reads THIS declaration's params for a caller that has resolved the
     /// import-scoped callee (used to bind a call's type arguments). Default `None`.
-    fn generic_params_of(&self, _symbol_id: i64) -> Option<&[String]> {
+    fn generic_params_of(&self, _symbol_id: i64) -> Option<Vec<String>> {
         None
     }
 
@@ -156,7 +156,7 @@ pub trait SymbolLookup {
     /// with `generic_params_of`. A default may name an earlier param
     /// (`TData = TQueryFnData`), letting a partially-applied call bind the rest.
     /// Default `None`.
-    fn generic_param_defaults_of(&self, _symbol_id: i64) -> Option<&[Option<String>]> {
+    fn generic_param_defaults_of(&self, _symbol_id: i64) -> Option<Vec<Option<String>>> {
         None
     }
 
@@ -198,17 +198,28 @@ pub trait SymbolLookup {
 
     /// Look up the structural shape of a type alias.
     ///
-    /// Returns `Some(&AliasTarget)` when `name` is a registered alias
+    /// Returns `Some(&AliasTargetIds)` when `name` is a registered alias
     /// (currently only the TypeScript extractor classifies its aliases
     /// this finely; other languages get a derived `Application` shape
-    /// or `None`). Used by `crate::type_checker::alias::expand_alias`
-    /// at the top of every chain segment iteration so the walker can
-    /// follow `type UserMap = Map<string, User>` aliases through to
-    /// the underlying concrete head and type args.
+    /// or `None`). Used by `engine::alias::expand` at the top of every
+    /// chain segment iteration so the walker can follow
+    /// `type UserMap = Map<string, User>` aliases through to the underlying
+    /// concrete head and type args. Every type-expression component is
+    /// pre-interned; no `TypeArena::intern_type_str` call is needed at
+    /// lookup time.
     ///
     /// Default returns `None` so synthetic test lookups don't have to
     /// opt in.
-    fn alias_target(&self, _name: &str) -> Option<&crate::types::AliasTarget> {
+    fn alias_target(&self, _name: &str) -> Option<&AliasTargetIds> {
+        None
+    }
+
+    /// The alias target of the type-alias declaration with this SYMBOL ID — the
+    /// import-scoped, collision-free counterpart of `alias_target`. Two sibling
+    /// aliases sharing a bare name (`type Logger = …` in two files) collide in the
+    /// name-keyed map; keying by the declaration the use site imports resolves the
+    /// right one. Default `None` so synthetic lookups need not opt in.
+    fn alias_target_by_id(&self, _id: i64) -> Option<&AliasTargetIds> {
         None
     }
 
@@ -406,6 +417,12 @@ pub trait SymbolLookup {
     /// the arguments live on the edge, not on the receiver. Default empty; the
     /// real store overrides it.
     fn parent_class_args(&self, _child_head: &str, _parent_head: &str) -> &[String] {
+        &[]
+    }
+
+    /// Interned-id form of `parent_class_args`. Default empty; the real store
+    /// overrides it. Consumers fall back to interning `parent_class_args` on empty.
+    fn parent_class_arg_ids(&self, _child_head: &str, _parent_head: &str) -> &[TypeId] {
         &[]
     }
 

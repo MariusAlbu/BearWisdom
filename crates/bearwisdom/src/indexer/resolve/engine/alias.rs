@@ -17,7 +17,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::types::AliasTarget;
+use crate::types::AliasTargetIds;
 
 use super::chain::{apply_args, callable_named_return, head_qname};
 use super::contract::SymbolLookup;
@@ -30,7 +30,21 @@ const MAX_ALIAS_DEPTH: usize = 8;
 /// applied as `Box<User>` → `Container<User>`. Recurses through an alias of an
 /// alias, bounded. A type that is not a registered `Application` alias is
 /// returned unchanged.
-pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeArena) -> TypeId {
+pub(crate) fn expand(ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeArena) -> TypeId {
+    expand_with_id(ty, None, lookup, arena)
+}
+
+/// `expand` with the receiver's declaration id. The id resolves a bare-name alias
+/// COLLISION (two `type Logger = …` in different files) to the alias the use site
+/// imported — via `alias_target_by_id`, which the name-keyed map cannot
+/// disambiguate (last writer wins). The id is consumed on the hop it resolves, so
+/// later hops resolve by name as usual; `None` reproduces the plain name walk.
+pub(crate) fn expand_with_id(
+    mut ty: TypeId,
+    mut recv_id: Option<i64>,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+) -> TypeId {
     for _ in 0..MAX_ALIAS_DEPTH {
         let Some(head) = head_qname(arena, ty) else {
             break;
@@ -60,15 +74,22 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
         // borrow ends before `ty` is reassigned. An `Application` alias reduces
         // to `root<args…>`; any other alias kind is transparent through its
         // flattened RHS head when it carries no members of its own.
-        let target = match lookup.alias_target(&head) {
+        // Id-keyed target wins on the head it describes — a bare-name alias
+        // collision the use site disambiguates by the declaration it imported.
+        // Consumed after this hop (later hops resolve by name); survives a prior
+        // NoInfer/utility unwrap so `NoInfer<Logger>` still keys on `Logger`'s id.
+        let by_id = recv_id.take().and_then(|id| lookup.alias_target_by_id(id));
+        let target = match by_id.or_else(|| lookup.alias_target(&head)) {
             // `ReturnType<typeof f>` / `ReturnType<F>` intrinsic — the return type
             // of the function value/type the single argument names. A captured
             // return is required; an uncaptured one (`break`) leaves the alias
             // unresolved rather than dereferencing a dead `ReturnType` class.
-            Some(AliasTarget::Application { root, args })
-                if root == "ReturnType" && args.len() == 1 =>
+            Some(AliasTargetIds::Application { root, args })
+                if head_qname(arena, *root).as_deref() == Some("ReturnType")
+                    && args.len() == 1 =>
             {
-                match callable_named_return(lookup, arena, &args[0]) {
+                let arg_str = arena.format_type(args[0]);
+                match callable_named_return(lookup, arena, &arg_str) {
                     Some(t) => t,
                     None => break,
                 }
@@ -80,17 +101,22 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
             // member-less intrinsic, so a walk on `Omit<Base,K>` finds nothing;
             // redirect to the wrapped type `T` (the conservative receiver for member
             // resolution) so the member resolves on it.
-            Some(AliasTarget::Application { root, args })
-                if is_member_preserving_utility(&root) && !args.is_empty() =>
+            Some(AliasTargetIds::Application { root, args })
+                if head_qname(arena, *root)
+                    .as_deref()
+                    .is_some_and(is_member_preserving_utility)
+                    && !args.is_empty() =>
             {
-                arena.intern_type_str(&args[0])
+                args[0]
             }
-            Some(AliasTarget::Application { root, args }) => application_target(arena, root, args),
+            Some(AliasTargetIds::Application { root, args }) => {
+                application_target(arena, *root, args)
+            }
             // A union alias has no members of its own; reducing it transparently to
             // a single arm (via a recorded field type) drops the receiver's type
             // arguments. Stop here so the member walk resolves the member on each
             // arm WITH those args bound (`lookup_member_on_union` + `substitute_through`).
-            Some(AliasTarget::Union(_)) => break,
+            Some(AliasTargetIds::Union(_)) => break,
             // A conditional `C extends E ? T : F`. Evaluate it only when binding the
             // alias's params to the application's args reduces `C extends E` to a
             // DECIDABLE literal comparison (`TDynamic extends true` with
@@ -98,21 +124,18 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
             // shape is resolved at the root (`resolve_return_type_extraction`), not
             // here; an undecidable guard keeps the prior transparent behaviour —
             // never a guessed branch.
-            Some(AliasTarget::Conditional {
+            Some(AliasTargetIds::Conditional {
                 check,
                 extends,
                 true_branch,
                 false_branch,
                 ..
-            }) if !extends.contains("=> infer ") => {
-                let params = lookup
-                    .generic_params(&head)
-                    .map(|p| p.to_vec())
-                    .unwrap_or_default();
+            }) if !arena.format_type(*extends).contains("=> infer ") => {
+                let params = lookup.generic_params(&head).unwrap_or_default();
                 let arg_ids = apply_args(arena, ty);
-                match decide_conditional(arena, &params, &arg_ids, &check, &extends) {
-                    Some(true) => arena.intern_type_str(&true_branch),
-                    Some(false) => arena.intern_type_str(&false_branch),
+                match decide_conditional(arena, &params, &arg_ids, *check, *extends) {
+                    Some(true) => *true_branch,
+                    Some(false) => *false_branch,
                     None => match transparent_alias_target(lookup, arena, &head) {
                         Some(t) => t,
                         None => break,
@@ -130,10 +153,7 @@ pub(crate) fn expand(mut ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeAren
             break;
         }
         // Substitute the alias's own generic params with the application's args.
-        let params = lookup
-            .generic_params(&head)
-            .map(|p| p.to_vec())
-            .unwrap_or_default();
+        let params = lookup.generic_params(&head).unwrap_or_default();
         let ty_args = apply_args(arena, ty);
         ty = if params.is_empty() || ty_args.is_empty() {
             target
@@ -165,44 +185,64 @@ fn decide_conditional(
     arena: &TypeArena,
     params: &[String],
     arg_ids: &[TypeId],
-    check: &str,
-    extends: &str,
+    check: TypeId,
+    extends: TypeId,
 ) -> Option<bool> {
-    let bind = |name: &str| -> String {
-        let n = name.trim();
-        params
-            .iter()
-            .position(|p| p == n)
-            .and_then(|i| arg_ids.get(i))
-            .and_then(|&a| head_qname(arena, a))
-            .unwrap_or_else(|| n.to_string())
+    // A bare generic-param reference (`T`) binds to the application's matching
+    // arg; any other type expression stays itself. Comparison is on nominal-head
+    // TypeIds — no string rendering.
+    let bind = |id: TypeId| -> TypeId {
+        head_qname(arena, id)
+            .and_then(|n| params.iter().position(|p| p.trim() == n.trim()))
+            .and_then(|i| arg_ids.get(i).copied())
+            .unwrap_or(id)
     };
-    literal_extends(&bind(check), &bind(extends))
+    literal_extends(arena, bind(check), bind(extends))
+}
+
+/// Nominal-head TypeId of `id`: peels `Apply`/`Optional`/`AsyncWrapper`/
+/// `Iterator` wrappers to the underlying base, so `Vec<User>` and `Vec<infer U>`
+/// share the `Vec` head id (the args bind separately in the conditional guard).
+fn head_type_id(arena: &TypeArena, id: TypeId) -> TypeId {
+    let mut cur = id;
+    loop {
+        match arena.get(cur) {
+            Type::Apply { base, .. } => cur = base,
+            Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
+                cur = inner
+            }
+            _ => return cur,
+        }
+    }
 }
 
 /// Minimal, SOUND subtype decision for the literal forms a captured conditional
 /// guard uses. Identical types are assignable; `true`/`false` are distinct boolean
 /// literals. Anything else is undecidable here — there is no full subtype lattice,
 /// so `None` rather than a guess.
-fn literal_extends(check: &str, extends: &str) -> Option<bool> {
-    if check == extends {
+fn literal_extends(arena: &TypeArena, check: TypeId, extends: TypeId) -> Option<bool> {
+    // Identical nominal heads are assignable (structural id equality).
+    if head_type_id(arena, check) == head_type_id(arena, extends) {
         return Some(true);
     }
-    const BOOL_LITS: [&str; 2] = ["true", "false"];
-    if BOOL_LITS.contains(&check) && BOOL_LITS.contains(&extends) {
+    // Distinct boolean-literal types are non-assignable. A bool literal interns
+    // as `Class("true")`/`Class("false")` — its identity IS the value — so this is
+    // a literal-value check, not a type-shape string.
+    let is_bool_lit =
+        |id: TypeId| head_qname(arena, id).as_deref().is_some_and(|n| n == "true" || n == "false");
+    if is_bool_lit(check) && is_bool_lit(extends) {
         return Some(false);
     }
     None
 }
 
-/// The `Application` alias target `root<args…>` as a TypeId.
-fn application_target(arena: &TypeArena, root: &str, args: &[String]) -> TypeId {
-    let base = arena.class(root);
+/// The `Application` alias target `root<args…>` as a TypeId. Both `root` and
+/// each element of `args` are already interned TypeIds from the Compilation map.
+fn application_target(arena: &TypeArena, root: TypeId, args: &[TypeId]) -> TypeId {
     if args.is_empty() {
-        base
+        root
     } else {
-        let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
-        arena.intern(Type::Apply { base, args: arg_ids })
+        arena.intern(Type::Apply { base: root, args: args.to_vec() })
     }
 }
 
@@ -228,8 +268,8 @@ fn transparent_alias_target(
         return Some(t);
     }
     lookup
-        .field_type_name(head)
-        .map(|s| arena.intern_type_str(s))
+        .field_type_str(head)
+        .map(|s| arena.intern_type_str(&s))
 }
 
 #[cfg(test)]

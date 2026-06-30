@@ -1,0 +1,19 @@
+[package]
+name         = "code-highlight"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+homepage.workspace     = true
+keywords.workspace     = true
+categories.workspace   = true
+description = "Tree-sitter syntax highlighting → HighlightKind spans, shared by editor frontends and BearWisdom"
+
+[dependencies]
+tree-sitter           = { workspace = true }
+tree-sitter-highlight = "0.25"
+tree-sitter-md        = { workspace = true }
+code-grammars         = { workspace = true }
+serde                 = { workspace = true }
+once_cell             = { workspace = true }

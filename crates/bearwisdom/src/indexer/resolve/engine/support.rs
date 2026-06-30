@@ -15,6 +15,7 @@ use rustc_hash::FxHashMap;
 use crate::indexer::resolve::engine::contract::{
     FileContext, Symbol, SymbolInfo, SymbolLookup, TypeInfo, RESOLVED_CONFIDENCE,
 };
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
 use crate::types::EdgeKind;
 
@@ -42,7 +43,8 @@ pub(crate) fn resolve_module_exported_value_type(
     export_alias: &FxHashMap<String, FxHashMap<String, String>>,
     by_qname: &BTreeMap<String, Symbol>,
     type_info: &FxHashMap<String, TypeInfo>,
-) -> Option<(String, Option<crate::type_checker::core::types::TypeId>)> {
+    arena: &TypeArena,
+) -> Option<TypeId> {
     let declaring_qname = export_alias
         .get(module)
         .and_then(|aliases| aliases.get(key))
@@ -55,20 +57,16 @@ pub(crate) fn resolve_module_exported_value_type(
         return None;
     }
     // A `typeof <value>` whose declared value is a function/method: the value IS
-    // that callable, so its type is the function's own qname — calling the typed
-    // property then yields the function's return type (the chain walker's
-    // callable-named unwrap). A function carries no `field_type` of its own, so
-    // the field-type read below would otherwise drop it. A non-callable value's
-    // type is its declared field_type.
+    // that callable, so its type is the function itself — a call on the typed
+    // property then walks through the callable's return_type_id.
     if by_qname
         .get(&declaring_qname)
         .is_some_and(|s| matches!(s.kind.as_str(), "function" | "method"))
     {
-        return Some((declaring_qname, None));
+        return Some(arena.class(&declaring_qname));
     }
     let ti = type_info.get(&declaring_qname)?;
-    let field_type = ti.field_type.clone()?;
-    Some((field_type, ti.field_type_id))
+    ti.field_type_id
 }
 
 /// The workspace package id the file imports `name` from, when the import's

@@ -11,6 +11,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::type_checker::core::types::{TypeArena, TypeId};
+
 // ---------------------------------------------------------------------------
 // Enumerations
 // ---------------------------------------------------------------------------
@@ -385,6 +387,96 @@ pub enum AliasTarget {
     /// tuples, infer, type predicates, this — chain walkers must NOT
     /// treat as `Application`.
     Other,
+}
+
+/// Pre-interned form of [`AliasTarget`] stored in the Compilation's
+/// `alias_target` map. Every type-expression `String` field is replaced by a
+/// `TypeId` obtained via the same `TypeArena::intern_type_str` / `class` call
+/// the old expand-alias path made at lookup time; non-type fields (value paths,
+/// key literals, value-template strings, binding-variable names) stay `String`.
+///
+/// `Typeof` keeps its string because the payload is a VALUE path (`"users.get"`),
+/// not a type expression. `IndexedAccess.key` keeps its string because it is a
+/// property-name literal or generic-parameter name, not a standalone type head.
+/// `Mapped.value_template` / `IntersectionMapped.value_template` keep their
+/// strings because consumers pattern-match them as template expressions.
+/// `Conditional.infer_binding.0` keeps its string because it is a binding
+/// variable name, not a type expression.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AliasTargetIds {
+    Application { root: TypeId, args: Vec<TypeId> },
+    Union(Vec<TypeId>),
+    Intersection(Vec<TypeId>),
+    Tuple(Vec<TypeId>),
+    IntersectionMapped {
+        branches: Vec<TypeId>,
+        source: TypeId,
+        value_template: String,
+    },
+    Object,
+    Typeof(String),
+    Keyof(TypeId),
+    IndexedAccess { object: TypeId, key: String },
+    Mapped { source: TypeId, value_template: String },
+    Conditional {
+        check: TypeId,
+        extends: TypeId,
+        true_branch: TypeId,
+        false_branch: TypeId,
+        infer_binding: Option<(String, usize)>,
+    },
+    Other,
+}
+
+/// Intern every type-expression component of an [`AliasTarget`] into the
+/// arena, producing the pre-interned [`AliasTargetIds`] form stored in the
+/// Compilation map. The resulting TypeIds are identical to those the old
+/// `expand_alias` path produced by calling `intern_type_str` / `class` at
+/// lookup time — the intern is just moved earlier, to map-build.
+pub fn intern_alias_target(arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds {
+    match t {
+        AliasTarget::Application { root, args } => AliasTargetIds::Application {
+            root: arena.class(root),
+            args: args.iter().map(|a| arena.intern_type_str(a)).collect(),
+        },
+        AliasTarget::Union(branches) => {
+            AliasTargetIds::Union(branches.iter().map(|b| arena.intern_type_str(b)).collect())
+        }
+        AliasTarget::Intersection(branches) => {
+            AliasTargetIds::Intersection(branches.iter().map(|b| arena.intern_type_str(b)).collect())
+        }
+        AliasTarget::Tuple(elems) => {
+            AliasTargetIds::Tuple(elems.iter().map(|e| arena.intern_type_str(e)).collect())
+        }
+        AliasTarget::IntersectionMapped { branches, source, value_template } => {
+            AliasTargetIds::IntersectionMapped {
+                branches: branches.iter().map(|b| arena.intern_type_str(b)).collect(),
+                source: arena.intern_type_str(source),
+                value_template: value_template.clone(),
+            }
+        }
+        AliasTarget::Object => AliasTargetIds::Object,
+        AliasTarget::Typeof(s) => AliasTargetIds::Typeof(s.clone()),
+        AliasTarget::Keyof(s) => AliasTargetIds::Keyof(arena.intern_type_str(s)),
+        AliasTarget::IndexedAccess { object, key } => AliasTargetIds::IndexedAccess {
+            object: arena.intern_type_str(object),
+            key: key.clone(),
+        },
+        AliasTarget::Mapped { source, value_template } => AliasTargetIds::Mapped {
+            source: arena.intern_type_str(source),
+            value_template: value_template.clone(),
+        },
+        AliasTarget::Conditional { check, extends, true_branch, false_branch, infer_binding } => {
+            AliasTargetIds::Conditional {
+                check: arena.intern_type_str(check),
+                extends: arena.intern_type_str(extends),
+                true_branch: arena.intern_type_str(true_branch),
+                false_branch: arena.intern_type_str(false_branch),
+                infer_binding: infer_binding.clone(),
+            }
+        }
+        AliasTarget::Other => AliasTargetIds::Other,
+    }
 }
 
 /// A symbol discovered during tree-sitter extraction.

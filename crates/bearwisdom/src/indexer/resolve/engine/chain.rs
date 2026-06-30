@@ -23,7 +23,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::types::{AliasTarget, SegmentKind};
+use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
 use super::support::{import_scoped_package_id, pick_ranked_candidate};
@@ -59,7 +59,14 @@ pub fn bind_member_access(
     // distinct, and the supertype climb is id-keyed. The id is `None` for a head
     // with no indexed declaration (external/ambient/string-parsed), and the walk
     // falls back to the qname-string member lookup there.
-    let root = resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0])?;
+    let mut root = resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0])?;
+    // Pin the receiver's declaration id when the root is an untyped value typed by
+    // a bare-name alias that COLLIDES (two `type Logger = …`): resolve the one the
+    // use site imported so expansion keys on its id, not the name map's last
+    // writer. Only the root needs it — yielded receivers carry qualified types.
+    if root.id.is_none() {
+        root.id = import_scoped_decl_id(ref_ctx, file_ctx, lookup, arena, root.ty);
+    }
     let mut current = expand_receiver(root, lookup, arena, Some(file_ctx));
     let last = chain.segments.len() - 1;
 
@@ -100,7 +107,7 @@ pub fn bind_member_access(
             let terminal_is_call = seg.is_call
                 || matches!(ref_ctx.extracted_ref.kind, crate::types::EdgeKind::Calls);
             let resolved_yield_type =
-                yield_through(lookup, arena, &member, terminal_is_call, current.ty);
+                yield_through(lookup, arena, &member, terminal_is_call, current.ty, current.id);
             return Some(SymbolInfo {
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
@@ -115,7 +122,7 @@ pub fn bind_member_access(
         // Pin the new receiver's id using the member's package context so the
         // chain stays anchored to the package the use site established rather
         // than falling back to a first-winner by_qname re-search.
-        let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty)?;
+        let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty, current.id)?;
         current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena, Some(file_ctx));
     }
     None
@@ -160,7 +167,10 @@ fn expand_receiver(
     file_ctx: Option<&FileContext>,
 ) -> Receiver {
     let pre_head = head_qname(arena, recv.ty);
-    let ty = alias::expand(recv.ty, lookup, arena);
+    // Expand through the carried id when present, so a bare-name alias collision
+    // (two sibling `type Logger = …`) expands the declaration the use site pinned,
+    // not the name map's last writer.
+    let ty = alias::expand_with_id(recv.ty, recv.id, lookup, arena);
     let post_head = head_qname(arena, ty);
     let id = if pre_head != post_head {
         // Alias rewrote the head — re-derive from the new head, fall back to
@@ -202,6 +212,75 @@ fn head_symbol_id(
         return None;
     }
     pick_ranked_candidate(fc, None, lookup, &candidates).map(|s| s.id)
+}
+
+/// The declaration id a type's simple-name head resolves to under the use site's
+/// import scope, but ONLY when the name is AMBIGUOUS (several type declarations
+/// share it). A unique name returns `None` — the name-keyed alias map resolves
+/// those correctly, so the scoped pick is skipped. Disambiguates which of two
+/// sibling aliases (`type Logger = …` in two files) the use site imported, so
+/// `expand_with_id` keys on its id rather than the name map's last writer.
+///
+/// The import that brings the name into the file names its source module. A
+/// path-aliased internal module (`@/utils/logger`) is rewritten through
+/// `resolve_path_alias` to a file the candidate is matched against — decisive
+/// where same-package siblings tie on path proximity. Falls back to scored
+/// ranking when the name is not imported (ambient / same-file) or no file matches.
+fn import_scoped_decl_id(
+    ref_ctx: &RefContext,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    ty: TypeId,
+) -> Option<i64> {
+    let head = head_qname(arena, ty)?;
+    let simple = head.rsplit('.').next().unwrap_or(&head);
+    let types = lookup.types_by_name(simple);
+    let candidates: Vec<&Symbol> = types.iter().collect();
+    if candidates.len() < 2 {
+        return None;
+    }
+    if let Some(module) = file_ctx
+        .imports
+        .iter()
+        .find(|i| i.imported_name == simple || i.alias.as_deref() == Some(simple))
+        .and_then(|i| i.module_path.as_deref())
+    {
+        let resolved = lookup
+            .resolve_path_alias(ref_ctx.file_package_id, module)
+            .unwrap_or_else(|| module.to_string());
+        let mut matched: Option<&Symbol> = None;
+        for cand in &candidates {
+            if file_matches_module(&cand.file_path, &resolved) {
+                if matched.is_some() {
+                    matched = None; // two files match — defer to scored ranking
+                    break;
+                }
+                matched = Some(cand);
+            }
+        }
+        if let Some(s) = matched {
+            return Some(s.id);
+        }
+    }
+    pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &candidates).map(|s| s.id)
+}
+
+/// A candidate file satisfies an import module specifier when the file path —
+/// extension and a trailing `/index` dropped — matches the specifier's path tail
+/// (`./` / `../` / leading `/` trimmed). `apps/web/utils/logger.ts` matches
+/// `./utils/logger` (a `@/utils/logger` import post path-alias rewrite).
+fn file_matches_module(file_path: &str, module: &str) -> bool {
+    let fp = file_path.replace('\\', "/");
+    let fp = fp.rsplit_once('.').map(|(b, _)| b).unwrap_or(&fp);
+    let fp = fp.strip_suffix("/index").unwrap_or(fp);
+    let tail = module
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .trim_start_matches("../")
+        .trim_start_matches('/')
+        .to_string();
+    !tail.is_empty() && (fp == tail || fp.ends_with(&format!("/{tail}")))
 }
 
 /// Build a `Receiver` for the type a member yielded, pinning the declaration id
@@ -282,7 +361,7 @@ pub(crate) fn field_type_on(
 ) -> Option<TypeId> {
     let recv = expand_receiver(Receiver { ty: recv_ty, id: recv_id }, lookup, arena, None);
     let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
-    let yielded = yield_through(lookup, arena, &member, false, recv.ty)?;
+    let yielded = yield_through(lookup, arena, &member, false, recv.ty, recv.id)?;
     // Normalize the field's type — peel a `NoInfer<T>` intrinsic wrapper (and any
     // transparent alias) so the recorded binding type is the concrete `T`.
     Some(alias::expand(yielded, lookup, arena))
@@ -445,7 +524,7 @@ fn lookup_member_on_mapped_supertype(
     for parent_head in lookup.parent_class_qnames(head) {
         let is_mapped = matches!(
             lookup.alias_target(parent_head),
-            Some(AliasTarget::Mapped { .. }) | Some(AliasTarget::IntersectionMapped { .. })
+            Some(AliasTargetIds::Mapped { .. }) | Some(AliasTargetIds::IntersectionMapped { .. })
         );
         if !is_mapped {
             continue;
@@ -453,11 +532,20 @@ fn lookup_member_on_mapped_supertype(
         // The supertype's applied type, carrying the `extends Parent<Arg>` edge
         // args so its mapped source param binds to the concrete argument.
         let base = arena.class(parent_head);
-        let args = lookup.parent_class_args(head, parent_head);
-        let parent_ty = if args.is_empty() {
+        // Prefer the interned-id edge args; fall back to interning the string form.
+        let id_slice = lookup.parent_class_arg_ids(head, parent_head);
+        let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
+            id_slice.to_vec()
+        } else {
+            lookup
+                .parent_class_args(head, parent_head)
+                .iter()
+                .map(|a| arena.intern_type_str(a))
+                .collect()
+        };
+        let parent_ty = if arg_ids.is_empty() {
             base
         } else {
-            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
             arena.intern(Type::Apply { base, args: arg_ids })
         };
         if let Some(source_ty) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
@@ -578,15 +666,19 @@ fn lookup_member_on_intersection(
     depth: usize,
 ) -> Option<Symbol> {
     let branches = match lookup.alias_target(head)? {
-        AliasTarget::Intersection(branches)
-        | AliasTarget::IntersectionMapped { branches, .. } => branches.clone(),
+        AliasTargetIds::Intersection(branches)
+        | AliasTargetIds::IntersectionMapped { branches, .. } => branches.clone(),
         _ => return None,
     };
-    for branch in &branches {
+    for &branch_id in &branches {
+        // A branch is a NOMINAL type reference (`Class("Foo")`); resolving it to
+        // its declaration is by name (`types_by_name`), the same path every type
+        // reference uses — multi-candidate, so an ambiguous branch tries each.
+        let branch = arena.format_type(branch_id);
         if branch.is_empty() || branch == head {
             continue;
         }
-        for cand in lookup.types_by_name(branch).iter() {
+        for cand in lookup.types_by_name(&branch).iter() {
             let recv = expand_receiver(
                 Receiver::new(arena.class(&cand.qualified_name), cand.id),
                 lookup,
@@ -625,21 +717,24 @@ fn lookup_member_on_union(
     depth: usize,
 ) -> Option<Symbol> {
     let branches = match lookup.alias_target(head)? {
-        AliasTarget::Union(branches) => branches.clone(),
+        AliasTargetIds::Union(branches) => branches.clone(),
         _ => return None,
     };
     if branches.is_empty() {
         return None;
     }
     let mut resolved: Option<Symbol> = None;
-    for branch in &branches {
+    for &branch_id in &branches {
+        // A branch is a NOMINAL type reference; resolve it to its declaration by
+        // name (`types_by_name`) — the same path every type reference uses.
+        let branch = arena.format_type(branch_id);
         if branch.is_empty() || branch == head {
             // A primitive/literal/self arm cannot carry the member; union access
             // requires it on every arm, so the access is invalid.
             return None;
         }
         let mut branch_hit: Option<Symbol> = None;
-        for cand in lookup.types_by_name(branch).iter() {
+        for cand in lookup.types_by_name(&branch).iter() {
             let recv = expand_receiver(
                 Receiver::new(arena.class(&cand.qualified_name), cand.id),
                 lookup,
@@ -680,20 +775,18 @@ fn mapped_source_type(
     ty: TypeId,
     head: &str,
 ) -> Option<TypeId> {
-    let source = match lookup.alias_target(head) {
-        Some(AliasTarget::Mapped { source, .. })
-        | Some(AliasTarget::IntersectionMapped { source, .. })
-            if !source.is_empty() =>
+    let source_id = match lookup.alias_target(head) {
+        Some(AliasTargetIds::Mapped { source, .. })
+        | Some(AliasTargetIds::IntersectionMapped { source, .. })
+            if !arena.format_type(*source).is_empty() =>
         {
-            source.clone()
+            *source
         }
         _ => return None,
     };
+    let source = arena.format_type(source_id);
     let args = apply_args(arena, ty);
-    let params = lookup
-        .generic_params(head)
-        .map(|p| p.to_vec())
-        .unwrap_or_default();
+    let params = lookup.generic_params(head).unwrap_or_default();
     if let Some(pos) = params.iter().position(|p| *p == source) {
         if let Some(&arg) = args.get(pos) {
             return Some(arg);
@@ -704,7 +797,7 @@ fn mapped_source_type(
         // receiver's re-export closure instead.
         return None;
     }
-    Some(arena.intern_type_str(&source))
+    Some(source_id)
 }
 
 /// Resolve `member` on a mapped alias whose source parameter is UNBOUND — the
@@ -729,15 +822,17 @@ fn lookup_member_via_unbound_mapped_source(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    let source = match lookup.alias_target(head)? {
-        AliasTarget::Mapped { source, .. } | AliasTarget::IntersectionMapped { source, .. }
-            if !source.is_empty() =>
+    let source_id = match lookup.alias_target(head)? {
+        AliasTargetIds::Mapped { source, .. }
+        | AliasTargetIds::IntersectionMapped { source, .. }
+            if !arena.format_type(*source).is_empty() =>
         {
-            source.clone()
+            *source
         }
         _ => return None,
     };
-    let params = lookup.generic_params(head).unwrap_or(&[]);
+    let source = arena.format_type(source_id);
+    let params = lookup.generic_params(head).unwrap_or_default();
     let pos = params.iter().position(|p| *p == source)?;
     // A source param with a CONCRETE applied argument is bound — `mapped_source_type`
     // resolved it already. But a self-applied return type echoes its own parameters
@@ -853,12 +948,11 @@ fn tuple_element_type(
         return elems.get(idx).copied();
     }
     let head = head_qname(arena, recv_ty)?;
-    let AliasTarget::Tuple(elem_strs) = lookup.alias_target(&head)? else {
+    let AliasTargetIds::Tuple(elem_ids) = lookup.alias_target(&head)? else {
         return None;
     };
-    let elem = elem_strs.get(idx)?;
-    let elem_ty = arena.intern_type_str(elem);
-    let params = lookup.generic_params(&head).map(|p| p.to_vec()).unwrap_or_default();
+    let elem_ty = *elem_ids.get(idx)?;
+    let params = lookup.generic_params(&head).unwrap_or_default();
     let args = apply_args(arena, recv_ty);
     if params.is_empty() || args.is_empty() {
         return Some(elem_ty);
@@ -915,8 +1009,9 @@ fn yield_through(
     member: &Symbol,
     is_call: bool,
     receiver: TypeId,
+    recv_id: Option<i64>,
 ) -> Option<TypeId> {
-    let result = yield_through_impl(lookup, arena, member, is_call, receiver);
+    let result = yield_through_impl(lookup, arena, member, is_call, receiver, recv_id);
     crate::tracef!(
         "  YIELD '{}' is_call={}: return_type_id={} field_type_id={} -> {}",
         member.qualified_name,
@@ -935,6 +1030,7 @@ fn yield_through_impl(
     member: &Symbol,
     is_call: bool,
     receiver: TypeId,
+    recv_id: Option<i64>,
 ) -> Option<TypeId> {
     let raw = member_yield_type(lookup, arena, member, is_call)?;
     // Callable-property unwrap: if the raw yield is a function type and the
@@ -956,7 +1052,7 @@ fn yield_through_impl(
     // Those args live on the edge, not the receiver, so `substitute_through`
     // (receiver-args only) cannot see them.
     let raw = substitute_supertype_args(lookup, arena, member, raw, receiver);
-    let substituted = substitute_through(lookup, arena, raw, receiver);
+    let substituted = substitute_through(lookup, arena, raw, receiver, recv_id);
     // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
     if is_self_head(arena, substituted) {
         return Some(receiver);
@@ -1021,17 +1117,26 @@ fn receiver_mapped_supertype_has_source(
     for parent_head in lookup.parent_class_qnames(receiver_head) {
         let is_mapped = matches!(
             lookup.alias_target(parent_head),
-            Some(AliasTarget::Mapped { .. }) | Some(AliasTarget::IntersectionMapped { .. })
+            Some(AliasTargetIds::Mapped { .. }) | Some(AliasTargetIds::IntersectionMapped { .. })
         );
         if !is_mapped {
             continue;
         }
         let base = arena.class(parent_head);
-        let args = lookup.parent_class_args(receiver_head, parent_head);
-        let parent_ty = if args.is_empty() {
+        // Prefer the interned-id edge args; fall back to interning the string form.
+        let id_slice = lookup.parent_class_arg_ids(receiver_head, parent_head);
+        let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
+            id_slice.to_vec()
+        } else {
+            lookup
+                .parent_class_args(receiver_head, parent_head)
+                .iter()
+                .map(|a| arena.intern_type_str(a))
+                .collect()
+        };
+        let parent_ty = if arg_ids.is_empty() {
             base
         } else {
-            let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
             arena.intern(Type::Apply { base, args: arg_ids })
         };
         if let Some(src) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
@@ -1073,8 +1178,8 @@ pub(crate) fn member_yield_type(
         {
             return Some(id);
         }
-        if let Some(s) = lookup.return_type_name(qname) {
-            return Some(arena.intern_type_str(s));
+        if let Some(s) = lookup.return_type_str(qname) {
+            return Some(arena.intern_type_str(&s));
         }
         // A synthesized object-literal return type (`{fn}$Ret`): the function's
         // body returned an object literal, materialized post-extract as a type
@@ -1092,7 +1197,7 @@ pub(crate) fn member_yield_type(
         let ft = lookup
             .field_type_id_of(member.id)
             .or_else(|| lookup.field_type_id(qname))
-            .or_else(|| lookup.field_type_name(qname).map(|s| arena.intern_type_str(s)))?;
+            .or_else(|| lookup.field_type_str(qname).map(|s| arena.intern_type_str(&s)))?;
         if let Some(head) = head_qname(arena, ft) {
             if let Some(rt) = callable_named_return(lookup, arena, &head) {
                 return Some(rt);
@@ -1106,8 +1211,8 @@ pub(crate) fn member_yield_type(
     {
         return Some(id);
     }
-    if let Some(s) = lookup.field_type_name(qname) {
-        return Some(arena.intern_type_str(s));
+    if let Some(s) = lookup.field_type_str(qname) {
+        return Some(arena.intern_type_str(&s));
     }
     // A getter (`get user(): T`) is indexed as a `method` but accessed as a
     // PROPERTY — `obj.user` (no call) yields its declared RETURN type, not a
@@ -1120,7 +1225,7 @@ pub(crate) fn member_yield_type(
     {
         return Some(id);
     }
-    lookup.return_type_name(qname).map(|s| arena.intern_type_str(s))
+    lookup.return_type_str(qname).map(|s| arena.intern_type_str(&s))
 }
 
 /// `true` when the type's nominal head is the `this` or `Self` keyword —
@@ -1143,17 +1248,27 @@ fn substitute_through(
     arena: &TypeArena,
     yielded: TypeId,
     receiver: TypeId,
+    recv_id: Option<i64>,
 ) -> TypeId {
-    let Some(head) = head_qname(arena, receiver) else {
-        return yielded;
-    };
     let args = apply_args(arena, receiver);
-    let params = lookup.generic_params(&head).unwrap_or(&[]);
-    if params.is_empty() || args.is_empty() {
+    if args.is_empty() {
+        return yielded;
+    }
+    // Prefer the receiver's declaration id to read its generic parameters
+    // directly; fall back to rendering the receiver's nominal head only when the
+    // receiver has no bound declaration (external / ambient / string-parsed).
+    let params: Vec<String> = match recv_id.and_then(|id| lookup.generic_params_of(id)) {
+        Some(p) => p,
+        None => match head_qname(arena, receiver) {
+            Some(head) => lookup.generic_params(&head).unwrap_or_default(),
+            None => return yielded,
+        },
+    };
+    if params.is_empty() {
         return yielded;
     }
     let map: FxHashMap<String, TypeId> =
-        params.iter().cloned().zip(args.iter().copied()).collect();
+        params.into_iter().zip(args.iter().copied()).collect();
     arena.rebind_class_params(yielded, &map)
 }
 
@@ -1185,19 +1300,27 @@ fn substitute_supertype_args(
     if decl_head == recv_head {
         return yielded;
     }
-    let args = lookup.parent_class_args(&recv_head, decl_head);
-    if args.is_empty() {
+    // Prefer the interned-id form of the edge args; fall back to interning the
+    // stored arg strings for id-less stores (incremental reload / test fixtures).
+    let id_slice = lookup.parent_class_arg_ids(&recv_head, decl_head);
+    let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
+        id_slice.to_vec()
+    } else {
+        lookup
+            .parent_class_args(&recv_head, decl_head)
+            .iter()
+            .map(|a| arena.intern_type_str(a))
+            .collect()
+    };
+    if arg_ids.is_empty() {
         return yielded;
     }
-    let params = lookup.generic_params(decl_head).unwrap_or(&[]);
+    let params = lookup.generic_params(decl_head).unwrap_or_default();
     if params.is_empty() {
         return yielded;
     }
-    let map: FxHashMap<String, TypeId> = params
-        .iter()
-        .cloned()
-        .zip(args.iter().map(|a| arena.intern_type_str(a)))
-        .collect();
+    let map: FxHashMap<String, TypeId> =
+        params.into_iter().zip(arg_ids.iter().copied()).collect();
     arena.rebind_class_params(yielded, &map)
 }
 
@@ -1451,7 +1574,7 @@ fn import_scoped_external_root(
             if let Some(call) =
                 lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_| true)
             {
-                if let Some(r) = yield_through(lookup, arena, &call, true, recv.ty) {
+                if let Some(r) = yield_through(lookup, arena, &call, true, recv.ty, recv.id) {
                     return Some(Receiver::untyped(r));
                 }
             }
@@ -1679,7 +1802,7 @@ fn raw_field_type_of(
     {
         return Some(id);
     }
-    lookup.field_type_name(qname).map(|s| arena.intern_type_str(s))
+    lookup.field_type_str(qname).map(|s| arena.intern_type_str(&s))
 }
 
 /// Upper bound on value-indirection hops when a field type names a value whose
@@ -1841,7 +1964,7 @@ fn call_value_root_type(
     let value_ty = value_root_type(lookup, arena, name, source_qname, file_ctx)?;
     let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
-    yield_through(lookup, arena, &call, true, recv.ty)
+    yield_through(lookup, arena, &call, true, recv.ty, recv.id)
 }
 
 /// The name the extractor synthesises for an interface's call signature
@@ -1864,7 +1987,22 @@ pub(crate) fn callee_return_type(
     file_ctx: &FileContext,
     name: &str,
 ) -> Option<TypeId> {
-    resolve_callee_return_and_id(lookup, arena, file_ctx, name).map(|(ret, _)| ret)
+    resolve_callee_return_and_id(lookup, arena, file_ctx, name, None).map(|(ret, _)| ret)
+}
+
+/// `callee_return_type` that, among same-named callables, prefers one declared
+/// INSIDE `enclosing` — a nested `function inner(){…}` whose qname is
+/// `{enclosing}.{name}`. A factory's `return inner()` means its OWN nested
+/// builder, not a same-named declaration in another file/scope; the bare-name
+/// path picks an arbitrary namesake (whichever `by_name` yields first).
+pub(crate) fn callee_return_type_in_scope(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+    name: &str,
+    enclosing: &str,
+) -> Option<TypeId> {
+    resolve_callee_return_and_id(lookup, arena, file_ctx, name, Some(enclosing)).map(|(ret, _)| ret)
 }
 
 /// The return type the callable `name` resolves to in this file's import scope,
@@ -1877,8 +2015,35 @@ fn resolve_callee_return_and_id(
     arena: &TypeArena,
     file_ctx: &FileContext,
     name: &str,
+    enclosing_scope: Option<&str>,
 ) -> Option<(TypeId, i64)> {
     let candidates = lookup.by_name(name);
+    // Scope preference: a callee declared INSIDE `enclosing` — a nested
+    // `function inner(){…}` whose qname is `{enclosing}.{name}` — is the one a
+    // factory's `return inner()` means, resolved before the unscoped name
+    // fallback picks an arbitrary namesake. Its `$Ret` (object-literal return)
+    // is authoritative, same as the general path below.
+    if let Some(scoped_qname) = enclosing_scope.map(|e| format!("{e}.{name}")) {
+        if let Some(cand) = candidates
+            .iter()
+            .find(|s| is_callable(&s.kind) && s.qualified_name == scoped_qname)
+        {
+            let ret_qname = format!("{}$Ret", cand.qualified_name);
+            if lookup.by_qualified_name(&ret_qname).is_some() {
+                return Some((arena.class(&ret_qname), cand.id));
+            }
+            if let Some(id) = lookup
+                .return_type_id_of(cand.id)
+                .or_else(|| lookup.return_type_id(&cand.qualified_name))
+            {
+                return Some((id, cand.id));
+            }
+            if let Some(s) = lookup.return_type_str(&cand.qualified_name) {
+                return Some((arena.intern_type_str(&s), cand.id));
+            }
+            // Scoped callee exists but carries no recorded return — fall through.
+        }
+    }
     // An object-literal return synthesized as `{qname}$Ret` (the flow-return-object
     // pass) IS the function's structural return — authoritative over any stored
     // return inferred from a param annotation (`Record`) or a body expression
@@ -1911,14 +2076,17 @@ fn resolve_callee_return_and_id(
             if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
                 return Some((id, callee.id));
             }
-            if let Some(n) = lookup.return_type_name(&callee.qualified_name) {
-                return Some((arena.intern_type_str(n), callee.id));
+            if let Some(n) = lookup.return_type_str(&callee.qualified_name) {
+                return Some((arena.intern_type_str(&n), callee.id));
             }
         }
     }
     // No import attribution (or the scoped set yielded no return): the first
-    // callable declaration of this name.
-    let callee = candidates.iter().find(|s| is_callable(&s.kind))?;
+    // free-function declaration of this name. Methods require an explicit receiver
+    // and must not root a bare unscoped call — they are excluded here so an
+    // unrelated method named the same as an ambient callable-interface const does
+    // not shadow the const's call-signature path.
+    let callee = candidates.iter().find(|s| s.kind == "function")?;
     if let Some(id) = lookup.return_type_id_of(callee.id) {
         return Some((id, callee.id));
     }
@@ -1926,8 +2094,8 @@ fn resolve_callee_return_and_id(
         return Some((id, callee.id));
     }
     lookup
-        .return_type_name(&callee.qualified_name)
-        .map(|s| (arena.intern_type_str(s), callee.id))
+        .return_type_str(&callee.qualified_name)
+        .map(|s| (arena.intern_type_str(&s), callee.id))
 }
 
 /// The return type of a call `name<args>(…)`, with the call's explicit type
@@ -1944,7 +2112,7 @@ pub(crate) fn call_return_with_type_args(
     name: &str,
     call_args: &[TypeId],
 ) -> Option<TypeId> {
-    let (ret, callee_id) = resolve_callee_return_and_id(lookup, arena, file_ctx, name)?;
+    let (ret, callee_id) = resolve_callee_return_and_id(lookup, arena, file_ctx, name, None)?;
     // The return propagates to every same-qname overload id, but the params are
     // stored only on the declaration that parsed them — which may be a SIBLING of
     // the id whose return was read. Use the callee's own params when present, else
@@ -1965,7 +2133,7 @@ pub(crate) fn call_return_with_type_args(
     if params.is_empty() || call_args.is_empty() {
         return Some(ret);
     }
-    let defaults = lookup.generic_param_defaults_of(params_id).unwrap_or(&[]);
+    let defaults = lookup.generic_param_defaults_of(params_id).unwrap_or_default();
     let mut subst: FxHashMap<String, TypeId> = FxHashMap::default();
     for (i, param) in params.iter().enumerate() {
         // Positional arg, else the param's default — which may name an earlier
@@ -2018,7 +2186,7 @@ pub(crate) fn resolve_return_type_extraction(
     let is_rt = head == "ReturnType"
         || lookup
             .alias_target(&head)
-            .map(is_return_type_extraction)
+            .map(|t| is_return_type_extraction(arena, t))
             .unwrap_or(false);
     if !is_rt {
         return None;
@@ -2056,8 +2224,8 @@ fn typeof_value_return_type(
         if let Some(id) = lookup.return_type_id(&qname) {
             return Some(id);
         }
-        if let Some(s) = lookup.return_type_name(&qname) {
-            return Some(arena.intern_type_str(s));
+        if let Some(s) = lookup.return_type_str(&qname) {
+            return Some(arena.intern_type_str(&s));
         }
     }
     callee_return_type(lookup, arena, file_ctx, value)
@@ -2067,8 +2235,8 @@ fn typeof_value_return_type(
 /// R ? R : …`. Recognised structurally — `extends` ends in `=> infer <V>` and the
 /// true branch is `<V>` — so it matches the lib `ReturnType<T>` and any alias
 /// written the same way, regardless of name.
-fn is_return_type_extraction(target: &AliasTarget) -> bool {
-    let AliasTarget::Conditional {
+fn is_return_type_extraction(arena: &TypeArena, target: &AliasTargetIds) -> bool {
+    let AliasTargetIds::Conditional {
         extends,
         true_branch,
         ..
@@ -2076,7 +2244,8 @@ fn is_return_type_extraction(target: &AliasTarget) -> bool {
     else {
         return false;
     };
-    let Some((_, infer_tail)) = extends.rsplit_once("=> infer ") else {
+    let extends_str = arena.format_type(*extends);
+    let Some((_, infer_tail)) = extends_str.rsplit_once("=> infer ") else {
         return false;
     };
     let infer_var = infer_tail
@@ -2084,7 +2253,11 @@ fn is_return_type_extraction(target: &AliasTarget) -> bool {
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
         .next()
         .unwrap_or("");
-    !infer_var.is_empty() && infer_var == true_branch.trim()
+    if infer_var.is_empty() {
+        return false;
+    }
+    let true_branch_str = arena.format_type(*true_branch);
+    infer_var == true_branch_str.trim()
 }
 
 /// Attach a segment's in-source type arguments to a freshly-interned bare head
@@ -2139,8 +2312,8 @@ pub(crate) fn callable_named_return(
         return Some(id);
     }
     lookup
-        .return_type_name(&callee_qname)
-        .map(|s| arena.intern_type_str(s))
+        .return_type_str(&callee_qname)
+        .map(|s| arena.intern_type_str(&s))
 }
 
 #[cfg(test)]

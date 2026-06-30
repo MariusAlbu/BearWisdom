@@ -3,9 +3,58 @@
 // =============================================================================
 
 use super::*;
+use crate::types::{ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility};
 
 fn norm(p: &str) -> String {
     p.to_lowercase().replace('\\', "/")
+}
+
+fn mk_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind,
+        visibility: Some(Visibility::Public),
+        start_line: 1,
+        end_line: 1,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn pf_with(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
+    ParsedFile {
+        path: path.to_string(),
+        language: "rust".to_string(),
+        content_hash: "h".to_string(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
 }
 
 #[test]
@@ -169,6 +218,58 @@ fn lib_path_recognises_ts_lib_types_node_and_stdlib() {
     ] {
         assert!(is_ambient_global_lib_path(p), "lib source should match: {p}");
     }
+}
+
+#[test]
+fn lib_path_recognises_framework_ambient_prelude_sources() {
+    // Framework-ambient prelude sources are import-free global surfaces: their
+    // top-level symbols must enter the ambient scope, same as the ts-lib /
+    // <lang>-stdlib sources. The sysroot std subtree lands under an `ext:idx:`
+    // tag (not `ext:<lang>-stdlib:`), so the `is_stdlib_external_path` arm alone
+    // never classified it.
+    for p in [
+        "ext:idx:C:/Users/x/.rustup/toolchains/stable-x86_64-pc-windows-msvc/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs",
+        "ext:idx:C:/x/flutter/cache/dart-sdk/lib/core/list.dart",
+        "ext:idx:C:/Users/x/cabal/store/ghc-9.12.1/ghc-internal-9.1401.0/src/GHC/Internal/Base.hs",
+    ] {
+        assert!(
+            is_ambient_global_lib_path(p),
+            "framework-ambient prelude source should be a lib source: {p}"
+        );
+    }
+}
+
+#[test]
+fn ambient_qnames_surfaces_prelude_enum_variants() {
+    // A prelude source contributes its enum *variants* by their dotted qname so
+    // the ambient rung can bind a bare `Some` / `Ok` constructor.
+    let prelude = pf_with(
+        "ext:idx:C:/u/.rustup/toolchains/stable/lib/rustlib/src/rust/library/core/src/option.rs",
+        vec![
+            mk_sym("Option", "Option", SymbolKind::Enum),
+            mk_sym("Some", "Option.Some", SymbolKind::EnumMember),
+            mk_sym("None", "Option.None", SymbolKind::EnumMember),
+        ],
+    );
+    let qn = ambient_global_qnames(&[prelude]);
+    assert!(qn.contains("Option"), "top-level enum stays ambient");
+    assert!(qn.contains("Option.Some"), "prelude variant Some must be surfaced");
+    assert!(qn.contains("Option.None"), "prelude variant None must be surfaced");
+}
+
+#[test]
+fn ambient_qnames_excludes_variants_from_non_lib_sources() {
+    // An ordinary project file's enum variants are not ambient — they need
+    // qualification or an explicit import.
+    let proj = pf_with(
+        "src/app.rs",
+        vec![mk_sym("Red", "Color.Red", SymbolKind::EnumMember)],
+    );
+    let qn = ambient_global_qnames(&[proj]);
+    assert!(
+        !qn.contains("Color.Red"),
+        "project variant must NOT be ambient"
+    );
 }
 
 #[test]

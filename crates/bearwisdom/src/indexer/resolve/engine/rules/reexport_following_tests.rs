@@ -135,7 +135,7 @@ impl SymbolLookup for ReexportLookup {
     fn return_type_name(&self, qname: &str) -> Option<&str> {
         self.inner.return_type_name(qname)
     }
-    fn generic_params(&self, qname: &str) -> Option<&[String]> {
+    fn generic_params(&self, qname: &str) -> Option<Vec<String>> {
         self.inner.generic_params(qname)
     }
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {

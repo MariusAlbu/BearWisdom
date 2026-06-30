@@ -103,6 +103,13 @@ impl LookupRule for ImportedNamespaceRule {
 
 /// Returns `true` when `file_path` resolves to the module string. Both a stem
 /// suffix match and a package-directory segment-run match are checked.
+///
+/// Hyphen/underscore normalization: many ecosystems use hyphens in on-disk
+/// directory names while the import statement uses underscores (e.g. Rust's
+/// `use turbo_tasks::Vc` where the crate directory is `turbo-tasks/`). After
+/// the literal segment-run check fails, both path and run are re-checked with
+/// hyphens folded to underscores. The segment-boundary requirement still
+/// applies after normalization, so `turbo_tasks_macros` never matches `turbo_tasks`.
 fn file_path_matches_module(file_path: &str, module: &str) -> bool {
     if module.is_empty() {
         return false;
@@ -118,7 +125,12 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
     if dotted.is_empty() {
         return false;
     }
-    path_contains_segment_run(&normalized, &dotted)
+    if path_contains_segment_run(&normalized, &dotted) {
+        return true;
+    }
+    let path_norm = normalized.replace('-', "_");
+    let run_norm = dotted.replace('-', "_");
+    path_contains_segment_run(&path_norm, &run_norm)
 }
 
 /// Returns `true` when `run` appears as a contiguous, segment-bounded

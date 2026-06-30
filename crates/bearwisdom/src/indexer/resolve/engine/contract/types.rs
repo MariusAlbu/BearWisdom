@@ -7,7 +7,7 @@
 // ResolutionEngine registry all stay in engine.rs.
 // =============================================================================
 
-use crate::type_checker::core::types::TypeId;
+use crate::type_checker::core::types::{GenericParamId, TypeId};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use std::sync::Arc;
 
@@ -122,39 +122,27 @@ pub struct Symbol {
 // ---------------------------------------------------------------------------
 
 /// All type metadata for a single symbol, stored in a single map keyed by
-/// the symbol's qualified name (or simple name for generic_params).
+/// the symbol's qualified name (or simple name for generic params).
 ///
 /// TypeIds are the canonical source of truth: the build pipeline populates
-/// `field_type_id` / `return_type_id` / `type_arg_ids` first from extractor
-/// signals (TypeRef refs, signature parsing, AST-driven extractors), and the
-/// string fields below are formatted from those TypeIds. The strings are the
-/// durable form: TypeIds are arena-local indices and not serializable, so the
-/// DB stores the strings and re-interns `field_type_id` / `return_type_id`
-/// from them on reload.
+/// `field_type_id` / `return_type_id` first from extractor signals (TypeRef
+/// refs, signature parsing, AST-driven extractors). `generic_param_ids` carries
+/// interned `GenericParamData` (name + optional bound) per parameter;
+/// `generic_param_default_ids` carries interned default TypeIds index-aligned
+/// with `generic_param_ids`. The DB column `generic_params` (TEXT) persists
+/// the NAME strings derived from ids and re-interns them on reload.
 #[derive(Debug, Default, Clone)]
 pub struct TypeInfo {
-    /// Field/property type rendered from `field_type_id`.
-    pub field_type: Option<String>,
-    /// Generic type arguments of `field_type` (e.g. `["User"]` for a field
-    /// `Repository<User>`).
-    pub type_args: Vec<String>,
-    /// Method return type rendered from `return_type_id`.
-    pub return_type: Option<String>,
-    /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
-    pub generic_params: Vec<String>,
-    /// Declared upper bounds for `generic_params`, index-aligned. `None` for an
-    /// unbounded parameter; `Some("Animal")` for `<T extends Animal>` / `<T: Animal>`.
-    /// Resolved to `GenericParamData.bound` when the param's `Type::Generic` is interned.
-    pub generic_param_bounds: Vec<Option<String>>,
-    /// Declared defaults for `generic_params`, index-aligned. `None` for a
-    /// parameter with no default; `Some("string")` for `<T = string>`, `Some("T")`
-    /// for `<U = T>` (a reference to an earlier param). Binds a parameter the call
-    /// site leaves unbound when substituting a callee's type args into its return.
-    pub generic_param_defaults: Vec<Option<String>>,
+    /// Interned generic parameter slots for type declarations, e.g., two
+    /// entries for `interface Repository<T, U>`. Each `GenericParamId`
+    /// carries the parameter name and optional upper bound in the TypeArena.
+    pub generic_param_ids: Vec<GenericParamId>,
+    /// Declared defaults for `generic_param_ids`, index-aligned. `None` for
+    /// a parameter with no default; `Some(id)` for `<T = string>` or
+    /// `<U = T>` where the default type is interned in the workspace arena.
+    pub generic_param_default_ids: Vec<Option<TypeId>>,
     /// Canonical TypeId form of `field_type`.
     pub field_type_id: Option<TypeId>,
     /// Canonical TypeId form of `return_type`.
     pub return_type_id: Option<TypeId>,
-    /// Canonical TypeIds of `type_args`, in declaration order.
-    pub type_arg_ids: Vec<TypeId>,
 }

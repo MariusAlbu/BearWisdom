@@ -9,6 +9,7 @@ members = [
     "crates/bearwisdom-profile",
     "crates/bearwisdom-web",
     "crates/code-grammars",
+    "crates/code-highlight",
     "crates/tree-sitter-dockerfile-0-25",
     "crates/tree-sitter-scss-local",
     "tests",

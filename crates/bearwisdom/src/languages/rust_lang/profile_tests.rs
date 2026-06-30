@@ -128,6 +128,19 @@ fn rust_async_wrappers_contain_future() {
 }
 
 #[test]
+fn rust_import_module_path_is_from_module_field() {
+    // The Rust profile must use FromModuleField so `use crate_name::Foo` import
+    // bindings (kind=Imports refs where r.module=Some("crate_name")) populate
+    // the file context's import list with the crate path. Without this, the
+    // imported_namespace rule cannot match bare type refs to their use-imported
+    // crate symbols.
+    assert!(matches!(
+        RUST_PROFILE.import_module_path,
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField
+    ));
+}
+
+#[test]
 fn rust_module_anchor_binds_by_name_under_module_dir() {
     assert!(matches!(
         RUST_PROFILE.module_anchor,

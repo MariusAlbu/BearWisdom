@@ -25,7 +25,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
-use crate::types::ParsedFile;
+use crate::types::{ParsedFile, SymbolKind};
 
 /// A path is an ambient provider when it contains `contains` AND ends with
 /// `ends_with`. An empty `contains` matches any path (suffix-only rule).
@@ -173,6 +173,13 @@ pub fn ambient_global_qnames(parsed: &[ParsedFile]) -> HashSet<String> {
                 // Top-level declaration in an ambient lib source; nested members
                 // (dotted qnames) are not globals.
                 out.insert(qname.clone());
+            } else if lib_source && sym.kind == SymbolKind::EnumMember {
+                // Enum variants in a prelude source (Rust `Option::Some` /
+                // `Result::Ok`, …) are re-exported by the language prelude and
+                // referenced bare. Their qname is dotted (the parent enum), so
+                // the top-level filter above skips them; surface the variant so
+                // the ambient rung binds the bare constructor name to it.
+                out.insert(qname.clone());
             }
         }
     }
@@ -187,16 +194,24 @@ pub fn locate_ambient_global<'a>(loc: &'a SymbolLocationIndex, name: &str) -> Op
 }
 
 /// Detect an ambient-global declaration file — a runtime surface a project can
-/// name without an explicit import. Two shapes qualify:
+/// name without an explicit import. Three shapes qualify:
 ///
 /// - TypeScript's `lib.*.d.ts` / `@types/node` (`is_ts_ambient_global_lib_path`).
 /// - A language stdlib whose symbols carry a `<lang>-stdlib`-tagged external
 ///   path. These libraries are language substrate — every project in the
 ///   language reaches their names unqualified-by-import (Lua's `string`,
 ///   `table`, `math`, `os`, …).
+/// - A framework ambient source (`is_framework_ambient_path`): a language
+///   prelude subtree (Rust `…/library/`, Dart `dart:core`, Haskell
+///   `GHC/Internal/`) or a generated/runtime declaration surface (Nuxt/Svelte/
+///   Next, Vue, bicep, bazel) whose top-level symbols are reachable bare. These
+///   land under an `ext:idx:` tag rather than `ext:<lang>-stdlib:`, so the
+///   stdlib arm above does not cover them.
 pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
-    is_ts_ambient_global_lib_path(&normalized) || is_stdlib_external_path(&normalized)
+    is_ts_ambient_global_lib_path(&normalized)
+        || is_stdlib_external_path(&normalized)
+        || is_framework_ambient_path(&normalized.to_lowercase())
 }
 
 /// Detect a TypeScript ambient-global declaration file — `lib.*.d.ts` shipped

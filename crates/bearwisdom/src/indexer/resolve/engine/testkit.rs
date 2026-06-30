@@ -15,7 +15,10 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::types::TypeArena;
-use crate::types::{AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedRef, ExtractedSymbol,
+    SymbolKind, Visibility,
+};
 
 /// Synthetic symbol index. Register symbols with `with`, members with
 /// `with_member`; everything else is empty.
@@ -43,7 +46,9 @@ pub(crate) struct Lookup {
     inherits_args: FxHashMap<(String, String), Vec<String>>,
     local_types: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
-    aliases: FxHashMap<String, AliasTarget>,
+    aliases: FxHashMap<String, AliasTargetIds>,
+    /// Id-keyed alias targets — the collision-free counterpart of `aliases`.
+    aliases_by_id: FxHashMap<i64, AliasTargetIds>,
     /// File path → its re-export entries `(original_name, source_module)`, with
     /// `"*"` for an `export * from 'm'` wildcard. Backs `reexports_from`.
     reexports: FxHashMap<String, Vec<(String, String)>>,
@@ -79,6 +84,7 @@ impl Lookup {
             local_types: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
+            aliases_by_id: Default::default(),
             reexports: Default::default(),
             ambient: Default::default(),
             by_package: Default::default(),
@@ -198,9 +204,21 @@ impl Lookup {
         self
     }
 
-    /// Register a type alias's target.
+    /// Register a type alias's target. Accepts [`AliasTarget`] (the
+    /// source-name form) and converts to [`AliasTargetIds`] at insert time,
+    /// matching the behavior of the Compilation map so tests exercise the same
+    /// id-keyed path the production engine uses.
     pub(crate) fn with_alias(mut self, name: &str, target: AliasTarget) -> Self {
-        self.aliases.insert(name.to_string(), target);
+        let interned = intern_alias_target(&self.arena, &target);
+        self.aliases.insert(name.to_string(), interned);
+        self
+    }
+
+    /// Register an alias target keyed by the declaration's symbol id — the
+    /// collision-free path a use site uses when a bare name has several aliases.
+    pub(crate) fn with_alias_id(mut self, id: i64, target: AliasTarget) -> Self {
+        let interned = intern_alias_target(&self.arena, &target);
+        self.aliases_by_id.insert(id, interned);
         self
     }
 
@@ -319,11 +337,14 @@ impl SymbolLookup for Lookup {
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing.get(source_qname).map(|s| s.as_str())
     }
-    fn generic_params(&self, qname: &str) -> Option<&[String]> {
-        self.generics.get(qname).map(|v| v.as_slice())
+    fn generic_params(&self, qname: &str) -> Option<Vec<String>> {
+        self.generics.get(qname).cloned()
     }
-    fn alias_target(&self, name: &str) -> Option<&AliasTarget> {
+    fn alias_target(&self, name: &str) -> Option<&AliasTargetIds> {
         self.aliases.get(name)
+    }
+    fn alias_target_by_id(&self, id: i64) -> Option<&AliasTargetIds> {
+        self.aliases_by_id.get(&id)
     }
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
         self.reexports

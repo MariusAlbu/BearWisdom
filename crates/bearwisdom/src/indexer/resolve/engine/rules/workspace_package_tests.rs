@@ -117,7 +117,7 @@ impl SymbolLookup for WsLookup {
     fn return_type_name(&self, _: &str) -> Option<&str> {
         None
     }
-    fn generic_params(&self, _: &str) -> Option<&[String]> {
+    fn generic_params(&self, _: &str) -> Option<Vec<String>> {
         None
     }
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {

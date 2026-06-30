@@ -66,7 +66,7 @@ impl SymbolLookup for SelectorLookup {
     fn return_type_name(&self, q: &str) -> Option<&str> {
         self.inner.return_type_name(q)
     }
-    fn generic_params(&self, q: &str) -> Option<&[String]> {
+    fn generic_params(&self, q: &str) -> Option<Vec<String>> {
         self.inner.generic_params(q)
     }
     fn reexports_from(&self, path: &str) -> &[(String, String)] {

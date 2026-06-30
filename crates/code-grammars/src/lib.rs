@@ -18,6 +18,8 @@
 //       tree-sitter-dockerfile 0.2, tree-sitter-prisma 0.1.1, tree-sitter-hare 0.20.7
 // =============================================================================
 
+use std::borrow::Cow;
+
 use tree_sitter::Language;
 
 /// Return the tree-sitter [`Language`] for the given language identifier.
@@ -107,6 +109,75 @@ pub fn get_language(lang: &str) -> Option<Language> {
         _ => return None,
     };
     Some(l)
+}
+
+/// Return the bundled tree-sitter highlights query for `lang`, if available.
+///
+/// Returns `None` for unknown ids and for grammars whose crate ships no highlights
+/// query (or keeps the constant commented out for an old ABI). Pairs with
+/// [`get_language`] over the same id space: build a highlighter from the
+/// `(Language, query)` pair.
+///
+/// Some grammars layer their highlights on a base language (TypeScript on JavaScript,
+/// C++ on C); for those the base and specific queries are concatenated, base first, so
+/// the more-specific patterns take precedence. The standalone case borrows, no alloc.
+pub fn highlights_query(lang: &str) -> Option<Cow<'static, str>> {
+    match lang {
+        "typescript" | "tsx" => Some(Cow::Owned(format!(
+            "{}\n{}",
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+        ))),
+        "cpp" => Some(Cow::Owned(format!(
+            "{}\n{}",
+            tree_sitter_c::HIGHLIGHT_QUERY,
+            tree_sitter_cpp::HIGHLIGHT_QUERY,
+        ))),
+        _ => single_highlights_query(lang).map(Cow::Borrowed),
+    }
+}
+
+/// The standalone highlights query a single grammar crate exposes. The constant's name
+/// differs across crates (`HIGHLIGHTS_QUERY` vs `HIGHLIGHT_QUERY`); this normalizes it.
+fn single_highlights_query(lang: &str) -> Option<&'static str> {
+    let q = match lang {
+        // NOTE: tree-sitter-c-sharp 0.23.1 (the locked version) ships its highlights
+        // query commented out; "csharp" stays None until the grammar is bumped.
+        "javascript" | "jsx" => tree_sitter_javascript::HIGHLIGHT_QUERY,
+        "python" => tree_sitter_python::HIGHLIGHTS_QUERY,
+        "java" => tree_sitter_java::HIGHLIGHTS_QUERY,
+        "go" => tree_sitter_go::HIGHLIGHTS_QUERY,
+        "rust" => tree_sitter_rust::HIGHLIGHTS_QUERY,
+        "ruby" => tree_sitter_ruby::HIGHLIGHTS_QUERY,
+        "php" => tree_sitter_php::HIGHLIGHTS_QUERY,
+        "c" => tree_sitter_c::HIGHLIGHT_QUERY,
+        "swift" => tree_sitter_swift::HIGHLIGHTS_QUERY,
+        "scala" => tree_sitter_scala::HIGHLIGHTS_QUERY,
+        "haskell" => tree_sitter_haskell::HIGHLIGHTS_QUERY,
+        "elixir" => tree_sitter_elixir::HIGHLIGHTS_QUERY,
+        "dart" => tree_sitter_dart::HIGHLIGHTS_QUERY,
+        "lua" => tree_sitter_lua::HIGHLIGHTS_QUERY,
+        "r" => tree_sitter_r::HIGHLIGHTS_QUERY,
+        "html" => tree_sitter_html::HIGHLIGHTS_QUERY,
+        "css" | "scss" => tree_sitter_css::HIGHLIGHTS_QUERY,
+        "json" => tree_sitter_json::HIGHLIGHTS_QUERY,
+        "yaml" => tree_sitter_yaml::HIGHLIGHTS_QUERY,
+        "shell" | "bash" => tree_sitter_bash::HIGHLIGHT_QUERY,
+        "sql" => tree_sitter_sequel::HIGHLIGHTS_QUERY,
+        "zig" => tree_sitter_zig::HIGHLIGHTS_QUERY,
+        "nix" => tree_sitter_nix::HIGHLIGHTS_QUERY,
+        "powershell" => tree_sitter_powershell::HIGHLIGHTS_QUERY,
+        "starlark" => tree_sitter_starlark::HIGHLIGHTS_QUERY,
+        "odin" => tree_sitter_odin::HIGHLIGHTS_QUERY,
+        "erlang" => tree_sitter_erlang::HIGHLIGHTS_QUERY,
+        "fsharp" => tree_sitter_fsharp::HIGHLIGHTS_QUERY,
+        "gleam" => tree_sitter_gleam::HIGHLIGHT_QUERY,
+        "bicep" => tree_sitter_bicep::HIGHLIGHTS_QUERY,
+        "make" => tree_sitter_make::HIGHLIGHTS_QUERY,
+        "ocaml" => tree_sitter_ocaml::HIGHLIGHTS_QUERY,
+        _ => return None,
+    };
+    Some(q)
 }
 
 #[cfg(test)]

@@ -130,6 +130,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0",
         )?;
     }
+    // Faithful TypeId persistence: canonical id columns alongside the legacy
+    // string forms. Raw arena indices, valid against the restored arena snapshot.
+    if !column_exists(conn, "symbol_type_info", "field_type_id") {
+        conn.execute_batch("ALTER TABLE symbol_type_info ADD COLUMN field_type_id INTEGER")?;
+    }
+    if !column_exists(conn, "symbol_type_info", "return_type_id") {
+        conn.execute_batch("ALTER TABLE symbol_type_info ADD COLUMN return_type_id INTEGER")?;
+    }
     // v0.3 monorepo Phase A: add declared_name — the package name as stated
     // in its own manifest (package.json `name`, Cargo.toml [package].name,
     // .csproj filename stem, etc.). Distinct from `name` which is the
@@ -554,15 +562,20 @@ CREATE INDEX IF NOT EXISTS idx_symloc_file ON symbol_locations(file_id);
 -- Per-symbol resolved type metadata, persisted so an incremental resolve can
 -- load EXACT type info for unchanged symbols — the full ref+signature
 -- derivation the full pass computed, not the lossy signature-only re-derivation.
--- TypeIds are per-build arena indices and are never persisted; the strings here
--- are re-interned into the fresh build's TypeArena on load. `type_args` /
--- `generic_params` are JSON string arrays.
+-- `field_type_id` / `return_type_id` are the canonical form: raw TypeId indices
+-- into the arena snapshot persisted in `_bearwisdom_meta` (key
+-- `type_arena_snapshot`), restored verbatim on load so the indices stay valid.
+-- `field_type` / `return_type` are the legacy string form (re-interned on load);
+-- `generic_params` is a JSON string array. `type_args` is unused (subsumed by
+-- `field_type_id`).
 CREATE TABLE IF NOT EXISTS symbol_type_info (
     symbol_id        INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
     field_type       TEXT,
     return_type      TEXT,
     type_args        TEXT,
-    generic_params   TEXT
+    generic_params   TEXT,
+    field_type_id    INTEGER,
+    return_type_id   INTEGER
 );
 
 -- ============================================================

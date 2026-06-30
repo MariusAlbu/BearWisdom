@@ -79,6 +79,15 @@ pub fn resolve_and_write_incremental(
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
     let arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
+    // Restore the prior build's arena before resolution interns the changed
+    // batch, so persisted `field_type_id` / `return_type_id` indices stay valid.
+    if let Ok(blob) = db.conn().query_row(
+        "SELECT value FROM _bearwisdom_meta WHERE key = 'type_arena_snapshot'",
+        [],
+        |r| r.get::<_, String>(0),
+    ) {
+        arena.restore_snapshot(&blob);
+    }
     let stats =
         engine::pipeline::resolve_incremental_pass(db, parsed, symbol_id_map, project_ctx, arena)?;
     finalize_resolution(db)?;

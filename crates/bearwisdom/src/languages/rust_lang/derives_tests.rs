@@ -254,7 +254,7 @@ fn default_chains_through_at_index_level() {
         "Config.default must be in the index after merging synthesized symbols"
     );
     assert_eq!(
-        index.return_type_name("Config.default").as_deref(),
+        index.return_type_str("Config.default").as_deref(),
         Some("Config"),
         "Config.default's return type must resolve to Config so .default().name chains through"
     );

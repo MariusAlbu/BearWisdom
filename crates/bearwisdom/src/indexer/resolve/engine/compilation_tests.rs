@@ -238,7 +238,7 @@ fn constructor_var_does_not_poison_instance_type_field_slot() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_ne!(
-        tree.field_type_name("Array"),
+        tree.field_type_str("Array").as_deref(),
         Some("ArrayConstructor"),
         "the constructor value's field_type must not poison the instance \
          interface's qname slot"
@@ -353,15 +353,15 @@ fn same_qname_overload_generics_survive_by_id() {
 
     let tree = Compilation::build(&[react_pf, preact_pf], &id_map, Arc::clone(&arena));
 
-    let expected = ["TData".to_string(), "TError".to_string()];
+    let expected = vec!["TData".to_string(), "TError".to_string()];
     assert_eq!(
         tree.generic_params_of(10),
-        Some(&expected[..]),
+        Some(expected.clone()),
         "react useQuery must keep its generics by id despite the shared qname"
     );
     assert_eq!(
         tree.generic_params_of(20),
-        Some(&expected[..]),
+        Some(expected),
         "preact useQuery must keep its generics by id despite the shared qname"
     );
 }
@@ -380,10 +380,10 @@ fn generic_param_defaults_are_captured_by_id() {
 
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
-    let expected = [Some("string".to_string()), Some("TData".to_string())];
+    let expected = vec![Some("string".to_string()), Some("TData".to_string())];
     assert_eq!(
         tree.generic_param_defaults_of(10),
-        Some(&expected[..]),
+        Some(expected),
         "defaults `= string` / `= TData` must be captured index-aligned"
     );
 }
@@ -411,12 +411,91 @@ fn call_wrapper_return_inferred_from_returned_call() {
 
     let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
     // useQuery's own return derives from its signature; usePost's is inferred.
-    assert_eq!(tree.return_type_name("usePost"), None, "no return before the pass");
+    assert_eq!(tree.return_type_str("usePost"), None, "no return before the pass");
     tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
     assert_eq!(
-        tree.return_type_name("usePost"),
+        tree.return_type_str("usePost").as_deref(),
         Some("UQR"),
         "usePost's return inferred from `return useQuery()`"
+    );
+}
+
+/// A factory `createScopedLogger() { return createLogger() }` whose nested
+/// `createLogger` shares its bare name with a top-level `createLogger` in another
+/// scope must bind its OWN nested builder's `$Ret`, not the namesake's. The
+/// returned-call inference resolves `createLogger` with the enclosing factory's
+/// scope so `{enclosing}.createLogger` wins over the unscoped namesake.
+#[test]
+fn call_wrapper_return_prefers_scoped_nested_callee_over_namesake() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+
+    let arena = Arc::new(TypeArena::new());
+    // Top-level namesake `createLogger` + its `$Ret` (a DIFFERENT shape) — listed
+    // first so the unscoped `by_name` path would pick it.
+    let namesake = make_symbol("createLogger", "createLogger", SymbolKind::Function, None, None, None);
+    let namesake_ret =
+        make_symbol("createLogger$Ret", "createLogger$Ret", SymbolKind::Interface, None, None, None);
+    let namesake_member =
+        make_symbol("ship", "createLogger$Ret.ship", SymbolKind::Property, Some(1), None, None);
+    // The factory + its nested builder + the builder's member-bearing `$Ret`.
+    let factory =
+        make_symbol("createScopedLogger", "createScopedLogger", SymbolKind::Function, None, None, None);
+    let mut nested = make_symbol(
+        "createLogger",
+        "createScopedLogger.createLogger",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
+    nested.scope_path = Some("createScopedLogger".to_string());
+    let nested_ret = make_symbol(
+        "createLogger$Ret",
+        "createScopedLogger.createLogger$Ret",
+        SymbolKind::Interface,
+        None,
+        None,
+        None,
+    );
+    let nested_member = make_symbol(
+        "info",
+        "createScopedLogger.createLogger$Ret.info",
+        SymbolKind::Property,
+        Some(5),
+        None,
+        None,
+    );
+
+    // `return createLogger()` inside the factory (symbol index 3).
+    let mut r = call_ref("createLogger");
+    r.source_symbol_index = 3;
+    let mut pf = make_parsed_file(
+        "src/logger.ts",
+        vec![namesake, namesake_ret, namesake_member, factory, nested, nested_ret, nested_member],
+        vec![r],
+    );
+    pf.flow.flow_return_lhs.insert(0, 3);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    for (qname, id) in [
+        ("createLogger", 100),
+        ("createLogger$Ret", 101),
+        ("createLogger$Ret.ship", 102),
+        ("createScopedLogger", 103),
+        ("createScopedLogger.createLogger", 104),
+        ("createScopedLogger.createLogger$Ret", 105),
+        ("createScopedLogger.createLogger$Ret.info", 106),
+    ] {
+        id_map.insert(("src/logger.ts".to_string(), qname.to_string()), id);
+    }
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    assert_eq!(tree.return_type_str("createScopedLogger"), None, "no return before the pass");
+    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
+    assert_eq!(
+        tree.return_type_str("createScopedLogger").as_deref(),
+        Some("createScopedLogger.createLogger$Ret"),
+        "factory must bind its OWN nested builder's $Ret, not the top-level namesake's"
     );
 }
 
@@ -443,10 +522,10 @@ fn field_init_call_types_the_field() {
     id_map.insert(("src/c.ts".to_string(), "C.svc".to_string()), 3);
 
     let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
-    assert_eq!(tree.field_type_name("C.svc"), None, "no field type before the pass");
+    assert_eq!(tree.field_type_str("C.svc"), None, "no field type before the pass");
     tree.infer_field_init_types(std::slice::from_ref(&pf));
     assert_eq!(
-        tree.field_type_name("C.svc"),
+        tree.field_type_str("C.svc").as_deref(),
         Some("Thing"),
         "field typed from its initializer call's return",
     );
@@ -505,13 +584,13 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
     // derive_type_info_from_refs (run during build) must SKIP the chain-bearing
     // TypeRef — `r` must NOT be mis-typed to the callee name "makeThing".
     assert_eq!(
-        tree.field_type_name("r"),
+        tree.field_type_str("r"),
         None,
         "chain-bearing initializer must not type the variable to the callee name",
     );
     tree.infer_field_init_types(std::slice::from_ref(&pf));
     assert_eq!(
-        tree.field_type_name("r"),
+        tree.field_type_str("r").as_deref(),
         Some("Thing"),
         "local variable typed from its initializer call's return",
     );
@@ -521,9 +600,9 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
 fn return_type_name_for_find() {
     let (tree, _) = build_fixture();
     assert_eq!(
-        tree.return_type_name("Repo.find"),
+        tree.return_type_str("Repo.find").as_deref(),
         Some("User"),
-        "return_type_name(Repo.find) should be Some(\"User\")"
+        "return_type_str(Repo.find) should be Some(\"User\")"
     );
 }
 
@@ -561,10 +640,62 @@ fn inferred_return_method_does_not_capture_last_param_as_return() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("Browser.elementByCss"),
+        tree.return_type_str("Browser.elementByCss"),
         None,
         "a params-first method with no return annotation must have no derived \
          return type, not its last parameter's type"
+    );
+}
+
+/// A function with an inline object-type return annotation (`fn(): { x: X }`) and
+/// a synthesized member-bearing `{fn}$Ret` interface must (1) route its return
+/// THROUGH `$Ret` and (2) type each `$Ret` member from the annotation — so member
+/// access / destructuring of the call result resolves on the real members.
+#[test]
+fn object_type_return_routes_through_synth_ret_with_typed_members() {
+    let arena = Arc::new(TypeArena::new());
+    // The extractor sets the function's return to the inline object type and
+    // mirrors it onto BOTH the qname and id slots — the routing must override it.
+    let obj_ret = arena.intern_type_str("{ browser: Browser; flag: boolean }");
+    let mut setup =
+        make_symbol("setup", "setup", SymbolKind::Function, None, None, Some(obj_ret));
+    setup.signature = Some("setup(): { browser: Browser; flag: boolean }".to_string());
+    let symbols = vec![
+        make_symbol("Browser", "Browser", SymbolKind::Class, None, None, None),
+        setup,
+        // The synth `$Ret` interface + its members (from the object-literal return),
+        // created untyped by the flow pass.
+        make_symbol("setup$Ret", "setup$Ret", SymbolKind::Interface, None, None, None),
+        make_symbol("browser", "setup$Ret.browser", SymbolKind::Property, Some(2), None, None),
+        make_symbol("flag", "setup$Ret.flag", SymbolKind::Property, Some(2), None, None),
+    ];
+    let pf = make_parsed_file("src/lib.ts", symbols, Vec::new());
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/lib.ts".to_string(), "Browser".to_string()), 1);
+    id_map.insert(("src/lib.ts".to_string(), "setup".to_string()), 2);
+    id_map.insert(("src/lib.ts".to_string(), "setup$Ret".to_string()), 3);
+    id_map.insert(("src/lib.ts".to_string(), "setup$Ret.browser".to_string()), 4);
+    id_map.insert(("src/lib.ts".to_string(), "setup$Ret.flag".to_string()), 5);
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_str("setup").as_deref(),
+        Some("setup$Ret"),
+        "setup()'s return must route through the member-bearing $Ret interface"
+    );
+    // The destructure/chain seed reads the ID slot first — it must also be $Ret,
+    // not the extractor-mirrored inline object-type string.
+    assert_eq!(
+        tree.return_type_id_of(2),
+        Some(arena.class("setup$Ret")),
+        "setup's id-slot return must route through $Ret (read before the qname slot)"
+    );
+    assert_eq!(
+        tree.field_type_str("setup$Ret.browser").as_deref(),
+        Some("Browser"),
+        "$Ret.browser must be typed from the object-type return annotation"
     );
 }
 
@@ -572,9 +703,9 @@ fn inferred_return_method_does_not_capture_last_param_as_return() {
 fn field_type_name_for_db() {
     let (tree, _) = build_fixture();
     assert_eq!(
-        tree.field_type_name("Repo.db"),
+        tree.field_type_str("Repo.db").as_deref(),
         Some("Database"),
-        "field_type_name(Repo.db) should be Some(\"Database\")"
+        "field_type_str(Repo.db) should be Some(\"Database\")"
     );
 }
 
@@ -699,6 +830,88 @@ fn reexports_from_returns_empty_for_non_barrel() {
     assert!(
         reexports.is_empty(),
         "no re-export refs were emitted, so reexports_from should be empty"
+    );
+}
+
+/// `export * from '<bare-pkg>'`: extractor emits kind=Imports, is_reexport=true,
+/// target_name="*", module=Some(pkg) — mirrors how `reexport_map` is fed.
+fn star_reexport(module: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "*".to_string(),
+        kind: EdgeKind::Imports,
+        line: 0,
+        col: 0,
+        module: Some(module.to_string()),
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: true,
+    }
+}
+
+/// A bare named import `{ computed } from 'vue'` must resolve through the indexed
+/// `vue → @vue/runtime-dom → @vue/runtime-core` `export *` chain to the `computed`
+/// defined in runtime-core. Exercises Compilation's `resolve_external_reexport` /
+/// `resolve_module_from` / `in_module_from` overrides driving `follow_reexports`.
+#[test]
+fn resolve_external_reexport_follows_export_star_package_chain() {
+    let arena = Arc::new(TypeArena::new());
+    let vue_entry = make_parsed_file(
+        "ext:ts:vue/dist/vue.d.ts",
+        vec![make_symbol(
+            "__barrel",
+            "vue.__barrel",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        )],
+        vec![star_reexport("@vue/runtime-dom")],
+    );
+    let rt_dom = make_parsed_file(
+        "ext:ts:@vue/runtime-dom/dist/runtime-dom.d.ts",
+        vec![make_symbol(
+            "__barrel",
+            "@vue/runtime-dom.__barrel",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        )],
+        vec![star_reexport("@vue/runtime-core")],
+    );
+    let rt_core = make_parsed_file(
+        "ext:ts:@vue/runtime-core/dist/runtime-core.d.ts",
+        vec![make_symbol(
+            "computed",
+            "@vue/runtime-core.computed",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        )],
+        vec![],
+    );
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        (
+            "ext:ts:@vue/runtime-core/dist/runtime-core.d.ts".into(),
+            "@vue/runtime-core.computed".into(),
+        ),
+        700,
+    );
+
+    let tree = Compilation::build(&[vue_entry, rt_dom, rt_core], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.resolve_external_reexport("computed", "computed", "vue"),
+        Some(700),
+        "bare `import {{ computed }} from 'vue'` must bind through the indexed \
+         vue → @vue/runtime-dom → @vue/runtime-core export* chain to runtime-core.computed"
     );
 }
 
@@ -855,9 +1068,9 @@ fn typeref_derived_return_type_for_method() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("Svc.getUser"),
+        tree.return_type_str("Svc.getUser").as_deref(),
         Some("User"),
-        "return_type_name should be derived from the TypeRef ref"
+        "return_type_str should be derived from the TypeRef ref"
     );
 }
 
@@ -887,9 +1100,9 @@ fn typeref_derived_field_type_for_property() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.field_type_name("App.config"),
+        tree.field_type_str("App.config").as_deref(),
         Some("Config"),
-        "field_type_name should be derived from the TypeRef ref"
+        "field_type_str should be derived from the TypeRef ref"
     );
 }
 
@@ -918,9 +1131,9 @@ fn signature_derived_return_type_for_method() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("load"),
+        tree.return_type_str("load").as_deref(),
         Some("User"),
-        "return_type_name should be derived from the signature string"
+        "return_type_str should be derived from the signature string"
     );
 }
 
@@ -954,7 +1167,7 @@ fn this_return_is_captured_over_parameter_typeref() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("Mock.mockImpl"),
+        tree.return_type_str("Mock.mockImpl").as_deref(),
         Some("this"),
         "a `: this` return must be captured verbatim, not the parameter type"
     );
@@ -990,7 +1203,7 @@ fn typeid_is_not_overwritten_by_typeref() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("fetch"),
+        tree.return_type_str("fetch").as_deref(),
         Some("User"),
         "extractor TypeId value must survive Phase B — must not be overwritten by TypeRef"
     );
@@ -1106,7 +1319,7 @@ fn bare_identifier_return_infers_param_type() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("useQueryClient"),
+        tree.return_type_str("useQueryClient").as_deref(),
         Some("QueryClient"),
         "the function's return must be inferred from the returned parameter's type"
     );
@@ -1143,7 +1356,7 @@ fn declared_return_blocks_bare_identifier_inference() {
     let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("useQueryClient"),
+        tree.return_type_str("useQueryClient").as_deref(),
         Some("Other"),
         "an extractor-declared return must survive bare-identifier inference"
     );
@@ -1169,7 +1382,7 @@ fn cross_module_agreement_infers_shared_qname() {
     let tree = Compilation::build(&[pf1, pf2], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.return_type_name("useQueryClient"),
+        tree.return_type_str("useQueryClient").as_deref(),
         Some("QueryClient"),
         "two copies agreeing on the same return must infer the shared slot"
     );
@@ -1182,7 +1395,7 @@ fn cross_module_agreement_infers_shared_qname() {
 /// the same first-winner string for both owners and can never disagree.
 #[test]
 fn agreement_gate_folds_agreement_and_skips_disagreement() {
-    let c = |q: &str, t: &str| (q.to_string(), t.to_string(), None, Vec::<String>::new());
+    let c = |q: &str, t: &str| (q.to_string(), t.to_string(), None);
 
     // Agreement across two owners of the shared qname → one folded entry.
     let agree = super::agree_inferred_returns_for_test(vec![
@@ -1209,7 +1422,7 @@ fn agreement_gate_folds_agreement_and_skips_disagreement() {
         c("a", "Account"),
         c("b", "Account"),
     ]);
-    let folded: Vec<&str> = mixed.iter().map(|(q, _, _, _)| q.as_str()).collect();
+    let folded: Vec<&str> = mixed.iter().map(|(q, _, _)| q.as_str()).collect();
     assert_eq!(folded, vec!["b"], "only the agreeing qname `b` is folded");
 }
 
@@ -1357,7 +1570,7 @@ fn module_tagged_value_typeref_resolves_to_exported_value_type() {
     let tree = Compilation::build(&[mod_pf, consumer_pf], &id_map, Arc::clone(&arena));
 
     assert_eq!(
-        tree.field_type_name("g.exp"),
+        tree.field_type_str("g.exp").as_deref(),
         Some("mod.TheType"),
         "a module-tagged value TypeRef that self-resolves must type to the exported \
          value's declared type, following the local export rename — not self-referential \

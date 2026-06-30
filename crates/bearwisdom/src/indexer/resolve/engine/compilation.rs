@@ -14,17 +14,20 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
-    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature, parse_return_type_positional, parse_type_head_and_args,
-    resolve_type_name_in_scope, FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet,
-    TypeInfo,
+    parse_object_type_members, parse_param_types_from_signature,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
+    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
+    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::types::{AliasTarget, EdgeKind, ExtractedSymbol, ParsedFile, SymbolKind};
+use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
+use crate::types::{
+    intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedSymbol, ParsedFile,
+    SymbolKind,
+};
 
 // ---------------------------------------------------------------------------
 // `is_type_like` is the single canonical type-name-surface predicate, owned by
@@ -92,6 +95,12 @@ pub struct Compilation {
     /// Re-export map: file_path → [(original_name, source_module)].
     /// Populated from `pf.refs` where `is_reexport` is true.
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
+    /// Bare module specifier → the indexed external file that re-export following
+    /// starts from. Keys a package's import specifier (`vue`, `@vue/runtime-dom`)
+    /// to its entry/barrel `ext:<lang>:<pkg>/…` file, so a bare named import drives
+    /// `follow_reexports` from the package entry. Built from the shared
+    /// `ext:<lang>:<pkg>` path convention; no per-language code.
+    module_entry: FxHashMap<String, String>,
     /// Local export-rename map: module head → (exposed name → declaring qname).
     /// A `module head` is the qualified-name prefix the renamed symbols live
     /// under (an external file's symbols are qnamed `<module>.<name>`), which is
@@ -113,6 +122,11 @@ pub struct Compilation {
     /// member found on a generic supertype binds that supertype's parameters from
     /// these edge arguments — the arguments live on the edge, not on the receiver.
     inherits_args: FxHashMap<String, Vec<(String, Vec<String>)>>,
+    /// Interned-id form of `inherits_args` (arg type-heads as `TypeId`) so the
+    /// supertype-arg substitution binds without re-`intern_type_str`ing the
+    /// stored arg strings on each access. Populated on full build; empty after an
+    /// incremental DB reload (the edge args aren't recoverable there).
+    inherits_arg_ids: FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
     /// Direct-parent inheritance keyed by SYMBOL ID: child symbol id → ALL parent
     /// symbol ids — the id-keyed counterpart of `inherits`. Derived at the end of
     /// `ingest` / `ingest_from_db` by resolving each `inherits` child qname to its
@@ -129,7 +143,15 @@ pub struct Compilation {
     enclosing_namespace: FxHashMap<String, String>,
     /// Type-alias targets, keyed by both qualified and simple name. Populated
     /// from `ParsedFile::alias_targets`; consulted by `engine::alias::expand`.
-    alias_target: FxHashMap<String, AliasTarget>,
+    /// Every type-expression component is pre-interned into the arena at
+    /// map-build time so `expand` reads TypeIds directly without re-interning.
+    alias_target: FxHashMap<String, AliasTargetIds>,
+    /// Type-alias targets keyed by the alias's declaration SYMBOL ID — the
+    /// collision-free counterpart of `alias_target`. Two sibling `type Logger = …`
+    /// aliases share the bare name key (last writer wins); their ids do not, so a
+    /// use site that resolves `Logger` to a specific declaration expands the right
+    /// target. See `alias_target_by_id`.
+    alias_target_by_id: FxHashMap<i64, AliasTargetIds>,
     /// Workspace-package declared name → package id — ecosystem-agnostic (npm,
     /// cargo, go workspaces). Snapshot of `ProjectContext::workspace_pkg_by_declared_name`.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
@@ -233,13 +255,16 @@ impl Compilation {
             type_info: FxHashMap::default(),
             type_info_by_id: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
+            module_entry: FxHashMap::default(),
             export_alias_by_module: FxHashMap::default(),
             inherits: FxHashMap::default(),
             inherits_args: FxHashMap::default(),
+            inherits_arg_ids: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
+            alias_target_by_id: FxHashMap::default(),
             workspace_pkg_by_declared_name: FxHashMap::default(),
             path_aliases_by_pkg: FxHashMap::default(),
             path_aliases_global: Vec::new(),
@@ -391,8 +416,7 @@ impl Compilation {
                     }
                 }
 
-                // Type metadata from extractor-set TypeIds — render into strings
-                // for the legacy string-typed SymbolLookup accessors. Ref-derived
+                // Type metadata from extractor-set TypeIds. Ref-derived
                 // type_info fills absent slots in Phase B below.
                 if sym.declared_type.is_some() || sym.return_type.is_some() {
                     let ti = self
@@ -400,11 +424,9 @@ impl Compilation {
                         .entry(sym.qualified_name.clone())
                         .or_insert_with(TypeInfo::default);
                     if let Some(type_id) = sym.declared_type {
-                        ti.field_type = Some(self.arena.format_type(type_id));
                         ti.field_type_id = Some(type_id);
                     }
                     if let Some(type_id) = sym.return_type {
-                        ti.return_type = Some(self.arena.format_type(type_id));
                         ti.return_type_id = Some(type_id);
                     }
                     // Mirror extractor-set types onto the id-keyed slot (info.id),
@@ -415,11 +437,9 @@ impl Compilation {
                         .entry(info.id)
                         .or_insert_with(TypeInfo::default);
                     if let Some(type_id) = sym.declared_type {
-                        tid.field_type = Some(self.arena.format_type(type_id));
                         tid.field_type_id = Some(type_id);
                     }
                     if let Some(type_id) = sym.return_type {
-                        tid.return_type = Some(self.arena.format_type(type_id));
                         tid.return_type_id = Some(type_id);
                     }
                 }
@@ -456,7 +476,14 @@ impl Compilation {
                     parents.push(parent_head.clone());
                 }
                 if !parent_args.is_empty() {
-                    let args = parent_args.iter().map(|a| a.trim().to_string()).collect();
+                    let args: Vec<String> =
+                        parent_args.iter().map(|a| a.trim().to_string()).collect();
+                    let arg_ids: Vec<TypeId> =
+                        args.iter().map(|a| self.arena.intern_type_str(a)).collect();
+                    self.inherits_arg_ids
+                        .entry(child_sym.qualified_name.clone())
+                        .or_default()
+                        .push((parent_head.clone(), arg_ids));
                     self.inherits_args
                         .entry(child_sym.qualified_name.clone())
                         .or_default()
@@ -508,14 +535,67 @@ impl Compilation {
 
             // Pass 5 — type-alias targets, keyed by both the qualified and the
             // simple name so a chain's type head matches whether or not it
-            // carries its scope prefix.
+            // carries its scope prefix. Type-expression components are interned
+            // once here so expand reads TypeIds directly.
             for (name, target) in &pf.alias_targets {
-                self.alias_target.insert(name.clone(), target.clone());
+                let interned = intern_alias_target(&self.arena, target);
+                self.alias_target.insert(name.clone(), interned);
                 if let Some((_, simple)) = name.rsplit_once('.') {
                     self.alias_target
                         .entry(simple.to_string())
-                        .or_insert_with(|| target.clone());
+                        .or_insert_with(|| intern_alias_target(&self.arena, target));
                 }
+                // Id-keyed entry: the bare/qualified name collides across sibling
+                // aliases (two `type Logger = …`), but the declaration id does not —
+                // so a use site that resolves the alias to a specific declaration
+                // expands its OWN target, not the last writer's.
+                if let Some(&id) = symbol_id_map.get(&(pf.path.clone(), name.clone())) {
+                    self.alias_target_by_id
+                        .insert(id, intern_alias_target(&self.arena, target));
+                }
+            }
+        }
+
+        // Module-entry map — bare package specifier → the indexed entry file that
+        // re-export following starts from. For each external `ext:<lang>:<pkg>/…`
+        // file key `<pkg>` (scoped packages keep both leading segments); when a
+        // package contributes several files prefer the barrel (non-empty
+        // re-exports), then the shallowest path. Runs after Pass 4 so `reexport_map`
+        // is complete; iterates a sorted list so the pick is reindex-deterministic.
+        fn package_from_ext_path(path: &str) -> Option<&str> {
+            let after_lang = path.strip_prefix("ext:")?.split_once(':')?.1;
+            if after_lang.starts_with('@') {
+                let mut segs = after_lang.splitn(3, '/');
+                let scope = segs.next()?;
+                let name = segs.next()?;
+                Some(&after_lang[..scope.len() + 1 + name.len()])
+            } else {
+                after_lang.split('/').next()
+            }
+        }
+        let mut ext_paths: Vec<&str> = parsed
+            .iter()
+            .map(|pf| pf.path.as_str())
+            .filter(|p| p.starts_with("ext:"))
+            .collect();
+        ext_paths.sort_unstable();
+        for path in ext_paths {
+            let Some(pkg) = package_from_ext_path(path) else {
+                continue;
+            };
+            let has_reexports = self.reexport_map.get(path).is_some_and(|v| !v.is_empty());
+            let depth = path.matches('/').count();
+            let replace = match self.module_entry.get(pkg) {
+                None => true,
+                Some(existing) => {
+                    let ex_has =
+                        self.reexport_map.get(existing).is_some_and(|v| !v.is_empty());
+                    let ex_depth = existing.matches('/').count();
+                    (has_reexports && !ex_has) || (has_reexports == ex_has && depth < ex_depth)
+                }
+            };
+            if replace {
+                self.module_entry.insert(pkg.to_string(), path.to_string());
             }
         }
 
@@ -827,14 +907,12 @@ impl Compilation {
                     // the two same-qname symbols apart, and the qname slot types
                     // INSTANCES of the type (which carry `push` / `includes` / `map`).
                     if !qname_owned_by_type {
-                        if let Some((resolved, arg_strs, fid)) = derived {
+                        if let Some((_, _, fid)) = derived {
                             // Qname slot — first-writer-wins.
                             let ti =
                                 self.type_info.entry(sym.qualified_name.clone()).or_default();
-                            if ti.field_type.is_none() {
+                            if ti.field_type_id.is_none() {
                                 ti.field_type_id = Some(fid);
-                                ti.field_type = Some(resolved.clone());
-                                ti.type_args = arg_strs.clone();
                             }
                             // Id slot — keyed by this symbol's id, kept distinct from a
                             // same-qname first-winner so a caller holding the resolved
@@ -843,10 +921,8 @@ impl Compilation {
                                 .get(&(pf.path.clone(), sym.qualified_name.clone()))
                             {
                                 let tid = self.type_info_by_id.entry(id).or_default();
-                                if tid.field_type.is_none() {
+                                if tid.field_type_id.is_none() {
                                     tid.field_type_id = Some(fid);
-                                    tid.field_type = Some(resolved);
-                                    tid.type_args = arg_strs;
                                 }
                             }
                         }
@@ -856,7 +932,7 @@ impl Compilation {
                     // function's return type when CALLED — captured here so
                     // `obj.fn().member` chains continue past the call.
                     let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                    if ti.return_type.is_none() {
+                    if ti.return_type_id.is_none() {
                         if let Some(rt) = sym
                             .signature
                             .as_deref()
@@ -868,14 +944,13 @@ impl Compilation {
                                 &self.by_qname,
                             );
                             ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
-                            ti.return_type = Some(resolved);
                         }
                     }
                 }
                 SymbolKind::TypeAlias => {
                     if let Some(&(first, _)) = type_refs.first() {
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                        if ti.field_type.is_none() {
+                        if ti.field_type_id.is_none() {
                             // Scope-qualify the alias's flattened RHS head to the
                             // declaring module so a transparent alias follows it to
                             // the real declaration (`expect-type.PositiveExpectTypeOf`,
@@ -887,7 +962,6 @@ impl Compilation {
                                 &self.by_qname,
                             );
                             ti.field_type_id = Some(self.arena.intern_type_str(&resolved));
-                            ti.field_type = Some(resolved);
                         }
                     }
                 }
@@ -935,7 +1009,57 @@ impl Compilation {
                     // shared qname slot — so a same-qname overload in another
                     // package (the qname slot's first-winner) does not hide it.
                     let computed: Option<(String, Option<TypeId>)> =
-                        if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
+                        if let Some(obj) = sig_rt
+                            .as_deref()
+                            .filter(|s| {
+                                let t = s.trim();
+                                t.starts_with('{') && t.ends_with('}')
+                            })
+                            .filter(|_| {
+                                self.by_qname
+                                    .contains_key(&format!("{}$Ret", sym.qualified_name))
+                            })
+                        {
+                            // An inline object-type return (`fn(): { a: A; b: B }`) has a
+                            // synthesized member-bearing `{fn}$Ret` interface (from the
+                            // object-literal return). Type its members from the annotation
+                            // and route the return THROUGH `$Ret`, so member access /
+                            // destructuring of the call result resolves on the real members
+                            // rather than a member-less inline-object-type string.
+                            let synth = format!("{}$Ret", sym.qualified_name);
+                            for (mname, mtype) in parse_object_type_members(obj) {
+                                let mqname = format!("{synth}.{mname}");
+                                if !self.by_qname.contains_key(&mqname) {
+                                    continue;
+                                }
+                                let resolved = resolve_type_name_in_scope(
+                                    &mtype,
+                                    sym.scope_path.as_deref(),
+                                    &self.by_qname,
+                                );
+                                let rid = self.arena.intern_type_str(&resolved);
+                                let mti = self.type_info.entry(mqname.clone()).or_default();
+                                if mti.field_type_id.is_none() {
+                                    mti.field_type_id = Some(rid);
+                                }
+                                if let Some(&mid) =
+                                    symbol_id_map.get(&(pf.path.clone(), mqname))
+                                {
+                                    let mtid = self.type_info_by_id.entry(mid).or_default();
+                                    if mtid.field_type_id.is_none() {
+                                        mtid.field_type_id = Some(rid);
+                                    }
+                                }
+                            }
+                            let sid = self.arena.class(&synth);
+                            // Override both stores: the extractor mirrored the inline
+                            // object-type return onto both the qname and id slots
+                            // (above), and the id slot — read first by the resolver and
+                            // COALESCEd over the qname slot on persist — would otherwise
+                            // keep the member-less string. `set_return_both` forces both.
+                            self.set_return_both(&sym.qualified_name, synth.clone(), sid);
+                            Some((synth, Some(sid)))
+                        } else if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
                             // A fluent self-returning method (`m(fn: P): this`)
                             // yields the receiver. Its `this` return emits no
                             // TypeRef, so the `type_refs.last()` arm below would
@@ -1007,21 +1131,19 @@ impl Compilation {
                             None
                         }
                     });
-                    if let Some((resolved, rid)) = computed {
+                    if let Some((_, rid)) = computed {
                         // Qname slot — first-writer-wins (unchanged).
                         let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                        if ti.return_type.is_none() {
+                        if ti.return_type_id.is_none() {
                             ti.return_type_id = rid;
-                            ti.return_type = Some(resolved.clone());
                         }
                         // Id slot — keyed by this symbol's id; no qname collision.
                         if let Some(&id) =
                             symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
                         {
                             let tid = self.type_info_by_id.entry(id).or_default();
-                            if tid.return_type.is_none() {
+                            if tid.return_type_id.is_none() {
                                 tid.return_type_id = rid;
-                                tid.return_type = Some(resolved);
                             }
                         }
                     }
@@ -1030,17 +1152,15 @@ impl Compilation {
                     // Constructor call yields the class itself.
                     let class_id = self.arena.class(&sym.qualified_name);
                     let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
-                    if ti.return_type.is_none() {
+                    if ti.return_type_id.is_none() {
                         ti.return_type_id = Some(class_id);
-                        ti.return_type = Some(sym.qualified_name.clone());
                     }
                     if let Some(&id) =
                         symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
                     {
                         let tid = self.type_info_by_id.entry(id).or_default();
-                        if tid.return_type.is_none() {
+                        if tid.return_type_id.is_none() {
                             tid.return_type_id = Some(class_id);
-                            tid.return_type = Some(sym.qualified_name.clone());
                         }
                     }
                 }
@@ -1074,23 +1194,30 @@ impl Compilation {
                         let mut gparams = parse_generic_param_clause(&sig[start + 1..end]);
                         merge_where_bounds(&mut gparams, sig);
                         if !gparams.is_empty() {
-                            let mut params = Vec::with_capacity(gparams.len());
-                            let mut bounds = Vec::with_capacity(gparams.len());
-                            let mut defaults = Vec::with_capacity(gparams.len());
+                            let mut param_ids = Vec::with_capacity(gparams.len());
+                            let mut default_ids = Vec::with_capacity(gparams.len());
                             for (n, b, d) in gparams {
-                                params.push(n);
-                                bounds.push(b);
-                                defaults.push(d);
+                                let bound = b
+                                    .as_deref()
+                                    .map(|s| self.arena.intern_type_str(s));
+                                let gp_id = self.arena.intern_generic(GenericParamData {
+                                    name: n,
+                                    owner_symbol_index: 0,
+                                    bound,
+                                });
+                                param_ids.push(gp_id);
+                                default_ids.push(
+                                    d.map(|s| self.arena.intern_type_str(&s)),
+                                );
                             }
                             // Key on both simple name and qname so callers
                             // using either form get the params.
                             for key in [&sym.name, &sym.qualified_name] {
                                 let ti =
                                     self.type_info.entry(key.clone()).or_default();
-                                if ti.generic_params.is_empty() {
-                                    ti.generic_params = params.clone();
-                                    ti.generic_param_bounds = bounds.clone();
-                                    ti.generic_param_defaults = defaults.clone();
+                                if ti.generic_param_ids.is_empty() {
+                                    ti.generic_param_ids = param_ids.clone();
+                                    ti.generic_param_default_ids = default_ids.clone();
                                 }
                             }
                             // Id slot — immune to the qname collision that collapses a
@@ -1104,10 +1231,9 @@ impl Compilation {
                                 symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
                             {
                                 let tid = self.type_info_by_id.entry(id).or_default();
-                                if tid.generic_params.is_empty() {
-                                    tid.generic_params = params.clone();
-                                    tid.generic_param_bounds = bounds.clone();
-                                    tid.generic_param_defaults = defaults.clone();
+                                if tid.generic_param_ids.is_empty() {
+                                    tid.generic_param_ids = param_ids.clone();
+                                    tid.generic_param_default_ids = default_ids.clone();
                                 }
                             }
                             break;
@@ -1125,21 +1251,20 @@ impl Compilation {
     /// or unresolvable export leaves the slot untouched.
     fn resolve_pending_module_values(&mut self, pending: Vec<PendingModuleValue>) {
         for p in pending {
-            let Some((field_type, field_type_id)) = resolve_module_exported_value_type(
+            let Some(field_type_id) = resolve_module_exported_value_type(
                 &p.module,
                 &p.key,
                 &p.typed_qname,
                 &self.export_alias_by_module,
                 &self.by_qname,
                 &self.type_info,
+                &self.arena,
             ) else {
                 continue;
             };
             let ti = self.type_info.entry(p.typed_qname).or_default();
-            if ti.field_type.is_none() {
-                ti.field_type_id =
-                    field_type_id.or_else(|| Some(self.arena.class(&field_type)));
-                ti.field_type = Some(field_type);
+            if ti.field_type_id.is_none() {
+                ti.field_type_id = Some(field_type_id);
             }
         }
     }
@@ -1165,8 +1290,8 @@ impl Compilation {
     /// correctly, while two same-named functions with different returns leave the
     /// qname uninferred (one slot cannot hold two types).
     fn infer_bare_identifier_returns(&mut self, parsed: &[ParsedFile]) {
-        // (fn_qname, candidate_return_type, candidate_return_type_id, type_args)
-        let mut candidates: Vec<(String, String, Option<TypeId>, Vec<String>)> = Vec::new();
+        // (fn_qname, candidate_return_type, candidate_return_type_id)
+        let mut candidates: Vec<(String, String, Option<TypeId>)> = Vec::new();
 
         for pf in parsed {
             for (fn_idx, ident) in &pf.flow.flow_return_ident {
@@ -1181,7 +1306,7 @@ impl Compilation {
                 if self
                     .type_info
                     .get(&fn_sym.qualified_name)
-                    .and_then(|ti| ti.return_type.as_deref())
+                    .and_then(|ti| ti.return_type_id)
                     .is_some()
                 {
                     continue;
@@ -1190,9 +1315,10 @@ impl Compilation {
                 let Some(param_ti) = self.type_info.get(&param_qname) else {
                     continue;
                 };
-                let Some(ty) = param_ti.field_type.clone() else {
+                let Some(fid) = param_ti.field_type_id else {
                     continue;
                 };
+                let ty = self.arena.format_type(fid);
                 if ty.is_empty() || ty.eq_ignore_ascii_case("unknown") {
                     continue;
                 }
@@ -1200,30 +1326,28 @@ impl Compilation {
                 let is_generic_param = self
                     .type_info
                     .get(&fn_sym.qualified_name)
-                    .map(|ti| ti.generic_params.iter().any(|p| p == &ty))
+                    .map(|ti| {
+                        ti.generic_param_ids
+                            .iter()
+                            .any(|&id| self.arena.generic_param(id).name == ty)
+                    })
                     .unwrap_or(false);
                 if is_generic_param {
                     continue;
                 }
-                candidates.push((
-                    fn_sym.qualified_name.clone(),
-                    ty,
-                    param_ti.field_type_id,
-                    param_ti.type_args.clone(),
-                ));
+                candidates.push((fn_sym.qualified_name.clone(), ty, param_ti.field_type_id));
             }
         }
 
-        for (qname, ty, ty_id, type_args) in agree_inferred_returns(candidates) {
+        for (qname, ty, ty_id) in agree_inferred_returns(candidates) {
             // Re-check the slot: a same-batch candidate ordering, or a slot a
             // concurrent function already filled, must not be overwritten.
             let ti = self.type_info.entry(qname).or_default();
-            if ti.return_type.is_some() {
+            if ti.return_type_id.is_some() {
                 continue;
             }
             ti.return_type_id =
-                Some(ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)));
-            ti.return_type = Some(ty);
+                ty_id.or_else(|| Some(intern_head_and_args(&self.arena, &ty, &[])));
         }
     }
 
@@ -1246,7 +1370,7 @@ impl Compilation {
     /// external function (`ReturnType<typeof f>` where `f` is an external
     /// package's) sees that function's return type.
     pub(crate) fn resolve_wrapper_return_types(&mut self, parsed: &[ParsedFile]) {
-        let mut rewrites: Vec<(String, String, TypeId)> = Vec::new();
+        let mut rewrites: Vec<(String, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
             // Import bindings (name → module) for this file. `typeof X` resolves
             // `X` to `{module}.X` via these. TS is the only producer of the
@@ -1279,7 +1403,8 @@ impl Compilation {
                 let Some(rt) = self
                     .type_info
                     .get(&sym.qualified_name)
-                    .and_then(|ti| ti.return_type.clone())
+                    .and_then(|ti| ti.return_type_id)
+                    .map(|id| self.arena.format_type(id))
                     .filter(|rt| rt.contains("typeof"))
                 else {
                     continue;
@@ -1288,14 +1413,12 @@ impl Compilation {
                 if let Some(resolved) =
                     super::chain::resolve_return_type_extraction(id, self, &self.arena, &file_ctx)
                 {
-                    let s = self.arena.format_type(resolved);
-                    rewrites.push((sym.qualified_name.clone(), s, resolved));
+                    rewrites.push((sym.qualified_name.clone(), resolved));
                 }
             }
         }
-        for (qname, s, id) in rewrites {
+        for (qname, id) in rewrites {
             if let Some(ti) = self.type_info.get_mut(&qname) {
-                ti.return_type = Some(s);
                 ti.return_type_id = Some(id);
             }
         }
@@ -1356,11 +1479,12 @@ impl Compilation {
                 if call_ref.chain.as_ref().map(|c| c.segments.len()).unwrap_or(1) > 1 {
                     continue;
                 }
-                let Some(ret_id) = super::chain::callee_return_type(
+                let Some(ret_id) = super::chain::callee_return_type_in_scope(
                     self,
                     &self.arena,
                     &file_ctx,
                     &call_ref.target_name,
+                    &fn_sym.qualified_name,
                 ) else {
                     continue;
                 };
@@ -1403,8 +1527,10 @@ impl Compilation {
                     ret_branches.sort(); // member-on-all-branches is order-free
                     ret_branches.dedup();
                     let union_name = format!("{qname}$Ret");
-                    self.alias_target
-                        .insert(union_name.clone(), AliasTarget::Union(ret_branches));
+                    self.alias_target.insert(
+                        union_name.clone(),
+                        intern_alias_target(&self.arena, &AliasTarget::Union(ret_branches)),
+                    );
                     let id = self.arena.class(&union_name);
                     (union_name, id)
                 };
@@ -1416,7 +1542,7 @@ impl Compilation {
             if self
                 .type_info
                 .get(&qname)
-                .and_then(|ti| ti.return_type.as_deref())
+                .and_then(|ti| ti.return_type_id)
                 .is_some()
             {
                 continue;
@@ -1427,7 +1553,6 @@ impl Compilation {
                 ti.return_type_id = Some(
                     ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)),
                 );
-                ti.return_type = Some(ty);
             }
         }
     }
@@ -1437,7 +1562,7 @@ impl Compilation {
     /// the id slot (`return_type_id_of`) BEFORE the qname slot, and persist
     /// COALESCEs the id store over the qname store — so a qname-only write is
     /// shadowed by a stale id-keyed value.
-    fn set_return_both(&mut self, qname: &str, ret_str: String, ret_id: TypeId) {
+    fn set_return_both(&mut self, qname: &str, _ret_str: String, ret_id: TypeId) {
         let ids: Vec<i64> = self
             .by_qname_all
             .get(qname)
@@ -1445,11 +1570,9 @@ impl Compilation {
             .unwrap_or_default();
         let ti = self.type_info.entry(qname.to_string()).or_default();
         ti.return_type_id = Some(ret_id);
-        ti.return_type = Some(ret_str.clone());
         for id in ids {
             let tid = self.type_info_by_id.entry(id).or_default();
             tid.return_type_id = Some(ret_id);
-            tid.return_type = Some(ret_str.clone());
         }
     }
 
@@ -1526,7 +1649,7 @@ impl Compilation {
                 if self
                     .type_info
                     .get(&field.qualified_name)
-                    .and_then(|ti| ti.field_type.as_deref())
+                    .and_then(|ti| ti.field_type_id)
                     .is_some()
                 {
                     continue;
@@ -1547,12 +1670,11 @@ impl Compilation {
                 updates.push((field.qualified_name.clone(), s, id));
             }
         }
-        for (qname, s, id) in updates {
+        for (qname, _, id) in updates {
             let ti = self.type_info.entry(qname).or_default();
-            if ti.field_type.is_some() {
+            if ti.field_type_id.is_some() {
                 continue;
             }
-            ti.field_type = Some(s);
             ti.field_type_id = Some(id);
         }
     }
@@ -1639,23 +1761,25 @@ impl SymbolLookup for Compilation {
         )
     }
 
-    fn field_type_name(&self, property_qname: &str) -> Option<&str> {
-        self.type_info
-            .get(property_qname)
-            .and_then(|ti| ti.field_type.as_deref())
+    fn field_type_name(&self, _property_qname: &str) -> Option<&str> {
+        None
     }
 
-    fn return_type_name(&self, method_qname: &str) -> Option<&str> {
-        self.type_info
-            .get(method_qname)
-            .and_then(|ti| ti.return_type.as_deref())
+    fn return_type_name(&self, _method_qname: &str) -> Option<&str> {
+        None
     }
 
-    fn generic_params(&self, type_name: &str) -> Option<&[String]> {
-        self.type_info
-            .get(type_name)
-            .filter(|ti| !ti.generic_params.is_empty())
-            .map(|ti| ti.generic_params.as_slice())
+    fn generic_params(&self, type_name: &str) -> Option<Vec<String>> {
+        let ti = self.type_info.get(type_name)?;
+        if ti.generic_param_ids.is_empty() {
+            return None;
+        }
+        Some(
+            ti.generic_param_ids
+                .iter()
+                .map(|&id| self.arena.generic_param(id).name)
+                .collect(),
+        )
     }
 
     fn field_type_id(&self, property_qname: &str) -> Option<TypeId> {
@@ -1676,18 +1800,30 @@ impl SymbolLookup for Compilation {
             .and_then(|ti| ti.return_type_id)
     }
 
-    fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
-        self.type_info_by_id
-            .get(&symbol_id)
-            .filter(|ti| !ti.generic_params.is_empty())
-            .map(|ti| ti.generic_params.as_slice())
+    fn generic_params_of(&self, symbol_id: i64) -> Option<Vec<String>> {
+        let ti = self.type_info_by_id.get(&symbol_id)?;
+        if ti.generic_param_ids.is_empty() {
+            return None;
+        }
+        Some(
+            ti.generic_param_ids
+                .iter()
+                .map(|&id| self.arena.generic_param(id).name)
+                .collect(),
+        )
     }
 
-    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
-        self.type_info_by_id
-            .get(&symbol_id)
-            .filter(|ti| !ti.generic_params.is_empty())
-            .map(|ti| ti.generic_param_defaults.as_slice())
+    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<Vec<Option<String>>> {
+        let ti = self.type_info_by_id.get(&symbol_id)?;
+        if ti.generic_param_ids.is_empty() {
+            return None;
+        }
+        Some(
+            ti.generic_param_default_ids
+                .iter()
+                .map(|opt_id| opt_id.map(|id| self.arena.format_type(id)))
+                .collect(),
+        )
     }
 
     fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
@@ -1709,6 +1845,34 @@ impl SymbolLookup for Compilation {
             .get(file_path)
             .map(|v| v.as_slice())
             .unwrap_or(&self.empty_pairs)
+    }
+
+    fn resolve_module_from(&self, _source_file: &str, spec: &str) -> Option<&str> {
+        // Bare package specifier → its indexed entry file. Relative specifiers are
+        // resolved by the relative re-export path in `reexport_following`; returning
+        // None here preserves that fallback.
+        if super::support::is_relative_specifier(spec) {
+            return None;
+        }
+        self.module_entry.get(spec).map(String::as_str)
+    }
+
+    fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {
+        // A bare specifier resolves to its entry file's symbols; the None arm keeps
+        // the legacy `in_file(spec)` fallback for already-file-shaped specifiers.
+        match self.resolve_module_from(source_file, spec) {
+            Some(path) => self.in_file(path),
+            None => self.in_file(spec),
+        }
+    }
+
+    fn resolve_external_reexport(&self, target: &str, _prefix: &str, module: &str) -> Option<i64> {
+        // Drive the generic re-export walker from the package's indexed entry. The
+        // calling rule re-checks edge-kind (`candidate_with_compatible_kind`), so an
+        // accept-any gate here is sound.
+        let entry = self.module_entry.get(module)?;
+        super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0)
+            .map(|info| info.target_symbol_id)
     }
 
     fn is_external_name(&self, _name: &str, _language: &str) -> bool {
@@ -1755,6 +1919,14 @@ impl SymbolLookup for Compilation {
             .unwrap_or(&[])
     }
 
+    fn parent_class_arg_ids(&self, child_head: &str, parent_head: &str) -> &[TypeId] {
+        self.inherits_arg_ids
+            .get(child_head)
+            .and_then(|edges| edges.iter().find(|(h, _)| h == parent_head))
+            .map(|(_, args)| args.as_slice())
+            .unwrap_or(&[])
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing_type
             .get(source_qname)
@@ -1767,8 +1939,12 @@ impl SymbolLookup for Compilation {
             .map(|s| s.as_str())
     }
 
-    fn alias_target(&self, name: &str) -> Option<&AliasTarget> {
+    fn alias_target(&self, name: &str) -> Option<&AliasTargetIds> {
         self.alias_target.get(name)
+    }
+
+    fn alias_target_by_id(&self, id: i64) -> Option<&AliasTargetIds> {
+        self.alias_target_by_id.get(&id)
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
@@ -1837,26 +2013,29 @@ impl Compilation {
         {
             let mut stmt = tx.prepare(
                 "INSERT OR REPLACE INTO symbol_type_info \
-                 (symbol_id, field_type, return_type, type_args, generic_params) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                 (symbol_id, generic_params, field_type_id, return_type_id) \
+                 VALUES (?1, ?2, ?3, ?4)",
             )?;
             for (qname, ti) in &self.type_info {
                 let Some(sym) = self.by_qname.get(qname) else {
                     continue;
                 };
-                if ti.field_type.is_none()
-                    && ti.return_type.is_none()
-                    && ti.type_args.is_empty()
-                    && ti.generic_params.is_empty()
+                let param_names: Vec<String> = ti
+                    .generic_param_ids
+                    .iter()
+                    .map(|&id| self.arena.generic_param(id).name)
+                    .collect();
+                if ti.field_type_id.is_none()
+                    && ti.return_type_id.is_none()
+                    && param_names.is_empty()
                 {
                     continue;
                 }
                 stmt.execute(rusqlite::params![
                     sym.id,
-                    ti.field_type.as_deref(),
-                    ti.return_type.as_deref(),
-                    json_string_array(&ti.type_args),
-                    json_string_array(&ti.generic_params),
+                    json_string_array(&param_names),
+                    ti.field_type_id.map(|t| t.0.get() as i64),
+                    ti.return_type_id.map(|t| t.0.get() as i64),
                 ])?;
             }
         }
@@ -1865,31 +2044,43 @@ impl Compilation {
         // `HttpClient.get`, every `inject` — persists only one declaration's
         // return. Upsert each symbol id's OWN field/return here so an incremental
         // reload restores the overload-accurate metadata the resolver reads by id;
-        // COALESCE keeps the qname loop's `generic_params` / `type_args` columns.
+        // COALESCE keeps the qname loop's `generic_params` / type-id columns.
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO symbol_type_info (symbol_id, field_type, return_type, generic_params) \
+                "INSERT INTO symbol_type_info \
+                 (symbol_id, generic_params, field_type_id, return_type_id) \
                  VALUES (?1, ?2, ?3, ?4) \
                  ON CONFLICT(symbol_id) DO UPDATE SET \
-                   field_type = COALESCE(excluded.field_type, field_type), \
-                   return_type = COALESCE(excluded.return_type, return_type), \
-                   generic_params = COALESCE(excluded.generic_params, generic_params)",
+                   generic_params = COALESCE(excluded.generic_params, generic_params), \
+                   field_type_id = COALESCE(excluded.field_type_id, field_type_id), \
+                   return_type_id = COALESCE(excluded.return_type_id, return_type_id)",
             )?;
             for (id, ti) in &self.type_info_by_id {
-                if ti.field_type.is_none() && ti.return_type.is_none() && ti.generic_params.is_empty()
+                let param_names: Vec<String> = ti
+                    .generic_param_ids
+                    .iter()
+                    .map(|&id| self.arena.generic_param(id).name)
+                    .collect();
+                if ti.field_type_id.is_none() && ti.return_type_id.is_none() && param_names.is_empty()
                 {
                     continue;
                 }
-                let generic_params = (!ti.generic_params.is_empty())
-                    .then(|| json_string_array(&ti.generic_params));
+                let generic_params =
+                    (!param_names.is_empty()).then(|| json_string_array(&param_names));
                 stmt.execute(rusqlite::params![
                     id,
-                    ti.field_type.as_deref(),
-                    ti.return_type.as_deref(),
                     generic_params,
+                    ti.field_type_id.map(|t| t.0.get() as i64),
+                    ti.return_type_id.map(|t| t.0.get() as i64),
                 ])?;
             }
         }
+        // Persist the arena verbatim so the `field_type_id` / `return_type_id`
+        // raw indices stay valid: `restore_snapshot` rebuilds an identical arena.
+        tx.execute(
+            "INSERT OR REPLACE INTO _bearwisdom_meta (key, value) VALUES ('type_arena_snapshot', ?1)",
+            rusqlite::params![self.arena.serialize_snapshot()],
+        )?;
         tx.commit()
     }
 
@@ -1986,10 +2177,12 @@ impl Compilation {
             }
         }
 
-        // 2) Persisted type_info, re-interned into this build's fresh arena.
+        // 2) Persisted type_info — restore TypeIds from the raw index columns.
+        //    The arena was restored from its snapshot before this pass so raw
+        //    indices map to the same interned types they did when persisted.
         if let Ok(mut ti_stmt) = conn.prepare(
-            "SELECT s.qualified_name, s.name, t.field_type, t.return_type, \
-                    t.type_args, t.generic_params, t.symbol_id \
+            "SELECT s.qualified_name, s.name, \
+                    t.generic_params, t.symbol_id, t.field_type_id, t.return_type_id \
              FROM symbol_type_info t JOIN symbols s ON s.id = t.symbol_id",
         ) {
             if let Ok(ti_rows) = ti_stmt.query_map([], |r| {
@@ -1997,48 +2190,63 @@ impl Compilation {
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
-                    r.get::<_, Option<String>>(3)?,
-                    r.get::<_, Option<String>>(4)?,
-                    r.get::<_, Option<String>>(5)?,
-                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<i64>>(5)?,
                 ))
             }) {
-                for (qname, name, field_type, return_type, type_args_j, generic_params_j, symbol_id) in
-                    ti_rows.flatten()
+                // Map a persisted raw TypeId index back to a TypeId — valid
+                // because the arena was restored from the snapshot before this pass.
+                let fid_from_raw = |raw: Option<i64>| -> Option<TypeId> {
+                    raw.and_then(|n| u32::try_from(n).ok())
+                        .and_then(std::num::NonZeroU32::new)
+                        .map(TypeId)
+                };
+                for (
+                    qname,
+                    name,
+                    generic_params_j,
+                    symbol_id,
+                    field_type_id_raw,
+                    return_type_id_raw,
+                ) in ti_rows.flatten()
                 {
                     // A changed symbol's type_info is the fresh parse's, not the
                     // last index's persisted (possibly stale) row.
                     if parsed_qnames.contains(&qname) {
                         continue;
                     }
-                    let type_args = parse_json_string_array(type_args_j.as_deref());
-                    let generic_params = parse_json_string_array(generic_params_j.as_deref());
+                    let param_names = parse_json_string_array(generic_params_j.as_deref());
+                    // Re-intern each param name as a GenericParamData with owner=0,
+                    // bound=None (the fallback load path; the snapshot carries the
+                    // precise data for symbols whose TypeIds survived the arena reload).
+                    let interned_ids: Vec<GenericParamId> = param_names
+                        .iter()
+                        .map(|n| {
+                            self.arena.intern_generic(GenericParamData {
+                                name: n.clone(),
+                                owner_symbol_index: 0,
+                                bound: None,
+                            })
+                        })
+                        .collect();
 
                     let ti = self.type_info.entry(qname.clone()).or_default();
-                    if ti.field_type.is_none() {
-                        if let Some(ft) = &field_type {
-                            ti.field_type_id = Some(self.arena.intern_type_str(ft));
-                            ti.field_type = Some(ft.clone());
-                        }
+                    if ti.field_type_id.is_none() {
+                        ti.field_type_id = fid_from_raw(field_type_id_raw);
                     }
-                    if ti.return_type.is_none() {
-                        if let Some(rt) = &return_type {
-                            ti.return_type_id = Some(self.arena.intern_type_str(rt));
-                            ti.return_type = Some(rt.clone());
-                        }
+                    if ti.return_type_id.is_none() {
+                        ti.return_type_id = fid_from_raw(return_type_id_raw);
                     }
-                    if ti.type_args.is_empty() {
-                        ti.type_args = type_args;
+                    if ti.generic_param_ids.is_empty() && !interned_ids.is_empty() {
+                        ti.generic_param_ids = interned_ids.clone();
                     }
-                    if ti.generic_params.is_empty() && !generic_params.is_empty() {
-                        ti.generic_params = generic_params.clone();
-                    }
-                    // Rebuild the simple-name generic_params key (the full pass
+                    // Rebuild the simple-name generic_param_ids key (the full pass
                     // stores generic params under both the qname and the bare name).
-                    if !generic_params.is_empty() && name != qname {
+                    if !interned_ids.is_empty() && name != qname {
                         let sti = self.type_info.entry(name).or_default();
-                        if sti.generic_params.is_empty() {
-                            sti.generic_params = generic_params.clone();
+                        if sti.generic_param_ids.is_empty() {
+                            sti.generic_param_ids = interned_ids.clone();
                         }
                     }
                     // Id-keyed slot — the persisted row is per-symbol-id, so this
@@ -2046,20 +2254,14 @@ impl Compilation {
                     // id (`return_type_id_of`) on an incremental reload, with no
                     // qname-collapse.
                     let tid = self.type_info_by_id.entry(symbol_id).or_default();
-                    if tid.field_type.is_none() {
-                        if let Some(ft) = &field_type {
-                            tid.field_type_id = Some(self.arena.intern_type_str(ft));
-                            tid.field_type = Some(ft.clone());
-                        }
+                    if tid.field_type_id.is_none() {
+                        tid.field_type_id = fid_from_raw(field_type_id_raw);
                     }
-                    if tid.return_type.is_none() {
-                        if let Some(rt) = &return_type {
-                            tid.return_type_id = Some(self.arena.intern_type_str(rt));
-                            tid.return_type = Some(rt.clone());
-                        }
+                    if tid.return_type_id.is_none() {
+                        tid.return_type_id = fid_from_raw(return_type_id_raw);
                     }
-                    if tid.generic_params.is_empty() && !generic_params.is_empty() {
-                        tid.generic_params = generic_params;
+                    if tid.generic_param_ids.is_empty() && !interned_ids.is_empty() {
+                        tid.generic_param_ids = interned_ids;
                     }
                 }
             }
@@ -2118,16 +2320,16 @@ impl Compilation {
 /// candidate's id and type args ride along so the caller fills the structured
 /// slot, not just the string.
 fn agree_inferred_returns(
-    candidates: Vec<(String, String, Option<TypeId>, Vec<String>)>,
-) -> Vec<(String, String, Option<TypeId>, Vec<String>)> {
+    candidates: Vec<(String, String, Option<TypeId>)>,
+) -> Vec<(String, String, Option<TypeId>)> {
     // qname → Some(candidate) on a single agreed type, None on a conflict.
-    let mut by_fn: HashMap<String, Option<(String, Option<TypeId>, Vec<String>)>> = HashMap::new();
-    for (qname, ty, ty_id, type_args) in candidates {
+    let mut by_fn: HashMap<String, Option<(String, Option<TypeId>)>> = HashMap::new();
+    for (qname, ty, ty_id) in candidates {
         match by_fn.get(&qname) {
             None => {
-                by_fn.insert(qname, Some((ty, ty_id, type_args)));
+                by_fn.insert(qname, Some((ty, ty_id)));
             }
-            Some(Some((prev_ty, _, _))) if *prev_ty != ty => {
+            Some(Some((prev_ty, _))) if *prev_ty != ty => {
                 by_fn.insert(qname, None);
             }
             _ => {}
@@ -2135,9 +2337,7 @@ fn agree_inferred_returns(
     }
     by_fn
         .into_iter()
-        .filter_map(|(qname, agreed)| {
-            agreed.map(|(ty, ty_id, type_args)| (qname, ty, ty_id, type_args))
-        })
+        .filter_map(|(qname, agreed)| agreed.map(|(ty, ty_id)| (qname, ty, ty_id)))
         .collect()
 }
 
@@ -2242,8 +2442,8 @@ pub(super) fn is_type_like_for_test(kind: &str) -> bool {
 /// disagreement branch only reachable by feeding candidates straight in.
 #[cfg(test)]
 pub(super) fn agree_inferred_returns_for_test(
-    candidates: Vec<(String, String, Option<TypeId>, Vec<String>)>,
-) -> Vec<(String, String, Option<TypeId>, Vec<String>)> {
+    candidates: Vec<(String, String, Option<TypeId>)>,
+) -> Vec<(String, String, Option<TypeId>)> {
     agree_inferred_returns(candidates)
 }
 

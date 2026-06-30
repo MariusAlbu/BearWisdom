@@ -299,6 +299,42 @@ fn generic_param_allocation_yields_unique_ids() {
 }
 
 #[test]
+fn snapshot_round_trips_every_variant_preserving_ids() {
+    let a = TypeArena::new();
+    let user = a.class("User");
+    let vec_user = a.intern(Type::Apply {
+        base: a.class("Vec"),
+        args: vec![user],
+    });
+    let opt = a.intern(Type::Optional(vec_user));
+    let _prim = a.primitive(PrimKind::Int);
+    let gp = a.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 3,
+        bound: Some(user),
+    });
+    let gen = a.intern(Type::Generic { param: gp });
+    let lit = a.intern(Type::Literal(LitValue::Str("x".to_string())));
+
+    let blob = a.serialize_snapshot();
+    let b = TypeArena::new();
+    let n = b.restore_snapshot(&blob);
+
+    assert!(n >= 6, "all interned types restored");
+    // TypeIds are preserved verbatim, so a persisted raw id is still valid.
+    assert_eq!(b.get(opt), a.get(opt));
+    assert_eq!(b.get(gen), a.get(gen));
+    assert_eq!(b.get(lit), a.get(lit));
+    // qname index rebuilt → class() dedups to the restored id.
+    assert_eq!(b.class_lookup("User"), Some(user));
+    // generic params restored (bound included).
+    assert_eq!(b.generic_param(gp).name, "T");
+    assert_eq!(b.generic_param(gp).bound, Some(user));
+    // intern dedups against the restored set rather than minting a new id.
+    assert_eq!(b.intern(Type::Optional(vec_user)), opt);
+}
+
+#[test]
 fn typeid_index_round_trips_via_get() {
     let mut arena = TypeArena::new();
     let a = arena.intern(Type::Primitive(PrimKind::Bool));

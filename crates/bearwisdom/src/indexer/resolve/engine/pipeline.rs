@@ -34,7 +34,7 @@ use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::{ImportModulePath, LanguageProfile};
-use crate::types::{AliasTarget, EdgeKind, ParsedFile};
+use crate::types::{AliasTargetIds, EdgeKind, ParsedFile};
 use crate::walker::WalkedFile;
 
 use crate::indexer::resolve::engine::contract::build_scope_chain;
@@ -178,7 +178,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.return_type_name(method_qname)
     }
 
-    fn generic_params(&self, type_name: &str) -> Option<&[String]> {
+    fn generic_params(&self, type_name: &str) -> Option<Vec<String>> {
         self.tree.generic_params(type_name)
     }
 
@@ -198,11 +198,11 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.field_type_id_of(symbol_id)
     }
 
-    fn generic_params_of(&self, symbol_id: i64) -> Option<&[String]> {
+    fn generic_params_of(&self, symbol_id: i64) -> Option<Vec<String>> {
         self.tree.generic_params_of(symbol_id)
     }
 
-    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<&[Option<String>]> {
+    fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<Vec<Option<String>>> {
         self.tree.generic_param_defaults_of(symbol_id)
     }
 
@@ -214,8 +214,12 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.type_arena()
     }
 
-    fn alias_target(&self, name: &str) -> Option<&AliasTarget> {
+    fn alias_target(&self, name: &str) -> Option<&AliasTargetIds> {
         self.tree.alias_target(name)
+    }
+
+    fn alias_target_by_id(&self, id: i64) -> Option<&AliasTargetIds> {
+        self.tree.alias_target_by_id(id)
     }
 
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
@@ -243,6 +247,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
 
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
         self.tree.parent_class_args(child_head, parent_head)
+    }
+
+    fn parent_class_arg_ids(&self, child_head: &str, parent_head: &str) -> &[TypeId] {
+        self.tree.parent_class_arg_ids(child_head, parent_head)
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {

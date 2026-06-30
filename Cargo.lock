@@ -671,6 +671,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "code-highlight"
+version = "0.1.0"
+dependencies = [
+ "code-grammars",
+ "once_cell",
+ "serde",
+ "tree-sitter 0.25.10",
+ "tree-sitter-highlight",
+ "tree-sitter-md",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3951,6 +3963,18 @@ checksum = "5a7b2cc3d7121553b84309fab9d11b3ff3d420403eef9ae50f9fd1cd9d9cf012"
 dependencies = [
  "cc",
  "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-highlight"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc5f880ad8d8f94e88cb81c3557024cf1a8b75e3b504c50481ed4f5a6006ff3"
+dependencies = [
+ "regex",
+ "streaming-iterator",
+ "thiserror",
+ "tree-sitter 0.25.10",
 ]
 
 [[package]]

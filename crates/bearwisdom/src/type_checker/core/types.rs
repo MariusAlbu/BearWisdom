@@ -20,7 +20,7 @@ use std::sync::RwLock;
 
 /// Interned-type identifier. Nonzero so `Option<TypeId>` is one word.
 /// Stable within a workspace build; not durable across indexing runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct TypeId(pub NonZeroU32);
 
 impl TypeId {
@@ -30,7 +30,7 @@ impl TypeId {
 }
 
 /// Generic-parameter identifier. Bound names live in TypeArena::generic_params.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct GenericParamId(pub NonZeroU32);
 
 impl GenericParamId {
@@ -41,7 +41,7 @@ impl GenericParamId {
 
 /// Canonical primitive categories. Width-specific integer / float variants
 /// collapse to Int / Float; the engine does not type-check numeric precision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum PrimKind {
     Int,
     Float,
@@ -57,7 +57,7 @@ pub enum PrimKind {
 
 /// Singleton-type value carrier. `Type::Literal(LitValue::Str("foo"))` is the
 /// type whose only inhabitant is the string `"foo"`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum LitValue {
     Str(String),
     Int(i64),
@@ -66,7 +66,7 @@ pub enum LitValue {
 
 /// Bound info for a generic parameter — captured at extraction time so the
 /// engine can resolve `T` back to the declaration that introduced it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericParamData {
     /// Source name of the parameter (e.g. `T`, `K`, `V`).
     pub name: String,
@@ -80,7 +80,7 @@ pub struct GenericParamData {
 /// The structured form every value, parameter, return, and field receives once
 /// the engine has interned it. Strings appear only inside `Class(QName)` and
 /// `Literal(LitValue::Str)`; every other type relationship is by TypeId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     /// Nominal reference identified by fully qualified name.
     Class(String),
@@ -578,6 +578,46 @@ impl TypeArena {
 
     pub fn generic_param_count(&self) -> usize {
         self.inner.read().unwrap().generic_params.len()
+    }
+
+    /// Faithful, order-preserving snapshot of the whole arena (every `Type` plus
+    /// every `GenericParamData`) as one JSON blob. Unlike `format_type` this is
+    /// lossless — every variant and child `TypeId` is encoded — so a persisted
+    /// raw `TypeId` index stays valid after `restore_snapshot` rebuilds an
+    /// identical arena. One blob per index; the durable form that lets
+    /// `symbol_type_info` carry `TypeId`s instead of re-parsed type strings.
+    pub fn serialize_snapshot(&self) -> String {
+        let inner = self.inner.read().unwrap();
+        serde_json::to_string(&(&inner.types, &inner.generic_params))
+            .unwrap_or_else(|_| "[[],[]]".to_string())
+    }
+
+    /// Rebuild the arena from a `serialize_snapshot` blob, preserving every
+    /// `TypeId` (types are restored in id order, so a child's id is always
+    /// smaller than its parent's). Rebuilds the intern + qname indices so later
+    /// `intern`/`class` calls dedup against the restored set and appended types
+    /// get fresh ids after the restored range. Returns the count restored.
+    /// Intended for a fresh arena at the start of an incremental load.
+    pub fn restore_snapshot(&self, blob: &str) -> usize {
+        let Ok((types, generic_params)) =
+            serde_json::from_str::<(Vec<Type>, Vec<GenericParamData>)>(blob)
+        else {
+            return 0;
+        };
+        let mut inner = self.inner.write().unwrap();
+        inner.intern.clear();
+        inner.qname_to_class.clear();
+        for (i, ty) in types.iter().enumerate() {
+            let id = TypeId(NonZeroU32::new((i + 1) as u32).expect("arena index overflow"));
+            inner.intern.insert(ty.clone(), id);
+            if let Type::Class(name) = ty {
+                inner.qname_to_class.insert(name.clone(), id);
+            }
+        }
+        let n = types.len();
+        inner.types = types;
+        inner.generic_params = generic_params;
+        n
     }
 }
 

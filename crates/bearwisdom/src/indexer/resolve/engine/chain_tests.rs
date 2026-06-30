@@ -2,7 +2,7 @@ use super::*;
 use crate::indexer::resolve::engine::testkit::{
     call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain};
+use crate::types::{AliasTarget, ChainSegment, EdgeKind, ExtractedRef, MemberChain};
 
 fn seg(name: &str, is_call: bool, kind: SegmentKind) -> ChainSegment {
     ChainSegment {
@@ -627,6 +627,61 @@ fn binds_generic_method_return_substituting_type_arg() {
 }
 
 #[test]
+fn binds_member_through_returntype_typeof_alias() {
+    // type Logger = ReturnType<typeof createScopedLogger>;  createScopedLogger(): ScopedRet
+    // function f(logger: Logger) { logger.info() }  →  ScopedRet.info (id 20)
+    // The dominant logger-consumer shape: a param typed by a ReturnType<typeof f>
+    // alias that must resolve to f's captured return.
+    let lookup = Lookup::new()
+        .with_local_type("logger", "Logger")
+        .with_alias(
+            "Logger",
+            crate::types::AliasTarget::Application {
+                root: "ReturnType".to_string(),
+                args: vec!["createScopedLogger".to_string()],
+            },
+        )
+        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with_return_type("createScopedLogger", "ScopedRet")
+        .with_member("ScopedRet", sym(20, "info", "ScopedRet.info", "method", "a.ts"));
+    let segs = vec![
+        seg("logger", false, SegmentKind::Identifier),
+        seg("info", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
+}
+
+#[test]
+fn binds_param_typed_by_returntype_typeof_alias() {
+    // function f(logger: Logger) { logger.info() } where
+    // type Logger = ReturnType<typeof createScopedLogger>; createScopedLogger(): ScopedRet { info }
+    // The param is a VALUE symbol `f.logger` whose FIELD type is the alias — rooted
+    // via value_root_type (not the local_type cache), the dominant consumer shape.
+    let lookup = Lookup::new()
+        .with(sym(2, "logger", "f.logger", "property", "a.ts"))
+        .with_field_type("f.logger", "Logger")
+        .with_alias(
+            "Logger",
+            crate::types::AliasTarget::Application {
+                root: "ReturnType".to_string(),
+                args: vec!["createScopedLogger".to_string()],
+            },
+        )
+        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with_return_type("createScopedLogger", "ScopedRet")
+        .with_member("ScopedRet", sym(20, "info", "ScopedRet.info", "method", "a.ts"));
+    let segs = vec![
+        seg("logger", false, SegmentKind::Identifier),
+        seg("info", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve_with_fc(&lookup, segs, "f", &file_ctx(vec![], None)),
+        Some(20),
+        "param typed ReturnType<typeof f> must root on f's captured return"
+    );
+}
+
+#[test]
 fn binds_through_a_type_alias() {
     // type UserRepo = Repository<User>;  interface Repository<T> { find(): T }
     // const r: UserRepo = ...; r.find().name  →  User.name (id 20)
@@ -1077,6 +1132,40 @@ fn function_callee_return_path_unaffected_by_callable_value_fallback() {
         seg("getByText", true, SegmentKind::Property),
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(90));
+}
+
+#[test]
+fn callable_interface_value_not_shadowed_by_unrelated_method() {
+    // `const expect: jest.Expect;  interface Expect { <T>(actual: T): Matchers }  interface Matchers { toBe() }`
+    // A method `SomeType.expect` sits in `by_name("expect")` from an unrelated
+    // package. With no import, the unscoped callee fallback must NOT pick a method
+    // as the root — a method requires a receiver and cannot root a bare call. The
+    // callable-interface-const path must fire instead and reach Matchers.toBe (id 70).
+    let lookup = Lookup::new()
+        // Interfering method from an unrelated package — same name, never a bare-call root
+        .with(sym(10, "expect", "SomeType.expect", "method", "ext:ts:other/index.d.ts"))
+        .with_return_type("SomeType.expect", "string")
+        // Ambient-global const: const expect: jest.Expect
+        .with(sym(1, "expect", "@types/jest.expect", "const", "ext:ts:@types/jest/index.d.ts"))
+        .with_field_type("@types/jest.expect", "jest.Expect")
+        // Callable interface with its synthesised call signature member
+        .with(sym(2, "Expect", "jest.Expect", "interface", "ext:ts:@types/jest/index.d.ts"))
+        .with_member(
+            "jest.Expect",
+            sym(50, "call", "jest.Expect.call", "method", "ext:ts:@types/jest/index.d.ts"),
+        )
+        .with_return_type("jest.Expect.call", "Matchers")
+        // Matcher interface where toBe lives
+        .with(sym(3, "Matchers", "Matchers", "interface", "ext:ts:@types/jest/index.d.ts"))
+        .with_member(
+            "Matchers",
+            sym(70, "toBe", "Matchers.toBe", "method", "ext:ts:@types/jest/index.d.ts"),
+        );
+    let segs = vec![
+        seg("expect", true, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
 }
 
 #[test]

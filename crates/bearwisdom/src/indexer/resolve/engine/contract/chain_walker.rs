@@ -352,6 +352,86 @@ pub(crate) fn parse_param_types_from_signature(sig: &str) -> Option<Vec<String>>
     parse_param_types_from_signature_for_lang(sig, "")
 }
 
+/// Parse the members of an inline object type — `{ a: A; b: B }` — into
+/// `(name, type)` pairs. Members are separated by `;`, `,`, or newline at brace
+/// depth 0; each member is `name: Type` with an optional `?`/`readonly`/`get`
+/// prefix, or a method `name(args): R` (yielding `(name, R)`). Index signatures
+/// (`[k: string]: V`), spreads, and call/construct signatures are skipped.
+///
+/// Nested object types, generic args, tuples, and parameter lists are kept whole
+/// (depth-tracked), so `p: Promise<X>` and `o: { a: A }` parse to the full type
+/// text. Returns empty when `s` is not a `{ … }` object type.
+pub(crate) fn parse_object_type_members(s: &str) -> Vec<(String, String)> {
+    let t = s.trim();
+    let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    let bytes = inner.as_bytes();
+    // Top-level entries: split on `;` / `,` / newline at bracket depth 0.
+    let mut push_entry = |slice: &str, out: &mut Vec<(String, String)>| {
+        let e = slice.trim();
+        if e.is_empty() {
+            return;
+        }
+        // Skip index signatures, spreads, and call/construct signatures.
+        if e.starts_with('[') || e.starts_with("...") || e.starts_with('(') || e.starts_with("new ")
+        {
+            return;
+        }
+        // Top-level `:` separating the (possibly method-headed) name from the type.
+        let eb = e.as_bytes();
+        let mut d: i32 = 0;
+        let mut colon: Option<usize> = None;
+        for (i, &b) in eb.iter().enumerate() {
+            match b {
+                b'{' | b'(' | b'<' | b'[' => d += 1,
+                b'}' | b')' | b'>' | b']' => d -= 1,
+                b':' if d == 0 => {
+                    colon = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(ci) = colon else { return };
+        let type_part = e[ci + 1..].trim();
+        if type_part.is_empty() {
+            return;
+        }
+        // Name: drop a method param list / generic clause, a trailing `?`, and
+        // any `readonly`/`get`/`set` modifier — the member name is the last
+        // identifier of what remains.
+        let head = e[..ci].split('(').next().unwrap_or("");
+        let head = head.split('<').next().unwrap_or(head);
+        let name = head.trim().trim_end_matches('?').split_whitespace().last().unwrap_or("");
+        if name.is_empty()
+            || !name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$')
+        {
+            return;
+        }
+        out.push((name.to_string(), type_part.to_string()));
+    };
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'{' | b'(' | b'<' | b'[' => depth += 1,
+            b'}' | b')' | b'>' | b']' => depth -= 1,
+            b';' | b',' | b'\n' if depth == 0 => {
+                push_entry(&inner[start..i], &mut out);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    push_entry(&inner[start..], &mut out);
+    out
+}
+
 /// Parse the declared type out of a field / property / variable /
 /// parameter signature. Recognised shapes:
 ///   - TS / Kotlin / Swift / Scala / Python / Rust style:

@@ -282,6 +282,16 @@ fn run_incremental_pipeline(
     // pass so extractor-populated TypeIds remain valid through to
     // SymbolIndex::build_with_context_and_arena.
     let workspace_arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
+    // Restore the prior build's interned arena BEFORE parsing so persisted
+    // `field_type_id` / `return_type_id` raw indices stay valid. The parse phase
+    // appends new types after the restored range and dedups against it.
+    if let Ok(blob) = db.conn().query_row(
+        "SELECT value FROM _bearwisdom_meta WHERE key = 'type_arena_snapshot'",
+        [],
+        |r| r.get::<_, String>(0),
+    ) {
+        workspace_arena.restore_snapshot(&blob);
+    }
     let parse_results: Vec<Result<ParsedFile>> = files_to_parse
         .par_iter()
         .map(|w| {

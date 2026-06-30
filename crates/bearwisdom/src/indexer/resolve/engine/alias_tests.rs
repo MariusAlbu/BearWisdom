@@ -1,6 +1,7 @@
 use super::*;
 use crate::indexer::resolve::engine::testkit::{sym, Lookup};
 use crate::type_checker::core::types::Type;
+use crate::types::AliasTarget;
 
 fn app(root: &str, args: &[&str]) -> AliasTarget {
     AliasTarget::Application {
@@ -31,6 +32,31 @@ fn expands_generic_alias_substituting_its_parameter() {
     });
     let out = expand(boxed, &lookup, arena);
     assert_eq!(arena.format_type(out), "Container<User>");
+}
+
+#[test]
+fn expand_with_id_prefers_id_keyed_target_over_colliding_bare_name() {
+    // Two `Logger` aliases collide on the bare name: the name map holds the WRONG
+    // sibling (a dead `WrongRet`), the id map holds the right one (decl id 8534):
+    // type Logger = ReturnType<typeof createScopedLogger>; createScopedLogger(): ScopedRet.
+    let lookup = Lookup::new()
+        .with_alias("Logger", app("WrongRet", &[]))
+        .with_alias_id(
+            8534,
+            AliasTarget::Application {
+                root: "ReturnType".to_string(),
+                args: vec!["createScopedLogger".to_string()],
+            },
+        )
+        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with_return_type("createScopedLogger", "ScopedRet");
+    let arena = lookup.type_arena().unwrap();
+    // With the use-site id, the alias resolves to ITS target — createScopedLogger's return.
+    let out = expand_with_id(arena.class("Logger"), Some(8534), &lookup, arena);
+    assert_eq!(arena.format_type(out), "ScopedRet");
+    // Without the id, the name map's (wrong) last-writer target wins.
+    let bare = expand(arena.class("Logger"), &lookup, arena);
+    assert_eq!(arena.format_type(bare), "WrongRet");
 }
 
 #[test]

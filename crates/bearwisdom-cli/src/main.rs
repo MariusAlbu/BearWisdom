@@ -460,21 +460,21 @@ enum Commands {
     },
 
     /// Run quality checks against the corpus baseline. Indexes each project
-    /// listed in baseline-all.json, compares results, and reports
+    /// listed in baseline.json, compares results, and reports
     /// regressions / improvements across the five quality dimensions:
     /// language detection, extraction + resolution, connector / flow
     /// wiring, dead-code trust (transitive via resolution_rate), and
     /// doc-drift coverage.
     QualityCheck {
         /// Path to the baseline file. The single tracked baseline is
-        /// `baseline-all.json`. Subset baselines must not be created;
+        /// `baseline.json`. Subset baselines must not be created;
         /// see `--project` to scope a run.
-        #[arg(long, default_value = "baseline-all.json")]
+        #[arg(long, default_value = "baseline.json")]
         baseline: String,
         /// Restrict the run to projects whose `project` field matches one
         /// of these names. Repeatable. When set, only these projects are
         /// indexed / compared / recaptured — but the file written is still
-        /// the full baseline-all.json with the matching entries replaced
+        /// the full baseline.json with the matching entries replaced
         /// in-place.
         #[arg(long = "project")]
         only_projects: Vec<String>,

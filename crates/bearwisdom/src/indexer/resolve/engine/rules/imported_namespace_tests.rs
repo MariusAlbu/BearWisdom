@@ -84,6 +84,57 @@ fn declines_when_no_import_matches() {
 }
 
 #[test]
+fn rust_use_import_resolves_bare_name_across_hyphenated_crate_dir() {
+    // `use turbo_tasks::Vc` imports `Vc` from a crate whose on-disk directory
+    // is `turbo-tasks/` (hyphens). The import module string uses underscores
+    // (`turbo_tasks`); the file path uses hyphens (`turbo-tasks`). The rule
+    // must resolve the bare `Vc` ref to the struct and not pick a competitor
+    // from an unrelated path.
+    let lookup = Lookup::new()
+        .with(sym(
+            100,
+            "Vc",
+            "Vc",
+            "struct",
+            "turbopack/crates/turbo-tasks/src/vc/mod.rs",
+        ))
+        .with(sym(
+            200,
+            "Vc",
+            "Vc",
+            "function",
+            "turbopack/crates/turbopack-ecmascript/tests/input.js",
+        ));
+    let imports = vec![import("Vc", Some("turbo_tasks"))];
+    assert_eq!(resolve(&lookup, "Vc", imports), Some(100));
+}
+
+#[test]
+fn rust_use_import_does_not_match_longer_crate_with_same_prefix() {
+    // `use turbo_tasks::Vc` must not resolve to a symbol in `turbo-tasks-macros/`
+    // even after hyphen normalization: `turbo_tasks_macros` is a longer segment
+    // than `turbo_tasks` and the boundary check must reject it. If both the
+    // macros symbol and the real struct are present, the struct wins.
+    let lookup = Lookup::new()
+        .with(sym(
+            300,
+            "Vc",
+            "ReceiverStyle.Vc",
+            "enum_member",
+            "turbopack/crates/turbo-tasks-macros/src/func.rs",
+        ))
+        .with(sym(
+            100,
+            "Vc",
+            "Vc",
+            "struct",
+            "turbopack/crates/turbo-tasks/src/vc/mod.rs",
+        ));
+    let imports = vec![import("Vc", Some("turbo_tasks"))];
+    assert_eq!(resolve(&lookup, "Vc", imports), Some(100));
+}
+
+#[test]
 fn import_scope_picks_the_workspace_package_candidate_over_first_by_name() {
     // `useQuery` declared in two sibling packages; the file imports it from
     // query-core, so the bind must pick pkg-10's def even though pkg-19's is

@@ -158,7 +158,14 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `FromModuleField` reads the `module` field on `EdgeKind::Imports` refs
+    // (the `use crate_name::Foo` import binding), so the file context carries
+    // `{imported_name: "Foo", module_path: Some("crate_name")}`. The
+    // imported_namespace rule then matches a bare `Foo` TypeRef to the
+    // symbol whose file path contains `crate-name/` (after hyphen→underscore
+    // normalization, since Cargo uses hyphens in directory names while Rust
+    // module paths use underscores).
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     // A qualified call (`DbPool::new()`) carries the importing module path on
     // `r.module` in its verbatim `::` form (`crate::db`). `ByNameUnderModuleDir`
     // maps the path separators to `/`, probes the `{module}{sep}{target}` qname
