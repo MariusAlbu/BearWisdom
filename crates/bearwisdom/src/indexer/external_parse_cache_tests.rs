@@ -86,6 +86,7 @@ fn cached_parse_serde_roundtrip() {
             "Foo".to_string(),
             crate::types::AliasTarget::Intersection(vec!["Bar".to_string()]),
         )],
+        component_selectors: vec![("nb-card".to_string(), "NbCardComponent".to_string())],
     };
     let json = serde_json::to_string(&cp).expect("serialize");
     let back: CachedParse = serde_json::from_str(&json).expect("deserialize");

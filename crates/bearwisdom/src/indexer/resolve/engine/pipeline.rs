@@ -1152,6 +1152,7 @@ fn materialize_externals(
             collect_external_files(&pf.refs, tree, loc, &mut seen, &mut next);
             collect_return_type_files(&pf.symbols, &pf.language, tree, loc, &mut seen, &mut next);
             collect_relative_supertype_imports(abs, &pf.refs, &mut seen, &mut next);
+            collect_angular_module_components(abs, &mut seen, &mut next);
             collect_module_augmentations(abs, &pf.path, &mut augmentations);
         }
         ext_parsed.extend(batch.into_iter().map(|(_, pf)| pf));
@@ -1432,6 +1433,50 @@ fn collect_relative_supertype_imports(
     }
 }
 
+/// For an Angular NgModule declaration file (`*.module.d.ts` carrying an
+/// `ɵɵNgModuleDeclaration`), pull the `.component.d.ts` / `.directive.d.ts` files it
+/// imports. Angular components/directives are referenced only by SELECTOR, so
+/// nothing demands the class by name — descending the module's declarations is the
+/// structural signal that materializes them, and their `ɵcmp`/`ɵdir` selectors then
+/// reach `selector_qname`. Gated on the NgModule marker, so non-Angular external
+/// files cost nothing.
+fn collect_angular_module_components(
+    importer: &Path,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    let name = importer.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !name.ends_with(".module.d.ts") {
+        return;
+    }
+    let Some(dir) = importer.parent() else {
+        return;
+    };
+    let Ok(content) = std::fs::read_to_string(importer) else {
+        return;
+    };
+    if !content.contains("ɵɵNgModuleDeclaration") {
+        return;
+    }
+    for line in content.lines() {
+        let t = line.trim();
+        if !(t.starts_with("import ") || t.starts_with("export ")) {
+            continue;
+        }
+        let Some(spec) = crate::ecosystem::npm::extract_quoted_after(t, " from ") else {
+            continue;
+        };
+        if !spec.starts_with('.') || !(spec.contains(".component") || spec.contains(".directive")) {
+            continue;
+        }
+        if let Some(file) = resolve_relative_ts_module(dir, &spec) {
+            if seen.insert(file.clone()) {
+                out.push(file);
+            }
+        }
+    }
+}
+
 /// The head of a supertype reference: `Base` for `Base<X, Y>` — the generic
 /// args don't name the symbol.
 fn supertype_head(target: &str) -> &str {
@@ -1556,6 +1601,29 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
     .ok()?;
     // External `.d.ts` symbols carry a `<pkg>.` prefix the resolver keys on.
     crate::ecosystem::npm::ts_post_process_external(&mut pf);
+    // The demand parse path leaves `component_selectors` empty; an Angular library
+    // `.d.ts` carries `ɵɵComponentDeclaration` selectors that back `selector_qname`.
+    // Harvest them after prefixing so the selector maps to the package-qualified
+    // class name the chain walker looks up.
+    if matches!(language, "typescript" | "angular") {
+        if let Ok(content) = std::str::from_utf8(&bytes) {
+            // Cheap substring gate: only Angular Ivy declaration files carry
+            // component/directive selectors. Skips a second tree-sitter parse on
+            // every non-Angular external `.d.ts`.
+            if content.contains("ɵɵComponentDeclaration")
+                || content.contains("ɵɵDirectiveDeclaration")
+            {
+                let selectors =
+                    crate::languages::typescript::selectors::extract_component_selectors(
+                        content,
+                        &pf.symbols,
+                    );
+                if !selectors.is_empty() {
+                    pf.component_selectors = selectors;
+                }
+            }
+        }
+    }
     crate::indexer::external_parse_cache::put(file, &hash, &pf);
     Some(pf)
 }

@@ -34,7 +34,7 @@ use crate::types::{
 
 /// Bumped whenever the cached extraction shape changes. It is part of the key,
 /// so a bump makes every prior entry un-matchable (effectively a full flush).
-const EXTRACTOR_SCHEMA_VERSION: u32 = 9;
+const EXTRACTOR_SCHEMA_VERSION: u32 = 11;
 
 #[cfg(test)]
 #[path = "external_parse_cache_tests.rs"]
@@ -164,6 +164,12 @@ struct CachedParse {
     /// silently breaks those chains while own-member lookup still works.
     #[serde(default)]
     alias_targets: Vec<(String, AliasTarget)>,
+    /// Angular/CSS component selectors `(raw_selector, class_qname)`. Angular
+    /// library `.d.ts` carry `ɵɵComponentDeclaration` selectors that back
+    /// `selector_qname`; dropping them on a cache hit leaves every `<nb-card>`
+    /// template ref unresolved while the class symbol still loads.
+    #[serde(default)]
+    component_selectors: Vec<(String, String)>,
 }
 
 static CACHE: Lazy<Option<Mutex<Connection>>> = Lazy::new(open_cache);
@@ -274,7 +280,7 @@ pub fn get(
         flow: FlowMeta::default(),
         demand_contributions: Vec::new(),
         alias_targets: cp.alias_targets,
-        component_selectors: Vec::new(),
+        component_selectors: cp.component_selectors,
         plugin_flow_emissions: Vec::new(),
     })
 }
@@ -289,6 +295,7 @@ pub fn put(abs_path: &Path, content_hash: &str, pf: &ParsedFile) {
         symbols: pf.symbols.iter().map(CachedSym::from_extracted).collect(),
         refs: pf.refs.iter().map(CachedRef::from_extracted).collect(),
         alias_targets: pf.alias_targets.clone(),
+        component_selectors: pf.component_selectors.clone(),
     };
     if let Ok(payload) = serde_json::to_string(&cp) {
         let _ = conn.execute(
