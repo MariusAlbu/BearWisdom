@@ -21,7 +21,11 @@ pub const ANGULAR_TEMPLATE_PROFILE: LanguageProfile = LanguageProfile {
     single_inner_wrappers: &[],
     deref_wrapper: None,
     iterator_method: None,
-    primitive_mapping: &[],
+    // A `.component.html` embedded region carries a synthetic `let <#ref>: any;`
+    // prelude (TypeScript). The resolve loop selects this host profile by file
+    // language, so the embedded TS primitive surface must be recognized here to drop
+    // those keyword TypeRefs from the unresolved count, not record them as references.
+    primitive_mapping: crate::languages::typescript::profile::TS_PRIMITIVES,
     kind_compatible_table: PERMISSIVE_KIND_TABLE,
     chain_qualification: ChainQualification::None,
     builtin_skip: None,

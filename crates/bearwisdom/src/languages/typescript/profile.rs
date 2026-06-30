@@ -81,7 +81,7 @@ const TS_KIND_TABLE: KindTable = &[
 ];
 
 /// Primitive name → engine PrimKind for TypeScript's surface types.
-const TS_PRIMITIVES: &[(&str, PrimKind)] = &[
+pub(crate) const TS_PRIMITIVES: &[(&str, PrimKind)] = &[
     ("string", PrimKind::Str),
     ("number", PrimKind::Float),
     ("bigint", PrimKind::Int),
