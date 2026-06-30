@@ -94,6 +94,33 @@ pub fn bind_member_access(
             current = elem_recv;
             continue;
         }
+        // `arr[i]` subscript on an array receiver projects the ELEMENT type — array
+        // applications are homogeneous, so the index value is immaterial (covers
+        // `arr[0]`, `arr[i]`, `arr[index]`). A non-array subscript (`obj['key']`)
+        // yields None here and falls through to the named-member lookup below, where
+        // the quoted key names a member. The `tuple_index:N` destructure form was
+        // already consumed by the block above.
+        if matches!(seg.kind, SegmentKind::ComputedAccess) {
+            if let Some(elem_ty) = array_element_type(arena, current.ty) {
+                let elem_recv = expand_receiver(
+                    yielded_receiver(lookup, arena, elem_ty, None),
+                    lookup,
+                    arena,
+                    Some(file_ctx),
+                );
+                if i == last {
+                    return Some(SymbolInfo {
+                        target_symbol_id: elem_recv.id?,
+                        confidence: RESOLVED_CONFIDENCE,
+                        strategy: STRATEGY,
+                        resolved_yield_type: Some(elem_recv.ty),
+                        flow_emit: None,
+                    });
+                }
+                current = elem_recv;
+                continue;
+            }
+        }
         let member = lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true)?;
         if i == last {
             // The final member's yield type (with the receiver's type arguments
@@ -1023,6 +1050,12 @@ fn tuple_element_type(
     if let Type::Tuple(elems) = arena.get(recv_ty) {
         return elems.get(idx).copied();
     }
+    // An array-destructure of an array (`const [a, b] = someArray`) emits the same
+    // tuple_index segments; array applications are homogeneous, so every position
+    // is the element type.
+    if let Some(elem) = array_element_type(arena, recv_ty) {
+        return Some(elem);
+    }
     let head = head_qname(arena, recv_ty)?;
     let AliasTargetIds::Tuple(elem_ids) = lookup.alias_target(&head)? else {
         return None;
@@ -1035,6 +1068,29 @@ fn tuple_element_type(
     }
     let map: rustc_hash::FxHashMap<String, TypeId> = params.into_iter().zip(args).collect();
     Some(arena.rebind_class_params(elem_ty, &map))
+}
+
+/// The element type of an array application — `E` for `Apply(Array,[E])` /
+/// `Apply(ReadonlyArray,[E])`. `Array` is the canonical head `intern_type_str` mints
+/// for every `T[]` suffix, so this is language-agnostic. Looks through the
+/// nullable/async/iterator wrappers the same way `head_qname` does. `None` for any
+/// non-array receiver — the caller falls through to named-member lookup so a
+/// string-keyed `obj['key']` index still resolves as a member.
+fn array_element_type(arena: &TypeArena, recv_ty: TypeId) -> Option<TypeId> {
+    match arena.get(recv_ty) {
+        Type::Apply { base, args } => {
+            let head = head_qname(arena, base)?;
+            if matches!(head.as_str(), "Array" | "ReadonlyArray") {
+                args.first().copied()
+            } else {
+                None
+            }
+        }
+        Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
+            array_element_type(arena, inner)
+        }
+        _ => None,
+    }
 }
 
 /// The qualified-name head of a type: `Repository` for `Repository<User>`.

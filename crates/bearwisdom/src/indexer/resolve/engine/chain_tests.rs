@@ -1919,3 +1919,48 @@ fn bare_head_reroots_through_same_qname_copies() {
     ];
     assert_eq!(resolve(&lookup, segs, "Host.m"), Some(201));
 }
+
+/// A numeric `arr[i]` subscript segment, as the extractor emits it: a
+/// `subscript_expression` ComputedAccess (distinct from the `tuple_index:N`
+/// destructure form).
+fn seg_subscript(index_text: &str) -> ChainSegment {
+    let mut s = seg(index_text, false, SegmentKind::ComputedAccess);
+    s.node_kind = "subscript_expression".to_string();
+    s
+}
+
+#[test]
+fn subscript_on_array_return_projects_element_then_resolves_member() {
+    // `email.split("<")[0].trim()` shape. email: Str ; Str.split(): Elem[] ; Elem.trim().
+    // The `[0]` subscript must unwrap Array<Elem> to Elem so `trim` resolves on the
+    // element — today it dead-ends in a lookup for a member named "0" on Array.
+    let lookup = Lookup::new()
+        .with_local_type("email", "Str")
+        .with(sym(1, "Str", "Str", "class", "ext:ts:lib.d.ts"))
+        .with_member("Str", sym(2, "split", "Str.split", "method", "ext:ts:lib.d.ts"))
+        .with_return_type("Str.split", "Elem[]")
+        .with(sym(3, "Elem", "Elem", "class", "ext:ts:lib.d.ts"))
+        .with_member("Elem", sym(10, "trim", "Elem.trim", "method", "ext:ts:lib.d.ts"));
+    let segs = vec![
+        seg("email", false, SegmentKind::Identifier),
+        seg("split", true, SegmentKind::Property),
+        seg_subscript("0"),
+        seg("trim", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(10));
+}
+
+#[test]
+fn subscript_on_non_array_still_resolves_named_member() {
+    // Guard: `obj['key']` on a NON-array receiver must keep falling through to the
+    // named-member lookup (the array-subscript branch returns None for it).
+    let lookup = Lookup::new()
+        .with_local_type("obj", "Cfg")
+        .with(sym(1, "Cfg", "Cfg", "class", "a.ts"))
+        .with_member("Cfg", sym(7, "key", "Cfg.key", "property", "a.ts"));
+    let segs = vec![
+        seg("obj", false, SegmentKind::Identifier),
+        seg_subscript("key"),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(7));
+}
