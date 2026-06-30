@@ -51,6 +51,11 @@ use std::path::{Path, PathBuf};
 pub struct SymbolLocationIndex {
     entries: HashMap<(String, String), PathBuf>,
     by_name: HashMap<String, Vec<(String, PathBuf)>>,
+    /// `module_path → the package's `.` entry file`. A barrel package re-exports
+    /// names defined in OTHER packages, so the leaf is keyed under the defining
+    /// package in `entries`, not the imported one. Materializing the entry brings
+    /// in the package's `export *` chain so re-export-following can bind the import.
+    module_entries: HashMap<String, PathBuf>,
 }
 
 impl SymbolLocationIndex {
@@ -88,6 +93,23 @@ impl SymbolLocationIndex {
             .map(PathBuf::as_path)
     }
 
+    /// Record a package's `.` entry file (first writer wins).
+    pub fn insert_module_entry(
+        &mut self,
+        module_path: impl Into<String>,
+        file: impl Into<PathBuf>,
+    ) {
+        self.module_entries
+            .entry(module_path.into())
+            .or_insert_with(|| file.into());
+    }
+
+    /// The `.` entry file of `module_path`, when known. Pulled by the demand pass
+    /// for a module-tagged ref so a barrel package's re-export chain materializes.
+    pub fn module_entry(&self, module_path: &str) -> Option<&Path> {
+        self.module_entries.get(module_path).map(PathBuf::as_path)
+    }
+
     /// Return every `(module_path, file)` pair where the symbol's short
     /// name matches `symbol_name`. Used by the demand-driven pipeline to
     /// resolve chain-walker bail-outs: the walker only knows "I was
@@ -114,6 +136,9 @@ impl SymbolLocationIndex {
                 .entry((module.clone(), name.clone()))
                 .or_insert_with(|| file.clone());
             self.by_name.entry(name).or_default().push((module, file));
+        }
+        for (module, entry) in other.module_entries {
+            self.module_entries.entry(module).or_insert(entry);
         }
     }
 

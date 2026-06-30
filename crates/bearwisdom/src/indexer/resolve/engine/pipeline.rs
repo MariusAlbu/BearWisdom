@@ -226,6 +226,18 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.reexports_from(file_path)
     }
 
+    fn resolve_module_from(&self, source_file: &str, spec: &str) -> Option<&str> {
+        self.tree.resolve_module_from(source_file, spec)
+    }
+
+    fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {
+        self.tree.in_module_from(source_file, spec)
+    }
+
+    fn resolve_external_reexport(&self, target: &str, prefix: &str, module: &str) -> Option<i64> {
+        self.tree.resolve_external_reexport(target, prefix, module)
+    }
+
     fn is_external_name(&self, name: &str, language: &str) -> bool {
         self.tree.is_external_name(name, language)
     }
@@ -1276,6 +1288,18 @@ fn collect_external_files(
                     let file = file.to_path_buf();
                     if seen.insert(file.clone()) {
                         out.push(file);
+                    }
+                }
+                // Also pull the module's `.` entry. A barrel package (`vue`)
+                // re-exports its names from other packages, so the name's def file
+                // resolves under the DEFINING package; materializing the entry brings
+                // in the `export *` chain — whose re-export refs carry the source
+                // module, so a closure pass pulls each hop — and lets re-export
+                // following bind the import against the entry.
+                if let Some(entry) = loc.module_entry(module) {
+                    let entry = entry.to_path_buf();
+                    if seen.insert(entry.clone()) {
+                        out.push(entry);
                     }
                 }
             }

@@ -67,7 +67,16 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // 'pkg/sub'` (a self-subpath wildcard, not a relative one) needs this to
     // surface the subpath's names under the main module too.
     let mut subpath_entry: HashMap<String, PathBuf> = HashMap::new();
+    // Each package's `.` entry keyed by module specifier — lets a cross-package
+    // wildcard (`export * from 'other-pkg'`) surface the other package's exported
+    // names under THIS module, so a bare import from a barrel package
+    // (`import { computed } from 'vue'`, vue being `export * from '@vue/runtime-dom'`)
+    // locates a name the re-exported package defines.
+    let mut pkg_entry: HashMap<String, PathBuf> = HashMap::new();
     for dep in dep_roots {
+        if let Some(entry) = resolve_package_entry_path(dep) {
+            pkg_entry.insert(dep.module_path.clone(), entry);
+        }
         let walked = if package_declares_globals(&dep.root) {
             union_entry_and_globals(dep)
         } else {
@@ -91,6 +100,7 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             }
         }
     }
+
     if work.is_empty() {
         return SymbolLocationIndex::new();
     }
@@ -162,8 +172,9 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
                 // package's own published subpath entries (a barrel re-exporting
                 // a subpath). The subpath's names are indexed under `pkg/sub`,
                 // but the user imports them from `pkg` — surface them here too.
-                // A cross-package wildcard is still skipped (that package's own
-                // scan indexes its names under its own module).
+                // A cross-package wildcard is skipped (that package's own scan
+                // indexes its names under its own module; the barrel binds via
+                // re-export-following once its `.` entry is materialized).
                 entry.clone()
             } else {
                 continue;
@@ -179,6 +190,15 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         for (name, def_file) in wc_names {
             index.insert(module, name, def_file);
         }
+    }
+    // Expose each package's `.` entry. A barrel package re-exports its names from
+    // other packages (`vue` → `@vue/runtime-dom` → @vue/runtime-core), so the leaf
+    // is qnamed under the DEFINING package, not the imported one. Materializing the
+    // package entry brings in its `export *` chain (whose re-export refs carry the
+    // source module, so the demand pass pulls each hop) and lets re-export-following
+    // bind `import { computed } from 'vue'`.
+    for (module, entry) in &pkg_entry {
+        index.insert_module_entry(module.clone(), entry.clone());
     }
     index
 }
