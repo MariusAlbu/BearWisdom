@@ -1835,3 +1835,87 @@ fn string_typed_receiver_reaches_string_members() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(70));
 }
+
+#[test]
+fn instance_member_through_field_typed_by_external_class_reroots_bare_head() {
+    // this.theme.getJsTheme() — `theme` is a DI field whose annotation captured the
+    // BARE name `NbThemeService`, but the class is indexed under its package-prefixed
+    // qname `@nebular/theme.NbThemeService` and `getJsTheme` is keyed there. The
+    // yielded receiver's bare head must re-root onto the indexed declaration so the
+    // member walk finds `getJsTheme`.
+    let lookup = Lookup::new()
+        .with_enclosing("HostComponent.constructor", "HostComponent")
+        .with_member(
+            "HostComponent",
+            sym(10, "theme", "HostComponent.theme", "property", "host.ts"),
+        )
+        .with_field_type("HostComponent.theme", "NbThemeService")
+        .with(sym(
+            100,
+            "NbThemeService",
+            "@nebular/theme.NbThemeService",
+            "class",
+            "ext:ts:@nebular/theme/theme.service.d.ts",
+        ))
+        .with_member_id(
+            100,
+            sym(
+                101,
+                "getJsTheme",
+                "@nebular/theme.NbThemeService.getJsTheme",
+                "method",
+                "ext:ts:@nebular/theme/theme.service.d.ts",
+            ),
+        );
+    let segs = vec![
+        seg("this", false, SegmentKind::SelfRef),
+        seg("theme", false, SegmentKind::Property),
+        seg("getJsTheme", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "HostComponent.constructor"),
+        Some(101)
+    );
+}
+
+#[test]
+fn bare_head_reroots_through_same_qname_copies() {
+    // A bare `Observable` head whose simple name maps to SEVERAL declarations sharing
+    // ONE qname (`rxjs.Observable` re-exported through several disk paths) must still
+    // re-root: ranking can't separate same-qname copies, so the same-qname fallback
+    // picks one — any is correct, the member is keyed under the shared qname.
+    let lookup = Lookup::new()
+        .with_enclosing("Host.m", "Host")
+        .with_member("Host", sym(10, "src", "Host.src", "property", "host.ts"))
+        .with_field_type("Host.src", "Observable")
+        .with(sym(
+            200,
+            "Observable",
+            "rxjs.Observable",
+            "class",
+            "ext:ts:rxjs/./internal/Observable.d.ts",
+        ))
+        .with(sym(
+            202,
+            "Observable",
+            "rxjs.Observable",
+            "class",
+            "ext:ts:rxjs/./operators/../internal/Observable.d.ts",
+        ))
+        .with_member(
+            "rxjs.Observable",
+            sym(
+                201,
+                "subscribe",
+                "rxjs.Observable.subscribe",
+                "method",
+                "ext:ts:rxjs/./internal/Observable.d.ts",
+            ),
+        );
+    let segs = vec![
+        seg("this", false, SegmentKind::SelfRef),
+        seg("src", false, SegmentKind::Property),
+        seg("subscribe", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "Host.m"), Some(201));
+}
