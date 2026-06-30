@@ -606,13 +606,56 @@ impl Compilation {
 
         // Selector → class qname. Backs SymbolLookup::selector_qname, which
         // SelectorMapRule consults to bind an Angular/CSS selector ref (`<nb-card>`,
-        // `nbButton`) to its decorated class. First-writer-wins — a duplicate selector
-        // across two classes is an Angular error.
+        // `nbButton`) to its decorated class. An element selector (`nb-card`) keys on
+        // its tag; an attribute directive (`button[nbButton],a[nbButton]`) keys on
+        // each attribute name — the template binds a directive by its attribute, not
+        // the element qualifier. First-writer-wins (a duplicate selector is an
+        // Angular error).
+        fn selector_binding_keys(raw: &str) -> Vec<String> {
+            let mut keys = Vec::new();
+            for part in raw.split(',') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                let mut had_attr = false;
+                let mut rest = part;
+                while let Some(open) = rest.find('[') {
+                    let Some(close) = rest[open..].find(']') else {
+                        break;
+                    };
+                    let attr = rest[open + 1..open + close].trim();
+                    // `[type=button]` / `[attr^="v"]` → the attribute NAME only.
+                    let attr = attr
+                        .split(['=', '~', '|', '^', '$', '*'])
+                        .next()
+                        .unwrap_or(attr)
+                        .trim();
+                    if !attr.is_empty() {
+                        keys.push(attr.to_string());
+                        had_attr = true;
+                    }
+                    rest = &rest[open + close + 1..];
+                }
+                if !had_attr {
+                    let tag: String = part
+                        .chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                        .collect();
+                    if !tag.is_empty() {
+                        keys.push(tag);
+                    }
+                }
+            }
+            keys
+        }
         for pf in parsed {
             for (selector, class_qname) in &pf.component_selectors {
-                self.selector_to_qname
-                    .entry(selector.clone())
-                    .or_insert_with(|| class_qname.clone());
+                for key in selector_binding_keys(selector) {
+                    self.selector_to_qname
+                        .entry(key)
+                        .or_insert_with(|| class_qname.clone());
+                }
             }
         }
 
