@@ -915,6 +915,46 @@ fn resolve_external_reexport_follows_export_star_package_chain() {
     );
 }
 
+/// `<ngx-legend-chart>` binds to ECommerceLegendChartComponent via the
+/// `@Component({selector:'ngx-legend-chart'})` pair the extractor records in
+/// `ParsedFile::component_selectors`. Proves Compilation consumes that field into
+/// `selector_qname` (the map SelectorMapRule consults).
+#[test]
+fn selector_qname_resolves_component_selector_from_parsed_file() {
+    let symbols = vec![make_symbol(
+        "ECommerceLegendChartComponent",
+        "ECommerceLegendChartComponent",
+        SymbolKind::Class,
+        None,
+        None,
+        None,
+    )];
+    let mut pf = make_parsed_file(
+        "src/app/pages/e-commerce/legend-chart/legend-chart.component.ts",
+        symbols,
+        vec![],
+    );
+    pf.component_selectors = vec![(
+        "ngx-legend-chart".to_string(),
+        "ECommerceLegendChartComponent".to_string(),
+    )];
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        (pf.path.clone(), "ECommerceLegendChartComponent".to_string()),
+        1,
+    );
+
+    let tree = Compilation::build(&[pf], &id_map, Arc::new(TypeArena::new()));
+
+    assert_eq!(
+        tree.selector_qname("ngx-legend-chart"),
+        Some("ECommerceLegendChartComponent"),
+        "Compilation must consume ParsedFile.component_selectors into selector_qname"
+    );
+    assert_eq!(tree.selector_qname("nb-card"), None);
+}
+
 #[test]
 fn is_external_name_returns_false() {
     let (tree, _) = build_fixture();

@@ -101,6 +101,10 @@ pub struct Compilation {
     /// `follow_reexports` from the package entry. Built from the shared
     /// `ext:<lang>:<pkg>` path convention; no per-language code.
     module_entry: FxHashMap<String, String>,
+    /// Angular/CSS selector → class qualified-name, from `ParsedFile::component_selectors`.
+    /// Backs `SymbolLookup::selector_qname`, which `SelectorMapRule` consults to bind a
+    /// selector ref (`<nb-card>` → `NbCardComponent`). First-writer-wins.
+    selector_to_qname: FxHashMap<String, String>,
     /// Local export-rename map: module head → (exposed name → declaring qname).
     /// A `module head` is the qualified-name prefix the renamed symbols live
     /// under (an external file's symbols are qnamed `<module>.<name>`), which is
@@ -256,6 +260,7 @@ impl Compilation {
             type_info_by_id: FxHashMap::default(),
             reexport_map: FxHashMap::default(),
             module_entry: FxHashMap::default(),
+            selector_to_qname: FxHashMap::default(),
             export_alias_by_module: FxHashMap::default(),
             inherits: FxHashMap::default(),
             inherits_args: FxHashMap::default(),
@@ -596,6 +601,18 @@ impl Compilation {
             };
             if replace {
                 self.module_entry.insert(pkg.to_string(), path.to_string());
+            }
+        }
+
+        // Selector → class qname. Backs SymbolLookup::selector_qname, which
+        // SelectorMapRule consults to bind an Angular/CSS selector ref (`<nb-card>`,
+        // `nbButton`) to its decorated class. First-writer-wins — a duplicate selector
+        // across two classes is an Angular error.
+        for pf in parsed {
+            for (selector, class_qname) in &pf.component_selectors {
+                self.selector_to_qname
+                    .entry(selector.clone())
+                    .or_insert_with(|| class_qname.clone());
             }
         }
 
@@ -1873,6 +1890,10 @@ impl SymbolLookup for Compilation {
         let entry = self.module_entry.get(module)?;
         super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0)
             .map(|info| info.target_symbol_id)
+    }
+
+    fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
+        self.selector_to_qname.get(raw_selector).map(String::as_str)
     }
 
     fn is_external_name(&self, _name: &str, _language: &str) -> bool {

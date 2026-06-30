@@ -238,6 +238,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.resolve_external_reexport(target, prefix, module)
     }
 
+    fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
+        self.tree.selector_qname(raw_selector)
+    }
+
     fn is_external_name(&self, name: &str, language: &str) -> bool {
         self.tree.is_external_name(name, language)
     }
