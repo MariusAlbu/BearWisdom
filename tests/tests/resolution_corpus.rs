@@ -65,6 +65,22 @@ fn count_resolved_to(db: &Database, file_suffix: &str, callee: &str, target_like
     .unwrap()
 }
 
+/// Count resolved `calls` edges for `callee` in the file ending `file_suffix`,
+/// regardless of the target's qname (for "resolves at all" checks where the
+/// target is an anonymous object-literal member with no stable qname).
+fn count_resolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
+    db.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN symbols s ON e.source_id = s.id
+         JOIN files f   ON s.file_id   = f.id
+         JOIN symbols t ON e.target_id = t.id
+         WHERE f.path LIKE ?1 AND e.kind = 'calls' AND t.name = ?2",
+        params![format!("%{file_suffix}"), callee],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 /// Count unresolved `calls` refs for `callee` in the file ending `file_suffix`.
 fn count_unresolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
     db.query_row(
@@ -189,6 +205,49 @@ export function widget(): void {
 "#,
     );
 
+    // --- candidate patterns (probed, not yet asserted) ------------------------
+    // A function that RETURNS an object literal; a consumer calls a member on the
+    // inferred local. (createScopedLogger pattern.)
+    project.add_file(
+        "src/obj_return.ts",
+        r#"function makeLogger() {
+    return {
+        info(msg: string): void {},
+        error(msg: string): void {},
+    };
+}
+
+export function useLogger(): void {
+    const log = makeLogger();
+    log.info("hi");
+}
+"#,
+    );
+    // An optional-array param: `T[] | undefined` receiver, member via `?.`.
+    project.add_file(
+        "src/optional_array.ts",
+        r#"export function firsts(items: string[] | undefined): string[] | undefined {
+    return items?.map((x) => x.trim());
+}
+"#,
+    );
+    // `type X = ReturnType<typeof f>` where f returns an object literal.
+    project.add_file(
+        "src/return_type.ts",
+        r#"function make() {
+    return {
+        go(): void {},
+    };
+}
+
+type Handle = ReturnType<typeof make>;
+
+export function run(h: Handle): void {
+    h.go();
+}
+"#,
+    );
+
     // Point the locators at the seeded stubs, index once, restore env.
     let prior_lib = std::env::var_os("BEARWISDOM_TS_LIB_DIR");
     let prior_nm = std::env::var_os("BEARWISDOM_TS_NODE_MODULES");
@@ -243,6 +302,31 @@ export function widget(): void {
         external_toast >= 1,
         "precondition: external `@base-ui/react.toast` must be indexed, else the foreign-pick \
          pattern has no competitor and passes vacuously"
+    );
+
+    // Candidate probes — KNOWN-RED next targets, diagnostic only (not asserted).
+    // Promote a row to `checks` once fixed. Root causes (traced):
+    //   obj-return / returntype — a `return { … }` object literal is captured as a
+    //     `_primitive` placeholder, so the inferred local has no members. Shared
+    //     root; the larger cascade.
+    //   optional-arr — `T[] | undefined` interns as `Union([Array, undefined])`, and
+    //     union member access requires the member on EVERY arm, so the `undefined`
+    //     arm kills `.map`. Needs nullish arms peeled before the union walk.
+    println!("\n--- candidate probes (known red) ---");
+    println!(
+        "  obj-return    log.info()  resolved={} unresolved={}",
+        count_resolved(&db, "obj_return.ts", "info"),
+        count_unresolved(&db, "obj_return.ts", "info")
+    );
+    println!(
+        "  optional-arr  items?.map() resolved-to-Array={} unresolved={}",
+        count_resolved_to(&db, "optional_array.ts", "map", "%Array%"),
+        count_unresolved(&db, "optional_array.ts", "map")
+    );
+    println!(
+        "  returntype    h.go()      resolved={} unresolved={}",
+        count_resolved(&db, "return_type.ts", "go"),
+        count_unresolved(&db, "return_type.ts", "go")
     );
 
     // Each row: (label, pass, detail). Printed as a table so a fix's effect is a
