@@ -1570,6 +1570,7 @@ fn resolve_root_impl(
             &seg.name,
             &ref_ctx.source_symbol.qualified_name,
             file_ctx,
+            ref_ctx.file_package_id,
         ) {
             return Some(Receiver::untyped(ty));
         }
@@ -1578,9 +1579,14 @@ fn resolve_root_impl(
     // imported binding, a typed field) whose declaration carries a type roots
     // the chain on that type — `builder.create()` roots on `builder`'s declared
     // type even though `builder` is not itself a type name.
-    if let Some(ty) =
-        value_root_type(lookup, arena, &seg.name, &ref_ctx.source_symbol.qualified_name, file_ctx)
-    {
+    if let Some(ty) = value_root_type(
+        lookup,
+        arena,
+        &seg.name,
+        &ref_ctx.source_symbol.qualified_name,
+        file_ctx,
+        ref_ctx.file_package_id,
+    ) {
         // A value whose declared type is `ReturnType<typeof f>` — an inferred
         // `const x = f(...)` binding imported from the file that declares it —
         // roots on f's return type (f resolved globally by name), deriving the
@@ -1757,6 +1763,7 @@ fn value_root_type(
     name: &str,
     source_qname: &str,
     file_ctx: &FileContext,
+    file_package_id: Option<i64>,
 ) -> Option<TypeId> {
     // A value root's type comes from a binding this file is entitled to root on
     // ("owned"): a scope-qualified match, the same file, an imported name, or an
@@ -1766,13 +1773,34 @@ fn value_root_type(
     // implicit cross-file scope). Borrowing it OVER an owned-but-untyped binding is
     // the first-winner leak that mis-typed `logger`/`z`/`response` to an unrelated
     // same-name value (a foreign `logger` typed `Array`).
-    let name_imported = file_ctx
+    // The module `name` is imported from, if any. An import from an INTERNAL module
+    // — a relative path or a tsconfig path alias (`@/lib/toast`) — makes a same-name
+    // EXTERNAL (`ext:`) symbol foreign, never the imported declaration; without this
+    // an untyped internal binding (an uncaptured `Object.assign(...)` value) is
+    // overridden by a borrowed external same-name's type. An import from a bare
+    // package keeps the blanket ext: ownership that cross-package re-exports rely on
+    // (`useQuery` imported from `@tanstack/react-query`, declared in a sibling
+    // `@tanstack/*` package), as does a name that is not imported at all (ambient
+    // global / bare external type reference).
+    let imported_module = file_ctx
         .imports
         .iter()
-        .any(|i| i.imported_name == name || i.alias.as_deref() == Some(name));
+        .find(|i| i.imported_name == name || i.alias.as_deref() == Some(name))
+        .and_then(|i| i.module_path.as_deref());
+    let name_imported = imported_module.is_some();
+    let import_is_internal = imported_module.is_some_and(|m| {
+        m.starts_with('.') || lookup.resolve_path_alias(file_package_id, m).is_some()
+    });
     let src_file = file_ctx.file_path.as_str();
-    let is_owned =
-        |s: &Symbol| name_imported || s.file_path.starts_with("ext:") || &*s.file_path == src_file;
+    let is_owned = |s: &Symbol| {
+        if &*s.file_path == src_file {
+            return true;
+        }
+        if s.file_path.starts_with("ext:") {
+            return !import_is_internal;
+        }
+        name_imported
+    };
 
     // Ambient-global scope: a name used WITHOUT an import that is registered as a
     // global resolves to the package that DECLARES the global, not a same-named
@@ -2092,8 +2120,9 @@ fn call_value_root_type(
     name: &str,
     source_qname: &str,
     file_ctx: &FileContext,
+    file_package_id: Option<i64>,
 ) -> Option<TypeId> {
-    let value_ty = value_root_type(lookup, arena, name, source_qname, file_ctx)?;
+    let value_ty = value_root_type(lookup, arena, name, source_qname, file_ctx, file_package_id)?;
     let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
     yield_through(lookup, arena, &call, true, recv.ty, recv.id)

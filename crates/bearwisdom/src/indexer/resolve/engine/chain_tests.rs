@@ -682,6 +682,51 @@ fn binds_param_typed_by_returntype_typeof_alias() {
 }
 
 #[test]
+fn imported_internal_name_does_not_borrow_external_same_name_type() {
+    // `import { toast } from "./lib/toast"` (an internal relative module), while an
+    // external `@base-ui/react` package also exports a `toast`. The internal binding
+    // is untyped (its `Object.assign(...)` type isn't captured), so the resolver must
+    // NOT borrow the external `toast`'s type — a name imported from an internal module
+    // is never the external same-name. `toast.dismiss` stays unresolved rather than
+    // binding to the foreign `@base-ui/react` member. (A tsconfig path alias such as
+    // `@/lib/toast` is classified the same way via `resolve_path_alias`.)
+    let lookup = Lookup::new()
+        .with(sym(1, "toast", "toast", "variable", "a.ts"))
+        .with(sym(
+            50,
+            "toast",
+            "@base-ui/react.toast",
+            "variable",
+            "ext:ts:@base-ui/react/index.d.ts",
+        ))
+        .with_field_type("@base-ui/react.toast", "ToastObjectType")
+        .with_member(
+            "ToastObjectType",
+            sym(
+                99,
+                "dismiss",
+                "ToastObjectType.dismiss",
+                "method",
+                "ext:ts:@base-ui/react/index.d.ts",
+            ),
+        );
+    let segs = vec![
+        seg("toast", false, SegmentKind::Identifier),
+        seg("dismiss", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve_with_fc(
+            &lookup,
+            segs,
+            "caller",
+            &file_ctx(vec![import("toast", Some("./lib/toast"))], None),
+        ),
+        None,
+        "an internally-imported `toast` must not borrow the external @base-ui `toast` type",
+    );
+}
+
+#[test]
 fn binds_through_a_type_alias() {
     // type UserRepo = Repository<User>;  interface Repository<T> { find(): T }
     // const r: UserRepo = ...; r.find().name  →  User.name (id 20)
