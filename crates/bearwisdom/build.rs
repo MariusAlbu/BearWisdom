@@ -249,6 +249,7 @@ fn extract_lang_id(crate_dir_name: &str) -> Option<String> {
         "c-sharp" => "csharp",
         "vb-dotnet" => "vbnet",
         "kotlin-ng" => "kotlin",
+        "kotlin-sg" => "kotlin",
         "sequel" => "sql",
         "scss-local" => "scss",
         "dockerfile-0-25" => "dockerfile",

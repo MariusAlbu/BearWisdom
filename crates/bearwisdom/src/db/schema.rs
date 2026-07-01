@@ -340,6 +340,20 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                 ON routes(file_id, http_method, route_template, COALESCE(line, -1));",
         )?;
     }
+    // Drain flag on unresolved_refs: 1 when a rule declined the ref before the
+    // strategy ladder ran because its target names a language builtin or other
+    // non-project construct (`LanguageProfile::builtin_skip`), not a missing
+    // project symbol. Resolution-rate aggregates (`CODE_REF_FILTER`) exclude
+    // these rows; the row itself is kept so the drain stays diagnosable.
+    if !column_exists(conn, "unresolved_refs", "drained") {
+        conn.execute_batch(
+            "ALTER TABLE unresolved_refs ADD COLUMN drained INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_drained
+           ON unresolved_refs(drained) WHERE drained = 1",
+    )?;
     // Symbol-identity refactor (SYMBOL-IDENTITY.md): stable key, multi-location
     // containment. Columns are added empty here; the indexer populates them.
     if !column_exists(conn, "symbols", "symbol_key") {
@@ -619,7 +633,8 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     source_line INTEGER,
     module      TEXT,
     package_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL,  -- M1/M2: per-package attribution
-    from_snippet INTEGER NOT NULL DEFAULT 0                          -- E3: 1 if source symbol is from a Markdown fence / doctest
+    from_snippet INTEGER NOT NULL DEFAULT 0,                         -- E3: 1 if source symbol is from a Markdown fence / doctest
+    drained     INTEGER NOT NULL DEFAULT 0                           -- 1 if a rule drained the ref as a language builtin / non-project construct
 );
 
 CREATE INDEX IF NOT EXISTS idx_unresolved_name       ON unresolved_refs(target_name);

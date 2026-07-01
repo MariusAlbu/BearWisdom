@@ -568,3 +568,44 @@ fn report_excludes_external_origin_and_snippets() {
     let report = classify_unresolved(&db, 5).unwrap();
     assert_eq!(report.total, 1);
 }
+
+// ---------------------------------------------------------------------------
+// Drained rows (unresolved_refs.drained = 1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn drained_row_classified_as_drained_builtin() {
+    let cat = _test_classify_row_drained("echo", "calls", "bash");
+    assert_eq!(cat, UnresolvedCategory::DrainedBuiltin);
+}
+
+#[test]
+fn report_includes_and_categorizes_drained_rows() {
+    // Unlike `resolution_breakdown`, the classifier must SEE drained rows (to
+    // route them to their own category) rather than exclude them from the
+    // scan — total counts both the drained builtin call and the genuine miss.
+    let db = Database::open_in_memory().unwrap();
+    let f = seed_file(&db, "script.sh", "bash", "internal");
+    let s = seed_symbol(&db, f, "caller");
+
+    // PascalCase + type_ref so the heuristic lands it in the RealMissingSymbol
+    // fallback rather than the LocalFalsePositive lowercase-identifier rule —
+    // isolating the assertion to the drained/real-miss distinction this test
+    // targets.
+    seed_unresolved(&db, s, "MyMissingProjectType", "type_ref", None, 1);
+    db.conn()
+        .execute(
+            "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line, drained)
+             VALUES (?1, 'echo', 'calls', 2, 1)",
+            [s],
+        )
+        .unwrap();
+
+    let report = classify_unresolved(&db, 5).unwrap();
+    assert_eq!(report.total, 2);
+    assert_eq!(report.by_category.get("drained_builtin").copied(), Some(1));
+    assert_eq!(
+        report.by_category.get("real_missing_symbol").copied(),
+        Some(1)
+    );
+}

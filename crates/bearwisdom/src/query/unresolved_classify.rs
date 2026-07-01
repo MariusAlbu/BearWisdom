@@ -11,7 +11,11 @@
 // The classifier is heuristic and deterministic. It runs entirely over the
 // existing schema — no migrations. Rows whose source symbol came from a
 // Markdown fence or doctest (`from_snippet = 1`) are excluded, mirroring
-// `resolution_breakdown`.
+// `resolution_breakdown`. Unlike `resolution_breakdown`, a row a rule drained
+// as a language builtin / non-project construct (`drained = 1`) is NOT
+// excluded here — it is classified `DrainedBuiltin` so the worklist stays a
+// complete accounting of every internal unresolved row, not just the ones
+// still counting against the rate.
 // =============================================================================
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -30,6 +34,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnresolvedCategory {
+    /// A rule drained the ref (`unresolved_refs.drained = 1`) before the
+    /// strategy ladder ran: the target names a language builtin or other
+    /// non-project construct (`LanguageProfile::builtin_skip`), not a missing
+    /// project symbol.
+    DrainedBuiltin,
     /// Extractor emitted a ref that should not exist (keyword, literal,
     /// punctuation-bearing target, empty name).
     ExtractorBug,
@@ -69,6 +78,7 @@ pub enum UnresolvedCategory {
 impl UnresolvedCategory {
     pub fn as_str(self) -> &'static str {
         match self {
+            UnresolvedCategory::DrainedBuiltin => "drained_builtin",
             UnresolvedCategory::ExtractorBug => "extractor_bug",
             UnresolvedCategory::GeneratedOrVendorNoise => "generated_or_vendor_noise",
             UnresolvedCategory::ModuleResolutionMiss => "module_resolution_miss",
@@ -207,17 +217,18 @@ pub fn classify_unresolved(
     };
 
     // Internal unresolved rows joined with source symbol/file metadata.
-    // Filter mirrors `resolution_breakdown` so the classifier total
-    // matches the metric total: snippet content excluded, doc cross-
-    // references (markdown/mdx kind=imports) excluded.
+    // Filter mirrors `resolution_breakdown`'s snippet / doc-cross-reference
+    // exclusions, but — unlike the rate metric — does NOT exclude drained
+    // rows: the classifier needs to see them so it can route them to
+    // `DrainedBuiltin` rather than drop them from the scan.
     let scan_sql = format!(
         "SELECT u.target_name, u.kind, u.module, u.source_line,
-                f.id, f.path, f.language
+                f.id, f.path, f.language, u.drained
          FROM unresolved_refs u
          JOIN symbols s ON s.id = u.source_id
          JOIN files   f ON f.id = s.file_id
          WHERE f.origin = 'internal' AND {filter}",
-        filter = crate::query::stats::CODE_REF_FILTER
+        filter = crate::query::stats::NON_CODE_REF_FILTER
     );
     let mut stmt = conn
         .prepare(&scan_sql)
@@ -241,15 +252,17 @@ pub fn classify_unresolved(
                 r.get::<_, i64>(4)?,            // file_id
                 r.get::<_, String>(5)?,         // file_path
                 r.get::<_, String>(6)?,         // file_language
+                r.get::<_, bool>(7)?,           // drained
             ))
         })
         .context("classify_unresolved: execute internal unresolved scan")?;
 
     for row in rows {
-        let (target_name, kind, module, source_line, file_id, file_path, language) = match row {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+        let (target_name, kind, module, source_line, file_id, file_path, language, drained) =
+            match row {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
 
         let row = ClassifyRow {
             target_name: &target_name,
@@ -257,6 +270,7 @@ pub fn classify_unresolved(
             module: module.as_deref(),
             file_path: &file_path,
             language: &language,
+            drained,
         };
         let category = classify_row(
             &row,
@@ -339,6 +353,9 @@ struct ClassifyRow<'a> {
     module: Option<&'a str>,
     file_path: &'a str,
     language: &'a str,
+    /// `unresolved_refs.drained` — true when a rule declined the ref before
+    /// the strategy ladder ran because the target names a language builtin.
+    drained: bool,
 }
 
 fn classify_row(
@@ -348,6 +365,12 @@ fn classify_row(
     workspace_packages: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
 ) -> UnresolvedCategory {
+    // 0. Drained — a rule already made this determination; it outranks every
+    // heuristic below.
+    if row.drained {
+        return UnresolvedCategory::DrainedBuiltin;
+    }
+
     // 1. Extractor bug — the cheapest checks first.
     if is_extractor_garbage(row.target_name) {
         return UnresolvedCategory::ExtractorBug;
@@ -744,6 +767,7 @@ pub(super) fn _test_classify_row(
         module,
         file_path,
         language,
+        drained: false,
     };
     classify_row(&row, external_names, &empty, &empty, imports_for_file)
 }
@@ -767,6 +791,7 @@ pub(super) fn _test_classify_row_ext(
         module,
         file_path,
         language,
+        drained: false,
     };
     classify_row(
         &row,
@@ -775,6 +800,21 @@ pub(super) fn _test_classify_row_ext(
         workspace_packages,
         imports_for_file,
     )
+}
+
+/// Drives `classify_row` with `drained: true` — the BuiltinSkipRule path.
+#[cfg(test)]
+pub(super) fn _test_classify_row_drained(target_name: &str, kind: &str, language: &str) -> UnresolvedCategory {
+    let empty = HashSet::new();
+    let row = ClassifyRow {
+        target_name,
+        kind,
+        module: None,
+        file_path: "script.sh",
+        language,
+        drained: true,
+    };
+    classify_row(&row, &empty, &empty, &empty, None)
 }
 
 #[cfg(test)]

@@ -128,6 +128,12 @@ pub enum LookupResult {
     /// no later rule may bind it (a module-decline / terminal-anchor guard, so a
     /// same-named local cannot hijack an external prefix).
     Stop,
+    /// The rule declined AND ends the ladder because the target names a
+    /// language builtin or other non-project construct
+    /// (`LanguageProfile::builtin_skip`), not a missing project symbol. Distinct
+    /// from `Stop` so the caller can write the ref to `unresolved_refs` tagged
+    /// `drained=1` and exclude it from the resolution-rate denominator.
+    Drained,
 }
 
 /// One resolution case. Single responsibility: examine the context and either
@@ -140,6 +146,18 @@ pub trait LookupRule: Send + Sync {
 
     /// Apply the rule to `ctx`.
     fn apply(&self, ctx: &BinderContext) -> LookupResult;
+}
+
+/// Outcome of running the full ladder against one ref.
+pub enum BindOutcome {
+    /// A rule bound the ref, tagged with the rule's name for diagnostics.
+    Resolved(SymbolInfo, &'static str),
+    /// No rule bound it and none marked it a non-project construct — an
+    /// honest miss, attributable to a missing or buggy rule.
+    Unresolved,
+    /// A rule declined the ref as a known non-project construct
+    /// (`LookupResult::Drained`) before the binding rungs ran.
+    Drained,
 }
 
 /// An ordered set of rules. First rule that resolves wins; the winning rule's
@@ -158,17 +176,16 @@ impl Binder {
         Self::new(rules::default_rules())
     }
 
-    /// Resolve one ref. Returns `(resolution, rule_name)`, or `None` when the
-    /// ladder ran out or a rule stopped it — an honestly-unresolved ref,
-    /// attributable to a missing or buggy rule, not to the engine.
-    pub fn bind(&self, ctx: &BinderContext) -> Option<(SymbolInfo, &'static str)> {
+    /// Resolve one ref against the ladder. See [`BindOutcome`].
+    pub fn bind(&self, ctx: &BinderContext) -> BindOutcome {
         for rule in &self.rules {
             match rule.apply(ctx) {
-                LookupResult::Resolved(res) => return Some((res, rule.name())),
+                LookupResult::Resolved(res) => return BindOutcome::Resolved(res, rule.name()),
                 LookupResult::Pass => continue,
-                LookupResult::Stop => return None,
+                LookupResult::Stop => return BindOutcome::Unresolved,
+                LookupResult::Drained => return BindOutcome::Drained,
             }
         }
-        None
+        BindOutcome::Unresolved
     }
 }

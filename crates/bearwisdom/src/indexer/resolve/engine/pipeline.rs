@@ -19,8 +19,18 @@ use rustc_hash::FxHashMap;
 
 /// A resolved edge row: (source_id, target_id, kind, source_line, confidence, strategy).
 type Edge = (i64, i64, &'static str, u32, f64, &'static str);
-/// An unresolved-ref row: (source_id, target_name, kind, source_line, module, package_id, from_snippet).
-type Unresolved = (i64, String, &'static str, u32, Option<String>, Option<i64>, bool);
+/// An unresolved-ref row: (source_id, target_name, kind, source_line, module,
+/// package_id, from_snippet, drained).
+type Unresolved = (
+    i64,
+    String,
+    &'static str,
+    u32,
+    Option<String>,
+    Option<i64>,
+    bool,
+    bool,
+);
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
@@ -29,7 +39,10 @@ use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefCon
 use crate::indexer::resolve::engine::contract::chain_walker::{
     parse_return_type_from_signature, parse_type_head_and_args,
 };
-use crate::indexer::resolve::engine::{semantic_model::SemanticModel, compilation::Compilation};
+use crate::indexer::resolve::engine::{
+    semantic_model::{SemanticModel, SolveOutcome},
+    compilation::Compilation,
+};
 use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
@@ -628,7 +641,7 @@ fn resolve_one_file(
         }
 
         match solver.get_symbol_info(&ref_ctx, &file_ctx, &file_lookup, profile) {
-            Some(res) => {
+            SolveOutcome::Resolved(res) => {
                 // Forward inference: when this ref is the RHS of a local binding,
                 // record the yield type so a later ref rooted on the same variable
                 // name can walk the chain.
@@ -835,7 +848,24 @@ fn resolve_one_file(
                     res.strategy,
                 ));
             }
-            None => {
+            SolveOutcome::Drained => {
+                // A rule positively identified the target as a language builtin
+                // or other non-project construct — write the row so it stays
+                // diagnosable, but tag it drained so it leaves the rate
+                // denominator instead of counting as a genuine miss.
+                crate::tracef!("RESULT DRAINED (builtin_skip)");
+                unresolved.push((
+                    source_id,
+                    r.target_name.clone(),
+                    kind_str,
+                    r.line,
+                    r.module.clone(),
+                    pf.package_id,
+                    ref_is_snippet,
+                    true,
+                ));
+            }
+            SolveOutcome::Unresolved => {
                 // A type annotation naming a language primitive (`: string`) is a
                 // builtin, not a missing symbol: it's captured as the binding's
                 // field type (the compilation pass reads the TypeRef) but must not
@@ -857,6 +887,7 @@ fn resolve_one_file(
                         r.module.clone(),
                         pf.package_id,
                         ref_is_snippet,
+                        false,
                     ));
                 }
             }
@@ -886,7 +917,7 @@ fn resolve_one_file(
 fn flush_to_db(
     db: &mut Database,
     edges: &[(i64, i64, &'static str, u32, f64, &'static str)],
-    unresolved: &[(i64, String, &'static str, u32, Option<String>, Option<i64>, bool)],
+    unresolved: &[Unresolved],
     clear_existing: bool,
 ) -> Result<()> {
     use rusqlite::types::Value;
@@ -958,7 +989,8 @@ fn flush_to_db(
         }
     }
 
-    // Unresolved refs: (source_id, target_name, kind, source_line, module, package_id, from_snippet)
+    // Unresolved refs: (source_id, target_name, kind, source_line, module,
+    // package_id, from_snippet, drained)
     if !unresolved.is_empty() {
         let mut start = 0;
         while start < unresolved.len() {
@@ -966,12 +998,12 @@ fn flush_to_db(
             let rows = end - start;
             let sql = format!(
                 "INSERT INTO unresolved_refs \
-                 (source_id, target_name, kind, source_line, module, package_id, from_snippet) \
+                 (source_id, target_name, kind, source_line, module, package_id, from_snippet, drained) \
                  VALUES {}",
-                placeholders(rows, 7),
+                placeholders(rows, 8),
             );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 7);
-            for (sid, name, kind, line, module, pkg, from_snippet) in &unresolved[start..end] {
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 8);
+            for (sid, name, kind, line, module, pkg, from_snippet, drained) in &unresolved[start..end] {
                 params.push(Value::Integer(*sid));
                 params.push(Value::Text(name.clone()));
                 params.push(Value::Text((*kind).to_string()));
@@ -985,6 +1017,7 @@ fn flush_to_db(
                     None => Value::Null,
                 });
                 params.push(Value::Integer(if *from_snippet { 1 } else { 0 }));
+                params.push(Value::Integer(if *drained { 1 } else { 0 }));
             }
             tx.prepare_cached(&sql)
                 .context("Failed to prepare unresolved_refs insert")?

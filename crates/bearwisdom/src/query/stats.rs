@@ -23,17 +23,35 @@ mod tests;
 /// fragment to bind. Composed via string concatenation; not parameterized
 /// because every clause is a literal predicate over schema-fixed values.
 ///
-/// Two patterns are excluded:
+/// Three patterns are excluded:
 ///
 /// 1. `u.from_snippet = 1` — refs from Markdown fences and doctests. The
 ///    source text is sample code, not first-party project code.
-/// 2. `(markdown|mdx) kind=imports` — Markdown link refs of the form
+/// 2. `u.drained = 1` — a rule declined the ref before the strategy ladder ran
+///    because its target names a language builtin or other non-project
+///    construct (`LanguageProfile::builtin_skip`), not a missing project
+///    symbol. See [`DRAINED_REF_MATCH`] for the positive form.
+/// 3. `(markdown|mdx) kind=imports` — Markdown link refs of the form
 ///    `[name](path/to/doc.md)`. The extractor emits these as Imports so
 ///    cross-document drift can be detected when the link target IS
 ///    indexed; when it isn't they fall to `unresolved_refs`. Document
 ///    cross-references are not code-resolution failures and must not
 ///    drag the rate down (Plan 01 — Resolution Gate).
 pub(crate) const CODE_REF_FILTER: &str = "u.from_snippet = 0 \
+     AND u.drained = 0 \
+     AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')";
+
+/// The positive form of the `u.drained = 1` clause folded into
+/// [`CODE_REF_FILTER`] — the rows a rule drained before the strategy ladder
+/// ran. Used to count the drain so it is observable rather than silently
+/// shrinking the denominator (surfaced as `ResolutionBreakdown::drained_refs`).
+pub(crate) const DRAINED_REF_MATCH: &str = "u.drained = 1";
+
+/// [`CODE_REF_FILTER`] minus the `u.drained = 0` clause — sample-code rows
+/// only. The unresolved-ref classifier scans with this filter instead of
+/// `CODE_REF_FILTER`: it needs to SEE drained rows so it can route them to
+/// their own category, rather than have them excluded from its scan.
+pub(crate) const NON_CODE_REF_FILTER: &str = "u.from_snippet = 0 \
      AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')";
 
 /// SQL WHERE-clause fragment that excludes refs/edges whose *source file* is
@@ -249,6 +267,12 @@ pub struct ResolutionBreakdown {
     /// numerator and the denominator. Surfaced so the exclusion is
     /// observable rather than silent.
     pub generated_excluded: u32,
+    /// Internal `unresolved_refs` a rule drained before the strategy ladder
+    /// ran (`drained=1`) — the target names a language builtin or other
+    /// non-project construct (`LanguageProfile::builtin_skip`), not a missing
+    /// project symbol. Excluded from the rate denominator via `CODE_REF_FILTER`;
+    /// surfaced here so the exclusion is observable rather than silent.
+    pub drained_refs: u32,
     /// Primary resolution gate metric, two decimals: internal_edges /
     /// (internal_edges + internal_unresolved) * 100. 100.0 when both
     /// sides are zero (empty project). `external_known_unhydrated` is not
@@ -373,6 +397,25 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         let refs_excluded: u32 = conn.query_row(&refs_excluded_sql, [], |r| r.get(0)).unwrap_or(0);
         edges_excluded + refs_excluded
     };
+
+    // Internal unresolved refs a rule drained before the strategy ladder ran
+    // (the target names a language builtin / non-project construct).
+    // `CODE_REF_FILTER` already excludes these from `internal_unresolved`;
+    // counted here, with the same snippet/doc-link exclusions, so the drain
+    // is observable rather than silently shrinking the denominator.
+    let drained_refs_sql = format!(
+        "SELECT COUNT(*)
+         FROM unresolved_refs u
+         JOIN symbols s ON s.id = u.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal'
+           AND u.from_snippet = 0
+           AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')
+           AND {GENERATED_FILE_FILTER} AND {DRAINED_REF_MATCH}"
+    );
+    let drained_refs: u32 = conn
+        .query_row(&drained_refs_sql, [], |r| r.get(0))
+        .unwrap_or(0);
 
     let mut languages: BTreeMap<String, u32> = BTreeMap::new();
     {
@@ -615,6 +658,7 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         internal_unresolved,
         external_known_unhydrated,
         generated_excluded,
+        drained_refs,
         internal_resolution_rate: resolution_rate,
         precision: resolution_rate,
         resolution_rate,

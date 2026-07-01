@@ -793,21 +793,26 @@ fn load_file_to_package_map(
 /// two packages each containing a `handleClick` symbol won't keep
 /// `apps/web`'s dead `handleClick` alive because `apps/api` failed to
 /// resolve a different `handleClick`.
+///
+/// Excludes drained rows (`drained = 1`): a rule drained the target as a
+/// language builtin / non-project construct, so a project symbol sharing
+/// that name was never actually referenced — including it would wrongly
+/// flag the symbol `potentially_referenced`.
 fn build_unresolved_name_counts(
     conn: &rusqlite::Connection,
     scope_file_ids: Option<&std::collections::HashSet<i64>>,
 ) -> QueryResult<std::collections::HashMap<String, u32>> {
     let mut map = std::collections::HashMap::new();
     let sql = match scope_file_ids {
-        None => {
-            "SELECT target_name, COUNT(*) FROM unresolved_refs GROUP BY target_name".to_string()
-        }
+        None => "SELECT target_name, COUNT(*) FROM unresolved_refs \
+                  WHERE drained = 0 GROUP BY target_name"
+            .to_string(),
         Some(ids) if ids.is_empty() => return Ok(map),
         Some(ids) => format!(
             "SELECT u.target_name, COUNT(*)
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
-             WHERE s.file_id IN ({})
+             WHERE s.file_id IN ({}) AND u.drained = 0
              GROUP BY u.target_name",
             ids.iter()
                 .map(|id| id.to_string())

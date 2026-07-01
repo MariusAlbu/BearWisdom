@@ -17,7 +17,18 @@ use crate::type_checker::profile::language_profile::{
 };
 use crate::types::{EdgeKind, SymbolKind};
 
-use super::{BinderContext, Binder};
+use super::{BindOutcome, BinderContext, Binder};
+
+/// Outcome of solving one ref, chain-bearing or chain-less.
+pub enum SolveOutcome {
+    /// A rule or the chain walk bound the ref.
+    Resolved(SymbolInfo),
+    /// Nothing bound it — an honest miss.
+    Unresolved,
+    /// The rule ladder declined the ref as a known non-project construct
+    /// (`LanguageProfile::builtin_skip`) rather than a missing project symbol.
+    Drained,
+}
 
 /// The rule-based code-reference solver. Holds the ordered rule set and applies
 /// it to one ref at a time.
@@ -47,10 +58,10 @@ impl SemanticModel {
         file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
-    ) -> Option<SymbolInfo> {
+    ) -> SolveOutcome {
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
             if let Some(res) = super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
-                return Some(res);
+                return SolveOutcome::Resolved(res);
             }
             // A multi-segment chain the walk declined is normally a genuine miss:
             // a same-named sibling must not hijack `a.b.c`. Two exceptions both
@@ -65,24 +76,26 @@ impl SemanticModel {
                 && !chain_root_is_namespace(chain, lookup)
                 && !chain_root_is_wildcard_import(chain, file_ctx)
             {
-                return None;
+                return SolveOutcome::Unresolved;
             }
         }
-        self.resolve_chain_less(ref_ctx, file_ctx, lookup, profile)
-            .map(|(res, _rule)| res)
+        match self.resolve_chain_less(ref_ctx, file_ctx, lookup, profile) {
+            BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
+            BindOutcome::Unresolved => SolveOutcome::Unresolved,
+            BindOutcome::Drained => SolveOutcome::Drained,
+        }
     }
 
     /// Solve one chain-less ref through the rule ladder. Builds the profile kind
-    /// predicate, assembles a `BinderContext`, and runs the rules. Returns the
-    /// resolution and the name of the rule that produced it, or `None` when the
-    /// ladder declined — an honestly-unresolved ref.
+    /// predicate, assembles a `BinderContext`, and runs the rules. See
+    /// [`BindOutcome`].
     pub fn resolve_chain_less(
         &self,
         ref_ctx: &RefContext,
         file_ctx: &FileContext,
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
-    ) -> Option<(SymbolInfo, &'static str)> {
+    ) -> BindOutcome {
         let table = profile.kind_compatible_table;
         let kind = move |edge: EdgeKind, sym_kind: &str| kind_ok_table(table, edge, sym_kind);
         let ctx = BinderContext {

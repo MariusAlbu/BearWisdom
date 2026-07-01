@@ -6,6 +6,55 @@ use crate::type_checker::core::types::TypeArena;
 
 use super::{FileLookup, resolve_single_pass};
 
+// ---------------------------------------------------------------------------
+// BuiltinSkipRule drain — end-to-end through the full resolve pipeline
+// ---------------------------------------------------------------------------
+
+/// A bash script call into a real builtin (`echo`, drained by `BuiltinSkipRule`
+/// via the profile's `is_bash_builtin`) lands in `unresolved_refs` with
+/// `drained=1`; a call into a genuinely missing project function lands with
+/// `drained=0` and still counts against the resolution rate. Both rows must
+/// keep their `unresolved_refs` entry — the drain changes classification, not
+/// row survival.
+#[test]
+fn drained_builtin_call_lands_with_flag_and_leaves_the_rate_denominator() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("script.sh"),
+        "my_func() {\n  totally_missing_project_function_xyz\n  echo hello\n}\n",
+    )
+    .unwrap();
+
+    let mut db = crate::db::Database::open_in_memory().unwrap();
+    crate::full_index(&mut db, dir.path(), None, None, None).unwrap();
+
+    let conn = db.conn();
+    let missing: (i64, i64) = conn
+        .query_row(
+            "SELECT drained, COUNT(*) FROM unresolved_refs \
+             WHERE target_name = 'totally_missing_project_function_xyz' GROUP BY drained",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("the genuine miss must have landed a row");
+    assert_eq!(missing, (0, 1), "a genuine miss must not be drained");
+
+    let builtin: (i64, i64) = conn
+        .query_row(
+            "SELECT drained, COUNT(*) FROM unresolved_refs \
+             WHERE target_name = 'echo' GROUP BY drained",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("the drained builtin call must have landed a row");
+    assert_eq!(builtin, (1, 1), "a bash builtin call must be drained");
+
+    // The rate excludes the drained row; only the genuine miss counts.
+    let rb = crate::query::stats::resolution_breakdown(&db).unwrap();
+    assert_eq!(rb.internal_unresolved, 1);
+    assert_eq!(rb.drained_refs, 1);
+}
+
 #[test]
 fn scan_module_augmentations_finds_quoted_module_interfaces() {
     // The jest-dom augmentation shape: a quoted `declare module` whose body lists
@@ -698,9 +747,9 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
         !unresolved.is_empty(),
         "NonexistentApi must be unresolved; got no unresolved rows"
     );
-    let row = unresolved.iter().find(|(_, name, _, _, _, _, _)| name == "NonexistentApi");
+    let row = unresolved.iter().find(|(_, name, _, _, _, _, _, _)| name == "NonexistentApi");
     assert!(row.is_some(), "unresolved row for NonexistentApi not found");
-    let (_, _, _, _, _, _, from_snippet) = row.unwrap();
+    let (_, _, _, _, _, _, from_snippet, _drained) = row.unwrap();
     assert!(
         *from_snippet,
         "unresolved ref from a snippet source symbol must have from_snippet=true"

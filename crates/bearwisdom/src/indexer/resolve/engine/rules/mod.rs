@@ -14,6 +14,7 @@ pub mod alias_module_qname;
 pub mod ambient_namespace_path;
 pub mod ambient_prefix_strip;
 pub mod ambient_scope;
+pub mod builtin_skip;
 pub mod chain_prefix;
 pub mod component_import;
 pub mod enclosing_member;
@@ -53,6 +54,7 @@ use alias_module_qname::AliasModuleQnameRule;
 use ambient_namespace_path::AmbientNamespacePathRule;
 use ambient_prefix_strip::AmbientPrefixStripRule;
 use ambient_scope::AmbientScopeRule;
+use builtin_skip::BuiltinSkipRule;
 use chain_prefix::ChainPrefixRule;
 use component_import::ComponentImportRule;
 use enclosing_member::EnclosingMemberRule;
@@ -88,14 +90,16 @@ use wildcard_import::WildcardImportRule;
 use workspace_package::WorkspacePackageRule;
 
 /// The production rule set, in canonical ladder order. First rule that resolves
-/// wins; a rule that stops the ladder leaves the ref honestly unresolved. The
+/// wins; a rule that stops the ladder leaves the ref honestly unresolved, and a
+/// rule that drains it marks it a known non-project construct instead. The
 /// order is the old strategy tower's `run_ladder` sequence: the module-decline
-/// guard, the most-specific evidence (import path / workspace / selector /
-/// module anchor), then scope → same-file → qualified → import-shape → ambient →
-/// wildcard → global rungs.
+/// and builtin-drain guards, the most-specific evidence (import path /
+/// workspace / selector / module anchor), then scope → same-file → qualified →
+/// import-shape → ambient → wildcard → global rungs.
 pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
     vec![
         Box::new(ModuleSkipRule),
+        Box::new(BuiltinSkipRule),
         Box::new(ImportPathRule),
         Box::new(WorkspacePackageRule),
         Box::new(SelectorMapRule),

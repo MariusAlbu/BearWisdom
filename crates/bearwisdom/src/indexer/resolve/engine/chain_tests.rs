@@ -1570,7 +1570,7 @@ fn identifier_root_decomposes_generic_local_type() {
 // --- cross-package import-scoped binding (bare type_ref / 1-seg instantiates) -
 
 use crate::indexer::resolve::engine::contract::FileContext;
-use crate::indexer::resolve::engine::semantic_model::SemanticModel;
+use crate::indexer::resolve::engine::semantic_model::{SemanticModel, SolveOutcome};
 use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
@@ -1609,9 +1609,10 @@ fn imports_query_client_from_core() -> FileContext {
 fn engine_resolve(lookup: &Lookup, r: &ExtractedRef, fc: &FileContext) -> Option<i64> {
     let s = source_symbol("caller");
     let rc = ref_ctx(r, &s, vec![]);
-    SemanticModel::production()
-        .get_symbol_info(&rc, fc, lookup, &WS_PROFILE)
-        .map(|res| res.target_symbol_id)
+    match SemanticModel::production().get_symbol_info(&rc, fc, lookup, &WS_PROFILE) {
+        SolveOutcome::Resolved(res) => Some(res.target_symbol_id),
+        SolveOutcome::Unresolved | SolveOutcome::Drained => None,
+    }
 }
 
 #[test]

@@ -464,6 +464,58 @@ fn index_stats_excludes_generated_dart() {
 }
 
 // ---------------------------------------------------------------------------
+// Builtin-drain exclusion (CODE_REF_FILTER's `u.drained = 0` clause)
+// ---------------------------------------------------------------------------
+
+fn seed_unresolved_drained(db: &Database, source_id: i64, target_name: &str, kind: &str) {
+    db.conn()
+        .execute(
+            "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line, drained)
+             VALUES (?1, ?2, ?3, 1, 1)",
+            rusqlite::params![source_id, target_name, kind],
+        )
+        .unwrap();
+}
+
+#[test]
+fn drained_ref_excluded_from_rate_but_counted_separately() {
+    // A ref a rule drained (BuiltinSkipRule, `drained=1`) must leave the
+    // resolution-rate denominator while a genuine miss on the same file still
+    // counts — the two must not be conflated.
+    let db = open();
+    let f = seed_file(&db, "script.sh", "bash", "internal");
+    let caller = seed_symbol(&db, f, "caller", "internal");
+    seed_unresolved(&db, caller, "totally_missing_project_function", "calls", 0);
+    seed_unresolved_drained(&db, caller, "echo", "calls");
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    // Only the genuine miss counts against the rate; the drained builtin call
+    // leaves the denominator entirely.
+    assert_eq!(rb.internal_unresolved, 1);
+    assert_eq!(rb.drained_refs, 1);
+    assert_eq!(
+        rb.unresolved_by_lang_kind.get("bash.calls").copied(),
+        Some(1),
+        "the drained row must not appear in the per-language breakdown either"
+    );
+}
+
+#[test]
+fn index_stats_excludes_drained_refs() {
+    // The standalone `index_stats` unresolved count honors the same
+    // `u.drained = 0` clause as the breakdown, so the two stay consistent.
+    let db = open();
+    let f = seed_file(&db, "script.sh", "bash", "internal");
+    let caller = seed_symbol(&db, f, "caller", "internal");
+    seed_unresolved(&db, caller, "real_miss", "calls", 0);
+    seed_unresolved_drained(&db, caller, "cd", "calls");
+
+    let stats = index_stats(&db).unwrap();
+    assert_eq!(stats.unresolved_ref_count, 1);
+}
+
+// ---------------------------------------------------------------------------
 // Origin-external symmetric exclusion (the jupyter locale-dedup contract)
 // ---------------------------------------------------------------------------
 

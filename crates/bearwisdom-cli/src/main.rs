@@ -1926,6 +1926,7 @@ fn cmd_quality_check(
                 "internal_unresolved": internal_unresolved,
                 "resolution_rate": resolution_rate,
                 "generated_excluded": rb.generated_excluded,
+                "drained_refs": rb.drained_refs,
                 "routes": routes,
                 "flow_edges": flow_edges,
                 "unresolved_external": unresolved_external,
@@ -2143,6 +2144,11 @@ fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Resul
         // Zero (and omitted on read) for projects with no build_runner output.
         if rb.generated_excluded > 0 {
             updated["generated_excluded"] = serde_json::json!(rb.generated_excluded);
+        }
+        // Refs a rule drained as a language builtin / non-project construct.
+        // Zero (and omitted on read) for languages with no `builtin_skip`.
+        if rb.drained_refs > 0 {
+            updated["drained_refs"] = serde_json::json!(rb.drained_refs);
         }
         updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
         updated["rate_by_language"] = serde_json::json!(rb.rate_by_language);
