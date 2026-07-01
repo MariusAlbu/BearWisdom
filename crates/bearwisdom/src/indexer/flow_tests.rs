@@ -618,6 +618,32 @@ fn rust_generic_annotation_records_bare_base() {
 }
 
 #[test]
+fn ts_function_parameter_annotation_records_declared_type() {
+    use crate::languages::typescript::flow::TS_FLOW_CONFIG;
+
+    // A function parameter `text: string` must seed the flow cache so a member
+    // call on the param (`text.replace(...)`) types the receiver `string` and
+    // routes to `String`'s member index — not a foreign same-named binding. The
+    // param is neither a `variable_declarator` nor an `assignment_expression`, so
+    // it needs its own capture in the assignment query.
+    let source =
+        "function toKebabCase(text: string): string {\n    return text.replace(/a/, \"b\");\n}\n";
+    let grammar = TypeScriptPlugin
+        .grammar("typescript")
+        .expect("typescript grammar must load");
+    let symbols = vec![mk_sym("text", SymbolKind::Property, 0)];
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    let meta = run_flow_queries(source, &grammar, &TS_FLOW_CONFIG, &symbols, &mut refs);
+
+    assert_eq!(
+        meta.flow_binding_decl_type.get(&0),
+        Some(&"string".to_string()),
+        "the `text: string` parameter annotation types symbol 0 directly"
+    );
+}
+
+#[test]
 fn csharp_declaration_pattern_narrows_binding() {
     use crate::languages::csharp::CSharpPlugin;
 

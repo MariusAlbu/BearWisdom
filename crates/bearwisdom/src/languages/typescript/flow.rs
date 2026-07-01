@@ -40,6 +40,14 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
     // runner strips generic args and writes `flow_binding_decl_type` so the
     // chain walker sees the receiver type even when the RHS has no resolvable ref.
     // The @rhs capture drives forward inference as before.
+    //
+    // The `required_parameter` / `optional_parameter` arms seed a declared
+    // parameter type (`function f(text: string)`) the same way, so a member call
+    // on the parameter (`text.replace(...)`) types its receiver from the
+    // annotation. A parameter has no initializer, so only `@lhs` + `@type` are
+    // captured (no `@rhs`). The accessibility-modifier shorthand
+    // (`constructor(private db: Repo)`) is a `required_parameter` too, so it is
+    // covered by the same arm.
     assignment_query: r#"
         (variable_declarator
             name: (identifier) @lhs
@@ -57,6 +65,14 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
                     key: (property_identifier) @destruct.key
                     value: (identifier) @destruct.bind)])
             value: (_) @rhs)
+
+        (required_parameter
+            pattern: (identifier) @lhs
+            (type_annotation (_) @type))
+
+        (optional_parameter
+            pattern: (identifier) @lhs
+            (type_annotation (_) @type))
     "#,
 
     // Two block-scoped narrowing forms:
