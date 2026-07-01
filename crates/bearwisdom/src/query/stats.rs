@@ -273,6 +273,17 @@ pub struct ResolutionBreakdown {
     /// project symbol. Excluded from the rate denominator via `CODE_REF_FILTER`;
     /// surfaced here so the exclusion is observable rather than silent.
     pub drained_refs: u32,
+    /// Files reclassified `ext:vendored:` at walk time — checked-in
+    /// third-party code (`node_modules/`, `vendor/`, `third_party/`, a
+    /// self-declared foreign package). Origin is `external`, so these files
+    /// are absent from every `internal_*` count above rather than filtered
+    /// out of a denominator; their own symbols remain lookup targets.
+    pub vendored_files_reclassified: u32,
+    /// Files reclassified `ext:generated:` at walk time — checked-in
+    /// build/codegen output (`dist/`, `build/`, `.next/`, `generated/`,
+    /// `*.min.js`, `*.pb.go`, `*.designer.cs`, …). Same origin/lookup-target
+    /// treatment as `vendored_files_reclassified`.
+    pub generated_files_reclassified: u32,
     /// Primary resolution gate metric, two decimals: internal_edges /
     /// (internal_edges + internal_unresolved) * 100. 100.0 when both
     /// sides are zero (empty project). `external_known_unhydrated` is not
@@ -415,6 +426,24 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     );
     let drained_refs: u32 = conn
         .query_row(&drained_refs_sql, [], |r| r.get(0))
+        .unwrap_or(0);
+
+    // Files reclassified at walk time carry their category in the `ext:`
+    // path prefix (`indexer/full.rs`), so counting them is a direct path
+    // match rather than a denominator filter.
+    let vendored_files_reclassified: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE path LIKE 'ext:vendored:%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let generated_files_reclassified: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE path LIKE 'ext:generated:%'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     let mut languages: BTreeMap<String, u32> = BTreeMap::new();
@@ -659,6 +688,8 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         external_known_unhydrated,
         generated_excluded,
         drained_refs,
+        vendored_files_reclassified,
+        generated_files_reclassified,
         internal_resolution_rate: resolution_rate,
         precision: resolution_rate,
         resolution_rate,

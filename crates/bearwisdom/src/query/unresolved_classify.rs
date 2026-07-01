@@ -380,7 +380,7 @@ fn classify_row(
     }
 
     // 2. Generated / vendor source.
-    if looks_generated_or_vendor(row.file_path) {
+    if crate::ecosystem::vendored_or_generated::classify(row.file_path).is_some() {
         return UnresolvedCategory::GeneratedOrVendorNoise;
     }
 
@@ -588,52 +588,6 @@ fn is_language_keyword(name: &str, language: &str) -> bool {
         _ => &[],
     };
     extra.contains(&name)
-}
-
-fn looks_generated_or_vendor(path: &str) -> bool {
-    let p = path.replace('\\', "/");
-    let segments: Vec<&str> = p.split('/').collect();
-
-    // Path-segment patterns.
-    for seg in &segments {
-        if matches!(
-            *seg,
-            "node_modules"
-                | "vendor"
-                | "third_party"
-                | "third-party"
-                | "dist"
-                | "build"
-                | "out"
-                | ".next"
-                | ".nuxt"
-                | ".svelte-kit"
-                | ".output"
-                | "generated"
-                | "__generated__"
-                | "obj"
-                | "bin"
-                | "target"
-                | ".gradle"
-                | ".idea"
-                | ".vscode"
-        ) {
-            return true;
-        }
-    }
-
-    // Filename-suffix patterns.
-    let leaf = segments.last().copied().unwrap_or("");
-    leaf.ends_with(".g.cs")
-        || leaf.ends_with(".designer.cs")
-        || leaf.ends_with(".generated.cs")
-        || leaf.ends_with(".generated.ts")
-        || leaf.ends_with(".gen.go")
-        || leaf.ends_with(".pb.go")
-        || leaf.ends_with("_pb2.py")
-        || leaf.ends_with("_pb2_grpc.py")
-        || leaf.ends_with(".min.js")
-        || leaf.ends_with(".bundle.js")
 }
 
 fn is_embedded_host_language(language: &str) -> bool {

@@ -339,3 +339,92 @@ fn robot_root_selection_ignores_non_python_ecosystems() {
         "only python-tagged roots are robot library targets"
     );
 }
+
+// ---------------------------------------------------------------
+// Checked-in vendor/generated reclassification
+// ---------------------------------------------------------------
+
+// `bearwisdom-profile`'s walker (`exclusions.rs::COMMON_EXCLUDE_DIRS` plus
+// every language's `exclude_dirs`, e.g. `javascript.rs` declaring `dist`,
+// `node_modules`) drops matching directories before a file ever reaches
+// this reclassification pass — regardless of whether the file is actually
+// checked into git. `dist/` and `vendor/` collide with that walker-level
+// exclusion, so these fixtures use `generated/` and `third_party/`, which
+// the walker does not exclude, to isolate the reclassification pass itself.
+
+#[test]
+fn checked_in_generated_file_reclassifies_while_near_miss_stays_internal() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    fs::create_dir_all(root.join("generated")).unwrap();
+    fs::write(
+        root.join("generated/client.pb.go"),
+        "package generated\n\nfunc vendoredHelper() int { return 1 }\n",
+    )
+    .unwrap();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("src/build_tools.rs"),
+        "pub fn build_tools_helper() -> i32 { 1 }\n",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    full_index(&mut db, root, None, None, None).unwrap();
+    let conn = db.conn();
+
+    // The checked-in codegen file is reclassified external under the new
+    // `ext:generated:` tag.
+    let (generated_path, generated_origin): (String, String) = conn
+        .query_row(
+            "SELECT path, origin FROM files WHERE path LIKE 'ext:generated:%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("generated/client.pb.go should be reclassified");
+    assert!(generated_path.starts_with("ext:generated:"));
+    assert!(generated_path.ends_with("client.pb.go"));
+    assert_eq!(generated_origin, "external");
+
+    // `src/build_tools.rs` is a near-miss for the `build` segment (the
+    // filename, not a path segment, contains "build") — it must stay
+    // internal and unprefixed.
+    let build_tools_origin: String = conn
+        .query_row(
+            "SELECT origin FROM files WHERE path = 'src/build_tools.rs'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("src/build_tools.rs should be indexed as internal");
+    assert_eq!(build_tools_origin, "internal");
+}
+
+#[test]
+fn reclassified_file_symbol_remains_a_lookup_target() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    fs::create_dir_all(root.join("third_party")).unwrap();
+    fs::write(
+        root.join("third_party/helper.js"),
+        "function vendoredHelper() { return 1; }\n",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    full_index(&mut db, root, None, None, None).unwrap();
+
+    // The vendored file's own symbol is still written — external-origin,
+    // available to the resolver as a lookup target, not silently dropped.
+    let symbol_origin: String = db
+        .conn()
+        .query_row(
+            "SELECT origin FROM symbols WHERE name = 'vendoredHelper'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("vendoredHelper symbol should still be indexed");
+    assert_eq!(symbol_origin, "external");
+}

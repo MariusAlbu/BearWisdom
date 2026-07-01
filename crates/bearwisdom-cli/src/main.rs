@@ -1927,6 +1927,8 @@ fn cmd_quality_check(
                 "resolution_rate": resolution_rate,
                 "generated_excluded": rb.generated_excluded,
                 "drained_refs": rb.drained_refs,
+                "vendored_files_reclassified": rb.vendored_files_reclassified,
+                "generated_files_reclassified": rb.generated_files_reclassified,
                 "routes": routes,
                 "flow_edges": flow_edges,
                 "unresolved_external": unresolved_external,
@@ -2149,6 +2151,17 @@ fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Resul
         // Zero (and omitted on read) for languages with no `builtin_skip`.
         if rb.drained_refs > 0 {
             updated["drained_refs"] = serde_json::json!(rb.drained_refs);
+        }
+        // Files reclassified `ext:vendored:`/`ext:generated:` at walk time.
+        // Zero (and omitted on read) for projects with no checked-in vendor
+        // or build/codegen output.
+        if rb.vendored_files_reclassified > 0 {
+            updated["vendored_files_reclassified"] =
+                serde_json::json!(rb.vendored_files_reclassified);
+        }
+        if rb.generated_files_reclassified > 0 {
+            updated["generated_files_reclassified"] =
+                serde_json::json!(rb.generated_files_reclassified);
         }
         updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
         updated["rate_by_language"] = serde_json::json!(rb.rate_by_language);

@@ -448,6 +448,40 @@ fn generated_filter_is_dart_only() {
 }
 
 #[test]
+fn vendored_and_generated_files_counted_by_ext_prefix() {
+    // `indexer/full.rs` reclassifies checked-in vendor/codegen files by
+    // rewriting their path with an `ext:vendored:`/`ext:generated:` prefix
+    // and origin='external' — a walk-time reclassification, not a query-time
+    // filter. The counts are a direct path match rather than
+    // `GENERATED_FILE_FILTER`-style denominator exclusion.
+    let db = open();
+    seed_file(
+        &db,
+        "ext:vendored:vendor/guzzlehttp/psr7/src/Uri.php",
+        "php",
+        "external",
+    );
+    seed_file(
+        &db,
+        "ext:generated:dist/bundle.min.js",
+        "javascript",
+        "external",
+    );
+    seed_file(
+        &db,
+        "ext:generated:proto/service.pb.go",
+        "go",
+        "external",
+    );
+    seed_file(&db, "src/app.ts", "typescript", "internal");
+
+    let rb = resolution_breakdown(&db).unwrap();
+
+    assert_eq!(rb.vendored_files_reclassified, 1);
+    assert_eq!(rb.generated_files_reclassified, 2);
+}
+
+#[test]
 fn index_stats_excludes_generated_dart() {
     // The standalone `index_stats` unresolved count honors the same Dart
     // generated-code filter as the breakdown, so the two stay consistent.

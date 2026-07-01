@@ -110,6 +110,7 @@ pub mod tf_registry;
 pub mod toolchain_payload;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
+pub mod vendored_or_generated;
 pub mod vendored_self_declared;
 pub mod vendored_submodules;
 pub mod zig_pkg;

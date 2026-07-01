@@ -515,11 +515,43 @@ fn full_index_inner(
                 debug!("translated-notebook duplicate external: {original}");
             }
 
+            // Checked-in vendored/generated code (`node_modules/`, `vendor/`,
+            // `dist/`, `*.min.js`, …) is not first-party source — classify it
+            // external, same as a vendored submodule, so its own refs stop
+            // counting against the project's resolution rate. Internal refs
+            // into these files still resolve normally; the files remain
+            // lookup targets via the same externals-merge path as every
+            // other `ext:` category.
+            let vendor_or_generated = if is_vendored_c
+                || is_vendored_submodule
+                || is_toolchain_payload
+                || is_self_declared_vendor
+                || is_translated_notebook
+            {
+                None
+            } else {
+                crate::ecosystem::vendored_or_generated::classify(&pf.path)
+            };
+            if let Some(kind) = vendor_or_generated {
+                let original = pf.path.clone();
+                let tag = match kind {
+                    crate::ecosystem::vendored_or_generated::VendorOrGeneratedKind::Vendor => {
+                        "vendored"
+                    }
+                    crate::ecosystem::vendored_or_generated::VendorOrGeneratedKind::Generated => {
+                        "generated"
+                    }
+                };
+                pf.path = format!("ext:{tag}:{original}");
+                debug!("checked-in {tag} external: {original}");
+            }
+
             let is_vendored = is_vendored_c
                 || is_vendored_submodule
                 || is_toolchain_payload
                 || is_self_declared_vendor
-                || is_translated_notebook;
+                || is_translated_notebook
+                || vendor_or_generated.is_some();
             let origin = if is_vendored { "external" } else { "internal" };
             let file_id = write::write_one_parsed_file(
                 &tx,
