@@ -20,7 +20,7 @@ use rustc_hash::FxHashMap;
 /// A resolved edge row: (source_id, target_id, kind, source_line, confidence, strategy).
 type Edge = (i64, i64, &'static str, u32, f64, &'static str);
 /// An unresolved-ref row: (source_id, target_name, kind, source_line, module,
-/// package_id, from_snippet, drained).
+/// package_id, from_snippet, drained, cause_symbol_id, cause_kind).
 type Unresolved = (
     i64,
     String,
@@ -30,6 +30,8 @@ type Unresolved = (
     Option<i64>,
     bool,
     bool,
+    Option<i64>,
+    Option<&'static str>,
 );
 
 use crate::db::Database;
@@ -39,6 +41,7 @@ use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefCon
 use crate::indexer::resolve::engine::contract::chain_walker::{
     parse_return_type_from_signature, parse_type_head_and_args,
 };
+use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::{
     semantic_model::{SemanticModel, SolveOutcome},
     compilation::Compilation,
@@ -128,6 +131,12 @@ struct FileLookup<'a> {
     tree: &'a Compilation,
     locals: RefCell<FxHashMap<String, String>>,
     locals_id: RefCell<FxHashMap<String, TypeId>>,
+    /// First-uncaptured-type cause recorded when a local binding's forward-
+    /// inference seed failed — e.g. `const x = f()` where `f` resolved but
+    /// its own return type was never captured. Consulted by the chain
+    /// walker's root step when `locals`/`locals_id` carry no entry for the
+    /// name, so a later `x.method()` blames `f`, not `x`.
+    root_cause_hints: RefCell<FxHashMap<String, crate::indexer::resolve::engine::cause::Cause>>,
 }
 
 impl<'a> FileLookup<'a> {
@@ -136,6 +145,7 @@ impl<'a> FileLookup<'a> {
             tree,
             locals: RefCell::new(FxHashMap::default()),
             locals_id: RefCell::new(FxHashMap::default()),
+            root_cause_hints: RefCell::new(FxHashMap::default()),
         }
     }
 }
@@ -324,6 +334,11 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     /// stale entry for the same name — a reassignment's latest write wins
     /// regardless of which cache it lands in (`resolve_root` probes `locals_id`
     /// before `locals`).
+    ///
+    /// Does NOT evict `root_cause_hints` — that cache is consulted only as
+    /// `resolve_root`'s last resort, strictly after `local_type_id`/`local_type`
+    /// both miss, so a stale hint left behind by an earlier failed seed for
+    /// this name is never read once this record succeeds.
     fn record_local_type(&self, name: String, type_name: String) {
         self.locals_id.borrow_mut().remove(&name);
         self.locals.borrow_mut().insert(name, type_name);
@@ -345,6 +360,14 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.locals_id.borrow_mut().insert(name, id);
     }
 
+    fn record_root_cause_hint(&self, name: String, cause: crate::indexer::resolve::engine::cause::Cause) {
+        self.root_cause_hints.borrow_mut().insert(name, cause);
+    }
+
+    fn root_cause_hint(&self, name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
+        self.root_cause_hints.borrow().get(name).copied()
+    }
+
     /// No-op: cursor-based narrowing is deferred; flat forward inference only.
     fn set_cursor(&self, _byte: u32) {}
 
@@ -361,6 +384,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     fn clear_local_cache(&self) {
         self.locals.borrow_mut().clear();
         self.locals_id.borrow_mut().clear();
+        self.root_cause_hints.borrow_mut().clear();
     }
 }
 
@@ -760,6 +784,26 @@ fn resolve_one_file(
                                 );
                                 if let Some(ty) = final_ty {
                                     file_lookup.record_local_type(lhs_sym.name.clone(), ty);
+                                } else {
+                                    // Nothing seeded this binding's type at all —
+                                    // `target_id` (the initializer's callee/value)
+                                    // resolved but its OWN return/field type was
+                                    // never captured. Record that as the cause a
+                                    // later ref rooted on `lhs_sym.name` will read,
+                                    // so the diagnosis blames the initializer, not
+                                    // this binding.
+                                    let cause_kind = if matches!(r.kind, EdgeKind::Calls) {
+                                        CauseKind::UncapturedReturn
+                                    } else {
+                                        CauseKind::UncapturedField
+                                    };
+                                    file_lookup.record_root_cause_hint(
+                                        lhs_sym.name.clone(),
+                                        crate::indexer::resolve::engine::cause::Cause::new(
+                                            Some(target_id),
+                                            cause_kind,
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -852,7 +896,8 @@ fn resolve_one_file(
                 // A rule positively identified the target as a language builtin
                 // or other non-project construct — write the row so it stays
                 // diagnosable, but tag it drained so it leaves the rate
-                // denominator instead of counting as a genuine miss.
+                // denominator instead of counting as a genuine miss. A rule
+                // decline carries no first-uncaptured-type cause.
                 crate::tracef!("RESULT DRAINED (builtin_skip)");
                 unresolved.push((
                     source_id,
@@ -863,9 +908,11 @@ fn resolve_one_file(
                     pf.package_id,
                     ref_is_snippet,
                     true,
+                    None,
+                    None,
                 ));
             }
-            SolveOutcome::Unresolved => {
+            SolveOutcome::Unresolved(cause) => {
                 // A type annotation naming a language primitive (`: string`) is a
                 // builtin, not a missing symbol: it's captured as the binding's
                 // field type (the compilation pass reads the TypeRef) but must not
@@ -878,7 +925,12 @@ fn resolve_one_file(
                 if is_primitive_type {
                     crate::tracef!("RESULT PRIMITIVE (builtin, not unresolved)");
                 } else {
-                    crate::tracef!("RESULT UNRESOLVED");
+                    crate::tracef!(
+                        "RESULT UNRESOLVED cause={}",
+                        cause
+                            .map(|c| format!("{}(symbol_id={:?})", c.kind.as_db_str(), c.symbol_id))
+                            .unwrap_or_else(|| "none".to_string()),
+                    );
                     unresolved.push((
                         source_id,
                         r.target_name.clone(),
@@ -888,6 +940,8 @@ fn resolve_one_file(
                         pf.package_id,
                         ref_is_snippet,
                         false,
+                        cause.and_then(|c| c.symbol_id),
+                        cause.map(|c| c.kind.as_db_str()),
                     ));
                 }
             }
@@ -990,7 +1044,7 @@ fn flush_to_db(
     }
 
     // Unresolved refs: (source_id, target_name, kind, source_line, module,
-    // package_id, from_snippet, drained)
+    // package_id, from_snippet, drained, cause_symbol_id, cause_kind)
     if !unresolved.is_empty() {
         let mut start = 0;
         while start < unresolved.len() {
@@ -998,12 +1052,15 @@ fn flush_to_db(
             let rows = end - start;
             let sql = format!(
                 "INSERT INTO unresolved_refs \
-                 (source_id, target_name, kind, source_line, module, package_id, from_snippet, drained) \
+                 (source_id, target_name, kind, source_line, module, package_id, from_snippet, drained, \
+                  cause_symbol_id, cause_kind) \
                  VALUES {}",
-                placeholders(rows, 8),
+                placeholders(rows, 10),
             );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 8);
-            for (sid, name, kind, line, module, pkg, from_snippet, drained) in &unresolved[start..end] {
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 10);
+            for (sid, name, kind, line, module, pkg, from_snippet, drained, cause_symbol_id, cause_kind) in
+                &unresolved[start..end]
+            {
                 params.push(Value::Integer(*sid));
                 params.push(Value::Text(name.clone()));
                 params.push(Value::Text((*kind).to_string()));
@@ -1018,6 +1075,14 @@ fn flush_to_db(
                 });
                 params.push(Value::Integer(if *from_snippet { 1 } else { 0 }));
                 params.push(Value::Integer(if *drained { 1 } else { 0 }));
+                params.push(match cause_symbol_id {
+                    Some(v) => Value::Integer(*v),
+                    None => Value::Null,
+                });
+                params.push(match cause_kind {
+                    Some(s) => Value::Text((*s).to_string()),
+                    None => Value::Null,
+                });
             }
             tx.prepare_cached(&sql)
                 .context("Failed to prepare unresolved_refs insert")?

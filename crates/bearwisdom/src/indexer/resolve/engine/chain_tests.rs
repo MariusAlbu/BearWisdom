@@ -83,7 +83,50 @@ fn resolve_with_fc(
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, fc, lookup).map(|res| res.target_symbol_id)
+    bind_member_access(&rc, fc, lookup).ok().map(|res| res.target_symbol_id)
+}
+
+/// Drive `bind_member_access` and return the recorded cause on the failure
+/// path (`None` on a resolution or on a failure with no diagnosable cause).
+fn resolve_cause(lookup: &Lookup, segs: Vec<ChainSegment>, src_qname: &str) -> Option<Cause> {
+    let leaf = segs.last().unwrap().name.clone();
+    let mut r = call_ref(&leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let mut s = source_symbol("caller");
+    s.qualified_name = src_qname.to_string();
+    let rc = ref_ctx(&r, &s, vec![]);
+    bind_member_access(&rc, &file_ctx(vec![], None), lookup).err().flatten()
+}
+
+/// A member access on an INTERNAL type that carries other members but not
+/// this one dies `member_missing`, naming the receiver's own declaration.
+#[test]
+fn member_missing_on_internal_type_names_the_receiver_declaration() {
+    let lookup = Lookup::new()
+        .with(sym(1, "Thing", "Thing", "class", "src/thing.ts"))
+        .with_member_id(1, sym(2, "existingMethod", "Thing.existingMethod", "method", "src/thing.ts"));
+    let segs = vec![
+        seg_declared("t", "Thing", &[]),
+        seg("missingMethod", true, SegmentKind::Property),
+    ];
+    let cause = resolve_cause(&lookup, segs, "caller").expect("member miss must carry a cause");
+    assert_eq!(cause.kind, CauseKind::MemberMissing);
+    assert_eq!(cause.symbol_id, Some(1));
+}
+
+/// A member access on an EXTERNAL type declaration with zero materialized
+/// members dies `external_unmaterialized` — the externals pipeline never
+/// exposed this type's surface — rather than the internal `member_missing`.
+#[test]
+fn member_miss_on_unmaterialized_external_type_names_the_declaration() {
+    let lookup = Lookup::new().with(sym(9, "SelectQueryBuilder", "SelectQueryBuilder", "class", "ext:ts:kysely/dist/index.d.ts"));
+    let segs = vec![
+        seg_declared("qb", "SelectQueryBuilder", &[]),
+        seg("selectFrom", true, SegmentKind::Property),
+    ];
+    let cause = resolve_cause(&lookup, segs, "caller").expect("member miss must carry a cause");
+    assert_eq!(cause.kind, CauseKind::ExternalUnmaterialized);
+    assert_eq!(cause.symbol_id, Some(9));
 }
 
 #[test]
@@ -1611,7 +1654,7 @@ fn engine_resolve(lookup: &Lookup, r: &ExtractedRef, fc: &FileContext) -> Option
     let rc = ref_ctx(r, &s, vec![]);
     match SemanticModel::production().get_symbol_info(&rc, fc, lookup, &WS_PROFILE) {
         SolveOutcome::Resolved(res) => Some(res.target_symbol_id),
-        SolveOutcome::Unresolved | SolveOutcome::Drained => None,
+        SolveOutcome::Unresolved(_) | SolveOutcome::Drained => None,
     }
 }
 
@@ -1662,7 +1705,7 @@ fn multi_seg_chain_roots_on_imported_packages_class() {
     // first-wins would pick solid-query's method (15800); the import scope must
     // steer the root to pkg-10's class -> its setQueryData (13200).
     assert_eq!(
-        bind_member_access(&rc, &fc, &lookup).map(|res| res.target_symbol_id),
+        bind_member_access(&rc, &fc, &lookup).ok().map(|res| res.target_symbol_id),
         Some(13200)
     );
 }

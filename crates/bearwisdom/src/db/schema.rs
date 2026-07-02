@@ -354,6 +354,20 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_drained
            ON unresolved_refs(drained) WHERE drained = 1",
     )?;
+    // First-uncaptured-type cause columns, added empty here; the resolve
+    // pipeline populates them only on the failure path (see pipeline.rs).
+    if !column_exists(conn, "unresolved_refs", "cause_symbol_id") {
+        conn.execute_batch(
+            "ALTER TABLE unresolved_refs ADD COLUMN cause_symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL",
+        )?;
+    }
+    if !column_exists(conn, "unresolved_refs", "cause_kind") {
+        conn.execute_batch("ALTER TABLE unresolved_refs ADD COLUMN cause_kind TEXT")?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_cause
+           ON unresolved_refs(cause_kind, cause_symbol_id) WHERE cause_kind IS NOT NULL",
+    )?;
     // Symbol-identity refactor (SYMBOL-IDENTITY.md): stable key, multi-location
     // containment. Columns are added empty here; the indexer populates them.
     if !column_exists(conn, "symbols", "symbol_key") {
@@ -634,7 +648,14 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     module      TEXT,
     package_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL,  -- M1/M2: per-package attribution
     from_snippet INTEGER NOT NULL DEFAULT 0,                         -- E3: 1 if source symbol is from a Markdown fence / doctest
-    drained     INTEGER NOT NULL DEFAULT 0                           -- 1 if a rule drained the ref as a language builtin / non-project construct
+    drained     INTEGER NOT NULL DEFAULT 0,                          -- 1 if a rule drained the ref as a language builtin / non-project construct
+    -- First-uncaptured-type cause, recorded only on the resolve-failure path.
+    -- cause_symbol_id names the symbol whose own return/field/declared type
+    -- was never captured (NULL only for cause_kind='unbound_root'); cause_kind
+    -- is one of: uncaptured_return, uncaptured_field, untyped_binding,
+    -- external_unmaterialized, member_missing, alias_opaque, unbound_root.
+    cause_symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
+    cause_kind      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_unresolved_name       ON unresolved_refs(target_name);

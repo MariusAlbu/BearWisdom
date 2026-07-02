@@ -80,6 +80,7 @@ pub use query::pattern::{pattern_search, PatternMatch};
 pub use query::search::SearchResult;
 pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};
 pub use query::symbol_info::{FileSymbol, FileSymbolsMode, SymbolDetail};
+pub use query::unresolved_by_cause::{unresolved_by_cause, ByCauseReport, CauseGroup, CauseSample};
 pub use query::unresolved_classify::{
     classify_unresolved, ClassificationBucket, ClassificationReport, SampleEntry,
     UnresolvedCategory,

@@ -29,6 +29,7 @@ pub mod search;
 pub mod stats;
 pub mod subgraph;
 pub mod symbol_info;
+pub mod unresolved_by_cause;
 pub mod unresolved_classify;
 pub mod workspace;
 

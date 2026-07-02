@@ -531,4 +531,24 @@ pub trait SymbolLookup {
     /// Clear the cache at end of file. Keeps leftover bindings from bleeding
     /// into the next file's pass.
     fn clear_local_cache(&self) {}
+
+    /// Record why a local binding's forward-inferred type could not be
+    /// seeded — e.g. `const x = f()` where `f` resolved but carries no
+    /// captured return type. A later ref rooted on `x` reads this via
+    /// `root_cause_hint` instead of re-deriving why `x` is untyped; it names
+    /// the true upstream cause (`f`, not `x`) rather than the symptom.
+    /// Default no-op — synthetic test lookups don't have to opt in.
+    fn record_root_cause_hint(
+        &self,
+        _name: String,
+        _cause: crate::indexer::resolve::engine::cause::Cause,
+    ) {
+    }
+
+    /// The cause recorded for `name` by `record_root_cause_hint`, when the
+    /// forward-inference seed for this binding failed and recorded one.
+    /// Default `None`.
+    fn root_cause_hint(&self, _name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
+        None
+    }
 }

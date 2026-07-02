@@ -17,9 +17,9 @@ use bearwisdom::query::unresolved_classify::ClassificationReport;
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::types::ReferenceResult;
 use bearwisdom::{
-    ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
-    PackageStats, PatternMatch, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
-    WorkspaceGraphEdge, WorkspaceOverview,
+    ArchitectureOverview, BlastRadiusResult, ByCauseReport, CallHierarchyItem, FileSymbol,
+    InvestigateResult, PackageStats, PatternMatch, ResolutionBreakdown, SearchResult, SymbolDetail,
+    SymbolSummary, WorkspaceGraphEdge, WorkspaceOverview,
 };
 
 // ---------------------------------------------------------------------------
@@ -896,6 +896,58 @@ pub fn unresolved_classify(report: &ClassificationReport) -> String {
         }
     }
 
+    out
+}
+
+/// Compact rendering of the by-cause root-cause grouping. Sections: the file
+/// registry, the group worklist (cause kind, cause symbol qname + file:line,
+/// ref_count) ranked by ref_count desc, and a sample-ref list per group keyed
+/// by its 1-based position in the group list.
+pub fn unresolved_by_cause(report: &ByCauseReport) -> String {
+    let mut f = CompactFormatter::new();
+    let mut body = String::with_capacity(4096);
+
+    body.push_str("#groups\n");
+    for g in &report.groups {
+        let loc = match (&g.cause_file, g.cause_line) {
+            (Some(path), Some(line)) => format!("{}:{}", f.fref(path), line),
+            (Some(path), None) => f.fref(path),
+            _ => "-".to_string(),
+        };
+        let _ = writeln!(
+            body,
+            "{}|{}|{}|{}",
+            g.cause_kind,
+            g.cause_qualified_name.as_deref().unwrap_or("-"),
+            loc,
+            g.ref_count,
+        );
+    }
+    body.push('\n');
+
+    body.push_str("#samples\n");
+    for (i, g) in report.groups.iter().enumerate() {
+        let _ = write!(body, "g{}|", i + 1);
+        for (j, s) in g.samples.iter().enumerate() {
+            if j > 0 {
+                body.push(' ');
+            }
+            let fr = f.fref(&s.file);
+            let line = s.line.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+            let _ = write!(body, "{fr}:{line}->{}", s.target_name);
+        }
+        body.push('\n');
+    }
+
+    let mut out = start(&format!(
+        "caused:{}|uncaused:{}",
+        report.total_caused, report.total_uncaused
+    ));
+    f.write_files(&mut out);
+    if !f.files.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&body);
     out
 }
 

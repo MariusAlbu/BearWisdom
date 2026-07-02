@@ -1506,7 +1506,7 @@ fn inferred_return_lets_call_root_chain_resolve() {
     let rc = ref_ctx(&r, &src, vec![]);
 
     let fc = file_ctx(vec![], None);
-    let resolved = bind_member_access(&rc, &fc, &tree).map(|res| res.target_symbol_id);
+    let resolved = bind_member_access(&rc, &fc, &tree).ok().map(|res| res.target_symbol_id);
     let clear_id = tree
         .by_qualified_name("QueryClient.clear")
         .expect("QueryClient.clear indexed")

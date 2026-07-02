@@ -565,6 +565,26 @@ enum Commands {
         samples: usize,
     },
 
+    /// Group unresolved references by their recorded first-uncaptured-type
+    /// cause instead of surface shape. `--by-cause` ranks the symbol whose
+    /// own return/field/declared type was never captured — the root cause
+    /// that made a receiver (or a hop in its chain) untypable — by how many
+    /// distinct unresolved refs trace back to it. Complements
+    /// `unresolved-classify`'s surface-shape buckets.
+    Unresolved {
+        /// Absolute path to the project root.
+        path: String,
+        /// Group by recorded cause instead of listing raw rows.
+        #[arg(long)]
+        by_cause: bool,
+        /// Top-N cause groups returned, ranked by ref_count desc. Defaults to 20.
+        #[arg(long, default_value_t = 20)]
+        top: usize,
+        /// Sample refs kept per cause group. Defaults to 5.
+        #[arg(long, default_value_t = 5)]
+        samples: usize,
+    },
+
     /// Resolution-gate report: internal resolution rate, trust tier,
     /// breakdown by language/kind/origin-language/strategy/package,
     /// top-N unresolved targets, low-confidence-edge count. Combines
@@ -835,6 +855,9 @@ fn run(command: Commands, full: bool) -> Result<String> {
             cmd_low_confidence_edges(&path, threshold)
         }
         Commands::UnresolvedClassify { path, samples } => cmd_unresolved_classify(&path, samples),
+        Commands::Unresolved { path, by_cause, top, samples } => {
+            cmd_unresolved(&path, by_cause, top, samples)
+        }
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
         Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
         Commands::WhyUnresolved { path, file, line, target, refs_file } => {
@@ -2405,6 +2428,22 @@ fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String>
     let report =
         bearwisdom::classify_unresolved(&db, samples).context("classify_unresolved failed")?;
     ok_json(report)
+}
+
+/// Group unresolved references by root cause (`--by-cause`) or, when the
+/// flag is absent, fall back to the surface-shape classifier — the same
+/// question `unresolved-classify` answers, kept reachable under one command.
+fn cmd_unresolved(project_path: &str, by_cause: bool, top: usize, samples: usize) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    if by_cause {
+        let report = bearwisdom::unresolved_by_cause(&db, top, samples)
+            .context("unresolved_by_cause failed")?;
+        ok_json(report)
+    } else {
+        let report =
+            bearwisdom::classify_unresolved(&db, samples).context("classify_unresolved failed")?;
+        ok_json(report)
+    }
 }
 
 /// Resolution-gate report. Wraps `resolution_breakdown` plus the dead-code

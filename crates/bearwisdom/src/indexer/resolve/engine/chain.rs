@@ -26,6 +26,7 @@ use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
+use super::cause::{Cause, CauseKind};
 use super::support::{import_scoped_package_id, pick_ranked_candidate};
 
 /// Strategy tag for a member-chain bind produced by the new engine.
@@ -34,24 +35,26 @@ const STRATEGY: &str = "rule_chain";
 /// Upper bound on supertype-chain climbing when locating an inherited member.
 const MAX_SUPERTYPE_DEPTH: usize = 8;
 
-/// Resolve a member chain to its final segment's symbol. `None` when the root
+/// Resolve a member chain to its final segment's symbol. `Err` when the root
 /// can't be typed or a hop has no matching member — an honestly-unresolved
-/// chain, diagnosable to the segment where the walk stopped.
+/// chain, carrying the first-uncaptured-type cause diagnosable from the
+/// segment where the walk stopped (`None` when no death site could attribute
+/// one from state already in hand).
 pub fn bind_member_access(
     ref_ctx: &RefContext,
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
-) -> Option<SymbolInfo> {
-    let chain = ref_ctx.extracted_ref.chain.as_ref()?;
+) -> Result<SymbolInfo, Option<Cause>> {
+    let chain = ref_ctx.extracted_ref.chain.as_ref().ok_or(None)?;
     // A single-segment "chain" carries no receiver to root; the bare ladder
     // handles it. Multi-segment only here.
     if chain.segments.len() < 2 {
-        return None;
+        return Err(None);
     }
     // The walk is entity-based — it needs the workspace arena to intern roots
     // and substitute generics. The production lookup and the test double both
     // expose one; a lookup without an arena cannot type a chain.
-    let arena = lookup.type_arena()?;
+    let arena = lookup.type_arena().ok_or(None)?;
 
     // The receiver threads a TypeId AND the symbol id of the declaration that
     // type names, when known. The id is the identity spine: a member step keys
@@ -75,7 +78,7 @@ pub fn bind_member_access(
         // (`const [a, b] = x`, emitted as a `tuple_index:N` ComputedAccess
         // segment): select the receiver tuple's element N, not a named member.
         if let Some(idx) = tuple_index_of(seg) {
-            let elem_ty = tuple_element_type(lookup, arena, current.ty, idx)?;
+            let elem_ty = tuple_element_type(lookup, arena, current.ty, idx).ok_or(None)?;
             let elem_recv = expand_receiver(
                 yielded_receiver(lookup, arena, elem_ty, None),
                 lookup,
@@ -83,8 +86,8 @@ pub fn bind_member_access(
                 Some(file_ctx),
             );
             if i == last {
-                return Some(SymbolInfo {
-                    target_symbol_id: elem_recv.id?,
+                return Ok(SymbolInfo {
+                    target_symbol_id: elem_recv.id.ok_or(None)?,
                     confidence: RESOLVED_CONFIDENCE,
                     strategy: STRATEGY,
                     resolved_yield_type: Some(elem_recv.ty),
@@ -109,8 +112,8 @@ pub fn bind_member_access(
                     Some(file_ctx),
                 );
                 if i == last {
-                    return Some(SymbolInfo {
-                        target_symbol_id: elem_recv.id?,
+                    return Ok(SymbolInfo {
+                        target_symbol_id: elem_recv.id.ok_or(None)?,
                         confidence: RESOLVED_CONFIDENCE,
                         strategy: STRATEGY,
                         resolved_yield_type: Some(elem_recv.ty),
@@ -121,7 +124,10 @@ pub fn bind_member_access(
                 continue;
             }
         }
-        let member = lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true)?;
+        let member = match lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true) {
+            Some(m) => m,
+            None => return Err(member_miss_cause(lookup, arena, current)),
+        };
         if i == last {
             // The final member's yield type (with the receiver's type arguments
             // substituted) records x's type for `const x = a.b.c()` so a later
@@ -135,7 +141,7 @@ pub fn bind_member_access(
                 || matches!(ref_ctx.extracted_ref.kind, crate::types::EdgeKind::Calls);
             let resolved_yield_type =
                 yield_through(lookup, arena, &member, terminal_is_call, current.ty, current.id);
-            return Some(SymbolInfo {
+            return Ok(SymbolInfo {
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
                 strategy: STRATEGY,
@@ -149,10 +155,54 @@ pub fn bind_member_access(
         // Pin the new receiver's id using the member's package context so the
         // chain stays anchored to the package the use site established rather
         // than falling back to a first-winner by_qname re-search.
-        let yielded = yield_through(lookup, arena, &member, seg.is_call, current.ty, current.id)?;
+        let yielded = match yield_through(lookup, arena, &member, seg.is_call, current.ty, current.id) {
+            Some(y) => y,
+            None => {
+                // The member itself was found — the hop dies because ITS OWN
+                // return/field type was never captured, the same shape as a
+                // chain-root miss but discovered one hop in.
+                let kind = if seg.is_call { CauseKind::UncapturedReturn } else { CauseKind::UncapturedField };
+                return Err(Some(Cause::new(Some(member.id), kind)));
+            }
+        };
         current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena, Some(file_ctx));
     }
-    None
+    Err(None)
+}
+
+/// Classify why `lookup_member_on` found nothing on `recv`, using only the
+/// receiver state the chain walker already holds — no re-resolution.
+///
+/// A bound declaration id is decisive: an external declaration with zero
+/// materialized members means the externals pipeline never exposed this
+/// type's surface (`ExternalUnmaterialized`); any other bound declaration
+/// with no matching member genuinely lacks it (`MemberMissing`). With no
+/// bound id, the receiver's head may still name a capture-only alias arm
+/// (Union / Intersection / Keyof / Other) that member lookup can never
+/// expand into a member set (`AliasOpaque`); anything else is indeterminate
+/// and left uncaused rather than guessed.
+fn member_miss_cause(lookup: &dyn SymbolLookup, arena: &TypeArena, recv: Receiver) -> Option<Cause> {
+    if let Some(id) = recv.id {
+        let sym = lookup.symbol_by_id(id)?;
+        let has_members = !lookup.members_of_id(id).is_empty()
+            || !lookup.members_of(&sym.qualified_name).is_empty();
+        return Some(if sym.file_path.starts_with("ext:") && !has_members {
+            Cause::new(Some(id), CauseKind::ExternalUnmaterialized)
+        } else {
+            Cause::new(Some(id), CauseKind::MemberMissing)
+        });
+    }
+    let head = head_qname(arena, recv.ty)?;
+    match lookup.alias_target(&head) {
+        Some(AliasTargetIds::Union(_))
+        | Some(AliasTargetIds::Intersection(_))
+        | Some(AliasTargetIds::Keyof(_))
+        | Some(AliasTargetIds::Other) => Some(Cause::new(
+            lookup.by_qualified_name(&head).map(|s| s.id),
+            CauseKind::AliasOpaque,
+        )),
+        _ => None,
+    }
 }
 
 /// A chain receiver: the type a segment evaluates to, plus the symbol id of the
@@ -1478,9 +1528,9 @@ fn resolve_root(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
-) -> Option<Receiver> {
+) -> Result<Receiver, Option<Cause>> {
     let result = resolve_root_impl(ref_ctx, file_ctx, lookup, arena, seg);
-    let result_str = result.as_ref().map_or_else(|| "UNTYPABLE".to_string(), |r| {
+    let result_str = result.as_ref().ok().map_or_else(|| "UNTYPABLE".to_string(), |r| {
         head_qname(arena, r.ty)
             .map(|h| format!("typed {h}"))
             .unwrap_or_else(|| "typed (structural)".to_string())
@@ -1504,7 +1554,7 @@ fn resolve_root_impl(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
-) -> Option<Receiver> {
+) -> Result<Receiver, Option<Cause>> {
     // Prefer the TypeId cache: `local_type_id` returns the TypeId that was
     // stored directly by `record_local_type_id`, preserving the exact type
     // variant (Primitive, Optional, Generic) without a format/intern round-trip.
@@ -1517,19 +1567,19 @@ fn resolve_root_impl(
     // String-cached local bindings.
     if let Some(id) = lookup.local_type_id(&seg.name) {
         if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
-            return Some(Receiver::untyped(r));
+            return Ok(Receiver::untyped(r));
         }
-        return Some(Receiver::untyped(id));
+        return Ok(Receiver::untyped(id));
     }
     if let Some(ty) = lookup.local_type(&seg.name) {
         let id = arena.intern_type_str(&ty);
         if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
-            return Some(Receiver::untyped(r));
+            return Ok(Receiver::untyped(r));
         }
-        return Some(Receiver::untyped(id));
+        return Ok(Receiver::untyped(id));
     }
     if let Some(ty) = &seg.declared_type {
-        return Some(Receiver::untyped(with_segment_args(
+        return Ok(Receiver::untyped(with_segment_args(
             arena,
             arena.intern_type_str(ty),
             &seg.type_args,
@@ -1539,10 +1589,12 @@ fn resolve_root_impl(
         // `this`/`self` roots on the enclosing type — the one declaration whose
         // members the chain walks. Bind its id so an inherited-member climb keys
         // on identity, not the enclosing type's qname string.
-        let enc_qname = lookup.enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)?;
+        let enc_qname = lookup
+            .enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)
+            .ok_or(None)?;
         let ty = arena.class(enc_qname);
         let id = lookup.by_qualified_name(enc_qname).map(|s| s.id);
-        return Some(Receiver { ty, id });
+        return Ok(Receiver { ty, id });
     }
     // An externally-imported root binds to the imported module's declaration of
     // the name, never a same-named symbol from a different external package: a `z`
@@ -1553,11 +1605,19 @@ fn resolve_root_impl(
     // declares the name (an `ext:` file under that module); otherwise those
     // fallbacks run unchanged.
     if let Some(recv) = import_scoped_external_root(file_ctx, lookup, arena, seg) {
-        return Some(recv);
+        return Ok(recv);
     }
+
+    // Nothing typed the root outright. The remaining strategies may still find
+    // the SYMBOL the root names — just discover its own type was never
+    // captured. Keep the most specific such near-miss; it beats a blank
+    // unbound_root when every strategy below also comes up empty.
+    let mut cause: Option<Cause> = None;
+
     if seg.is_call {
-        if let Some(ty) = callee_return_type(lookup, arena, file_ctx, &seg.name) {
-            return Some(Receiver::untyped(ty));
+        match resolve_callee_return_and_id(lookup, arena, file_ctx, &seg.name, None) {
+            Ok((ty, _id)) => return Ok(Receiver::untyped(ty)),
+            Err(c) => cause = cause.or(c),
         }
         // The callee is not a callable declaration (function/method) but may be
         // a VALUE whose declared type is a callable interface — `const v: I`
@@ -1572,14 +1632,14 @@ fn resolve_root_impl(
             file_ctx,
             ref_ctx.file_package_id,
         ) {
-            return Some(Receiver::untyped(ty));
+            return Ok(Receiver::untyped(ty));
         }
     }
     // Import-of-value / typed-value root: a value (a `declare const`, an
     // imported binding, a typed field) whose declaration carries a type roots
     // the chain on that type — `builder.create()` roots on `builder`'s declared
     // type even though `builder` is not itself a type name.
-    if let Some(ty) = value_root_type(
+    match value_root_type(
         lookup,
         arena,
         &seg.name,
@@ -1587,14 +1647,17 @@ fn resolve_root_impl(
         file_ctx,
         ref_ctx.file_package_id,
     ) {
-        // A value whose declared type is `ReturnType<typeof f>` — an inferred
-        // `const x = f(...)` binding imported from the file that declares it —
-        // roots on f's return type (f resolved globally by name), deriving the
-        // cross-file type the per-file flow seed could not carry.
-        if let Some(r) = resolve_return_type_extraction(ty, lookup, arena, file_ctx) {
-            return Some(Receiver::untyped(r));
+        Ok(ty) => {
+            // A value whose declared type is `ReturnType<typeof f>` — an inferred
+            // `const x = f(...)` binding imported from the file that declares it —
+            // roots on f's return type (f resolved globally by name), deriving the
+            // cross-file type the per-file flow seed could not carry.
+            if let Some(r) = resolve_return_type_extraction(ty, lookup, arena, file_ctx) {
+                return Ok(Receiver::untyped(r));
+            }
+            return Ok(Receiver::untyped(ty));
         }
-        return Some(Receiver::untyped(ty));
+        Err(c) => cause = cause.or(c),
     }
     // Bare type name used as a static-access / construction root. When the same
     // name is declared in several sibling workspace packages, prefer the
@@ -1609,10 +1672,17 @@ fn resolve_root_impl(
     // package the file imports, not a same-named `Page` in another). Ranked +
     // ascending-id deterministic; when no candidate clearly wins, the first
     // same-named type is the fallback.
-    let s = pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &cand_refs)
-        .or_else(|| candidates.first())?;
+    let Some(s) = pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &cand_refs)
+        .or_else(|| candidates.first())
+    else {
+        // A prior forward-inference pass may have already diagnosed why THIS
+        // EXACT binding carries no seeded type — that names the true upstream
+        // cause (an initializer's uncaptured return/field), which outranks the
+        // generic "this binding itself is untyped" signal collected above.
+        return Err(lookup.root_cause_hint(&seg.name).or(cause));
+    };
     let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
-    Some(Receiver::new(ty, s.id))
+    Ok(Receiver::new(ty, s.id))
 }
 
 /// Reduce an import specifier to its package root: `next/server` → `next`,
@@ -1764,7 +1834,7 @@ fn value_root_type(
     source_qname: &str,
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
-) -> Option<TypeId> {
+) -> Result<TypeId, Option<Cause>> {
     // A value root's type comes from a binding this file is entitled to root on
     // ("owned"): a scope-qualified match, the same file, an imported name, or an
     // external/ambient declaration (`ext:` — where imports and globals resolve). A
@@ -1817,7 +1887,7 @@ fn value_root_type(
                 }
                 if let Some(id) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) {
                     if !is_primitive_head(arena, id) {
-                        return Some(id);
+                        return Ok(id);
                     }
                 }
             }
@@ -1827,6 +1897,9 @@ fn value_root_type(
     // True once an owned same-name binding is seen (even untyped) — then a foreign
     // value's type is never borrowed over it.
     let mut owned_seen = false;
+    // The first owned-but-untyped binding's own cause — the diagnosable
+    // near-miss returned when nothing else types the root.
+    let mut owned_cause: Option<Cause> = None;
     // Non-primitive type from a foreign-internal same-name value, used only when no
     // owned binding exists.
     let mut foreign_fallback: Option<TypeId> = None;
@@ -1850,9 +1923,10 @@ fn value_root_type(
                 let ft = field_type_of(lookup, arena, s.id, &qn);
                 if owned {
                     if let Some(id) = ft {
-                        return Some(id);
+                        return Ok(id);
                     }
                     owned_seen = true;
+                    owned_cause.get_or_insert_with(|| root_binding_cause(s));
                 } else if let Some(id) = ft {
                     if is_primitive_head(arena, id) {
                         primitive_fallback.get_or_insert(id);
@@ -1882,7 +1956,7 @@ fn value_root_type(
                     primitive_fallback.get_or_insert(id);
                     owned_seen = true;
                 } else {
-                    return Some(id);
+                    return Ok(id);
                 }
             }
             Some(id) => {
@@ -1892,16 +1966,30 @@ fn value_root_type(
                     foreign_fallback.get_or_insert(id);
                 }
             }
-            None if owned => owned_seen = true,
+            None if owned => {
+                owned_seen = true;
+                owned_cause.get_or_insert_with(|| root_binding_cause(cand));
+            }
             None => {}
         }
     }
     // An owned same-name binding exists ⇒ it roots the chain; never borrow a
     // foreign-internal value's type over it.
     if owned_seen {
-        return primitive_fallback;
+        return primitive_fallback.ok_or(owned_cause);
     }
-    foreign_fallback.or(primitive_fallback)
+    foreign_fallback.or(primitive_fallback).ok_or(None)
+}
+
+/// The cause for an owned root binding found by name but carrying no captured
+/// type: a field/property is `UncapturedField`, anything else value-kind
+/// (variable, constant, parameter) is `UntypedBinding`.
+fn root_binding_cause(sym: &Symbol) -> Cause {
+    let kind = match sym.kind.as_str() {
+        "field" | "property" => CauseKind::UncapturedField,
+        _ => CauseKind::UntypedBinding,
+    };
+    Cause::new(Some(sym.id), kind)
 }
 
 /// `true` when the type's nominal head is a language primitive — a value typed by
@@ -2122,7 +2210,8 @@ fn call_value_root_type(
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
 ) -> Option<TypeId> {
-    let value_ty = value_root_type(lookup, arena, name, source_qname, file_ctx, file_package_id)?;
+    let value_ty =
+        value_root_type(lookup, arena, name, source_qname, file_ctx, file_package_id).ok()?;
     let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
     yield_through(lookup, arena, &call, true, recv.ty, recv.id)
@@ -2148,7 +2237,9 @@ pub(crate) fn callee_return_type(
     file_ctx: &FileContext,
     name: &str,
 ) -> Option<TypeId> {
-    resolve_callee_return_and_id(lookup, arena, file_ctx, name, None).map(|(ret, _)| ret)
+    resolve_callee_return_and_id(lookup, arena, file_ctx, name, None)
+        .ok()
+        .map(|(ret, _)| ret)
 }
 
 /// `callee_return_type` that, among same-named callables, prefers one declared
@@ -2163,7 +2254,9 @@ pub(crate) fn callee_return_type_in_scope(
     name: &str,
     enclosing: &str,
 ) -> Option<TypeId> {
-    resolve_callee_return_and_id(lookup, arena, file_ctx, name, Some(enclosing)).map(|(ret, _)| ret)
+    resolve_callee_return_and_id(lookup, arena, file_ctx, name, Some(enclosing))
+        .ok()
+        .map(|(ret, _)| ret)
 }
 
 /// The return type the callable `name` resolves to in this file's import scope,
@@ -2177,8 +2270,13 @@ fn resolve_callee_return_and_id(
     file_ctx: &FileContext,
     name: &str,
     enclosing_scope: Option<&str>,
-) -> Option<(TypeId, i64)> {
+) -> Result<(TypeId, i64), Option<Cause>> {
     let candidates = lookup.by_name(name);
+    // The most specific callable candidate found so far whose own return type
+    // was never captured — the diagnosable near-miss if every strategy below
+    // falls through without a typed return.
+    let mut untyped_callee: Option<i64> = None;
+
     // Scope preference: a callee declared INSIDE `enclosing` — a nested
     // `function inner(){…}` whose qname is `{enclosing}.{name}` — is the one a
     // factory's `return inner()` means, resolved before the unscoped name
@@ -2191,18 +2289,19 @@ fn resolve_callee_return_and_id(
         {
             let ret_qname = format!("{}$Ret", cand.qualified_name);
             if lookup.by_qualified_name(&ret_qname).is_some() {
-                return Some((arena.class(&ret_qname), cand.id));
+                return Ok((arena.class(&ret_qname), cand.id));
             }
             if let Some(id) = lookup
                 .return_type_id_of(cand.id)
                 .or_else(|| lookup.return_type_id(&cand.qualified_name))
             {
-                return Some((id, cand.id));
+                return Ok((id, cand.id));
             }
             if let Some(s) = lookup.return_type_str(&cand.qualified_name) {
-                return Some((arena.intern_type_str(&s), cand.id));
+                return Ok((arena.intern_type_str(&s), cand.id));
             }
             // Scoped callee exists but carries no recorded return — fall through.
+            untyped_callee = Some(cand.id);
         }
     }
     // An object-literal return synthesized as `{qname}$Ret` (the flow-return-object
@@ -2212,7 +2311,7 @@ fn resolve_callee_return_and_id(
     for cand in candidates.iter().filter(|s| is_callable(&s.kind)) {
         let ret_qname = format!("{}$Ret", cand.qualified_name);
         if lookup.by_qualified_name(&ret_qname).is_some() {
-            return Some((arena.class(&ret_qname), cand.id));
+            return Ok((arena.class(&ret_qname), cand.id));
         }
     }
     // Import-scoped overload set: when `name` is imported from a specific
@@ -2230,16 +2329,17 @@ fn resolve_callee_return_and_id(
             .collect();
         for s in &scoped {
             if let Some(id) = lookup.return_type_id_of(s.id) {
-                return Some((id, s.id));
+                return Ok((id, s.id));
             }
         }
         if let Some(callee) = scoped.first() {
             if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
-                return Some((id, callee.id));
+                return Ok((id, callee.id));
             }
             if let Some(n) = lookup.return_type_str(&callee.qualified_name) {
-                return Some((arena.intern_type_str(&n), callee.id));
+                return Ok((arena.intern_type_str(&n), callee.id));
             }
+            untyped_callee.get_or_insert(callee.id);
         }
     }
     // No import attribution (or the scoped set yielded no return): the first
@@ -2247,16 +2347,19 @@ fn resolve_callee_return_and_id(
     // and must not root a bare unscoped call — they are excluded here so an
     // unrelated method named the same as an ambient callable-interface const does
     // not shadow the const's call-signature path.
-    let callee = candidates.iter().find(|s| s.kind == "function")?;
+    let Some(callee) = candidates.iter().find(|s| s.kind == "function") else {
+        return Err(untyped_callee.map(|id| Cause::new(Some(id), CauseKind::UncapturedReturn)));
+    };
     if let Some(id) = lookup.return_type_id_of(callee.id) {
-        return Some((id, callee.id));
+        return Ok((id, callee.id));
     }
     if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
-        return Some((id, callee.id));
+        return Ok((id, callee.id));
     }
-    lookup
-        .return_type_str(&callee.qualified_name)
-        .map(|s| (arena.intern_type_str(&s), callee.id))
+    if let Some(s) = lookup.return_type_str(&callee.qualified_name) {
+        return Ok((arena.intern_type_str(&s), callee.id));
+    }
+    Err(Some(Cause::new(Some(callee.id), CauseKind::UncapturedReturn)))
 }
 
 /// The return type of a call `name<args>(…)`, with the call's explicit type
@@ -2273,7 +2376,7 @@ pub(crate) fn call_return_with_type_args(
     name: &str,
     call_args: &[TypeId],
 ) -> Option<TypeId> {
-    let (ret, callee_id) = resolve_callee_return_and_id(lookup, arena, file_ctx, name, None)?;
+    let (ret, callee_id) = resolve_callee_return_and_id(lookup, arena, file_ctx, name, None).ok()?;
     // The return propagates to every same-qname overload id, but the params are
     // stored only on the declaration that parsed them — which may be a SIBLING of
     // the id whose return was read. Use the callee's own params when present, else

@@ -11,6 +11,7 @@
 
 use std::str::FromStr;
 
+use crate::indexer::resolve::engine::cause::{Cause, CauseKind};
 use crate::indexer::resolve::engine::contract::{FileContext, RefContext, SymbolInfo, SymbolLookup};
 use crate::type_checker::profile::language_profile::{
     KindCompatibility, KindTable, LanguageProfile,
@@ -23,8 +24,9 @@ use super::{BindOutcome, BinderContext, Binder};
 pub enum SolveOutcome {
     /// A rule or the chain walk bound the ref.
     Resolved(SymbolInfo),
-    /// Nothing bound it — an honest miss.
-    Unresolved,
+    /// Nothing bound it — an honest miss, carrying the first-uncaptured-type
+    /// cause when a death site could attribute one.
+    Unresolved(Option<Cause>),
     /// The rule ladder declined the ref as a known non-project construct
     /// (`LanguageProfile::builtin_skip`) rather than a missing project symbol.
     Drained,
@@ -60,28 +62,34 @@ impl SemanticModel {
         profile: &LanguageProfile,
     ) -> SolveOutcome {
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
-            if let Some(res) = super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
-                return SolveOutcome::Resolved(res);
-            }
-            // A multi-segment chain the walk declined is normally a genuine miss:
-            // a same-named sibling must not hijack `a.b.c`. Two exceptions both
-            // root on a MODULE the chain walker can't type as a value, so the
-            // bare-name ladder resolves the member under that module (scoped, so it
-            // can't bind an unrelated sibling):
-            //   - a namespace/module SYMBOL root (`React.useState`);
-            //   - a wildcard/namespace IMPORT root (`import * as v from 'm'; v.x`)
-            //     — the alias names no value, and the member is a module export.
-            // A single-segment "chain" carries no receiver and always falls through.
-            if chain.segments.len() > 1
-                && !chain_root_is_namespace(chain, lookup)
-                && !chain_root_is_wildcard_import(chain, file_ctx)
-            {
-                return SolveOutcome::Unresolved;
+            match super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
+                Ok(res) => return SolveOutcome::Resolved(res),
+                Err(cause) => {
+                    // A multi-segment chain the walk declined is normally a genuine
+                    // miss: a same-named sibling must not hijack `a.b.c`. Two
+                    // exceptions both root on a MODULE the chain walker can't type
+                    // as a value, so the bare-name ladder resolves the member under
+                    // that module (scoped, so it can't bind an unrelated sibling):
+                    //   - a namespace/module SYMBOL root (`React.useState`);
+                    //   - a wildcard/namespace IMPORT root (`import * as v from
+                    //     'm'; v.x`) — the alias names no value, and the member is a
+                    //     module export.
+                    // A single-segment "chain" carries no receiver and always falls
+                    // through.
+                    if chain.segments.len() > 1
+                        && !chain_root_is_namespace(chain, lookup)
+                        && !chain_root_is_wildcard_import(chain, file_ctx)
+                    {
+                        return SolveOutcome::Unresolved(cause);
+                    }
+                }
             }
         }
         match self.resolve_chain_less(ref_ctx, file_ctx, lookup, profile) {
             BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
-            BindOutcome::Unresolved => SolveOutcome::Unresolved,
+            BindOutcome::Unresolved => {
+                SolveOutcome::Unresolved(Some(Cause::new(None, CauseKind::UnboundRoot)))
+            }
             BindOutcome::Drained => SolveOutcome::Drained,
         }
     }

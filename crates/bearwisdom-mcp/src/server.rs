@@ -344,8 +344,16 @@ pub struct QualityCheckParams {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct UnresolvedParams {
-    /// Top-N example identifiers kept per (language, category) group (default: 10)
+    /// Top-N example identifiers kept per (language, category) group (default: 10).
+    /// Also caps sample refs per group when `by_cause` is set.
     pub samples: Option<usize>,
+    /// Group by recorded first-uncaptured-type cause (the upstream symbol
+    /// whose own type was never captured) instead of surface shape. Default
+    /// false — surface-shape classification.
+    pub by_cause: Option<bool>,
+    /// Top-N cause groups returned when `by_cause` is set, ranked by
+    /// ref_count desc (default: 20). Ignored otherwise.
+    pub top: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
@@ -1212,27 +1220,47 @@ impl BearWisdomServer {
     /// generated_or_vendor_noise, unsupported_syntax — with top-N example
     /// identifiers per group. The first tool to reach for when driving down
     /// unresolved-ref counts: it names WHY refs fail, not just which ones.
+    ///
+    /// Pass `by_cause: true` to switch from surface shape to ROOT CAUSE:
+    /// groups ranked by how many unresolved refs trace back to the SAME
+    /// upstream symbol whose own return/field/declared type was never
+    /// captured — the symbol that made a receiver (or a hop in its chain)
+    /// untypable, not just the symptom at the ref site.
     #[tool(name = "bw_unresolved")]
     fn unresolved(
         &self,
         Parameters(params): Parameters<UnresolvedParams>,
     ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
+        let by_cause = params.by_cause.unwrap_or(false);
         self.run_tool(
             "bw_unresolved",
             &params,
             params.project.as_deref(),
             |db, _| {
                 let samples = params.samples.unwrap_or(10);
-                bearwisdom::classify_unresolved(db, samples)
-                    .map_err(Self::query_err)
-                    .and_then(|r| {
-                        if compact {
-                            Ok(crate::compact::unresolved_classify(&r))
-                        } else {
-                            Self::to_json(&r)
-                        }
-                    })
+                if by_cause {
+                    let top = params.top.unwrap_or(20);
+                    bearwisdom::unresolved_by_cause(db, top, samples)
+                        .map_err(Self::query_err)
+                        .and_then(|r| {
+                            if compact {
+                                Ok(crate::compact::unresolved_by_cause(&r))
+                            } else {
+                                Self::to_json(&r)
+                            }
+                        })
+                } else {
+                    bearwisdom::classify_unresolved(db, samples)
+                        .map_err(Self::query_err)
+                        .and_then(|r| {
+                            if compact {
+                                Ok(crate::compact::unresolved_classify(&r))
+                            } else {
+                                Self::to_json(&r)
+                            }
+                        })
+                }
             },
         )
     }
