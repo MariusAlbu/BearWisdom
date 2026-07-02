@@ -65,6 +65,7 @@ pub const GSP_PROFILE: LanguageProfile = LanguageProfile {
     module_prefix_rewrites:
         crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
+    self_package_root: None,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

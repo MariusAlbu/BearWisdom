@@ -256,6 +256,12 @@ pub struct LanguageProfile {
     /// `symbols_in_package` / `is_workspace_declared_name` to bind the target —
     /// including deep imports (`@org/utils/sub/mod`) — at confidence 1.0.
     pub workspace_packages: bool,
+    /// The keyword a module specifier's leading segment uses to mean "this
+    /// file's own package root", distinct from a declared sibling package
+    /// name (Rust's `crate`, resolved against the ref's `file_package_id`
+    /// rather than a `workspace_pkg_by_declared_name` lookup). `None` (the
+    /// default) leaves every specifier resolved by declared name only.
+    pub self_package_root: Option<&'static str>,
     /// Whether the `ByNameUnderModuleDir` qname probe and `resolve_via_qname_exact`
     /// scan ALL same-qname overloads for the first kind-compatible one rather
     /// than taking `by_qualified_name`'s first-wins winner. `false` (the
@@ -1151,6 +1157,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     alias_module_qname: false,
     module_prefix_rewrites: ModulePrefixRewrites::Off,
     workspace_packages: false,
+    self_package_root: None,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

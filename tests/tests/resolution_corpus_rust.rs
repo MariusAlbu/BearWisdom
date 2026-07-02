@@ -33,14 +33,15 @@ fn count_resolved_to(db: &Database, file_suffix: &str, callee: &str, target_like
     .unwrap()
 }
 
-/// Count unresolved `calls` refs for `callee` in the file ending `file_suffix`.
-fn count_unresolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
+/// Count unresolved refs of `kind` targeting `target_name` in the file ending
+/// `file_suffix`.
+fn count_unresolved(db: &Database, file_suffix: &str, kind: &str, target_name: &str) -> i64 {
     db.query_row(
         "SELECT COUNT(*) FROM unresolved_refs u
          JOIN symbols s ON u.source_id = s.id
          JOIN files f   ON s.file_id   = f.id
-         WHERE f.path LIKE ?1 AND u.kind = 'calls' AND u.target_name = ?2",
-        params![format!("%{file_suffix}"), callee],
+         WHERE f.path LIKE ?1 AND u.kind = ?2 AND u.target_name = ?3",
+        params![format!("%{file_suffix}"), kind, target_name],
         |r| r.get(0),
     )
     .unwrap()
@@ -465,6 +466,77 @@ pub fn run_bench_nested() -> bool {
 "#,
     );
 
+    // --- pattern: crate::-relative self-reference through a pub-use re-export
+    // `Thing` is declared in `src/thing.rs` and re-exported at the crate root
+    // (`pub use thing::Thing;` in `lib.rs`). `crate_reexport.rs` names it via
+    // the re-exported crate-root path (`use crate::Thing;`); `crate_direct.rs`
+    // names it via its declaring submodule path (`use crate::thing::Thing;`).
+    // The synthetic TypeRef that seeds `t`'s local type from `let t =
+    // Thing::new();` carries this import's module (`crate` / `crate::thing`)
+    // — an unrecognized specifier leaves that TypeRef unresolved
+    // (`cause=unbound_root`) even on the constructor-call shape where the
+    // chain walker's own root/call resolution happens to re-derive `t`'s type
+    // and rescue the downstream `.go()` member lookup. The unresolved TypeRef
+    // itself is the count-inflating symptom this probe targets.
+    project.add_file(
+        "src/thing.rs",
+        r#"pub struct Thing;
+
+impl Thing {
+    pub fn new() -> Thing {
+        Thing
+    }
+
+    pub fn go(&self) -> bool {
+        true
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/lib.rs",
+        r#"mod thing;
+pub use thing::Thing;
+"#,
+    );
+    project.add_file(
+        "src/crate_reexport.rs",
+        r#"use crate::Thing;
+
+pub fn run_reexported() -> bool {
+    let t = Thing::new();
+    t.go()
+}
+"#,
+    );
+    project.add_file(
+        "src/crate_direct.rs",
+        r#"use crate::thing::Thing;
+
+pub fn run_direct() -> bool {
+    let t = Thing::new();
+    t.go()
+}
+"#,
+    );
+    // Canonical real-world shape: a `#[cfg(test)]` sibling module inside a
+    // `src/` file, importing its own crate's type by the `crate::` path
+    // exactly like tantivy's `src/aggregation/agg_tests.rs`.
+    project.add_file(
+        "src/cfg_test_reexport.rs",
+        r#"#[cfg(test)]
+mod tests {
+    use crate::Thing;
+
+    #[test]
+    fn it_works() {
+        let t = Thing::new();
+        let _ = t.go();
+    }
+}
+"#,
+    );
+
     // Point the locators at the seeded stubs, index once, restore env.
     let prior_sysroot = std::env::var_os("BEARWISDOM_RUST_SYSROOT");
     let prior_cargo_home = std::env::var_os("CARGO_HOME");
@@ -547,12 +619,12 @@ pub fn run_bench_nested() -> bool {
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
-        count_unresolved(&db, "result_unwrap.rs", "exists")
+        count_unresolved(&db, "result_unwrap.rs", "calls", "exists")
     );
     println!(
         "  local-macro-import  my_thing!() resolved-internal={} unresolved={}",
         count_resolved_with_origin(&db, "macro_call.rs", "my_thing", "internal"),
-        count_unresolved(&db, "macro_call.rs", "my_thing")
+        count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
     );
 
     // Each row: (label, pass, detail).
@@ -569,6 +641,12 @@ pub fn run_bench_nested() -> bool {
         count_resolved_to(&db, "bench_self_import_nested.rs", "poke", "%SelfProbe%");
     let std_macro_assert =
         count_resolved_with_origin(&db, "std_macros.rs", "assert", "external");
+    let crate_reexport_thing_unresolved =
+        count_unresolved(&db, "crate_reexport.rs", "type_ref", "Thing");
+    let crate_direct_thing_unresolved =
+        count_unresolved(&db, "crate_direct.rs", "type_ref", "Thing");
+    let cfg_test_reexport_thing_unresolved =
+        count_unresolved(&db, "cfg_test_reexport.rs", "type_ref", "Thing");
 
     let checks = [
         (
@@ -620,6 +698,21 @@ pub fn run_bench_nested() -> bool {
             "std macro (sysroot)  assert!(x) -> core::macros::assert (BEARWISDOM_RUST_SYSROOT)",
             std_macro_assert >= 1,
             format!("resolved-to-external-assert edges = {std_macro_assert}"),
+        ),
+        (
+            "crate::-relative re-export  use crate::Thing; local-type TypeRef binds (not unbound_root)",
+            crate_reexport_thing_unresolved == 0,
+            format!("unresolved type_ref(Thing) = {crate_reexport_thing_unresolved}"),
+        ),
+        (
+            "crate::-relative direct  use crate::thing::Thing; local-type TypeRef binds (not unbound_root)",
+            crate_direct_thing_unresolved == 0,
+            format!("unresolved type_ref(Thing) = {crate_direct_thing_unresolved}"),
+        ),
+        (
+            "crate::-relative re-export in #[cfg(test)] sibling module  local-type TypeRef binds",
+            cfg_test_reexport_thing_unresolved == 0,
+            format!("unresolved type_ref(Thing) = {cfg_test_reexport_thing_unresolved}"),
         ),
     ];
 

@@ -197,6 +197,14 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // which registers the crate's own root package alongside its workspace
     // members) resolves it the same way an npm sibling-package import does.
     workspace_packages: true,
+    // `crate::` is the crate-root path to the current package itself — a
+    // `use crate::Thing;` (or an inline `crate::db::Pool` path) names this
+    // file's own package, not a sibling by declared name. Resolved against
+    // the ref's own `file_package_id` rather than
+    // `workspace_pkg_by_declared_name`, so a re-exported name (`pub use
+    // thing::Thing;` at the crate root) binds the same way a direct
+    // declaration would — both are members of the same package.
+    self_package_root: Some("crate"),
     overload_pick_all: false,
     argument_dependent_lookup: false,
     // `Self::Output` / `<C as Trait>::Item` return strings project through the

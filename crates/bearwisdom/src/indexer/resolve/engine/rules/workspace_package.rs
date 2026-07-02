@@ -8,6 +8,13 @@
 // trailing segments to find the package root, then the sub-path filters to
 // symbols whose file contains it.
 //
+// A specifier led by `profile.self_package_root` (Rust's `crate`) names the
+// CURRENT file's own package rather than a sibling by declared name —
+// `self_package_sub_path` resolves it against `file_package_id` directly
+// instead of `workspace_package_id`'s declared-name table, so a name
+// re-exported at the package root binds the same way a direct declaration
+// would (both are members of the same package's symbol set).
+//
 // Gated on `profile.workspace_packages`.  `is_bare_module_specifier` (inlined
 // below) rejects relative and drive-rooted specifiers.
 // =============================================================================
@@ -16,6 +23,7 @@ use crate::indexer::resolve::engine::support::{
     follow_reexports, workspace_pkg_barrels, workspace_sub_path,
 };
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
 pub struct WorkspacePackageRule;
 
@@ -51,10 +59,16 @@ impl LookupRule for WorkspacePackageRule {
         if !is_bare_module_specifier(specifier) {
             return LookupResult::Pass;
         }
-        let Some(pkg_id) = ctx.lookup.workspace_package_id(specifier) else {
+        let (pkg_id, sub_path) = match self_package_sub_path(ctx.profile, specifier) {
+            Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
+            None => (
+                ctx.lookup.workspace_package_id(specifier),
+                workspace_sub_path(specifier, ctx.lookup),
+            ),
+        };
+        let Some(pkg_id) = pkg_id else {
             return LookupResult::Pass;
         };
-        let sub_path = workspace_sub_path(specifier, ctx.lookup);
 
         let mut fallback: Option<i64> = None;
         for sym in ctx.lookup.symbols_in_package(pkg_id) {
@@ -104,6 +118,23 @@ fn is_bare_module_specifier(spec: &str) -> bool {
     !spec.starts_with('.')
         && !spec.starts_with('/')
         && !(spec.len() >= 2 && spec.as_bytes()[1] == b':')
+}
+
+/// When `specifier`'s leading segment is `profile.self_package_root`
+/// (Rust's `crate`), the sub-path remainder that follows it: `Some(None)` for
+/// the bare keyword (`crate`), `Some(Some(rest))` for a deeper path
+/// (`crate::thing` -> `Some(Some("thing"))`). `None` when the profile carries
+/// no such keyword or `specifier` doesn't lead with it, so the caller falls
+/// back to the declared-name lookup.
+fn self_package_sub_path(profile: &LanguageProfile, specifier: &str) -> Option<Option<String>> {
+    let keyword = profile.self_package_root?;
+    let rest = specifier.strip_prefix(keyword)?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    rest.strip_prefix(profile.qname_separator)
+        .or_else(|| rest.strip_prefix('/'))
+        .map(|sub| Some(sub.to_string()))
 }
 
 #[cfg(test)]

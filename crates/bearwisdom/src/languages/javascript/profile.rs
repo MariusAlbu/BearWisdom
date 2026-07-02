@@ -90,6 +90,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
             decline_bare_directory_match: true,
         },
     workspace_packages: true,
+    self_package_root: None,
     overload_pick_all: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
