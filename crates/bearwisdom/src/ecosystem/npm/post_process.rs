@@ -149,6 +149,16 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
         }
     }
     prefix_ts_external_symbols(pf, &pkg);
+    // `extract_component_selectors` (run in the parse pass) keyed each selector on
+    // the class's BARE qname, but every symbol was just package-prefixed — so prefix
+    // the selector's class qname to match. An external `<nb-card>` must map to
+    // `@nebular/theme.NbCardComponent`, the qname its class symbol now carries.
+    let prefix = format!("{pkg}.");
+    for (_selector, class_qname) in &mut pf.component_selectors {
+        if !class_qname.starts_with(&prefix) {
+            *class_qname = format!("{prefix}{class_qname}");
+        }
+    }
 }
 
 pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {

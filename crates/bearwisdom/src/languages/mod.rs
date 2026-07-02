@@ -252,6 +252,17 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         None
     }
 
+    /// Relative module specifiers a just-materialized external declaration file
+    /// reaches IN ADDITION to its imports/re-exports — e.g. an Angular NgModule
+    /// declaration `.d.ts` reaches the `.component`/`.directive` `.d.ts` files it
+    /// declares (those are referenced only by selector, so nothing demands them by
+    /// name). The generic externals closure resolves each spec relative to the file
+    /// and materializes it. Default: none. Keeps framework-specific reachability in
+    /// the owning plugin, not the generic resolve pipeline.
+    fn external_declaration_reachables(&self, _file_path: &str, _content: &str) -> Vec<String> {
+        Vec::new()
+    }
+
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.
