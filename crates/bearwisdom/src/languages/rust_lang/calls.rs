@@ -1138,6 +1138,33 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
             Some(())
         }
 
+        // `container[index]` — a subscript. The grammar carries no field
+        // names for `index_expression`; the container is the first named
+        // child, the index expression the second. Recurse into the
+        // container, then push a ComputedAccess segment carrying the index
+        // text — the chain walker projects the container's element type at
+        // this segment (`array_element_type` in engine/chain.rs) rather than
+        // looking up a member literally named by the index.
+        "index_expression" => {
+            let container = node.named_child(0)?;
+            build_chain_inner(container, source, segments)?;
+            let index_text = node.named_child(1).map(|n| node_text(&n, source)).unwrap_or_default();
+            segments.push(ChainSegment {
+                name: index_text,
+                node_kind: "index_expression".to_string(),
+                kind: SegmentKind::ComputedAccess,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+                byte_offset: 0,
+                declared_type_id: None,
+                is_call: false,
+                call_args: Vec::new(),
+                type_arg_ids: Vec::new(),
+            });
+            Some(())
+        }
+
         // `(x as Foo).bar()` — `x` is the value, `Foo` the asserted type. The
         // chain walker adopts the inner segment's `declared_type`.
         "type_cast_expression" => {

@@ -642,6 +642,231 @@ mod tests {
 "#,
     );
 
+    // --- pattern: Vec<T> element projection at a subscript receiver --------
+    // `v[0].touch()` — `v`'s type is `Vec<Item>` (via `make_items`'s return,
+    // not a local annotation — an angle-bracket-generic annotation's argument
+    // is stripped before it reaches the type interner, a separate gap traced
+    // below). The `[0]` subscript must project the ELEMENT type `Item` so
+    // `touch` resolves there, not against `Vec` (which has no `touch`).
+    // `Decoy` declares a same-named `touch` FIRST in the file so a same-file,
+    // name-only fallback (which would win if the chain walker never types the
+    // receiver — e.g. because the subscript breaks chain-building entirely)
+    // resolves to the WRONG target; only a receiver-typed bind lands on `Item`.
+    project.add_file(
+        "src/vec_subscript.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct Item;
+
+impl Item {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub fn make_items() -> Vec<Item> {
+    Vec::new()
+}
+
+pub fn use_vec() -> bool {
+    let v = make_items();
+    v[0].touch()
+}
+"#,
+    );
+
+    // --- pattern: Vec<T> element projection through a struct field ---------
+    // `list.segments[0].touch()` — the field's declared type (`Vec<Segment>`)
+    // is captured whole (struct field signatures aren't run through the
+    // lossy local-annotation path), so this exercises element projection
+    // through a field member lookup rather than a bare local. `list` is typed
+    // via `make_list`'s return (not `self` — a `self.field` receiver hits a
+    // separate, pre-existing gap: an impl-block method's `parent_index` never
+    // climbs to the struct it implements, since the impl block's own Namespace
+    // symbol carries `parent_index: None`, so `enclosing_type_qname` can never
+    // find it from a method; out of scope here). `Decoy` guards against the
+    // same-file fallback as above.
+    project.add_file(
+        "src/vec_field_subscript.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct Segment;
+
+impl Segment {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub struct SegmentList {
+    pub segments: Vec<Segment>,
+}
+
+pub fn make_list() -> SegmentList {
+    SegmentList { segments: Vec::new() }
+}
+
+pub fn first_touch() -> bool {
+    let list = make_list();
+    list.segments[0].touch()
+}
+"#,
+    );
+
+    // --- pattern: Vec<T> element projection through a `self` field, inside
+    // the implementing impl block ------------------------------------------
+    // `self.segments[0].touch()`, called from `SegmentList::first_touch_self`
+    // — a separate, pre-existing gap from the subscript projection this
+    // corpus otherwise exercises: `first_touch_self`'s `parent_index` climbs
+    // to the `impl SegmentList` block's own Namespace symbol, but that
+    // Namespace symbol itself carries `parent_index: None` (impl blocks are
+    // siblings of the struct they implement, not its AST parent), so
+    // `enclosing_type_qname` never reaches `SegmentList` and `self` roots as
+    // UNTYPABLE. Every `self.x` chain of 2+ segments hits this, not just
+    // subscript ones. Diagnostic only.
+    project.add_file(
+        "src/vec_self_field_subscript.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct SelfSegment;
+
+impl SelfSegment {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub struct SelfSegmentList {
+    pub segments: Vec<SelfSegment>,
+}
+
+impl SelfSegmentList {
+    pub fn first_touch_self(&self) -> bool {
+        self.segments[0].touch()
+    }
+}
+"#,
+    );
+
+    // --- pattern: fixed-size array element projection at a subscript -------
+    // `a[0].touch()` — `a: [Elem; 2]` must project the element `Elem` the
+    // same way a `Vec<Elem>` subscript does. Unlike `Vec<T>`, the bracket
+    // annotation carries no `<` so it isn't truncated by the angle-bracket
+    // generic-arg strip — the local's declared type reaches the interner
+    // whole. `Decoy` guards against the same-file fallback as above.
+    project.add_file(
+        "src/array_subscript.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct Elem;
+
+impl Elem {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub fn use_array() -> bool {
+    let a: [Elem; 2] = [Elem, Elem];
+    a[0].touch()
+}
+"#,
+    );
+
+    // --- pattern: slice element projection at a subscript -------------------
+    // `s[0].touch()` — `s: &'static [Piece]` (via `make_slice`'s return) must
+    // project the element `Piece` the same way the array/Vec cases do.
+    // `Decoy` guards against the same-file fallback as above.
+    project.add_file(
+        "src/slice_subscript.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct Piece;
+
+impl Piece {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub fn make_slice() -> &'static [Piece] {
+    &[Piece, Piece]
+}
+
+pub fn use_slice() -> bool {
+    let s = make_slice();
+    s[0].touch()
+}
+"#,
+    );
+
+    // --- pattern: Vec<T> element projection through an annotated local, no
+    // resolvable RHS to rescue it -------------------------------------------
+    // `let v: Vec<Item> = Vec::new(); v[0].touch()` — the LHS annotation is
+    // the only place `Item` appears in source, but the flow seeding strips
+    // everything from the angle bracket onward before the type interner ever
+    // runs (`strip_generic_args("Vec<Item>")` == `"Vec"`), so `v`'s recorded
+    // type carries no argument to project. Shared with TypeScript's
+    // equivalent `const x: Array<T> = []` annotation (asserted stripped in
+    // `ts_array_annotation_seeds_decl_type`) — a pre-existing, cross-language
+    // gap in the declared-type seed, not the chain walker's element
+    // projection this probe otherwise exercises. Diagnostic only. `Decoy`
+    // guards against the same-file fallback as above.
+    project.add_file(
+        "src/vec_annotation_only.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn touch(&self) -> bool {
+        false
+    }
+}
+
+pub struct Widget;
+
+impl Widget {
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub fn use_annotated_vec() -> bool {
+    let v: Vec<Widget> = Vec::new();
+    v[0].touch()
+}
+"#,
+    );
+
     // --- pattern: renamed re-export, `pub use path::Thing as Alias;` ---------
     // `RealDoc` is declared in `src/real.rs` and re-exported under a different
     // name at the crate root (`pub use real::RealDoc as AliasDoc;` in
@@ -779,6 +1004,16 @@ pub fn run_bench_alias() -> bool {
         count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
     );
     println!(
+        "  vec-annotation-only  v[0].touch() resolved-to-Widget={} unresolved={}",
+        count_resolved_to(&db, "vec_annotation_only.rs", "touch", "%Widget%"),
+        count_unresolved(&db, "vec_annotation_only.rs", "calls", "touch")
+    );
+    println!(
+        "  vec-self-field-subscript  self.segments[0].touch() resolved-to-SelfSegment={} unresolved={}",
+        count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%"),
+        count_unresolved(&db, "vec_self_field_subscript.rs", "calls", "touch")
+    );
+    println!(
         "  alias-reexport-member-chase  AliasDoc::new().touch() resolved-to-RealDoc={} unresolved={}",
         count_resolved_to(&db, "bench_alias_reexport.rs", "touch", "%RealDoc%"),
         count_unresolved(&db, "bench_alias_reexport.rs", "calls", "touch")
@@ -815,6 +1050,11 @@ pub fn run_bench_alias() -> bool {
         count_unresolved(&db, "crate_direct.rs", "type_ref", "Thing");
     let cfg_test_reexport_thing_unresolved =
         count_unresolved(&db, "cfg_test_reexport.rs", "type_ref", "Thing");
+    let vec_subscript_touch = count_resolved_to(&db, "vec_subscript.rs", "touch", "%Item%");
+    let vec_field_subscript_touch =
+        count_resolved_to(&db, "vec_field_subscript.rs", "touch", "%Segment%");
+    let array_subscript_touch = count_resolved_to(&db, "array_subscript.rs", "touch", "%Elem%");
+    let slice_subscript_touch = count_resolved_to(&db, "slice_subscript.rs", "touch", "%Piece%");
     let alias_reexport_aliasdoc_unresolved =
         count_unresolved(&db, "bench_alias_reexport.rs", "type_ref", "AliasDoc");
 
@@ -893,6 +1133,26 @@ pub fn run_bench_alias() -> bool {
             "crate::-relative re-export in #[cfg(test)] sibling module  local-type TypeRef binds",
             cfg_test_reexport_thing_unresolved == 0,
             format!("unresolved type_ref(Thing) = {cfg_test_reexport_thing_unresolved}"),
+        ),
+        (
+            "Vec<T> subscript (local, call-return)  v[0].touch() -> Item.touch",
+            vec_subscript_touch >= 1,
+            format!("resolved-to-Item edges = {vec_subscript_touch}"),
+        ),
+        (
+            "Vec<T> subscript (struct field)  list.segments[0].touch() -> Segment.touch",
+            vec_field_subscript_touch >= 1,
+            format!("resolved-to-Segment edges = {vec_field_subscript_touch}"),
+        ),
+        (
+            "fixed-array subscript (annotated local)  a[0].touch() -> Elem.touch",
+            array_subscript_touch >= 1,
+            format!("resolved-to-Elem edges = {array_subscript_touch}"),
+        ),
+        (
+            "slice subscript (call-return)  s[0].touch() -> Piece.touch",
+            slice_subscript_touch >= 1,
+            format!("resolved-to-Piece edges = {slice_subscript_touch}"),
         ),
         (
             "renamed re-export (bench)  use resolution_corpus_rust::AliasDoc; local-type TypeRef binds (not unbound_root)",

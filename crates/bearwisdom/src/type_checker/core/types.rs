@@ -311,6 +311,23 @@ impl TypeArena {
                     .collect();
                 return self.intern(Type::Tuple(ids));
             }
+            // Rust fixed-size array `[T; N]` / slice `[T]` — bracket-enclosed
+            // with no top-level comma. A depth-0 `;` separates the element
+            // type from the length (`[T; N]`); its absence means a slice
+            // (`[T]`). Both are homogeneous single-element sequences, so both
+            // collapse to the same canonical `Array<T>` application the
+            // `T[]` suffix above already mints — `array_element_type`
+            // (engine/chain.rs) projects the element the same way either
+            // shape arrives.
+            let elem_text = match find_depth_zero_semicolon(inner) {
+                Some(semi) => inner[..semi].trim(),
+                None => inner.trim(),
+            };
+            if !elem_text.is_empty() {
+                let elem = self.intern_type_str(elem_text);
+                let base = self.class("Array");
+                return self.intern(Type::Apply { base, args: vec![elem] });
+            }
         }
         // Locate the first generic-open at depth 0. Accept both `<` and
         // `[` so Scala / OCaml-style param brackets resolve too.
@@ -762,6 +779,22 @@ fn split_depth_zero_commas(s: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Byte index of a `;` at bracket depth 0 in `s`, or `None`. Splits a Rust
+/// fixed-size array's element type from its length: `[T; N]` → element ends
+/// where this returns.
+fn find_depth_zero_semicolon(s: &str) -> Option<usize> {
+    let mut depth: i32 = 0;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ';' if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Strip a `label:` / `label?:` prefix from one tuple element (`get: Accessor<T>`

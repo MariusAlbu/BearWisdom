@@ -2053,3 +2053,29 @@ fn subscript_on_non_array_still_resolves_named_member() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(7));
 }
+
+/// A Rust `v[0]` subscript segment, as the Rust extractor emits it: an
+/// `index_expression` ComputedAccess.
+fn seg_index_expression(index_text: &str) -> ChainSegment {
+    let mut s = seg(index_text, false, SegmentKind::ComputedAccess);
+    s.node_kind = "index_expression".to_string();
+    s
+}
+
+#[test]
+fn subscript_on_vec_return_projects_element_then_resolves_member() {
+    // `make_items()[0].touch()` shape: make_items(): Vec<Item> ; Item.touch().
+    // The `[0]` subscript must unwrap Apply(Vec, [Item]) to Item so `touch`
+    // resolves on the element, not against Vec (which has no `touch`).
+    let lookup = Lookup::new()
+        .with(sym(1, "Item", "Item", "struct", "a.rs"))
+        .with_member("Item", sym(2, "touch", "Item.touch", "method", "a.rs"))
+        .with(sym(3, "make_items", "make_items", "function", "a.rs"))
+        .with_return_type("make_items", "Vec<Item>");
+    let segs = vec![
+        seg("make_items", true, SegmentKind::Identifier),
+        seg_index_expression("0"),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(2));
+}

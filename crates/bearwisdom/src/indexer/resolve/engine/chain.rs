@@ -1120,17 +1120,23 @@ fn tuple_element_type(
     Some(arena.rebind_class_params(elem_ty, &map))
 }
 
-/// The element type of an array application — `E` for `Apply(Array,[E])` /
-/// `Apply(ReadonlyArray,[E])`. `Array` is the canonical head `intern_type_str` mints
-/// for every `T[]` suffix, so this is language-agnostic. Looks through the
-/// nullable/async/iterator wrappers the same way `head_qname` does. `None` for any
-/// non-array receiver — the caller falls through to named-member lookup so a
+/// The element type of a homogeneous single-arg sequence application — `E` for
+/// `Apply(Array,[E])` / `Apply(ReadonlyArray,[E])` / `Apply(Vec,[E])`. `Array`
+/// is the canonical head `intern_type_str` mints for every `T[]` suffix and
+/// Rust's `[T; N]` / `[T]` array/slice syntax; `Vec` is Rust's growable-vector
+/// head, decomposed the same way any `Foo<Bar>` generic application is — so
+/// this is language-agnostic. Looks through the nullable/async/iterator
+/// wrappers the same way `head_qname` does. `None` for any other receiver —
+/// the head is checked against the known homogeneous-sequence heads rather
+/// than projecting the first argument of any application, since a keyed
+/// (non-sequence) container's subscript does not yield its first type
+/// argument. The caller falls through to named-member lookup so a
 /// string-keyed `obj['key']` index still resolves as a member.
 fn array_element_type(arena: &TypeArena, recv_ty: TypeId) -> Option<TypeId> {
     match arena.get(recv_ty) {
         Type::Apply { base, args } => {
             let head = head_qname(arena, base)?;
-            if matches!(head.as_str(), "Array" | "ReadonlyArray") {
+            if matches!(head.as_str(), "Array" | "ReadonlyArray" | "Vec") {
                 args.first().copied()
             } else {
                 None

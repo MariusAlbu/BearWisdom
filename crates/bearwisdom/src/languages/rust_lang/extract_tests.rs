@@ -1061,6 +1061,39 @@ impl Color {
 }
 
 // -----------------------------------------------------------------------
+// `v[0].touch()` — a subscript receiver in a member-access chain. Before the
+// `index_expression` arm, `build_chain_inner` had no case for it: the
+// `field_expression` arm recursed into the `index_expression` value, hit the
+// catch-all `_ => None`, and the `?` aborted the WHOLE chain build — so
+// `v[0].touch()` carried no chain at all, not merely an untyped subscript.
+// -----------------------------------------------------------------------
+
+#[test]
+fn subscript_receiver_emits_chain_with_computed_access_segment() {
+    let source = r#"pub fn use_vec(v: Vec<i32>) -> i32 {
+    v[0].abs()
+}"#;
+    let r = extract::extract(source);
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "abs");
+    let chain = call
+        .and_then(|rf| rf.chain.as_ref())
+        .expect("v[0].abs() must have a chain");
+    assert_eq!(
+        chain.segments.len(),
+        3,
+        "chain should be [v, <subscript>, abs], got {chain:?}"
+    );
+    assert_eq!(chain.segments[0].kind, SegmentKind::Identifier);
+    assert_eq!(chain.segments[0].name, "v");
+    assert_eq!(chain.segments[1].kind, SegmentKind::ComputedAccess);
+    assert_eq!(chain.segments[1].name, "0");
+    assert_eq!(chain.segments[2].name, "abs");
+}
+
+// -----------------------------------------------------------------------
 // Self::Variant in TypeRef position (both match-pattern LHS and expression
 // RHS) — the extractor emits target=leaf with a 2-segment SelfRef→Property
 // chain and NO `module`, so the chain walker roots on the enclosing type

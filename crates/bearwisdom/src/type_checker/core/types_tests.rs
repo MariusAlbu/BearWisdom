@@ -149,6 +149,40 @@ fn intern_type_str_parses_tuple() {
 }
 
 #[test]
+fn intern_type_str_parses_rust_fixed_array_and_slice() {
+    let mut arena = TypeArena::new();
+    // `[T; N]` — a fixed-size array. The length is discarded; the element
+    // decomposes the same canonical `Array<T>` shape a `T[]` suffix does.
+    let array_ty = arena.intern_type_str("[Item; 2]");
+    let array_suffix_ty = arena.intern_type_str("Item[]");
+    assert_eq!(array_ty, array_suffix_ty, "[T; N] must intern to the same Array<T> as T[]");
+    match arena.get(array_ty) {
+        Type::Apply { base, args } => {
+            assert!(matches!(arena.get(base), Type::Class(q) if q == "Array"));
+            assert_eq!(args.len(), 1);
+            assert!(matches!(arena.get(args[0]), Type::Class(q) if q == "Item"));
+        }
+        other => panic!("expected Apply(Array, [Item]), got {other:?}"),
+    }
+    // `[T]` — an unsized slice, as it appears behind `&[T]` once the leading
+    // reference sigil is peeled. Same canonical Array<T> shape.
+    assert_eq!(arena.intern_type_str("[Item]"), array_suffix_ty);
+    // `&[T]` — the reference sigil is peeled before the bracket form is seen.
+    assert_eq!(arena.intern_type_str("&[Item]"), array_suffix_ty);
+    // `&'static [T]` — a lifetime between the sigil and the slice.
+    assert_eq!(arena.intern_type_str("&'static [Item]"), array_suffix_ty);
+    // A nested generic element stays structured, not flattened to a string.
+    match arena.get(arena.intern_type_str("[Vec<Item>; 3]")) {
+        Type::Apply { base, args } => {
+            assert!(matches!(arena.get(base), Type::Class(q) if q == "Array"));
+            assert_eq!(args.len(), 1);
+            assert!(matches!(arena.get(args[0]), Type::Apply { .. }));
+        }
+        other => panic!("expected Apply(Array, [Apply(Vec, [Item])]), got {other:?}"),
+    }
+}
+
+#[test]
 fn intern_type_str_parses_intersection() {
     let mut arena = TypeArena::new();
     let a = arena.intern_type_str("MockInstance");
