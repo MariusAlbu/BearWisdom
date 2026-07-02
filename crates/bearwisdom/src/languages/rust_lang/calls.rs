@@ -1122,8 +1122,15 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
         }
 
         "call_expression" => {
+            // Nested call in a chain: `a.b().c()` — walk into the function child,
+            // then mark the resolved segment as invoked so the walker yields the
+            // function's return type rather than the function value itself.
             let func = node.child_by_field_name("function")?;
-            build_chain_inner(func, source, segments)
+            build_chain_inner(func, source, segments)?;
+            if let Some(last) = segments.last_mut() {
+                last.is_call = true;
+            }
+            Some(())
         }
 
         // `(x as Foo).bar()` — `x` is the value, `Foo` the asserted type. The

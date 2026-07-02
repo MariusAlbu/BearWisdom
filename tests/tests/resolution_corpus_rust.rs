@@ -252,6 +252,42 @@ pub fn greet_it() -> bool {
 "#,
     );
 
+    // --- pattern: intermediate call in a member chain, no local binding -----
+    // `Builder::new().build()` — `new` is a nested call whose RETURN type
+    // (`Builder`) the walker must follow to look up `build`. `.build().show()`
+    // chains a second intermediate call whose return (`Widget`) gates `show`.
+    project.add_file(
+        "src/chain_call.rs",
+        r#"pub struct Builder;
+
+impl Builder {
+    pub fn new() -> Builder {
+        Builder
+    }
+
+    pub fn build(&self) -> Widget {
+        Widget
+    }
+}
+
+pub struct Widget;
+
+impl Widget {
+    pub fn show(&self) -> bool {
+        true
+    }
+}
+
+pub fn make() -> Widget {
+    Builder::new().build()
+}
+
+pub fn make_and_show() -> bool {
+    Builder::new().build().show()
+}
+"#,
+    );
+
     // Point the locators at the seeded stubs, index once, restore env.
     let prior_sysroot = std::env::var_os("BEARWISDOM_RUST_SYSROOT");
     let prior_cargo_home = std::env::var_os("CARGO_HOME");
@@ -325,6 +361,8 @@ pub fn greet_it() -> bool {
     let std_string_len = count_resolved_to(&db, "std_string.rs", "len", "%String%");
     let std_option_unwrap = count_resolved_to(&db, "std_option.rs", "unwrap", "%Option%");
     let external_crate_greet = count_resolved_to(&db, "external_crate.rs", "greet", "%Thing%");
+    let chain_call_build = count_resolved_to(&db, "chain_call.rs", "build", "%Builder%");
+    let chain_call_show = count_resolved_to(&db, "chain_call.rs", "show", "%Widget%");
 
     let checks = [
         (
@@ -351,6 +389,16 @@ pub fn greet_it() -> bool {
             "external crate seam  t.greet() -> Thing.greet (CARGO_HOME)",
             external_crate_greet >= 1,
             format!("resolved-to-Thing edges = {external_crate_greet}"),
+        ),
+        (
+            "chain call (r6a)  Builder::new().build() -> Builder.build",
+            chain_call_build >= 1,
+            format!("resolved-to-Builder edges = {chain_call_build}"),
+        ),
+        (
+            "chain call (r6b)  Builder::new().build().show() -> Widget.show",
+            chain_call_show >= 1,
+            format!("resolved-to-Widget edges = {chain_call_show}"),
         ),
     ];
 
