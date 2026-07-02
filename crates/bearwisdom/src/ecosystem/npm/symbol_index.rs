@@ -356,7 +356,10 @@ pub(crate) fn resolve_relative_in_set(
     specifier: &str,
     known: &HashSet<PathBuf>,
 ) -> Option<PathBuf> {
-    let target = base_dir.join(specifier);
+    // `known` holds the lexically-normalized paths `resolve_relative_ts_path`
+    // returned during the scan; normalize the freshly-joined target the same
+    // way so a `../`-laden specifier still matches its entry.
+    let target = super::lexically_normalize(&base_dir.join(specifier));
     const EXTS: &[&str] = &["ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs"];
     for ext in EXTS {
         let candidate = target.with_extension(ext);

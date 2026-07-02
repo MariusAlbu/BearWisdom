@@ -498,7 +498,8 @@ fn survivor_match_file(
         let survivor: Option<i64> = match (&key, mergeable) {
             (Some(k), true) => tx
                 .prepare_cached(
-                    "SELECT id FROM symbols WHERE symbol_key = ?1 AND mergeable = 1 LIMIT 1",
+                    "SELECT id FROM symbols WHERE symbol_key = ?1 AND mergeable = 1
+                     ORDER BY id LIMIT 1",
                 )?
                 .query_row([k], |r| r.get::<_, i64>(0))
                 .optional()?,
@@ -563,8 +564,16 @@ fn survivor_match_file(
         tx.prepare_cached("DELETE FROM symbol_locations WHERE symbol_id = ?1 AND file_id = ?2")?
             .execute(rusqlite::params![id, file_id])?;
         let remaining: Vec<(i64, i64, i64)> = {
+            // Ordered by (file path, line, col) rather than bare `file_id`:
+            // `file_id` is an auto-increment value assigned in file-processing
+            // order, which isn't guaranteed stable, so picking the smallest
+            // `file_id` would make the promoted primary site — and therefore
+            // this symbol's reported declaration location — non-deterministic.
             let mut stmt = tx.prepare_cached(
-                "SELECT file_id, line, col FROM symbol_locations WHERE symbol_id = ?1 ORDER BY file_id",
+                "SELECT sl.file_id, sl.line, sl.col
+                 FROM symbol_locations sl JOIN files f ON f.id = sl.file_id
+                 WHERE sl.symbol_id = ?1
+                 ORDER BY f.path, sl.line, sl.col, sl.file_id",
             )?;
             let rows = stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             rows.collect::<std::result::Result<_, _>>()?
@@ -1434,18 +1443,25 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
     let mut remapped: HashMap<i64, i64> = HashMap::new();
 
     // Compute the dup_id -> canonical map in ONE ordered scan: rows sharing a
-    // mergeable symbol_key are consecutive, the smallest id per group is the
-    // canonical row, the rest are duplicates. Uses the partial index on
-    // (symbol_key WHERE mergeable=1) for both the filter and the ordering — one
-    // pass instead of a GROUP-BY plus a prepared id query per duplicate key.
+    // mergeable symbol_key are consecutive, the first row per group (by the
+    // ordering below) is the canonical row, the rest are duplicates.
     // Canonical ids are never themselves dup_ids, so the remap is single-level
     // (no reparent chaining).
+    //
+    // Ordered by (file path, line, col, id) rather than bare `id`: `id` is an
+    // auto-increment value assigned during the parallel per-file symbol write,
+    // whose completion order varies run to run, so picking the smallest id
+    // would make the canonical winner — and therefore which file's refs
+    // absorb the merge — non-deterministic. Path/line/col are properties of
+    // the source itself and don't change between runs; `id` only breaks a
+    // literal tie (same file, same line, same column).
     {
         let mut stmt = tx
             .prepare(
-                "SELECT symbol_key, id FROM symbols
-                 WHERE mergeable = 1 AND symbol_key IS NOT NULL
-                 ORDER BY symbol_key, id",
+                "SELECT s.symbol_key, s.id
+                 FROM symbols s JOIN files f ON f.id = s.file_id
+                 WHERE s.mergeable = 1 AND s.symbol_key IS NOT NULL
+                 ORDER BY s.symbol_key, f.path, s.line, s.col, s.id",
             )
             .context("Failed to prepare mergeable-rows query")?;
         let mut rows = stmt.query([]).context("Failed to query mergeable rows")?;
@@ -1456,7 +1472,7 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
             let id: i64 = row.get(1)?;
             if cur_key.as_deref() != Some(key.as_str()) {
                 cur_key = Some(key);
-                canonical = id; // first id in the group (ORDER BY id) is canonical
+                canonical = id; // first row in the group (ORDER BY above) is canonical
             } else {
                 remapped.insert(id, canonical);
             }

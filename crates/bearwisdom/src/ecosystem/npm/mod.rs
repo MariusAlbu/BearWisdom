@@ -467,22 +467,59 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // Module-path validation
 // ---------------------------------------------------------------------------
 
-/// Collapse embedded `/./` segments and normalise backslashes in a path
-/// fragment that's about to land in a virtual `ext:ts:<pkg>/<rel>` URI.
-/// `resolve_relative_ts_path` joins specs like `./internal/foo` without
-/// normalising, so a single .d.ts can otherwise show up under multiple
-/// virtual paths (`dist/types/Observable.d.ts`,
-/// `dist/types/./internal/Observable.d.ts`) and confuse downstream
+/// Collapse embedded `/./` and `/../` segments and normalise backslashes in
+/// a path fragment that's about to land in a virtual `ext:ts:<pkg>/<rel>`
+/// URI. `resolve_relative_ts_path` joins specs like `./internal/foo` or
+/// `../../foo` without normalising, so a single .d.ts can otherwise show up
+/// under multiple virtual paths (`dist/types/Observable.d.ts`,
+/// `dist/types/./internal/Observable.d.ts`,
+/// `dist/types/internal/../Observable.d.ts`) and confuse downstream
 /// dedupe + symbol prefixing.
 pub(crate) fn normalize_virtual_rel(rel: &str) -> String {
-    let mut s = rel.replace('\\', "/");
-    while s.contains("/./") {
-        s = s.replace("/./", "/");
+    let s = rel.replace('\\', "/");
+    let mut out: Vec<&str> = Vec::new();
+    for seg in s.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                if out.last().is_some_and(|s| *s != "..") {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            _ => out.push(seg),
+        }
     }
-    if let Some(rest) = s.strip_prefix("./") {
-        s = rest.to_string();
+    out.join("/")
+}
+
+/// Collapse `.` and `..` components out of an absolute filesystem path
+/// without touching disk (no symlink resolution, no existence check — the
+/// path may name a file that doesn't exist yet at call time). Two relative
+/// re-export hops that reach the same physical file by different routes
+/// (`pkg/a/../b.d.ts` vs `pkg/b.d.ts`) must produce an identical `PathBuf`,
+/// since every reachability-closure dedup (`HashSet<PathBuf>`) and
+/// `(module, name) → PathBuf` first-writer-wins map is keyed on this
+/// identity. A leading `..` that would pop past the start of the path is
+/// kept literally rather than silently dropped, since there is no root
+/// segment left to remove.
+pub(crate) fn lexically_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
     }
-    s
+    out
 }
 
 /// Reject `dep.module_path` shapes that would produce malformed virtual

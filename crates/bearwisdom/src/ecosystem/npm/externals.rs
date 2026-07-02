@@ -67,11 +67,18 @@ fn subpath_imports_under(
     user_imports: &std::collections::HashSet<String>,
 ) -> Vec<String> {
     let prefix = format!("{module_path}/");
-    user_imports
+    // Sorted: this becomes `ExternalDepRoot::requested_imports`, whose order
+    // drives the push order of subpath entries into the symbol-index build —
+    // an unsorted HashSet iteration would make that order (and therefore any
+    // first-writer-wins collision downstream) a function of the process's
+    // hash seed instead of the input.
+    let mut specs: Vec<String> = user_imports
         .iter()
         .filter(|s| s.starts_with(prefix.as_str()))
         .cloned()
-        .collect()
+        .collect();
+    specs.sort();
+    specs
 }
 
 pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
@@ -562,7 +569,13 @@ pub(crate) fn discover_ts_externals_scoped(
     let builtins = node_builtins();
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    for dep in &declared {
+    // Sort before iterating: a HashSet's iteration order is not stable, and
+    // the order here decides the first-writer-wins winner among same-name
+    // externals downstream (mirrors the project-level `discover_ts_externals`,
+    // which sorts its own `deps` set for the same reason).
+    let mut declared: Vec<&String> = declared.iter().collect();
+    declared.sort();
+    for dep in declared {
         if builtins.contains(dep.as_str()) {
             continue;
         }
@@ -700,6 +713,14 @@ pub(crate) fn discover_ts_externals_scoped(
             break;
         }
         next_pass_start = roots.len();
+
+        // Sort before iterating: a HashSet's iteration order is not stable, and
+        // the order here decides the first-writer-wins winner among same-name
+        // externals downstream, which steers the whole transitive closure into a
+        // different file set run-to-run. A total order keeps the materialized
+        // set a deterministic function of the inputs.
+        let mut transitive_specs: Vec<(String, PathBuf)> = transitive_specs.into_iter().collect();
+        transitive_specs.sort();
         for (spec, parent_local_nm) in transitive_specs {
             // Reduce deep specs (`playwright/test`, `@types/node/fs`) to
             // their package portion before validating + walking. The

@@ -716,6 +716,50 @@ fn full_index_mergeable_namespace_collapsed_by_post_write_pass() {
     assert_eq!(loc_cnt, 2, "two declaration sites recorded");
 }
 
+/// The canonical row among mergeable duplicates must be chosen by file path,
+/// not by raw `id` — `id` is an auto-increment value assigned during the
+/// parallel per-file symbol write, whose completion order varies run to run.
+/// Writing "b.cs" before "a.cs" gives "b.cs" the SMALLER id; the collapse
+/// must still pick "a.cs" (the alphabetically-first path) as canonical.
+#[test]
+fn mergeable_collapse_canonical_pick_is_path_ordered_not_id_ordered() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    // "b.cs" written FIRST, so it gets the smaller auto-increment id.
+    write_full(&db, "b.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+    write_full(&db, "a.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+
+    let remapped = resolve_cross_file_containment_and_merge(&db).unwrap();
+
+    let canonical_id: i64 = db
+        .conn()
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let canonical_path: String = db
+        .conn()
+        .query_row(
+            "SELECT f.path FROM symbols s JOIN files f ON f.id = s.file_id WHERE s.id = ?1",
+            [canonical_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(
+        canonical_path, "a.cs",
+        "canonical row must be the alphabetically-first file, not whichever file wrote first"
+    );
+    assert_eq!(
+        remapped.len(),
+        1,
+        "exactly one duplicate (b.cs's row) remapped onto the canonical id"
+    );
+}
+
 /// A cross-file member of a MERGEABLE parent must bind after the pass: the
 /// collapse step runs first, reducing the two namespace rows to one canonical
 /// row, so the containment step then sees a single unambiguous parent (rather

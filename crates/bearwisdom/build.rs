@@ -152,8 +152,16 @@ fn write_lang_file(
     }
     out.push_str(";\n");
 
-    let path = dir.join(format!("{lang}.rs"));
+    let path = dir.join(format!("{}.rs", mod_ident(lang)));
     fs::write(&path, &out).expect("Failed to write per-language file");
+}
+
+/// Turn a language id into a valid Rust module identifier.
+///
+/// Language ids may contain hyphens (e.g. an unmapped grammar crate name);
+/// module names and file stems cannot, so hyphens become underscores here.
+fn mod_ident(lang: &str) -> String {
+    lang.replace('-', "_")
 }
 
 /// Write the dispatcher: mod declarations + two match-based lookup functions.
@@ -174,7 +182,7 @@ fn write_dispatcher(
     );
 
     for lang in all_langs {
-        out.push_str(&format!("mod {lang};\n"));
+        out.push_str(&format!("mod {};\n", mod_ident(lang)));
     }
     out.push('\n');
 
@@ -185,7 +193,10 @@ fn write_dispatcher(
          \x20   match lang {\n",
     );
     for lang in builtins.keys() {
-        out.push_str(&format!("        \"{lang}\" => {lang}::BUILTINS,\n"));
+        out.push_str(&format!(
+            "        \"{lang}\" => {}::BUILTINS,\n",
+            mod_ident(lang)
+        ));
     }
     out.push_str("        _ => &[],\n    }\n}\n\n");
 
@@ -196,7 +207,10 @@ fn write_dispatcher(
          \x20   match lang {\n",
     );
     for lang in locals.keys() {
-        out.push_str(&format!("        \"{lang}\" => {lang}::LOCALS_SCM,\n"));
+        out.push_str(&format!(
+            "        \"{lang}\" => {}::LOCALS_SCM,\n",
+            mod_ident(lang)
+        ));
     }
     out.push_str("        _ => None,\n    }\n}\n");
 

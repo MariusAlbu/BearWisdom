@@ -12,7 +12,8 @@ use crate::ecosystem::externals::{ExternalDepRoot, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
 use super::{
-    is_valid_npm_module_path, normalize_virtual_rel, package_ships_scss, scan_for_scss_bounded,
+    is_valid_npm_module_path, lexically_normalize, normalize_virtual_rel, package_ships_scss,
+    scan_for_scss_bounded,
 };
 
 // ---------------------------------------------------------------------------
@@ -641,7 +642,13 @@ pub(crate) fn extract_relative_reexports(src: &str) -> Vec<String> {
 
 pub(crate) fn resolve_relative_ts_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
     let base = from_file.parent()?;
-    let raw = base.join(spec);
+    // Lexically collapse `.`/`..` before any candidate is built or returned.
+    // `base.join(spec)` leaves `foo/bar/../../baz` as-is, so the same physical
+    // file reached via a direct join vs. a `../`-laden relative re-export
+    // would otherwise carry two different `PathBuf` identities — breaking
+    // every `HashSet<PathBuf>` dedup and `(module, name) → PathBuf` first-
+    // writer-wins map keyed on this return value.
+    let raw = lexically_normalize(&base.join(spec));
     let raw_str = raw.to_string_lossy().to_string();
 
     // Rollup-bundled type-entry shells re-export from `./chunk.js`-style

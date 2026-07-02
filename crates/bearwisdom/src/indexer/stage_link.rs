@@ -132,6 +132,18 @@ pub(crate) fn parse_external_sources(
             all_roots.extend(roots);
         }
     } else {
+        // Sorted by path before iterating: a package whose deps are symlink-
+        // hoisted (pnpm) is reached again from every consuming package's own
+        // node_modules, producing several `ExternalDepRoot`s for the same
+        // physical directory under different symlink paths — the dedup key
+        // below doesn't canonicalize symlinks, so those survive as distinct
+        // entries. Their relative order among `all_roots` then decides the
+        // first-writer-wins winner in the downstream symbol index for any
+        // name the package re-exports through more than one file. `packages`
+        // arrives in filesystem-scan order, which isn't a stable contract
+        // across runs, so a content-derived order is required here.
+        let mut packages: Vec<&PackageInfo> = packages.iter().collect();
+        packages.sort_by(|a, b| a.path.cmp(&b.path));
         for pkg in packages {
             let Some(pkg_id) = pkg.id else { continue };
             let pkg_abs_path = project_root.join(&pkg.path);
@@ -280,10 +292,17 @@ pub(crate) fn parse_external_sources(
 
     // Build the symbol index for every demand-driven ecosystem. One call
     // per ecosystem with the full set of that ecosystem's dep roots, merged
-    // into a process-wide master index.
+    // into a process-wide master index. Ecosystem tags are sorted before
+    // iterating: `demand_driven_by_eco` is a HashMap, whose iteration order
+    // is randomized per process, and `symbol_index.extend` is first-writer-
+    // wins on the `(module, name)` axis — an unsorted iteration would let a
+    // cross-ecosystem key collision resolve to a different winner each run.
     let mut symbol_index = SymbolLocationIndex::new();
     let _t_symidx = Some(crate::indexer::phase_timer::scope("externals.build_symbol_index"));
-    for (tag, roots) in &demand_driven_by_eco {
+    let mut eco_tags: Vec<&'static str> = demand_driven_by_eco.keys().copied().collect();
+    eco_tags.sort_unstable();
+    for tag in &eco_tags {
+        let roots = &demand_driven_by_eco[tag];
         if let Some(eco) = demand_driven_ecosystems.get(tag) {
             let idx = {
                 let _t = crate::indexer::phase_timer::scope("externals.build_symbol_index.per_eco");

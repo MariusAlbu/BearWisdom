@@ -54,7 +54,14 @@ pub(crate) fn collect_bare_reexports_recursive(entry: &Path) -> Vec<String> {
             }
         }
     }
-    out.into_iter().collect()
+    // Sorted at the source: a HashSet's iteration order is randomized per
+    // process, and callers use this order to decide first-writer-wins winners
+    // among same-name externals — an unsorted return would make that pick
+    // (and the whole downstream transitive closure) a function of the
+    // process's hash seed instead of the input.
+    let mut specs: Vec<String> = out.into_iter().collect();
+    specs.sort();
+    specs
 }
 
 /// Scan a source file for `export ... from '<spec>'` / `import ... from '<spec>'`

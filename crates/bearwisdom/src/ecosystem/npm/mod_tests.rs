@@ -453,6 +453,43 @@ fn normalize_virtual_rel_collapses_dot_segments() {
 }
 
 #[test]
+fn normalize_virtual_rel_collapses_parent_segments() {
+    // A relative re-export reached via a nested subpath (`primitives/x/../../y.d.ts`)
+    // must collapse to the same string as the direct route (`y.d.ts`) — otherwise
+    // the same physical file shows up under two virtual paths depending on which
+    // re-export hop pulled it in.
+    assert_eq!(
+        normalize_virtual_rel("primitives/event-dispatch/../../event_dispatcher.d.ts"),
+        "event_dispatcher.d.ts"
+    );
+    assert_eq!(
+        normalize_virtual_rel("testing/../chrome_dev_tools_performance.d.ts"),
+        "chrome_dev_tools_performance.d.ts"
+    );
+    // A `..` with nothing left to pop is kept literally rather than dropped.
+    assert_eq!(normalize_virtual_rel("../escaped.d.ts"), "../escaped.d.ts");
+}
+
+#[test]
+fn lexically_normalize_collapses_dot_and_parent_components() {
+    use std::path::Path;
+
+    assert_eq!(
+        lexically_normalize(Path::new("/pkg/primitives/event-dispatch/../../event_dispatcher.d.ts")),
+        Path::new("/pkg/event_dispatcher.d.ts")
+    );
+    assert_eq!(
+        lexically_normalize(Path::new("/pkg/./sub/./file.d.ts")),
+        Path::new("/pkg/sub/file.d.ts")
+    );
+    // No root segment left to pop past — the leading `..` survives.
+    assert_eq!(
+        lexically_normalize(Path::new("../escaped")),
+        Path::new("../escaped")
+    );
+}
+
+#[test]
 fn declare_global_extracts_const_decls() {
     let src = r#"
 declare global {
