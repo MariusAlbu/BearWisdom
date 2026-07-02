@@ -1210,6 +1210,18 @@ fn materialize_externals(
         return Ok(());
     }
 
+    // Sorted by virtual path before write/ingest: the closure above discovers
+    // files in whatever order the frontier/BFS happened to enqueue them, which
+    // is a function of which internal file's ref reached them first — not
+    // necessarily stable when the same package is reachable through more than
+    // one route (e.g. a package's root entry and one of its own subpaths both
+    // independently declare a same-named symbol). `write_parsed_files_with_origin`
+    // assigns each file's symbol ids in `ext_parsed`'s order, and `tree.ingest`'s
+    // first-writer-wins `by_qname` insert keeps whichever file it sees first —
+    // sorting here makes both a deterministic function of the file set, the
+    // same fix already applied to the internal `parsed` batch in full.rs.
+    ext_parsed.sort_by(|a, b| a.path.cmp(&b.path));
+
     // Persist the external symbols (origin='external') to get real DB ids, then
     // ingest them into the tree so refs bind to those ids.
     let (_files, ext_id_map) = crate::indexer::write::write_parsed_files_with_origin(
