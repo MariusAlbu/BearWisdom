@@ -52,6 +52,7 @@ pub const SVELTE_PROFILE: LanguageProfile = LanguageProfile {
         },
     workspace_packages: true,
     self_package_root: None,
+    wildcard_workspace_scope: false,
     overload_pick_all: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,

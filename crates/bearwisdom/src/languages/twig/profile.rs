@@ -47,6 +47,7 @@ pub const TWIG_PROFILE: LanguageProfile = LanguageProfile {
         crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     self_package_root: None,
+    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

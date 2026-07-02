@@ -15,15 +15,15 @@
 // re-exported at the package root binds the same way a direct declaration
 // would (both are members of the same package's symbol set).
 //
-// Gated on `profile.workspace_packages`.  `is_bare_module_specifier` (inlined
-// below) rejects relative and drive-rooted specifiers.
+// Gated on `profile.workspace_packages`.  `is_bare_module_specifier` rejects
+// relative and drive-rooted specifiers.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::{
-    follow_reexports, workspace_pkg_barrels, workspace_sub_path,
+    follow_reexports, is_bare_module_specifier, self_package_sub_path, workspace_pkg_barrels,
+    workspace_sub_path,
 };
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::LanguageProfile;
 
 pub struct WorkspacePackageRule;
 
@@ -105,36 +105,6 @@ impl LookupRule for WorkspacePackageRule {
         }
         LookupResult::Pass
     }
-}
-
-// =============================================================================
-// Private helpers
-// =============================================================================
-
-/// A bare module specifier names a package, not a project-relative path.
-/// Rejects specifiers that start with `.`, `/`, or a Windows drive letter
-/// (`C:/`).
-fn is_bare_module_specifier(spec: &str) -> bool {
-    !spec.starts_with('.')
-        && !spec.starts_with('/')
-        && !(spec.len() >= 2 && spec.as_bytes()[1] == b':')
-}
-
-/// When `specifier`'s leading segment is `profile.self_package_root`
-/// (Rust's `crate`), the sub-path remainder that follows it: `Some(None)` for
-/// the bare keyword (`crate`), `Some(Some(rest))` for a deeper path
-/// (`crate::thing` -> `Some(Some("thing"))`). `None` when the profile carries
-/// no such keyword or `specifier` doesn't lead with it, so the caller falls
-/// back to the declared-name lookup.
-fn self_package_sub_path(profile: &LanguageProfile, specifier: &str) -> Option<Option<String>> {
-    let keyword = profile.self_package_root?;
-    let rest = specifier.strip_prefix(keyword)?;
-    if rest.is_empty() {
-        return Some(None);
-    }
-    rest.strip_prefix(profile.qname_separator)
-        .or_else(|| rest.strip_prefix('/'))
-        .map(|sub| Some(sub.to_string()))
 }
 
 #[cfg(test)]

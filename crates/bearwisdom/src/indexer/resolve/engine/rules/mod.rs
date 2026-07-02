@@ -47,6 +47,7 @@ pub mod selector_map;
 pub mod self_keyword;
 pub mod wildcard_builtin_fold;
 pub mod wildcard_import;
+pub mod wildcard_workspace_package;
 pub mod workspace_package;
 
 use aliased_import::AliasedImportRule;
@@ -87,6 +88,7 @@ use selector_map::SelectorMapRule;
 use self_keyword::SelfKeywordRule;
 use wildcard_builtin_fold::WildcardBuiltinFoldRule;
 use wildcard_import::WildcardImportRule;
+use wildcard_workspace_package::WildcardWorkspacePackageRule;
 use workspace_package::WorkspacePackageRule;
 
 /// The production rule set, in canonical ladder order. First rule that resolves
@@ -131,6 +133,7 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
         Box::new(ExternalByImportRule),
         Box::new(ModuleScopeRule),
         Box::new(WildcardImportRule),
+        Box::new(WildcardWorkspacePackageRule),
         Box::new(RelativeModuleWildcardRule),
         Box::new(ImplicitPreludeRule),
         Box::new(GenericParamRule),

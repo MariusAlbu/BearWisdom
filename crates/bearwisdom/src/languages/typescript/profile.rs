@@ -193,6 +193,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
         },
     workspace_packages: true,
     self_package_root: None,
+    wildcard_workspace_scope: false,
     // Declaration merging: interface + variable under one qname.
     overload_pick_all: true,
     argument_dependent_lookup: false,

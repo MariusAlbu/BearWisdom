@@ -170,6 +170,16 @@ impl SelfProbe {
         false
     }
 }
+
+pub struct GlobProbe;
+impl GlobProbe {
+    pub fn new() -> GlobProbe {
+        GlobProbe
+    }
+    pub fn external_marker(&self) -> bool {
+        false
+    }
+}
 "#,
     )
     .unwrap();
@@ -466,6 +476,86 @@ pub fn run_bench_nested() -> bool {
 "#,
     );
 
+    // --- pattern: bench target glob-imports its own crate by published name --
+    // `use tantivy::collector::*;` — every name the target module's public
+    // surface exposes becomes bare-scoped, including ones reached only through
+    // a `pub use` re-export nested deeper than the glob's own module path.
+    // `GlobProbe` collides with a same-named `somecrate::GlobProbe` (seeded in
+    // `seed_cargo_registry`) for the same reason `SelfProbe` does above: a
+    // globally unique name would resolve through the bare-qname fallback
+    // without ever exercising the glob-scoped bind.
+    project.add_file(
+        "src/glob_probe.rs",
+        r#"pub struct GlobProbe;
+
+impl GlobProbe {
+    pub fn new() -> GlobProbe {
+        GlobProbe
+    }
+
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+"#,
+    );
+    project.add_file(
+        "benches/bench_glob_import.rs",
+        r#"use resolution_corpus_rust::*;
+
+pub fn run_bench_glob() -> bool {
+    let p = GlobProbe::new();
+    p.touch()
+}
+"#,
+    );
+    // --- pattern: bench target glob-imports a NESTED module of its own crate -
+    // `use tantivy::collector::*;`'s multi-segment shape: the glob's module path
+    // carries a sub-path (`inner`) that must filter candidates by file, not just
+    // by package. `decoy_mod.rs` declares a same-named `InnerProbe` OUTSIDE the
+    // `inner` module so a bind that ignores the sub-path (package-wide, first
+    // same-name hit) cannot pass by accident.
+    project.add_file(
+        "src/inner.rs",
+        r#"pub struct InnerProbe;
+
+impl InnerProbe {
+    pub fn new() -> InnerProbe {
+        InnerProbe
+    }
+
+    pub fn ping(&self) -> bool {
+        true
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/decoy_mod.rs",
+        r#"pub struct InnerProbe;
+
+impl InnerProbe {
+    pub fn new() -> InnerProbe {
+        InnerProbe
+    }
+
+    pub fn wrong(&self) -> bool {
+        false
+    }
+}
+"#,
+    );
+    project.add_file(
+        "benches/bench_glob_import_nested.rs",
+        r#"use resolution_corpus_rust::inner::*;
+
+pub fn run_bench_glob_nested() -> bool {
+    let p = InnerProbe::new();
+    p.ping()
+}
+"#,
+    );
+
     // --- pattern: crate::-relative self-reference through a pub-use re-export
     // `Thing` is declared in `src/thing.rs` and re-exported at the crate root
     // (`pub use thing::Thing;` in `lib.rs`). `crate_reexport.rs` names it via
@@ -497,6 +587,9 @@ impl Thing {
         "src/lib.rs",
         r#"mod thing;
 pub use thing::Thing;
+mod glob_probe;
+pub use glob_probe::GlobProbe;
+pub mod inner;
 "#,
     );
     project.add_file(
@@ -639,6 +732,17 @@ mod tests {
         count_resolved_to(&db, "bench_self_import.rs", "touch", "%SelfProbe%");
     let self_import_nested_poke =
         count_resolved_to(&db, "bench_self_import_nested.rs", "poke", "%SelfProbe%");
+    // The `.touch()` / `.ping()` calls below already resolve regardless of this
+    // gap — the chain walker's own root/call re-derivation rescues them the
+    // same way it rescues `crate_reexport.rs`'s `.go()` (see that pattern's
+    // comment). The synthetic TypeRef that seeds `p`'s local type from
+    // `GlobProbe::new()` / `InnerProbe::new()` is the one that dies on
+    // `cause=unbound_root` without the glob-scoped bind — that TypeRef is the
+    // count-inflating symptom these probes target.
+    let glob_import_globprobe_unresolved =
+        count_unresolved(&db, "bench_glob_import.rs", "type_ref", "GlobProbe");
+    let glob_import_nested_innerprobe_unresolved =
+        count_unresolved(&db, "bench_glob_import_nested.rs", "type_ref", "InnerProbe");
     let std_macro_assert =
         count_resolved_with_origin(&db, "std_macros.rs", "assert", "external");
     let crate_reexport_thing_unresolved =
@@ -693,6 +797,16 @@ mod tests {
             "self-crate import (bench, nested module)  SelfProbe::new().poke() -> selfmod.SelfProbe.poke",
             self_import_nested_poke >= 1,
             format!("resolved-to-SelfProbe(nested).poke edges = {self_import_nested_poke}"),
+        ),
+        (
+            "self-crate glob import (bench, crate root)  use resolution_corpus_rust::*; GlobProbe local-type TypeRef binds (not unbound_root)",
+            glob_import_globprobe_unresolved == 0,
+            format!("unresolved type_ref(GlobProbe) = {glob_import_globprobe_unresolved}"),
+        ),
+        (
+            "self-crate glob import (bench, nested module)  use resolution_corpus_rust::inner::*; InnerProbe local-type TypeRef binds (not unbound_root)",
+            glob_import_nested_innerprobe_unresolved == 0,
+            format!("unresolved type_ref(InnerProbe) = {glob_import_nested_innerprobe_unresolved}"),
         ),
         (
             "std macro (sysroot)  assert!(x) -> core::macros::assert (BEARWISDOM_RUST_SYSROOT)",

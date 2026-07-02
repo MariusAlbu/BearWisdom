@@ -16,7 +16,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, Symbol, SymbolInfo, SymbolLookup, TypeInfo, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{TypeArena, TypeId};
-use crate::type_checker::profile::language_profile::{NameNormalization, NormSpec};
+use crate::type_checker::profile::language_profile::{LanguageProfile, NameNormalization, NormSpec};
 use crate::types::EdgeKind;
 
 /// Resolve a module-tagged value `TypeRef` to the type of the value module
@@ -125,6 +125,35 @@ pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> 
         }
     }
     None
+}
+
+/// A bare module specifier names a package, not a project-relative path.
+/// Rejects specifiers that start with `.`, `/`, or a Windows drive letter
+/// (`C:/`). Shared by `workspace_package` and `wildcard_workspace_package` —
+/// both scope a specifier to a workspace package's symbol set and must first
+/// rule out a relative/absolute path.
+pub(crate) fn is_bare_module_specifier(spec: &str) -> bool {
+    !(spec.starts_with('.') || spec.starts_with('/') || (spec.len() >= 2 && spec.as_bytes()[1] == b':'))
+}
+
+/// When `specifier`'s leading segment is `profile.self_package_root`
+/// (Rust's `crate`), the sub-path remainder that follows it: `Some(None)` for
+/// the bare keyword (`crate`), `Some(Some(rest))` for a deeper path
+/// (`crate::thing` -> `Some(Some("thing"))`). `None` when the profile carries
+/// no such keyword or `specifier` doesn't lead with it, so the caller falls
+/// back to the declared-name lookup.
+pub(crate) fn self_package_sub_path(
+    profile: &LanguageProfile,
+    specifier: &str,
+) -> Option<Option<String>> {
+    let keyword = profile.self_package_root?;
+    let rest = specifier.strip_prefix(keyword)?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    rest.strip_prefix(profile.qname_separator)
+        .or_else(|| rest.strip_prefix('/'))
+        .map(|sub| Some(sub.to_string()))
 }
 
 /// `true` when `kind` names a type a `this`/`self` keyword or an inherited

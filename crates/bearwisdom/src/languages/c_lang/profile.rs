@@ -107,6 +107,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
         crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
     self_package_root: None,
+    wildcard_workspace_scope: false,
     overload_pick_all: false,
     // C++ argument-dependent lookup: a bare `swap(a, b)` resolves to a free
     // function `swap` declared in the namespace of an argument's type.

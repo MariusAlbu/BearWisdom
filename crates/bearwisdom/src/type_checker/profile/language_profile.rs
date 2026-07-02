@@ -262,6 +262,19 @@ pub struct LanguageProfile {
     /// rather than a `workspace_pkg_by_declared_name` lookup). `None` (the
     /// default) leaves every specifier resolved by declared name only.
     pub self_package_root: Option<&'static str>,
+    /// Whether a bare name under a `*` wildcard import (`use pkg::*;`) that
+    /// names a workspace package — sibling by declared name, or this file's
+    /// own via `self_package_root` — brings that package's symbols into bare
+    /// scope. `false` (the default) leaves the rung inert. `true` opts in a
+    /// language whose glob imports genuinely open unqualified scope AND whose
+    /// qualified names don't carry the module path a `wildcard_match` string
+    /// test needs (Rust: `qualified_name` is file-nesting-only, so a name
+    /// reached through a `pub use` re-export from a deeper submodule has no
+    /// prefix in common with the glob's module path). Resolved the same way
+    /// `workspace_packages` binds an explicit import — package id + optional
+    /// sub-path file-substring match, never a `qualified_name` string test —
+    /// and only when EXACTLY ONE candidate matches across the file's globs.
+    pub wildcard_workspace_scope: bool,
     /// Whether the `ByNameUnderModuleDir` qname probe and `resolve_via_qname_exact`
     /// scan ALL same-qname overloads for the first kind-compatible one rather
     /// than taking `by_qualified_name`'s first-wins winner. `false` (the
@@ -1158,6 +1171,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     module_prefix_rewrites: ModulePrefixRewrites::Off,
     workspace_packages: false,
     self_package_root: None,
+    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

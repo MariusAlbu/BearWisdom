@@ -205,6 +205,14 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // thing::Thing;` at the crate root) binds the same way a direct
     // declaration would — both are members of the same package.
     self_package_root: Some("crate"),
+    // `use tantivy::collector::*;` brings every name the `collector` module
+    // exposes into bare scope, including ones only reachable through a
+    // `pub use` re-export from a deeper submodule — the physical declaration
+    // site's qualified name carries no crate/module prefix at all, so a
+    // qname-prefix test can never line it up with the glob's module path.
+    // Scoped through the same package-id + file-path-substring search
+    // `workspace_packages` gives an explicit import.
+    wildcard_workspace_scope: true,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     // `Self::Output` / `<C as Trait>::Item` return strings project through the
