@@ -312,32 +312,18 @@ pub fn greet_it() -> bool {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
-    //   std-option — `impl<T> Option<T> { fn unwrap(...) }`'s qualifying
-    //     prefix is the impl target node's raw text: `extract_impl`
-    //     (`rust_lang/calls.rs:41-45`) sets `type_name =
-    //     node_text(&type_node, source)` for the `type` field directly,
-    //     without reducing a `generic_type` node to its base name the way
-    //     `rust_type_node_name()` does elsewhere. `unwrap` indexes as
-    //     `Option<T>.unwrap`, not `Option.unwrap` — the member walk looks
-    //     for the latter and misses. Unrelated to std-seeding (confirmed:
-    //     the stub IS indexed); reproduces on any project-local
-    //     `impl<T> Foo<T> { .. }` inherent-method block.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "exists")
     );
-    println!(
-        "  std-option     opt.unwrap() resolved-to-Option={} unresolved={}",
-        count_resolved_to(&db, "std_option.rs", "unwrap", "%Option%"),
-        count_unresolved(&db, "std_option.rs", "unwrap")
-    );
 
     // Each row: (label, pass, detail).
     let assoc_call_exists = count_resolved_to(&db, "assoc_call.rs", "exists", "%Index%");
     let local_ctor_commit = count_resolved_to(&db, "local_ctor.rs", "commit", "%IndexWriter%");
     let std_string_len = count_resolved_to(&db, "std_string.rs", "len", "%String%");
+    let std_option_unwrap = count_resolved_to(&db, "std_option.rs", "unwrap", "%Option%");
     let external_crate_greet = count_resolved_to(&db, "external_crate.rs", "greet", "%Thing%");
 
     let checks = [
@@ -355,6 +341,11 @@ pub fn greet_it() -> bool {
             "std seam (sysroot)  s.len() -> String.len (BEARWISDOM_RUST_SYSROOT)",
             std_string_len >= 1,
             format!("resolved-to-String edges = {std_string_len}"),
+        ),
+        (
+            "std seam (sysroot)  opt.unwrap() -> Option.unwrap (BEARWISDOM_RUST_SYSROOT)",
+            std_option_unwrap >= 1,
+            format!("resolved-to-Option edges = {std_option_unwrap}"),
         ),
         (
             "external crate seam  t.greet() -> Thing.greet (CARGO_HOME)",

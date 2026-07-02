@@ -42,7 +42,22 @@ pub(super) fn extract_impl(
         Some(n) => n,
         None => return,
     };
-    let type_name = node_text(&type_node, source);
+    // Raw impl-target text — kept for the impl-block's own display name and
+    // signature, where the full generic form (`Option<T>`, `&'a mut Slice<K, V>`)
+    // is useful context rather than noise.
+    let type_text = node_text(&type_node, source);
+    // Base type name — generic argument lists, reference/`mut` prefixes, and
+    // lifetimes stripped — used everywhere the implementing type is treated
+    // as a qualification parent or a TypeRef target. Falls back to the raw
+    // text when `rust_type_node_name` doesn't recognize the type-node kind.
+    let type_name = {
+        let reduced = rust_type_node_name(&type_node, source);
+        if reduced.is_empty() {
+            type_text.clone()
+        } else {
+            reduced
+        }
+    };
 
     // Emit a Namespace symbol at the impl_item line. This gives the coverage
     // system something to match against for `impl_item` in symbol_node_kinds.
@@ -56,7 +71,7 @@ pub(super) fn extract_impl(
     {
         use super::helpers::{qualify, scope_from_prefix};
         let impl_line = node.start_position().row as u32 + 1;
-        let impl_short = format!("<impl {type_name}@{impl_line}>");
+        let impl_short = format!("<impl {type_text}@{impl_line}>");
         let impl_qname = if outer_prefix.is_empty() {
             impl_short.clone()
         } else {
@@ -67,8 +82,8 @@ pub(super) fn extract_impl(
         // this, refs to `T` inside an `impl<T> Foo for T` block end up
         // as unresolved type references.
         let signature = match node.child_by_field_name("type_parameters") {
-            Some(tp) => format!("impl{} {type_name}", node_text(&tp, source)),
-            None => format!("impl {type_name}"),
+            Some(tp) => format!("impl{} {type_text}", node_text(&tp, source)),
+            None => format!("impl {type_text}"),
         };
         symbols.push(ExtractedSymbol {
             name: impl_short.clone(),

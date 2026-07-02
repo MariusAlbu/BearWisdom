@@ -16,6 +16,61 @@ impl Bar {
 }
 
 #[test]
+fn impl_generic_type_param_qualifies_under_base_type() {
+    let source = r#"struct Foo<T> {
+    value: T,
+}
+
+impl<T> Foo<T> {
+    pub fn method(&self) {}
+}"#;
+    let r = extract::extract(source);
+    let method = r.symbols.iter().find(|s| s.name == "method");
+    assert!(method.is_some(), "Expected method 'method'");
+    assert_eq!(method.unwrap().qualified_name, "Foo.method");
+}
+
+#[test]
+fn impl_lifetime_param_qualifies_under_base_type() {
+    let source = r#"struct Bar<'a> {
+    value: &'a str,
+}
+
+impl<'a> Bar<'a> {
+    pub fn method(&self) {}
+}"#;
+    let r = extract::extract(source);
+    let method = r.symbols.iter().find(|s| s.name == "method");
+    assert!(method.is_some(), "Expected method 'method'");
+    assert_eq!(method.unwrap().qualified_name, "Bar.method");
+}
+
+#[test]
+fn impl_trait_for_reference_type_qualifies_under_base_type() {
+    let source = r#"struct Baz<K> {
+    key: K,
+}
+
+trait MyTrait {
+    fn convert(&self);
+}
+
+impl<'a, K> MyTrait for &'a mut Baz<K> {
+    fn convert(&self) {}
+}"#;
+    let r = extract::extract(source);
+    let qnames: Vec<&str> = r
+        .symbols
+        .iter()
+        .map(|s| s.qualified_name.as_str())
+        .collect();
+    assert!(
+        qnames.contains(&"Baz.convert"),
+        "Expected 'Baz.convert', got: {qnames:?}"
+    );
+}
+
+#[test]
 fn use_declaration_produces_import_ref() {
     let source = "use crate::db::Database;";
     let r = extract::extract(source);
