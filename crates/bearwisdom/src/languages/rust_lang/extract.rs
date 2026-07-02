@@ -628,7 +628,8 @@ fn extract_from_node(
             }
 
             "use_declaration" => {
-                calls::extract_use_names(&child, source, refs, symbols.len());
+                let sym_count = symbols.len();
+                calls::extract_use_names(&child, source, refs, symbols, sym_count, qualified_prefix);
             }
 
             // `extern "C" { fn malloc(size: usize) -> *mut u8; }`

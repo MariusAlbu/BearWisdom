@@ -383,7 +383,12 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // an imported name inside the function body sees no import
             // entry and falls through to unresolved.
             "use_declaration" => {
-                extract_use_names(&child, source, refs, source_symbol_index);
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_use_names(&child, source, refs, syms, source_symbol_index, "");
+                } else {
+                    let mut tmp: Vec<ExtractedSymbol> = Vec::new();
+                    extract_use_names(&child, source, refs, &mut tmp, source_symbol_index, "");
+                }
                 // No further descent — `extract_use_names` handles the
                 // entire subtree.
             }

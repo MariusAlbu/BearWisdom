@@ -1150,6 +1150,38 @@ fn pub_use_tags_reexport_private_use_does_not() {
 }
 
 #[test]
+fn pub_use_as_emits_addressable_alias_symbol() {
+    // `pub use path::Thing as Alias;` — un-renamed re-exports resolve because
+    // the source symbol's own declared name matches what's imported; a
+    // rename has no such symbol anywhere in the package. A synthetic
+    // `TypeAlias` symbol named after the alias makes it addressable the same
+    // way, mirroring TS's `export { X as Y } from '...'` placeholder.
+    let source = "pub use real::RealDoc as AliasDoc;";
+    let r = extract::extract(source);
+    let sym = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "AliasDoc")
+        .expect("expected a synthetic symbol named after the alias");
+    assert_eq!(sym.qualified_name, "AliasDoc");
+    assert_eq!(sym.kind, SymbolKind::TypeAlias);
+}
+
+#[test]
+fn private_use_as_emits_no_alias_symbol() {
+    // A private `use path::Thing as Alias;` only brings a name into local
+    // scope — it must not put a symbol on the module's surface, matching the
+    // `is_reexport` gate `pub_use_tags_reexport_private_use_does_not` checks
+    // for the plain (non-aliased) form.
+    let source = "use real::RealDoc as AliasDoc;";
+    let r = extract::extract(source);
+    assert!(
+        !r.symbols.iter().any(|s| s.name == "AliasDoc"),
+        "private `use ... as ...` must not emit an addressable alias symbol"
+    );
+}
+
+#[test]
 fn qualified_call_module_keeps_colon_path_verbatim() {
     // `use crate::db::DbPool` then `DbPool::new()`: the import-map post-pass
     // copies the importing module onto the call ref verbatim in `::` form

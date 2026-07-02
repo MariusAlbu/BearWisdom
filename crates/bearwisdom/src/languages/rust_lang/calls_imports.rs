@@ -2,8 +2,8 @@
 // rust/calls_imports.rs  —  `extern crate` and `use` declaration ref extraction
 // =============================================================================
 
-use super::helpers::{detect_visibility, node_text};
-use crate::types::{EdgeKind, ExtractedRef, Visibility};
+use super::helpers::{detect_visibility, node_text, qualify, scope_from_prefix};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -59,7 +59,9 @@ pub(super) fn extract_use_names(
     node: &Node,
     source: &str,
     refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
     current_symbol_count: usize,
+    qualified_prefix: &str,
 ) {
     // A `pub` / `pub(crate)` / `pub(super)` use re-exports the imported names
     // onto the module's surface — those names are genuine re-exports the binder
@@ -72,7 +74,16 @@ pub(super) fn extract_use_names(
         match child.kind() {
             "scoped_identifier" | "scoped_use_list" | "use_as_clause" | "use_wildcard"
             | "identifier" | "use_list" => {
-                walk_use_tree(&child, source, refs, current_symbol_count, "", is_reexport);
+                walk_use_tree(
+                    &child,
+                    source,
+                    refs,
+                    symbols,
+                    current_symbol_count,
+                    "",
+                    is_reexport,
+                    qualified_prefix,
+                );
             }
             _ => {}
         }
@@ -83,9 +94,11 @@ fn walk_use_tree(
     node: &Node,
     source: &str,
     refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
     current_symbol_count: usize,
     prefix: &str,
     is_reexport: bool,
+    qualified_prefix: &str,
 ) {
     match node.kind() {
         "scoped_identifier" => {
@@ -135,9 +148,11 @@ fn walk_use_tree(
                     &list,
                     source,
                     refs,
+                    symbols,
                     current_symbol_count,
                     &new_prefix,
                     is_reexport,
+                    qualified_prefix,
                 );
             }
         }
@@ -151,9 +166,11 @@ fn walk_use_tree(
                         &child,
                         source,
                         refs,
+                        symbols,
                         current_symbol_count,
                         prefix,
                         is_reexport,
+                        qualified_prefix,
                     ),
                 }
             }
@@ -219,6 +236,46 @@ fn walk_use_tree(
             } else {
                 None
             };
+
+            // A genuine rename (`chain` is Some) that also re-exports the name
+            // onto the module's surface needs a real, addressable symbol under
+            // the alias: unlike an un-renamed `pub use path::Thing;`, where
+            // `Thing` already IS the struct's own declared name, nothing else
+            // in the package carries this alias — the package-wide bare-name
+            // scan that makes the un-renamed form resolvable has nothing to
+            // find for it otherwise.
+            if is_reexport && chain.is_some() {
+                if let Some(alias_name) = alias.clone() {
+                    if !symbols.iter().any(|s| s.name == alias_name) {
+                        let alias_node = node.child_by_field_name("alias");
+                        let start = alias_node
+                            .map(|n| n.start_position())
+                            .unwrap_or_else(|| node.start_position());
+                        let end = alias_node
+                            .map(|n| n.end_position())
+                            .unwrap_or_else(|| node.end_position());
+                        symbols.push(ExtractedSymbol {
+                            name: alias_name.clone(),
+                            qualified_name: qualify(&alias_name, qualified_prefix),
+                            kind: SymbolKind::TypeAlias,
+                            visibility: Some(Visibility::Public),
+                            start_line: start.row as u32,
+                            end_line: end.row as u32,
+                            start_col: start.column as u32,
+                            end_col: end.column as u32,
+                            signature: None,
+                            doc_comment: None,
+                            scope_path: scope_from_prefix(qualified_prefix),
+                            parent_index: None,
+                            byte_offset: node.start_byte() as u32,
+                            declared_type: None,
+                            return_type: None,
+                            param_types: Vec::new(),
+                            generic_params: Vec::new(),
+                        });
+                    }
+                }
+            }
 
             refs.push(ExtractedRef {
                 is_import_binding: false,
@@ -303,9 +360,11 @@ fn walk_use_tree(
                     &child,
                     source,
                     refs,
+                    symbols,
                     current_symbol_count,
                     prefix,
                     is_reexport,
+                    qualified_prefix,
                 );
             }
         }

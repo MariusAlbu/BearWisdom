@@ -180,6 +180,16 @@ impl GlobProbe {
         false
     }
 }
+
+pub struct AliasDoc;
+impl AliasDoc {
+    pub fn new() -> AliasDoc {
+        AliasDoc
+    }
+    pub fn external_marker(&self) -> bool {
+        false
+    }
+}
 "#,
     )
     .unwrap();
@@ -590,6 +600,8 @@ pub use thing::Thing;
 mod glob_probe;
 pub use glob_probe::GlobProbe;
 pub mod inner;
+mod real;
+pub use real::RealDoc as AliasDoc;
 "#,
     );
     project.add_file(
@@ -626,6 +638,42 @@ mod tests {
         let t = Thing::new();
         let _ = t.go();
     }
+}
+"#,
+    );
+
+    // --- pattern: renamed re-export, `pub use path::Thing as Alias;` ---------
+    // `RealDoc` is declared in `src/real.rs` and re-exported under a different
+    // name at the crate root (`pub use real::RealDoc as AliasDoc;` in
+    // `lib.rs`) — the shape tantivy's `pub use CompactDoc as TantivyDocument;`
+    // takes. `AliasDoc` collides with a same-named `somecrate::AliasDoc`
+    // (seeded in `seed_cargo_registry`, method `external_marker`) for the same
+    // reason `SelfProbe`/`GlobProbe` do above: a bind that resolves purely by
+    // the alias name without carrying it to `RealDoc`'s own members would find
+    // no `touch` method on either candidate, so the probe can't pass by
+    // accident.
+    project.add_file(
+        "src/real.rs",
+        r#"pub struct RealDoc;
+
+impl RealDoc {
+    pub fn new() -> RealDoc {
+        RealDoc
+    }
+
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+"#,
+    );
+    project.add_file(
+        "benches/bench_alias_reexport.rs",
+        r#"use resolution_corpus_rust::AliasDoc;
+
+pub fn run_bench_alias() -> bool {
+    let p = AliasDoc::new();
+    p.touch()
 }
 "#,
     );
@@ -708,6 +756,17 @@ mod tests {
     //     though the file's own `use crate::macro_def::my_thing;` names the
     //     defining module. Not macro-specific: any bare, `use`-imported,
     //     unqualified call (macro or free function) hits the same gap.
+    //   alias-reexport-member-chase — `AliasDoc::new().touch()` needs
+    //     `AliasDoc` (the synthetic symbol `calls_imports.rs`'s `use_as_clause`
+    //     arm registers for the alias) to carry `RealDoc`'s members. Rust
+    //     never populates `ParsedFile::alias_targets` (hardcoded empty in
+    //     `extract.rs`), so the generic `AliasTarget`/`expand_alias` machinery
+    //     that would redirect a `TypeAlias`-kind symbol to its target has
+    //     nothing to expand for Rust — the same gap TS has for a true rename
+    //     (`export { X as Y } from './m'`): its synthetic `Y` symbol carries
+    //     no type info either, so a chain through `Y` cannot reach `X`'s
+    //     members. Wiring `alias_targets` for Rust is separate, larger work
+    //     than re-export addressability.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
@@ -718,6 +777,11 @@ mod tests {
         "  local-macro-import  my_thing!() resolved-internal={} unresolved={}",
         count_resolved_with_origin(&db, "macro_call.rs", "my_thing", "internal"),
         count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
+    );
+    println!(
+        "  alias-reexport-member-chase  AliasDoc::new().touch() resolved-to-RealDoc={} unresolved={}",
+        count_resolved_to(&db, "bench_alias_reexport.rs", "touch", "%RealDoc%"),
+        count_unresolved(&db, "bench_alias_reexport.rs", "calls", "touch")
     );
 
     // Each row: (label, pass, detail).
@@ -751,6 +815,8 @@ mod tests {
         count_unresolved(&db, "crate_direct.rs", "type_ref", "Thing");
     let cfg_test_reexport_thing_unresolved =
         count_unresolved(&db, "cfg_test_reexport.rs", "type_ref", "Thing");
+    let alias_reexport_aliasdoc_unresolved =
+        count_unresolved(&db, "bench_alias_reexport.rs", "type_ref", "AliasDoc");
 
     let checks = [
         (
@@ -827,6 +893,11 @@ mod tests {
             "crate::-relative re-export in #[cfg(test)] sibling module  local-type TypeRef binds",
             cfg_test_reexport_thing_unresolved == 0,
             format!("unresolved type_ref(Thing) = {cfg_test_reexport_thing_unresolved}"),
+        ),
+        (
+            "renamed re-export (bench)  use resolution_corpus_rust::AliasDoc; local-type TypeRef binds (not unbound_root)",
+            alias_reexport_aliasdoc_unresolved == 0,
+            format!("unresolved type_ref(AliasDoc) = {alias_reexport_aliasdoc_unresolved}"),
         ),
     ];
 
