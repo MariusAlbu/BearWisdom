@@ -1096,7 +1096,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 61
+        "min_resolution_rate": 71
       },
       "code_chunks": 20251,
       "drained_refs": 1,
@@ -1104,8 +1104,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 5,
-      "internal_edges": 19502,
-      "internal_unresolved": 12372,
+      "internal_edges": 22901,
+      "internal_unresolved": 9116,
       "languages": {
         "css": 4,
         "freemarker": 3,
@@ -1121,42 +1121,42 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-loco",
       "perf": {
-        "end_ws_mb": 225,
-        "files_per_sec": 3,
-        "index_duration_ms": 122395
+        "end_ws_mb": 99,
+        "files_per_sec": 5,
+        "index_duration_ms": 63051
       },
       "project": "rust-loco",
       "rate_by_language": {
         "html": 0.0,
-        "javascript": 22.86,
+        "javascript": 24.76,
         "markdown": 100.0,
-        "rust": 61.24
+        "rust": 71.63
       },
-      "resolution_rate": 61.18,
+      "resolution_rate": 71.53,
       "routes": 0,
       "symbols": 10797,
       "unresolved_by_lang_kind": {
         "html.imports": 4,
-        "javascript.calls": 72,
+        "javascript.calls": 70,
         "javascript.imports": 1,
         "javascript.type_ref": 8,
-        "rust.calls": 7606,
-        "rust.implements": 85,
-        "rust.imports": 532,
-        "rust.type_ref": 4064
+        "rust.calls": 5468,
+        "rust.implements": 48,
+        "rust.imports": 435,
+        "rust.type_ref": 3082
       },
       "vendored_files_reclassified": 9
     },
     {
       "assertions": {
-        "min_resolution_rate": 59
+        "min_resolution_rate": 77
       },
-      "code_chunks": 63528,
+      "code_chunks": 63526,
       "files": 472,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 64641,
-      "internal_unresolved": 43514,
+      "internal_edges": 83743,
+      "internal_unresolved": 23874,
       "languages": {
         "c": 1,
         "json": 5,
@@ -1168,27 +1168,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-tantivy",
       "perf": {
-        "end_ws_mb": 225,
-        "files_per_sec": 7,
-        "index_duration_ms": 70064
+        "end_ws_mb": 119,
+        "files_per_sec": 6,
+        "index_duration_ms": 85222
       },
       "project": "rust-tantivy",
       "rate_by_language": {
         "markdown": 100.0,
         "python": 0.0,
-        "rust": 59.76
+        "rust": 77.82
       },
-      "resolution_rate": 59.77,
+      "resolution_rate": 77.82,
       "routes": 0,
-      "symbols": 30331,
+      "symbols": 30312,
       "unresolved_by_lang_kind": {
         "python.imports": 1,
         "python.type_ref": 2,
-        "rust.calls": 21645,
-        "rust.implements": 336,
-        "rust.imports": 1620,
-        "rust.inherits": 12,
-        "rust.type_ref": 19898
+        "rust.calls": 16287,
+        "rust.implements": 116,
+        "rust.imports": 801,
+        "rust.inherits": 4,
+        "rust.type_ref": 6663
       }
     },
     {
