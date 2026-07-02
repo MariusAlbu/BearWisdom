@@ -436,12 +436,38 @@ enum Commands {
     /// Parity oracle: index a project with BOTH the legacy and the new engine
     /// and diff their resolved edges. Reports edges the legacy engine bound that
     /// the new engine did not (the parity worklist) and the reverse. JSON out.
-    ResolveDiff {
+    ResolveParity {
         /// Path to the project root.
         path: String,
         /// Max number of regression rows to include in the sample.
         #[arg(long, default_value_t = 50)]
         limit: usize,
+    },
+
+    /// Export every internal ref's resolution outcome (resolved / unresolved /
+    /// drained) as a deterministic, content-keyed JSONL snapshot. Compare two
+    /// snapshots with `resolve-diff` to see which refs flipped between index
+    /// runs.
+    SnapshotRefs {
+        /// Path to the project root.
+        path: String,
+        /// Output file. Omit to write JSONL to stdout.
+        #[arg(long)]
+        out: Option<String>,
+    },
+
+    /// Diff a previously-captured ref snapshot (from `snapshot-refs`) against
+    /// the current DB state: counts + samples of refs that newly resolved,
+    /// newly unresolved, retargeted (same ref site, different target), or
+    /// transitioned into/out of drained.
+    ResolveDiff {
+        /// Path to the project root.
+        path: String,
+        /// Path to a JSONL snapshot produced by `snapshot-refs`.
+        old_snapshot: String,
+        /// Sample rows per bucket (ignored when --full is passed).
+        #[arg(long, default_value_t = 20)]
+        samples: usize,
     },
 
     /// Analyze tree-sitter extraction coverage for a project.
@@ -825,7 +851,13 @@ fn run(command: Commands, full: bool) -> Result<String> {
         } => cmd_full_trace(&path, symbol.as_deref(), depth, max_traces),
         Commands::Reindex { path, force } => cmd_reindex(&path, force),
         Commands::ReindexCodeSolver { path } => cmd_reindex_code_solver(&path),
-        Commands::ResolveDiff { path, limit } => cmd_resolve_diff(&path, limit),
+        Commands::ResolveParity { path, limit } => cmd_resolve_parity(&path, limit),
+        Commands::SnapshotRefs { path, out } => cmd_snapshot_refs(&path, out.as_deref()),
+        Commands::ResolveDiff {
+            path,
+            old_snapshot,
+            samples,
+        } => cmd_resolve_diff(&path, &old_snapshot, samples, full),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck {
             baseline,
@@ -1644,15 +1676,15 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
 /// engine into separate in-memory databases and diff their resolved edges.
 /// `regression_sample` lists edges the legacy engine bound that the new engine
 /// did not — the worklist toward deleting the legacy engine.
-fn cmd_resolve_diff(project_path: &str, limit: usize) -> Result<String> {
+fn cmd_resolve_parity(project_path: &str, limit: usize) -> Result<String> {
     let root = PathBuf::from(project_path);
     let start = std::time::Instant::now();
     eprintln!(
-        "Indexing {} with both engines for resolve-diff ...",
+        "Indexing {} with both engines for resolve-parity ...",
         root.display()
     );
     let diff = bearwisdom::resolve_diff(&root)
-        .with_context(|| format!("resolve-diff failed for {}", root.display()))?;
+        .with_context(|| format!("resolve-parity failed for {}", root.display()))?;
     let elapsed_ms = start.elapsed().as_millis() as u64;
     eprintln!(
         "Done in {:.2}s: legacy {} edges, engine {} edges, {} regressions, {} gains{}",
@@ -1682,6 +1714,50 @@ fn cmd_resolve_diff(project_path: &str, limit: usize) -> Result<String> {
         "regression_sample": regression_sample,
         "sample_truncated": diff.regressions.len() > limit,
     }))
+}
+
+/// Export the indexed project's per-ref resolution outcomes as JSONL. Writes
+/// to `out` when given; otherwise streams the JSONL rows directly to stdout
+/// (bypassing the `{"ok":true,"data":...}` envelope, since the payload here
+/// IS the raw snapshot, not a JSON status report).
+fn cmd_snapshot_refs(project_path: &str, out: Option<&str>) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let rows = bearwisdom::query::ref_snapshot::export_ref_snapshot(&db)
+        .context("ref snapshot export failed")?;
+    match out {
+        Some(path) => {
+            let file = std::fs::File::create(path)
+                .with_context(|| format!("Failed to create snapshot file {path}"))?;
+            let mut writer = std::io::BufWriter::new(file);
+            bearwisdom::query::ref_snapshot::write_snapshot_jsonl(&rows, &mut writer)
+                .context("Failed to write snapshot JSONL")?;
+            ok_json(serde_json::json!({ "written": rows.len(), "out": path }))
+        }
+        None => {
+            let mut stdout = std::io::stdout().lock();
+            bearwisdom::query::ref_snapshot::write_snapshot_jsonl(&rows, &mut stdout)
+                .context("Failed to write snapshot JSONL")?;
+            Ok(String::new())
+        }
+    }
+}
+
+/// Diff a previously-captured ref snapshot against the current DB state.
+/// `--full` (the global verbosity flag) uncaps the per-bucket sample; slim
+/// mode caps each bucket at `samples`.
+fn cmd_resolve_diff(
+    project_path: &str,
+    old_snapshot_path: &str,
+    samples: usize,
+    full: bool,
+) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let old = bearwisdom::query::ref_snapshot::read_snapshot_jsonl(Path::new(old_snapshot_path))
+        .with_context(|| format!("Failed to read snapshot {old_snapshot_path}"))?;
+    let cap = if full { usize::MAX } else { samples };
+    let report = bearwisdom::query::resolve_diff::diff_against_db(&db, &old, cap)
+        .context("resolve-diff failed")?;
+    ok_json(report)
 }
 
 /// Full-index a project through the new rule-based `CodeSolver`. Always a full

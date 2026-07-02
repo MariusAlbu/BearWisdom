@@ -411,7 +411,8 @@ fn run_incremental_pipeline(
             }
         }
 
-        // Clean stale unresolved/external refs for affected files — batched via temp table.
+        // Clean stale unresolved/external/ref-resolution-log refs for affected
+        // files — batched via temp table.
         if !affected_parsed.is_empty() {
             db.conn().execute(
                 "CREATE TEMP TABLE IF NOT EXISTS _affected_paths (path TEXT PRIMARY KEY)",
@@ -436,6 +437,15 @@ fn run_incremental_pipeline(
 
             db.conn().execute(
                 "DELETE FROM external_refs WHERE source_id IN (
+                    SELECT s.id FROM symbols s
+                    JOIN files f ON s.file_id = f.id
+                    JOIN _affected_paths ap ON ap.path = f.path
+                )",
+                [],
+            )?;
+
+            db.conn().execute(
+                "DELETE FROM ref_resolutions WHERE source_id IN (
                     SELECT s.id FROM symbols s
                     JOIN files f ON s.file_id = f.id
                     JOIN _affected_paths ap ON ap.path = f.path

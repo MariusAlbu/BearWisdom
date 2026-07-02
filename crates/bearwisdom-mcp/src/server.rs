@@ -332,6 +332,20 @@ pub struct EntryPointsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ResolveDiffParams {
+    /// Path to a JSONL ref-resolution snapshot produced by `bw snapshot-refs`,
+    /// compared against the current DB state.
+    pub old_snapshot: String,
+    /// Sample rows per bucket in the response (default: 20).
+    pub samples: Option<usize>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct QualityCheckParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
@@ -1178,6 +1192,31 @@ impl BearWisdomServer {
                             Self::to_json(&r)
                         }
                     })
+            },
+        )
+    }
+
+    /// Diff a ref-resolution snapshot (from `bw snapshot-refs`) against the
+    /// current DB state: counts + samples of refs that newly resolved, newly
+    /// unresolved, retargeted (same ref site, different resolved target), or
+    /// transitioned into/out of drained. The instrument for measuring which
+    /// refs changed outcome between two index runs — edge-count deltas alone
+    /// can't distinguish a resolution gain from a same-count retarget.
+    #[tool(name = "bw_resolve_diff")]
+    fn resolve_diff(&self, Parameters(params): Parameters<ResolveDiffParams>) -> Result<String, String> {
+        self.run_tool(
+            "bw_resolve_diff",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                let old = bearwisdom::query::ref_snapshot::read_snapshot_jsonl(std::path::Path::new(
+                    &params.old_snapshot,
+                ))
+                .map_err(|e| error_response("INVALID_INPUT", &format!("{e:#}")))?;
+                let cap = params.samples.unwrap_or(20);
+                bearwisdom::query::resolve_diff::diff_against_db(db, &old, cap)
+                    .map_err(Self::query_err)
+                    .and_then(|r| Self::to_json(&r))
             },
         )
     }

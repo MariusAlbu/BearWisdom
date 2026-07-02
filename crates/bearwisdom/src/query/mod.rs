@@ -25,6 +25,8 @@ pub mod pattern;
 #[cfg(test)]
 #[path = "pattern_tests.rs"]
 mod pattern_tests;
+pub mod ref_snapshot;
+pub mod resolve_diff;
 pub mod search;
 pub mod stats;
 pub mod subgraph;

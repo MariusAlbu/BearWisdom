@@ -33,6 +33,22 @@ type Unresolved = (
     Option<i64>,
     Option<&'static str>,
 );
+/// A per-ref resolution log row: (source_id, target_name, kind, source_line,
+/// source_col, outcome, target_id, confidence, strategy). One row per ref site
+/// processed, regardless of how `edges` / `unresolved_refs` dedup — the
+/// resolution-snapshot instrument's write side (see `db/schema.rs`'s
+/// `ref_resolutions` table).
+type RefLog = (
+    i64,
+    String,
+    &'static str,
+    u32,
+    u32,
+    &'static str,
+    Option<i64>,
+    Option<f64>,
+    Option<&'static str>,
+);
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
@@ -447,7 +463,7 @@ pub fn resolve_single_pass(
     // work; refs WITHIN a file stay ordered so forward flow inference (a local's
     // type recorded by an earlier ref is visible to a later ref) is
     // deterministic. The tree is read-only here, shared across workers by ref.
-    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>)> = parsed
+    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
         .map(|pf| resolve_one_file(pf, &tree, &profiles, &solver, symbol_id_map))
@@ -455,17 +471,19 @@ pub fn resolve_single_pass(
 
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
-    for (e, u) in per_file {
+    let mut ref_log: Vec<RefLog> = Vec::new();
+    for (e, u, r) in per_file {
         edges.extend(e);
         unresolved.extend(u);
+        ref_log.extend(r);
     }
 
     let mut stats = ResolutionStats::default();
     stats.resolved = edges.len() as u64;
     stats.unresolved = unresolved.len() as u64;
 
-    // Write: replace all three resolution tables atomically.
-    flush_to_db(db, &edges, &unresolved, true)?;
+    // Write: replace all four resolution tables atomically.
+    flush_to_db(db, &edges, &unresolved, &ref_log, true)?;
     // Persist the resolved type metadata so an incremental pass can load it back
     // exactly, instead of re-deriving a lossier version from signatures alone.
     tree.persist_type_info(db.conn())
@@ -524,7 +542,7 @@ pub fn resolve_incremental_pass(
     let profiles = build_profiles();
     let solver = SemanticModel::production();
 
-    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>)> = parsed
+    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
         .map(|pf| resolve_one_file(pf, &tree, &profiles, &solver, &full_id_map))
@@ -532,9 +550,11 @@ pub fn resolve_incremental_pass(
 
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
-    for (e, u) in per_file {
+    let mut ref_log: Vec<RefLog> = Vec::new();
+    for (e, u, r) in per_file {
         edges.extend(e);
         unresolved.extend(u);
+        ref_log.extend(r);
     }
 
     let mut stats = ResolutionStats::default();
@@ -543,7 +563,7 @@ pub fn resolve_incremental_pass(
 
     // Insert-only: do NOT clear the tables — only the changed files' rows were
     // dropped upstream; everything else must survive.
-    flush_to_db(db, &edges, &unresolved, false)?;
+    flush_to_db(db, &edges, &unresolved, &ref_log, false)?;
 
     Ok(stats)
 }
@@ -558,12 +578,13 @@ fn resolve_one_file(
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     solver: &SemanticModel,
     symbol_id_map: &HashMap<(String, String), i64>,
-) -> (Vec<Edge>, Vec<Unresolved>) {
+) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
+    let mut ref_log: Vec<RefLog> = Vec::new();
 
     let Some(&profile) = profiles.get(pf.language.as_str()) else {
-        return (edges, unresolved);
+        return (edges, unresolved, ref_log);
     };
 
     let file_ctx = build_file_context(&pf.language, pf, profile);
@@ -891,6 +912,17 @@ fn resolve_one_file(
                     res.confidence,
                     res.strategy,
                 ));
+                ref_log.push((
+                    source_id,
+                    r.target_name.clone(),
+                    kind_str,
+                    r.line,
+                    r.col,
+                    "resolved",
+                    Some(res.target_symbol_id),
+                    Some(res.confidence),
+                    Some(res.strategy),
+                ));
             }
             SolveOutcome::Drained => {
                 // A rule positively identified the target as a language builtin
@@ -908,6 +940,17 @@ fn resolve_one_file(
                     pf.package_id,
                     ref_is_snippet,
                     true,
+                    None,
+                    None,
+                ));
+                ref_log.push((
+                    source_id,
+                    r.target_name.clone(),
+                    kind_str,
+                    r.line,
+                    r.col,
+                    "drained",
+                    None,
                     None,
                     None,
                 ));
@@ -943,6 +986,17 @@ fn resolve_one_file(
                         cause.and_then(|c| c.symbol_id),
                         cause.map(|c| c.kind.as_db_str()),
                     ));
+                    ref_log.push((
+                        source_id,
+                        r.target_name.clone(),
+                        kind_str,
+                        r.line,
+                        r.col,
+                        "unresolved",
+                        None,
+                        None,
+                        None,
+                    ));
                 }
             }
         }
@@ -959,7 +1013,7 @@ fn resolve_one_file(
         }
     }
 
-    (edges, unresolved)
+    (edges, unresolved, ref_log)
 }
 
 // ---------------------------------------------------------------------------
@@ -972,6 +1026,7 @@ fn flush_to_db(
     db: &mut Database,
     edges: &[(i64, i64, &'static str, u32, f64, &'static str)],
     unresolved: &[Unresolved],
+    ref_log: &[RefLog],
     clear_existing: bool,
 ) -> Result<()> {
     use rusqlite::types::Value;
@@ -981,7 +1036,7 @@ fn flush_to_db(
         .unchecked_transaction()
         .context("Failed to begin single-pass resolution transaction")?;
 
-    // The full pass replaces all three tables; the incremental pass inserts only
+    // The full pass replaces all four tables; the incremental pass inserts only
     // (the changed files' old rows were already dropped upstream when their
     // symbols were rewritten, and the rest of the tables must survive).
     if clear_existing {
@@ -991,10 +1046,13 @@ fn flush_to_db(
             .context("Failed to clear unresolved_refs")?;
         tx.execute("DELETE FROM external_refs", [])
             .context("Failed to clear external_refs")?;
+        tx.execute("DELETE FROM ref_resolutions", [])
+            .context("Failed to clear ref_resolutions")?;
     }
 
     const EDGE_CHUNK: usize = 256;
     const UNRESOLVED_CHUNK: usize = 256;
+    const REF_LOG_CHUNK: usize = 256;
 
     fn placeholders(rows: usize, cols: usize) -> String {
         let mut s = String::with_capacity(rows * (cols * 2 + 4));
@@ -1088,6 +1146,50 @@ fn flush_to_db(
                 .context("Failed to prepare unresolved_refs insert")?
                 .execute(rusqlite::params_from_iter(params.iter()))
                 .context("Failed to execute unresolved_refs insert")?;
+            start = end;
+        }
+    }
+
+    // Ref resolution log: (source_id, target_name, kind, source_line,
+    // source_col, outcome, target_id, confidence, strategy)
+    if !ref_log.is_empty() {
+        let mut start = 0;
+        while start < ref_log.len() {
+            let end = (start + REF_LOG_CHUNK).min(ref_log.len());
+            let rows = end - start;
+            let sql = format!(
+                "INSERT INTO ref_resolutions \
+                 (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence, strategy) \
+                 VALUES {}",
+                placeholders(rows, 9),
+            );
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 9);
+            for (sid, name, kind, line, col, outcome, target_id, confidence, strategy) in
+                &ref_log[start..end]
+            {
+                params.push(Value::Integer(*sid));
+                params.push(Value::Text(name.clone()));
+                params.push(Value::Text((*kind).to_string()));
+                params.push(Value::Integer(*line as i64));
+                params.push(Value::Integer(*col as i64));
+                params.push(Value::Text((*outcome).to_string()));
+                params.push(match target_id {
+                    Some(v) => Value::Integer(*v),
+                    None => Value::Null,
+                });
+                params.push(match confidence {
+                    Some(v) => Value::Real(*v),
+                    None => Value::Null,
+                });
+                params.push(match strategy {
+                    Some(s) => Value::Text((*s).to_string()),
+                    None => Value::Null,
+                });
+            }
+            tx.prepare_cached(&sql)
+                .context("Failed to prepare ref_resolutions insert")?
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to execute ref_resolutions insert")?;
             start = end;
         }
     }

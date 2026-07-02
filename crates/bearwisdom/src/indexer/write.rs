@@ -733,9 +733,9 @@ fn capture_vanished_dependents(
     Ok(())
 }
 
-/// Clear the outgoing edges / external / unresolved refs of the given symbols
-/// (file F's survivors + new rows). New rows have none; survivors' stale set is
-/// dropped so re-resolution writes the current set.
+/// Clear the outgoing edges / external / unresolved / ref-resolution-log rows
+/// of the given symbols (file F's survivors + new rows). New rows have none;
+/// survivors' stale set is dropped so re-resolution writes the current set.
 fn clear_outgoing_refs(tx: &rusqlite::Transaction<'_>, ids: &[i64]) -> Result<()> {
     if ids.iter().all(|id| *id == 0) {
         return Ok(());
@@ -763,6 +763,10 @@ fn clear_outgoing_refs(tx: &rusqlite::Transaction<'_>, ids: &[i64]) -> Result<()
     )?;
     tx.execute(
         "DELETE FROM external_refs WHERE source_id IN (SELECT id FROM _fsyms)",
+        [],
+    )?;
+    tx.execute(
+        "DELETE FROM ref_resolutions WHERE source_id IN (SELECT id FROM _fsyms)",
         [],
     )?;
     tx.execute("DELETE FROM _fsyms", [])?;
