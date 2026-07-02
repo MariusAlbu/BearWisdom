@@ -478,6 +478,7 @@ pub(crate) fn follow_reexports(
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     lookup: &dyn SymbolLookup,
     depth: u32,
+    barrel_stems: &[&str],
 ) -> Option<SymbolInfo> {
     const MAX_DEPTH: u32 = 5;
     if depth >= MAX_DEPTH {
@@ -497,7 +498,8 @@ pub(crate) fn follow_reexports(
         // unresolvable bare source (a true external) is skipped.
         if !is_relative_specifier(source_module)
             && lookup.resolve_module_from(module_path, source_module).is_none()
-            && workspace_pkg_barrels(lookup, source_module).is_empty()
+            && workspace_pkg_barrels(lookup, source_module, barrel_stems).is_empty()
+            && lookup.workspace_package_id(source_module).is_none()
         {
             continue;
         }
@@ -509,6 +511,22 @@ pub(crate) fn follow_reexports(
 
         if exported_name != target_name {
             continue;
+        }
+
+        // A bare source naming a sibling workspace package may DECLARE the target
+        // directly (a member that owns the type, re-exported through this module),
+        // rather than forwarding it onward. Chase one hop into the package's own
+        // symbol set (the cross-member re-export seam).
+        if !is_relative_specifier(source_module) {
+            if let Some(id) = workspace_pkg_declared_symbol(
+                lookup,
+                source_module,
+                target_name,
+                edge_kind,
+                kind_compatible,
+            ) {
+                return Some(reexport_resolution(id, "reexport_chain"));
+            }
         }
 
         for sym in lookup.in_module_from(module_path, source_module) {
@@ -547,6 +565,7 @@ pub(crate) fn follow_reexports(
             kind_compatible,
             lookup,
             depth,
+            barrel_stems,
         ) {
             return Some(res);
         }
@@ -589,6 +608,7 @@ pub(crate) fn follow_reexports(
             kind_compatible,
             lookup,
             depth,
+            barrel_stems,
         ) {
             return Some(res);
         }
@@ -611,6 +631,7 @@ fn follow_reexport_source(
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     lookup: &dyn SymbolLookup,
     depth: u32,
+    barrel_stems: &[&str],
 ) -> Option<SymbolInfo> {
     if let Some(next) = lookup.resolve_module_from(module_path, source_module) {
         let next = next.to_string();
@@ -621,10 +642,11 @@ fn follow_reexport_source(
             kind_compatible,
             lookup,
             depth + 1,
+            barrel_stems,
         );
     }
     if !is_relative_specifier(source_module) {
-        for barrel in workspace_pkg_barrels(lookup, source_module) {
+        for barrel in workspace_pkg_barrels(lookup, source_module, barrel_stems) {
             if let Some(res) = follow_reexports(
                 &barrel,
                 target_name,
@@ -632,6 +654,7 @@ fn follow_reexport_source(
                 kind_compatible,
                 lookup,
                 depth + 1,
+                barrel_stems,
             ) {
                 return Some(res);
             }
@@ -649,6 +672,7 @@ fn follow_reexport_source(
             kind_compatible,
             lookup,
             depth + 1,
+            barrel_stems,
         ) {
             return Some(res);
         }
@@ -754,11 +778,16 @@ fn relative_file_matches_base(file_path: &str, base: &str) -> bool {
         .any(|cand| normalized == *cand || normalized.ends_with(&format!("/{cand}")))
 }
 
-/// The re-exporting `index` barrels of the workspace package a bare `specifier`
-/// names — the files in that package whose basename stem is `index` and whose
-/// `reexports_from` is non-empty. Empty when `specifier` is not a workspace
-/// package or the package has no re-exporting barrel.
-pub(crate) fn workspace_pkg_barrels(lookup: &dyn SymbolLookup, specifier: &str) -> Vec<String> {
+/// The re-export barrels of the workspace package a bare `specifier` names —
+/// the files in that package whose basename stem is one of `stems` (the
+/// language's `reexport_barrel_stems`: `index` for JS/TS, `lib`/`main` for Rust)
+/// and whose `reexports_from` is non-empty. Empty when `specifier` is not a
+/// workspace package, `stems` is empty, or the package has no re-export barrel.
+pub(crate) fn workspace_pkg_barrels(
+    lookup: &dyn SymbolLookup,
+    specifier: &str,
+    stems: &[&str],
+) -> Vec<String> {
     let Some(pkg_id) = lookup.workspace_package_id(specifier) else {
         return Vec::new();
     };
@@ -769,7 +798,7 @@ pub(crate) fn workspace_pkg_barrels(lookup: &dyn SymbolLookup, specifier: &str) 
         if !seen.insert(path.to_string()) {
             continue;
         }
-        if !path_basename_stem_is_index(path) {
+        if !path_basename_stem_in(path, stems) {
             continue;
         }
         if lookup.reexports_from(path).is_empty() {
@@ -780,14 +809,39 @@ pub(crate) fn workspace_pkg_barrels(lookup: &dyn SymbolLookup, specifier: &str) 
     barrels
 }
 
-/// `true` when the file's basename stem is `index` — the conventional package
-/// barrel (`.../src/index.ts`, `index.js`, `index.tsx`, …).
-fn path_basename_stem_is_index(file_path: &str) -> bool {
+/// The symbol a bare workspace-package `specifier` DECLARES under `target_name`
+/// — a sibling member that owns the type, reached as the source of a cross-member
+/// re-export (`pub use member::Name`). Scans the package's own symbol set for a
+/// name + edge-kind match. `None` when `specifier` is not a workspace package or
+/// declares no such name.
+pub(crate) fn workspace_pkg_declared_symbol(
+    lookup: &dyn SymbolLookup,
+    specifier: &str,
+    target_name: &str,
+    edge_kind: EdgeKind,
+    kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
+) -> Option<i64> {
+    let pkg_id = lookup.workspace_package_id(specifier)?;
+    let mut found: Option<i64> = None;
+    for sym in lookup.symbols_in_package(pkg_id) {
+        if sym.name == target_name && kind_compatible(edge_kind, &sym.kind) {
+            if found.is_some() {
+                return None; // ambiguous: two same-name declarations — decline
+            }
+            found = Some(sym.id);
+        }
+    }
+    found
+}
+
+/// `true` when the file's basename stem (extension dropped) is one of `stems`.
+fn path_basename_stem_in(file_path: &str, stems: &[&str]) -> bool {
     let normalized = file_path.replace('\\', "/");
     let Some(basename) = normalized.rsplit('/').next() else {
         return false;
     };
-    basename.split('.').next().unwrap_or(basename) == "index"
+    let stem = basename.split('.').next().unwrap_or(basename);
+    stems.contains(&stem)
 }
 
 /// A resolved-via-re-export `SymbolInfo` tagged with the hop strategy.

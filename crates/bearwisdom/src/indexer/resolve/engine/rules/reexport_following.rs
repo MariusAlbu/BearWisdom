@@ -57,18 +57,19 @@ impl LookupRule for ReexportFollowingRule {
                     ctx.kind,
                     ctx.lookup,
                     0,
+                    ctx.profile.reexport_barrel_stems,
                 ) {
                     return LookupResult::Resolved(res);
                 }
             } else if is_relative_specifier(module) {
                 if let Some(res) =
-                    follow_reexports(module, target, edge_kind, ctx.kind, ctx.lookup, 0)
+                    follow_reexports(module, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.reexport_barrel_stems)
                 {
                     return LookupResult::Resolved(res);
                 }
                 for barrel in relative_reexport_candidates(ctx.lookup, from_file, module) {
                     if let Some(res) =
-                        follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0)
+                        follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.reexport_barrel_stems)
                     {
                         return LookupResult::Resolved(res);
                     }

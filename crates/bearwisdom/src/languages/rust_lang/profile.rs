@@ -197,6 +197,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // which registers the crate's own root package alongside its workspace
     // members) resolves it the same way an npm sibling-package import does.
     workspace_packages: true,
+    reexport_barrel_stems: &["lib", "main"],
     // `crate::` is the crate-root path to the current package itself — a
     // `use crate::Thing;` (or an inline `crate::db::Pool` path) names this
     // file's own package, not a sibling by declared name. Resolved against

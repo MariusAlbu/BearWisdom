@@ -96,9 +96,10 @@ impl LookupRule for WorkspacePackageRule {
         // `index` barrels to the declaring symbol, which may live in another
         // workspace package. (The bare specifier has no `resolve_module_from`
         // mapping, so the barrel is recovered from the package's own symbol set.)
-        for barrel in workspace_pkg_barrels(ctx.lookup, specifier) {
+        let stems = ctx.profile.reexport_barrel_stems;
+        for barrel in workspace_pkg_barrels(ctx.lookup, specifier, stems) {
             if let Some(res) =
-                follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0)
+                follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)
             {
                 return LookupResult::Resolved(res);
             }

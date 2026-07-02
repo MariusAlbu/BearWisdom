@@ -230,7 +230,21 @@ version = "0.0.1"
 edition = "2021"
 "#,
     );
-    project.add_file("member/src/lib.rs", "pub struct MemberPlaceholder;\n");
+    project.add_file(
+        "member/src/lib.rs",
+        r#"pub struct MemberPlaceholder;
+
+// Cross-member re-export target: declared HERE (the sibling `common`-style
+// member), re-exported through the root crate's `directory` submodule below.
+pub struct OwnedBytes;
+
+impl OwnedBytes {
+    pub fn owned_len(&self) -> bool {
+        true
+    }
+}
+"#,
+    );
     // Registry-source dep with no path/git override, matching the shape
     // `discover_cargo_roots` requires to resolve against a registry root.
     project.add_file(
@@ -602,6 +616,7 @@ pub use glob_probe::GlobProbe;
 pub mod inner;
 mod real;
 pub use real::RealDoc as AliasDoc;
+pub use resolution_corpus_rust_member::OwnedBytes;
 "#,
     );
     project.add_file(
@@ -638,6 +653,25 @@ mod tests {
         let t = Thing::new();
         let _ = t.go();
     }
+}
+"#,
+    );
+
+    // --- pattern: cross-workspace-member re-export through a submodule -----
+    // `use resolution_corpus_rust::OwnedBytes;` — the type is
+    // declared in a SIBLING workspace member and only re-exported through the
+    // root crate's `directory` module (`pub use ...member::OwnedBytes;`). The
+    // import names the re-exporting submodule by its sub-path (`::directory::`),
+    // never the declaring member. Binding it requires following the pub-use
+    // re-export from the sub-path module across the member boundary — the exact
+    // shape tantivy's `use tantivy::directory::OwnedBytes` (x382) takes.
+    project.add_file(
+        "benches/bench_cross_member.rs",
+        r#"use resolution_corpus_rust::directory::OwnedBytes;
+
+pub fn run_cross_member() -> bool {
+    let b = OwnedBytes;
+    b.owned_len()
 }
 "#,
     );
@@ -1077,6 +1111,9 @@ pub fn run_bench_alias() -> bool {
         count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%");
     let self_field_method_mark = count_resolved_to(&db, "self_field_method.rs", "mark", "%Namer%");
 
+    let cross_member_ownedbytes_unresolved =
+        count_unresolved(&db, "bench_cross_member.rs", "imports", "OwnedBytes");
+
     let checks = [
         (
             "UFCS assoc call  Index::exists(idx, d) -> Index.exists",
@@ -1192,6 +1229,11 @@ pub fn run_bench_alias() -> bool {
             "self field method (no subscript)  self.name.mark() -> Namer.mark",
             self_field_method_mark >= 1,
             format!("resolved-to-Namer edges = {self_field_method_mark}"),
+        ),
+        (
+            "cross-member re-export (bench)  use resolution_corpus_rust::OwnedBytes; import binds across a workspace member (lib.rs barrel)",
+            cross_member_ownedbytes_unresolved == 0,
+            format!("unresolved imports(OwnedBytes) = {cross_member_ownedbytes_unresolved}"),
         ),
     ];
 

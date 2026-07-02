@@ -1686,6 +1686,7 @@ use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PR
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: true,
+    reexport_barrel_stems: &["index"],
     ..DEFAULT_PROFILE
 };
 

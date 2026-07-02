@@ -10,12 +10,14 @@ use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguagePr
 
 static WWS_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: true,
+    reexport_barrel_stems: &["index"],
     wildcard_workspace_scope: true,
     ..DEFAULT_PROFILE
 };
 
 static WWS_SELF_PROFILE: LanguageProfile = LanguageProfile {
     workspace_packages: true,
+    reexport_barrel_stems: &["index"],
     wildcard_workspace_scope: true,
     self_package_root: Some("crate"),
     qname_separator: "::",

@@ -112,14 +112,6 @@ fn relative_file_matches_base_covers_extension_and_index_forms() {
 }
 
 #[test]
-fn path_basename_stem_is_index_matches_index_barrels_only() {
-    assert!(path_basename_stem_is_index("packages/q/src/index.ts"));
-    assert!(path_basename_stem_is_index("a\\b\\index.tsx"));
-    assert!(!path_basename_stem_is_index("packages/q/src/queryClient.ts"));
-    assert!(!path_basename_stem_is_index("indexer.ts"));
-}
-
-#[test]
 fn path_proximity_score_shared_dir() {
     assert_eq!(path_proximity_score("src/views/Page.ts", "src/views/Helper.ts"), 20);
 }

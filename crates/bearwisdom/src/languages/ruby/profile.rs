@@ -96,6 +96,7 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     module_prefix_rewrites:
         crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
     workspace_packages: false,
+    reexport_barrel_stems: &["index"],
     self_package_root: None,
     wildcard_workspace_scope: false,
     overload_pick_all: false,

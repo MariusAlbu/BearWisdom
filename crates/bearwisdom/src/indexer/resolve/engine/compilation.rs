@@ -1931,7 +1931,7 @@ impl SymbolLookup for Compilation {
         // calling rule re-checks edge-kind (`candidate_with_compatible_kind`), so an
         // accept-any gate here is sound.
         let entry = self.module_entry.get(module)?;
-        super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0)
+        super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0, &["index"])
             .map(|info| info.target_symbol_id)
     }
 

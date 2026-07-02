@@ -256,6 +256,12 @@ pub struct LanguageProfile {
     /// `symbols_in_package` / `is_workspace_declared_name` to bind the target —
     /// including deep imports (`@org/utils/sub/mod`) — at confidence 1.0.
     pub workspace_packages: bool,
+    /// Basename stems (extension dropped) that count as a package's re-export
+    /// barrels for `workspace_pkg_barrels` — the files whose `pub`/`export`
+    /// re-exports the workspace-package rung follows. `["index"]` for JS/TS
+    /// (`index.ts`); Rust uses its crate roots (`lib`, `main`). Empty leaves
+    /// the rung's barrel discovery inert.
+    pub reexport_barrel_stems: &'static [&'static str],
     /// The keyword a module specifier's leading segment uses to mean "this
     /// file's own package root", distinct from a declared sibling package
     /// name (Rust's `crate`, resolved against the ref's `file_package_id`
@@ -1170,6 +1176,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     alias_module_qname: false,
     module_prefix_rewrites: ModulePrefixRewrites::Off,
     workspace_packages: false,
+    reexport_barrel_stems: &["index"],
     self_package_root: None,
     wildcard_workspace_scope: false,
     overload_pick_all: false,

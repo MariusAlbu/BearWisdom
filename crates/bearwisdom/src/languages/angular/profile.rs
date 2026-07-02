@@ -53,6 +53,7 @@ pub const ANGULAR_PROFILE: LanguageProfile = LanguageProfile {
             decline_bare_directory_match: true,
         },
     workspace_packages: true,
+    reexport_barrel_stems: &["index"],
     self_package_root: None,
     wildcard_workspace_scope: false,
     overload_pick_all: true,

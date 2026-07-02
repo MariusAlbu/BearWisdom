@@ -192,6 +192,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
             decline_bare_directory_match: true,
         },
     workspace_packages: true,
+    reexport_barrel_stems: &["index"],
     self_package_root: None,
     wildcard_workspace_scope: false,
     // Declaration merging: interface + variable under one qname.
