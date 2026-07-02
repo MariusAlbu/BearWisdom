@@ -628,21 +628,34 @@ fn read_dart_manifest(dir: &Path) -> Option<String> {
     crate::ecosystem::pub_pkg::parse_pubspec_name(&content)
 }
 
-/// True when the project-root manifest declares runtime dependencies of
-/// its own — the signal that a workspace root is hybrid (workspace
-/// controller + real package).
+/// True when the project-root manifest declares a real package of its own —
+/// the signal that a workspace root is hybrid (workspace controller + real
+/// package), not a pure virtual manifest.
 ///
-/// `kind` is the ecosystem hint propagated by `scan_all_manifests`. Only
-/// npm is decided positively today: that's the ecosystem where `package.json`
-/// at the root commonly mixes `"workspaces": [...]` with the app's own
-/// `dependencies`. Other ecosystems return `false` so they keep the
+/// `kind` is the ecosystem hint propagated by `scan_all_manifests`. npm and
+/// cargo are decided positively: npm's `package.json` commonly mixes
+/// `"workspaces": [...]` with the app's own `dependencies`; Cargo's root
+/// `Cargo.toml` commonly carries both `[workspace]` and its own `[package]`
+/// (the crate every bench/example/test target in the workspace imports by
+/// its published name). Other ecosystems return `false` so they keep the
 /// pre-existing pure-controller behaviour until a concrete hybrid case
 /// surfaces and gets tested.
 fn workspace_root_has_own_deps(project_root: &Path, kind: Option<&str>) -> bool {
     match kind {
         Some("npm") => npm_root_has_own_runtime_deps(project_root),
+        Some("cargo") => cargo_root_has_own_package(project_root),
         _ => false,
     }
+}
+
+/// A `[package]` section in the root `Cargo.toml` alongside `[workspace]` —
+/// Cargo's hybrid-root shape. A pure virtual-manifest workspace root has
+/// `[workspace]` with no `[package]` section and stays skipped.
+fn cargo_root_has_own_package(project_root: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(project_root.join("Cargo.toml")) else {
+        return false;
+    };
+    content.contains("[package]")
 }
 
 /// `dependencies` or `peerDependencies` non-empty means the root installs

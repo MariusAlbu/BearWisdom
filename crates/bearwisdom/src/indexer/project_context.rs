@@ -280,6 +280,23 @@ pub fn build_project_context_with_packages(
         }
         workspace_pkg_by_declared_name.insert(declared.clone(), id);
     }
+    // A hyphenated declared name (Cargo's convention, e.g. `loco-rs`) is
+    // referenced in source under its identifier-safe form (`use loco_rs::`
+    // — Rust identifiers can't contain `-`). Register the underscored
+    // spelling too, once every package's own exact declared_name has already
+    // claimed its slot above, so the alias never pre-empts a package that
+    // genuinely declares that exact (underscored) spelling itself.
+    for pkg in packages {
+        let Some(id) = pkg.id else { continue };
+        let Some(declared) = &pkg.declared_name else {
+            continue;
+        };
+        if declared.contains('-') {
+            workspace_pkg_by_declared_name
+                .entry(declared.replace('-', "_"))
+                .or_insert(id);
+        }
+    }
 
     log_manifests(&manifests);
     info!(
@@ -948,15 +965,24 @@ impl ProjectContext {
         Some(format!("{target}{remainder}"))
     }
 
-    /// Resolve a module specifier (e.g. `@myorg/utils`, `@myorg/utils/sub/mod`)
-    /// to a workspace `package_id` via `declared_name`.
+    /// Resolve a module specifier (e.g. `@myorg/utils`, `@myorg/utils/sub/mod`,
+    /// Rust's `tantivy::schema`) to a workspace `package_id` via `declared_name`.
     ///
-    /// Matches exact first, then strips trailing path segments to handle deep
-    /// imports: `@myorg/utils/sub/mod` → `@myorg/utils` → `@myorg`.
+    /// `::` is canonicalized to `/` first, so a `::`-qualified specifier peels
+    /// the same way a slash-separated deep import does. Matches exact first,
+    /// then strips trailing path segments to handle deep imports:
+    /// `@myorg/utils/sub/mod` → `@myorg/utils` → `@myorg`.
     ///
     /// Returns `None` if no workspace package declared that name, including
     /// single-project contexts where `workspace_pkg_by_declared_name` is empty.
     pub fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        let normalized;
+        let specifier: &str = if specifier.contains("::") {
+            normalized = specifier.replace("::", "/");
+            &normalized
+        } else {
+            specifier
+        };
         if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
             return Some(id);
         }

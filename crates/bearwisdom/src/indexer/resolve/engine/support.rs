@@ -98,6 +98,35 @@ pub(crate) fn import_scoped_package_id(
     None
 }
 
+/// The sub-path remainder after the longest declared workspace-package prefix
+/// that `specifier` starts with. `None` when `specifier` IS a declared name
+/// (no sub-path) or when no workspace package matches.
+///
+/// Peels on `/`, treating a `::`-qualified specifier (Rust's
+/// `tantivy::schema`) the same way — `::` is canonicalized to `/` first, the
+/// same normalization `workspace_package_id` applies, so both agree on the
+/// same package root and sub-path for a given specifier.
+pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    let normalized;
+    let specifier: &str = if specifier.contains("::") {
+        normalized = specifier.replace("::", "/");
+        &normalized
+    } else {
+        specifier
+    };
+    if lookup.is_workspace_declared_name(specifier) {
+        return None;
+    }
+    let mut path = specifier;
+    while let Some(slash) = path.rfind('/') {
+        path = &path[..slash];
+        if lookup.is_workspace_declared_name(path) {
+            return Some(specifier[path.len() + 1..].to_string());
+        }
+    }
+    None
+}
+
 /// `true` when `kind` names a type a `this`/`self` keyword or an inherited
 /// member can attach to — a class-like declaration, not a namespace, function,
 /// or value.
@@ -176,6 +205,18 @@ pub(crate) fn score_candidate(
         }
         if qname_under_module(&sym.qualified_name, mod_path) {
             s += 300;
+        }
+        // A crate-relative qname (Rust, C++) never carries the workspace
+        // package's own declared name as a leading qname segment — only a
+        // deeper submodule path does. Score the sub-path remainder after
+        // peeling the package's declared name off `mod_path`, so a same-
+        // package candidate under the submodule the import actually names
+        // (`tantivy::schema::Schema`) outranks a same-package candidate at
+        // the crate root that merely shares the bare name.
+        if let Some(sub) = workspace_sub_path(mod_path, lookup) {
+            if qname_under_module(&sym.qualified_name, &sub) {
+                s += 300;
+            }
         }
     }
     if lookup.is_ambient_path(&sym.file_path) {

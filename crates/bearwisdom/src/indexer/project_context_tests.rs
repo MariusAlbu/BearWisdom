@@ -237,6 +237,64 @@ mod m2_tests {
     }
 
     #[test]
+    fn hyphenated_declared_name_also_registers_underscored_alias() {
+        // Cargo's convention: a hyphenated package name (`loco-rs`) is
+        // referenced in source under its identifier-safe form (`use
+        // loco_rs::...` — Rust identifiers can't contain `-`).
+        // `workspace_pkg_by_declared_name` must expose both spellings so a
+        // bare specifier lookup finds the package under either.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let packages = vec![PackageInfo {
+            id: Some(1),
+            name: "loco-rs".into(),
+            path: "".into(),
+            kind: Some("cargo".into()),
+            manifest: Some("Cargo.toml".into()),
+            declared_name: Some("loco-rs".into()),
+            is_publishable: true,
+        }];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco-rs"), Some(&1));
+        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco_rs"), Some(&1));
+    }
+
+    #[test]
+    fn underscored_alias_never_displaces_a_real_package_with_that_name() {
+        // If a DIFFERENT package genuinely declared the underscored spelling
+        // itself, the hyphenated sibling's alias insert must not clobber it.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "loco-rs".into(),
+                path: "".into(),
+                kind: Some("cargo".into()),
+                manifest: Some("Cargo.toml".into()),
+                declared_name: Some("loco-rs".into()),
+                is_publishable: true,
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "loco_rs".into(),
+                path: "member".into(),
+                kind: Some("cargo".into()),
+                manifest: Some("member/Cargo.toml".into()),
+                declared_name: Some("loco_rs".into()),
+                is_publishable: true,
+            },
+        ];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco-rs"), Some(&1));
+        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco_rs"), Some(&2));
+    }
+
+    #[test]
     fn package_with_no_manifest_yields_no_entry() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();

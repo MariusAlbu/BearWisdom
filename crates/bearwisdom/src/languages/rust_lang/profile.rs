@@ -190,7 +190,13 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     alias_module_qname: false,
     module_prefix_rewrites:
         crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
+    // A bench/example/test target imports its own package by its published
+    // crate name (`use tantivy::Index`) exactly like a sibling would — Cargo
+    // has no separate "internal" import syntax for it. The workspace-package
+    // scoped bind (keyed on `ProjectContext::workspace_pkg_by_declared_name`,
+    // which registers the crate's own root package alongside its workspace
+    // members) resolves it the same way an npm sibling-package import does.
+    workspace_packages: true,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     // `Self::Output` / `<C as Trait>::Item` return strings project through the

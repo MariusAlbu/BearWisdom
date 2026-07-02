@@ -60,7 +60,20 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                             lang_id,
                         )
                     {
-                        if !rt.is_empty() {
+                        // A bare (unqualified) return-type name is only safe to
+                        // intern here when the symbol has no enclosing scope: a
+                        // method nested under a namespace/module whose signature
+                        // just says `Foo` may mean ITS OWN scope's `Foo`, not a
+                        // same-named top-level declaration — and this pass runs
+                        // per-file, before the cross-file symbol table exists, so
+                        // it cannot scope-qualify the name itself. Leaving the
+                        // slot empty defers to the later scope-aware derivation
+                        // (`resolve_type_name_in_scope`, run once the full symbol
+                        // table is built), which reads the same signature text
+                        // plus this symbol's `scope_path`.
+                        let is_bare = !rt.contains('.') && !rt.contains("::");
+                        let has_scope = sym.scope_path.as_deref().is_some_and(|s| !s.is_empty());
+                        if !rt.is_empty() && !(is_bare && has_scope) {
                             sym.return_type = Some(arena.intern_type_str(&rt));
                         }
                     }
@@ -408,3 +421,7 @@ pub use html::{
     extract_astro_frontmatter, extract_html_script_style_regions, extract_script_refs, ScriptRef,
 };
 pub use jquery::append_jquery_fn_plugin_globals;
+
+#[cfg(test)]
+#[path = "common_tests.rs"]
+mod tests;

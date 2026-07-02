@@ -2012,6 +2012,16 @@ impl SymbolLookup for Compilation {
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        // `::` (Rust's qualification separator) canonicalizes to `/` so a
+        // deep `tantivy::schema` import peels the same way `@org/utils/sub`
+        // does below.
+        let normalized;
+        let specifier: &str = if specifier.contains("::") {
+            normalized = specifier.replace("::", "/");
+            &normalized
+        } else {
+            specifier
+        };
         if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
             return Some(id);
         }

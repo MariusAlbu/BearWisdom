@@ -110,6 +110,16 @@ impl Thing {
         "hi"
     }
 }
+
+pub struct SelfProbe;
+impl SelfProbe {
+    pub fn new() -> SelfProbe {
+        SelfProbe
+    }
+    pub fn external_marker(&self) -> bool {
+        false
+    }
+}
 "#,
     )
     .unwrap();
@@ -134,8 +144,23 @@ edition = "2021"
 
 [dependencies]
 somecrate = "0.1.0"
+
+[workspace]
+members = ["member"]
 "#,
     );
+    // A real (if trivial) workspace member alongside the hybrid root, matching
+    // the shape `tantivy` / `loco-rs` actually ship: a root `Cargo.toml` that
+    // carries both its own `[package]` and a `[workspace]` table.
+    project.add_file(
+        "member/Cargo.toml",
+        r#"[package]
+name = "resolution-corpus-rust-member"
+version = "0.0.1"
+edition = "2021"
+"#,
+    );
+    project.add_file("member/src/lib.rs", "pub struct MemberPlaceholder;\n");
     // Registry-source dep with no path/git override, matching the shape
     // `discover_cargo_roots` requires to resolve against a registry root.
     project.add_file(
@@ -288,6 +313,70 @@ pub fn make_and_show() -> bool {
 "#,
     );
 
+    // --- pattern: bench target imports its own crate by published name ------
+    // `benches/`, `examples/`, and `tests/` targets compile as separate crates
+    // that reach the library through `use <crate_name>::X` — the exact same
+    // syntax an external consumer would use, since Cargo has no "internal"
+    // import form for them.
+    //
+    // `SelfProbe` is deliberately name-colliding with `somecrate::SelfProbe`
+    // (seeded in `seed_cargo_registry`, method `external_marker`) at BOTH the
+    // crate root and one nested module (`selfmod`) — a globally unique name
+    // would resolve through the same bare-qname fallback that already binds
+    // same-file structs (see `assoc_call.rs` below), without ever exercising
+    // import-scoped disambiguation. With the collision, only a bind that
+    // actually reads the `use` specifier can land on the project's own
+    // `touch`/`poke` methods instead of the external stub's `external_marker`.
+    project.add_file(
+        "src/self_import.rs",
+        r#"pub struct SelfProbe;
+
+impl SelfProbe {
+    pub fn new() -> SelfProbe {
+        SelfProbe
+    }
+
+    pub fn touch(&self) -> bool {
+        true
+    }
+}
+
+pub mod selfmod {
+    pub struct SelfProbe;
+
+    impl SelfProbe {
+        pub fn new() -> SelfProbe {
+            SelfProbe
+        }
+
+        pub fn poke(&self) -> bool {
+            true
+        }
+    }
+}
+"#,
+    );
+    project.add_file(
+        "benches/bench_self_import.rs",
+        r#"use resolution_corpus_rust::SelfProbe;
+
+pub fn run_bench_flat() -> bool {
+    let p = SelfProbe::new();
+    p.touch()
+}
+"#,
+    );
+    project.add_file(
+        "benches/bench_self_import_nested.rs",
+        r#"use resolution_corpus_rust::selfmod::SelfProbe;
+
+pub fn run_bench_nested() -> bool {
+    let p = SelfProbe::new();
+    p.poke()
+}
+"#,
+    );
+
     // Point the locators at the seeded stubs, index once, restore env.
     let prior_sysroot = std::env::var_os("BEARWISDOM_RUST_SYSROOT");
     let prior_cargo_home = std::env::var_os("CARGO_HOME");
@@ -363,6 +452,10 @@ pub fn make_and_show() -> bool {
     let external_crate_greet = count_resolved_to(&db, "external_crate.rs", "greet", "%Thing%");
     let chain_call_build = count_resolved_to(&db, "chain_call.rs", "build", "%Builder%");
     let chain_call_show = count_resolved_to(&db, "chain_call.rs", "show", "%Widget%");
+    let self_import_flat_touch =
+        count_resolved_to(&db, "bench_self_import.rs", "touch", "%SelfProbe%");
+    let self_import_nested_poke =
+        count_resolved_to(&db, "bench_self_import_nested.rs", "poke", "%SelfProbe%");
 
     let checks = [
         (
@@ -399,6 +492,16 @@ pub fn make_and_show() -> bool {
             "chain call (r6b)  Builder::new().build().show() -> Widget.show",
             chain_call_show >= 1,
             format!("resolved-to-Widget edges = {chain_call_show}"),
+        ),
+        (
+            "self-crate import (bench, flat)  SelfProbe::new().touch() -> self_import.SelfProbe.touch",
+            self_import_flat_touch >= 1,
+            format!("resolved-to-SelfProbe(root).touch edges = {self_import_flat_touch}"),
+        ),
+        (
+            "self-crate import (bench, nested module)  SelfProbe::new().poke() -> selfmod.SelfProbe.poke",
+            self_import_nested_poke >= 1,
+            format!("resolved-to-SelfProbe(nested).poke edges = {self_import_nested_poke}"),
         ),
     ];
 

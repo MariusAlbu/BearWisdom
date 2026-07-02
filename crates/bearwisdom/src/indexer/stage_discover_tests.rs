@@ -337,3 +337,62 @@ fn workspace_root_with_peer_deps_is_registered() {
         "root with peerDependencies must register — saw {paths:?}"
     );
 }
+
+#[test]
+fn cargo_workspace_root_hybrid_with_own_package_is_registered() {
+    // A Cargo root commonly carries both `[package]` and `[workspace]` — the
+    // crate every bench/example/test target in the workspace imports by its
+    // published name. That root must register as a package even though it's
+    // also the workspace controller.
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "Cargo.toml",
+        "[package]\nname = \"tantivy\"\nversion = \"0.1.0\"\n\n[dependencies]\nbyteorder = \"1\"\n\n[workspace]\nmembers = [\n    \"common\",\n]\n",
+    );
+    fs::create_dir_all(tmp.path().join("common")).unwrap();
+    write(
+        &tmp.path().join("common"),
+        "Cargo.toml",
+        "[package]\nname = \"tantivy-common\"\nversion = \"0.1.0\"\n",
+    );
+
+    let (packages, kind) = detect_packages(tmp.path());
+    assert_eq!(kind.as_deref(), Some("cargo-workspace"));
+    let paths: std::collections::HashSet<_> = packages.iter().map(|p| p.path.as_str()).collect();
+    assert!(
+        paths.contains("") || paths.contains("."),
+        "hybrid cargo root with its own [package] must register — saw {paths:?}"
+    );
+    assert!(
+        paths.contains("common"),
+        "workspace member must also register"
+    );
+}
+
+#[test]
+fn cargo_workspace_root_pure_virtual_manifest_skipped() {
+    // A root `Cargo.toml` with `[workspace]` and NO `[package]` section is a
+    // pure virtual manifest — nothing to import by name — and stays skipped.
+    let tmp = TempDir::new().unwrap();
+    write(
+        tmp.path(),
+        "Cargo.toml",
+        "[workspace]\nmembers = [\n    \"app\",\n]\n",
+    );
+    fs::create_dir_all(tmp.path().join("app")).unwrap();
+    write(
+        &tmp.path().join("app"),
+        "Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+
+    let (packages, kind) = detect_packages(tmp.path());
+    assert_eq!(kind.as_deref(), Some("cargo-workspace"));
+    let paths: std::collections::HashSet<_> = packages.iter().map(|p| p.path.as_str()).collect();
+    assert!(
+        !paths.contains("") && !paths.contains("."),
+        "pure virtual-manifest root (no [package]) must NOT register — saw {paths:?}"
+    );
+    assert!(paths.contains("app"));
+}
