@@ -726,16 +726,12 @@ pub fn first_touch() -> bool {
     );
 
     // --- pattern: Vec<T> element projection through a `self` field, inside
-    // the implementing impl block ------------------------------------------
-    // `self.segments[0].touch()`, called from `SegmentList::first_touch_self`
-    // — a separate, pre-existing gap from the subscript projection this
-    // corpus otherwise exercises: `first_touch_self`'s `parent_index` climbs
-    // to the `impl SegmentList` block's own Namespace symbol, but that
-    // Namespace symbol itself carries `parent_index: None` (impl blocks are
-    // siblings of the struct they implement, not its AST parent), so
-    // `enclosing_type_qname` never reaches `SegmentList` and `self` roots as
-    // UNTYPABLE. Every `self.x` chain of 2+ segments hits this, not just
-    // subscript ones. Diagnostic only.
+    // the implementing impl block --------------------------------------
+    // `self.segments[0].touch()` — `self` roots on the enclosing impl's
+    // target type via the scope-chain / scope-path fallback, since methods
+    // extracted as impl-block siblings carry no `parent_index` chain up to
+    // their struct. `Decoy` guards against a same-name fallback resolving
+    // the call by luck rather than by the receiver's actual element type.
     project.add_file(
         "src/vec_self_field_subscript.rs",
         r#"pub struct Decoy;
@@ -761,6 +757,40 @@ pub struct SelfSegmentList {
 impl SelfSegmentList {
     pub fn first_touch_self(&self) -> bool {
         self.segments[0].touch()
+    }
+}
+"#,
+    );
+
+    // --- pattern: `self.field.method()` with no subscript in the chain -----
+    // The simplest shape that depends on the same `self`-rooting fallback:
+    // one field hop, one call, no bracket projection involved. `Decoy` guards
+    // against a same-name fallback resolving `mark()` by luck.
+    project.add_file(
+        "src/self_field_method.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn mark(&self) -> bool {
+        false
+    }
+}
+
+pub struct Namer;
+
+impl Namer {
+    pub fn mark(&self) -> bool {
+        true
+    }
+}
+
+pub struct Cfg {
+    pub name: Namer,
+}
+
+impl Cfg {
+    pub fn go(&self) -> bool {
+        self.name.mark()
     }
 }
 "#,
@@ -998,11 +1028,6 @@ pub fn run_bench_alias() -> bool {
         count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
     );
     println!(
-        "  vec-self-field-subscript  self.segments[0].touch() resolved-to-SelfSegment={} unresolved={}",
-        count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%"),
-        count_unresolved(&db, "vec_self_field_subscript.rs", "calls", "touch")
-    );
-    println!(
         "  alias-reexport-member-chase  AliasDoc::new().touch() resolved-to-RealDoc={} unresolved={}",
         count_resolved_to(&db, "bench_alias_reexport.rs", "touch", "%RealDoc%"),
         count_unresolved(&db, "bench_alias_reexport.rs", "calls", "touch")
@@ -1048,6 +1073,9 @@ pub fn run_bench_alias() -> bool {
         count_resolved_to(&db, "vec_annotation_only.rs", "touch", "%Widget%");
     let alias_reexport_aliasdoc_unresolved =
         count_unresolved(&db, "bench_alias_reexport.rs", "type_ref", "AliasDoc");
+    let vec_self_field_subscript_touch =
+        count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%");
+    let self_field_method_mark = count_resolved_to(&db, "self_field_method.rs", "mark", "%Namer%");
 
     let checks = [
         (
@@ -1154,6 +1182,16 @@ pub fn run_bench_alias() -> bool {
             "renamed re-export (bench)  use resolution_corpus_rust::AliasDoc; local-type TypeRef binds (not unbound_root)",
             alias_reexport_aliasdoc_unresolved == 0,
             format!("unresolved type_ref(AliasDoc) = {alias_reexport_aliasdoc_unresolved}"),
+        ),
+        (
+            "Vec<T> subscript through self field  self.segments[0].touch() -> SelfSegment.touch",
+            vec_self_field_subscript_touch >= 1,
+            format!("resolved-to-SelfSegment edges = {vec_self_field_subscript_touch}"),
+        ),
+        (
+            "self field method (no subscript)  self.name.mark() -> Namer.mark",
+            self_field_method_mark >= 1,
+            format!("resolved-to-Namer edges = {self_field_method_mark}"),
         ),
     ];
 

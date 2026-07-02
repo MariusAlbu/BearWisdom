@@ -27,7 +27,7 @@ use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
 use super::cause::{Cause, CauseKind};
-use super::support::{import_scoped_package_id, pick_ranked_candidate};
+use super::support::{import_scoped_package_id, is_type_kind, pick_ranked_candidate};
 
 /// Strategy tag for a member-chain bind produced by the new engine.
 const STRATEGY: &str = "rule_chain";
@@ -1595,12 +1595,29 @@ fn resolve_root_impl(
         // `this`/`self` roots on the enclosing type — the one declaration whose
         // members the chain walks. Bind its id so an inherited-member climb keys
         // on identity, not the enclosing type's qname string.
-        let enc_qname = lookup
-            .enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)
+        if let Some(enc_qname) =
+            lookup.enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)
+        {
+            let ty = arena.class(enc_qname);
+            let id = lookup.by_qualified_name(enc_qname).map(|s| s.id);
+            return Ok(Receiver { ty, id });
+        }
+        // `enclosing_type_qname` walks `parent_index`, which is empty for a
+        // language whose methods are extracted as AST siblings of their
+        // container rather than nested children (Rust impl blocks). Fall back
+        // to the scope chain (innermost first), then the source symbol's own
+        // `scope_path`, accepting the first type-kind symbol either names.
+        let enc_sym = ref_ctx
+            .scope_chain
+            .iter()
+            .find_map(|q| lookup.by_qualified_name(q).filter(|s| is_type_kind(&s.kind)))
+            .or_else(|| {
+                let sp = ref_ctx.source_symbol.scope_path.as_deref()?;
+                lookup.by_qualified_name(sp).filter(|s| is_type_kind(&s.kind))
+            })
             .ok_or(None)?;
-        let ty = arena.class(enc_qname);
-        let id = lookup.by_qualified_name(enc_qname).map(|s| s.id);
-        return Ok(Receiver { ty, id });
+        let ty = arena.class(&enc_sym.qualified_name);
+        return Ok(Receiver { ty, id: Some(enc_sym.id) });
     }
     // An externally-imported root binds to the imported module's declaration of
     // the name, never a same-named symbol from a different external package: a `z`

@@ -589,6 +589,56 @@ fn roots_self_at_enclosing_type() {
     assert_eq!(resolve(&lookup, segs, "Svc.run"), Some(40));
 }
 
+/// A container whose members are extracted as AST siblings rather than
+/// nested children (Rust impl blocks) carries no `parent_index` chain up to
+/// the struct, so `enclosing_type_qname` returns `None`. `self` still roots
+/// on the struct via the scope chain (innermost first).
+#[test]
+fn roots_self_via_scope_chain_when_enclosing_type_qname_absent() {
+    let lookup = Lookup::new()
+        .with(sym(1, "SegmentList", "SegmentList", "struct", "src/lib.rs"))
+        .with_member("SegmentList", sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"));
+    let segs = vec![
+        seg("self", false, SegmentKind::SelfRef),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    let leaf = "touch";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let mut s = source_symbol("first_touch_self");
+    s.qualified_name = "SegmentList.first_touch_self".to_string();
+    let rc = ref_ctx(&r, &s, vec!["SegmentList".to_string()]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(40));
+}
+
+/// Same gap, one tier further down: the scope chain is empty (a caller that
+/// builds `RefContext` without deriving it), but the source symbol's own
+/// `scope_path` still names the struct directly.
+#[test]
+fn roots_self_via_scope_path_when_scope_chain_empty() {
+    let lookup = Lookup::new()
+        .with(sym(1, "SegmentList", "SegmentList", "struct", "src/lib.rs"))
+        .with_member("SegmentList", sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"));
+    let segs = vec![
+        seg("self", false, SegmentKind::SelfRef),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    let leaf = "touch";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let mut s = source_symbol("first_touch_self");
+    s.qualified_name = "SegmentList.first_touch_self".to_string();
+    s.scope_path = Some("SegmentList".to_string());
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(40));
+}
+
 #[test]
 fn declines_when_member_absent() {
     let lookup = Lookup::new()
