@@ -599,7 +599,16 @@ fn resolve_one_file(
     // ref-driven forward inference below would never type them. Seeded before
     // the ref loop so a ref-driven binding for the same name encountered later
     // in the loop still wins (record_local_type overwrites the seeded entry).
-    for (&lhs_idx, decl_ty) in &pf.flow.flow_binding_decl_type {
+    // Ascending lhs order is load-bearing: `flow_binding_decl_type` is a HashMap
+    // whose iteration order varies per process, and `record_local_type` is
+    // last-writer-wins keyed by name. When a file declares the same name in two
+    // sibling scopes (two functions each with an `options` parameter), an
+    // unordered walk lets a different declaration win each run, so the surviving
+    // type — and every member ref rooted on that name — flips between index runs.
+    let mut decl_seeds: Vec<(&usize, &String)> =
+        pf.flow.flow_binding_decl_type.iter().collect();
+    decl_seeds.sort_unstable_by_key(|&(idx, _)| *idx);
+    for (&lhs_idx, decl_ty) in decl_seeds {
         if let Some(sym) = pf.symbols.get(lhs_idx) {
             file_lookup.record_local_type(sym.name.clone(), decl_ty.clone());
         }
