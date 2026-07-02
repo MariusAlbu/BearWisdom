@@ -1,9 +1,15 @@
 // =============================================================================
 // build.rs — Extract builtin/keyword names from tree-sitter highlights.scm
 //
-// Auto-discovers ALL tree-sitter grammar crates in the cargo registry.
-// No hardcoded grammar list — any crate matching `tree-sitter-*` with a
-// `queries/highlights.scm` gets processed.
+// Discovers the tree-sitter grammar crates this workspace actually resolves —
+// the `(name, version)` pairs in the workspace-root `Cargo.lock` — and harvests
+// queries only from those. The `~/.cargo/registry/src` tree is shared across
+// every project on the machine, so it also holds grammar crates (and stray
+// versions) this build does not depend on; those must not contribute.
+//
+// No hardcoded grammar list — membership is driven by Cargo.lock, and any
+// resolved crate matching `tree-sitter-*` with a `queries/highlights.scm` gets
+// processed.
 //
 // Extracts:
 //   1. String literals in [...] @keyword blocks
@@ -34,6 +40,14 @@ fn main() {
         .unwrap_or_else(|_| String::from(".cargo"));
     let registry_src = PathBuf::from(&home).join("registry/src");
 
+    // Crate directory names (`{name}-{version}`) this workspace resolves. The
+    // registry scan considers only these — never the machine-shared remainder.
+    let lock_path = find_cargo_lock(&manifest);
+    let resolved = lock_path
+        .as_deref()
+        .map(resolved_grammar_crate_dirs)
+        .unwrap_or_default();
+
     let mut all_builtins: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut all_locals: BTreeMap<String, String> = BTreeMap::new();
 
@@ -48,6 +62,11 @@ fn main() {
                 for crate_entry in crate_dirs.flatten() {
                     let crate_name = crate_entry.file_name().to_string_lossy().to_string();
                     let crate_path = crate_entry.path();
+
+                    // Skip any registry crate this workspace does not resolve.
+                    if !resolved.contains(&crate_name) {
+                        continue;
+                    }
 
                     let Some(lang_id) = extract_lang_id(&crate_name) else {
                         continue;
@@ -113,10 +132,57 @@ fn main() {
         &all_locals,
     );
 
-    // Rerun only when build.rs itself changes. Grammar query files in the
-    // cargo registry are stable per-version — they only change when crate
-    // versions are bumped in Cargo.toml.
+    // Rerun when build.rs changes or when the resolved dependency set changes.
+    // Grammar query files are stable per-version, so the only other input that
+    // moves is Cargo.lock: a version bump there changes which crate dirs are
+    // eligible and must re-trigger generation.
     println!("cargo:rerun-if-changed=build.rs");
+    if let Some(lock) = &lock_path {
+        println!("cargo:rerun-if-changed={}", lock.display());
+    }
+}
+
+/// Locate the workspace-root `Cargo.lock` by walking up from the crate manifest.
+///
+/// Workspace member crates have no `Cargo.lock` of their own, so the first one
+/// found walking toward the filesystem root is the workspace lockfile.
+fn find_cargo_lock(manifest: &str) -> Option<PathBuf> {
+    Path::new(manifest)
+        .ancestors()
+        .map(|dir| dir.join("Cargo.lock"))
+        .find(|candidate| candidate.exists())
+}
+
+/// Collect the `tree-sitter-*` crate directory names (`{name}-{version}`) the
+/// workspace resolves, read from `Cargo.lock`.
+///
+/// Registry source directories are named `{name}-{version}`, so a resolved
+/// `(name, version)` pair maps directly to the one directory permitted to
+/// contribute. Path-dependency grammar crates appear here too but have no
+/// matching registry directory, so they simply match nothing.
+fn resolved_grammar_crate_dirs(lock_path: &Path) -> BTreeSet<String> {
+    let mut dirs = BTreeSet::new();
+    let Ok(content) = fs::read_to_string(lock_path) else {
+        return dirs;
+    };
+    // Within each `[[package]]` block `name` always precedes `version`; pair
+    // them and keep only the grammar crates.
+    let mut name: Option<String> = None;
+    for line in content.lines() {
+        let line = line.trim();
+        if line == "[[package]]" {
+            name = None;
+        } else if let Some(rest) = line.strip_prefix("name = \"") {
+            name = rest.strip_suffix('"').map(str::to_string);
+        } else if let Some(rest) = line.strip_prefix("version = \"") {
+            if let (Some(n), Some(v)) = (name.take(), rest.strip_suffix('"')) {
+                if n.starts_with("tree-sitter-") {
+                    dirs.insert(format!("{n}-{v}"));
+                }
+            }
+        }
+    }
+    dirs
 }
 
 /// Write a per-language file containing `BUILTINS` and `LOCALS_SCM` consts.
