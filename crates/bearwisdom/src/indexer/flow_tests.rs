@@ -595,12 +595,14 @@ fn rust_let_mut_annotation_records_declared_type() {
 }
 
 #[test]
-fn rust_generic_annotation_records_bare_base() {
+fn rust_generic_annotation_records_full_type() {
     use crate::languages::rust_lang::flow::RUST_FLOW_CONFIG;
     use crate::languages::rust_lang::RustLangPlugin;
 
-    // Generic annotation `Vec<String>` records the bare base `Vec` so it keys
-    // the same members the dual-keyed MembersIndex registers.
+    // Generic annotation `Vec<String>` records the full text so the type
+    // interner can decompose it into `Apply(Vec, [String])` — the head still
+    // keys the member lookup, and the element type survives for subscript
+    // projection (`names[0]`).
     let source = "fn f() {\n    let names: Vec<String> = make();\n}\n";
     let grammar = RustLangPlugin
         .grammar("rust")
@@ -612,8 +614,8 @@ fn rust_generic_annotation_records_bare_base() {
 
     assert_eq!(
         meta.flow_binding_decl_type.get(&0),
-        Some(&"Vec".to_string()),
-        "generic annotation records the bare base type"
+        Some(&"Vec<String>".to_string()),
+        "generic annotation records the full declared type text"
     );
 }
 
@@ -1495,15 +1497,16 @@ fn run_ts_assignment(source: &str) -> crate::types::FlowMeta {
 
 #[test]
 fn ts_array_annotation_seeds_decl_type() {
-    // `const queries: Array<unknown> = []` — the @type capture lands the
-    // annotation in flow_binding_decl_type stripped to its bare base. The RHS
-    // `[]` has no resolvable ref, so without the annotation capture this binding
-    // would produce no type at all.
+    // `const queries: Array<unknown> = []` — the @type capture lands the full
+    // annotation text in flow_binding_decl_type; the type interner (not this
+    // capture) decomposes `Array<unknown>` into the head plus its element arg.
+    // The RHS `[]` has no resolvable ref, so without the annotation capture
+    // this binding would produce no type at all.
     let meta = run_ts_assignment("const queries: Array<unknown> = []");
     assert_eq!(
         meta.flow_binding_decl_type.get(&0).map(String::as_str),
-        Some("Array"),
-        "annotated Array<unknown> must seed flow_binding_decl_type with \"Array\""
+        Some("Array<unknown>"),
+        "annotated Array<unknown> must seed flow_binding_decl_type with the full text"
     );
 }
 

@@ -499,6 +499,24 @@ fn roots_member_on_array_annotated_local() {
 }
 
 #[test]
+fn subscript_on_array_annotated_local_projects_element_then_resolves_member() {
+    // `const items: Array<Widget> = []; items[0].touch()` — the annotation
+    // seeds `items` as `Array<Widget>` (full text, not the bare head); the
+    // `[0]` subscript must unwrap it to `Widget` so `touch` resolves on the
+    // element, not against `Array` (which has no `touch`).
+    let lookup = Lookup::new()
+        .with_local_type("items", "Array<Widget>")
+        .with(sym(1, "Widget", "Widget", "class", "a.ts"))
+        .with_member("Widget", sym(62, "touch", "Widget.touch", "method", "a.ts"));
+    let segs = vec![
+        seg("items", false, SegmentKind::Identifier),
+        seg_subscript("0"),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(62));
+}
+
+#[test]
 fn binds_member_through_named_intersection_branch() {
     // `const r = render(...)` types `r` as `Result`, an intersection alias
     // `BoundFunctions<typeof queries> & { container; ... }`. `getByText` is NOT a

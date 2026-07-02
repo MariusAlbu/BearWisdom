@@ -32,7 +32,7 @@ pub(crate) use chain_walker::{
     parse_generic_param_clause, parse_object_type_members, parse_param_types_from_signature,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
-    parse_type_head_and_args_bracket, resolve_type_name_in_scope, strip_generic_args,
+    parse_type_head_and_args_bracket, resolve_type_name_in_scope,
 };
 pub(crate) use util::{
     common_prefix_len, file_belongs_to_npm_package, is_type_like_kind,

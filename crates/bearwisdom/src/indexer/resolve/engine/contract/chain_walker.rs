@@ -10,10 +10,8 @@
 //   * Resolve a type name relative to a scope chain
 //     (resolve_type_name_in_scope).
 //
-// Plus the small string utilities the chain walker needs: strip_generic_args,
-// find_matching_bracket, tuple_element, parse_return_type_from_signature.
-// strip_generic_args is also used by SymbolLookup::record_chain_miss so it
-// lives here (the chain miss it strips is a chain-walker emission).
+// Plus the small string utilities the chain walker needs: find_matching_bracket,
+// tuple_element, parse_return_type_from_signature.
 // =============================================================================
 
 use std::collections::BTreeMap;
@@ -22,14 +20,6 @@ use rustc_hash::FxHashMap;
 
 
 use super::{Symbol, SymbolLookup, TypeInfo};
-
-pub(crate) fn strip_generic_args(s: &str) -> String {
-    let base = match s.find('<') {
-        Some(i) => &s[..i],
-        None => s,
-    };
-    base.trim_end_matches('.').to_string()
-}
 
 /// Return the first generic argument of `T<A, B, …>` (depth-aware), or `None`
 /// when `s` carries no top-level generic application. Used to peel a fallible

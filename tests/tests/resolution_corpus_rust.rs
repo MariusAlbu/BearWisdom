@@ -833,15 +833,9 @@ pub fn use_slice() -> bool {
     // --- pattern: Vec<T> element projection through an annotated local, no
     // resolvable RHS to rescue it -------------------------------------------
     // `let v: Vec<Item> = Vec::new(); v[0].touch()` — the LHS annotation is
-    // the only place `Item` appears in source, but the flow seeding strips
-    // everything from the angle bracket onward before the type interner ever
-    // runs (`strip_generic_args("Vec<Item>")` == `"Vec"`), so `v`'s recorded
-    // type carries no argument to project. Shared with TypeScript's
-    // equivalent `const x: Array<T> = []` annotation (asserted stripped in
-    // `ts_array_annotation_seeds_decl_type`) — a pre-existing, cross-language
-    // gap in the declared-type seed, not the chain walker's element
-    // projection this probe otherwise exercises. Diagnostic only. `Decoy`
-    // guards against the same-file fallback as above.
+    // the only place `Item` appears in source, so `v`'s recorded type must
+    // carry the full `Vec<Item>` text for the subscript to project the
+    // element. `Decoy` guards against the same-file fallback as above.
     project.add_file(
         "src/vec_annotation_only.rs",
         r#"pub struct Decoy;
@@ -1004,11 +998,6 @@ pub fn run_bench_alias() -> bool {
         count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
     );
     println!(
-        "  vec-annotation-only  v[0].touch() resolved-to-Widget={} unresolved={}",
-        count_resolved_to(&db, "vec_annotation_only.rs", "touch", "%Widget%"),
-        count_unresolved(&db, "vec_annotation_only.rs", "calls", "touch")
-    );
-    println!(
         "  vec-self-field-subscript  self.segments[0].touch() resolved-to-SelfSegment={} unresolved={}",
         count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%"),
         count_unresolved(&db, "vec_self_field_subscript.rs", "calls", "touch")
@@ -1055,6 +1044,8 @@ pub fn run_bench_alias() -> bool {
         count_resolved_to(&db, "vec_field_subscript.rs", "touch", "%Segment%");
     let array_subscript_touch = count_resolved_to(&db, "array_subscript.rs", "touch", "%Elem%");
     let slice_subscript_touch = count_resolved_to(&db, "slice_subscript.rs", "touch", "%Piece%");
+    let vec_annotation_only_touch =
+        count_resolved_to(&db, "vec_annotation_only.rs", "touch", "%Widget%");
     let alias_reexport_aliasdoc_unresolved =
         count_unresolved(&db, "bench_alias_reexport.rs", "type_ref", "AliasDoc");
 
@@ -1153,6 +1144,11 @@ pub fn run_bench_alias() -> bool {
             "slice subscript (call-return)  s[0].touch() -> Piece.touch",
             slice_subscript_touch >= 1,
             format!("resolved-to-Piece edges = {slice_subscript_touch}"),
+        ),
+        (
+            "Vec<T> subscript (annotated local, no resolvable RHS)  v[0].touch() -> Widget.touch",
+            vec_annotation_only_touch >= 1,
+            format!("resolved-to-Widget edges = {vec_annotation_only_touch}"),
         ),
         (
             "renamed re-export (bench)  use resolution_corpus_rust::AliasDoc; local-type TypeRef binds (not unbound_root)",

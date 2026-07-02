@@ -37,7 +37,6 @@
 // Sprint 2 wires TypeScript. Sprint 3+ wires Python/Rust/etc.
 // =============================================================================
 
-use crate::indexer::resolve::engine::contract::chain_walker::strip_generic_args;
 use crate::types::{
     ChainSegment, DiscriminantNarrowing, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta,
     Narrowing, SymbolKind,
@@ -434,14 +433,16 @@ fn run_assignment_query(
             continue;
         };
 
-        // Explicit annotation: record the declared type directly. The base
-        // type (generic args stripped) keys the member lookup, so `Vec<T>`
-        // and `Vec` resolve the same members.
+        // Explicit annotation: record the declared type text verbatim (trimmed
+        // only). `intern_type_str` decomposes `Vec<Item>` into `Apply(Vec,
+        // [Item])` itself, so the head still keys the member lookup AND the
+        // generic argument survives for element-type projection (`v[0]`).
         if let Some(ty) = type_node {
             if let Ok(text) = ty.utf8_text(src) {
-                let base = strip_generic_args(text.trim());
-                if !base.is_empty() {
-                    meta.flow_binding_decl_type.insert(lhs_idx, base);
+                let text = text.trim();
+                if !text.is_empty() {
+                    meta.flow_binding_decl_type
+                        .insert(lhs_idx, text.to_string());
                 }
             }
         }

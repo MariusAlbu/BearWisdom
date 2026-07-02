@@ -36,10 +36,11 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
 
     // Matches `let/const/var x = <expr>` and `x = <expr>` reassignment.
     // The optional `type: (type_annotation (_) @type)` capture records the
-    // declared type for annotated locals (`const x: Array<T> = …`); the generic
-    // runner strips generic args and writes `flow_binding_decl_type` so the
-    // chain walker sees the receiver type even when the RHS has no resolvable ref.
-    // The @rhs capture drives forward inference as before.
+    // declared type text for annotated locals (`const x: Array<T> = …`) into
+    // `flow_binding_decl_type` verbatim; the type interner decomposes the
+    // generic application when the chain walker seeds it, so the receiver
+    // types even when the RHS has no resolvable ref. The @rhs capture drives
+    // forward inference as before.
     //
     // The `required_parameter` / `optional_parameter` arms seed a declared
     // parameter type (`function f(text: string)`) the same way, so a member call
