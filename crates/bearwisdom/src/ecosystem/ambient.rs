@@ -187,10 +187,25 @@ pub fn ambient_global_qnames(parsed: &[ParsedFile]) -> HashSet<String> {
 }
 
 /// Locate the file defining an import-free ambient global named `name`, for
-/// demand-driven materialization of a bare reference. Probes the npm synthetic
-/// globals module, where `declare global` / test-runner globals are registered.
+/// demand-driven materialization of a bare reference. Two probes:
+///
+/// - The npm synthetic globals module, where `declare global` / test-runner
+///   globals are registered by name (registration-driven — the file's own
+///   path carries no marker).
+/// - A `find_by_name` sweep filtered to files matching
+///   `is_ambient_global_lib_path` (path-driven — a language prelude / stdlib
+///   substrate, `lib.*.d.ts`, or a framework-generated ambient source). This
+///   is what lets a bare Rust macro call (`assert!`, `println!`) or other
+///   prelude-only symbol reach its definition in the sysroot source tree
+///   without a `use`.
 pub fn locate_ambient_global<'a>(loc: &'a SymbolLocationIndex, name: &str) -> Option<&'a Path> {
-    loc.locate(crate::ecosystem::npm::NPM_GLOBALS_MODULE, name)
+    if let Some(file) = loc.locate(crate::ecosystem::npm::NPM_GLOBALS_MODULE, name) {
+        return Some(file);
+    }
+    loc.find_by_name(name)
+        .into_iter()
+        .find(|(_module, file)| is_ambient_global_lib_path(&file.to_string_lossy()))
+        .map(|(_module, file)| file)
 }
 
 /// Detect an ambient-global declaration file — a runtime surface a project can

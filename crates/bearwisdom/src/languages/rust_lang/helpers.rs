@@ -142,3 +142,28 @@ pub(super) fn has_test_attribute(node: &Node, source: &str) -> bool {
     }
     false
 }
+
+/// Return `true` if the `macro_definition` has a preceding `#[macro_export]`
+/// attribute sibling. `#[macro_export]` places a `macro_rules!` macro at the
+/// crate root, regardless of how deeply it is physically nested inside `mod`
+/// blocks — the opposite of ordinary item visibility, which follows the
+/// module path.
+pub(super) fn has_macro_export_attribute(node: &Node, source: &str) -> bool {
+    let mut current = node.prev_sibling();
+    while let Some(sib) = current {
+        match sib.kind() {
+            "attribute_item" => {
+                let text = node_text(&sib, source);
+                if text.contains("macro_export") {
+                    return true;
+                }
+                current = sib.prev_sibling();
+            }
+            "line_comment" | "block_comment" => {
+                current = sib.prev_sibling();
+            }
+            _ => break,
+        }
+    }
+    false
+}

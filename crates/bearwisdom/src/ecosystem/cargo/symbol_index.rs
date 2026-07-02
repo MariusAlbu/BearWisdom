@@ -76,11 +76,32 @@ fn collect_rust_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
         | "type_item"
         | "const_item"
         | "static_item"
-        | "mod_item"
         | "macro_definition" => {
             if let Some(name_node) = node.child_by_field_name("name") {
                 if let Ok(name) = name_node.utf8_text(bytes) {
                     out.push(name.to_string());
+                }
+            }
+        }
+
+        "mod_item" => {
+            // Emit the mod's own name (so `mod builtin;`/`mod builtin { .. }`
+            // itself is locatable), then recurse into an inline body. An
+            // inline `mod { .. }` used purely for source organization (real
+            // rust-src wraps several `#[macro_export]` macros in an internal
+            // `mod builtin { .. }`) still exports its members at the same
+            // crate-module level this scan already keys entries under, so a
+            // nested declaration is collected into the same flat name list
+            // rather than dropped.
+            if let Some(name_node) = node.child_by_field_name("name") {
+                if let Ok(name) = name_node.utf8_text(bytes) {
+                    out.push(name.to_string());
+                }
+            }
+            if let Some(body) = node.child_by_field_name("body") {
+                let mut cursor = body.walk();
+                for child in body.children(&mut cursor) {
+                    collect_rust_top_level_name(&child, bytes, out);
                 }
             }
         }

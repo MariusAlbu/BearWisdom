@@ -603,6 +603,94 @@ fn macro_rules_definition_extracted_as_function() {
     );
 }
 
+#[test]
+fn macro_export_hoists_qname_out_of_enclosing_mod() {
+    // Real rust-src shape: `#[macro_export] macro_rules! assert { ... }`
+    // nested inside an internal `mod builtin { ... }` used purely for
+    // source organization. `#[macro_export]` places the macro at the crate
+    // root regardless of that nesting.
+    let source = r#"pub(crate) mod builtin {
+    #[macro_export]
+    macro_rules! assert {
+        ($cond:expr) => {};
+    }
+}"#;
+    let r = extract::extract(source);
+    let sym = r.symbols.iter().find(|s| s.name == "assert");
+    assert!(sym.is_some(), "expected assert symbol from nested macro_rules!");
+    assert_eq!(
+        sym.unwrap().qualified_name,
+        "assert",
+        "macro_export macro must qualify bare, not under its enclosing mod"
+    );
+}
+
+#[test]
+fn macro_rules_without_macro_export_keeps_mod_qualification() {
+    let source = r#"mod inner {
+    macro_rules! helper {
+        () => {};
+    }
+}"#;
+    let r = extract::extract(source);
+    let sym = r.symbols.iter().find(|s| s.name == "helper");
+    assert!(sym.is_some(), "expected helper symbol from nested macro_rules!");
+    assert_eq!(
+        sym.unwrap().qualified_name,
+        "inner.helper",
+        "non-exported macro keeps its enclosing mod qualification"
+    );
+}
+
+#[test]
+fn macro_2_0_arm_list_definition_does_not_corrupt_parse() {
+    // tree-sitter-rust 0.24 has no grammar node for the macro-2.0
+    // (`decl_macro`) `pub macro NAME { ... }` syntax; the extractor blanks
+    // it to whitespace so the surrounding, unrelated top-level items still
+    // parse and extract cleanly.
+    let source = r#"pub macro assert_matches {
+    ($left:expr, $right:pat) => {
+        match $left {
+            $right => {}
+            _ => panic!(),
+        }
+    },
+}
+
+pub fn after() -> bool {
+    true
+}"#;
+    let r = extract::extract(source);
+    assert!(!r.has_errors, "macro-2.0 def must not corrupt the parse");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "after"),
+        "symbol following a macro-2.0 def must still be extracted, got: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.symbols.iter().any(|s| s.name == "assert_matches"),
+        "macro-2.0 defs are blanked, not captured as symbols"
+    );
+}
+
+#[test]
+fn macro_2_0_single_rule_definition_does_not_corrupt_parse() {
+    let source = r#"pub macro eii($item:item) {
+    /* compiler built-in */
+}
+
+pub fn after() -> bool {
+    true
+}"#;
+    let r = extract::extract(source);
+    assert!(!r.has_errors, "macro-2.0 single-rule def must not corrupt the parse");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "after"),
+        "symbol following a macro-2.0 def must still be extracted, got: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
 // -----------------------------------------------------------------------
 // struct_expression emits Calls + TypeRef
 // -----------------------------------------------------------------------

@@ -46,6 +46,22 @@ fn count_unresolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
     .unwrap()
 }
 
+/// Count resolved `calls` edges for `callee` in the file ending `file_suffix`,
+/// whose resolved target has the given `origin` (`'internal'` | `'external'`).
+fn count_resolved_with_origin(db: &Database, file_suffix: &str, callee: &str, origin: &str) -> i64 {
+    db.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN symbols s ON e.source_id = s.id
+         JOIN files f   ON s.file_id   = f.id
+         JOIN symbols t ON e.target_id = t.id
+         WHERE f.path LIKE ?1 AND e.kind = 'calls' AND t.name = ?2
+           AND t.origin = ?3",
+        params![format!("%{file_suffix}"), callee, origin],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 /// Seed a stub rust-src tree at `{root}/lib/rustlib/src/rust/library/{std,core}/src/`
 /// carrying just the members the corpus references, so `String`/`Option` index
 /// deterministically without a `rustup component add rust-src` install.
@@ -81,6 +97,39 @@ impl<T> Option<T> {
             Option::Some(t) => t,
             Option::None => panic!(),
         }
+    }
+}
+"#,
+    )
+    .unwrap();
+    // Real rust-src layout, mirrored exactly: `core/src/macros/mod.rs` opens
+    // with a macro-2.0 (`decl_macro`) `pub macro assert_matches { ... }`
+    // definition tree-sitter-rust 0.24 has no grammar node for, and the
+    // real `assert!` is a `#[macro_export]` `macro_rules!` nested inside an
+    // internal `pub(crate) mod builtin { ... }` used purely for source
+    // organization — `#[macro_export]` hoists it to the crate root despite
+    // the nesting.
+    let core_macros = core_src.join("macros");
+    fs::create_dir_all(&core_macros).unwrap();
+    fs::write(
+        core_macros.join("mod.rs"),
+        r#"pub macro assert_matches {
+    ($left:expr, $right:pat) => {
+        match $left {
+            $right => {}
+            _ => panic!(),
+        }
+    },
+}
+
+pub(crate) mod builtin {
+    #[macro_export]
+    macro_rules! assert {
+        ($cond:expr $(,)?) => {
+            if !$cond {
+                panic!("assertion failed");
+            }
+        };
     }
 }
 "#,
@@ -265,6 +314,45 @@ pub fn use_it() -> i32 {
 "#,
     );
 
+    // --- pattern: bare std macro call against the seeded rust-src stub ------
+    // `assert!(x)` — a macro invocation with no receiver, no chain, no `use`.
+    // Macros are code with real targets: rust-src ships `assert!` as a
+    // `macro_rules!` definition in `core/src/macros/mod.rs` (seeded above),
+    // and this call must bind to it the same way any other prelude symbol
+    // does — through the ambient stdlib surface, not a drain.
+    project.add_file(
+        "src/std_macros.rs",
+        r#"pub fn check_it(x: bool) {
+    assert!(x);
+}
+"#,
+    );
+
+    // --- pattern: project-local macro_rules!, invoked from another module ---
+    // `my_thing!()` — a macro defined in one file and invoked from a sibling
+    // module via an explicit `use crate::macro_def::my_thing;` import, the
+    // same shape an ordinary cross-module function call already resolves
+    // through.
+    project.add_file(
+        "src/macro_def.rs",
+        r#"#[macro_export]
+macro_rules! my_thing {
+    () => {
+        true
+    };
+}
+"#,
+    );
+    project.add_file(
+        "src/macro_call.rs",
+        r#"use crate::macro_def::my_thing;
+
+pub fn call_it() -> bool {
+    my_thing!()
+}
+"#,
+    );
+
     // --- pattern: use-imported external crate type via a seeded registry ----
     project.add_file(
         "src/external_crate.rs",
@@ -423,10 +511,18 @@ pub fn run_bench_nested() -> bool {
             |r| r.get(0),
         )
         .unwrap();
+    let stub_assert_macro: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE name='assert' AND kind='function' AND origin='external'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     println!("\n--- preconditions ---");
     println!("  stub std::String indexed (BEARWISDOM_RUST_SYSROOT): {stub_string}");
     println!("  stub core::Option indexed (BEARWISDOM_RUST_SYSROOT): {stub_option}");
     println!("  stub external crate Thing indexed (CARGO_HOME): {stub_thing}");
+    println!("  stub core::macros::assert! indexed (BEARWISDOM_RUST_SYSROOT): {stub_assert_macro}");
 
     // Candidate probes — KNOWN-RED, diagnostic only (not asserted). Root
     // causes (traced):
@@ -437,11 +533,26 @@ pub fn run_bench_nested() -> bool {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
+    //   local-macro-import — `my_thing!()` is a bare single-`identifier`
+    //     call, and `build_chain` (`rust_lang/calls.rs:1006-1007`) returns
+    //     `None` for any bare identifier — true for `macro_invocation` calls
+    //     AND ordinary free-function calls alike. The Third-pass import-map
+    //     enrichment (`rust_lang/extract.rs:104-121`) that copies a `use`d
+    //     module onto a bare Calls ref only fires when `chain.segments.len()
+    //     >= 2`, so it never runs here — the ref keeps `module: None` even
+    //     though the file's own `use crate::macro_def::my_thing;` names the
+    //     defining module. Not macro-specific: any bare, `use`-imported,
+    //     unqualified call (macro or free function) hits the same gap.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "exists")
+    );
+    println!(
+        "  local-macro-import  my_thing!() resolved-internal={} unresolved={}",
+        count_resolved_with_origin(&db, "macro_call.rs", "my_thing", "internal"),
+        count_unresolved(&db, "macro_call.rs", "my_thing")
     );
 
     // Each row: (label, pass, detail).
@@ -456,6 +567,8 @@ pub fn run_bench_nested() -> bool {
         count_resolved_to(&db, "bench_self_import.rs", "touch", "%SelfProbe%");
     let self_import_nested_poke =
         count_resolved_to(&db, "bench_self_import_nested.rs", "poke", "%SelfProbe%");
+    let std_macro_assert =
+        count_resolved_with_origin(&db, "std_macros.rs", "assert", "external");
 
     let checks = [
         (
@@ -502,6 +615,11 @@ pub fn run_bench_nested() -> bool {
             "self-crate import (bench, nested module)  SelfProbe::new().poke() -> selfmod.SelfProbe.poke",
             self_import_nested_poke >= 1,
             format!("resolved-to-SelfProbe(nested).poke edges = {self_import_nested_poke}"),
+        ),
+        (
+            "std macro (sysroot)  assert!(x) -> core::macros::assert (BEARWISDOM_RUST_SYSROOT)",
+            std_macro_assert >= 1,
+            format!("resolved-to-external-assert edges = {std_macro_assert}"),
         ),
     ];
 

@@ -48,9 +48,31 @@ pub fn extract(source: &str) -> ExtractionResult {
     // stay valid) before parsing. Whitespace doesn't affect semantics and
     // keeps the parsed tree's byte ranges aligned with the source slice
     // the extractor reads identifiers from.
+    //
+    // tree-sitter-rust 0.24 also has no grammar node for the macro-2.0
+    // (`decl_macro`) declarative-macro syntax — `[pub] macro NAME { ... }` /
+    // `[pub] macro NAME(...) { ... }`, distinct from `macro_rules!`. Hitting
+    // one derails the parser into a single ERROR node that swallows every
+    // top-level item for the rest of the file: `core::macros::builtin` in
+    // the shipped rust-src opens with `pub macro assert_matches { ... }`,
+    // which blanks out `assert`, `debug_assert`, `matches`, `write`, and
+    // everything after it. `rewrite_macro_2_0_defs` blanks each such
+    // definition (visibility keyword through the matching closing `}`) to
+    // whitespace, same byte-length-preserving technique as the const-trait
+    // rewrite above, so the rest of the file parses cleanly.
     let owned;
-    let parse_input: &str = if memchr_const_trait(source) {
-        owned = rewrite_const_trait(source);
+    let needs_const_trait = memchr_const_trait(source);
+    let needs_macro_2_0 = contains_macro_2_0_keyword(source);
+    let parse_input: &str = if needs_const_trait || needs_macro_2_0 {
+        let mut rewritten = if needs_const_trait {
+            rewrite_const_trait(source)
+        } else {
+            source.to_string()
+        };
+        if needs_macro_2_0 {
+            rewritten = rewrite_macro_2_0_defs(&rewritten);
+        }
+        owned = rewritten;
         owned.as_str()
     } else {
         source
@@ -246,6 +268,153 @@ fn is_word_boundary_after(bytes: &[u8], i: usize) -> bool {
     }
     let c = bytes[i];
     !(c.is_ascii_alphanumeric() || c == b'_')
+}
+
+/// Cheap pre-scan for `rewrite_macro_2_0_defs`: true when the source contains
+/// the bare `macro` keyword followed by whitespace (the shape the rewrite
+/// targets). `macro_rules!` never matches — `_rules!` follows `macro`
+/// directly, with no intervening whitespace.
+fn contains_macro_2_0_keyword(source: &str) -> bool {
+    source.contains("macro ") || source.contains("macro\t") || source.contains("macro\n")
+}
+
+/// Replace each `[pub[(...)]] macro NAME { ... }` / `... macro NAME(...) {
+/// ... }` declarative-macro-2.0 definition with whitespace, preserving `\n`
+/// bytes so line numbers of the surviving source stay aligned. Leaves
+/// `macro_rules!` definitions (which the grammar parses natively) untouched.
+fn rewrite_macro_2_0_defs(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut i = 0;
+    while i + 5 <= bytes.len() {
+        if !(bytes[i..].starts_with(b"macro")
+            && is_word_boundary_before(bytes, i)
+            && is_word_boundary_after(bytes, i + 5))
+        {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 5;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let name_start = j;
+        while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+            j += 1;
+        }
+        if j == name_start {
+            i += 5;
+            continue;
+        }
+        let mut k = j;
+        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        // Optional `(params)` single-rule form precedes the body brace.
+        if k < bytes.len() && bytes[k] == b'(' {
+            let Some(after_parens) = skip_balanced(bytes, k, b'(', b')') else {
+                i += 5;
+                continue;
+            };
+            k = after_parens;
+            while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+        }
+        if k >= bytes.len() || bytes[k] != b'{' {
+            i += 5;
+            continue;
+        }
+        let Some(body_end) = skip_balanced(bytes, k, b'{', b'}') else {
+            i += 5;
+            continue;
+        };
+        // Extend the blanked span backward over a `pub` / `pub(...)`
+        // visibility modifier so no dangling `pub` is left behind.
+        let mut start = i;
+        let mut back = i;
+        while back > 0 && bytes[back - 1].is_ascii_whitespace() {
+            back -= 1;
+        }
+        if back >= 3 && &bytes[back - 3..back] == b"pub" && is_word_boundary_before(bytes, back - 3)
+        {
+            start = back - 3;
+        }
+        for b in &mut out[start..body_end] {
+            if *b != b'\n' {
+                *b = b' ';
+            }
+        }
+        i = body_end;
+    }
+    // SAFETY: every byte is either verbatim from the original UTF-8 string or
+    // an ASCII space substituted in place — the result is still valid UTF-8.
+    unsafe { String::from_utf8_unchecked(out) }
+}
+
+/// From `bytes[open_idx]` (which must equal `open`), scan forward tracking
+/// nested `open`/`close` delimiter depth, skipping over string, char, and
+/// comment contents so a delimiter inside one doesn't miscount. Returns the
+/// index just past the matching `close`, or `None` if the source ends before
+/// the delimiter is balanced.
+fn skip_balanced(bytes: &[u8], open_idx: usize, open: u8, close: u8) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut i = open_idx;
+    while i < bytes.len() {
+        match bytes[i] {
+            b if b == open => {
+                depth += 1;
+                i += 1;
+            }
+            b if b == close => {
+                depth -= 1;
+                i += 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' && i + 1 < bytes.len() { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            b'\'' => {
+                // Char literal vs. a lifetime (`'a`) — a lifetime never
+                // closes with `'`, so only consume as a literal when a
+                // closing `'` appears within a plausible char-literal span.
+                let start = i;
+                let mut lookahead = i + 1;
+                while lookahead < bytes.len()
+                    && lookahead < start + 8
+                    && bytes[lookahead] != b'\''
+                    && bytes[lookahead] != b'\n'
+                {
+                    lookahead += 1;
+                }
+                i = if lookahead < bytes.len() && bytes[lookahead] == b'\'' {
+                    lookahead + 1
+                } else {
+                    start + 1
+                };
+            }
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+            }
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 fn is_valid_rust_target_name(name: &str) -> bool {

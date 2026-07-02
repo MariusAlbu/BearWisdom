@@ -3,8 +3,8 @@
 // =============================================================================
 
 use super::helpers::{
-    detect_visibility, extract_doc_comment, extract_signature, node_text, qualify,
-    scope_from_prefix,
+    detect_visibility, extract_doc_comment, extract_signature, has_macro_export_attribute,
+    node_text, qualify, scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
@@ -419,7 +419,17 @@ pub(super) fn extract_macro_rules(
     if name.is_empty() {
         return None;
     }
-    let qualified_name = qualify(&name, qualified_prefix);
+    // `#[macro_export]` places the macro at the crate root regardless of its
+    // enclosing `mod` nesting — qualify against an empty prefix so the qname
+    // stays reachable as a bare, top-level ambient global (real rust-src
+    // organizes several `#[macro_export]` macros inside an internal
+    // `mod builtin { ... }` purely for source layout).
+    let export_prefix = if has_macro_export_attribute(node, source) {
+        ""
+    } else {
+        qualified_prefix
+    };
+    let qualified_name = qualify(&name, export_prefix);
     let doc_comment = extract_doc_comment(node, source);
 
     Some(ExtractedSymbol {
@@ -433,7 +443,7 @@ pub(super) fn extract_macro_rules(
         end_col: node.end_position().column as u32,
         signature: Some(format!("macro_rules! {name}")),
         doc_comment,
-        scope_path: scope_from_prefix(qualified_prefix),
+        scope_path: scope_from_prefix(export_prefix),
         parent_index,
         byte_offset: 0,
         declared_type: None,
