@@ -216,7 +216,7 @@ edition = "2021"
 somecrate = "0.1.0"
 
 [workspace]
-members = ["member"]
+members = ["member", "consumer"]
 "#,
     );
     // A real (if trivial) workspace member alongside the hybrid root, matching
@@ -228,6 +228,33 @@ members = ["member"]
 name = "resolution-corpus-rust-member"
 version = "0.0.1"
 edition = "2021"
+"#,
+    );
+    // A separate consumer crate that RENAMES the root dependency
+    // (`rootalias = { package = "resolution-corpus-rust" }`) and imports the
+    // cross-member-re-exported `OwnedBytes` through the alias — alias != declared
+    // package name, exactly tantivy's `common = { package = "tantivy-common" }` +
+    // `use common::OwnedBytes` shape. Needs BOTH per-consumer dependency-rename
+    // resolution AND pub-use re-export following.
+    project.add_file(
+        "consumer/Cargo.toml",
+        r#"[package]
+name = "resolution-corpus-rust-consumer"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+rootalias = { path = "..", package = "resolution-corpus-rust" }
+"#,
+    );
+    project.add_file(
+        "consumer/src/lib.rs",
+        r#"use rootalias::OwnedBytes;
+
+pub fn use_renamed() -> bool {
+    let b = OwnedBytes;
+    b.owned_len()
+}
 "#,
     );
     project.add_file(
@@ -1113,6 +1140,8 @@ pub fn run_bench_alias() -> bool {
 
     let cross_member_ownedbytes_unresolved =
         count_unresolved(&db, "bench_cross_member.rs", "imports", "OwnedBytes");
+    let renamed_dep_ownedbytes_unresolved =
+        count_unresolved(&db, "consumer/src/lib.rs", "imports", "OwnedBytes");
 
     let checks = [
         (
@@ -1234,6 +1263,11 @@ pub fn run_bench_alias() -> bool {
             "cross-member re-export (bench)  use resolution_corpus_rust::OwnedBytes; import binds across a workspace member (lib.rs barrel)",
             cross_member_ownedbytes_unresolved == 0,
             format!("unresolved imports(OwnedBytes) = {cross_member_ownedbytes_unresolved}"),
+        ),
+        (
+            "cargo dep-rename (consumer)  use rootalias::OwnedBytes, rootalias renames resolution-corpus-rust; alias resolves to the package then follows its re-export",
+            renamed_dep_ownedbytes_unresolved == 0,
+            format!("unresolved imports(OwnedBytes) = {renamed_dep_ownedbytes_unresolved}"),
         ),
     ];
 

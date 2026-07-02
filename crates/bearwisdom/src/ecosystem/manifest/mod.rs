@@ -142,6 +142,10 @@ pub struct ManifestData {
     /// `*` stripped — e.g. `("@/", "src/")` lets `@/utils` resolve to
     /// `src/utils`. Other manifest kinds leave this empty.
     pub path_aliases: Vec<(String, String)>,
+    /// Cargo dependency renames: (alias, target_package_name) for each
+    /// alias = { package = "X" } entry. In a crate declaring the rename,
+    /// use alias::... refers to the workspace member named X. Per-consumer.
+    pub dep_renames: Vec<(String, String)>,
     /// TypeScript: `compilerOptions.types` from tsconfig.json — the list
     /// of packages whose type definitions are auto-loaded as ambient
     /// globals (the same way TS itself treats them). Each entry is the

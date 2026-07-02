@@ -23,6 +23,7 @@ use crate::indexer::resolve::engine::support::{
     follow_reexports, is_bare_module_specifier, self_package_sub_path, workspace_pkg_barrels,
     workspace_sub_path,
 };
+use crate::indexer::resolve::engine::contract::types::SymbolInfo;
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 
 pub struct WorkspacePackageRule;
@@ -59,6 +60,23 @@ impl LookupRule for WorkspacePackageRule {
         if !is_bare_module_specifier(specifier) {
             return LookupResult::Pass;
         }
+        // A bare head that is not itself a declared package name may be a
+        // consumer-scoped Cargo dependency rename (common = { package =
+        // "tantivy-common" }). Rewrite the head to the target package so the
+        // lookup, sub-path, and barrel discovery all key on the real member.
+        let rewritten;
+        let specifier = if ctx.lookup.workspace_package_id(specifier).is_some() {
+            specifier
+        } else {
+            let head = specifier.split("::").next().unwrap_or(specifier);
+            match ctx.lookup.dep_rename(ctx.ref_ctx.file_package_id, head) {
+                Some(target) => {
+                    rewritten = format!("{target}{}", &specifier[head.len()..]);
+                    rewritten.as_str()
+                }
+                None => specifier,
+            }
+        };
         let (pkg_id, sub_path) = match self_package_sub_path(ctx.profile, specifier) {
             Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
             None => (
@@ -101,6 +119,38 @@ impl LookupRule for WorkspacePackageRule {
             if let Some(res) =
                 follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)
             {
+                return LookupResult::Resolved(res);
+            }
+        }
+
+        // Sub-path-guided follow: `use pkg::sub::X` re-exports X inside the `sub`
+        // module (Rust `directory/mod.rs`), not the crate barrel. Follow re-exports
+        // from each package file whose path carries the sub-path; bind the unique
+        // target and decline when the follow fans out to more than one.
+        if let Some(sub) = sub_path.as_deref() {
+            let mut hit: Option<SymbolInfo> = None;
+            let mut seen: std::collections::BTreeSet<String> = Default::default();
+            for sym in ctx.lookup.symbols_in_package(pkg_id) {
+                let path = sym.file_path.as_ref();
+                if !path.contains(sub) || !seen.insert(path.to_string()) {
+                    continue;
+                }
+                if ctx.lookup.reexports_from(path).is_empty() {
+                    continue;
+                }
+                if let Some(res) =
+                    follow_reexports(path, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)
+                {
+                    if let Some(prev) = &hit {
+                        if prev.target_symbol_id != res.target_symbol_id {
+                            return LookupResult::Pass;
+                        }
+                    } else {
+                        hit = Some(res);
+                    }
+                }
+            }
+            if let Some(res) = hit {
                 return LookupResult::Resolved(res);
             }
         }

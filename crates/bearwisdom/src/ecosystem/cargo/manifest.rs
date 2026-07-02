@@ -50,6 +50,7 @@ impl ManifestReader for CargoManifest {
                     data.project_refs.push(key);
                 }
             }
+            data.dep_renames = parse_cargo_dep_renames(&content);
 
             let name = parse_cargo_package_name(&content);
             let package_dir = manifest_path
@@ -146,6 +147,77 @@ fn cargo_subtable_dep_name(trimmed: &str) -> Option<&str> {
 /// Line-by-line scan — avoids a full TOML dependency. Handles
 /// `serde = "1"`, `tokio = { ... }`, `foo.workspace = true`, plus
 /// the sub-table form `[dependencies.foo]\nversion = "1"`.
+/// Parse Cargo dependency renames: an inline-table dep entry carrying an
+/// explicit `package = "X"` key is a rename. `alias = { package = "X", .. }`
+/// yields `(alias, "X")`; plain entries use the key as the crate name.
+pub fn parse_cargo_dep_renames(content: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut in_dep_section = false;
+    let mut pending_key: Option<String> = None;
+    let mut pending_table = String::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_dep_section = is_cargo_dependency_section(trimmed);
+            pending_key = None;
+            pending_table.clear();
+            continue;
+        }
+        if !in_dep_section || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(key) = pending_key.clone() {
+            pending_table.push(' ');
+            pending_table.push_str(trimmed);
+            if trimmed.contains('}') {
+                if let Some(pkg) = cargo_table_package_field(&pending_table) {
+                    out.push((key, pkg));
+                }
+                pending_key = None;
+                pending_table.clear();
+            }
+            continue;
+        }
+        let Some(eq) = trimmed.find('=') else {
+            continue;
+        };
+        let key = trimmed[..eq]
+            .trim()
+            .split('.')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if key.is_empty()
+            || !key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            continue;
+        }
+        let value = trimmed[eq + 1..].trim();
+        if value.starts_with('{') && value.ends_with('}') {
+            if let Some(pkg) = cargo_table_package_field(value) {
+                out.push((key, pkg));
+            }
+            continue;
+        }
+        if value.starts_with('{') {
+            pending_key = Some(key);
+            pending_table.push_str(value);
+        }
+    }
+    out
+}
+
+/// The `package = "X"` value inside an inline-table dependency body, if any.
+fn cargo_table_package_field(table: &str) -> Option<String> {
+    let idx = table.find("package")?;
+    let after = table[idx + "package".len()..].trim_start();
+    let after = after.strip_prefix('=')?.trim_start();
+    let after = after.strip_prefix('"')?;
+    let end = after.find('"')?;
+    Some(after[..end].to_string())
+}
+
 pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
     let mut crates = Vec::new();
     let mut in_dep_section = false;

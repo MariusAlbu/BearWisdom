@@ -166,6 +166,9 @@ pub struct Compilation {
     path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
     /// Workspace-wide path aliases, for files not under a per-package manifest.
     path_aliases_global: Vec<(String, String)>,
+    /// Per-package Cargo dependency renames: (alias, target_package_name),
+    /// snapshot of the cargo manifest's dep_renames. Per-consumer only.
+    dep_renames_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
     /// Symbols grouped by their owning workspace package id, for package-scoped
     /// lookups. Built from each symbol's `package_id` during ingest.
     by_package: FxHashMap<i64, Vec<Symbol>>,
@@ -239,6 +242,11 @@ impl Compilation {
                 .map(|m| m.path_aliases.clone())
                 .unwrap_or_default();
             self.path_aliases_by_pkg.insert(pkg_id, aliases);
+            let renames = manifests
+                .get(&ManifestKind::Cargo)
+                .map(|m| m.dep_renames.clone())
+                .unwrap_or_default();
+            self.dep_renames_by_pkg.insert(pkg_id, renames);
         }
         if let Some(npm) = ctx.manifests.get(&ManifestKind::Npm) {
             self.path_aliases_global = npm.path_aliases.clone();
@@ -273,6 +281,7 @@ impl Compilation {
             workspace_pkg_by_declared_name: FxHashMap::default(),
             path_aliases_by_pkg: FxHashMap::default(),
             path_aliases_global: Vec::new(),
+            dep_renames_by_pkg: FxHashMap::default(),
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
             arena,
@@ -2058,6 +2067,15 @@ impl SymbolLookup for Compilation {
         }
         let (alias, target) = best?;
         Some(format!("{target}{}", &specifier[alias.len()..]))
+    }
+
+    fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
+        let renames = self.dep_renames_by_pkg.get(&consumer_pkg?)?;
+        renames.iter().find(|(a, _)| a == alias).map(|(_, pkg)| pkg.as_str())
+    }
+
+    fn package_id_for_file(&self, file_path: &str) -> Option<i64> {
+        self.by_file.get(file_path).and_then(|v| v.first()).and_then(|s| s.package_id)
     }
 
     fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {

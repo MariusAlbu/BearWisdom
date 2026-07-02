@@ -242,6 +242,11 @@ pub fn build_project_context_with_packages(
                         entry.path_aliases.push(alias.clone());
                     }
                 }
+                for rn in &pm.data.dep_renames {
+                    if !entry.dep_renames.contains(rn) {
+                        entry.dep_renames.push(rn.clone());
+                    }
+                }
             }
         }
         if !pkg_manifests.is_empty() {

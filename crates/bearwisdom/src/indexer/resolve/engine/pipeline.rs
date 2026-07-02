@@ -332,6 +332,14 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.resolve_path_alias(package_id, specifier)
     }
 
+    fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
+        self.tree.dep_rename(consumer_pkg, alias)
+    }
+
+    fn package_id_for_file(&self, file_path: &str) -> Option<i64> {
+        self.tree.package_id_for_file(file_path)
+    }
+
     // -- Flow cache: methods implemented over `locals` and `locals_id`. ------
 
     /// Return the inferred type of `name` from the per-file forward-inference

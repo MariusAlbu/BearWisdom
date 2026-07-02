@@ -344,6 +344,18 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Target package name a consumer-scoped Cargo dependency rename maps an
+    /// alias to. None when the consumer declares no such rename.
+    fn dep_rename(&self, _consumer_pkg: Option<i64>, _alias: &str) -> Option<&str> {
+        None
+    }
+
+    /// The workspace package id that owns `file_path`, or `None` when the file
+    /// is unknown or has no package.
+    fn package_id_for_file(&self, _file_path: &str) -> Option<i64> {
+        None
+    }
+
     /// Look up the class qualified name for a component/directive selector.
     ///
     /// `raw_selector` is the selector as stored in `@Component({selector:'...'})`

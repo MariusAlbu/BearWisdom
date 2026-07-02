@@ -493,13 +493,28 @@ pub(crate) fn follow_reexports(
     let mut wildcard_sources: Vec<&str> = Vec::new();
 
     for (exported_name, source_module) in reexports {
-        // A bare source module is followable when it resolves to a file OR names
-        // a sibling workspace package whose barrel can be recovered. An
-        // unresolvable bare source (a true external) is skipped.
-        if !is_relative_specifier(source_module)
-            && lookup.resolve_module_from(module_path, source_module).is_none()
-            && workspace_pkg_barrels(lookup, source_module, barrel_stems).is_empty()
-            && lookup.workspace_package_id(source_module).is_none()
+        // A bare workspace-package source may be a consumer-scoped Cargo dependency
+        // RENAME in the re-exporting file's own package (`pub use common::X` where
+        // `common` = `tantivy-common`). Rewrite the alias head to the target package
+        // so the hop keys on the real member; the wildcard path keeps the original.
+        let renamed = if is_relative_specifier(source_module)
+            || lookup.workspace_package_id(source_module).is_some()
+        {
+            None
+        } else {
+            let head = source_module.split("::").next().unwrap_or(source_module);
+            lookup
+                .dep_rename(lookup.package_id_for_file(module_path), head)
+                .map(|t| format!("{t}{}", &source_module[head.len()..]))
+        };
+        let source = renamed.as_deref().unwrap_or(source_module);
+
+        // A bare source is followable when it resolves to a file OR names a sibling
+        // workspace package whose barrel can be recovered; a true external is skipped.
+        if !is_relative_specifier(source)
+            && lookup.resolve_module_from(module_path, source).is_none()
+            && workspace_pkg_barrels(lookup, source, barrel_stems).is_empty()
+            && lookup.workspace_package_id(source).is_none()
         {
             continue;
         }
@@ -517,10 +532,10 @@ pub(crate) fn follow_reexports(
         // directly (a member that owns the type, re-exported through this module),
         // rather than forwarding it onward. Chase one hop into the package's own
         // symbol set (the cross-member re-export seam).
-        if !is_relative_specifier(source_module) {
+        if !is_relative_specifier(source) {
             if let Some(id) = workspace_pkg_declared_symbol(
                 lookup,
-                source_module,
+                source,
                 target_name,
                 edge_kind,
                 kind_compatible,
@@ -529,16 +544,16 @@ pub(crate) fn follow_reexports(
             }
         }
 
-        for sym in lookup.in_module_from(module_path, source_module) {
+        for sym in lookup.in_module_from(module_path, source) {
             if sym.name == target_name && kind_compatible(edge_kind, &sym.kind) {
                 return Some(reexport_resolution(sym.id, "reexport_chain"));
             }
         }
-        if is_relative_specifier(source_module) {
+        if is_relative_specifier(source) {
             if let Some(res) = resolve_relative_reexport(
                 lookup,
                 module_path,
-                source_module,
+                source,
                 target_name,
                 edge_kind,
                 kind_compatible,
@@ -548,7 +563,7 @@ pub(crate) fn follow_reexports(
             }
         } else if let Some(res) = resolve_reexport_by_matching_file(
             lookup,
-            source_module,
+            source,
             target_name,
             edge_kind,
             kind_compatible,
@@ -559,7 +574,7 @@ pub(crate) fn follow_reexports(
 
         if let Some(res) = follow_reexport_source(
             module_path,
-            source_module,
+            source,
             target_name,
             edge_kind,
             kind_compatible,
