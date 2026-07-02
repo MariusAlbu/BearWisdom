@@ -20,6 +20,7 @@ pub mod languages;
 pub mod registry;
 pub mod scanner;
 pub mod types;
+pub mod vendored_or_generated;
 pub mod walker;
 
 #[cfg(test)]

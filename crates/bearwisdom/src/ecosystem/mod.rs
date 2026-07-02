@@ -110,11 +110,16 @@ pub mod tf_registry;
 pub mod toolchain_payload;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
-pub mod vendored_or_generated;
 pub mod vendored_self_declared;
 pub mod vendored_submodules;
 pub mod zig_pkg;
 pub mod zig_std;
+
+/// The checked-in vendor/generated-code classifier is shared with the
+/// walker's git-state exclusion gate in `bearwisdom-profile`, which cannot
+/// depend on this crate — so it lives there and is re-exported here.
+pub use bearwisdom_profile::vendored_or_generated;
+
 pub use alire::AlireEcosystem;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;

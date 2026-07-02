@@ -1,5 +1,5 @@
 // =============================================================================
-// ecosystem/vendored_or_generated.rs — checked-in vendor/codegen classification
+// vendored_or_generated.rs — checked-in vendor/codegen path classification
 //
 // Some projects commit third-party code or build/codegen output straight into
 // the tree instead of `.gitignore`-ing it: a vendored `node_modules/`, a
@@ -7,9 +7,10 @@
 // None of it is first-party source, but nothing on disk marks it external the
 // way a real dependency root does.
 //
-// This module supplies the classification predicate consumed during origin
-// assignment in `indexer/full.rs` and by the unresolved-ref classifier in
-// `query/unresolved_classify.rs`.
+// This is the single source of truth for which directory segments and
+// filename suffixes count as checked-in vendor/codegen noise — consumed both
+// by the walker's git-state exclusion gate (`exclusions.rs`) and by the
+// indexer's origin-classification pass.
 // =============================================================================
 
 /// The two checked-in-noise buckets this module recognizes.

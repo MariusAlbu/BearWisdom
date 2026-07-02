@@ -12,8 +12,11 @@
 // =============================================================================
 
 use crate::detect::detect_language;
-use crate::exclusions::{project_exclude_dirs, should_exclude_in_project_path, should_skip_file};
+use crate::exclusions::{
+    is_git_repo, project_exclude_dirs, should_exclude_in_project_path, should_skip_file,
+};
 use crate::types::ScannedFile;
+use crate::vendored_or_generated;
 use ignore::WalkBuilder;
 use std::io::Read;
 use std::path::Path;
@@ -48,12 +51,23 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
         std::path::PathBuf::from(stripped)
     };
 
+    // In a git working tree, directories/files the shared
+    // `vendored_or_generated::classify` detector recognizes are admitted
+    // instead of hard-excluded below — checked-in vendor/codegen content
+    // flows through for reclassification as an external lookup target,
+    // while `.gitignore`-covered copies of the same names stay skipped
+    // through this walker's normal gitignore handling. Non-git projects
+    // keep the unconditional exclusion (no gitignore to fall back on).
+    let admit_checked_in = is_git_repo(root);
+
     // Build override rules to exclude project-scoped dirs at the walker
     // level. The exclusion set is the union of `COMMON_EXCLUDE_DIRS` and the
     // `exclude_dirs` of every language detected at `root` — NOT the global
     // union of every registered language. The global union excludes `build/`
     // (Java/Kotlin/Dart/C/C++) which incorrectly hides Cargo build-script
     // source in pure Rust projects (scryer-prolog, prost-build downstreams).
+    // `project_exclude_dirs` already drops detector-recognized names from
+    // this set when `root` is a git working tree.
     //
     // This prevents the walker from entering these directories at all, which
     // is critical for performance (venv/ can have 10,000+ files).
@@ -138,7 +152,7 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
             } else {
                 Vec::new()
             };
-            should_exclude_in_project_path(&dir_comps, &project_excludes) || {
+            should_exclude_in_project_path(&dir_comps, &project_excludes, admit_checked_in) || {
                 // Vendor lib dirs: parent in WEB_ROOT + child in
                 // VENDOR_CHILD (`wwwroot/lib`, `public/vendor`).
                 let pair_components: Vec<_> = rel.components().collect();
@@ -154,13 +168,16 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
             continue;
         }
 
-        // Skip minified/bundled files (.min.js, .min.css, .bundle.js).
-        if abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(should_skip_file)
-        {
-            continue;
+        // Skip minified/bundled files (.min.js, .min.css, .bundle.js) —
+        // unless it's a checked-in `.min.js`/`.bundle.js` the detector
+        // recognizes and `root` is a git working tree, in which case it's
+        // admitted for reclassification instead.
+        if let Some(name) = abs_path.file_name().and_then(|n| n.to_str()) {
+            let hard_skip = should_skip_file(name)
+                && !(admit_checked_in && vendored_or_generated::classify(name).is_some());
+            if hard_skip {
+                continue;
+            }
         }
 
         // Detect language — skip files with no recognised extension.

@@ -347,10 +347,14 @@ fn robot_root_selection_ignores_non_python_ecosystems() {
 // `bearwisdom-profile`'s walker (`exclusions.rs::COMMON_EXCLUDE_DIRS` plus
 // every language's `exclude_dirs`, e.g. `javascript.rs` declaring `dist`,
 // `node_modules`) drops matching directories before a file ever reaches
-// this reclassification pass — regardless of whether the file is actually
-// checked into git. `dist/` and `vendor/` collide with that walker-level
-// exclusion, so these fixtures use `generated/` and `third_party/`, which
-// the walker does not exclude, to isolate the reclassification pass itself.
+// this reclassification pass — unless the project root is a git working
+// tree, in which case names the shared `vendored_or_generated::classify`
+// detector recognizes are admitted instead of hard-excluded (still subject
+// to `.gitignore`). These first two fixtures have no `.git` dir, so `dist/`
+// and `vendor/` still collide with the walker-level exclusion; they use
+// `generated/` and `third_party/`, which the walker never excludes, to
+// isolate the reclassification pass itself. The git-repo fixtures below
+// exercise the now-reachable `vendor/`/`dist/` paths end to end.
 
 #[test]
 fn checked_in_generated_file_reclassifies_while_near_miss_stays_internal() {
@@ -427,4 +431,98 @@ fn reclassified_file_symbol_remains_a_lookup_target() {
         )
         .expect("vendoredHelper symbol should still be indexed");
     assert_eq!(symbol_origin, "external");
+}
+
+#[test]
+fn git_repo_checked_in_vendor_dir_reclassifies() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+
+    fs::create_dir_all(root.join("vendor")).unwrap();
+    fs::write(
+        root.join("vendor/lib.js"),
+        "function checkedInVendorHelper() { return 1; }\n",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    full_index(&mut db, root, None, None, None).unwrap();
+    let conn = db.conn();
+
+    let (vendor_path, vendor_origin): (String, String) = conn
+        .query_row(
+            "SELECT path, origin FROM files WHERE path LIKE 'ext:vendored:%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("checked-in vendor/lib.js should be reclassified in a git repo");
+    assert!(vendor_path.ends_with("vendor/lib.js"));
+    assert_eq!(vendor_origin, "external");
+
+    let symbol_origin: String = conn
+        .query_row(
+            "SELECT origin FROM symbols WHERE name = 'checkedInVendorHelper'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("checkedInVendorHelper symbol should still be indexed");
+    assert_eq!(symbol_origin, "external");
+}
+
+#[test]
+fn git_repo_checked_in_minified_dist_file_reclassifies() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+
+    fs::create_dir_all(root.join("dist")).unwrap();
+    fs::write(
+        root.join("dist/app.min.js"),
+        "function checkedInBundleHelper() { return 1; }\n",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    full_index(&mut db, root, None, None, None).unwrap();
+    let conn = db.conn();
+
+    let (generated_path, generated_origin): (String, String) = conn
+        .query_row(
+            "SELECT path, origin FROM files WHERE path LIKE 'ext:generated:%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("checked-in dist/app.min.js should be reclassified in a git repo");
+    assert!(generated_path.ends_with("dist/app.min.js"));
+    assert_eq!(generated_origin, "external");
+}
+
+#[test]
+fn non_git_project_still_excludes_vendor_dir_at_the_walker() {
+    // Same fixture as `git_repo_checked_in_vendor_dir_reclassifies`, minus
+    // the `.git` dir — the safety-net case. `vendor/` never reaches the
+    // reclassification pass because the walker hard-excludes it first.
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    fs::create_dir_all(root.join("vendor")).unwrap();
+    fs::write(
+        root.join("vendor/lib.js"),
+        "function checkedInVendorHelper() { return 1; }\n",
+    )
+    .unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    full_index(&mut db, root, None, None, None).unwrap();
+    let conn = db.conn();
+
+    let file_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE path LIKE '%vendor%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(file_count, 0, "vendor/ must not be walked without a .git dir");
 }

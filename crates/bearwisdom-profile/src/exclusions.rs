@@ -1,4 +1,5 @@
 use crate::registry::LANGUAGES;
+use crate::vendored_or_generated;
 use ignore::WalkBuilder;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -31,6 +32,23 @@ static SKIP_EXTENSIONS: &[&str] = &[
     ".chunk.js",
     ".chunk.css",
 ];
+
+/// Returns true when `root` is a git working tree — i.e. `root/.git` exists,
+/// either as the standard directory or the file-based pointer git worktrees
+/// and submodules use.
+pub fn is_git_repo(root: &Path) -> bool {
+    root.join(".git").exists()
+}
+
+/// Returns true when `name`, treated as a bare path segment, matches a
+/// pattern the shared vendored/generated detector recognizes (see
+/// [`vendored_or_generated::classify`]). Directories and files that pass
+/// this check are checked-in vendor/codegen noise the indexer can parse and
+/// reclassify as external lookup targets, rather than content that must
+/// never be walked.
+fn is_reclassifiable(name: &str) -> bool {
+    vendored_or_generated::classify(name).is_some()
+}
 
 /// Returns the deduplicated, sorted union of `COMMON_EXCLUDE_DIRS` and all
 /// `exclude_dirs` declared on every registered `LanguageDescriptor`.
@@ -114,25 +132,38 @@ pub fn project_active_languages(root: &Path) -> Vec<&'static str> {
 ///
 /// Falls back to [`canonical_exclude_dirs`] when no language could be
 /// detected (rare — the project has no manifest and we have no signal).
+///
+/// When `root` is a git working tree ([`is_git_repo`]), entries the shared
+/// [`vendored_or_generated::classify`] detector recognizes are dropped from
+/// the returned set: checked-in vendor/codegen directories should be walked
+/// and reclassified as external lookup targets rather than hard-excluded,
+/// while `.gitignore`-covered copies of the same directories stay skipped
+/// through the walker's normal gitignore handling. Non-git projects keep the
+/// full set unchanged — there's no gitignore to fall back on.
 pub fn project_exclude_dirs(root: &Path) -> Vec<&'static str> {
     let active = project_active_languages(root);
-    if active.is_empty() {
-        return canonical_exclude_dirs();
-    }
-
-    let mut set: BTreeSet<&'static str> = BTreeSet::new();
-    for &dir in COMMON_EXCLUDE_DIRS {
-        set.insert(dir);
-    }
-    for lang in LANGUAGES {
-        if !active.contains(&lang.id) {
-            continue;
-        }
-        for &dir in lang.exclude_dirs {
+    let base = if active.is_empty() {
+        canonical_exclude_dirs()
+    } else {
+        let mut set: BTreeSet<&'static str> = BTreeSet::new();
+        for &dir in COMMON_EXCLUDE_DIRS {
             set.insert(dir);
         }
+        for lang in LANGUAGES {
+            if !active.contains(&lang.id) {
+                continue;
+            }
+            for &dir in lang.exclude_dirs {
+                set.insert(dir);
+            }
+        }
+        set.into_iter().collect()
+    };
+
+    if !is_git_repo(root) {
+        return base;
     }
-    set.into_iter().collect()
+    base.into_iter().filter(|dir| !is_reclassifiable(dir)).collect()
 }
 
 /// Returns true if `name` matches any canonical exclude dir.
@@ -188,12 +219,23 @@ pub static ROOT_ONLY_EXCLUDE_NAMES: &[&str] = &["vendor", "lib", "libs"];
 /// `rel_path_components` is the sequence of path-component basenames
 /// from the project root, e.g. `["_sass", "minimal-mistakes", "vendor",
 /// "breakpoint"]`.
+///
+/// When `admit_checked_in` is true (the caller has already established
+/// `root` is a git working tree), a component the shared
+/// [`vendored_or_generated::classify`] detector recognizes is skipped
+/// entirely rather than matched against `COMMON_EXCLUDE_DIRS` or
+/// `exclude_dirs` — it's checked-in vendor/codegen content that should flow
+/// through to reclassification instead of being hard-excluded.
 pub fn should_exclude_in_project_path(
     rel_path_components: &[&str],
     exclude_dirs: &[&'static str],
+    admit_checked_in: bool,
 ) -> bool {
     for (i, comp) in rel_path_components.iter().enumerate() {
         let is_root_level = i == 0;
+        if admit_checked_in && is_reclassifiable(comp) {
+            continue;
+        }
         if COMMON_EXCLUDE_DIRS.contains(comp) {
             return true;
         }
@@ -246,16 +288,30 @@ fn is_vendor_lib_dir(path: &Path) -> bool {
 /// - Skips all canonical exclude dirs and vendor library dirs.
 /// - Skips minified files (`.min.js`, `.min.css`, `.bundle.js`).
 /// - Does not follow symlinks.
+///
+/// In a git working tree ([`is_git_repo`]), an excluded name the shared
+/// [`vendored_or_generated::classify`] detector recognizes is admitted
+/// instead of vetoed — checked-in vendor/codegen content flows through for
+/// reclassification, while `.gitignore`-covered copies of the same
+/// directories stay skipped through this walker's standard gitignore
+/// handling. Names outside the detector's list (`.cache`, `tmp`, `.claude`,
+/// ...) keep the unconditional exclusion. Note this only affects names that
+/// don't also start with `.` — hidden-file filtering (`standard_filters`)
+/// drops dot-prefixed entries before this veto is even consulted, so
+/// dot-prefixed detector segments (`.next`, `.gradle`, `.idea`, ...) stay
+/// excluded regardless of git state.
 pub fn build_walker(root: &Path) -> WalkBuilder {
+    let admit_checked_in = is_git_repo(root);
     let mut builder = WalkBuilder::new(root);
     builder
         .follow_links(false)
         .standard_filters(true)
-        .filter_entry(|entry| {
+        .filter_entry(move |entry| {
             let name = entry.file_name().to_string_lossy();
+            let reclassifiable = admit_checked_in && is_reclassifiable(&name);
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 if should_exclude(&name) {
-                    return false;
+                    return reclassifiable;
                 }
                 // Exclude vendor library dirs (wwwroot/lib, public/vendor, etc.)
                 if is_vendor_lib_dir(entry.path()) {
@@ -264,7 +320,7 @@ pub fn build_walker(root: &Path) -> WalkBuilder {
                 return true;
             }
             // Skip minified/bundled files.
-            !should_skip_file(&name)
+            !should_skip_file(&name) || reclassifiable
         });
     builder
 }

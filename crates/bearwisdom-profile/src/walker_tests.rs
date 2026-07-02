@@ -140,6 +140,86 @@ fn pure_c_dot_h_stays_c() {
 }
 
 #[test]
+fn git_repo_walks_checked_in_vendor_and_generated_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+
+    let vendor = dir.path().join("vendor");
+    std::fs::create_dir(&vendor).unwrap();
+    std::fs::write(vendor.join("lib.js"), "module.exports = {};").unwrap();
+
+    let dist = dir.path().join("dist");
+    std::fs::create_dir(&dist).unwrap();
+    std::fs::write(dist.join("app.min.js"), "!function(){}();").unwrap();
+
+    let files = walk_files(dir.path());
+    let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+    assert!(paths.contains(&"app.ts"), "got: {paths:?}");
+    assert!(
+        paths.contains(&"vendor/lib.js"),
+        "checked-in vendor/ should be walked in a git repo: {paths:?}"
+    );
+    assert!(
+        paths.contains(&"dist/app.min.js"),
+        "checked-in dist/*.min.js should be walked in a git repo: {paths:?}"
+    );
+}
+
+#[test]
+fn non_git_project_still_excludes_vendor_and_generated_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    // Deliberately no `.git` — this is the non-repo safety-net case.
+    std::fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+
+    let vendor = dir.path().join("vendor");
+    std::fs::create_dir(&vendor).unwrap();
+    std::fs::write(vendor.join("lib.js"), "module.exports = {};").unwrap();
+
+    let dist = dir.path().join("dist");
+    std::fs::create_dir(&dist).unwrap();
+    std::fs::write(dist.join("app.min.js"), "!function(){}();").unwrap();
+
+    let files = walk_files(dir.path());
+    let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+    assert_eq!(paths, vec!["app.ts"], "got: {paths:?}");
+}
+
+#[test]
+fn dot_git_directory_itself_is_never_walked() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let git_dir = dir.path().join(".git");
+    std::fs::create_dir(&git_dir).unwrap();
+    // A `.git` internals file that happens to carry a recognised extension —
+    // must never surface as a source file regardless of the git-state gate.
+    std::fs::write(git_dir.join("hooks.py"), "# not a real file").unwrap();
+    std::fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+
+    let files = walk_files(dir.path());
+    let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+    assert_eq!(paths, vec!["app.ts"], "got: {paths:?}");
+}
+
+#[test]
+fn gitignored_node_modules_still_skipped_in_git_repo() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    std::fs::write(dir.path().join(".gitignore"), "node_modules/\n").unwrap();
+    std::fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+
+    let nm = dir.path().join("node_modules");
+    std::fs::create_dir(&nm).unwrap();
+    std::fs::write(nm.join("dep.ts"), "const y = 2;").unwrap();
+
+    let files = walk_files(dir.path());
+    let paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+    assert_eq!(
+        paths, vec!["app.ts"],
+        "gitignored node_modules must stay skipped even though it's now admitted for reclassification: {paths:?}"
+    );
+}
+
+#[test]
 fn dot_c_always_routes_to_c_even_with_cpp_strings() {
     // The disambiguation only kicks in when the detector returns "c"
     // (which happens for `.h`, `.c` files). A `.c` file with the literal

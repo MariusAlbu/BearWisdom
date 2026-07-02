@@ -358,11 +358,13 @@ mod project_exclusion_tests {
         let ruby_excludes: &[&'static str] = &["vendor", ".bundle", "tmp", "log"];
         assert!(crate::exclusions::should_exclude_in_project_path(
             &["vendor"],
-            ruby_excludes
+            ruby_excludes,
+            false
         ));
         assert!(crate::exclusions::should_exclude_in_project_path(
             &["vendor", "bundle", "ruby"],
-            ruby_excludes
+            ruby_excludes,
+            false
         ));
     }
 
@@ -373,11 +375,13 @@ mod project_exclusion_tests {
         let ruby_excludes: &[&'static str] = &["vendor", ".bundle", "tmp", "log"];
         assert!(!crate::exclusions::should_exclude_in_project_path(
             &["_sass", "minimal-mistakes", "vendor", "breakpoint"],
-            ruby_excludes
+            ruby_excludes,
+            false
         ));
         assert!(!crate::exclusions::should_exclude_in_project_path(
             &["assets", "lib", "util"],
-            ruby_excludes
+            ruby_excludes,
+            false
         ));
     }
 
@@ -389,7 +393,8 @@ mod project_exclusion_tests {
         let no_lang: &[&'static str] = &[];
         assert!(crate::exclusions::should_exclude_in_project_path(
             &["packages", "frontend", "node_modules", "react"],
-            no_lang
+            no_lang,
+            false
         ));
     }
 
@@ -401,12 +406,104 @@ mod project_exclusion_tests {
         let custom: &[&'static str] = &["lib"];
         assert!(crate::exclusions::should_exclude_in_project_path(
             &["lib"],
-            custom
+            custom,
+            false
         ));
         assert!(!crate::exclusions::should_exclude_in_project_path(
             &["src", "lib", "helper"],
-            custom
+            custom,
+            false
         ));
+    }
+
+    #[test]
+    fn admit_checked_in_lets_detector_covered_name_through() {
+        // `node_modules` and `.idea` are both recognized by the shared
+        // vendored/generated detector. With `admit_checked_in` set, they
+        // no longer trigger exclusion even though they're still present
+        // in `COMMON_EXCLUDE_DIRS`.
+        let no_lang: &[&'static str] = &[];
+        assert!(!crate::exclusions::should_exclude_in_project_path(
+            &["node_modules", "react"],
+            no_lang,
+            true
+        ));
+        assert!(!crate::exclusions::should_exclude_in_project_path(
+            &[".idea"],
+            no_lang,
+            true
+        ));
+        // A name the detector does NOT recognize stays excluded regardless.
+        assert!(crate::exclusions::should_exclude_in_project_path(
+            &[".claude"],
+            no_lang,
+            true
+        ));
+    }
+}
+
+#[cfg(test)]
+mod build_walker_tests {
+    use crate::exclusions::build_walker;
+    use std::collections::BTreeSet;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn walked_relative_paths(root: &std::path::Path) -> BTreeSet<String> {
+        build_walker(root)
+            .build()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .map(|e| {
+                e.path()
+                    .strip_prefix(root)
+                    .unwrap_or(e.path())
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn git_repo_admits_checked_in_vendor_dir() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+        let vendor = dir.path().join("vendor");
+        fs::create_dir(&vendor).unwrap();
+        fs::write(vendor.join("lib.js"), "module.exports = {};").unwrap();
+
+        let paths = walked_relative_paths(dir.path());
+        assert!(paths.contains("vendor/lib.js"), "got: {paths:?}");
+    }
+
+    #[test]
+    fn non_git_project_excludes_vendor_dir() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+        let vendor = dir.path().join("vendor");
+        fs::create_dir(&vendor).unwrap();
+        fs::write(vendor.join("lib.js"), "module.exports = {};").unwrap();
+
+        let paths = walked_relative_paths(dir.path());
+        assert!(!paths.contains("vendor/lib.js"), "got: {paths:?}");
+    }
+
+    #[test]
+    fn git_repo_still_excludes_non_detector_dir() {
+        // `tmp` isn't in the shared vendored/generated detector's list — it
+        // stays hard-excluded even in a git repo. Unlike a dot-prefixed
+        // name, `tmp` isn't already caught by hidden-file filtering, so
+        // this isolates the gate's own name-list boundary.
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::write(dir.path().join("app.ts"), "const x = 1;").unwrap();
+        let tmp = dir.path().join("tmp");
+        fs::create_dir(&tmp).unwrap();
+        fs::write(tmp.join("stale.ts"), "const y = 2;").unwrap();
+
+        let paths = walked_relative_paths(dir.path());
+        assert!(!paths.iter().any(|p| p.starts_with("tmp/")), "got: {paths:?}");
     }
 }
 
