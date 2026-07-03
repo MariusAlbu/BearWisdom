@@ -115,7 +115,7 @@ fn walk_use_tree(
                 return;
             }
 
-            let module = build_module_path(prefix, &path);
+            let module = resolve_relative_module(&build_module_path(prefix, &path), qualified_prefix);
             refs.push(ExtractedRef {
                 is_import_binding: false,
                 is_reexport,
@@ -201,12 +201,12 @@ fn walk_use_tree(
                 // Aliased import: module = parent of the original full path.
                 let orig = original.as_deref().unwrap_or("");
                 let full = build_module_path(prefix, orig);
-                let parent = full.rsplit_once("::").map(|(p, _)| p.to_string());
-                parent
+                full.rsplit_once("::")
+                    .map(|(p, _)| resolve_relative_module(p, qualified_prefix))
             } else if prefix.is_empty() {
                 None
             } else {
-                Some(prefix.to_string())
+                Some(resolve_relative_module(prefix, qualified_prefix))
             };
 
             // Aliased imports carry the original name as a single-segment
@@ -335,7 +335,7 @@ fn walk_use_tree(
             let module = if prefix.is_empty() {
                 None
             } else {
-                Some(prefix.to_string())
+                Some(resolve_relative_module(prefix, qualified_prefix))
             };
             refs.push(ExtractedRef {
                 is_import_binding: false,
@@ -378,4 +378,45 @@ fn build_module_path(prefix: &str, path: &str) -> String {
         (false, true) => prefix.to_string(),
         (false, false) => format!("{prefix}::{path}"),
     }
+}
+
+/// Rewrite a `use` path's leading `self` / `super`(`::super`)* keyword to its
+/// absolute, crate-rooted equivalent — `crate` or `crate::a::b` — using the
+/// enclosing module's dot-joined `qualified_prefix`. Each `super` pops one
+/// segment off `qualified_prefix`; a leading `self` consumes it unchanged.
+/// A path with no such leading keyword (an external crate name, or one
+/// already rooted at `crate`) passes through unmodified — this is the same
+/// absolute form `self_package_sub_path` already strips `crate` from, so a
+/// `use super::X` inside a nested module resolves through the same module
+/// lookup a `use crate::a::X` does.
+fn resolve_relative_module(module: &str, qualified_prefix: &str) -> String {
+    let segs: Vec<&str> = module.split("::").collect();
+    match segs.first() {
+        Some(&"self") | Some(&"super") => {}
+        _ => return module.to_string(),
+    }
+    let mut base: Vec<&str> = if qualified_prefix.is_empty() {
+        Vec::new()
+    } else {
+        qualified_prefix.split('.').collect()
+    };
+    let mut i = 0;
+    if segs[0] == "self" {
+        i = 1;
+    } else {
+        while i < segs.len() && segs[i] == "super" {
+            base.pop();
+            i += 1;
+        }
+    }
+    let rest = &segs[i..];
+    if base.is_empty() && rest.is_empty() {
+        return "crate".to_string();
+    }
+    let mut out = String::from("crate");
+    for seg in base.iter().chain(rest.iter()) {
+        out.push_str("::");
+        out.push_str(seg);
+    }
+    out
 }

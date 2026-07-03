@@ -887,6 +887,96 @@ fn run() {
     );
 }
 
+#[test]
+fn use_super_inside_nested_mod_gets_crate_absolute_module() {
+    // `mod tests { use super::OwnedBytes; ... }` at crate root — the Imports
+    // ref for `OwnedBytes` should carry module="crate", not the literal
+    // relative keyword "super", so it resolves the same way `use
+    // crate::OwnedBytes;` already does.
+    let src = r#"
+pub struct OwnedBytes;
+
+mod tests {
+    use super::OwnedBytes;
+
+    fn make() -> OwnedBytes {
+        OwnedBytes
+    }
+}
+"#;
+    let r = extract::extract(src);
+    let import = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports && r.target_name == "OwnedBytes");
+    assert!(import.is_some(), "Expected Imports ref for 'OwnedBytes'");
+    let import = import.unwrap();
+    assert_eq!(
+        import.module.as_deref(),
+        Some("crate"),
+        "use super::OwnedBytes; inside a crate-root nested mod should carry module='crate'; got {:?}",
+        import.module
+    );
+}
+
+#[test]
+fn use_super_inside_doubly_nested_mod_pops_one_segment() {
+    // `super` from `outer::inner` names `outer`, not the crate root.
+    let src = r#"
+mod outer {
+    pub struct Thing;
+
+    mod inner {
+        use super::Thing;
+
+        fn make() -> Thing {
+            Thing
+        }
+    }
+}
+"#;
+    let r = extract::extract(src);
+    let import = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports && r.target_name == "Thing");
+    assert!(import.is_some(), "Expected Imports ref for 'Thing'");
+    let import = import.unwrap();
+    assert_eq!(
+        import.module.as_deref(),
+        Some("crate::outer"),
+        "use super::Thing; inside outer::inner should carry module='crate::outer'; got {:?}",
+        import.module
+    );
+}
+
+#[test]
+fn use_self_gets_crate_absolute_module() {
+    // `pub use self::inner::Thing;` re-exports a child module's item — the
+    // Imports ref should carry module="crate::inner", not the literal
+    // "self::inner".
+    let src = r#"
+mod inner {
+    pub struct Thing;
+}
+
+pub use self::inner::Thing;
+"#;
+    let r = extract::extract(src);
+    let import = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports && r.target_name == "Thing");
+    assert!(import.is_some(), "Expected Imports ref for 'Thing'");
+    let import = import.unwrap();
+    assert_eq!(
+        import.module.as_deref(),
+        Some("crate::inner"),
+        "pub use self::inner::Thing; should carry module='crate::inner'; got {:?}",
+        import.module
+    );
+}
+
 // -----------------------------------------------------------------------
 // Local variable type inference from RHS constructors
 // -----------------------------------------------------------------------

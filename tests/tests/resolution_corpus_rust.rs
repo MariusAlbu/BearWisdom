@@ -415,6 +415,45 @@ pub fn call_it() -> bool {
 "#,
     );
 
+    // --- pattern: `use super::X;` from a separate-file `#[cfg(test)]` mod ---
+    // `Marker` is declared in `marker.rs`; its `#[path]`-free `mod tests;`
+    // submodule lives in the SEPARATE file `marker/tests.rs` and names the
+    // parent via the RELATIVE `super` keyword (`use super::Marker;`) — the
+    // same shape tantivy's own crates use for every `#[cfg(test)] mod tests`
+    // split into its own file. `super` must resolve to the declaring module
+    // (here, `marker.rs`'s own crate-root scope), not stay a literal keyword
+    // no lookup can act on. Split across files (not nested inline) so the
+    // same-file fallback can't rescue it by coincidence.
+    project.add_file(
+        "src/marker.rs",
+        r#"pub struct Marker;
+
+impl Marker {
+    pub fn new() -> Marker {
+        Marker
+    }
+
+    pub fn ping(&self) -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests;
+"#,
+    );
+    project.add_file(
+        "src/marker/tests.rs",
+        r#"use super::Marker;
+
+#[test]
+fn it_pings() {
+    let m = Marker::new();
+    let _ = m.ping();
+}
+"#,
+    );
+
     // --- pattern: use-imported external crate type via a seeded registry ----
     project.add_file(
         "src/external_crate.rs",
@@ -1056,16 +1095,6 @@ pub fn run_bench_alias() -> bool {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
-    //   local-macro-import — `my_thing!()` is a bare single-`identifier`
-    //     call, and `build_chain` (`rust_lang/calls.rs:1006-1007`) returns
-    //     `None` for any bare identifier — true for `macro_invocation` calls
-    //     AND ordinary free-function calls alike. The Third-pass import-map
-    //     enrichment (`rust_lang/extract.rs:104-121`) that copies a `use`d
-    //     module onto a bare Calls ref only fires when `chain.segments.len()
-    //     >= 2`, so it never runs here — the ref keeps `module: None` even
-    //     though the file's own `use crate::macro_def::my_thing;` names the
-    //     defining module. Not macro-specific: any bare, `use`-imported,
-    //     unqualified call (macro or free function) hits the same gap.
     //   alias-reexport-member-chase — `AliasDoc::new().touch()` needs
     //     `AliasDoc` (the synthetic symbol `calls_imports.rs`'s `use_as_clause`
     //     arm registers for the alias) to carry `RealDoc`'s members. Rust
@@ -1082,11 +1111,6 @@ pub fn run_bench_alias() -> bool {
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "calls", "exists")
-    );
-    println!(
-        "  local-macro-import  my_thing!() resolved-internal={} unresolved={}",
-        count_resolved_with_origin(&db, "macro_call.rs", "my_thing", "internal"),
-        count_unresolved(&db, "macro_call.rs", "calls", "my_thing")
     );
     println!(
         "  alias-reexport-member-chase  AliasDoc::new().touch() resolved-to-RealDoc={} unresolved={}",
@@ -1142,6 +1166,15 @@ pub fn run_bench_alias() -> bool {
         count_unresolved(&db, "bench_cross_member.rs", "imports", "OwnedBytes");
     let renamed_dep_ownedbytes_unresolved =
         count_unresolved(&db, "consumer/src/lib.rs", "imports", "OwnedBytes");
+    let local_macro_import_my_thing =
+        count_resolved_with_origin(&db, "macro_call.rs", "my_thing", "internal");
+    // The `.ping()` call itself is rescued regardless of this gap (the chain
+    // walker re-derives `m`'s type from `Marker::new()`'s own return-type
+    // annotation) — the import ref and `m`'s synthetic TypeRef are the
+    // count-inflating symptom this probe targets, same shape as the
+    // crate::-relative re-export patterns above.
+    let marker_import_unresolved = count_unresolved(&db, "marker/tests.rs", "imports", "Marker");
+    let marker_typeref_unresolved = count_unresolved(&db, "marker/tests.rs", "type_ref", "Marker");
 
     let checks = [
         (
@@ -1268,6 +1301,18 @@ pub fn run_bench_alias() -> bool {
             "cargo dep-rename (consumer)  use rootalias::OwnedBytes, rootalias renames resolution-corpus-rust; alias resolves to the package then follows its re-export",
             renamed_dep_ownedbytes_unresolved == 0,
             format!("unresolved imports(OwnedBytes) = {renamed_dep_ownedbytes_unresolved}"),
+        ),
+        (
+            "local macro import  use crate::macro_def::my_thing; my_thing!() resolves internally",
+            local_macro_import_my_thing >= 1,
+            format!("resolved-internal edges = {local_macro_import_my_thing}"),
+        ),
+        (
+            "cross-file #[cfg(test)] mod import  use super::Marker; local-type TypeRef binds (not unbound_root)",
+            marker_import_unresolved == 0 && marker_typeref_unresolved == 0,
+            format!(
+                "unresolved imports(Marker) = {marker_import_unresolved}, unresolved type_ref(Marker) = {marker_typeref_unresolved}"
+            ),
         ),
     ];
 
