@@ -55,7 +55,7 @@ use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet};
 use crate::indexer::resolve::engine::contract::chain_walker::{
-    parse_return_type_from_signature, parse_type_head_and_args,
+    parse_return_type_from_signature_for_lang, parse_type_head_and_args,
 };
 use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::{
@@ -1596,7 +1596,10 @@ fn collect_external_files(
 /// `db.delete(t)` yields `PgDeleteBase`, whose member `.where(...)` the chain then
 /// walks. This is the same next-hop reachability as following an import, sourced
 /// from the signature: pull only an un-materialized, externally-defined head, so a
-/// return type already indexed (internal or pulled) adds nothing.
+/// return type already indexed (internal or pulled) adds nothing. Signature shape
+/// is per-language (TS/.NET `):`, Rust/Python `->`, Go's separator-less trailing
+/// result) — dispatched through `parse_return_type_from_signature_for_lang`, the
+/// same parser `populate_return_type_ids` uses for every language's own symbols.
 fn collect_return_type_files(
     symbols: &[crate::types::ExtractedSymbol],
     lang: &str,
@@ -1605,17 +1608,18 @@ fn collect_return_type_files(
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
 ) {
-    if lang != "typescript" && lang != "tsx" {
-        return;
-    }
     for s in symbols {
         let Some(sig) = s.signature.as_deref() else {
             continue;
         };
-        let Some(ret) = parse_return_type_from_signature(sig) else {
+        let Some(ret) = parse_return_type_from_signature_for_lang(sig, lang) else {
             continue;
         };
         let (head, _args) = parse_type_head_and_args(&ret);
+        // Strip a module-qualified prefix so the lookup key is the bare
+        // declared name — TS/namespace paths join segments with `.`
+        // (`ns.Type`), Rust/C++ paths with `::` (`gadgetcrate::Gadget`).
+        let head = head.rsplit("::").next().unwrap_or(head);
         let head = head.rsplit('.').next().unwrap_or(head);
         if head.is_empty() || !tree.by_name(head).is_empty() {
             continue;

@@ -142,7 +142,10 @@ pub(crate) mod builtin {
 /// Seed a stub Cargo registry crate at
 /// `{home}/registry/src/<index>/<name>-<ver>/src/lib.rs` so `use somecrate::Thing;`
 /// resolves against a pinned external crate rather than the machine's real
-/// `~/.cargo/registry`.
+/// `~/.cargo/registry`. Also seeds a SECOND registry crate, `gadgetcrate`,
+/// named only from `somecrate`'s own return type (`Thing::make`) — never
+/// `use`d by the test project itself — so the second-hop materialization
+/// closure has a target reachable exclusively through a return-type head.
 fn seed_cargo_registry() -> TempDir {
     let dir = TempDir::new().unwrap();
     let crate_src = dir
@@ -158,6 +161,9 @@ impl Thing {
     }
     pub fn greet(&self) -> &str {
         "hi"
+    }
+    pub fn make(&self) -> gadgetcrate::Gadget {
+        todo!()
     }
 }
 
@@ -193,6 +199,23 @@ impl AliasDoc {
 "#,
     )
     .unwrap();
+
+    let gadget_src = dir
+        .path()
+        .join("registry/src/index.crates.io/gadgetcrate-0.1.0/src");
+    fs::create_dir_all(&gadget_src).unwrap();
+    fs::write(
+        gadget_src.join("lib.rs"),
+        r#"pub struct Gadget;
+impl Gadget {
+    pub fn spin(&self) -> bool {
+        true
+    }
+}
+"#,
+    )
+    .unwrap();
+
     dir
 }
 
@@ -274,12 +297,21 @@ impl OwnedBytes {
     );
     // Registry-source dep with no path/git override, matching the shape
     // `discover_cargo_roots` requires to resolve against a registry root.
+    // `gadgetcrate` is a TRANSITIVE dep of `somecrate` (never named in this
+    // project's own `Cargo.toml` — only `somecrate`'s return type names it),
+    // matching how Cargo.lock lists a full resolved dependency graph rather
+    // than just the root's direct `[dependencies]`.
     project.add_file(
         "Cargo.lock",
         r#"version = 3
 
 [[package]]
 name = "somecrate"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "gadgetcrate"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 "#,
@@ -486,6 +518,24 @@ fn it_pings() {
 pub fn greet_it() -> bool {
     let t = Thing::new();
     t.greet().is_empty()
+}
+"#,
+    );
+
+    // --- pattern: second-hop external return type, no direct import --------
+    // `t.make()` yields `gadgetcrate::Gadget` — a type this project never
+    // `use`s directly; it is named only in `somecrate::Thing::make`'s own
+    // signature. Materializing `gadgetcrate` and binding `t.make().spin()`
+    // are asserted separately below: materialization is asserted in `checks`
+    // (the return-type-head follow); the member bind is a known-red
+    // candidate (a separate, `::`-vs-`.` qname gap — see there).
+    project.add_file(
+        "src/external_second_hop.rs",
+        r#"use somecrate::Thing;
+
+pub fn spin_it() -> bool {
+    let t = Thing::new();
+    t.make().spin()
 }
 "#,
     );
@@ -1192,11 +1242,22 @@ pub fn check() {
             |r| r.get(0),
         )
         .unwrap();
+    // Never `use`d by the project — reachable only through `somecrate::Thing
+    // ::make`'s return-type head, so this count is zero unless the
+    // materialization closure follows the second hop.
+    let stub_gadget: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE name='Gadget' AND origin='external'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     println!("\n--- preconditions ---");
     println!("  stub std::String indexed (BEARWISDOM_RUST_SYSROOT): {stub_string}");
     println!("  stub core::Option indexed (BEARWISDOM_RUST_SYSROOT): {stub_option}");
     println!("  stub external crate Thing indexed (CARGO_HOME): {stub_thing}");
     println!("  stub core::macros::assert! indexed (BEARWISDOM_RUST_SYSROOT): {stub_assert_macro}");
+    println!("  stub second-hop external crate Gadget indexed (return-type-only reach): {stub_gadget}");
 
     // Candidate probes — KNOWN-RED, diagnostic only (not asserted). Root
     // cause (traced):
@@ -1229,6 +1290,21 @@ pub fn check() {
     //     correctly scoped fix needs to intern the field's type directly at
     //     extract time (bypassing the shared naive-text fallback for Rust
     //     specifically) rather than post-processing the shared parser.
+    //   external-second-hop-member-bind — `t.make()`'s return type
+    //     (`gadgetcrate::Gadget`) MATERIALIZES (asserted below). But
+    //     `.spin()` still fails to BIND, because Phase B's `resolve_type_
+    //     name_in_scope` (`chain_walker.rs`) only recognizes a `.`-joined raw
+    //     as an already-qualified FQN to pass through unchanged — a Rust
+    //     `::`-joined raw falls through its scope-prefixing loop unmatched
+    //     and returns verbatim, so `Thing::make`'s return_type_id interns
+    //     the literal string `"gadgetcrate::Gadget"`, which never equals
+    //     `Gadget`'s own bare qname. Same root-cause SHAPE as
+    //     field-typed-chain-scoped-path above (a `::`-embedded type not
+    //     recognized where the engine expects a `.`-joined qname), here in
+    //     Phase B's return-type derivation instead of Phase A's field-type
+    //     fallback — the fix in either place needs a Rust-aware normalize
+    //     (crate-name segment drop vs. internal-module segment keep), not a
+    //     blanket strip in the shared, cross-language parser.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
@@ -1239,6 +1315,11 @@ pub fn check() {
         "  field-typed-chain-scoped-path  h.inner.poke() resolved-to-ScopedGadget={} unresolved={}",
         count_resolved_to(&db, "field_chain_scoped.rs", "poke", "%ScopedGadget%"),
         count_unresolved(&db, "field_chain_scoped.rs", "calls", "poke")
+    );
+    println!(
+        "  external-second-hop-member-bind  t.make().spin() resolved-to-Gadget={} unresolved={}",
+        count_resolved_to(&db, "external_second_hop.rs", "spin", "%Gadget%"),
+        count_unresolved(&db, "external_second_hop.rs", "calls", "spin")
     );
 
     // Each row: (label, pass, detail).
@@ -1345,6 +1426,11 @@ pub fn check() {
             "external crate seam  t.greet() -> Thing.greet (CARGO_HOME)",
             external_crate_greet >= 1,
             format!("resolved-to-Thing edges = {external_crate_greet}"),
+        ),
+        (
+            "external crate second hop (materialization)  gadgetcrate::Gadget materializes from somecrate::Thing::make's return-type head alone, no direct import",
+            stub_gadget >= 1,
+            format!("stub Gadget indexed (origin=external) = {stub_gadget}"),
         ),
         (
             "chain call (r6a)  Builder::new().build() -> Builder.build",
