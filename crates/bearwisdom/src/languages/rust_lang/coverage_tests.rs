@@ -1236,12 +1236,14 @@ fn coverage_use_declaration_wildcard_emits_imports_edge() {
 #[test]
 fn coverage_use_wildcard_captures_relative_module_path() {
     // `use super::*` / `use crate::cfg::*` — the wildcard's own path child carries
-    // the relative module keyword; it must land on the ref's `module`, not NULL.
+    // the relative module keyword; it must land on the ref's `module`, rewritten
+    // to its crate-absolute form the same way the other `use`-tree arms already
+    // rewrite `super`/`self`, not NULL and not the literal relative keyword.
     let cases = [
-        ("use super::*;", "super"),
+        ("use super::*;", "crate"),
         ("use crate::*;", "crate"),
         ("use crate::cfg::*;", "crate::cfg"),
-        ("use super::sib::*;", "super::sib"),
+        ("use super::sib::*;", "crate::sib"),
     ];
     for (src, expected) in cases {
         let r = extract::extract(src);

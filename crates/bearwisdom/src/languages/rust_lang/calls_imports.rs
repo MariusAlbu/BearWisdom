@@ -6,6 +6,10 @@ use super::helpers::{detect_visibility, node_text, qualify, scope_from_prefix};
 use crate::types::{AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
+#[cfg(test)]
+#[path = "calls_imports_tests.rs"]
+mod tests;
+
 // ---------------------------------------------------------------------------
 // extern crate import
 // ---------------------------------------------------------------------------
@@ -335,7 +339,7 @@ fn walk_use_tree(
             let module = if module.is_empty() {
                 None
             } else {
-                Some(module)
+                Some(resolve_relative_module(&module, qualified_prefix))
             };
             refs.push(ExtractedRef {
                 is_import_binding: false,
