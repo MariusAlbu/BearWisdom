@@ -886,8 +886,24 @@ fn lookup_member_on_union(
             // requires it on every arm, so the access is invalid.
             return None;
         }
+        // A branch scoped under an enclosing declaration (a nested function's
+        // synthesized `{outer}.{inner}$Ret`) is a DOTTED qualified name — an
+        // exact `by_qualified_name` lookup finds its one real declaration.
+        // `types_by_name` indexes by SIMPLE name only, so it would search for a
+        // symbol literally NAMED the whole dotted string and find nothing.
+        // Fall back to the simple-name search for a bare (unqualified) branch.
+        let exact = lookup.by_qualified_name(&branch);
+        let fallback_set = if exact.is_none() {
+            Some(lookup.types_by_name(&branch))
+        } else {
+            None
+        };
+        let candidates: Vec<&Symbol> = match exact {
+            Some(s) => vec![s],
+            None => fallback_set.iter().flat_map(|s| s.iter()).collect(),
+        };
         let mut branch_hit: Option<Symbol> = None;
-        for cand in lookup.types_by_name(&branch).iter() {
+        for cand in candidates {
             let recv = expand_receiver(
                 Receiver::new(arena.class(&cand.qualified_name), cand.id),
                 lookup,

@@ -856,10 +856,39 @@ impl Compilation {
             if r.chain.is_some() {
                 continue;
             }
-            if r.source_symbol_index < type_refs_by_sym.len() {
-                type_refs_by_sym[r.source_symbol_index]
-                    .push((r.target_name.as_str(), r.module.as_deref()));
+            // The `_primitive` coverage sentinel (emitted by the file-level
+            // type-identifier scan for primitives / literals / structured
+            // annotations, always attributed to a fixed symbol index — never
+            // necessarily THIS symbol's own) carries no real type. `pipeline.rs`
+            // already excludes it from edges/unresolved_refs; this fallback must
+            // honor the same exclusion, or a stray sentinel from an unrelated
+            // nested annotation (attributed to the same index) wins as `last()`
+            // and clobbers this symbol's real return/field type.
+            if r.target_name == "_primitive" {
+                continue;
             }
+            if r.source_symbol_index >= type_refs_by_sym.len() {
+                continue;
+            }
+            // The file-level type-identifier coverage scan attributes every ref
+            // it emits to a single fixed symbol index rather than the
+            // declaration the annotation actually belongs to — its own doc
+            // contract only guarantees "a ref at the correct line", not correct
+            // attribution. A ref whose line falls outside the attributed
+            // symbol's own [start_line, end_line] span is one of these: it
+            // belongs to an unrelated, possibly much later, declaration and
+            // must not compete for that symbol's `last()` return/field-type
+            // fallback. Only enforced when the symbol carries a real
+            // (non-degenerate) span — a single-point span carries no scoping
+            // signal to check a ref's line against.
+            let owner = &pf.symbols[r.source_symbol_index];
+            if owner.end_line > owner.start_line
+                && (r.line < owner.start_line || r.line > owner.end_line)
+            {
+                continue;
+            }
+            type_refs_by_sym[r.source_symbol_index]
+                .push((r.target_name.as_str(), r.module.as_deref()));
         }
 
         for (sym_idx, sym) in pf.symbols.iter().enumerate() {

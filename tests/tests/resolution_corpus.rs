@@ -205,7 +205,7 @@ export function widget(): void {
 "#,
     );
 
-    // --- candidate patterns (probed, not yet asserted) ------------------------
+    // --- pattern: object-literal function return, member call on the local ----
     // A function that RETURNS an object literal; a consumer calls a member on the
     // inferred local. (createScopedLogger pattern.)
     project.add_file(
@@ -223,15 +223,7 @@ export function useLogger(): void {
 }
 "#,
     );
-    // An optional-array param: `T[] | undefined` receiver, member via `?.`.
-    project.add_file(
-        "src/optional_array.ts",
-        r#"export function firsts(items: string[] | undefined): string[] | undefined {
-    return items?.map((x) => x.trim());
-}
-"#,
-    );
-    // `type X = ReturnType<typeof f>` where f returns an object literal.
+    // --- pattern: `type X = ReturnType<typeof f>` where f returns an object literal
     project.add_file(
         "src/return_type.ts",
         r#"function make() {
@@ -244,6 +236,32 @@ type Handle = ReturnType<typeof make>;
 
 export function run(h: Handle): void {
     h.go();
+}
+"#,
+    );
+    // --- candidate patterns (probed, not yet asserted) ------------------------
+    // An optional-array param: `T[] | undefined` receiver, member via `?.`.
+    project.add_file(
+        "src/optional_array.ts",
+        r#"export function firsts(items: string[] | undefined): string[] | undefined {
+    return items?.map((x) => x.trim());
+}
+"#,
+    );
+    // Destructuring an object-literal-returning call's result, then calling the
+    // destructured binding directly (`const { info } = f(); info(...)`).
+    project.add_file(
+        "src/obj_return_destructure.ts",
+        r#"function makeLogger2() {
+    return {
+        info(msg: string): void {},
+        error(msg: string): void {},
+    };
+}
+
+export function useLoggerDestructured(): void {
+    const { info } = makeLogger2();
+    info("hi");
 }
 "#,
     );
@@ -306,27 +324,27 @@ export function run(h: Handle): void {
 
     // Candidate probes — KNOWN-RED next targets, diagnostic only (not asserted).
     // Promote a row to `checks` once fixed. Root causes (traced):
-    //   obj-return / returntype — a `return { … }` object literal is captured as a
-    //     `_primitive` placeholder, so the inferred local has no members. Shared
-    //     root; the larger cascade.
     //   optional-arr — `T[] | undefined` interns as `Union([Array, undefined])`, and
     //     union member access requires the member on EVERY arm, so the `undefined`
     //     arm kills `.map`. Needs nullish arms peeled before the union walk.
+    //   obj-return-destructure — `const { info } = f()` types the destructured
+    //     binding from the FIELD on f's yield type, but a synthesized `{f}$Ret`
+    //     member carries no field type of its own (its presence under `$Ret` is
+    //     the resolve, not a typed slot), so the destructure seed yields nothing
+    //     and `info` is left untyped. `info("hi")` still shows a resolved edge,
+    //     but to the object-literal's OWN structurally-extracted `makeLogger2.info`
+    //     (a same-file same-name bare-call fallback) — not to `$Ret`, so the probe
+    //     checks the target package specifically rather than "resolved at all".
     println!("\n--- candidate probes (known red) ---");
-    println!(
-        "  obj-return    log.info()  resolved={} unresolved={}",
-        count_resolved(&db, "obj_return.ts", "info"),
-        count_unresolved(&db, "obj_return.ts", "info")
-    );
     println!(
         "  optional-arr  items?.map() resolved-to-Array={} unresolved={}",
         count_resolved_to(&db, "optional_array.ts", "map", "%Array%"),
         count_unresolved(&db, "optional_array.ts", "map")
     );
     println!(
-        "  returntype    h.go()      resolved={} unresolved={}",
-        count_resolved(&db, "return_type.ts", "go"),
-        count_unresolved(&db, "return_type.ts", "go")
+        "  obj-return-destructure  info(\"hi\") resolved-to-$Ret={} unresolved={}",
+        count_resolved_to(&db, "obj_return_destructure.ts", "info", "%$Ret%"),
+        count_unresolved(&db, "obj_return_destructure.ts", "info")
     );
 
     // Each row: (label, pass, detail). Printed as a table so a fix's effect is a
@@ -336,6 +354,8 @@ export function run(h: Handle): void {
     let local_param_getname = count_resolved_to(&db, "local_param.ts", "getName", "%User%");
     let notify_dismiss_external = count_resolved_to(&db, "notify.ts", "dismiss", "%base-ui%");
     let notify_dismiss_unresolved = count_unresolved(&db, "notify.ts", "dismiss");
+    let obj_return_info = count_resolved(&db, "obj_return.ts", "info");
+    let return_type_go = count_resolved(&db, "return_type.ts", "go");
 
     let checks = [
         (
@@ -359,6 +379,16 @@ export function run(h: Handle): void {
             format!(
                 "external-dismiss edges = {notify_dismiss_external} (unresolved = {notify_dismiss_unresolved})"
             ),
+        ),
+        (
+            "obj return    log.info() -> makeLogger$Ret.info",
+            obj_return_info >= 1,
+            format!("resolved edges = {obj_return_info}"),
+        ),
+        (
+            "return type   h.go() -> make$Ret.go (via ReturnType<typeof make>)",
+            return_type_go >= 1,
+            format!("resolved edges = {return_type_go}"),
         ),
     ];
 
