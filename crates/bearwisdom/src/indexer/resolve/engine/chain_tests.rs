@@ -477,6 +477,44 @@ fn probe_intersection_alias_with_own_members_finds_branch_member() {
 }
 
 #[test]
+fn probe_undecidable_conditional_union_extends_finds_true_branch_member() {
+    // MaybeMocked<T> = T extends Procedure | Constructable ? MockedFunction<T> : T
+    // (the `@vitest/spy` shape `vi.mocked(fn).mockResolvedValue(...)` roots
+    // through). `T extends Procedure | Constructable` is undecidable — the
+    // union `extends` never reduces to a literal comparison — so both branches
+    // are carried as an Intersection; mockResolvedValue lives two hops down the
+    // true branch (MockedFunction -> MockInstance), reachable via the
+    // Intersection's first-arm-match traversal without ever deciding the guard.
+    let lookup = Lookup::new()
+        .with_local_type("mocked", "MaybeMocked<SomeFn>")
+        .with(sym(1, "MaybeMocked", "MaybeMocked", "type_alias", "a.ts"))
+        .with_generics("MaybeMocked", &["T"])
+        .with_alias(
+            "MaybeMocked",
+            crate::types::AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Procedure | Constructable".to_string(),
+                true_branch: "MockedFunction<T>".to_string(),
+                false_branch: "T".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with(sym(2, "MockedFunction", "MockedFunction", "type_alias", "a.ts"))
+        .with_generics("MockedFunction", &["T"])
+        .with_field_type("MockedFunction", "MockInstance")
+        .with(sym(3, "MockInstance", "MockInstance", "interface", "a.ts"))
+        .with_member(
+            "MockInstance",
+            sym(4, "mockResolvedValue", "MockInstance.mockResolvedValue", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("mocked", false, SegmentKind::Identifier),
+        seg("mockResolvedValue", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(4));
+}
+
+#[test]
 fn roots_at_bare_type_name_for_static_access() {
     let lookup = Lookup::new()
         .with(sym(1, "Math", "Math", "class", "a.ts"))

@@ -132,10 +132,13 @@ fn evaluates_a_decidable_conditional_to_its_false_branch() {
 }
 
 #[test]
-fn leaves_an_undecidable_conditional_unevaluated() {
+fn undecidable_conditional_carries_both_branches_as_an_intersection() {
     // type Cond<T> = T extends string ? A : B — `T extends string` is undecidable
-    // without a subtype lattice, so neither branch is guessed; with no recorded
-    // field type the type stays put.
+    // without a subtype lattice, so neither branch is asserted as the type; with
+    // no recorded field type to fall back on, both branches are carried as an
+    // Intersection instead — not a claim the type IS both, just reuse of
+    // intersection's first-arm-match member traversal so a member declared on
+    // whichever branch actually applies is still reachable.
     let lookup = Lookup::new()
         .with_alias(
             "Cond",
@@ -153,5 +156,5 @@ fn leaves_an_undecidable_conditional_unevaluated() {
         base: arena.class("Cond"),
         args: vec![arena.class("User")],
     });
-    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "Cond<User>");
+    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "A & B");
 }

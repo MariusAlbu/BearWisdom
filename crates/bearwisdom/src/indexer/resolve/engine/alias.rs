@@ -123,7 +123,12 @@ pub(crate) fn expand_with_id(
             // `TDynamic=false` → the false branch). The `… => infer R` return-type
             // shape is resolved at the root (`resolve_return_type_extraction`), not
             // here; an undecidable guard keeps the prior transparent behaviour —
-            // never a guessed branch.
+            // never a guessed branch on the TYPE. For MEMBER LOOKUP specifically, an
+            // undecidable guard with no recorded field type carries BOTH branches as
+            // an Intersection: not an assertion that the type IS both, just reuse of
+            // intersection's first-arm-match member traversal so a member declared on
+            // whichever branch actually applies (`MockedFunction<T>` vs `T`) is still
+            // found, instead of leaving a member-less conditional head unresolved.
             Some(AliasTargetIds::Conditional {
                 check,
                 extends,
@@ -138,7 +143,7 @@ pub(crate) fn expand_with_id(
                     Some(false) => *false_branch,
                     None => match transparent_alias_target(lookup, arena, &head) {
                         Some(t) => t,
-                        None => break,
+                        None => arena.intern(Type::Intersection(vec![*true_branch, *false_branch])),
                     },
                 }
             }
