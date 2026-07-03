@@ -2,22 +2,34 @@
 // rust/calls_macros.rs  —  Macro-argument re-parse for nested call extraction
 // =============================================================================
 
+use super::calls::extract_calls_from_body;
 use super::helpers::node_text;
-use crate::types::{EdgeKind, ExtractedRef};
+use crate::types::ExtractedRef;
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
 // Macro argument re-parse — extract nested calls from `token_tree` contents
 // ---------------------------------------------------------------------------
 
-/// Re-parse the contents of a `macro_invocation`'s argument `token_tree` as
-/// a Rust expression and emit `Calls` edges for every `call_expression` we
-/// find inside. Handles `()`, `[]`, and `{}` macro delimiter styles by
-/// stripping the outer punctuation and wrapping the body in a synthetic
-/// `fn _macro_arg() { ( <body> ); }` so multi-comma argument lists parse
-/// as a tuple. When the inner text fails to parse cleanly (rare — `cfg!`
-/// and similar non-expression DSLs), tree-sitter still produces a partial
-/// AST; we walk what's there and skip what's not.
+/// Fixed prefix synthesized ahead of the macro-argument text (see `extract_calls_from_macro_args`).
+/// Its byte length anchors the synthetic-to-real byte rebase — keep it in
+/// lockstep with the `format!` call that builds the wrapped source.
+const WRAPPER_PREFIX: &str = "fn _macro_arg() { (";
+
+/// Re-parse the contents of a `macro_invocation`'s argument `token_tree` as a
+/// Rust expression and splice every ref the real extractor finds inside back
+/// into `refs`, rebased onto the host file's coordinates. tree-sitter-rust
+/// parses macro arguments as an opaque `token_tree` — `assert!(w.poke())`'s
+/// `w.poke()` never appears as a `call_expression`/`field_expression` in the
+/// primary AST, so without this splice every call, method call, and type
+/// reference inside a macro body is invisible to the graph.
+///
+/// Handles `()`, `[]`, and `{}` macro delimiter styles by stripping the outer
+/// punctuation and wrapping the body in a synthetic `fn _macro_arg() { ( body
+/// ); }` so multi-comma argument lists parse as a tuple. Macro arguments that
+/// aren't expression-shaped (`matches!` patterns, `quote!` token DSLs) don't
+/// reparse cleanly — the synthetic tree carries an ERROR node, and this
+/// declines to emit anything rather than walk a broken tree.
 pub(super) fn extract_calls_from_macro_args(
     macro_node: &Node,
     source: &str,
@@ -51,7 +63,7 @@ pub(super) fn extract_calls_from_macro_args(
     // Wrap as a tuple expression statement so multi-arg macros parse:
     //   `assert_eq!(a, b)` → `( a, b )` → `(tuple)`. Single-arg cases
     //   `( expr )` parse as parenthesized expression.
-    let wrapped = format!("fn _macro_arg() {{ ({inner}); }}");
+    let wrapped = format!("{WRAPPER_PREFIX}{inner}); }}");
     let mut parser = tree_sitter::Parser::new();
     if parser
         .set_language(&tree_sitter_rust::LANGUAGE.into())
@@ -62,99 +74,29 @@ pub(super) fn extract_calls_from_macro_args(
     let Some(tree) = parser.parse(&wrapped, None) else {
         return;
     };
+    let root = tree.root_node();
+    if root.has_error() {
+        return;
+    }
+    let Some(function_item) = root.named_child(0).filter(|n| n.kind() == "function_item") else {
+        return;
+    };
+    let Some(body) = function_item.child_by_field_name("body") else {
+        return;
+    };
 
-    // Walk the synthetic AST and collect call_expression / scoped_identifier
-    // function targets. Attribute every nested call to the original
-    // macro_invocation's start line — we lose precise per-call line info
-    // because the synthetic source has different positions, but resolution
-    // doesn't need exact lines (it uses scope chain + source symbol).
-    let macro_line = macro_node.start_position().row as u32;
-    let macro_byte = macro_node.start_byte() as u32;
-    walk_synthetic_macro_calls(
-        &tree.root_node(),
-        &wrapped,
-        source_symbol_index,
-        refs,
-        macro_line,
-        macro_byte,
-    );
-}
+    // Byte-for-byte, `inner` is a verbatim slice of `source` re-inserted at a
+    // fixed offset inside `wrapped`, so both the byte and row deltas between
+    // synthetic and real coordinates are constant additive shifts.
+    let byte_delta = tt.start_byte() as i64 + 1 - WRAPPER_PREFIX.len() as i64;
+    let row_delta = tt.start_position().row as u32;
 
-fn walk_synthetic_macro_calls(
-    node: &Node,
-    synthetic_source: &str,
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-    line: u32,
-    byte_offset: u32,
-) {
-    let mut walker = node.walk();
-    for child in node.children(&mut walker) {
-        match child.kind() {
-            "call_expression" => {
-                if let Some(fn_node) = child.child_by_field_name("function") {
-                    let raw = node_text(&fn_node, synthetic_source);
-                    let raw = raw.trim();
-                    if raw.is_empty() {
-                        // Method call (foo.bar()) — fn_node is a field_expression.
-                        // Skip these; the chain walker handles them at the
-                        // primary-AST level. Macro args don't typically need
-                        // method-chain tracking at the same depth.
-                    } else if let Some((prefix, leaf)) = raw.rsplit_once("::") {
-                        if !prefix.is_empty() && !leaf.is_empty() {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index,
-                                target_name: leaf.to_string(),
-                                kind: EdgeKind::Calls,
-                                line,
-                                module: Some(prefix.to_string()),
-                                chain: None,
-                                byte_offset,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                                col: 0,
-                            });
-                        }
-                    } else if !raw.contains(['.', '(']) {
-                        // Plain identifier call: foo(...).
-                        refs.push(ExtractedRef {
-                            is_import_binding: false,
-                            is_reexport: false,
-                            source_symbol_index,
-                            target_name: raw.to_string(),
-                            kind: EdgeKind::Calls,
-                            line,
-                            module: None,
-                            chain: None,
-                            byte_offset,
-                            namespace_segments: Vec::new(),
-                            call_args: Vec::new(),
-                            col: 0,
-                        });
-                    }
-                }
-                // Continue walking arguments — nested calls like foo(bar()) need both.
-                walk_synthetic_macro_calls(
-                    &child,
-                    synthetic_source,
-                    source_symbol_index,
-                    refs,
-                    line,
-                    byte_offset,
-                );
-            }
-            _ => {
-                walk_synthetic_macro_calls(
-                    &child,
-                    synthetic_source,
-                    source_symbol_index,
-                    refs,
-                    line,
-                    byte_offset,
-                );
-            }
-        }
+    let mut synthetic_refs: Vec<ExtractedRef> = Vec::new();
+    extract_calls_from_body(&body, &wrapped, source_symbol_index, &mut synthetic_refs);
+
+    for mut r in synthetic_refs {
+        r.line = r.line.saturating_add(row_delta);
+        r.byte_offset = (r.byte_offset as i64 + byte_delta).max(0) as u32;
+        refs.push(r);
     }
 }

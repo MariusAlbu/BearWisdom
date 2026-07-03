@@ -401,6 +401,100 @@ fn custom_macro_emits_calls_edge() {
     );
 }
 
+#[test]
+fn macro_arg_method_call_emits_calls_edge() {
+    let source = r#"struct Widget;
+impl Widget {
+    fn poke(&self) -> bool { true }
+}
+fn run(w: Widget) {
+    assert!(w.poke());
+}"#;
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"poke"),
+        "expected 'poke' Calls edge from macro arg, got: {call_names:?}"
+    );
+}
+
+#[test]
+fn macro_arg_format_string_nested_call_emits_calls_edge() {
+    let source = r#"fn compute() -> i32 { 1 }
+fn run() {
+    println!("{}", compute());
+}"#;
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"compute"),
+        "expected 'compute' Calls edge from macro arg, got: {call_names:?}"
+    );
+}
+
+#[test]
+fn macro_arg_method_chain_emits_calls_edge_for_each_hop() {
+    let source = r#"struct Builder;
+impl Builder {
+    fn configure(&self) -> Builder { Builder }
+    fn is_ready(&self) -> bool { true }
+}
+fn run(b: Builder) {
+    assert!(b.configure().is_ready());
+}"#;
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"configure"),
+        "expected 'configure' Calls edge from macro arg chain, got: {call_names:?}"
+    );
+    assert!(
+        call_names.contains(&"is_ready"),
+        "expected 'is_ready' Calls edge from macro arg chain, got: {call_names:?}"
+    );
+}
+
+#[test]
+fn macro_arg_non_expression_shaped_declines_without_panic() {
+    // `Some(y) if y > 0` is a pattern-with-guard — not a tuple-element
+    // expression. The re-parse must fail soft: no panic, no refs invented
+    // from a broken synthetic tree. The macro name itself still emits a
+    // Calls edge via the ordinary macro_invocation path.
+    let source = r#"fn run(x: Option<i32>) -> bool {
+    matches!(x, Some(y) if y > 0)
+}"#;
+    let r = extract::extract(source);
+    let call_names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        call_names.contains(&"matches"),
+        "expected 'matches' Calls edge for the macro itself, got: {call_names:?}"
+    );
+    assert!(
+        !call_names.contains(&"y"),
+        "must not invent a call for the guard-bound pattern variable, got: {call_names:?}"
+    );
+}
+
 // -----------------------------------------------------------------------
 // type_cast_expression
 // -----------------------------------------------------------------------

@@ -441,9 +441,9 @@ fn coverage_call_inside_assert_eq_emits_both_args() {
 
 #[test]
 fn coverage_macro_arg_scoped_path_call_records_module() {
-    // The call inside the macro is `foo::bar()` — the resolver needs the
-    // `foo` module hint to route the ref correctly. Verify the module
-    // segment lands on the ref.
+    // The call inside the macro is `foo::bar()`. Same shape as an ordinary
+    // (non-macro) scoped call: the resolver's module hint travels on the
+    // chain's root segment, not on `ExtractedRef.module`.
     let src = "fn t() { dbg!(my_mod::helper(value)); }";
     let r = extract::extract(src);
     let scoped_call = r
@@ -456,11 +456,15 @@ fn coverage_macro_arg_scoped_path_call_records_module() {
             r.refs
         );
     };
+    let chain_names: Vec<&str> = call
+        .chain
+        .as_ref()
+        .map(|c| c.segments.iter().map(|s| s.name.as_str()).collect())
+        .unwrap_or_default();
     assert_eq!(
-        call.module.as_deref(),
-        Some("my_mod"),
-        "expected module=my_mod, got {:?}",
-        call.module,
+        chain_names,
+        vec!["my_mod", "helper"],
+        "expected chain [my_mod, helper], got {chain_names:?}",
     );
 }
 

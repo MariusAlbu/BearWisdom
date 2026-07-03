@@ -1093,6 +1093,52 @@ pub fn run_bench_alias() -> bool {
 "#,
     );
 
+    // --- pattern: method calls nested inside macro-invocation arguments -----
+    // `assert!(w.poke())` and `println!("{}", w.render())` — tree-sitter-rust
+    // parses macro arguments as an opaque `token_tree`, so `w.poke()` and
+    // `w.render()` never appear as `call_expression`/`field_expression` nodes
+    // in the primary AST. The macro-argument re-parse must surface them the
+    // same way a bare `w.poke()` statement would. `Decoy` declares a same-
+    // named `poke`/`render` FIRST in the file so a receiver-blind same-file
+    // fallback would land on it instead of `Widget`.
+    project.add_file(
+        "src/macro_arg_method_call.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn poke(&self) -> bool {
+        false
+    }
+
+    pub fn render(&self) -> bool {
+        false
+    }
+}
+
+pub struct Widget;
+
+impl Widget {
+    pub fn new() -> Widget {
+        Widget
+    }
+
+    pub fn poke(&self) -> bool {
+        true
+    }
+
+    pub fn render(&self) -> bool {
+        true
+    }
+}
+
+pub fn check() {
+    let w = Widget::new();
+    assert!(w.poke());
+    println!("{}", w.render());
+}
+"#,
+    );
+
     // Point the locators at the seeded stubs, index once, restore env.
     let prior_sysroot = std::env::var_os("BEARWISDOM_RUST_SYSROOT");
     let prior_cargo_home = std::env::var_os("CARGO_HOME");
@@ -1263,6 +1309,10 @@ pub fn run_bench_alias() -> bool {
     let marker_import_unresolved = count_unresolved(&db, "marker/tests.rs", "imports", "Marker");
     let marker_typeref_unresolved = count_unresolved(&db, "marker/tests.rs", "type_ref", "Marker");
 
+    let macro_arg_assert_poke = count_resolved_to(&db, "macro_arg_method_call.rs", "poke", "%Widget%");
+    let macro_arg_println_render =
+        count_resolved_to(&db, "macro_arg_method_call.rs", "render", "%Widget%");
+
     let checks = [
         (
             "UFCS assoc call  Index::exists(idx, d) -> Index.exists",
@@ -1417,6 +1467,16 @@ pub fn run_bench_alias() -> bool {
             format!(
                 "unresolved imports(Marker) = {marker_import_unresolved}, unresolved type_ref(Marker) = {marker_typeref_unresolved}"
             ),
+        ),
+        (
+            "macro-arg method call  assert!(w.poke()) -> Widget.poke",
+            macro_arg_assert_poke >= 1,
+            format!("resolved-to-Widget edges = {macro_arg_assert_poke}"),
+        ),
+        (
+            "macro-arg method call  println!(\"{}\", w.render()) -> Widget.render",
+            macro_arg_println_render >= 1,
+            format!("resolved-to-Widget edges = {macro_arg_println_render}"),
         ),
     ];
 
