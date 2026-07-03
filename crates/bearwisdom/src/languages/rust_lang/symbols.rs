@@ -542,6 +542,7 @@ pub(super) fn extract_struct_fields(
             Some(field_name.clone())
         };
 
+        let field_sym_index = symbols.len();
         symbols.push(ExtractedSymbol {
             name: field_name.clone(),
             qualified_name,
@@ -562,9 +563,12 @@ pub(super) fn extract_struct_fields(
             generic_params: Vec::new(),
         });
 
-        // Emit TypeRef for non-primitive field types.
+        // Emit TypeRef for non-primitive field types, attributed to the
+        // FIELD's own symbol index (not the struct's) so the field's
+        // declared type — not the struct's — is what the ref graph records
+        // and what the resolver's TypeRef-derived `field_type_id` sees.
         if let Some(type_node) = child.child_by_field_name("type") {
-            extract_type_refs_from_type_node(&type_node, source, struct_sym_index, refs);
+            extract_type_refs_from_type_node(&type_node, source, field_sym_index, refs);
         }
     }
 }

@@ -862,6 +862,48 @@ impl SelfSegmentList {
 "#,
     );
 
+    // --- pattern: field typed via a SCOPED path (`mod::Type`), no subscript -
+    // `h.inner.poke()` — `Holder.inner`'s declared type is a path type
+    // (`holder_mod::ScopedGadget`), not a bare identifier. `h` is a plain
+    // local typed via `make_holder()`'s return (the already-working
+    // call-return seeding path), isolating `.inner`'s member lookup to
+    // `Holder`'s FIELD DECLARATION type alone. `Decoy` declares a same-named
+    // `poke` FIRST in the file so a receiver-blind same-file fallback would
+    // land on it instead of `ScopedGadget`.
+    project.add_file(
+        "src/field_chain_scoped.rs",
+        r#"pub struct Decoy;
+
+impl Decoy {
+    pub fn poke(&self) -> bool {
+        false
+    }
+}
+
+pub mod holder_mod {
+    pub struct ScopedGadget;
+    impl ScopedGadget {
+        pub fn poke(&self) -> bool {
+            true
+        }
+    }
+}
+
+pub struct Holder {
+    pub inner: holder_mod::ScopedGadget,
+}
+
+pub fn make_holder() -> Holder {
+    Holder { inner: holder_mod::ScopedGadget }
+}
+
+pub fn use_holder() -> bool {
+    let h = make_holder();
+    h.inner.poke()
+}
+"#,
+    );
+
     // --- pattern: `self.field.method()` with no subscript in the chain -----
     // The simplest shape that depends on the same `self`-rooting fallback:
     // one field hop, one call, no bracket projection involved. `Decoy` guards
@@ -1095,11 +1137,38 @@ pub fn run_bench_alias() -> bool {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
+    //   field-typed-chain-scoped-path — `Holder.inner`'s declared type is a
+    //     path (`holder_mod::ScopedGadget`). `extract_struct_fields` now
+    //     attributes the field's TypeRef to the field's own symbol index
+    //     (`rust_lang/symbols.rs`), but `populate_return_type_ids`
+    //     (`languages/common.rs`) runs first at extract time and unconditionally
+    //     interns the field's raw `"name: Type"` signature text verbatim —
+    //     `sym.declared_type` is set to the literal string `"holder_mod::
+    //     ScopedGadget"` before the TypeRef-derived, scope-aware Phase B
+    //     (`derive_type_info_from_refs` in `compilation.rs`) ever runs, and
+    //     Phase B only fills slots Phase A left empty. A `::`-embedded type
+    //     never matches `by_qname` (dot-joined) or `types_by_name` (keyed on
+    //     the bare short name), so the field never types. Stripping the
+    //     module-path prefix in the shared signature parser
+    //     (`chain_walker.rs`'s `parse_declared_type_from_signature_for_lang`)
+    //     fixes this probe but regresses the real tantivy corpus net negative
+    //     (84.31%→83.70%, 1279 newly-unresolved vs 530 newly-resolved) — that
+    //     parser is shared by every language's Field/Property/Variable/
+    //     Parameter declared-type derivation, not just Rust struct fields, so
+    //     a blanket fix there shifts candidate-tie outcomes corpus-wide. A
+    //     correctly scoped fix needs to intern the field's type directly at
+    //     extract time (bypassing the shared naive-text fallback for Rust
+    //     specifically) rather than post-processing the shared parser.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "calls", "exists")
+    );
+    println!(
+        "  field-typed-chain-scoped-path  h.inner.poke() resolved-to-ScopedGadget={} unresolved={}",
+        count_resolved_to(&db, "field_chain_scoped.rs", "poke", "%ScopedGadget%"),
+        count_unresolved(&db, "field_chain_scoped.rs", "calls", "poke")
     );
 
     // Each row: (label, pass, detail).
