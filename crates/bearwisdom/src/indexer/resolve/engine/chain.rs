@@ -23,6 +23,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
@@ -44,6 +45,7 @@ pub fn bind_member_access(
     ref_ctx: &RefContext,
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
+    profile: &LanguageProfile,
 ) -> Result<SymbolInfo, Option<Cause>> {
     let chain = ref_ctx.extracted_ref.chain.as_ref().ok_or(None)?;
     // A single-segment "chain" carries no receiver to root; the bare ladder
@@ -70,6 +72,7 @@ pub fn bind_member_access(
     if root.id.is_none() {
         root.id = import_scoped_decl_id(ref_ctx, file_ctx, lookup, arena, root.ty);
     }
+    root = peel_wrapped_receiver(root, arena, profile.single_inner_wrappers);
     let mut current = expand_receiver(root, lookup, arena, Some(file_ctx));
     let last = chain.segments.len() - 1;
 
@@ -80,7 +83,11 @@ pub fn bind_member_access(
         if let Some(idx) = tuple_index_of(seg) {
             let elem_ty = tuple_element_type(lookup, arena, current.ty, idx).ok_or(None)?;
             let elem_recv = expand_receiver(
-                yielded_receiver(lookup, arena, elem_ty, None),
+                peel_wrapped_receiver(
+                    yielded_receiver(lookup, arena, elem_ty, None),
+                    arena,
+                    profile.single_inner_wrappers,
+                ),
                 lookup,
                 arena,
                 Some(file_ctx),
@@ -106,7 +113,11 @@ pub fn bind_member_access(
         if matches!(seg.kind, SegmentKind::ComputedAccess) {
             if let Some(elem_ty) = array_element_type(arena, current.ty) {
                 let elem_recv = expand_receiver(
-                    yielded_receiver(lookup, arena, elem_ty, None),
+                    peel_wrapped_receiver(
+                        yielded_receiver(lookup, arena, elem_ty, None),
+                        arena,
+                        profile.single_inner_wrappers,
+                    ),
                     lookup,
                     arena,
                     Some(file_ctx),
@@ -165,9 +176,54 @@ pub fn bind_member_access(
                 return Err(Some(Cause::new(Some(member.id), kind)));
             }
         };
-        current = expand_receiver(yielded_receiver(lookup, arena, yielded, member.package_id), lookup, arena, Some(file_ctx));
+        let yielded_recv = peel_wrapped_receiver(
+            yielded_receiver(lookup, arena, yielded, member.package_id),
+            arena,
+            profile.single_inner_wrappers,
+        );
+        current = expand_receiver(yielded_recv, lookup, arena, Some(file_ctx));
     }
     Err(None)
+}
+
+/// Peel a receiver through `profile.single_inner_wrappers` — std smart-pointer
+/// heads (`Box<C>` / `Rc<C>` / `Arc<C>` / `Pin<C>` / `Cow<'a, C>`) that `Deref`
+/// to their single applied argument — before member lookup runs. Peeling the
+/// structural `args[0]` IS that Deref hop: `Box<Thing>.touch()` becomes
+/// `Thing.touch()`. Bounded so a nested wrapper (`Arc<Box<Thing>>`) peels down
+/// to `Thing`. Resets the receiver's id when a peel fires: the wrapper's own
+/// declaration id no longer names the peeled type, so the caller's next
+/// `expand_receiver` re-derives it from the new head. A receiver whose head is
+/// absent, unlisted, or not a single-argument application returns unchanged —
+/// this is why a real container (`Vec`, `HashMap`) must stay OFF the list: its
+/// accessors belong to the container itself, not a peeled element.
+fn peel_wrapped_receiver(recv: Receiver, arena: &TypeArena, wrappers: &[&str]) -> Receiver {
+    if wrappers.is_empty() {
+        return recv;
+    }
+    const MAX_PEEL_DEPTH: usize = 4;
+    let mut ty = recv.ty;
+    let mut peeled = false;
+    for _ in 0..MAX_PEEL_DEPTH {
+        let Some(head) = head_qname(arena, ty) else {
+            break;
+        };
+        if !wrappers.contains(&head.as_str()) {
+            break;
+        }
+        match apply_args(arena, ty).as_slice() {
+            [arg] => {
+                ty = *arg;
+                peeled = true;
+            }
+            _ => break,
+        }
+    }
+    if peeled {
+        Receiver { ty, id: None }
+    } else {
+        recv
+    }
 }
 
 /// Classify why `lookup_member_on` found nothing on `recv`, using only the

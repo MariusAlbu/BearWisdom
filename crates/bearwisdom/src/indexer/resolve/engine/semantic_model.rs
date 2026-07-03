@@ -62,7 +62,7 @@ impl SemanticModel {
         profile: &LanguageProfile,
     ) -> SolveOutcome {
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
-            match super::chain::bind_member_access(ref_ctx, file_ctx, lookup) {
+            match super::chain::bind_member_access(ref_ctx, file_ctx, lookup, profile) {
                 Ok(res) => return SolveOutcome::Resolved(res),
                 Err(cause) => {
                     // A multi-segment chain the walk declined is normally a genuine

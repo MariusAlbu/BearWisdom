@@ -83,7 +83,9 @@ fn resolve_with_fc(
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, fc, lookup).ok().map(|res| res.target_symbol_id)
+    bind_member_access(&rc, fc, lookup, &DEFAULT_PROFILE)
+        .ok()
+        .map(|res| res.target_symbol_id)
 }
 
 /// Drive `bind_member_access` and return the recorded cause on the failure
@@ -95,7 +97,9 @@ fn resolve_cause(lookup: &Lookup, segs: Vec<ChainSegment>, src_qname: &str) -> O
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, &file_ctx(vec![], None), lookup).err().flatten()
+    bind_member_access(&rc, &file_ctx(vec![], None), lookup, &DEFAULT_PROFILE)
+        .err()
+        .flatten()
 }
 
 /// A member access on an INTERNAL type that carries other members but not
@@ -678,7 +682,7 @@ fn roots_self_via_scope_chain_when_enclosing_type_qname_absent() {
     let mut s = source_symbol("first_touch_self");
     s.qualified_name = "SegmentList.first_touch_self".to_string();
     let rc = ref_ctx(&r, &s, vec!["SegmentList".to_string()]);
-    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup)
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &DEFAULT_PROFILE)
         .ok()
         .map(|res| res.target_symbol_id);
     assert_eq!(got, Some(40));
@@ -703,10 +707,55 @@ fn roots_self_via_scope_path_when_scope_chain_empty() {
     s.qualified_name = "SegmentList.first_touch_self".to_string();
     s.scope_path = Some("SegmentList".to_string());
     let rc = ref_ctx(&r, &s, vec![]);
-    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup)
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &DEFAULT_PROFILE)
         .ok()
         .map(|res| res.target_symbol_id);
     assert_eq!(got, Some(40));
+}
+
+/// `Box<Thing>.touch()` peels the `Box` wrapper (`profile.single_inner_wrappers`)
+/// before member lookup, so `touch` binds on `Thing` — the pointed-to value —
+/// not on `Box`'s own (member-less) declaration.
+#[test]
+fn peels_single_inner_wrapper_before_member_lookup() {
+    let profile = LanguageProfile {
+        single_inner_wrappers: &["Box"],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = Lookup::new()
+        .with(sym(1, "Box", "Box", "struct", "ext:rust:alloc/boxed.rs"))
+        .with(sym(2, "Thing", "Thing", "struct", "src/lib.rs"))
+        .with_member("Thing", sym(40, "touch", "Thing.touch", "method", "src/lib.rs"));
+    let segs = vec![
+        seg_declared("b", "Box", &["Thing"]),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    let leaf = "touch";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(40));
+}
+
+/// The SAME `Box<Thing>.touch()` chain under the default profile
+/// (`single_inner_wrappers` empty) never peels: the receiver stays `Box`,
+/// which carries no `touch` member, so the chain dies `member_missing` —
+/// proving the peel is gated on profile data, not always-on.
+#[test]
+fn declines_wrapper_peel_when_profile_omits_it() {
+    let lookup = Lookup::new()
+        .with(sym(1, "Box", "Box", "struct", "ext:rust:alloc/boxed.rs"))
+        .with(sym(2, "Thing", "Thing", "struct", "src/lib.rs"))
+        .with_member("Thing", sym(40, "touch", "Thing.touch", "method", "src/lib.rs"));
+    let segs = vec![
+        seg_declared("b", "Box", &["Thing"]),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
 
 #[test]
@@ -1844,7 +1893,9 @@ fn multi_seg_chain_roots_on_imported_packages_class() {
     // first-wins would pick solid-query's method (15800); the import scope must
     // steer the root to pkg-10's class -> its setQueryData (13200).
     assert_eq!(
-        bind_member_access(&rc, &fc, &lookup).ok().map(|res| res.target_symbol_id),
+        bind_member_access(&rc, &fc, &lookup, &DEFAULT_PROFILE)
+            .ok()
+            .map(|res| res.target_symbol_id),
         Some(13200)
     );
 }
