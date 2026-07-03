@@ -105,8 +105,8 @@
         "http_call": 7
       },
       "flow_edges": 7,
-      "internal_edges": 85341,
-      "internal_unresolved": 9672,
+      "internal_edges": 85342,
+      "internal_unresolved": 9702,
       "languages": {
         "angular_template": 17,
         "astro": 2,
@@ -125,26 +125,26 @@
       "perf": {
         "end_ws_mb": 95,
         "files_per_sec": 23,
-        "index_duration_ms": 87540
+        "index_duration_ms": 86602
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
         "angular_template": 66.67,
         "astro": 100.0,
         "html": 30.43,
-        "javascript": 47.28,
+        "javascript": 47.05,
         "markdown": 62.9,
         "svelte": 91.18,
-        "typescript": 90.5,
+        "typescript": 90.48,
         "vue": 68.75
       },
-      "resolution_rate": 89.82,
+      "resolution_rate": 89.79,
       "routes": 7,
       "symbols": 28365,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 4,
         "html.imports": 32,
-        "javascript.calls": 277,
+        "javascript.calls": 279,
         "javascript.imports": 109,
         "javascript.inherits": 3,
         "javascript.type_ref": 67,
@@ -153,11 +153,11 @@
         "markdown.type_ref": 80,
         "svelte.calls": 5,
         "svelte.type_ref": 1,
-        "typescript.calls": 6549,
+        "typescript.calls": 6580,
         "typescript.imports": 88,
         "typescript.inherits": 23,
         "typescript.instantiates": 44,
-        "typescript.type_ref": 2138,
+        "typescript.type_ref": 2135,
         "vue.calls": 10
       }
     },
@@ -303,8 +303,8 @@
       },
       "flow_edges": 148,
       "generated_files_reclassified": 65,
-      "internal_edges": 116793,
-      "internal_unresolved": 20496,
+      "internal_edges": 117085,
+      "internal_unresolved": 19850,
       "languages": {
         "css": 3,
         "javascript": 7,
@@ -322,26 +322,26 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-inbox-zero",
       "perf": {
-        "end_ws_mb": 189,
+        "end_ws_mb": 110,
         "files_per_sec": 19,
-        "index_duration_ms": 120101
+        "index_duration_ms": 116557
       },
       "project": "ts-inbox-zero",
       "rate_by_language": {
-        "javascript": 46.02,
+        "javascript": 44.93,
         "markdown": 100.0,
         "mdx": 32.79,
         "prisma": 100.0,
         "ruby": 24.0,
         "shell": 60.0,
         "sql": 92.86,
-        "typescript": 85.14
+        "typescript": 85.58
       },
-      "resolution_rate": 85.07,
+      "resolution_rate": 85.5,
       "routes": 148,
       "symbols": 47819,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 75,
+        "javascript.calls": 78,
         "javascript.imports": 15,
         "javascript.type_ref": 32,
         "mdx.calls": 41,
@@ -351,16 +351,16 @@
         "shell.calls": 15,
         "shell.imports": 1,
         "sql.type_ref": 22,
-        "typescript.calls": 13908,
-        "typescript.imports": 140,
+        "typescript.calls": 13138,
+        "typescript.imports": 142,
         "typescript.inherits": 16,
         "typescript.instantiates": 51,
-        "typescript.type_ref": 6161
+        "typescript.type_ref": 6280
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 71
+        "min_resolution_rate": 70
       },
       "code_chunks": 25218,
       "drained_refs": 19,
@@ -369,8 +369,8 @@
         "service_dependency": 1
       },
       "flow_edges": 1,
-      "internal_edges": 27322,
-      "internal_unresolved": 11099,
+      "internal_edges": 27213,
+      "internal_unresolved": 11278,
       "languages": {
         "css": 2,
         "dockerfile": 2,
@@ -389,38 +389,38 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-kaneo",
       "perf": {
-        "end_ws_mb": 194,
-        "files_per_sec": 13,
-        "index_duration_ms": 71452
+        "end_ws_mb": 123,
+        "files_per_sec": 8,
+        "index_duration_ms": 116627
       },
       "project": "ts-kaneo",
       "rate_by_language": {
         "dockerfile": 0.0,
         "html": 0.0,
-        "javascript": 45.49,
+        "javascript": 44.31,
         "markdown": 87.5,
         "mdx": 39.34,
         "sql": 100.0,
-        "typescript": 71.25
+        "typescript": 70.84
       },
-      "resolution_rate": 71.11,
+      "resolution_rate": 70.7,
       "routes": 0,
       "symbols": 12716,
       "unresolved_by_lang_kind": {
         "dockerfile.imports": 2,
         "dockerfile.inherits": 2,
         "html.imports": 1,
-        "javascript.calls": 60,
+        "javascript.calls": 64,
         "javascript.imports": 17,
         "javascript.type_ref": 56,
         "markdown.calls": 1,
         "mdx.calls": 36,
         "mdx.type_ref": 1,
-        "typescript.calls": 6742,
+        "typescript.calls": 6905,
         "typescript.imports": 52,
         "typescript.inherits": 8,
         "typescript.instantiates": 24,
-        "typescript.type_ref": 4097
+        "typescript.type_ref": 4109
       }
     },
     {
@@ -462,9 +462,9 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 66
+        "min_resolution_rate": 72
       },
-      "code_chunks": 374864,
+      "code_chunks": 374863,
       "drained_refs": 252,
       "files": 20955,
       "flow_edge_types": {
@@ -472,8 +472,8 @@
       },
       "flow_edges": 448,
       "generated_files_reclassified": 9,
-      "internal_edges": 352728,
-      "internal_unresolved": 179753,
+      "internal_edges": 391851,
+      "internal_unresolved": 149194,
       "languages": {
         "c": 1,
         "css": 602,
@@ -499,68 +499,68 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 213,
-        "files_per_sec": 21,
-        "index_duration_ms": 1017836
+        "end_ws_mb": 170,
+        "files_per_sec": 15,
+        "index_duration_ms": 1403590
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "dockerfile": 73.53,
-        "graphql": 61.0,
+        "graphql": 63.0,
         "html": 19.27,
-        "javascript": 61.44,
+        "javascript": 61.68,
         "markdown": 80.14,
-        "mdx": 48.01,
+        "mdx": 48.54,
         "php": 100.0,
         "prisma": 100.0,
         "python": 81.13,
-        "rust": 66.73,
+        "rust": 80.09,
         "scss": 14.23,
         "shell": 47.83,
-        "typescript": 67.36
+        "typescript": 67.59
       },
-      "resolution_rate": 66.24,
+      "resolution_rate": 72.42,
       "routes": 458,
-      "symbols": 152019,
+      "symbols": 151950,
       "unresolved_by_lang_kind": {
         "dockerfile.imports": 9,
         "dockerfile.inherits": 9,
         "graphql.calls": 12,
-        "graphql.type_ref": 27,
+        "graphql.type_ref": 25,
         "html.calls": 70,
         "html.imports": 2,
         "html.type_ref": 16,
-        "javascript.calls": 10448,
-        "javascript.imports": 7680,
+        "javascript.calls": 10325,
+        "javascript.imports": 7678,
         "javascript.inherits": 20,
-        "javascript.type_ref": 9604,
+        "javascript.type_ref": 9600,
         "markdown.calls": 84,
         "markdown.type_ref": 143,
-        "mdx.calls": 363,
+        "mdx.calls": 359,
         "mdx.type_ref": 28,
         "python.calls": 3,
         "python.type_ref": 7,
-        "rust.calls": 44518,
-        "rust.implements": 783,
-        "rust.imports": 2229,
-        "rust.inherits": 26,
-        "rust.type_ref": 31115,
+        "rust.calls": 32054,
+        "rust.implements": 310,
+        "rust.imports": 2031,
+        "rust.inherits": 9,
+        "rust.type_ref": 14358,
         "scss.calls": 174,
         "scss.imports": 66,
         "scss.inherits": 1,
         "shell.calls": 12,
-        "typescript.calls": 61348,
+        "typescript.calls": 61073,
         "typescript.implements": 9,
-        "typescript.imports": 333,
+        "typescript.imports": 332,
         "typescript.inherits": 13,
         "typescript.instantiates": 183,
-        "typescript.type_ref": 10418
+        "typescript.type_ref": 10179
       },
       "vendored_files_reclassified": 3896
     },
     {
       "assertions": {
-        "min_resolution_rate": 77
+        "min_resolution_rate": 76
       },
       "code_chunks": 18505,
       "drained_refs": 16,
@@ -570,8 +570,8 @@
       },
       "flow_edges": 18,
       "generated_files_reclassified": 6,
-      "internal_edges": 20322,
-      "internal_unresolved": 6038,
+      "internal_edges": 20274,
+      "internal_unresolved": 6108,
       "languages": {
         "css": 4,
         "dockerfile": 1,
@@ -589,9 +589,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-rallly",
       "perf": {
-        "end_ws_mb": 213,
-        "files_per_sec": 13,
-        "index_duration_ms": 90014
+        "end_ws_mb": 177,
+        "files_per_sec": 8,
+        "index_duration_ms": 138126
       },
       "project": "ts-rallly",
       "rate_by_language": {
@@ -601,9 +601,9 @@
         "mdx": 6.7,
         "prisma": 100.0,
         "sql": 91.7,
-        "typescript": 77.52
+        "typescript": 77.26
       },
-      "resolution_rate": 77.09,
+      "resolution_rate": 76.85,
       "routes": 18,
       "symbols": 8524,
       "unresolved_by_lang_kind": {
@@ -613,11 +613,11 @@
         "markdown.type_ref": 2,
         "mdx.calls": 195,
         "sql.type_ref": 19,
-        "typescript.calls": 3855,
+        "typescript.calls": 3917,
         "typescript.imports": 30,
         "typescript.inherits": 11,
         "typescript.instantiates": 25,
-        "typescript.type_ref": 1879
+        "typescript.type_ref": 1887
       }
     },
     {
@@ -631,8 +631,8 @@
       },
       "flow_edges": 23,
       "generated_files_reclassified": 22,
-      "internal_edges": 62316,
-      "internal_unresolved": 11162,
+      "internal_edges": 62222,
+      "internal_unresolved": 11288,
       "languages": {
         "css": 6,
         "html": 2,
@@ -650,26 +650,26 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-trpc",
       "perf": {
-        "end_ws_mb": 214,
-        "files_per_sec": 11,
-        "index_duration_ms": 133903
+        "end_ws_mb": 183,
+        "files_per_sec": 8,
+        "index_duration_ms": 173035
       },
       "project": "ts-trpc",
       "rate_by_language": {
         "html": 0.0,
-        "javascript": 45.74,
+        "javascript": 43.3,
         "markdown": 47.81,
         "mdx": 55.02,
         "prisma": 100.0,
         "sql": 100.0,
-        "typescript": 85.18
+        "typescript": 85.02
       },
-      "resolution_rate": 84.81,
+      "resolution_rate": 84.64,
       "routes": 23,
       "symbols": 30711,
       "unresolved_by_lang_kind": {
         "html.imports": 2,
-        "javascript.calls": 70,
+        "javascript.calls": 76,
         "javascript.imports": 22,
         "javascript.type_ref": 29,
         "markdown.calls": 71,
@@ -677,11 +677,11 @@
         "markdown.type_ref": 70,
         "mdx.calls": 75,
         "mdx.type_ref": 46,
-        "typescript.calls": 7685,
+        "typescript.calls": 7758,
         "typescript.imports": 149,
         "typescript.inherits": 47,
         "typescript.instantiates": 44,
-        "typescript.type_ref": 2850
+        "typescript.type_ref": 2897
       },
       "vendored_files_reclassified": 8
     },
