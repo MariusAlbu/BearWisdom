@@ -540,6 +540,20 @@ pub trait SymbolLookup {
     /// `Primitive`/`Optional`/`Generic` to `Class`.
     fn record_local_type_id(&self, _name: String, _id: TypeId) {}
 
+    /// The qualified name of the declaration a local binding's value points
+    /// at, when the binding's own field/return type was never captured (a
+    /// destructured `$Ret`-synthesized member — see
+    /// `chain::callable_member_qname_on`). Consulted only by the bare-name-call
+    /// rule (`LocalFlowHeadRule`), never by the chain walker's root step —
+    /// unlike `local_type_id`, this name-only pointer never re-roots a chain
+    /// that continues past the binding onto a member-less leaf.
+    fn local_callable_head(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    /// Record the qualified name `local_callable_head` reads back for `name`.
+    fn record_local_callable_head(&self, _name: String, _qname: String) {}
+
     /// Clear the cache at end of file. Keeps leftover bindings from bleeding
     /// into the next file's pass.
     fn clear_local_cache(&self) {}

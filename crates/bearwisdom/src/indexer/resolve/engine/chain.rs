@@ -520,6 +520,37 @@ pub(crate) fn field_type_on(
     Some(alias::expand(yielded, lookup, arena))
 }
 
+/// The qualified name of a synthesized `$Ret` member (see `parse_file.rs`'s
+/// `{fn}$Ret` object-literal-return synthesis) accessed as `field` on `recv_ty`
+/// — for a destructured binding whose field carries no type of its own to
+/// record via `field_type_on` (`$Ret` members are placeholders: their presence
+/// is the only signal they carry, never a field/return type).
+///
+/// Deliberately narrower than `field_type_on`'s TypeId result: this is a
+/// name-only pointer to the member's own declaration, consulted ONLY by the
+/// bare-name-call rule (`LocalFlowHeadRule`'s `local_callable_head` cache) —
+/// never fed into `local_type_id`, so it can never re-root a chain that
+/// continues past this binding onto a leaf with no members of its own to walk.
+/// `None` when the member isn't found or isn't `$Ret`-declared (a real
+/// interface/class member whose type genuinely failed to capture must stay
+/// untyped, not be aliased to its own member-less declaration).
+pub(crate) fn callable_member_qname_on(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv_ty: TypeId,
+    recv_id: Option<i64>,
+    field: &str,
+) -> Option<String> {
+    let recv = expand_receiver(Receiver { ty: recv_ty, id: recv_id }, lookup, arena, None);
+    let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
+    let decl_head = member.qualified_name.rsplit_once('.').map(|(h, _)| h)?;
+    if decl_head.ends_with("$Ret") {
+        Some(member.qualified_name)
+    } else {
+        None
+    }
+}
+
 /// Upper bound on mapped-type source hops — a mapped type whose source is itself
 /// a mapped type chains here. Bounds the rare nesting and guards a cyclic alias.
 const MAX_MAPPED_DEPTH: usize = 6;

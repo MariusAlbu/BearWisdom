@@ -213,6 +213,38 @@ fn field_type_on_substitutes_receiver_type_arg_into_field() {
 }
 
 #[test]
+fn callable_member_qname_on_names_a_ret_placeholder_member() {
+    // `const { info } = makeLogger()` — `makeLogger$Ret.info` is a synthesized
+    // placeholder member (no field/return type of its own); the name-only
+    // pointer still names it, for the bare-call rule's identity cache.
+    let lookup = Lookup::new()
+        .with(sym(1, "makeLogger$Ret", "makeLogger$Ret", "interface", "a.ts"))
+        .with_member(
+            "makeLogger$Ret",
+            sym(2, "info", "makeLogger$Ret.info", "property", "a.ts"),
+        );
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.class("makeLogger$Ret");
+    assert_eq!(
+        callable_member_qname_on(&lookup, arena, recv, Some(1), "info").as_deref(),
+        Some("makeLogger$Ret.info")
+    );
+}
+
+#[test]
+fn callable_member_qname_on_declines_a_real_member_outside_a_ret_synthesis() {
+    // A REAL interface member whose field type genuinely failed to capture
+    // must stay untyped here — this pointer is reserved for `$Ret`
+    // placeholders, never a real declaration's own member-less leaf.
+    let lookup = Lookup::new()
+        .with(sym(1, "Config", "Config", "interface", "a.ts"))
+        .with_member("Config", sym(2, "count", "Config.count", "property", "a.ts"));
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.class("Config");
+    assert_eq!(callable_member_qname_on(&lookup, arena, recv, Some(1), "count"), None);
+}
+
+#[test]
 fn field_type_on_threads_arg_through_alias_union_chain() {
     // `const { data } = useQuery<Movie>()` reduced to its type chain:
     //   UseQueryResult<T> = QueryObserverResult<T>   (Application alias)

@@ -45,6 +45,7 @@ pub(crate) struct Lookup {
     /// → args. Backs `parent_class_args` for the supertype-arg binding tests.
     inherits_args: FxHashMap<(String, String), Vec<String>>,
     local_types: FxHashMap<String, String>,
+    local_callable_heads: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTargetIds>,
     /// Id-keyed alias targets — the collision-free counterpart of `aliases`.
@@ -82,6 +83,7 @@ impl Lookup {
             parents_by_id: Default::default(),
             inherits_args: Default::default(),
             local_types: Default::default(),
+            local_callable_heads: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
             aliases_by_id: Default::default(),
@@ -194,6 +196,15 @@ impl Lookup {
     /// Register a local variable's forward-inferred type.
     pub(crate) fn with_local_type(mut self, name: &str, ty: &str) -> Self {
         self.local_types.insert(name.to_string(), ty.to_string());
+        self
+    }
+
+    /// Register a local binding's callable-head pointer — the qname a
+    /// destructured `$Ret` member's own declaration names, backing
+    /// `local_callable_head`.
+    pub(crate) fn with_local_callable_head(mut self, name: &str, qname: &str) -> Self {
+        self.local_callable_heads
+            .insert(name.to_string(), qname.to_string());
         self
     }
 
@@ -333,6 +344,9 @@ impl SymbolLookup for Lookup {
     }
     fn local_type(&self, name: &str) -> Option<String> {
         self.local_types.get(name).cloned()
+    }
+    fn local_callable_head(&self, name: &str) -> Option<String> {
+        self.local_callable_heads.get(name).cloned()
     }
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing.get(source_qname).map(|s| s.as_str())

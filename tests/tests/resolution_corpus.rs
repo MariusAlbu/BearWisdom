@@ -81,6 +81,23 @@ fn count_resolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
     .unwrap()
 }
 
+/// Count resolved `calls` edges for `callee` in the file ending `file_suffix`
+/// whose resolved target's SYMBOL KIND matches `kind` — distinguishes
+/// "resolved to a real callable" from "resolved to the binding's own
+/// declaration" for a candidate probe.
+fn count_resolved_kind(db: &Database, file_suffix: &str, callee: &str, kind: &str) -> i64 {
+    db.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN symbols s ON e.source_id = s.id
+         JOIN files f   ON s.file_id   = f.id
+         JOIN symbols t ON e.target_id = t.id
+         WHERE f.path LIKE ?1 AND e.kind = 'calls' AND t.name = ?2 AND t.kind = ?3",
+        params![format!("%{file_suffix}"), callee, kind],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 /// Count unresolved `calls` refs for `callee` in the file ending `file_suffix`.
 fn count_unresolved(db: &Database, file_suffix: &str, callee: &str) -> i64 {
     db.query_row(
@@ -120,7 +137,7 @@ fn resolution_corpus() {
         r#"{
   "name": "resolution-corpus",
   "version": "0.0.1",
-  "dependencies": { "@base-ui/react": "^1.0.0" }
+  "dependencies": { "@base-ui/react": "^1.0.0", "vitest": "^1.0.0" }
 }
 "#,
     );
@@ -239,17 +256,8 @@ export function run(h: Handle): void {
 }
 "#,
     );
-    // --- candidate patterns (probed, not yet asserted) ------------------------
-    // An optional-array param: `T[] | undefined` receiver, member via `?.`.
-    project.add_file(
-        "src/optional_array.ts",
-        r#"export function firsts(items: string[] | undefined): string[] | undefined {
-    return items?.map((x) => x.trim());
-}
-"#,
-    );
-    // Destructuring an object-literal-returning call's result, then calling the
-    // destructured binding directly (`const { info } = f(); info(...)`).
+    // --- pattern: destructuring an object-literal-returning call's result, then
+    // calling the destructured binding directly (`const { info } = f(); info(...)`).
     project.add_file(
         "src/obj_return_destructure.ts",
         r#"function makeLogger2() {
@@ -262,6 +270,60 @@ export function run(h: Handle): void {
 export function useLoggerDestructured(): void {
     const { info } = makeLogger2();
     info("hi");
+}
+"#,
+    );
+
+    // --- pattern: a plain (non-destructured) const binding from a member-chain
+    // call, then a member call on the binding (`const s = vi.spyOn(...); s.m()`).
+    // A stub `vitest` external carries `spyOn`'s declared return type so the
+    // binding's forward-inferred type is a real, resolvable interface.
+    project.add_file(
+        "node_modules/vitest/package.json",
+        r#"{"name":"vitest","version":"1.0.0","types":"index.d.ts"}"#,
+    );
+    project.add_file(
+        "node_modules/vitest/index.d.ts",
+        r#"export interface SpyInstance {
+    mockRestore(): void;
+}
+export interface VitestUtils {
+    spyOn(obj: any, method: string): SpyInstance;
+}
+export declare const vi: VitestUtils;
+"#,
+    );
+    project.add_file(
+        "src/spy_const.ts",
+        r#"import { vi } from "vitest";
+
+export function useSpy(obj: { m(): void }): void {
+    const s = vi.spyOn(obj, "m");
+    s.mockRestore();
+}
+"#,
+    );
+
+    // --- candidate patterns (probed, not yet asserted) ------------------------
+    // An optional-array param: `T[] | undefined` receiver, member via `?.`.
+    project.add_file(
+        "src/optional_array.ts",
+        r#"export function firsts(items: string[] | undefined): string[] | undefined {
+    return items?.map((x) => x.trim());
+}
+"#,
+    );
+    // Array-destructuring a tuple-returning call's result, then calling the
+    // destructured binding directly (`const [count, reset] = f(); reset()`).
+    project.add_file(
+        "src/tuple_destructure.ts",
+        r#"function makeCounter(): [number, () => void] {
+    return [0, () => {}];
+}
+
+export function useCounter(): void {
+    const [count, reset] = makeCounter();
+    reset();
 }
 "#,
     );
@@ -327,14 +389,15 @@ export function useLoggerDestructured(): void {
     //   optional-arr — `T[] | undefined` interns as `Union([Array, undefined])`, and
     //     union member access requires the member on EVERY arm, so the `undefined`
     //     arm kills `.map`. Needs nullish arms peeled before the union walk.
-    //   obj-return-destructure — `const { info } = f()` types the destructured
-    //     binding from the FIELD on f's yield type, but a synthesized `{f}$Ret`
-    //     member carries no field type of its own (its presence under `$Ret` is
-    //     the resolve, not a typed slot), so the destructure seed yields nothing
-    //     and `info` is left untyped. `info("hi")` still shows a resolved edge,
-    //     but to the object-literal's OWN structurally-extracted `makeLogger2.info`
-    //     (a same-file same-name bare-call fallback) — not to `$Ret`, so the probe
-    //     checks the target package specifically rather than "resolved at all".
+    //   tuple-destructure — `const [count, reset] = f()` (array-pattern) is
+    //     structurally extracted (a Variable symbol per element plus a
+    //     tuple-index TypeRef on each), but `TS_FLOW_CONFIG`'s destructure
+    //     capture only matches `object_pattern`; no array-pattern arm feeds
+    //     `flow_binding_destructure`, so the binding is never seeded into the
+    //     per-file flow cache. `reset()` still shows a resolved edge, but to
+    //     `reset`'s own local declaration (the only same-named symbol in the
+    //     file) rather than a real callable — `LocalFlowHeadRule` never gets a
+    //     recorded local type to work from.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  optional-arr  items?.map() resolved-to-Array={} unresolved={}",
@@ -342,9 +405,9 @@ export function useLoggerDestructured(): void {
         count_unresolved(&db, "optional_array.ts", "map")
     );
     println!(
-        "  obj-return-destructure  info(\"hi\") resolved-to-$Ret={} unresolved={}",
-        count_resolved_to(&db, "obj_return_destructure.ts", "info", "%$Ret%"),
-        count_unresolved(&db, "obj_return_destructure.ts", "info")
+        "  tuple-destructure  reset() resolved-to-its-own-decl={} unresolved={}",
+        count_resolved_kind(&db, "tuple_destructure.ts", "reset", "variable"),
+        count_unresolved(&db, "tuple_destructure.ts", "reset")
     );
 
     // Each row: (label, pass, detail). Printed as a table so a fix's effect is a
@@ -356,6 +419,9 @@ export function useLoggerDestructured(): void {
     let notify_dismiss_unresolved = count_unresolved(&db, "notify.ts", "dismiss");
     let obj_return_info = count_resolved(&db, "obj_return.ts", "info");
     let return_type_go = count_resolved(&db, "return_type.ts", "go");
+    let obj_return_destructure_info =
+        count_resolved_to(&db, "obj_return_destructure.ts", "info", "%$Ret%");
+    let spy_const_mock_restore = count_resolved(&db, "spy_const.ts", "mockRestore");
 
     let checks = [
         (
@@ -389,6 +455,16 @@ export function useLoggerDestructured(): void {
             "return type   h.go() -> make$Ret.go (via ReturnType<typeof make>)",
             return_type_go >= 1,
             format!("resolved edges = {return_type_go}"),
+        ),
+        (
+            "obj destructure  info(\"hi\") -> makeLogger2$Ret.info",
+            obj_return_destructure_info >= 1,
+            format!("resolved-to-$Ret edges = {obj_return_destructure_info}"),
+        ),
+        (
+            "spy const     s.mockRestore() -> SpyInstance.mockRestore",
+            spy_const_mock_restore >= 1,
+            format!("resolved edges = {spy_const_mock_restore}"),
         ),
     ];
 

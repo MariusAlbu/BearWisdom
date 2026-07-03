@@ -153,6 +153,12 @@ struct FileLookup<'a> {
     /// walker's root step when `locals`/`locals_id` carry no entry for the
     /// name, so a later `x.method()` blames `f`, not `x`.
     root_cause_hints: RefCell<FxHashMap<String, crate::indexer::resolve::engine::cause::Cause>>,
+    /// Name → declaration qname for a binding whose field/return type was
+    /// never captured (a destructured `$Ret`-synthesized member). Read only by
+    /// `LocalFlowHeadRule`'s bare-name-call resolution — kept separate from
+    /// `locals`/`locals_id` so it never re-roots a chain that continues past
+    /// this binding onto the member-less `$Ret` leaf.
+    local_callable_heads: RefCell<FxHashMap<String, String>>,
 }
 
 impl<'a> FileLookup<'a> {
@@ -162,6 +168,7 @@ impl<'a> FileLookup<'a> {
             locals: RefCell::new(FxHashMap::default()),
             locals_id: RefCell::new(FxHashMap::default()),
             root_cause_hints: RefCell::new(FxHashMap::default()),
+            local_callable_heads: RefCell::new(FxHashMap::default()),
         }
     }
 }
@@ -388,6 +395,14 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.root_cause_hints.borrow_mut().insert(name, cause);
     }
 
+    fn local_callable_head(&self, name: &str) -> Option<String> {
+        self.local_callable_heads.borrow().get(name).cloned()
+    }
+
+    fn record_local_callable_head(&self, name: String, qname: String) {
+        self.local_callable_heads.borrow_mut().insert(name, qname);
+    }
+
     fn root_cause_hint(&self, name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
         self.root_cause_hints.borrow().get(name).copied()
     }
@@ -409,6 +424,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.locals.borrow_mut().clear();
         self.locals_id.borrow_mut().clear();
         self.root_cause_hints.borrow_mut().clear();
+        self.local_callable_heads.borrow_mut().clear();
     }
 }
 
@@ -915,6 +931,27 @@ fn resolve_one_file(
                                     );
                                     file_lookup
                                         .record_local_type_id(lhs_sym.name.clone(), field_ty);
+                                } else if let Some(qname) =
+                                    crate::indexer::resolve::engine::chain::callable_member_qname_on(
+                                        &file_lookup,
+                                        arena,
+                                        recv_ty,
+                                        None,
+                                        field_key,
+                                    )
+                                {
+                                    // The field is a `$Ret` placeholder member with no
+                                    // type of its own — record a name-only pointer so a
+                                    // later BARE CALL on the binding (`info("hi")`)
+                                    // still binds to this exact declaration.
+                                    crate::tracef!(
+                                        "SEED destructure lhs='{}' field='{}' -> recorded=CallableHead({})",
+                                        lhs_sym.name,
+                                        field_key,
+                                        qname,
+                                    );
+                                    file_lookup
+                                        .record_local_callable_head(lhs_sym.name.clone(), qname);
                                 }
                             }
                         }

@@ -27,6 +27,7 @@ pub mod head_alias;
 pub mod implicit_prelude;
 pub mod imported_namespace;
 pub mod import_path;
+pub mod local_flow_head;
 pub mod module_anchor;
 pub mod module_anchor_terminal;
 pub mod module_scope;
@@ -68,6 +69,7 @@ use head_alias::HeadAliasRule;
 use implicit_prelude::ImplicitPreludeRule;
 use imported_namespace::ImportedNamespaceRule;
 use import_path::ImportPathRule;
+use local_flow_head::LocalFlowHeadRule;
 use module_anchor::ModuleAnchorRule;
 use module_anchor_terminal::ModuleAnchorTerminalRule;
 use module_scope::ModuleScopeRule;
@@ -96,8 +98,8 @@ use workspace_package::WorkspacePackageRule;
 /// rule that drains it marks it a known non-project construct instead. The
 /// order is the old strategy tower's `run_ladder` sequence: the module-decline
 /// and builtin-drain guards, the most-specific evidence (import path /
-/// workspace / selector / module anchor), then scope → same-file → qualified →
-/// import-shape → ambient → wildcard → global rungs.
+/// workspace / selector / module anchor), then scope → local-flow-typed →
+/// same-file → qualified → import-shape → ambient → wildcard → global rungs.
 pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
     vec![
         Box::new(ModuleSkipRule),
@@ -108,6 +110,7 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
         Box::new(ModuleAnchorRule),
         Box::new(ModuleAnchorTerminalRule),
         Box::new(ScopeVisibleRule),
+        Box::new(LocalFlowHeadRule),
         Box::new(SameFileRule),
         Box::new(FileScopedImportRule),
         Box::new(SelfKeywordRule),
