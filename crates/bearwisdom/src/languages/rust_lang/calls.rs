@@ -383,11 +383,32 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // an imported name inside the function body sees no import
             // entry and falls through to unresolved.
             "use_declaration" => {
+                // A function-scoped `use` never re-exports onto the crate's
+                // surface (nothing outside the function body can reach the
+                // name), so its alias targets — if any — have no consumer;
+                // the accumulator here is discarded.
+                let mut local_alias_targets = Vec::new();
                 if let Some(syms) = symbols.as_deref_mut() {
-                    extract_use_names(&child, source, refs, syms, source_symbol_index, "");
+                    extract_use_names(
+                        &child,
+                        source,
+                        refs,
+                        syms,
+                        source_symbol_index,
+                        "",
+                        &mut local_alias_targets,
+                    );
                 } else {
                     let mut tmp: Vec<ExtractedSymbol> = Vec::new();
-                    extract_use_names(&child, source, refs, &mut tmp, source_symbol_index, "");
+                    extract_use_names(
+                        &child,
+                        source,
+                        refs,
+                        &mut tmp,
+                        source_symbol_index,
+                        "",
+                        &mut local_alias_targets,
+                    );
                 }
                 // No further descent — `extract_use_names` handles the
                 // entire subtree.

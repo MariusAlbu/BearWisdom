@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::helpers::{detect_visibility, node_text, qualify, scope_from_prefix};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,7 @@ pub(super) fn extract_use_names(
     symbols: &mut Vec<ExtractedSymbol>,
     current_symbol_count: usize,
     qualified_prefix: &str,
+    alias_targets: &mut Vec<(String, AliasTarget)>,
 ) {
     // A `pub` / `pub(crate)` / `pub(super)` use re-exports the imported names
     // onto the module's surface — those names are genuine re-exports the binder
@@ -83,6 +84,7 @@ pub(super) fn extract_use_names(
                     "",
                     is_reexport,
                     qualified_prefix,
+                    alias_targets,
                 );
             }
             _ => {}
@@ -99,6 +101,7 @@ fn walk_use_tree(
     prefix: &str,
     is_reexport: bool,
     qualified_prefix: &str,
+    alias_targets: &mut Vec<(String, AliasTarget)>,
 ) {
     match node.kind() {
         "scoped_identifier" => {
@@ -153,6 +156,7 @@ fn walk_use_tree(
                     &new_prefix,
                     is_reexport,
                     qualified_prefix,
+                    alias_targets,
                 );
             }
         }
@@ -171,6 +175,7 @@ fn walk_use_tree(
                         prefix,
                         is_reexport,
                         qualified_prefix,
+                        alias_targets,
                     ),
                 }
             }
@@ -244,6 +249,16 @@ fn walk_use_tree(
             // in the package carries this alias — the package-wide bare-name
             // scan that makes the un-renamed form resolvable has nothing to
             // find for it otherwise.
+            //
+            // The synthetic also needs an `AliasTarget` so a member chase through
+            // it (`Alias::new().touch()`) can see through to the renamed symbol's
+            // own members — an `Application` target with no args, the same shape
+            // a plain `type X = Y;` classifies to in TypeScript. `root` is the
+            // path's trailing segment (`Thing`, not `path::Thing`): the target
+            // symbol's own qualified name never carries the `use`'s module path
+            // (each file's extraction starts its qualified-name prefix fresh),
+            // so the bare leaf is what actually matches it — the same bare name
+            // the un-renamed case's package-wide scan already relies on.
             if is_reexport && chain.is_some() {
                 if let Some(alias_name) = alias.clone() {
                     if !symbols.iter().any(|s| s.name == alias_name) {
@@ -254,9 +269,10 @@ fn walk_use_tree(
                         let end = alias_node
                             .map(|n| n.end_position())
                             .unwrap_or_else(|| node.end_position());
+                        let qname = qualify(&alias_name, qualified_prefix);
                         symbols.push(ExtractedSymbol {
                             name: alias_name.clone(),
-                            qualified_name: qualify(&alias_name, qualified_prefix),
+                            qualified_name: qname.clone(),
                             kind: SymbolKind::TypeAlias,
                             visibility: Some(Visibility::Public),
                             start_line: start.row as u32,
@@ -273,6 +289,16 @@ fn walk_use_tree(
                             param_types: Vec::new(),
                             generic_params: Vec::new(),
                         });
+                        if let Some(orig) = original.as_deref() {
+                            let root = orig.rsplit("::").next().unwrap_or(orig).to_string();
+                            alias_targets.push((
+                                qname,
+                                AliasTarget::Application {
+                                    root,
+                                    args: Vec::new(),
+                                },
+                            ));
+                        }
                     }
                 }
             }
@@ -365,6 +391,7 @@ fn walk_use_tree(
                     prefix,
                     is_reexport,
                     qualified_prefix,
+                    alias_targets,
                 );
             }
         }

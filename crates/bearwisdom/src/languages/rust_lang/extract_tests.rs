@@ -1291,6 +1291,28 @@ fn pub_use_as_emits_addressable_alias_symbol() {
 }
 
 #[test]
+fn pub_use_as_emits_alias_target_for_the_renamed_symbol() {
+    // The synthetic `AliasDoc` symbol needs an `AliasTarget` so a member
+    // chase through it (`AliasDoc::new()`) can expand to `RealDoc`'s own
+    // members — an `Application` target with no args, keyed by the alias's
+    // qualified name, root pointing at the renamed symbol's bare name.
+    let source = "pub use real::RealDoc as AliasDoc;";
+    let r = extract::extract(source);
+    let (_, target) = r
+        .alias_targets
+        .iter()
+        .find(|(name, _)| name == "AliasDoc")
+        .expect("expected an alias_targets entry for the alias's qualified name");
+    assert_eq!(
+        *target,
+        AliasTarget::Application {
+            root: "RealDoc".to_string(),
+            args: Vec::new(),
+        }
+    );
+}
+
+#[test]
 fn private_use_as_emits_no_alias_symbol() {
     // A private `use path::Thing as Alias;` only brings a name into local
     // scope — it must not put a symbol on the module's surface, matching the

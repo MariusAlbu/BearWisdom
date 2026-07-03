@@ -19,7 +19,7 @@
 
 use super::{calls, decorators, helpers, patterns, symbols};
 use crate::types::ExtractionResult;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+use crate::types::{AliasTarget, ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
 
 // Re-exports required by rust_tests.rs (`use super::*`).
@@ -95,10 +95,11 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     let mut syms = Vec::new();
     let mut refs = Vec::new();
+    let mut alias_targets = Vec::new();
 
     let root = tree.root_node();
 
-    extract_from_node(root, source, &mut syms, &mut refs, None, "");
+    extract_from_node(root, source, &mut syms, &mut refs, None, "", &mut alias_targets);
 
     // Second pass: scan the full CST for type_identifier and scoped_type_identifier
     // nodes, emitting TypeRef for each non-primitive type found anywhere in the file.
@@ -154,7 +155,9 @@ pub fn extract(source: &str) -> ExtractionResult {
     refs.retain(|r| is_valid_rust_target_name(&r.target_name) && !is_generic_param_noise(r));
 
     let has_errors = tree.root_node().has_error();
-    ExtractionResult::new(syms, refs, has_errors)
+    let mut result = ExtractionResult::new(syms, refs, has_errors);
+    result.alias_targets = alias_targets;
+    result
 }
 
 /// True when a ref's target is a declared generic parameter rather than a real
@@ -446,6 +449,7 @@ fn extract_from_node(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
+    alias_targets: &mut Vec<(String, AliasTarget)>,
 ) {
     let mut cursor = node.walk();
 
@@ -561,7 +565,15 @@ fn extract_from_node(
                             symbols,
                             refs,
                         );
-                        extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
+                        extract_from_node(
+                            body,
+                            source,
+                            symbols,
+                            refs,
+                            Some(idx),
+                            &new_prefix,
+                            alias_targets,
+                        );
                     }
                 }
             }
@@ -622,14 +634,30 @@ fn extract_from_node(
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
-                        extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
+                        extract_from_node(
+                            body,
+                            source,
+                            symbols,
+                            refs,
+                            Some(idx),
+                            &new_prefix,
+                            alias_targets,
+                        );
                     }
                 }
             }
 
             "use_declaration" => {
                 let sym_count = symbols.len();
-                calls::extract_use_names(&child, source, refs, symbols, sym_count, qualified_prefix);
+                calls::extract_use_names(
+                    &child,
+                    source,
+                    refs,
+                    symbols,
+                    sym_count,
+                    qualified_prefix,
+                    alias_targets,
+                );
             }
 
             // `extern "C" { fn malloc(size: usize) -> *mut u8; }`
@@ -720,7 +748,15 @@ fn extract_from_node(
             "ERROR" | "MISSING" => {}
 
             _ => {
-                extract_from_node(child, source, symbols, refs, parent_index, qualified_prefix);
+                extract_from_node(
+                    child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    alias_targets,
+                );
             }
         }
     }

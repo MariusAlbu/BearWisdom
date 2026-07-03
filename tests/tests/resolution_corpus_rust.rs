@@ -1087,7 +1087,7 @@ pub fn run_bench_alias() -> bool {
     println!("  stub core::macros::assert! indexed (BEARWISDOM_RUST_SYSROOT): {stub_assert_macro}");
 
     // Candidate probes — KNOWN-RED, diagnostic only (not asserted). Root
-    // causes (traced):
+    // cause (traced):
     //   result-unwrap — `create()?` records the try-expression on the flow
     //     cache (`rust_lang/flow.rs`'s `@rhs_unwrap` capture), but
     //     `flow_binding_unwrap` is read only by `canonical_form.rs`'s bounds
@@ -1095,27 +1095,11 @@ pub fn run_bench_alias() -> bool {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
-    //   alias-reexport-member-chase — `AliasDoc::new().touch()` needs
-    //     `AliasDoc` (the synthetic symbol `calls_imports.rs`'s `use_as_clause`
-    //     arm registers for the alias) to carry `RealDoc`'s members. Rust
-    //     never populates `ParsedFile::alias_targets` (hardcoded empty in
-    //     `extract.rs`), so the generic `AliasTarget`/`expand_alias` machinery
-    //     that would redirect a `TypeAlias`-kind symbol to its target has
-    //     nothing to expand for Rust — the same gap TS has for a true rename
-    //     (`export { X as Y } from './m'`): its synthetic `Y` symbol carries
-    //     no type info either, so a chain through `Y` cannot reach `X`'s
-    //     members. Wiring `alias_targets` for Rust is separate, larger work
-    //     than re-export addressability.
     println!("\n--- candidate probes (known red) ---");
     println!(
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "calls", "exists")
-    );
-    println!(
-        "  alias-reexport-member-chase  AliasDoc::new().touch() resolved-to-RealDoc={} unresolved={}",
-        count_resolved_to(&db, "bench_alias_reexport.rs", "touch", "%RealDoc%"),
-        count_unresolved(&db, "bench_alias_reexport.rs", "calls", "touch")
     );
 
     // Each row: (label, pass, detail).
@@ -1158,6 +1142,14 @@ pub fn run_bench_alias() -> bool {
         count_resolved_to(&db, "vec_annotation_only.rs", "touch", "%Widget%");
     let alias_reexport_aliasdoc_unresolved =
         count_unresolved(&db, "bench_alias_reexport.rs", "type_ref", "AliasDoc");
+    let alias_reexport_new_resolved =
+        count_resolved_to(&db, "bench_alias_reexport.rs", "new", "%RealDoc%");
+    let alias_reexport_new_unresolved =
+        count_unresolved(&db, "bench_alias_reexport.rs", "calls", "new");
+    let alias_reexport_touch_resolved =
+        count_resolved_to(&db, "bench_alias_reexport.rs", "touch", "%RealDoc%");
+    let alias_reexport_touch_unresolved =
+        count_unresolved(&db, "bench_alias_reexport.rs", "calls", "touch");
     let vec_self_field_subscript_touch =
         count_resolved_to(&db, "vec_self_field_subscript.rs", "touch", "%SelfSegment%");
     let self_field_method_mark = count_resolved_to(&db, "self_field_method.rs", "mark", "%Namer%");
@@ -1281,6 +1273,16 @@ pub fn run_bench_alias() -> bool {
             "renamed re-export (bench)  use resolution_corpus_rust::AliasDoc; local-type TypeRef binds (not unbound_root)",
             alias_reexport_aliasdoc_unresolved == 0,
             format!("unresolved type_ref(AliasDoc) = {alias_reexport_aliasdoc_unresolved}"),
+        ),
+        (
+            "renamed re-export member chase (bench)  AliasDoc::new().touch() -> RealDoc.new / RealDoc.touch through the alias's AliasTarget",
+            alias_reexport_new_resolved >= 1
+                && alias_reexport_new_unresolved == 0
+                && alias_reexport_touch_resolved >= 1
+                && alias_reexport_touch_unresolved == 0,
+            format!(
+                "resolved-to-RealDoc(new) = {alias_reexport_new_resolved}, unresolved(new) = {alias_reexport_new_unresolved}, resolved-to-RealDoc(touch) = {alias_reexport_touch_resolved}, unresolved(touch) = {alias_reexport_touch_unresolved}"
+            ),
         ),
         (
             "Vec<T> subscript through self field  self.segments[0].touch() -> SelfSegment.touch",
