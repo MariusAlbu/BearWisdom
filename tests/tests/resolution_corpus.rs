@@ -274,6 +274,32 @@ export function useLoggerDestructured(): void {
 "#,
     );
 
+    // --- pattern: destructuring an AWAITED call's result (`const { a } = await
+    // f()`), then a member call on the destructured binding. The awaited call's
+    // own return is the async wrapper (`Promise<Status>`), not what `await`
+    // yields (`Status`); the destructure seed must strip that wrapper before
+    // projecting the `handle` field, or `handle.activate()` never types.
+    project.add_file(
+        "src/await_destructure.ts",
+        r#"class AwaitHandle {
+    activate(): void {}
+}
+
+class Status {
+    handle: AwaitHandle = new AwaitHandle();
+}
+
+function fetchStatus(): Promise<Status> {
+    return Promise.resolve(new Status());
+}
+
+export async function useAwaitDestructure(): Promise<void> {
+    const { handle } = await fetchStatus();
+    handle.activate();
+}
+"#,
+    );
+
     // --- pattern: a plain (non-destructured) const binding from a member-chain
     // call, then a member call on the binding (`const s = vi.spyOn(...); s.m()`).
     // A stub `vitest` external carries `spyOn`'s declared return type so the
@@ -545,6 +571,8 @@ export function useNullLogger(): void {
     let return_type_go = count_resolved(&db, "return_type.ts", "go");
     let obj_return_destructure_info =
         count_resolved_to(&db, "obj_return_destructure.ts", "info", "%$Ret%");
+    let await_destructure_activate =
+        count_resolved_to(&db, "await_destructure.ts", "activate", "%Handle%");
     let spy_const_mock_restore = count_resolved(&db, "spy_const.ts", "mockRestore");
     let wrap_internal_render = count_resolved_to(&db, "wrap_internal.ts", "render", "%Widget%");
     let wrap_external_refetch =
@@ -590,6 +618,11 @@ export function useNullLogger(): void {
             "obj destructure  info(\"hi\") -> makeLogger2$Ret.info",
             obj_return_destructure_info >= 1,
             format!("resolved-to-$Ret edges = {obj_return_destructure_info}"),
+        ),
+        (
+            "await destructure  handle.activate() -> Handle.activate (Promise-wrapped destructure)",
+            await_destructure_activate >= 1,
+            format!("resolved-to-Handle edges = {await_destructure_activate}"),
         ),
         (
             "spy const     s.mockRestore() -> SpyInstance.mockRestore",

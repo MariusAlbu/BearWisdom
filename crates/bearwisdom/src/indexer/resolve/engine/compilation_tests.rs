@@ -523,11 +523,54 @@ fn field_init_call_types_the_field() {
 
     let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
     assert_eq!(tree.field_type_str("C.svc"), None, "no field type before the pass");
-    tree.infer_field_init_types(std::slice::from_ref(&pf));
+    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
     assert_eq!(
         tree.field_type_str("C.svc").as_deref(),
         Some("Thing"),
         "field typed from its initializer call's return",
+    );
+}
+
+/// `const res = await fetch()` — the initializer's raw return type is the
+/// async wrapper itself (`Promise<Response>`), not what `await` yields
+/// (`Response`). `flow_binding_await` names the binding as awaited;
+/// `infer_field_init_types` must peel one wrapper layer (per
+/// `profile.async_wrappers`) before recording the field's type.
+#[test]
+fn field_init_await_unwraps_the_async_wrapper() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+    use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
+
+    static ASYNC_PROFILE: LanguageProfile = LanguageProfile {
+        async_wrappers: &["Promise"],
+        ..DEFAULT_PROFILE
+    };
+
+    let arena = Arc::new(TypeArena::new());
+    let mut mk = make_symbol("fetch", "fetch", SymbolKind::Function, None, None, None);
+    mk.signature = Some("function fetch(): Promise<Response>".to_string());
+    let res_sym = make_symbol("res", "res", SymbolKind::Variable, None, None, None);
+
+    // `const res = await fetch()` — the Calls ref, attributed to the variable
+    // (idx 1), same as the non-async `field_init_call_types_the_field` shape.
+    let mut r = call_ref("fetch");
+    r.source_symbol_index = 1;
+    let mut pf = make_parsed_file("src/c.ts", vec![mk, res_sym], vec![r]);
+    pf.flow.flow_binding_await.insert(1);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/c.ts".to_string(), "fetch".to_string()), 1);
+    id_map.insert(("src/c.ts".to_string(), "res".to_string()), 2);
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut profiles: rustc_hash::FxHashMap<&'static str, &'static LanguageProfile> =
+        rustc_hash::FxHashMap::default();
+    profiles.insert("typescript", &ASYNC_PROFILE);
+    tree.infer_field_init_types(std::slice::from_ref(&pf), &profiles);
+    assert_eq!(
+        tree.field_type_str("res").as_deref(),
+        Some("Response"),
+        "await-bound field must unwrap the async wrapper, not record Promise<Response>",
     );
 }
 
@@ -588,7 +631,7 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
         None,
         "chain-bearing initializer must not type the variable to the callee name",
     );
-    tree.infer_field_init_types(std::slice::from_ref(&pf));
+    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
     assert_eq!(
         tree.field_type_str("r").as_deref(),
         Some("Thing"),

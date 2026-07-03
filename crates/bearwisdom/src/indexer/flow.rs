@@ -415,6 +415,9 @@ fn run_assignment_query(
                             .entry(ref_idx)
                             .or_default()
                             .push((lhs_idx, field_key));
+                        if rhs.kind() == "await_expression" {
+                            meta.flow_binding_destructure_await.insert(ref_idx);
+                        }
                     }
                 }
             }

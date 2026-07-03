@@ -24,6 +24,7 @@ use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{
     intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedSymbol, ParsedFile,
     SymbolKind,
@@ -1707,9 +1708,26 @@ impl Compilation {
     /// declaring file's import scope so the right package's overload is read.
     /// Only fills a genuine gap and only for a DIRECT call/new initializer — a
     /// chained `field = a.b().c()` is left to the chain walker.
-    pub(crate) fn infer_field_init_types(&mut self, parsed: &[ParsedFile]) {
+    ///
+    /// `readonly res = await fetch(url)` needs one more step: the initializer's
+    /// raw return type is the async wrapper itself (`Promise<Response>`), not
+    /// what `await` yields (`Response`). `flow_binding_await` — populated by
+    /// the same per-file flow pass that seeds forward-inference locals — names
+    /// which field/variable symbols were bound from an `await`-ed initializer;
+    /// when the field's own index is in that set, one async-wrapper layer is
+    /// peeled per `profiles[pf.language].async_wrappers` before the field's type
+    /// is recorded, mirroring the peel `resolve_one_file`'s binding seed applies.
+    pub(crate) fn infer_field_init_types(
+        &mut self,
+        parsed: &[ParsedFile],
+        profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+    ) {
         let mut updates: Vec<(String, String, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
+            let async_wrappers = profiles
+                .get(pf.language.as_str())
+                .map(|p| p.async_wrappers)
+                .unwrap_or_default();
             let imports: Vec<ImportEntry> = pf
                 .refs
                 .iter()
@@ -1780,6 +1798,11 @@ impl Compilation {
                 };
                 let Some(id) = ty_id else {
                     continue;
+                };
+                let id = if pf.flow.flow_binding_await.contains(&field_idx) {
+                    super::pipeline::unwrap_async_yield_id(id, &self.arena, async_wrappers)
+                } else {
+                    id
                 };
                 let s = self.arena.format_type(id);
                 if s.is_empty() || s.eq_ignore_ascii_case("unknown") {

@@ -560,6 +560,17 @@ fn check_flow_meta(file: &ParsedFile, out: &mut Vec<ContractViolation>) {
             });
         }
     }
+    for &ref_idx in &file.flow.flow_binding_destructure_await {
+        if ref_idx >= nref {
+            out.push(ContractViolation {
+                code: "FILE-004",
+                message: format!(
+                    "flow.flow_binding_destructure_await entry {ref_idx} is out of bounds (refs.len() = {nref})",
+                ),
+                location: file_loc(file),
+            });
+        }
+    }
     if !file.flow.ref_byte_offsets.is_empty() && file.flow.ref_byte_offsets.len() != nref {
         out.push(ContractViolation {
             code: "FILE-004",

@@ -1074,6 +1074,16 @@ pub struct FlowMeta {
     /// RHS's yield type (`R["a"]`), not from the whole object `R`. A single RHS
     /// ref carries one entry per destructured binding.
     pub flow_binding_destructure: HashMap<usize, Vec<(usize, String)>>,
+    /// Set of `ref_idx` (the destructure RHS's own ref, the same key
+    /// `flow_binding_destructure` uses) whose initializer is an `await`
+    /// expression: `const { data } = await p.refetch()`. Unlike
+    /// `flow_binding_await` — keyed per LHS symbol, one binding — a destructure
+    /// RHS is shared across every bound field, so the await flag is recorded
+    /// once per ref rather than per binding. The resolver strips one
+    /// async-wrapper layer off the RHS's yield type before projecting each
+    /// destructured field, the same peel `flow_binding_await` drives for a
+    /// single-identifier binding.
+    pub flow_binding_destructure_await: std::collections::HashSet<usize>,
     pub flow_binding_decl_type: HashMap<usize, String>,
     pub flow_binding_unwrap: std::collections::HashSet<usize>,
     pub flow_binding_await: std::collections::HashSet<usize>,

@@ -181,6 +181,29 @@ fn flow_object_destructure_binds_each_field() {
 }
 
 #[test]
+fn flow_object_destructure_await_marks_the_ref_awaited() {
+    // `const { handle } = await fetchStatus();` — the destructure RHS is an
+    // `await_expression` wrapping the call; the runner must flag the RHS ref
+    // as awaited so the resolver strips the async wrapper before projecting
+    // `handle`.
+    let source = "const { handle } = await fetchStatus();\n";
+    // byte positions: 'handle' = 8, 'await' = 19, 'fetchStatus' = 25
+    let symbols = vec![mk_sym("handle", SymbolKind::Variable, 0)];
+    let mut refs = vec![mk_call_ref("fetchStatus", 0, 25)];
+
+    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &symbols, &mut refs);
+
+    assert!(
+        meta.flow_binding_destructure.contains_key(&0),
+        "RHS ref 0 (fetchStatus call) must carry a destructure entry; meta={meta:?}"
+    );
+    assert!(
+        meta.flow_binding_destructure_await.contains(&0),
+        "RHS ref 0 must be flagged awaited; meta={meta:?}"
+    );
+}
+
+#[test]
 fn flow_nested_construction_binds_outer_constructor() {
     // `const x = new Outer(new Inner());` — two chain-less Instantiates refs.
     // The outer constructor is the initializer's type, so the lhs must bind to

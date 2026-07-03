@@ -84,7 +84,7 @@ use crate::indexer::resolve::engine::contract::build_scope_chain;
 ///
 /// The unwrap fires ONLY at the binding seed (the binding's await flag gates it);
 /// a non-awaited `Promise<T>` variable is never touched.
-fn unwrap_async_yield_id(
+pub(super) fn unwrap_async_yield_id(
     yield_id: TypeId,
     arena: &TypeArena,
     async_wrappers: &[&str],
@@ -476,11 +476,13 @@ pub fn resolve_single_pass(
     // `const { data } = usePost()` destructure roots on the result type. Runs
     // after externals materialize so a wrapper of an external call resolves too.
     tree.infer_call_wrapper_returns(parsed);
+    // Built here (rather than at its previous call site below) so
+    // `infer_field_init_types` can read each file's `async_wrappers` too.
+    let profiles = build_profiles();
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
-    tree.infer_field_init_types(parsed);
+    tree.infer_field_init_types(parsed, &profiles);
 
-    let profiles = build_profiles();
     let solver = SemanticModel::production();
 
     // Resolve every internal file in parallel. Files are independent units of
@@ -559,11 +561,13 @@ pub fn resolve_incremental_pass(
     // `const { data } = usePost()` destructure roots on the result type. Runs
     // after externals materialize so a wrapper of an external call resolves too.
     tree.infer_call_wrapper_returns(parsed);
+    // Built here (rather than at its previous call site below) so
+    // `infer_field_init_types` can read each file's `async_wrappers` too.
+    let profiles = build_profiles();
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
-    tree.infer_field_init_types(parsed);
+    tree.infer_field_init_types(parsed, &profiles);
 
-    let profiles = build_profiles();
     let solver = SemanticModel::production();
 
     let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
@@ -910,6 +914,16 @@ fn resolve_one_file(
                             }
                             _ => tree.field_type_id_of(res.target_symbol_id),
                         });
+                        // `const { data } = await p.refetch()` — the RHS's own yield
+                        // is the async wrapper (`Promise<QueryObserverResult>`), not
+                        // what `await` yields; strip one layer before projecting each
+                        // destructured field, mirroring the single-identifier peel
+                        // above (`unwrap_async_yield_id` gated by `is_awaited`).
+                        let recv_ty = if pf.flow.flow_binding_destructure_await.contains(&ref_idx) {
+                            recv_ty.map(|id| unwrap_async_yield_id(id, arena, profile.async_wrappers))
+                        } else {
+                            recv_ty
+                        };
                         if let Some(recv_ty) = recv_ty {
                             for (lhs_idx, field_key) in entries {
                                 let Some(lhs_sym) = pf.symbols.get(*lhs_idx) else {
