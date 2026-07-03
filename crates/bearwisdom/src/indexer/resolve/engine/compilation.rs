@@ -1633,6 +1633,7 @@ impl Compilation {
                     (union_name, id)
                 };
                 self.set_return_both(&qname, ret_str, ret_id);
+                self.mirror_ret_interface_member(&qname, ret_id);
                 continue;
             }
             // No object-literal builder branch: keep a single agreed non-synthetic
@@ -1647,11 +1648,30 @@ impl Compilation {
             }
             if distinct.len() == 1 {
                 let (ty, ty_id, type_args) = distinct.into_iter().next().unwrap();
-                let ti = self.type_info.entry(qname).or_default();
-                ti.return_type_id = Some(
-                    ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args)),
-                );
+                let rid = ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args));
+                let ti = self.type_info.entry(qname.clone()).or_default();
+                ti.return_type_id = Some(rid);
+                self.mirror_ret_interface_member(&qname, rid);
             }
+        }
+    }
+
+    /// Mirror a wrapped method's inferred return onto its `{scope}$Ret.{member}`
+    /// synthetic sibling, when one exists. The object-literal-return member
+    /// synthesis (`{fn}$Ret` in `parse_file.rs`) creates that sibling carrying
+    /// no return type of its own — so a factory method that itself wraps
+    /// another call (`createNullLogger() { return { with() { return
+    /// createLogger() } } }`) would type `createNullLogger.with` but leave
+    /// `createNullLogger$Ret.with` (what chain-walking a call's inferred
+    /// receiver actually reads) untyped, stopping a further chain
+    /// (`nl.with().log()`) at `with`.
+    fn mirror_ret_interface_member(&mut self, qname: &str, ret_id: TypeId) {
+        let Some(dot) = qname.rfind('.') else {
+            return;
+        };
+        let mirror_qname = format!("{}$Ret.{}", &qname[..dot], &qname[dot + 1..]);
+        if self.by_qname.contains_key(&mirror_qname) {
+            self.set_return_both(&mirror_qname, String::new(), ret_id);
         }
     }
 

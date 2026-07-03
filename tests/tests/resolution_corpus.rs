@@ -137,7 +137,7 @@ fn resolution_corpus() {
         r#"{
   "name": "resolution-corpus",
   "version": "0.0.1",
-  "dependencies": { "@base-ui/react": "^1.0.0", "vitest": "^1.0.0" }
+  "dependencies": { "@base-ui/react": "^1.0.0", "vitest": "^1.0.0", "@stub/query": "^1.0.0", "@stub/query2": "^1.0.0" }
 }
 "#,
     );
@@ -304,6 +304,29 @@ export function useSpy(obj: { m(): void }): void {
 "#,
     );
 
+    // --- pattern: wrapper of an INTERNAL function, member call on the wrapper's
+    // result. `outer`'s own return is never annotated; it must be inferred from
+    // `return inner()`, so `outer().render()` roots on `Widget`.
+    project.add_file(
+        "src/wrap_internal.ts",
+        r#"class Widget {
+    render(): void {}
+}
+
+function inner(): Widget {
+    return new Widget();
+}
+
+export function outer() {
+    return inner();
+}
+
+export function useOuter(): void {
+    outer().render();
+}
+"#,
+    );
+
     // --- candidate patterns (probed, not yet asserted) ------------------------
     // An optional-array param: `T[] | undefined` receiver, member via `?.`.
     project.add_file(
@@ -324,6 +347,107 @@ export function useSpy(obj: { m(): void }): void {
 export function useCounter(): void {
     const [count, reset] = makeCounter();
     reset();
+}
+"#,
+    );
+
+    // A stub external package exporting a function with a signature-declared
+    // return type, so a WRAPPER of it must inherit that return across the
+    // external-materialization boundary.
+    project.add_file(
+        "node_modules/@stub/query/package.json",
+        r#"{"name":"@stub/query","version":"1.0.0","types":"index.d.ts"}"#,
+    );
+    project.add_file(
+        "node_modules/@stub/query/index.d.ts",
+        r#"export interface ThingResult {
+    refetch(): void;
+}
+export declare function useThing(): ThingResult;
+"#,
+    );
+    // --- pattern: wrapper of an EXTERNAL function, member call on the wrapper's
+    // result. `useWrapped`'s own return is never annotated; it must be inferred
+    // from `return useThing()`, so `useWrapped().refetch()` roots on
+    // `@stub/query`'s `ThingResult`.
+    project.add_file(
+        "src/wrap_external.ts",
+        r#"import { useThing } from "@stub/query";
+
+function useWrapped() {
+    return useThing();
+}
+
+export function useConsumer(): void {
+    useWrapped().refetch();
+}
+"#,
+    );
+
+    // A stub external package with an OVERLOADED, GENERIC hook — the shape a
+    // published (pre-compiled) `.d.ts` carries for `useQuery`-like APIs: several
+    // typed overload signatures, no implementation body (ambient declarations
+    // never have one), a generic param with a default, and a return type that
+    // itself carries the unbound param.
+    project.add_file(
+        "node_modules/@stub/query2/package.json",
+        r#"{"name":"@stub/query2","version":"1.0.0","types":"index.d.ts"}"#,
+    );
+    project.add_file(
+        "node_modules/@stub/query2/index.d.ts",
+        r#"export interface QueryResult<TData = unknown> {
+    data: TData;
+    refetch(): void;
+}
+export declare function useThing2<TData = unknown>(options: { defined: true }): QueryResult<TData>;
+export declare function useThing2<TData = unknown>(options: { defined?: false }): QueryResult<TData>;
+"#,
+    );
+    // --- pattern: wrapper of an EXTERNAL, OVERLOADED, GENERIC function, member
+    // call on the wrapper's result. `useWrapped2`'s own return is never
+    // annotated; it must be inferred from `return useThing2(...)`, so
+    // `useWrapped2().refetch()` roots on `@stub/query2`'s `QueryResult`.
+    project.add_file(
+        "src/wrap_external_overload.ts",
+        r#"import { useThing2 } from "@stub/query2";
+
+function useWrapped2() {
+    return useThing2({ defined: true });
+}
+
+export function useConsumer2(): void {
+    useWrapped2().refetch();
+}
+"#,
+    );
+
+    // --- pattern: a $Ret-synthesized OBJECT-LITERAL METHOD whose own body is
+    // `return <call>`, with NO explicit return annotation of its own — a
+    // factory returns an object literal, one of its methods wraps ANOTHER
+    // call rather than doing its own work. The method's return must still be
+    // inferred from that call (the same wrapper-inference this pass performs
+    // for top-level functions), so a consumer of the method's result can root
+    // on it.
+    project.add_file(
+        "src/obj_method_wraps_call.ts",
+        r#"function createLogger() {
+    return {
+        log(msg: string): void {},
+    };
+}
+
+function createNullLogger() {
+    return {
+        with() {
+            return createLogger();
+        },
+    };
+}
+
+export function useNullLogger(): void {
+    const nl = createNullLogger();
+    const inner = nl.with();
+    inner.log("hi");
 }
 "#,
     );
@@ -422,6 +546,12 @@ export function useCounter(): void {
     let obj_return_destructure_info =
         count_resolved_to(&db, "obj_return_destructure.ts", "info", "%$Ret%");
     let spy_const_mock_restore = count_resolved(&db, "spy_const.ts", "mockRestore");
+    let wrap_internal_render = count_resolved_to(&db, "wrap_internal.ts", "render", "%Widget%");
+    let wrap_external_refetch =
+        count_resolved_to(&db, "wrap_external.ts", "refetch", "%ThingResult%");
+    let wrap_external_overload_refetch =
+        count_resolved_to(&db, "wrap_external_overload.ts", "refetch", "%QueryResult%");
+    let obj_method_wraps_call_log = count_resolved(&db, "obj_method_wraps_call.ts", "log");
 
     let checks = [
         (
@@ -465,6 +595,26 @@ export function useCounter(): void {
             "spy const     s.mockRestore() -> SpyInstance.mockRestore",
             spy_const_mock_restore >= 1,
             format!("resolved edges = {spy_const_mock_restore}"),
+        ),
+        (
+            "wrap internal   outer().render() -> Widget.render (wrapper of internal fn)",
+            wrap_internal_render >= 1,
+            format!("resolved-to-Widget edges = {wrap_internal_render}"),
+        ),
+        (
+            "wrap external   useWrapped().refetch() -> ThingResult.refetch (wrapper of external fn)",
+            wrap_external_refetch >= 1,
+            format!("resolved-to-ThingResult edges = {wrap_external_refetch}"),
+        ),
+        (
+            "wrap ext ovld   useWrapped2().refetch() -> QueryResult.refetch (wrapper of overloaded, generic external fn)",
+            wrap_external_overload_refetch >= 1,
+            format!("resolved-to-QueryResult edges = {wrap_external_overload_refetch}"),
+        ),
+        (
+            "obj method      nl.with().log() -> createLogger$Ret.log (wrapper method mirrored onto $Ret)",
+            obj_method_wraps_call_log >= 1,
+            format!("resolved edges = {obj_method_wraps_call_log}"),
         ),
     ];
 
