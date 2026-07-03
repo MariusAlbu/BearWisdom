@@ -50,7 +50,19 @@ pub(super) fn extract_impl(
     // lifetimes stripped — used everywhere the implementing type is treated
     // as a qualification parent or a TypeRef target. Falls back to the raw
     // text when `rust_type_node_name` doesn't recognize the type-node kind.
-    let type_name = {
+    //
+    // `array_type` is the one exception: tree-sitter-rust uses this node kind
+    // for BOTH `[T; N]` and the lengthless slice self-type `[T]`, and
+    // `rust_type_node_name` reduces it to its `element` field — correct for a
+    // TypeRef annotation (the element is the interesting referenced type) but
+    // wrong here, where the self type IS the slice/array, not its element.
+    // Reducing to the element would qualify every method under the element's
+    // bare name — `T` for the standard library's own `impl<T> [T]` — which
+    // collides with every other type parameter named `T` in the indexed
+    // corpus. Qualify under a stable nominal name instead.
+    let type_name = if type_node.kind() == "array_type" {
+        "slice".to_string()
+    } else {
         let reduced = rust_type_node_name(&type_node, source);
         if reduced.is_empty() {
             type_text.clone()

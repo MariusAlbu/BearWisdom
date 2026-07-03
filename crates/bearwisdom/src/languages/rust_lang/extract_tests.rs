@@ -45,6 +45,23 @@ impl<'a> Bar<'a> {
     assert_eq!(method.unwrap().qualified_name, "Bar.method");
 }
 
+/// `impl<T> [T] { ... }` — the standard library's own inherent-slice impl
+/// shape. Tree-sitter-rust's `array_type` node covers both `[T; N]` and the
+/// lengthless slice `[T]`; `rust_type_node_name`'s element-reduction (correct
+/// for a TypeRef annotation) would qualify `iter` under the bare element name
+/// `T`, colliding with every other type parameter named `T` in the corpus.
+/// The self type is the slice itself — qualify under a stable nominal name.
+#[test]
+fn impl_for_slice_qualifies_under_stable_name_not_element_type() {
+    let source = r#"impl<T> [T] {
+    pub fn iter(&self) {}
+}"#;
+    let r = extract::extract(source);
+    let method = r.symbols.iter().find(|s| s.name == "iter");
+    assert!(method.is_some(), "Expected method 'iter'");
+    assert_eq!(method.unwrap().qualified_name, "slice.iter");
+}
+
 #[test]
 fn impl_trait_for_reference_type_qualifies_under_base_type() {
     let source = r#"struct Baz<K> {
