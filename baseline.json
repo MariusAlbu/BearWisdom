@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-07-02T00:00:00Z",
+  "captured_at": "2026-07-03T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -991,15 +991,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 61
+        "min_resolution_rate": 81
       },
-      "code_chunks": 16955,
+      "code_chunks": 16958,
       "files": 177,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 1,
-      "internal_edges": 18971,
-      "internal_unresolved": 11630,
+      "internal_edges": 26011,
+      "internal_unresolved": 5976,
       "languages": {
         "javascript": 1,
         "json": 29,
@@ -1010,43 +1010,42 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-ast-grep",
       "perf": {
-        "end_ws_mb": 216,
+        "end_ws_mb": 113,
         "files_per_sec": 1,
-        "index_duration_ms": 143764
+        "index_duration_ms": 139727
       },
       "project": "rust-ast-grep",
       "rate_by_language": {
-        "javascript": 50.0,
-        "python": 54.31,
-        "rust": 62.15
+        "javascript": 64.29,
+        "python": 54.78,
+        "rust": 81.79
       },
-      "resolution_rate": 61.99,
+      "resolution_rate": 81.32,
       "routes": 0,
-      "symbols": 9218,
+      "symbols": 9214,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 14,
-        "python.calls": 132,
+        "javascript.calls": 10,
+        "python.calls": 129,
         "python.imports": 3,
         "python.type_ref": 114,
-        "rust.calls": 6605,
-        "rust.implements": 70,
-        "rust.imports": 493,
-        "rust.inherits": 3,
-        "rust.type_ref": 4196
+        "rust.calls": 4347,
+        "rust.implements": 25,
+        "rust.imports": 213,
+        "rust.type_ref": 1135
       },
       "vendored_files_reclassified": 73
     },
     {
       "assertions": {
-        "min_resolution_rate": 51
+        "min_resolution_rate": 71
       },
-      "code_chunks": 34405,
+      "code_chunks": 34404,
       "drained_refs": 143,
       "files": 1408,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 39198,
-      "internal_unresolved": 37169,
+      "internal_edges": 54576,
+      "internal_unresolved": 22015,
       "languages": {
         "dockerfile": 1,
         "javascript": 2,
@@ -1062,50 +1061,50 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-lemmy",
       "perf": {
-        "end_ws_mb": 225,
-        "files_per_sec": 7,
-        "index_duration_ms": 188167
+        "end_ws_mb": 133,
+        "files_per_sec": 5,
+        "index_duration_ms": 264589
       },
       "project": "rust-lemmy",
       "rate_by_language": {
         "dockerfile": 16.67,
         "markdown": 100.0,
-        "rust": 50.5,
+        "rust": 72.77,
         "shell": 28.57,
         "sql": 99.83,
-        "typescript": 46.82
+        "typescript": 46.74
       },
-      "resolution_rate": 51.33,
+      "resolution_rate": 71.26,
       "routes": 0,
-      "symbols": 19321,
+      "symbols": 19319,
       "unresolved_by_lang_kind": {
         "dockerfile.imports": 6,
         "dockerfile.inherits": 4,
-        "rust.calls": 12453,
-        "rust.implements": 158,
-        "rust.imports": 1642,
+        "rust.calls": 9235,
+        "rust.implements": 88,
+        "rust.imports": 1600,
         "rust.inherits": 1,
-        "rust.type_ref": 19573,
+        "rust.type_ref": 7745,
         "shell.calls": 16,
         "shell.imports": 4,
         "sql.type_ref": 3,
-        "typescript.calls": 1554,
+        "typescript.calls": 1558,
         "typescript.instantiates": 40,
         "typescript.type_ref": 1715
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 71
+        "min_resolution_rate": 72
       },
-      "code_chunks": 20251,
+      "code_chunks": 20259,
       "drained_refs": 1,
       "files": 324,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 5,
-      "internal_edges": 22901,
-      "internal_unresolved": 9116,
+      "internal_edges": 24897,
+      "internal_unresolved": 9630,
       "languages": {
         "css": 4,
         "freemarker": 3,
@@ -1121,42 +1120,42 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-loco",
       "perf": {
-        "end_ws_mb": 99,
-        "files_per_sec": 5,
-        "index_duration_ms": 63051
+        "end_ws_mb": 140,
+        "files_per_sec": 2,
+        "index_duration_ms": 137877
       },
       "project": "rust-loco",
       "rate_by_language": {
         "html": 0.0,
         "javascript": 24.76,
         "markdown": 100.0,
-        "rust": 71.63
+        "rust": 72.21
       },
-      "resolution_rate": 71.53,
+      "resolution_rate": 72.11,
       "routes": 0,
-      "symbols": 10797,
+      "symbols": 10801,
       "unresolved_by_lang_kind": {
         "html.imports": 4,
         "javascript.calls": 70,
         "javascript.imports": 1,
         "javascript.type_ref": 8,
-        "rust.calls": 5468,
-        "rust.implements": 48,
-        "rust.imports": 435,
-        "rust.type_ref": 3082
+        "rust.calls": 6624,
+        "rust.implements": 45,
+        "rust.imports": 406,
+        "rust.type_ref": 2472
       },
       "vendored_files_reclassified": 9
     },
     {
       "assertions": {
-        "min_resolution_rate": 77
+        "min_resolution_rate": 84
       },
-      "code_chunks": 63526,
+      "code_chunks": 63528,
       "files": 472,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 83743,
-      "internal_unresolved": 23874,
+      "internal_edges": 96066,
+      "internal_unresolved": 18052,
       "languages": {
         "c": 1,
         "json": 5,
@@ -1168,41 +1167,41 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-tantivy",
       "perf": {
-        "end_ws_mb": 119,
-        "files_per_sec": 6,
-        "index_duration_ms": 85222
+        "end_ws_mb": 145,
+        "files_per_sec": 4,
+        "index_duration_ms": 116018
       },
       "project": "rust-tantivy",
       "rate_by_language": {
         "markdown": 100.0,
         "python": 0.0,
-        "rust": 77.82
+        "rust": 84.18
       },
-      "resolution_rate": 77.82,
+      "resolution_rate": 84.18,
       "routes": 0,
-      "symbols": 30312,
+      "symbols": 30307,
       "unresolved_by_lang_kind": {
         "python.imports": 1,
         "python.type_ref": 2,
-        "rust.calls": 16287,
-        "rust.implements": 116,
-        "rust.imports": 801,
+        "rust.calls": 14726,
+        "rust.implements": 69,
+        "rust.imports": 452,
         "rust.inherits": 4,
-        "rust.type_ref": 6663
+        "rust.type_ref": 2798
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 62
+        "min_resolution_rate": 78
       },
-      "code_chunks": 170221,
+      "code_chunks": 170270,
       "drained_refs": 5,
       "files": 1602,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 6,
-      "internal_edges": 205435,
-      "internal_unresolved": 121763,
+      "internal_edges": 262344,
+      "internal_unresolved": 70722,
       "languages": {
         "html": 32,
         "json": 7,
@@ -1215,30 +1214,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/rust-rust-analyzer",
       "perf": {
-        "end_ws_mb": 239,
+        "end_ws_mb": 164,
         "files_per_sec": 2,
-        "index_duration_ms": 821785
+        "index_duration_ms": 878853
       },
       "project": "rust-rust-analyzer",
       "rate_by_language": {
-        "markdown": 81.03,
+        "markdown": 94.83,
         "python": 40.82,
-        "rust": 62.77,
+        "rust": 78.76,
         "typescript": 100.0
       },
-      "resolution_rate": 62.79,
+      "resolution_rate": 78.77,
       "routes": 0,
-      "symbols": 92373,
+      "symbols": 92381,
       "unresolved_by_lang_kind": {
-        "markdown.calls": 11,
+        "markdown.calls": 3,
         "python.calls": 16,
         "python.imports": 3,
         "python.type_ref": 10,
-        "rust.calls": 75410,
-        "rust.implements": 447,
-        "rust.imports": 2693,
-        "rust.inherits": 31,
-        "rust.type_ref": 43142
+        "rust.calls": 52907,
+        "rust.implements": 373,
+        "rust.imports": 1891,
+        "rust.inherits": 16,
+        "rust.type_ref": 15503
       },
       "vendored_files_reclassified": 36
     }
