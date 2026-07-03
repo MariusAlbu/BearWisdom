@@ -17,7 +17,7 @@ use super::walk::{
     resolve_package_entry_path, resolve_package_subpath_entries, resolve_relative_ts_path,
     walk_ts_dep_entry_only, walk_ts_external_root, REEXPORT_MAX_DEPTH,
 };
-use super::{package_declares_globals, probe_global_decl_files};
+use super::{npm_package_name_from_spec, package_declares_globals, probe_global_decl_files};
 
 // ---------------------------------------------------------------------------
 // Symbol-location index (demand-driven pipeline entry)
@@ -73,6 +73,14 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // (`import { computed } from 'vue'`, vue being `export * from '@vue/runtime-dom'`)
     // locates a name the re-exported package defines.
     let mut pkg_entry: HashMap<String, PathBuf> = HashMap::new();
+    // Each reached package's own root directory, keyed by its bare module
+    // name — lets a re-export resolve a Node self-reference specifier
+    // (`next/dist/server/...` inside the `next` package's own `.d.ts` files)
+    // against the package's disk root instead of declining it as cross-package.
+    let bare_pkg_root: HashMap<String, PathBuf> = dep_roots
+        .iter()
+        .map(|d| (d.module_path.clone(), d.root.clone()))
+        .collect();
     for dep in dep_roots {
         if let Some(entry) = resolve_package_entry_path(dep) {
             pkg_entry.insert(dep.module_path.clone(), entry);
@@ -138,6 +146,9 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             index.insert(module, g.clone(), file.clone());
         }
 
+        let bare_name = npm_package_name_from_spec(module);
+        let pkg_root = bare_pkg_root.get(bare_name).map(PathBuf::as_path);
+
         // Named exports: resolve each to its DEFINITION file by walking
         // the re-export graph. A barrel like `axios/index.d.ts` that
         // does `export { get } from './core'` resolves 'get' to
@@ -145,8 +156,9 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         // definition instead of the barrel.
         for (exposed, source) in &exports.named {
             let mut visited = HashSet::new();
-            let def_file = resolve_definition(&by_path, &known_paths, file, source, &mut visited)
-                .unwrap_or_else(|| file.clone());
+            let def_file =
+                resolve_definition(&by_path, &known_paths, file, source, bare_name, pkg_root, &mut visited)
+                    .unwrap_or_else(|| file.clone());
             index.insert(module, exposed.clone(), def_file);
         }
 
@@ -183,6 +195,8 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
                 &by_path,
                 &known_paths,
                 &wc_path,
+                bare_name,
+                pkg_root,
                 &mut wc_seen,
                 &mut wc_names,
             );
@@ -231,10 +245,88 @@ fn union_entry_and_globals(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 // Re-export resolution helpers (index-build time)
 // ---------------------------------------------------------------------------
 
+/// A re-export module specifier that names THIS SAME package by its own bare
+/// name (`next/dist/server/...` inside one of the `next` package's own
+/// `.d.ts` files) — Node's self-reference resolution, not a foreign package.
+/// Returns the remainder path relative to the package root. `None` when the
+/// specifier names a genuinely different package.
+fn same_package_deep_path<'a>(module: &'a str, pkg_name: &str) -> Option<&'a str> {
+    module.strip_prefix(pkg_name)?.strip_prefix('/')
+}
+
+/// Resolve a same-package deep specifier's remainder path against the
+/// package's disk root, reusing the relative-specifier resolver
+/// (`resolve_relative_ts_path` joins against `from_file.parent()`, so a
+/// synthetic anchor rooted at `pkg_root` makes that parent `pkg_root`
+/// itself) — including its `.js` → `.d.ts` companion mapping for
+/// rollup-bundled packages. Hits the filesystem directly rather than
+/// `known_paths`: a package-internal implementation file is rarely part of
+/// the entry+reexport-closure scan that built `known_paths`.
+fn resolve_pkg_relative(pkg_root: &Path, rel: &str) -> Option<PathBuf> {
+    let anchor = pkg_root.join("__pkg_root__");
+    resolve_relative_ts_path(&anchor, rel)
+}
+
+/// Grammar to scan `file` with, inferred from its extension — `scan_ts_file_exports`
+/// only branches on tsx/javascript, defaulting to typescript for everything else
+/// (`.ts`, `.d.ts`, `.mts`, `.cts`).
+fn language_for_ext(file: &Path) -> &'static str {
+    match file.extension().and_then(|e| e.to_str()) {
+        Some("tsx") => "tsx",
+        Some("js") | Some("jsx") | Some("mjs") | Some("cjs") => "javascript",
+        _ => "typescript",
+    }
+}
+
+/// Follow `original`'s definition starting from `file`, a same-package deep
+/// specifier's resolved target that was never part of the initial
+/// entry+reexport-closure header scan (`by_path`/`known_paths`) — so each hop
+/// reads and scans the file directly instead of consulting the pre-built maps.
+///
+/// The deep specifier's resolved file is sometimes a directory-index barrel
+/// (`export * from './sub'`), not the file that declares `original` — the
+/// `next/dist/server/after` shape, where the specifier resolves to
+/// `after/index.d.ts`, itself only re-exporting from sibling `./after.ts`.
+/// Follows a further RELATIVE named re-export or wildcard the same way
+/// `resolve_definition`'s in-memory chain does; a hop naming a genuinely
+/// different package stops here (that package's own scan owns it).
+fn resolve_on_disk(file: &Path, original: &str, depth: u32) -> Option<PathBuf> {
+    if depth > REEXPORT_MAX_DEPTH {
+        return None;
+    }
+    let src = std::fs::read_to_string(file).ok()?;
+    let exports = scan_ts_file_exports(&src, language_for_ext(file));
+    if let Some(source) = exports.named.get(original) {
+        return match source {
+            ExportSource::Local => Some(file.to_path_buf()),
+            ExportSource::Reexport { module, original: inner } if module.starts_with('.') => {
+                let target = resolve_relative_ts_path(file, module)?;
+                resolve_on_disk(&target, inner, depth + 1)
+            }
+            ExportSource::Namespace { module } if module.starts_with('.') => {
+                resolve_relative_ts_path(file, module)
+            }
+            _ => None,
+        };
+    }
+    for wc in &exports.wildcards {
+        if !wc.starts_with('.') {
+            continue;
+        }
+        let Some(target) = resolve_relative_ts_path(file, wc) else {
+            continue;
+        };
+        if let Some(found) = resolve_on_disk(&target, original, depth + 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 /// Follow a (potentially chained) re-export from `current_file` to the file
 /// that actually defines the symbol. Returns `None` when the chain exits the
-/// same-package scope (cross-package specifier), dead-ends in an unscanned
-/// file, or hits a cycle.
+/// package scope (a genuinely cross-package specifier), dead-ends in an
+/// unscanned file, or hits a cycle.
 ///
 /// Callers fall back to indexing the name at the barrel file on `None`,
 /// preserving pre-refactor behaviour for cases we can't follow statically.
@@ -243,6 +335,8 @@ pub(crate) fn resolve_definition(
     known_paths: &HashSet<PathBuf>,
     current_file: &Path,
     source: &ExportSource,
+    pkg_name: &str,
+    pkg_root: Option<&Path>,
     visited: &mut HashSet<(PathBuf, String)>,
 ) -> Option<PathBuf> {
     match source {
@@ -251,23 +345,35 @@ pub(crate) fn resolve_definition(
             // `export * as ns from './mod'` — ns points at the whole
             // module's entry file. No single "original" symbol name to
             // follow through chains; resolving terminates at the module
-            // file itself. Cross-package namespace re-exports return
-            // None with the same reasoning as cross-package Reexports.
+            // file itself. A specifier naming a genuinely different package
+            // returns None with the same reasoning as cross-package Reexports.
             if !module.starts_with('.') {
-                return None;
+                let rel = same_package_deep_path(module, pkg_name)?;
+                return resolve_pkg_relative(pkg_root?, rel);
             }
             let parent = current_file.parent()?;
             resolve_relative_in_set(parent, module, known_paths)
         }
         ExportSource::Reexport { module, original } => {
             if !module.starts_with('.') {
-                // Cross-package — the target package's scan indexes its
-                // own Locals under its own module, so `locate(target_pkg,
-                // original)` already answers for the user. We can't
-                // bridge pkg-A's re-export of pkg-B's symbol into a
-                // unified pointer without the pkg-B index in hand, and
-                // that lives in a different ecosystem's dep_roots.
-                return None;
+                // A same-package deep specifier — the file it names may not
+                // be part of `known_paths` (a package-internal implementation
+                // file the entry+reexport-closure scan never reached), and the
+                // specifier itself may resolve to a directory-index barrel
+                // that only re-exports further (`export * from './sub'`), so
+                // `resolve_on_disk` follows the chain to `original`'s actual
+                // declaring file rather than trusting the first hop.
+                //
+                // A specifier naming a genuinely DIFFERENT package declines —
+                // the target package's own scan indexes its Locals under its
+                // own module, so `locate(target_pkg, original)` already
+                // answers for the user. We can't bridge pkg-A's re-export of
+                // pkg-B's symbol into a unified pointer without pkg-B's
+                // index in hand, and that lives in a different ecosystem's
+                // dep_roots.
+                let rel = same_package_deep_path(module, pkg_name)?;
+                let start = resolve_pkg_relative(pkg_root?, rel)?;
+                return resolve_on_disk(&start, original, 0);
             }
             let parent = current_file.parent()?;
             let target = resolve_relative_in_set(parent, module, known_paths)?;
@@ -276,7 +382,9 @@ pub(crate) fn resolve_definition(
             }
             let target_exports = by_path.get(target.as_path())?;
             if let Some(inner) = target_exports.named.get(original) {
-                return resolve_definition(by_path, known_paths, &target, inner, visited);
+                return resolve_definition(
+                    by_path, known_paths, &target, inner, pkg_name, pkg_root, visited,
+                );
             }
             // Name not directly in target.named — try wildcard re-exports
             // in the target file. `export * from './sub'` surfaces every
@@ -295,9 +403,9 @@ pub(crate) fn resolve_definition(
                     continue;
                 };
                 if let Some(inner) = wc_exports.named.get(original) {
-                    if let Some(def) =
-                        resolve_definition(by_path, known_paths, &wc_path, inner, visited)
-                    {
+                    if let Some(def) = resolve_definition(
+                        by_path, known_paths, &wc_path, inner, pkg_name, pkg_root, visited,
+                    ) {
                         return Some(def);
                     }
                 }
@@ -315,6 +423,8 @@ pub(crate) fn collect_wildcard_names(
     by_path: &HashMap<&Path, &FileExports>,
     known_paths: &HashSet<PathBuf>,
     file: &Path,
+    pkg_name: &str,
+    pkg_root: Option<&Path>,
     seen: &mut HashSet<PathBuf>,
     out: &mut HashMap<String, PathBuf>,
 ) {
@@ -329,8 +439,10 @@ pub(crate) fn collect_wildcard_names(
             continue;
         }
         let mut visited = HashSet::new();
-        let def_file = resolve_definition(by_path, known_paths, file, source, &mut visited)
-            .unwrap_or_else(|| file.to_path_buf());
+        let def_file = resolve_definition(
+            by_path, known_paths, file, source, pkg_name, pkg_root, &mut visited,
+        )
+        .unwrap_or_else(|| file.to_path_buf());
         out.insert(name.clone(), def_file);
     }
     for wc in &exports.wildcards {
@@ -343,7 +455,7 @@ pub(crate) fn collect_wildcard_names(
         let Some(wc_path) = resolve_relative_in_set(parent, wc, known_paths) else {
             continue;
         };
-        collect_wildcard_names(by_path, known_paths, &wc_path, seen, out);
+        collect_wildcard_names(by_path, known_paths, &wc_path, pkg_name, pkg_root, seen, out);
     }
 }
 
@@ -375,3 +487,7 @@ pub(crate) fn resolve_relative_in_set(
     }
     None
 }
+
+#[cfg(test)]
+#[path = "symbol_index_tests.rs"]
+mod tests;
