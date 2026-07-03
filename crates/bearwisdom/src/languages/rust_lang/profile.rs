@@ -21,7 +21,9 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 ///     `impl Fn(...)` param types), test (a `#[test]` fn called by another
 ///     test), enum_member (tuple/unit-variant construction via call syntax —
 ///     `Some(x)`, `Ok(y)`, a `Status::Active` unit variant called as a fn
-///     pointer).
+///     pointer), struct (`Point { x: 1 }` struct-literal construction — the
+///     extractor emits a Calls ref alongside the TypeRef at the same site, so
+///     it needs the same target kind TypeRef already admits).
 ///   - Inherits: trait (Rust has trait subtyping; structs themselves don't
 ///     extend other structs).
 ///   - Implements: trait (only valid impl target).
@@ -46,6 +48,7 @@ const RUST_KIND_TABLE: KindTable = &[
             SymbolKind::Parameter,
             SymbolKind::Test,
             SymbolKind::EnumMember,
+            SymbolKind::Struct,
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Trait]),

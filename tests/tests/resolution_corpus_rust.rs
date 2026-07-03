@@ -354,6 +354,30 @@ pub fn build() -> bool {
 "#,
     );
 
+    // --- pattern: struct-literal constructor call resolves like its type_ref -
+    // `Point { x: 1 }` (tree-sitter-rust `struct_expression`) emits BOTH a
+    // `calls` ref and a `type_ref` for `Point` at the same line. The
+    // `type_ref` resolves via `default_workspace_package`; the `calls` ref
+    // used to die `unbound_root` because `EdgeKind::Calls`'s kind-compatible
+    // table carried no `Struct` entry, unlike `EdgeKind::TypeRef`'s.
+    project.add_file(
+        "src/point.rs",
+        r#"pub struct Point {
+    pub x: i32,
+}
+"#,
+    );
+    project.add_file(
+        "src/point_user.rs",
+        r#"use crate::point::Point;
+
+pub fn make() -> bool {
+    let p = Point { x: 1 };
+    p.x == 1
+}
+"#,
+    );
+
     // --- pattern: std/prelude member calls against the seeded rust-src stub -
     project.add_file(
         "src/std_string.rs",
@@ -1174,6 +1198,8 @@ pub fn run_bench_alias() -> bool {
     // Each row: (label, pass, detail).
     let assoc_call_exists = count_resolved_to(&db, "assoc_call.rs", "exists", "%Index%");
     let local_ctor_commit = count_resolved_to(&db, "local_ctor.rs", "commit", "%IndexWriter%");
+    let struct_literal_calls_resolved = count_resolved_to(&db, "point_user.rs", "Point", "%Point%");
+    let struct_literal_calls_unresolved = count_unresolved(&db, "point_user.rs", "calls", "Point");
     let std_string_len = count_resolved_to(&db, "std_string.rs", "len", "%String%");
     let std_option_unwrap = count_resolved_to(&db, "std_option.rs", "unwrap", "%Option%");
     let external_crate_greet = count_resolved_to(&db, "external_crate.rs", "greet", "%Thing%");
@@ -1247,6 +1273,13 @@ pub fn run_bench_alias() -> bool {
             "local ctor       w.commit() -> IndexWriter.commit",
             local_ctor_commit >= 1,
             format!("resolved-to-IndexWriter edges = {local_ctor_commit}"),
+        ),
+        (
+            "struct-literal constructor  Point { x: 1 } calls-ref resolves like its type_ref",
+            struct_literal_calls_resolved >= 1 && struct_literal_calls_unresolved == 0,
+            format!(
+                "resolved-to-Point edges = {struct_literal_calls_resolved}, unresolved(calls Point) = {struct_literal_calls_unresolved}"
+            ),
         ),
         (
             "std seam (sysroot)  s.len() -> String.len (BEARWISDOM_RUST_SYSROOT)",

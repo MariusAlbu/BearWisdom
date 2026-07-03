@@ -70,6 +70,19 @@ fn rust_calls_accepts_enum_member_for_variant_construction() {
 }
 
 #[test]
+fn rust_calls_accepts_struct_for_struct_literal_construction() {
+    // `Point { x: 1 }` (`struct_expression`) emits both a Calls ref and a
+    // TypeRef for `Point` at the same site — the Calls ref needs the same
+    // target kind the TypeRef already admits.
+    let table = RUST_PROFILE.kind_compatible_table;
+    assert!(KindCompatibility::check(
+        table,
+        EdgeKind::Calls,
+        SymbolKind::Struct
+    ));
+}
+
+#[test]
 fn rust_inherits_accepts_trait_only() {
     let table = RUST_PROFILE.kind_compatible_table;
     assert!(KindCompatibility::check(
