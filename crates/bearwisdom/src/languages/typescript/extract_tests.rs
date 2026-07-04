@@ -10,6 +10,87 @@ fn refs(source: &str) -> Vec<ExtractedRef> {
 }
 
 #[test]
+fn declare_var_object_type_members_qualified_under_variable() {
+    // `declare var AbortSignal: <cond> ? T : { any(...): ... }` — members of
+    // the object type must be parented under the variable and qualified as
+    // `AbortSignal.any`. A bare `any` qname collides with every bare-head
+    // lookup on an `any`-typed receiver.
+    let src = "declare global {\n    var AbortSignal: typeof globalThis extends { onmessage: any; AbortSignal: infer T } ? T\n        : {\n            prototype: AbortSignal;\n            new(): AbortSignal;\n            abort(reason?: any): AbortSignal;\n            any(signals: AbortSignal[]): AbortSignal;\n            timeout(milliseconds: number): AbortSignal;\n        };\n}\n";
+    let s = sym(src);
+    let var_idx = s
+        .iter()
+        .position(|x| x.name == "AbortSignal" && x.kind == SymbolKind::Variable)
+        .expect("declare var symbol");
+    let any = s
+        .iter()
+        .find(|x| x.name == "any" && x.kind == SymbolKind::Method)
+        .expect("object-type member `any` should be extracted");
+    assert_eq!(
+        any.qualified_name, "AbortSignal.any",
+        "member must be qualified under the declaring variable: {s:?}"
+    );
+    assert_eq!(any.parent_index, Some(var_idx));
+    assert!(
+        !s.iter().any(|x| x.qualified_name == "any"),
+        "no symbol may carry the bare qname `any`: {s:?}"
+    );
+    let timeout = s
+        .iter()
+        .find(|x| x.name == "timeout")
+        .expect("member `timeout`");
+    assert_eq!(timeout.qualified_name, "AbortSignal.timeout");
+}
+
+#[test]
+fn declare_const_object_type_members_qualified() {
+    let src = "declare const Api: { fetchOne(id: number): string };\n";
+    let s = sym(src);
+    let fetch = s
+        .iter()
+        .find(|x| x.name == "fetchOne")
+        .expect("member `fetchOne` should be extracted");
+    assert_eq!(fetch.qualified_name, "Api.fetchOne", "{s:?}");
+    assert_eq!(
+        s.iter().filter(|x| x.name == "fetchOne").count(),
+        1,
+        "annotation member must not be double-emitted: {s:?}"
+    );
+}
+
+#[test]
+fn declarator_annotation_nested_object_members_chain_qualified() {
+    // Nested object types qualify through the full parent chain, not a flat
+    // prefix: `X.a.b`, with `b` parented under `a` and `a` under `X`.
+    let src = "declare var X: { a: { b(): void } };\n";
+    let s = sym(src);
+    let a = s.iter().find(|x| x.name == "a").expect("member `a`");
+    let b = s.iter().find(|x| x.name == "b").expect("member `b`");
+    assert_eq!(a.qualified_name, "X.a", "{s:?}");
+    assert_eq!(b.qualified_name, "X.a.b", "{s:?}");
+    let a_idx = s.iter().position(|x| x.name == "a").unwrap();
+    assert_eq!(b.parent_index, Some(a_idx));
+}
+
+#[test]
+fn annotated_const_initializer_calls_still_extracted() {
+    // Skipping the declarator-annotation descent must not affect initializer
+    // extraction — the call in the value expression still emits a Calls ref.
+    let src = "const ops: { findOne(id: number): string } = makeOps();\n";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "makeOps"),
+        "initializer call should still be extracted: {r:?}"
+    );
+    let s = sym(src);
+    let find_one = s
+        .iter()
+        .find(|x| x.name == "findOne")
+        .expect("member `findOne`");
+    assert_eq!(find_one.qualified_name, "ops.findOne", "{s:?}");
+}
+
+#[test]
 fn local_export_rename_emits_moduleless_reexport_ref() {
     // `export { local as exposed }` with no `from`, where `local` is declared in
     // this file, records the rename so an import-type indexing the exposed name

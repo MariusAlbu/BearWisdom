@@ -13,7 +13,8 @@ use super::reexports::{
 };
 use super::type_scan::{collect_type_param_scopes, is_ts_primitive, scan_all_type_identifiers};
 use super::{
-    alias_classify, calls, decorators, helpers, imports, narrowing, params, symbols, types,
+    alias_classify, annotation_members, calls, decorators, helpers, imports, narrowing, params,
+    symbols, types,
 };
 
 use crate::ecosystem::ecmascript_imports::build_import_map;
@@ -745,7 +746,20 @@ fn extract_node(
 
             "lexical_declaration" | "variable_declaration" => {
                 // `const Foo = ...` / `let bar = ...`
+                let decl_syms_start = symbols.len();
                 symbols::push_variable_decl(&child, src, scope_tree, symbols, refs, parent_index);
+                // Object types in a declarator's annotation carry members
+                // (`declare var AbortSignal: { any(...): ... }`) — emit them
+                // parented under the variable and qualified by its name.
+                annotation_members::push_annotation_object_members(
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    alias_targets,
+                    decl_syms_start,
+                );
                 // Also recurse so that `new_expression` and `call_expression` arms fire
                 // for initializers that weren't inlined into push_variable_decl.
                 // push_variable_decl handles TypeRef/chain inference for the initializer,
@@ -1144,16 +1158,23 @@ fn extract_node(
                 // Recursively walk all children to catch type_identifiers and other types
                 // nested inside generic_type, union_type, etc. that extract_type_ref_from_annotation
                 // may have handled but children not yet extracted.
-                extract_node(
-                    child,
-                    src,
-                    scope_tree,
-                    symbols,
-                    refs,
-                    alias_targets,
-                    parent_index,
-                    demand,
-                );
+                //
+                // An identifier-named declarator's annotation is excluded: its
+                // object-type members are already emitted parented under the
+                // variable (see the lexical_declaration arm), and descending
+                // here would re-emit them with bare names.
+                if !annotation_members::is_declarator_annotation(&node, &child) {
+                    extract_node(
+                        child,
+                        src,
+                        scope_tree,
+                        symbols,
+                        refs,
+                        alias_targets,
+                        parent_index,
+                        demand,
+                    );
+                }
             }
 
             // `generic_type` encountered during recursion — recurse to catch all inner types.
@@ -1319,7 +1340,7 @@ fn extract_sig_object_type_members(
 /// we recurse through their children so that nested `object_type` nodes are found.
 /// `extract_node` is called only for `object_type` so that property_signature,
 /// method_signature, call_signature, and index_signature arms fire for each member.
-fn recurse_for_object_types(
+pub(super) fn recurse_for_object_types(
     node: tree_sitter::Node,
     src: &[u8],
     scope_tree: &crate::parser::scope_tree::ScopeTree,

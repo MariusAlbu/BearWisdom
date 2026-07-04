@@ -6,6 +6,7 @@
 
 // Extraction sub-modules
 mod alias_classify;
+mod annotation_members;
 mod calls;
 pub mod connectors;
 mod connectors_graphql;
