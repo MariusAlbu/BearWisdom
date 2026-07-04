@@ -427,7 +427,7 @@ pub(crate) fn parse_external_sources(
             Ok(mut pf) => {
                 // Per-locator post-processing hook: TS rewrites declaration
                 // file symbols to package-qualified names here.
-                owner.post_process_parsed(&mut pf);
+                owner.post_process_parsed(&mut pf, type_arena);
                 parsed.push(pf);
             }
             Err(e) => {

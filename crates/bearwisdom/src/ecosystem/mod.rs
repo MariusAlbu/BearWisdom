@@ -547,9 +547,15 @@ pub trait Ecosystem: Send + Sync {
 
     /// Per-file post-processing hook. npm uses this to prefix symbols
     /// with package name so the Tier-1 resolver matches
-    /// `import { X } from 'pkg'` → `pkg.X`.
-    fn post_process_parsed(&self, dep: &ExternalDepRoot, parsed: &mut ParsedFile) {
-        let _ = (dep, parsed);
+    /// `import { X } from 'pkg'` → `pkg.X`, requalifying extractor-set
+    /// declared types against `arena` in the same pass.
+    fn post_process_parsed(
+        &self,
+        dep: &ExternalDepRoot,
+        parsed: &mut ParsedFile,
+        arena: &crate::type_checker::core::types::TypeArena,
+    ) {
+        let _ = (dep, parsed, arena);
     }
 
     /// True if this ecosystem describes a workspace-level artefact that

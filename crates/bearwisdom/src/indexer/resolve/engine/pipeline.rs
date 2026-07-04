@@ -1882,7 +1882,7 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
     .ok()?;
     // External `.d.ts` symbols carry a `<pkg>.` prefix the resolver keys on; this
     // also prefixes the parse pass's `component_selectors` to match.
-    crate::ecosystem::npm::ts_post_process_external(&mut pf);
+    crate::ecosystem::npm::ts_post_process_external(&mut pf, arena);
     crate::indexer::external_parse_cache::put(file, &hash, &pf, arena);
     Some(pf)
 }

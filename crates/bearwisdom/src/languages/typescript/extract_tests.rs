@@ -2252,3 +2252,68 @@ fn declare_global_let_lookup_type_emits_module_tagged_ref() {
         "declare global let lookup_type must emit target_name='expect' module=Some('vitest'); got: {type_refs:?}"
     );
 }
+
+#[test]
+fn ambient_declare_const_named_type_enriches_signature() {
+    // `declare const gadget: ApiKind` — the declarator's whole member surface
+    // lives on the named annotation type, and the annotation's TypeRef is
+    // rewritten to the import's source name by the import-semantics pass, so
+    // the signature must carry the local type name for the declared-type fill.
+    let src = "import { g as ApiKind } from './impl.js';\ndeclare const gadget: ApiKind;\n";
+    let s = sym(src);
+    let v = s
+        .iter()
+        .find(|x| x.name == "gadget")
+        .expect("declare const symbol");
+    assert_eq!(v.signature.as_deref(), Some("const gadget: ApiKind"));
+}
+
+#[test]
+fn ambient_declare_var_generic_named_type_enriches_signature() {
+    let src = "declare var q: Registry<Cfg>;\n";
+    let s = sym(src);
+    let v = s.iter().find(|x| x.name == "q").expect("declare var symbol");
+    assert_eq!(v.signature.as_deref(), Some("const q: Registry<Cfg>"));
+}
+
+#[test]
+fn non_ambient_const_annotation_keeps_bare_signature() {
+    // A non-ambient annotated const is typed by the flow seed and the
+    // scope-qualified ref derivation; its signature stays annotation-less so
+    // the extractor-set TypeId never out-ranks those with an unqualified name.
+    let src = "const x: Foo = make();\n";
+    let s = sym(src);
+    let v = s.iter().find(|x| x.name == "x").expect("const symbol");
+    assert_eq!(v.signature.as_deref(), Some("const x"));
+}
+
+#[test]
+fn ambient_object_type_annotation_keeps_bare_signature() {
+    // Object-type annotations carry their members as symbols; the signature
+    // stays bare so no object-literal text is interned as a declared type.
+    let src = "declare const Api: { fetchOne(id: number): string };\n";
+    let s = sym(src);
+    let v = s
+        .iter()
+        .find(|x| x.name == "Api" && x.kind == SymbolKind::Variable)
+        .expect("declare const symbol");
+    assert_eq!(v.signature.as_deref(), Some("const Api"));
+}
+
+#[test]
+fn ambient_named_type_annotation_fills_declared_type() {
+    use crate::type_checker::core::types::{Type, TypeArena};
+    let arena = TypeArena::new();
+    let mut result = extract::extract("declare const gadget: ApiKind;\n", false);
+    crate::languages::common::populate_return_type_ids(&mut result, &arena, "typescript");
+    let v = result
+        .symbols
+        .iter()
+        .find(|x| x.name == "gadget")
+        .expect("declare const symbol");
+    let id = v.declared_type.expect("declared_type filled from signature");
+    assert!(
+        matches!(arena.get(id), Type::Class(n) if n == "ApiKind"),
+        "declared_type must intern the annotation's named type"
+    );
+}

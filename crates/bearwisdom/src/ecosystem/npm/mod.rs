@@ -146,8 +146,13 @@ impl Ecosystem for NpmEcosystem {
         files
     }
 
-    fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
-        ts_post_process_external(parsed);
+    fn post_process_parsed(
+        &self,
+        _dep: &ExternalDepRoot,
+        parsed: &mut crate::types::ParsedFile,
+        arena: &crate::type_checker::core::types::TypeArena,
+    ) {
+        ts_post_process_external(parsed, arena);
     }
 
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
@@ -423,8 +428,12 @@ impl ExternalSourceLocator for NpmEcosystem {
         walk_ts_external_root(dep)
     }
 
-    fn post_process_parsed(&self, parsed: &mut crate::types::ParsedFile) {
-        ts_post_process_external(parsed);
+    fn post_process_parsed(
+        &self,
+        parsed: &mut crate::types::ParsedFile,
+        arena: &crate::type_checker::core::types::TypeArena,
+    ) {
+        ts_post_process_external(parsed, arena);
     }
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {

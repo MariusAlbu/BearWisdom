@@ -5,6 +5,10 @@
 use crate::ecosystem::externals::ts_package_from_virtual_path;
 
 use super::symbol_index::NPM_GLOBALS_MODULE;
+
+#[cfg(test)]
+#[path = "post_process_tests.rs"]
+mod tests;
 use super::ts_scan::{scan_declare_global_blocks, scan_global_script_top_level_decls};
 use super::{normalize_virtual_rel, LEGACY_ECOSYSTEM_TAG};
 
@@ -124,7 +128,10 @@ pub(crate) fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile,
 /// package. Both demand-driven entry points (`stage_link::seed_demand_*`
 /// and `expand::expand_*`) must call this so the symbol table is shaped
 /// the same regardless of which pass pulled the file in.
-pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
+pub(crate) fn ts_post_process_external(
+    pf: &mut crate::types::ParsedFile,
+    arena: &crate::type_checker::core::types::TypeArena,
+) {
     let Some(pkg) = ts_package_from_virtual_path(&pf.path).map(str::to_string) else {
         return;
     };
@@ -148,7 +155,7 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
             backfill_declare_global_symbols(pf, source);
         }
     }
-    prefix_ts_external_symbols(pf, &pkg);
+    prefix_ts_external_symbols(pf, &pkg, arena);
     // `extract_component_selectors` (run in the parse pass) keyed each selector on
     // the class's BARE qname, but every symbol was just package-prefixed — so prefix
     // the selector's class qname to match. An external `<nb-card>` must map to
@@ -161,7 +168,11 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
     }
 }
 
-pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
+pub(crate) fn prefix_ts_external_symbols(
+    pf: &mut crate::types::ParsedFile,
+    package: &str,
+    arena: &crate::type_checker::core::types::TypeArena,
+) {
     if package.is_empty() {
         return;
     }
@@ -188,11 +199,19 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
         // qname. After prefixing, those TypeIds reference a name no symbol
         // carries, so Phase A would write a self/return type the chain walker
         // can't resolve and Phase B (which only fills empty slots) couldn't
-        // correct it — a fresh parse then resolves FEWER chains than a warm
-        // cache hit, which drops these fields. Clear them so the two paths
-        // ingest identically and Phase B re-derives the correctly-qualified
-        // types from refs/signatures.
-        sym.declared_type = None;
+        // correct it. A Variable's declared type (`declare const api: ApiType`)
+        // is requalified with the package prefix instead — the annotation names
+        // a type in the package's own surface, and the ref that carried the
+        // local name is rewritten to the import's source name by the
+        // import-semantics pass, so Phase B has nothing to re-derive it from.
+        // Everything else is cleared so Phase B re-derives the
+        // correctly-qualified types from refs/signatures.
+        sym.declared_type = match sym.declared_type.take() {
+            Some(id) if matches!(sym.kind, crate::types::SymbolKind::Variable) => {
+                requalify_named_type(arena, id, &prefix)
+            }
+            _ => None,
+        };
         sym.return_type = None;
         sym.param_types.clear();
         sym.generic_params.clear();
@@ -208,5 +227,41 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
         if !name.starts_with(&prefix) && !name.starts_with(&globals_prefix) {
             *name = format!("{prefix}{name}");
         }
+    }
+}
+
+/// Requalify a declared type whose nominal head carries the bare (pre-prefix)
+/// name, minting the package-qualified equivalent: `Class("ApiType")` →
+/// `Class("{prefix}ApiType")`, `Apply { ApiType, args }` → the same with a
+/// requalified base and the args untouched (bare arg heads resolve by name at
+/// walk time). Already-prefixed heads pass through unchanged, keeping the
+/// rewrite idempotent. Any other shape (primitive, function, union, …) returns
+/// `None` — the caller drops it, matching the pre-prefix clear.
+fn requalify_named_type(
+    arena: &crate::type_checker::core::types::TypeArena,
+    id: crate::type_checker::core::types::TypeId,
+    prefix: &str,
+) -> Option<crate::type_checker::core::types::TypeId> {
+    use crate::type_checker::core::types::Type;
+    match arena.get(id) {
+        Type::Class(name) => {
+            if name.starts_with(prefix) {
+                Some(id)
+            } else {
+                Some(arena.class(&format!("{prefix}{name}")))
+            }
+        }
+        Type::Apply { base, args } => match arena.get(base) {
+            Type::Class(name) => {
+                if name.starts_with(prefix) {
+                    Some(id)
+                } else {
+                    let new_base = arena.class(&format!("{prefix}{name}"));
+                    Some(arena.intern(Type::Apply { base: new_base, args }))
+                }
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }

@@ -1820,3 +1820,30 @@ fn reexport_alias_leads_but_keeps_same_qname_fallbacks() {
     // The declaring package's own qname is untouched.
     assert_eq!(tree.by_qualified_name("lib-pkg.util").map(|s| s.id), Some(20));
 }
+
+#[test]
+fn merged_value_type_pair_keeps_declared_type_off_field_slots() {
+    // `declare var D: DConstructor` + `interface D` share one qname. The
+    // value's declared type must not occupy the field slots — the qname slot
+    // types INSTANCES of the type, and the id map cannot tell the two
+    // same-qname symbols apart.
+    let arena = Arc::new(TypeArena::new());
+    let ctor = arena.class("DConstructor");
+    let api = arena.class("ApiKind");
+    let symbols = vec![
+        make_symbol("D", "D", SymbolKind::Variable, None, Some(ctor), None),
+        make_symbol("D", "D", SymbolKind::Interface, None, None, None),
+        make_symbol("gadget", "gadget", SymbolKind::Variable, None, Some(api), None),
+    ];
+    let pf = make_parsed_file("src/lib.d.ts", symbols, Vec::new());
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/lib.d.ts".to_string(), "D".to_string()), 1);
+    id_map.insert(("src/lib.d.ts".to_string(), "gadget".to_string()), 2);
+    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+
+    assert_eq!(tree.field_type_id("D"), None);
+    assert_eq!(tree.field_type_id_of(1), None);
+    // A variable whose qname no type owns keeps its declared type on both slots.
+    assert_eq!(tree.field_type_id("gadget"), Some(api));
+    assert_eq!(tree.field_type_id_of(2), Some(api));
+}

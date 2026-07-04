@@ -327,6 +327,10 @@ impl Compilation {
         // -----------------------------------------------------------------------
         // Phase A — structural indexes (Passes 1–4) over all files.
         // -----------------------------------------------------------------------
+        // Extractor-set declared types, applied after the batch loop so the
+        // merged value+type qname guard sees every type declaration:
+        // `(qname, symbol id, declared TypeId)`.
+        let mut pending_field_types: Vec<(String, i64, TypeId)> = Vec::new();
         for pf in parsed {
             let file_arc: Arc<str> = Arc::from(pf.path.as_str());
 
@@ -442,29 +446,31 @@ impl Compilation {
                 }
 
                 // Type metadata from extractor-set TypeIds. Ref-derived
-                // type_info fills absent slots in Phase B below.
+                // type_info fills absent slots in Phase B below. Return types
+                // apply immediately; declared (field) types are deferred until
+                // the whole batch's symbols are indexed, so the merged
+                // value+type qname guard below sees every type declaration.
                 if sym.declared_type.is_some() || sym.return_type.is_some() {
-                    let ti = self
-                        .type_info
-                        .entry(sym.qualified_name.clone())
-                        .or_insert_with(TypeInfo::default);
                     if let Some(type_id) = sym.declared_type {
-                        ti.field_type_id = Some(type_id);
+                        pending_field_types.push((
+                            sym.qualified_name.clone(),
+                            info.id,
+                            type_id,
+                        ));
                     }
                     if let Some(type_id) = sym.return_type {
+                        let ti = self
+                            .type_info
+                            .entry(sym.qualified_name.clone())
+                            .or_insert_with(TypeInfo::default);
                         ti.return_type_id = Some(type_id);
-                    }
-                    // Mirror extractor-set types onto the id-keyed slot (info.id),
-                    // so an id-driven read sees the same extractor-wins precedence
-                    // as the qname slot.
-                    let tid = self
-                        .type_info_by_id
-                        .entry(info.id)
-                        .or_insert_with(TypeInfo::default);
-                    if let Some(type_id) = sym.declared_type {
-                        tid.field_type_id = Some(type_id);
-                    }
-                    if let Some(type_id) = sym.return_type {
+                        // Mirror extractor-set types onto the id-keyed slot
+                        // (info.id), so an id-driven read sees the same
+                        // extractor-wins precedence as the qname slot.
+                        let tid = self
+                            .type_info_by_id
+                            .entry(info.id)
+                            .or_insert_with(TypeInfo::default);
                         tid.return_type_id = Some(type_id);
                     }
                 }
@@ -579,6 +585,27 @@ impl Compilation {
                         .insert(id, intern_alias_target(&self.arena, target));
                 }
             }
+        }
+
+        // Extractor-set declared types. A value whose qname is ALSO a type
+        // declaration — the merged `declare var Date: DateConstructor` +
+        // `interface Date` global pair — must not write its declared type into
+        // either field slot: the qname slot types INSTANCES of the type, and
+        // the id map cannot tell the two same-qname symbols apart. Same rule
+        // as the ref-derived guard in Phase B; applied here after every file's
+        // symbols are indexed so the check sees the whole batch.
+        for (qname, id, type_id) in pending_field_types {
+            let qname_owned_by_type = self
+                .by_qname_all
+                .get(&qname)
+                .is_some_and(|cands| cands.iter().any(|c| is_type_like(&c.kind)));
+            if qname_owned_by_type {
+                continue;
+            }
+            let ti = self.type_info.entry(qname).or_insert_with(TypeInfo::default);
+            ti.field_type_id = Some(type_id);
+            let tid = self.type_info_by_id.entry(id).or_insert_with(TypeInfo::default);
+            tid.field_type_id = Some(type_id);
         }
 
         // Module-entry map — bare package specifier → the indexed entry file that

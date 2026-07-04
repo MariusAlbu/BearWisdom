@@ -13,8 +13,8 @@ use super::reexports::{
 };
 use super::type_scan::{collect_type_param_scopes, is_ts_primitive, scan_all_type_identifiers};
 use super::{
-    alias_classify, annotation_members, calls, decorators, helpers, imports, narrowing, params,
-    symbols, types,
+    alias_classify, annotation_members, annotation_named_type, calls, decorators, helpers,
+    imports, narrowing, params, symbols, types,
 };
 
 use crate::ecosystem::ecmascript_imports::build_import_map;
@@ -758,6 +758,15 @@ fn extract_node(
                     symbols,
                     refs,
                     alias_targets,
+                    decl_syms_start,
+                );
+                // A named-type annotation on an ambient declarator carries the
+                // value's whole member surface — record it on the symbol's
+                // signature so the arena pass captures it as the declared type.
+                annotation_named_type::enrich_ambient_declarator_signatures(
+                    &child,
+                    src,
+                    symbols,
                     decl_syms_start,
                 );
                 // Also recurse so that `new_expression` and `call_expression` arms fire

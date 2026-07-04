@@ -138,11 +138,16 @@ pub trait ExternalSourceLocator: Send + Sync {
     }
 
     /// Optional per-file post-processing hook applied after the main
-    /// extractor has parsed a walked file. Used by the TS locator today
-    /// to prefix bare declaration symbols with their package name so the
-    /// Tier-1 resolver can match `package.Symbol` lookups. Default is a
-    /// no-op.
-    fn post_process_parsed(&self, _parsed: &mut ParsedFile) {}
+    /// extractor has parsed a walked file. The TS locator uses it to prefix
+    /// bare declaration symbols with their package name so the resolver can
+    /// match `package.Symbol` lookups, requalifying extractor-set declared
+    /// types against `arena` in the same pass. Default is a no-op.
+    fn post_process_parsed(
+        &self,
+        _parsed: &mut ParsedFile,
+        _arena: &crate::type_checker::core::types::TypeArena,
+    ) {
+    }
 }
 
 /// Extract the package name from a TS external-file virtual path like
