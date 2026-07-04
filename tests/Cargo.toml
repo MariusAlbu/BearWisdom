@@ -19,3 +19,6 @@ tokio              = { workspace = true }
 prost              = { workspace = true }
 rusqlite           = { workspace = true }
 zip                = { workspace = true }
+
+[dev-dependencies]
+cargo_metadata     = { workspace = true }
