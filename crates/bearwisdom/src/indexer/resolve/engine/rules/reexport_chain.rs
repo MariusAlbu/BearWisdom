@@ -27,20 +27,23 @@ impl LookupRule for ReexportChainRule {
         let target = ctx.target();
         let edge_kind = ctx.edge_kind();
 
-        // Shape (a): bare target matches a non-relative import.
+        // Shape (a): bare target matches a non-relative import — by its BOUND
+        // name (a rename binds only the alias). The module-side lookup keys on
+        // the import's own declared name, which is what the module re-exports.
         if let Some(matching) = ctx
             .file_ctx
             .imports
             .iter()
-            .find(|imp| imp.imported_name == target)
+            .find(|imp| imp.bound_name() == target)
         {
             if let Some(module) = matching.module_path.as_deref() {
                 if !module.is_empty() && !is_relative_specifier(module) {
+                    let declared = matching.imported_name.as_str();
                     if let Some(id) =
-                        ctx.lookup.resolve_external_reexport(target, target, module)
+                        ctx.lookup.resolve_external_reexport(declared, declared, module)
                     {
                         if let Some(sid) =
-                            candidate_with_compatible_kind(ctx, target, id, edge_kind)
+                            candidate_with_compatible_kind(ctx, declared, id, edge_kind)
                         {
                             return LookupResult::Resolved(
                                 ctx.resolved(sid, "default_reexport_chain"),

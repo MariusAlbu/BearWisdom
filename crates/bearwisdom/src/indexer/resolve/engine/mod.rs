@@ -177,6 +177,12 @@ impl Binder {
         Self::new(rules::default_rules())
     }
 
+    /// The module-evidence subset — the rungs a declined member chain with an
+    /// extractor-set `module` may still run. See `rules::module_evidence_rules`.
+    pub fn module_evidence() -> Self {
+        Self::new(rules::module_evidence_rules())
+    }
+
     /// Resolve one ref against the ladder. See [`BindOutcome`].
     pub fn bind(&self, ctx: &BinderContext) -> BindOutcome {
         for rule in &self.rules {

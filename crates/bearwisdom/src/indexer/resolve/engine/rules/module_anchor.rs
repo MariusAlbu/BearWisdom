@@ -111,22 +111,33 @@ impl LookupRule for ModuleAnchorRule {
                 }
                 let module_as_path = separators_to_slash(module, sep);
                 let leaf = module_leaf(module, sep).to_lowercase();
-                for sym in ctx.lookup.by_name(target) {
-                    if !(ctx.kind)(edge_kind, &sym.kind) {
-                        continue;
-                    }
-                    let path = sym.file_path.replace('\\', "/");
-                    if path.contains(&module_as_path) {
-                        return LookupResult::Resolved(
-                            ctx.resolved(sym.id, "default_module_anchor"),
-                        );
-                    }
-                    if leaf != module_as_path
-                        && path_stem_matches(&path.to_lowercase(), &leaf)
-                    {
-                        return LookupResult::Resolved(
-                            ctx.resolved(sym.id, "default_module_anchor"),
-                        );
+                let candidates = ctx.lookup.by_name(target);
+                // Two passes: top-level declarations (qname == bare target)
+                // first, member declarations second. A module-qualified target
+                // names a top-level item of that module, so `mod::f` must not
+                // bind a member `T.f` when the located file set also declares a
+                // top-level `f`.
+                for top_level_pass in [true, false] {
+                    for sym in &candidates {
+                        if (sym.qualified_name == target) != top_level_pass {
+                            continue;
+                        }
+                        if !(ctx.kind)(edge_kind, &sym.kind) {
+                            continue;
+                        }
+                        let path = sym.file_path.replace('\\', "/");
+                        if path.contains(&module_as_path) {
+                            return LookupResult::Resolved(
+                                ctx.resolved(sym.id, "default_module_anchor"),
+                            );
+                        }
+                        if leaf != module_as_path
+                            && path_stem_matches(&path.to_lowercase(), &leaf)
+                        {
+                            return LookupResult::Resolved(
+                                ctx.resolved(sym.id, "default_module_anchor"),
+                            );
+                        }
                     }
                 }
             }

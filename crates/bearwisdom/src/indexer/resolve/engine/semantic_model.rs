@@ -36,6 +36,10 @@ pub enum SolveOutcome {
 /// it to one ref at a time.
 pub struct SemanticModel {
     engine: Binder,
+    /// Module-evidence subset for a declined member chain that carries an
+    /// extractor-set `module` — every rung in it is scoped by that module, so
+    /// the fall-through can never bind an unrelated same-named sibling.
+    module_engine: Binder,
 }
 
 impl SemanticModel {
@@ -43,12 +47,16 @@ impl SemanticModel {
     pub fn production() -> Self {
         Self {
             engine: Binder::production(),
+            module_engine: Binder::module_evidence(),
         }
     }
 
     /// Build a solver over an explicit rule set (tests inject a subset).
     pub fn new(engine: Binder) -> Self {
-        Self { engine }
+        Self {
+            engine,
+            module_engine: Binder::module_evidence(),
+        }
     }
 
     /// Solve one ref. A chain-bearing ref (member access) walks the Symbol tree;
@@ -66,20 +74,38 @@ impl SemanticModel {
                 Ok(res) => return SolveOutcome::Resolved(res),
                 Err(cause) => {
                     // A multi-segment chain the walk declined is normally a genuine
-                    // miss: a same-named sibling must not hijack `a.b.c`. Two
-                    // exceptions both root on a MODULE the chain walker can't type
-                    // as a value, so the bare-name ladder resolves the member under
-                    // that module (scoped, so it can't bind an unrelated sibling):
-                    //   - a namespace/module SYMBOL root (`React.useState`);
-                    //   - a wildcard/namespace IMPORT root (`import * as v from
-                    //     'm'; v.x`) — the alias names no value, and the member is a
-                    //     module export.
+                    // miss: a same-named sibling must not hijack `a.b.c`. Three
+                    // exceptions all root on a MODULE the chain walker can't type
+                    // as a value, so a scoped ladder resolves the member under
+                    // that module:
+                    //   - a namespace/module SYMBOL root (`React.useState`) and a
+                    //     wildcard/namespace IMPORT root (`import * as v; v.x`)
+                    //     run the full bare-name ladder, whose import rungs carry
+                    //     the scoping;
+                    //   - a ref whose `module` IS the chain's own qualifier path
+                    //     (a qualified `mod::path::f()` call — the target is a
+                    //     direct member of the module) runs ONLY the
+                    //     module-evidence rungs. Every probe is scoped by the
+                    //     module, so no ambient / same-file / global rung can
+                    //     bind an unrelated same-named sibling. A module tag that
+                    //     merely names where the chain's ROOT was imported from
+                    //     (`client.get()` tagged with the client's package) says
+                    //     nothing about the member's home and does not qualify.
                     // A single-segment "chain" carries no receiver and always falls
                     // through.
                     if chain.segments.len() > 1
                         && !chain_root_is_namespace(chain, lookup)
                         && !chain_root_is_wildcard_import(chain, file_ctx)
                     {
+                        if module_is_chain_qualifier(ref_ctx.extracted_ref, chain, profile) {
+                            return match self.resolve_module_scoped(
+                                ref_ctx, file_ctx, lookup, profile,
+                            ) {
+                                BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
+                                BindOutcome::Drained => SolveOutcome::Drained,
+                                BindOutcome::Unresolved => SolveOutcome::Unresolved(cause),
+                            };
+                        }
                         return SolveOutcome::Unresolved(cause);
                     }
                 }
@@ -115,6 +141,51 @@ impl SemanticModel {
         };
         self.engine.bind(&ctx)
     }
+
+    /// Solve a declined module-tagged member chain through the module-evidence
+    /// rung subset. Same context assembly as `resolve_chain_less`; only the
+    /// rule set differs.
+    fn resolve_module_scoped(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+    ) -> BindOutcome {
+        let table = profile.kind_compatible_table;
+        let kind = move |edge: EdgeKind, sym_kind: &str| kind_ok_table(table, edge, sym_kind);
+        let ctx = BinderContext {
+            file_ctx,
+            ref_ctx,
+            lookup,
+            kind: &kind,
+            profile,
+        };
+        self.module_engine.bind(&ctx)
+    }
+}
+
+/// `true` when the ref's extractor-set `module` is exactly the chain's own
+/// qualifier path — every segment but the target, joined by the profile's
+/// separator (or the universal `.`). That shape means the target is a DIRECT
+/// member of the module (`serde_json::from_value` → module `serde_json`,
+/// chain `[serde_json, from_value]`), so the module-evidence rungs can bind
+/// it. A module tag naming where the chain's root was imported from joins to
+/// a different string and is rejected.
+fn module_is_chain_qualifier(
+    r: &crate::types::ExtractedRef,
+    chain: &crate::types::MemberChain,
+    profile: &LanguageProfile,
+) -> bool {
+    let Some(module) = r.module.as_deref() else {
+        return false;
+    };
+    let quals = &chain.segments[..chain.segments.len() - 1];
+    let mut for_sep = |sep: &str| {
+        let joined = quals.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(sep);
+        joined == module
+    };
+    for_sep(profile.qname_separator) || for_sep(".")
 }
 
 /// `true` when the chain's root segment names a namespace/module declaration

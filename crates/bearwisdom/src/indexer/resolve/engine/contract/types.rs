@@ -20,7 +20,8 @@ use super::SymbolLookup;
 /// Normalized import entry, built from ExtractedRef data.
 #[derive(Debug, Clone)]
 pub struct ImportEntry {
-    /// The name brought into scope (e.g., "CatalogItem", "Foo").
+    /// The module's own declared name for the imported symbol (e.g.,
+    /// "CatalogItem", "Foo") — the name its declaring files carry.
     pub imported_name: String,
     /// The module/namespace path (e.g., "eShop.Catalog.API.Model", "./foo").
     pub module_path: Option<String>,
@@ -28,6 +29,18 @@ pub struct ImportEntry {
     pub alias: Option<String>,
     /// Whether this is a wildcard/namespace import (e.g., `using NS;`).
     pub is_wildcard: bool,
+}
+
+impl ImportEntry {
+    /// The name this import BINDS in the importing file: the alias when
+    /// renamed (`use m::Orig as Bound` brings only `Bound` into scope),
+    /// else the imported name. A rename's ORIGINAL name is not in scope —
+    /// a rule asking "does an import bind `target`?" must compare this,
+    /// while a rule looking the declaration up inside the module keys on
+    /// `imported_name`.
+    pub fn bound_name(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.imported_name)
+    }
 }
 
 /// Context for the file being resolved. Built once per file by the resolver.

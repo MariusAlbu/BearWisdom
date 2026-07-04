@@ -1,8 +1,12 @@
-use super::{chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test};
-use crate::indexer::resolve::engine::testkit::{file_ctx, import, sym, Lookup};
+use super::{
+    chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test, SemanticModel,
+    SolveOutcome,
+};
+use crate::indexer::resolve::engine::testkit::{file_ctx, import, ref_ctx, source_symbol, sym, Lookup};
 use crate::languages::javascript::profile::JAVASCRIPT_PROFILE;
+use crate::languages::rust_lang::profile::RUST_PROFILE;
 use crate::languages::typescript::profile::TYPESCRIPT_PROFILE;
-use crate::types::{ChainSegment, EdgeKind, MemberChain, SegmentKind};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 
 fn nseg(name: &str) -> ChainSegment {
     ChainSegment {
@@ -31,6 +35,137 @@ fn namespace_rooted_chain_is_detected() {
         segments: vec![nseg("React"), nseg("useState")],
     };
     assert!(chain_root_is_namespace(&chain, &lookup));
+}
+
+/// A qualified call chain the walker can't root (`m::f(v)` — the root names a
+/// module path, never a typable value) but whose ref carries extractor-set
+/// `module` evidence falls through to the ladder, where the module anchor
+/// binds the target inside the module's own files.
+#[test]
+fn module_tagged_declined_chain_falls_through_to_ladder() {
+    let lookup = Lookup::new().with(sym(
+        7,
+        "from_value",
+        "from_value",
+        "function",
+        "ext:rust:ser_x/src/value/mod.rs",
+    ));
+    let seg = |name: &str, kind: SegmentKind, is_call: bool| ChainSegment {
+        name: name.to_string(),
+        node_kind: "scoped_identifier".to_string(),
+        kind,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    };
+    let mut r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "from_value".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: Some("ser_x".to_string()),
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![
+                seg("ser_x", SegmentKind::Identifier, false),
+                seg("from_value", SegmentKind::Property, true),
+            ],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    let src = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let solver = SemanticModel::production();
+
+    let rc = ref_ctx(&r, &src, vec![]);
+    match solver.get_symbol_info(&rc, &fc, &lookup, &RUST_PROFILE) {
+        SolveOutcome::Resolved(res) => assert_eq!(res.target_symbol_id, 7),
+        _ => panic!("module-tagged declined chain must reach the module anchor"),
+    }
+
+    // Control: the same declined chain WITHOUT module evidence stays a hard
+    // miss — no ladder fall-through, no sibling hijack.
+    r.module = None;
+    let rc = ref_ctx(&r, &src, vec![]);
+    assert!(matches!(
+        solver.get_symbol_info(&rc, &fc, &lookup, &RUST_PROFILE),
+        SolveOutcome::Unresolved(_)
+    ));
+
+    // Control: a module tag that is NOT the chain's own qualifier (it names
+    // where the ROOT was imported from) must not fall through either — even
+    // though the module-scoped rungs could locate the same target under it.
+    r.module = Some("other_pkg".to_string());
+    let rc = ref_ctx(&r, &src, vec![]);
+    assert!(matches!(
+        solver.get_symbol_info(&rc, &fc, &lookup, &RUST_PROFILE),
+        SolveOutcome::Unresolved(_)
+    ));
+}
+
+/// A module-tagged declined chain runs ONLY the module-evidence rungs: when
+/// the module locates nothing, a same-named candidate that a full-ladder rung
+/// (same-file / ambient / global) would bind must stay untouched — the module
+/// evidence scopes the fall-through, it does not widen it.
+#[test]
+fn module_tagged_declined_chain_cannot_hijack_a_same_named_sibling() {
+    // The only `parse` in the index lives in the REF'S OWN FILE — the classic
+    // same-file hijack bait (the fixture file context is `src/main.ts`). The
+    // ref's module names a package that declares nothing, so the
+    // module-scoped rungs all miss.
+    let lookup = Lookup::new().with(sym(9, "parse", "parse", "function", "src/main.ts"));
+    let seg = |name: &str, kind: SegmentKind, is_call: bool| ChainSegment {
+        name: name.to_string(),
+        node_kind: "scoped_identifier".to_string(),
+        kind,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    };
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "parse".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: Some("other_crate".to_string()),
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![
+                seg("other_crate", SegmentKind::Identifier, false),
+                seg("parse", SegmentKind::Property, true),
+            ],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    let src = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let solver = SemanticModel::production();
+    let rc = ref_ctx(&r, &src, vec![]);
+    assert!(
+        matches!(
+            solver.get_symbol_info(&rc, &fc, &lookup, &RUST_PROFILE),
+            SolveOutcome::Unresolved(_)
+        ),
+        "a module miss must stay a miss — the same-file sibling is not other_crate's parse"
+    );
 }
 
 /// `rendered.getByText` — `rendered` is a value, not a namespace; the chain

@@ -145,3 +145,18 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
         Box::new(RankedCandidatesRule),
     ]
 }
+
+/// The module-evidence subset, in ladder order: only the rungs that resolve
+/// or decline THROUGH the ref's extractor-set `module`. A declined member
+/// chain that carries module evidence re-runs against exactly these — the
+/// module scopes every probe, so no ambient / same-file / global rung can
+/// bind an unrelated same-named sibling.
+pub fn module_evidence_rules() -> Vec<Box<dyn LookupRule>> {
+    vec![
+        Box::new(ModuleSkipRule),
+        Box::new(BuiltinSkipRule),
+        Box::new(WorkspacePackageRule),
+        Box::new(ModuleAnchorRule),
+        Box::new(RefModuleRule),
+    ]
+}

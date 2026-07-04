@@ -113,6 +113,57 @@ fn yields_to_explicit_import_binding_the_same_name() {
 }
 
 #[test]
+fn does_not_yield_to_a_renamed_import_whose_original_name_matches() {
+    // `use m::helper as external_helper;` binds only `external_helper` — the
+    // ORIGINAL name stays free for the file's own `helper` declaration.
+    let lookup = FileLookup::new().with(sym(25, "helper", "helper", "function", "src/main.ts"));
+    let r = call_ref("helper");
+    let s = source_symbol("caller");
+    let fc = FileContext {
+        file_path: "src/main.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "helper".to_string(),
+            module_path: Some("./utils".to_string()),
+            alias: Some("external_helper".to_string()),
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext { file_ctx: &fc, ref_ctx: &rc, lookup: &lookup, kind: &kind, profile: &DEFAULT_PROFILE };
+    match SameFileRule.apply(&ctx) {
+        LookupResult::Resolved(res) => assert_eq!(res.target_symbol_id, 25),
+        _ => panic!("expected Resolved: a rename's original name must not suppress the sibling"),
+    }
+}
+
+#[test]
+fn yields_to_a_renamed_import_on_its_bound_name() {
+    // The ALIAS is the bound name — a same-file sibling must not shadow it.
+    let lookup =
+        FileLookup::new().with(sym(26, "external_helper", "external_helper", "function", "src/main.ts"));
+    let r = call_ref("external_helper");
+    let s = source_symbol("caller");
+    let fc = FileContext {
+        file_path: "src/main.ts".to_string(),
+        language: "typescript".to_string(),
+        imports: vec![ImportEntry {
+            imported_name: "helper".to_string(),
+            module_path: Some("./utils".to_string()),
+            alias: Some("external_helper".to_string()),
+            is_wildcard: false,
+        }],
+        file_namespace: None,
+    };
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext { file_ctx: &fc, ref_ctx: &rc, lookup: &lookup, kind: &kind, profile: &DEFAULT_PROFILE };
+    assert!(matches!(SameFileRule.apply(&ctx), LookupResult::Pass));
+}
+
+#[test]
 fn does_not_yield_to_wildcard_import() {
     let lookup = FileLookup::new().with(sym(30, "helper", "helper", "function", "src/main.ts"));
     let r = call_ref("helper");

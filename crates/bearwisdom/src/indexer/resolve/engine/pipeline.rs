@@ -1329,11 +1329,27 @@ fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfi
             .filter(|r| r.is_import_binding || r.kind == EdgeKind::Imports)
             .filter_map(|r| {
                 let module = r.module.clone()?;
-                Some(ImportEntry {
-                    imported_name: r.target_name.clone(),
-                    module_path: Some(module),
-                    alias: None,
-                    is_wildcard: r.target_name == "*",
+                // A rename import carries the module's ORIGINAL declared name
+                // as a single-segment chain (`use m::Orig as Bound`). The entry
+                // keys the original name — that is what the module's files
+                // declare — with the locally bound name as the alias.
+                let original = r.chain.as_ref().and_then(|c| match c.segments.as_slice() {
+                    [seg] if seg.name != r.target_name => Some(seg.name.clone()),
+                    _ => None,
+                });
+                Some(match original {
+                    Some(orig) => ImportEntry {
+                        imported_name: orig,
+                        module_path: Some(module),
+                        alias: Some(r.target_name.clone()),
+                        is_wildcard: false,
+                    },
+                    None => ImportEntry {
+                        imported_name: r.target_name.clone(),
+                        module_path: Some(module),
+                        alias: None,
+                        is_wildcard: r.target_name == "*",
+                    },
                 })
             })
             .collect(),

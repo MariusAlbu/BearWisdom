@@ -1255,3 +1255,178 @@ fn collect_return_type_files_follows_rust_path_qualified_head() {
          `::`-qualified path reduced to the bare leaf the location index keys on"
     );
 }
+
+/// A rename import ref (`use m::Orig as Bound;`) carries the module's original
+/// declared name as a single-segment chain. `build_file_context` must key the
+/// entry on the ORIGINAL name — that is what the module's files declare — with
+/// the locally bound name as the alias; a plain import keeps the flat shape.
+#[test]
+fn rename_import_ref_splits_original_name_and_alias() {
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, FlowMeta, MemberChain, ParsedFile, SegmentKind,
+    };
+    fn import_ref(target: &str, module: &str, original: Option<&str>) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Imports,
+            line: 0,
+            col: 0,
+            module: Some(module.into()),
+            chain: original.map(|orig| MemberChain {
+                segments: vec![ChainSegment {
+                    name: orig.into(),
+                    node_kind: "use_as_original".into(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                }],
+            }),
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+    let pf = ParsedFile {
+        path: "src/main.rs".into(),
+        language: "rust".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: Vec::new(),
+        refs: vec![
+            import_ref("JsonValue", "ser_x", Some("Value")),
+            import_ref("Deserializer", "ser_x", None),
+        ],
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let fc = super::build_file_context(
+        "rust",
+        &pf,
+        &crate::languages::rust_lang::profile::RUST_PROFILE,
+    );
+    let renamed = fc
+        .imports
+        .iter()
+        .find(|i| i.alias.as_deref() == Some("JsonValue"))
+        .expect("rename import must land an aliased entry");
+    assert_eq!(renamed.imported_name, "Value");
+    assert_eq!(renamed.module_path.as_deref(), Some("ser_x"));
+    let plain = fc
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "Deserializer")
+        .expect("plain import must keep the flat shape");
+    assert_eq!(plain.alias, None);
+}
+/// A rename import whose ORIGINAL name equals a local struct's name (`use
+/// ext_pkg::Widget as ExternalWidgetTrait;` next to `pub struct Widget`), with
+/// the external declaration materialized and a later crate-rooted import of
+/// the same name (`use super::Widget` in a nested mod). Bare `Widget` refs
+/// must keep binding the LOCAL struct: the rename binds only its alias, so
+/// neither the workspace-package specifier pick nor the same-file yield may
+/// treat the original name as imported.
+#[test]
+fn rename_import_original_name_does_not_shadow_local_struct() {
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+    fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(), qualified_name: qname.into(), kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
+            signature: None, doc_comment: None, scope_path: None,
+            parent_index: None, declared_type: None, return_type: None,
+            param_types: Vec::new(), generic_params: Vec::new(),
+        }
+    }
+    fn import_ref(target: &str, module: &str, original: Option<&str>, line: u32) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false, is_reexport: false, source_symbol_index: 0,
+            target_name: target.into(), kind: EdgeKind::Imports,
+            line, col: 0, module: Some(module.into()),
+            chain: original.map(|orig| MemberChain { segments: vec![ChainSegment {
+                name: orig.into(), node_kind: "use_as_original".into(),
+                kind: SegmentKind::Identifier, declared_type: None, type_args: Vec::new(),
+                optional_chaining: false, byte_offset: 0, declared_type_id: None,
+                is_call: false, call_args: Vec::new(), type_arg_ids: Vec::new(),
+            }]}),
+            byte_offset: 0, namespace_segments: Vec::new(), call_args: Vec::new(),
+        }
+    }
+    let type_ref = ExtractedRef {
+        is_import_binding: false, is_reexport: false, source_symbol_index: 1,
+        target_name: "Widget".into(), kind: EdgeKind::TypeRef,
+        line: 10, col: 0, module: None, chain: None,
+        byte_offset: 100, namespace_segments: Vec::new(), call_args: Vec::new(),
+    };
+    let mut pf = ParsedFile {
+        path: "widgets/src/widget.rs".into(), language: "rust".into(),
+        content_hash: String::new(), size: 0, line_count: 0, mtime: None, package_id: Some(1),
+        symbols: vec![
+            esym("Widget", "Widget", SymbolKind::Struct),
+            esym("caller", "caller", SymbolKind::Function),
+        ],
+        refs: vec![
+            import_ref("ExternalWidgetTrait", "ext_pkg", Some("Widget"), 3),
+            type_ref,
+            import_ref("Widget", "crate", None, 200),
+        ],
+        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
+        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
+        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+    };
+    pf.symbols[0].visibility = Some(Visibility::Public);
+    let ext_pf = ParsedFile {
+        path: "ext:rust:ext_pkg/src/lib.rs".into(), language: "rust".into(),
+        content_hash: String::new(), size: 0, line_count: 0, mtime: None, package_id: None,
+        symbols: vec![esym("Widget", "Widget", SymbolKind::Interface)],
+        refs: Vec::new(),
+        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
+        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
+        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    id_map.insert(("widgets/src/widget.rs".to_string(), "Widget".to_string()), 1i64);
+    id_map.insert(("widgets/src/widget.rs".to_string(), "caller".to_string()), 2i64);
+    id_map.insert(("ext:rust:ext_pkg/src/lib.rs".to_string(), "Widget".to_string()), 3i64);
+    let arena = Arc::new(TypeArena::new());
+    let files = [pf, ext_pf];
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &solver, &id_map);
+    assert!(
+        edges.iter().any(|e| e.1 == 1),
+        "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
+    );
+    assert!(
+        !edges.iter().any(|e| e.1 == 3),
+        "the rename's original name must not divert the bind to the external declaration"
+    );
+}

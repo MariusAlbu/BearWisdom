@@ -327,6 +327,31 @@ fn value_root_declines_foreign_internal_same_name_unless_imported() {
 }
 
 #[test]
+fn renamed_external_import_roots_on_original_declared_name() {
+    // `use m::Orig as Bound; Bound::Variant(x)` — the import entry binds the
+    // local alias to the module's ORIGINAL declared name. The root must look
+    // the original up inside the module's files (nothing there is named by
+    // the local alias) and the member then resolves on that declaration.
+    let lookup = Lookup::new()
+        .with(sym(1, "Value", "Value", "enum", "ext:rust:ser_x/src/value/mod.rs"))
+        .with_member(
+            "Value",
+            sym(2, "String", "Value.String", "enum_member", "ext:rust:ser_x/src/value/mod.rs"),
+        );
+    let mut imp = import("Value", Some("ser_x"));
+    imp.alias = Some("JsonValue".to_string());
+    let segs = vec![
+        seg("JsonValue", false, SegmentKind::Identifier),
+        seg("String", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve_with_fc(&lookup, segs, "caller", &file_ctx(vec![imp], None)),
+        Some(2),
+        "the aliased root must bind through the import's original name"
+    );
+}
+
+#[test]
 fn static_access_root_prefers_internal_type_over_foreign_external_field() {
     // `Index.create()` where the project declares a type `Index` and an
     // unrelated external package carries a FIELD also named `Index` (typed

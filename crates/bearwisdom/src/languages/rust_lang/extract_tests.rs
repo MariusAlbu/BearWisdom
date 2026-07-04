@@ -999,6 +999,110 @@ fn run() {
 }
 
 #[test]
+fn unimported_qualified_call_gets_path_prefix_module() {
+    // A fully qualified call whose root matches no `use` import — crate paths
+    // are in scope without one — carries its own path qualifier as the module.
+    let src = r#"
+fn parse(v: Input) -> Output {
+    ser_x::from_value(v).unwrap()
+}
+"#;
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "from_value")
+        .expect("Expected Calls ref for 'from_value'");
+    assert_eq!(
+        call.module.as_deref(),
+        Some("ser_x"),
+        "unimported qualified call should carry its path prefix as module; got {:?}",
+        call.module
+    );
+}
+
+#[test]
+fn deep_unimported_qualified_call_gets_full_prefix() {
+    // `a::b::leaf()` — every qualifying segment joins into the module.
+    let src = r#"
+fn run() {
+    tokio::sync::channel(8);
+}
+"#;
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "channel")
+        .expect("Expected Calls ref for 'channel'");
+    assert_eq!(call.module.as_deref(), Some("tokio::sync"));
+}
+
+#[test]
+fn self_qualified_calls_get_no_path_prefix_module() {
+    // `Self::` roots resolve through the enclosing type (SelfRef chain) and
+    // `self::` names the current module — neither is path-prefix evidence.
+    let src = r#"
+impl Widget {
+    fn build() -> Widget {
+        self::helper();
+        Self::default_config()
+    }
+}
+"#;
+    let r = extract::extract(src);
+    for target in ["helper", "default_config"] {
+        let call = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == target)
+            .unwrap_or_else(|| panic!("Expected Calls ref for '{target}'"));
+        assert_eq!(
+            call.module, None,
+            "'{target}' must not carry a self-rooted module tag; got {:?}",
+            call.module
+        );
+    }
+}
+
+#[test]
+fn method_chain_call_gets_no_path_prefix_module() {
+    // `config.load()` — a field/method hop is not a scoped path; no module.
+    let src = r#"
+fn run(config: Config) {
+    config.load();
+}
+"#;
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "load")
+        .expect("Expected Calls ref for 'load'");
+    assert_eq!(call.module, None);
+}
+
+#[test]
+fn imported_root_module_wins_over_path_prefix() {
+    // The import map's crate-rooted path stays authoritative for an imported
+    // root; the path-prefix fallback fires only on an import-map miss.
+    let src = r#"
+use crate::db::DbPool;
+
+fn start() {
+    DbPool::acquire();
+}
+"#;
+    let r = extract::extract(src);
+    let call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "acquire")
+        .expect("Expected Calls ref for 'acquire'");
+    assert_eq!(call.module.as_deref(), Some("crate::db"));
+}
+
+#[test]
 fn use_super_inside_nested_mod_gets_crate_absolute_module() {
     // `mod tests { use super::OwnedBytes; ... }` at crate root — the Imports
     // ref for `OwnedBytes` should carry module="crate", not the literal

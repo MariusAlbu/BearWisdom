@@ -137,6 +137,13 @@ pub fn extract(source: &str) -> ExtractionResult {
                             // separators to a path fragment and falls back to the
                             // module leaf to locate the defining file.
                             r.module = Some(module.clone());
+                        } else if let Some(prefix) = scoped_chain_prefix(chain) {
+                            // A qualified call whose root matches no import is
+                            // its own module evidence: crate and module paths
+                            // are in scope without a `use`, so the verbatim
+                            // `::` qualifier is the only module the resolver
+                            // will ever see for this ref.
+                            r.module = Some(prefix);
                         }
                     }
                 }
@@ -158,6 +165,32 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut result = ExtractionResult::new(syms, refs, has_errors);
     result.alias_targets = alias_targets;
     result
+}
+
+/// The `::`-joined qualifier of a pure scoped-path call chain (`a::b::leaf` →
+/// `a::b`), or `None` when any qualifying segment is not a plain path
+/// identifier — a field/method hop, a `self`/`Self` head (resolved through the
+/// enclosing type, not a module), a nested call, or bracketed type-argument
+/// noise the chain builder couldn't flatten.
+fn scoped_chain_prefix(chain: &crate::types::MemberChain) -> Option<String> {
+    use crate::types::SegmentKind;
+    let quals = &chain.segments[..chain.segments.len() - 1];
+    if quals.is_empty() || chain.segments[0].name == "self" {
+        return None;
+    }
+    let mut parts: Vec<&str> = Vec::with_capacity(quals.len());
+    for seg in quals {
+        if seg.node_kind != "scoped_identifier"
+            || !matches!(seg.kind, SegmentKind::Identifier | SegmentKind::Property)
+            || seg.is_call
+            || seg.name.is_empty()
+            || !seg.name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        {
+            return None;
+        }
+        parts.push(&seg.name);
+    }
+    Some(parts.join("::"))
 }
 
 /// True when a ref's target is a declared generic parameter rather than a real

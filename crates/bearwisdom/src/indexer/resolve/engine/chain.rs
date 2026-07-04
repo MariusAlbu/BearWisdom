@@ -20,7 +20,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::contract::{
-    FileContext, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
+    FileContext, ImportEntry, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
@@ -1906,18 +1906,18 @@ fn ext_file_under_module(file_path: &str, root: &str) -> bool {
     modpath == root || modpath.strip_prefix(root).is_some_and(|r| r.starts_with('/'))
 }
 
-/// The full module specifier the chain-root `name` is imported from, when the
-/// import is an EXTERNAL bare specifier (not a relative `./…` path). Relative
-/// imports return None — their declarations are not `ext:` files, so the
-/// scoped filter would be empty anyway; skipping them avoids the work.
-fn external_import_spec<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a str> {
+/// The import entry binding the chain-root `name`, when the import is an
+/// EXTERNAL bare specifier (not a relative `./…` path). Relative imports
+/// return None — their declarations are not `ext:` files, so the scoped
+/// filter would be empty anyway; skipping them avoids the work.
+fn external_import_entry<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a ImportEntry> {
     for import in &file_ctx.imports {
         if import.imported_name == name || import.alias.as_deref() == Some(name) {
             let spec = import.module_path.as_deref()?;
             if spec.starts_with('.') {
                 return None;
             }
-            return Some(spec);
+            return Some(import);
         }
     }
     None
@@ -1933,9 +1933,17 @@ fn import_scoped_external_root(
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
 ) -> Option<Receiver> {
-    let spec = external_import_spec(file_ctx, &seg.name)?;
+    let entry = external_import_entry(file_ctx, &seg.name)?;
+    let spec = entry.module_path.as_deref()?;
     let root = package_root(spec);
-    let by_name = lookup.by_name(&seg.name);
+    // A rename import binds `seg.name` locally, but the module's files declare
+    // the ORIGINAL name — that is the name the scoped candidate set must carry.
+    let lookup_name = if entry.alias.as_deref() == Some(seg.name.as_str()) {
+        entry.imported_name.as_str()
+    } else {
+        seg.name.as_str()
+    };
+    let by_name = lookup.by_name(lookup_name);
     let mut scoped: Vec<&Symbol> = by_name
         .iter()
         .filter(|s| ext_file_under_module(&s.file_path, root))
@@ -1946,8 +1954,8 @@ fn import_scoped_external_root(
     // alias carries the same import-scoped evidence, so the declaration leads
     // the candidate set; the module's own binding symbols stay as fallbacks.
     if let Some(alias) = lookup
-        .reexport_alias_target(&format!("{spec}.{}", seg.name))
-        .or_else(|| lookup.reexport_alias_target(&format!("{root}.{}", seg.name)))
+        .reexport_alias_target(&format!("{spec}.{lookup_name}"))
+        .or_else(|| lookup.reexport_alias_target(&format!("{root}.{lookup_name}")))
     {
         scoped.insert(0, alias);
     }

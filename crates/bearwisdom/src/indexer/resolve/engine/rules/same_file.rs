@@ -27,12 +27,16 @@ impl LookupRule for SameFileRule {
         // Yield to an explicit (non-wildcard) import that binds this name. True
         // lexical locals are already handled by scope_visible (which runs first);
         // a file-level sibling that isn't in the scope chain must not shadow an
-        // import that names the same thing.
+        // import that names the same thing. The name an import BINDS is its
+        // alias when renamed (`use m::Orig as Bound` brings only `Bound` into
+        // scope), else its imported name — a renamed import's ORIGINAL name is
+        // free for a same-file declaration to claim.
         if !target.is_empty()
-            && ctx.file_ctx.imports.iter().any(|imp| {
-                !imp.is_wildcard
-                    && (imp.imported_name == target || imp.alias.as_deref() == Some(target))
-            })
+            && ctx
+                .file_ctx
+                .imports
+                .iter()
+                .any(|imp| !imp.is_wildcard && imp.bound_name() == target)
         {
             return LookupResult::Pass;
         }

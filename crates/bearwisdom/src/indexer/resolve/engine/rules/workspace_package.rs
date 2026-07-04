@@ -44,14 +44,16 @@ impl LookupRule for WorkspacePackageRule {
         let edge_kind = ctx.edge_kind();
 
         // The specifier comes from the ref's own module field first, then from
-        // the import that binds this target by name.
+        // the import that binds this target by name — its BOUND name, so a
+        // rename's original name never diverts the specifier to a module that
+        // does not actually bind `target` in this file.
         let specifier: Option<&str> = match ctx.r().module.as_deref() {
             Some(m) => Some(m),
             None => ctx
                 .file_ctx
                 .imports
                 .iter()
-                .find(|imp| imp.imported_name == target)
+                .find(|imp| imp.bound_name() == target)
                 .and_then(|imp| imp.module_path.as_deref()),
         };
         let Some(specifier) = specifier else {
