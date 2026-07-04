@@ -35,7 +35,7 @@ use crate::types::ParsedFile;
 
 /// Bumped whenever the cached extraction shape changes. It is part of the key,
 /// so a bump makes every prior entry un-matchable (effectively a full flush).
-const EXTRACTOR_SCHEMA_VERSION: u32 = 19;
+const EXTRACTOR_SCHEMA_VERSION: u32 = 20;
 
 #[cfg(test)]
 #[path = "external_parse_cache_tests.rs"]
