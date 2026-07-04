@@ -2051,6 +2051,39 @@ fn value_root_type(
         }
         name_imported
     };
+    // A bare-name pick of an EXTERNAL value is the weakest evidence tier: no
+    // scope qualification, no ambient registration, and the import-scoped
+    // external root (which owns genuine import attribution) declined upstream.
+    // Such a pick yields to a same-named TYPE declaration in three shapes:
+    //   - the project itself declares the type — the head is a static-access /
+    //     construction root on the project's type, not a value borrowed from
+    //     an unrelated dependency's surface;
+    //   - the external value is a MEMBER (a foreign struct's same-named
+    //     field), which never roots a bare-name chain when any type
+    //     declaration carries the name;
+    //   - the external value is standalone but no same-named type is declared
+    //     in its own file — a same-name constant in an unrelated package, not
+    //     a merged pair.
+    // The one shape that keeps the value on top is the merged value+type
+    // global pair, declared side by side in one file: its static surface
+    // lives on the value's declared type (`var D: DConstructor` alongside
+    // `interface D` — `D.now` is on the constructor object, not the instance
+    // interface). Scope-qualified hits, same-file values, and internal
+    // imports are untouched, so genuine value shadowing keeps winning on its
+    // own evidence.
+    let types_named = lookup.types_by_name(name);
+    let internal_type_named = types_named.iter().any(|t| !t.file_path.starts_with("ext:"));
+    let any_type_named = internal_type_named || types_named.iter().next().is_some();
+    let ext_yields_to_type = |s: &Symbol| {
+        if !s.file_path.starts_with("ext:") || !any_type_named {
+            return false;
+        }
+        if internal_type_named || matches!(s.kind.as_str(), "field" | "property" | "parameter")
+        {
+            return true;
+        }
+        !types_named.iter().any(|t| t.file_path == s.file_path)
+    };
 
     // Ambient-global scope: a name used WITHOUT an import that is registered as a
     // global resolves to the package that DECLARES the global, not a same-named
@@ -2095,7 +2128,7 @@ fn value_root_type(
             format!("{scope}.{name}")
         };
         if let Some(s) = lookup.by_qualified_name(&qn) {
-            if is_value_kind(&s.kind) {
+            if is_value_kind(&s.kind) && !(scope.is_empty() && ext_yields_to_type(s)) {
                 // A scope-qualified hit carries the source's own scope, so it is
                 // owned regardless of file; a bare-name hit (scope exhausted) is a
                 // global pick subject to the owned/foreign split.
@@ -2125,7 +2158,7 @@ fn value_root_type(
         };
     }
     for cand in lookup.by_name(name) {
-        if !is_value_kind(&cand.kind) {
+        if !is_value_kind(&cand.kind) || ext_yields_to_type(cand) {
             continue;
         }
         let owned = is_owned(cand);

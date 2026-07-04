@@ -327,6 +327,151 @@ fn value_root_declines_foreign_internal_same_name_unless_imported() {
 }
 
 #[test]
+fn static_access_root_prefers_internal_type_over_foreign_external_field() {
+    // `Index.create()` where the project declares a type `Index` and an
+    // unrelated external package carries a FIELD also named `Index` (typed
+    // `u64`). A bare-name external value is the weakest evidence tier — no
+    // import, no scope qualification — so the internal type declaration roots
+    // the static access; the foreign field's type must not hijack the head.
+    let lookup = Lookup::new()
+        .with(sym(1, "Index", "core.Index", "struct", "src/core/index.rs"))
+        .with_member_id(
+            1,
+            sym(2, "create", "core.Index.create", "method", "src/core/index.rs"),
+        )
+        .with(sym(3, "Index", "Info.Index", "field", "ext:rust:otherpkg/src/lib.rs"))
+        .with_field_type("Info.Index", "u64");
+    let segs = vec![
+        seg("Index", false, SegmentKind::Identifier),
+        seg("create", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "caller"),
+        Some(2),
+        "the internal type declaration must out-rank the foreign external field"
+    );
+}
+
+#[test]
+fn scope_qualified_value_still_shadows_internal_type_at_the_root() {
+    // A value binding in the use site's own scope chain (`caller.Index`) is
+    // real shadowing evidence: it roots the chain on its declared type even
+    // though a same-named internal type declaration exists. The internal-type
+    // precedence applies only to the bare-name external pick.
+    let lookup = Lookup::new()
+        .with(sym(1, "Index", "core.Index", "struct", "src/core/index.rs"))
+        .with_member_id(
+            1,
+            sym(2, "create", "core.Index.create", "method", "src/core/index.rs"),
+        )
+        .with(sym(3, "Index", "caller.Index", "variable", "src/main.rs"))
+        .with_field_type("caller.Index", "Wrapper")
+        .with(sym(4, "Wrapper", "Wrapper", "struct", "src/w.rs"))
+        .with_member_id(4, sym(5, "create", "Wrapper.create", "method", "src/w.rs"));
+    let segs = vec![
+        seg("Index", false, SegmentKind::Identifier),
+        seg("create", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "caller"),
+        Some(5),
+        "an in-scope value binding keeps shadowing the type declaration"
+    );
+}
+
+#[test]
+fn static_access_root_prefers_external_type_over_foreign_external_field() {
+    // `Opt.default()` where the type `Opt` is itself external (a stdlib enum)
+    // and an unrelated external struct carries a FIELD named `Opt`. A
+    // member-kind value never roots a bare-name chain when any type
+    // declaration carries the name, so the type wins even without an
+    // internal declaration.
+    let lookup = Lookup::new()
+        .with(sym(1, "Opt", "Opt", "enum", "ext:rust:std/option.rs"))
+        .with_member_id(1, sym(2, "default", "Opt.default", "method", "ext:rust:std/option.rs"))
+        .with(sym(3, "Opt", "Descriptor.Opt", "field", "ext:rust:otherpkg/src/lib.rs"))
+        .with_field_type("Descriptor.Opt", "u32");
+    let segs = vec![
+        seg("Opt", false, SegmentKind::Identifier),
+        seg("default", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "caller"),
+        Some(2),
+        "a foreign external field must not out-rank the external type declaration"
+    );
+}
+
+#[test]
+fn foreign_standalone_external_value_yields_to_type_declared_elsewhere() {
+    // `P.new()` where `P` is a struct in one external package and an
+    // unrelated external package exports a standalone constant also named
+    // `P`. With no same-file merged type on the constant's side, the
+    // constant is a foreign collision — the type declaration roots the
+    // chain.
+    let lookup = Lookup::new()
+        .with(sym(1, "P", "P", "struct", "ext:rust:std/path.rs"))
+        .with_member_id(1, sym(2, "new", "P.new", "method", "ext:rust:std/path.rs"))
+        .with(sym(3, "P", "otherpkg.P", "variable", "ext:rust:otherpkg/src/lib.rs"))
+        .with_field_type("otherpkg.P", "Guid");
+    let segs = vec![
+        seg("P", false, SegmentKind::Identifier),
+        seg("new", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "caller"),
+        Some(2),
+        "a same-name constant from an unrelated package must not out-rank the type"
+    );
+}
+
+#[test]
+fn standalone_external_value_keeps_static_surface_over_merged_type() {
+    // The merged value+type global pair: `var D: DConstructor` alongside
+    // `interface D`. `D.now()` lives on the constructor object (the VALUE's
+    // declared type), so the standalone external variable must keep
+    // out-ranking the same-named external interface.
+    let lookup = Lookup::new()
+        .with(sym(1, "D", "D", "variable", "ext:ts:lib.es5.d.ts"))
+        .with_field_type("D", "DConstructor")
+        .with(sym(2, "D", "D", "interface", "ext:ts:lib.es5.d.ts"))
+        .with(sym(3, "DConstructor", "DConstructor", "interface", "ext:ts:lib.es5.d.ts"))
+        .with_member_id(
+            3,
+            sym(4, "now", "DConstructor.now", "method", "ext:ts:lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("D", false, SegmentKind::Identifier),
+        seg("now", true, SegmentKind::Property),
+    ];
+    assert_eq!(
+        resolve(&lookup, segs, "caller"),
+        Some(4),
+        "the constructor-object value's declared type carries the static surface"
+    );
+}
+
+#[test]
+fn bare_external_value_still_roots_without_internal_type_collision() {
+    // The external blanket stays intact when no internal type shares the
+    // name: an unimported external value (an ambient-style global) roots the
+    // chain on its declared type exactly as before.
+    let lookup = Lookup::new()
+        .with(sym(1, "document", "document", "variable", "ext:ts:lib.dom.d.ts"))
+        .with_field_type("document", "Document")
+        .with(sym(2, "Document", "Document", "interface", "ext:ts:lib.dom.d.ts"))
+        .with_member_id(
+            2,
+            sym(3, "querySelector", "Document.querySelector", "method", "ext:ts:lib.dom.d.ts"),
+        );
+    let segs = vec![
+        seg("document", false, SegmentKind::Identifier),
+        seg("querySelector", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(3));
+}
+
+#[test]
 fn call_root_falls_back_to_synthetic_ret_interface() {
     // `makeLogger().info` where `makeLogger` carries no stored return type but its
     // object-literal return was synthesized as the `makeLogger$Ret` interface (the
