@@ -523,7 +523,7 @@ pub struct ExtractedSymbol {
 // ---------------------------------------------------------------------------
 
 /// The semantic role of a segment in a member access chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentKind {
     /// `this` / `self` / `base` — receiver referencing the enclosing type.
     SelfRef,
@@ -596,7 +596,7 @@ pub struct MemberChain {
 /// when the extractor walks the argument list. The `Other` arm covers any
 /// argument shape not worth preserving: function references, complex
 /// expressions, spread elements, etc.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CallArg {
     /// Plain string literal: `"users"`, `'users'`.
     StringLit(String),
@@ -738,7 +738,7 @@ pub struct ExtractedRef {
 ///
 /// Built up during extraction: `[HttpGet("/api/catalog/{id}")]` produces one.
 /// The connector later matches these against TS fetch/axios calls.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedRoute {
     /// Index into Vec<ExtractedSymbol> for the handler method.
     pub handler_symbol_index: usize,

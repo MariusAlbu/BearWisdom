@@ -8,12 +8,15 @@
 // skips tree-sitter + the extraction walk (the expensive half) and rebuilds the
 // ParsedFile from the stored extraction.
 //
-// What is cached: only the symbols + refs the lazy-materialization path needs
-// (names, kinds, signatures, ref kinds/targets) — NOT the post-extract TypeIds
-// (arena-specific, meaningless across runs) nor ref chains/call-args (external
-// files are never resolution SOURCES, so their chains are never walked). The
-// rebuilt ParsedFile carries empty TypeId/chain fields; the materialized
-// symbols use string-based type metadata derived from the cached signatures.
+// What is cached: the full extraction the external ingest/write surface reads
+// — symbols with their type surface (declared/return/param types, generic
+// params, carried structurally via `external_parse_payload` so arena ids
+// re-intern into the current run's `TypeArena`), refs with their chains,
+// routes, origin-language and snippet flags, alias targets, and component
+// selectors. A cache-hit rehydration must resolve identically to the fresh
+// parse that produced it. NOT cached: `content` (bulk — consumers re-read the
+// file from disk) and `mtime` (machine state — recomputed from fs metadata on
+// rehydration, exactly as the fresh parse path does).
 //
 // Best-effort: any open/read/write error disables the cache for that op — a
 // missing or unwritable cache only costs a re-parse, never correctness.
@@ -24,153 +27,19 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::types::{
-    AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind,
-    Visibility,
-};
+use super::external_parse_payload::CachedParse;
+use crate::type_checker::core::types::TypeArena;
+use crate::types::ParsedFile;
 
 /// Bumped whenever the cached extraction shape changes. It is part of the key,
 /// so a bump makes every prior entry un-matchable (effectively a full flush).
-const EXTRACTOR_SCHEMA_VERSION: u32 = 17;
+const EXTRACTOR_SCHEMA_VERSION: u32 = 18;
 
 #[cfg(test)]
 #[path = "external_parse_cache_tests.rs"]
 mod tests;
-
-#[derive(Serialize, Deserialize)]
-struct CachedSym {
-    name: String,
-    qualified_name: String,
-    kind: SymbolKind,
-    visibility: Option<Visibility>,
-    start_line: u32,
-    end_line: u32,
-    start_col: u32,
-    end_col: u32,
-    byte_offset: u32,
-    signature: Option<String>,
-    doc_comment: Option<String>,
-    scope_path: Option<String>,
-    parent_index: Option<usize>,
-}
-
-impl CachedSym {
-    fn from_extracted(s: &ExtractedSymbol) -> Self {
-        CachedSym {
-            name: s.name.clone(),
-            qualified_name: s.qualified_name.clone(),
-            kind: s.kind,
-            visibility: s.visibility,
-            start_line: s.start_line,
-            end_line: s.end_line,
-            start_col: s.start_col,
-            end_col: s.end_col,
-            byte_offset: s.byte_offset,
-            signature: s.signature.clone(),
-            doc_comment: s.doc_comment.clone(),
-            scope_path: s.scope_path.clone(),
-            parent_index: s.parent_index,
-        }
-    }
-
-    fn into_extracted(self) -> ExtractedSymbol {
-        ExtractedSymbol {
-            name: self.name,
-            qualified_name: self.qualified_name,
-            kind: self.kind,
-            visibility: self.visibility,
-            start_line: self.start_line,
-            end_line: self.end_line,
-            start_col: self.start_col,
-            end_col: self.end_col,
-            byte_offset: self.byte_offset,
-            signature: self.signature,
-            doc_comment: self.doc_comment,
-            scope_path: self.scope_path,
-            parent_index: self.parent_index,
-            // TypeIds are arena-specific and not cached; re-derived from
-            // signatures by the materialize path when needed.
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct CachedRef {
-    source_symbol_index: usize,
-    target_name: String,
-    kind: EdgeKind,
-    line: u32,
-    col: u32,
-    byte_offset: u32,
-    module: Option<String>,
-    namespace_segments: Vec<String>,
-    is_import_binding: bool,
-    is_reexport: bool,
-}
-
-impl CachedRef {
-    fn from_extracted(r: &ExtractedRef) -> Self {
-        CachedRef {
-            source_symbol_index: r.source_symbol_index,
-            target_name: r.target_name.clone(),
-            kind: r.kind,
-            line: r.line,
-            col: r.col,
-            byte_offset: r.byte_offset,
-            module: r.module.clone(),
-            namespace_segments: r.namespace_segments.clone(),
-            is_import_binding: r.is_import_binding,
-            is_reexport: r.is_reexport,
-        }
-    }
-
-    fn into_extracted(self) -> ExtractedRef {
-        ExtractedRef {
-            source_symbol_index: self.source_symbol_index,
-            target_name: self.target_name,
-            kind: self.kind,
-            line: self.line,
-            col: self.col,
-            byte_offset: self.byte_offset,
-            module: self.module,
-            namespace_segments: self.namespace_segments,
-            is_import_binding: self.is_import_binding,
-            is_reexport: self.is_reexport,
-            // Chains / call-args are not cached: external files are never
-            // resolution sources, so their refs' chains are never walked.
-            chain: None,
-            call_args: Vec::new(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct CachedParse {
-    language: String,
-    package_id: Option<i64>,
-    symbols: Vec<CachedSym>,
-    refs: Vec<CachedRef>,
-    /// Type-alias targets, qualified by `ts_post_process_external` before the
-    /// cache `put`. The chain walker reads these (intersection / mapped /
-    /// typeof expansion) to resolve members reached THROUGH an external alias
-    /// (`RenderResult`'s `BoundFunctions` branch); dropping them on a cache hit
-    /// silently breaks those chains while own-member lookup still works.
-    #[serde(default)]
-    alias_targets: Vec<(String, AliasTarget)>,
-    /// Angular/CSS component selectors `(raw_selector, class_qname)`. Angular
-    /// library `.d.ts` carry `ɵɵComponentDeclaration` selectors that back
-    /// `selector_qname`; dropping them on a cache hit leaves every `<nb-card>`
-    /// template ref unresolved while the class symbol still loads.
-    #[serde(default)]
-    component_selectors: Vec<(String, String)>,
-}
 
 static CACHE: Lazy<Option<Mutex<Connection>>> = Lazy::new(open_cache);
 
@@ -240,14 +109,25 @@ pub fn content_hash(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// File modification time (seconds since epoch) — the same derivation the
+/// fresh parse path records, so a rehydrated file carries the same value.
+fn fs_mtime(abs_path: &Path) -> Option<i64> {
+    std::fs::metadata(abs_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+}
+
 /// Rebuild a `ParsedFile` from a cache hit, or `None` on miss/error. The
 /// `virtual_path` and `size` come from the caller (they are not part of the
-/// content-addressed payload). Empty for the fields externals never use.
+/// content-addressed payload); cached types re-intern into `arena`.
 pub fn get(
     abs_path: &Path,
     content_hash: &str,
     virtual_path: &str,
     size: u64,
+    arena: &TypeArena,
 ) -> Option<ParsedFile> {
     let lock = CACHE.as_ref()?;
     let payload: String = {
@@ -260,43 +140,14 @@ pub fn get(
         .ok()?
     };
     let cp: CachedParse = serde_json::from_str(&payload).ok()?;
-    Some(ParsedFile {
-        path: virtual_path.to_string(),
-        language: cp.language,
-        content_hash: content_hash.to_string(),
-        size,
-        line_count: 0,
-        mtime: None,
-        package_id: cp.package_id,
-        symbols: cp.symbols.into_iter().map(CachedSym::into_extracted).collect(),
-        refs: cp.refs.into_iter().map(CachedRef::into_extracted).collect(),
-        routes: Vec::new(),
-        db_sets: Vec::new(),
-        symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(),
-        symbol_from_snippet: Vec::new(),
-        content: None,
-        has_errors: false,
-        flow: FlowMeta::default(),
-        demand_contributions: Vec::new(),
-        alias_targets: cp.alias_targets,
-        component_selectors: cp.component_selectors,
-        plugin_flow_emissions: Vec::new(),
-    })
+    Some(cp.into_parsed(arena, virtual_path, content_hash, size, fs_mtime(abs_path)))
 }
 
 /// Store a freshly-parsed external file. Best-effort; errors are ignored.
-pub fn put(abs_path: &Path, content_hash: &str, pf: &ParsedFile) {
+pub fn put(abs_path: &Path, content_hash: &str, pf: &ParsedFile, arena: &TypeArena) {
     let Some(lock) = CACHE.as_ref() else { return };
     let Ok(conn) = lock.lock() else { return };
-    let cp = CachedParse {
-        language: pf.language.clone(),
-        package_id: pf.package_id,
-        symbols: pf.symbols.iter().map(CachedSym::from_extracted).collect(),
-        refs: pf.refs.iter().map(CachedRef::from_extracted).collect(),
-        alias_targets: pf.alias_targets.clone(),
-        component_selectors: pf.component_selectors.clone(),
-    };
+    let cp = CachedParse::from_parsed(pf, arena);
     if let Ok(payload) = serde_json::to_string(&cp) {
         let _ = conn.execute(
             "INSERT OR REPLACE INTO parse_cache (key, payload) VALUES (?1, ?2)",

@@ -1836,7 +1836,8 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
     let hash = crate::indexer::external_parse_cache::content_hash(&bytes);
     let size = bytes.len() as u64;
 
-    if let Some(cached) = crate::indexer::external_parse_cache::get(file, &hash, &virtual_path, size)
+    if let Some(cached) =
+        crate::indexer::external_parse_cache::get(file, &hash, &virtual_path, size, arena)
     {
         return Some(cached);
     }
@@ -1856,7 +1857,7 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
     // External `.d.ts` symbols carry a `<pkg>.` prefix the resolver keys on; this
     // also prefixes the parse pass's `component_selectors` to match.
     crate::ecosystem::npm::ts_post_process_external(&mut pf);
-    crate::indexer::external_parse_cache::put(file, &hash, &pf);
+    crate::indexer::external_parse_cache::put(file, &hash, &pf, arena);
     Some(pf)
 }
 

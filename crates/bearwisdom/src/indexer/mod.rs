@@ -3,6 +3,8 @@ pub mod changeset;
 pub mod demand;
 pub mod embedded_regions;
 pub mod external_parse_cache;
+pub(crate) mod external_parse_payload;
+pub(crate) mod external_parse_types;
 pub mod flow;
 pub mod flow_cfg;
 #[cfg(test)]
