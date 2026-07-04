@@ -284,6 +284,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.resolve_external_reexport(target, prefix, module)
     }
 
+    fn reexport_alias_target(&self, qname: &str) -> Option<&Symbol> {
+        self.tree.reexport_alias_target(qname)
+    }
+
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {
         self.tree.selector_qname(raw_selector)
     }
@@ -1474,6 +1478,28 @@ fn materialize_externals(
     // declared on `S` resolves on the receiver `M`-typed values carry.
     if !augmentations.is_empty() {
         tree.apply_module_augmentations(&augmentations);
+    }
+
+    // Cross-package re-export aliases: `{importing_module}.{name}` resolves to
+    // the sibling package's declaration now that both sides are ingested. The
+    // alias qname is assembled here; the target qname derives from the
+    // declaring file's virtual-path package prefix — the same prefix its
+    // materialized symbols carry.
+    let aliases: Vec<(String, String, String)> = loc
+        .reexport_aliases()
+        .filter_map(|(module, name, target_file, target_name)| {
+            let lang = language_from_file_ext(target_file)?;
+            let vpath = virtual_path_for_indexed_file(target_file, lang);
+            let pkg = crate::ecosystem::externals::ts_package_from_virtual_path(&vpath)?;
+            Some((
+                format!("{module}.{name}"),
+                format!("{pkg}.{target_name}"),
+                vpath,
+            ))
+        })
+        .collect();
+    if !aliases.is_empty() {
+        tree.apply_external_reexport_aliases(&aliases);
     }
     Ok(())
 }

@@ -178,6 +178,15 @@ pub struct Compilation {
     /// the conventional ambient-scope namespace — the marker an ecosystem stamps
     /// on a `declare global` name or test-framework global at materialization.
     ambient_scope: FxHashMap<String, Vec<Symbol>>,
+    /// Cross-package re-export aliases: `{importing_module}.{name}` → the
+    /// declaration Symbol ingested under the DECLARING package's own prefix.
+    /// A barrel's re-export binding carries no type of its own; the alias
+    /// leads `all_by_qualified_name` (kind-gated callers keep the binding as
+    /// fallback) and backs `reexport_alias_target` for chain-root typing.
+    /// `by_qualified_name` stays alias-free: its single slot feeds
+    /// type-derivation contexts where the binding symbol itself is the
+    /// correct referent. Populated by `apply_external_reexport_aliases`.
+    reexport_alias: FxHashMap<String, Symbol>,
     /// Shared workspace type arena — the same one threaded through extractors.
     arena: Arc<TypeArena>,
     /// Sentinel slices for Borrowed returns that must hand back a `&[…]`.
@@ -285,6 +294,7 @@ impl Compilation {
             dep_renames_by_pkg: FxHashMap::default(),
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
+            reexport_alias: FxHashMap::default(),
             arena,
             empty: Vec::new(),
             empty_pairs: Vec::new(),
@@ -771,6 +781,35 @@ impl Compilation {
         }
         if changed {
             self.rebuild_inherits_by_id();
+        }
+    }
+
+    /// Register cross-package re-export aliases. Each tuple is
+    /// `(alias_qname, target_qname, target_file)`: `alias_qname` is the qname
+    /// the importing module's surface binds (`{module}.{name}`), resolved to
+    /// the declaration ingested under `target_qname` — preferring the
+    /// candidate from `target_file` when the qname is declared in several
+    /// files. The declaration keeps its single symbol identity; the alias
+    /// only adds a lookup key consulted by `all_by_qualified_name` and
+    /// `reexport_alias_target`. First writer wins; a pair whose target is
+    /// not materialized is skipped.
+    pub(crate) fn apply_external_reexport_aliases(&mut self, aliases: &[(String, String, String)]) {
+        for (alias_qname, target_qname, target_file) in aliases {
+            if self.reexport_alias.contains_key(alias_qname) {
+                continue;
+            }
+            let Some(candidates) = self.by_qname_all.get(target_qname) else {
+                continue;
+            };
+            let sym = candidates
+                .iter()
+                .find(|s| &*s.file_path == target_file.as_str())
+                .or_else(|| candidates.first());
+            if let Some(sym) = sym {
+                if sym.qualified_name != *alias_qname {
+                    self.reexport_alias.insert(alias_qname.clone(), sym.clone());
+                }
+            }
         }
     }
 
@@ -1840,12 +1879,17 @@ impl SymbolLookup for Compilation {
     }
 
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
-        SymbolSet::Borrowed(
-            self.by_qname_all
-                .get(qname)
-                .map(|v| v.as_slice())
-                .unwrap_or(&self.empty),
-        )
+        let base = self
+            .by_qname_all
+            .get(qname)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty);
+        // Bridged declaration first; the same-qname binding symbols stay as
+        // fallbacks so a kind-gated caller loses nothing.
+        match self.reexport_alias.get(qname) {
+            Some(alias) => SymbolSet::Owned(std::iter::once(alias).chain(base.iter()).collect()),
+            None => SymbolSet::Borrowed(base),
+        }
     }
 
     fn members_of(&self, parent_qname: &str) -> SymbolSet<'_> {
@@ -2014,6 +2058,10 @@ impl SymbolLookup for Compilation {
         let entry = self.module_entry.get(module)?;
         super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0, &["index"])
             .map(|info| info.target_symbol_id)
+    }
+
+    fn reexport_alias_target(&self, qname: &str) -> Option<&Symbol> {
+        self.reexport_alias.get(qname)
     }
 
     fn selector_qname(&self, raw_selector: &str) -> Option<&str> {

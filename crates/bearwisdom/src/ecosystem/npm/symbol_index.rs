@@ -11,6 +11,7 @@ use crate::ecosystem::externals::ExternalDepRoot;
 use crate::ecosystem::SymbolLocationIndex;
 use crate::walker::WalkedFile;
 
+use super::reexport_bridge::{resolve_cross_package_reexport, BridgeCtx};
 use super::ts_scan::{scan_declare_global_blocks, scan_ts_file_exports, ExportSource, FileExports};
 use super::walk::{
     expand_reexports_into, extract_relative_reexports, is_test_or_story_file,
@@ -158,7 +159,44 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             let mut visited = HashSet::new();
             let def_file =
                 resolve_definition(&by_path, &known_paths, file, source, bare_name, pkg_root, &mut visited)
-                    .unwrap_or_else(|| file.clone());
+                    .unwrap_or_else(|| {
+                        // A named re-export from a SIBLING dep root keeps the
+                        // barrel as its located file, but records the resolved
+                        // declaration as a qname-alias bridge so
+                        // `{module}.{name}` lookups reach the declaration's
+                        // single identity under its own package prefix.
+                        if let ExportSource::Reexport { module: spec, original } = source {
+                            if !spec.starts_with('.')
+                                && npm_package_name_from_spec(spec) != bare_name
+                            {
+                                let ctx = BridgeCtx {
+                                    by_path: &by_path,
+                                    known_paths: &known_paths,
+                                    pkg_entry: &pkg_entry,
+                                    subpath_entry: &subpath_entry,
+                                    bare_pkg_root: &bare_pkg_root,
+                                };
+                                let mut bridge_visited = HashSet::new();
+                                if let Some((target_file, target_name)) =
+                                    resolve_cross_package_reexport(
+                                        &ctx,
+                                        spec,
+                                        original,
+                                        &mut bridge_visited,
+                                        0,
+                                    )
+                                {
+                                    index.push_reexport_alias(
+                                        module,
+                                        exposed,
+                                        target_file,
+                                        target_name,
+                                    );
+                                }
+                            }
+                        }
+                        file.clone()
+                    });
             index.insert(module, exposed.clone(), def_file);
         }
 
@@ -250,7 +288,7 @@ fn union_entry_and_globals(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 /// `.d.ts` files) — Node's self-reference resolution, not a foreign package.
 /// Returns the remainder path relative to the package root. `None` when the
 /// specifier names a genuinely different package.
-fn same_package_deep_path<'a>(module: &'a str, pkg_name: &str) -> Option<&'a str> {
+pub(super) fn same_package_deep_path<'a>(module: &'a str, pkg_name: &str) -> Option<&'a str> {
     module.strip_prefix(pkg_name)?.strip_prefix('/')
 }
 
@@ -262,7 +300,7 @@ fn same_package_deep_path<'a>(module: &'a str, pkg_name: &str) -> Option<&'a str
 /// rollup-bundled packages. Hits the filesystem directly rather than
 /// `known_paths`: a package-internal implementation file is rarely part of
 /// the entry+reexport-closure scan that built `known_paths`.
-fn resolve_pkg_relative(pkg_root: &Path, rel: &str) -> Option<PathBuf> {
+pub(super) fn resolve_pkg_relative(pkg_root: &Path, rel: &str) -> Option<PathBuf> {
     let anchor = pkg_root.join("__pkg_root__");
     resolve_relative_ts_path(&anchor, rel)
 }
@@ -270,7 +308,7 @@ fn resolve_pkg_relative(pkg_root: &Path, rel: &str) -> Option<PathBuf> {
 /// Grammar to scan `file` with, inferred from its extension — `scan_ts_file_exports`
 /// only branches on tsx/javascript, defaulting to typescript for everything else
 /// (`.ts`, `.d.ts`, `.mts`, `.cts`).
-fn language_for_ext(file: &Path) -> &'static str {
+pub(super) fn language_for_ext(file: &Path) -> &'static str {
     match file.extension().and_then(|e| e.to_str()) {
         Some("tsx") => "tsx",
         Some("js") | Some("jsx") | Some("mjs") | Some("cjs") => "javascript",

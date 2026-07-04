@@ -56,6 +56,14 @@ pub struct SymbolLocationIndex {
     /// package in `entries`, not the imported one. Materializing the entry brings
     /// in the package's `export *` chain so re-export-following can bind the import.
     module_entries: HashMap<String, PathBuf>,
+    /// Cross-package re-export bridges: `(module, name)` is bound by `module`'s
+    /// public surface, but the declaration lives in ANOTHER package's file. The
+    /// `(module, name)` slot in `entries` keeps pointing at the re-exporting
+    /// barrel (materialized symbols are qname-prefixed by their own file's
+    /// package, so relocating the slot would key the wrong prefix); this map
+    /// carries the declaration's file + declared name so the lookup layer can
+    /// register `{module}.{name}` as a qname ALIAS of that single declaration.
+    reexport_aliases: HashMap<(String, String), (PathBuf, String)>,
 }
 
 impl SymbolLocationIndex {
@@ -110,6 +118,35 @@ impl SymbolLocationIndex {
         self.module_entries.get(module_path).map(PathBuf::as_path)
     }
 
+    /// Record a cross-package re-export bridge: `module` binds `name`, whose
+    /// declaration is `target_name` in `target_file` (another package). Skipped
+    /// when `(module, name)` already has a located definition — a real local
+    /// declaration owns the slot, and an alias must never shadow it. First
+    /// writer wins on the alias axis, matching `insert`.
+    pub fn push_reexport_alias(
+        &mut self,
+        module: impl Into<String>,
+        name: impl Into<String>,
+        target_file: impl Into<PathBuf>,
+        target_name: impl Into<String>,
+    ) {
+        let key = (module.into(), name.into());
+        if self.entries.contains_key(&key) {
+            return;
+        }
+        self.reexport_aliases
+            .entry(key)
+            .or_insert_with(|| (target_file.into(), target_name.into()));
+    }
+
+    /// Every recorded cross-package bridge as
+    /// `(module, name, target_file, target_name)`.
+    pub fn reexport_aliases(&self) -> impl Iterator<Item = (&str, &str, &Path, &str)> {
+        self.reexport_aliases.iter().map(|((module, name), (file, target_name))| {
+            (module.as_str(), name.as_str(), file.as_path(), target_name.as_str())
+        })
+    }
+
     /// Return every `(module_path, file)` pair where the symbol's short
     /// name matches `symbol_name`. Used by the demand-driven pipeline to
     /// resolve chain-walker bail-outs: the walker only knows "I was
@@ -139,6 +176,12 @@ impl SymbolLocationIndex {
         }
         for (module, entry) in other.module_entries {
             self.module_entries.entry(module).or_insert(entry);
+        }
+        // Aliases coexist with their own barrel-fallback entry (merged above),
+        // so no entries-vacancy check here — `push_reexport_alias` enforced it
+        // against genuine local declarations at build time.
+        for (key, target) in other.reexport_aliases {
+            self.reexport_aliases.entry(key).or_insert(target);
         }
     }
 

@@ -1906,18 +1906,18 @@ fn ext_file_under_module(file_path: &str, root: &str) -> bool {
     modpath == root || modpath.strip_prefix(root).is_some_and(|r| r.starts_with('/'))
 }
 
-/// The package root the chain-root `name` is imported from, when the import is an
-/// EXTERNAL bare specifier (not a relative `./…` path). Relative imports return
-/// None — their declarations are not `ext:` files, so the scoped filter would be
-/// empty anyway; skipping them avoids the work.
-fn external_import_root<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a str> {
+/// The full module specifier the chain-root `name` is imported from, when the
+/// import is an EXTERNAL bare specifier (not a relative `./…` path). Relative
+/// imports return None — their declarations are not `ext:` files, so the
+/// scoped filter would be empty anyway; skipping them avoids the work.
+fn external_import_spec<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a str> {
     for import in &file_ctx.imports {
         if import.imported_name == name || import.alias.as_deref() == Some(name) {
             let spec = import.module_path.as_deref()?;
             if spec.starts_with('.') {
                 return None;
             }
-            return Some(package_root(spec));
+            return Some(spec);
         }
     }
     None
@@ -1933,12 +1933,24 @@ fn import_scoped_external_root(
     arena: &TypeArena,
     seg: &crate::types::ChainSegment,
 ) -> Option<Receiver> {
-    let root = external_import_root(file_ctx, &seg.name)?;
+    let spec = external_import_spec(file_ctx, &seg.name)?;
+    let root = package_root(spec);
     let by_name = lookup.by_name(&seg.name);
-    let scoped: Vec<&Symbol> = by_name
+    let mut scoped: Vec<&Symbol> = by_name
         .iter()
         .filter(|s| ext_file_under_module(&s.file_path, root))
         .collect();
+    // A barrel module re-exporting `name` from the package that DECLARES it
+    // registers `{module}.{name}` as an alias of that declaration — a file
+    // OUTSIDE the module's own subtree, invisible to the filter above. The
+    // alias carries the same import-scoped evidence, so the declaration leads
+    // the candidate set; the module's own binding symbols stay as fallbacks.
+    if let Some(alias) = lookup
+        .reexport_alias_target(&format!("{spec}.{}", seg.name))
+        .or_else(|| lookup.reexport_alias_target(&format!("{root}.{}", seg.name)))
+    {
+        scoped.insert(0, alias);
+    }
     if scoped.is_empty() {
         return None;
     }
@@ -2093,6 +2105,20 @@ fn value_root_type(
     // (like import scope), so this never reorders an unscoped multi-candidate root.
     if !name_imported {
         if let Some(pkg) = ambient_global_package(lookup, name) {
+            // The globalizing package may itself re-export the declaration
+            // from a sibling package — the registered re-export alias names
+            // that declaration directly, outside the `{pkg}.` prefix below.
+            if let Some(decl) = lookup.reexport_alias_target(&format!("{pkg}.{name}")) {
+                if is_value_kind(&decl.kind) {
+                    if let Some(id) =
+                        field_type_of(lookup, arena, decl.id, &decl.qualified_name)
+                    {
+                        if !is_primitive_head(arena, id) {
+                            return Ok(id);
+                        }
+                    }
+                }
+            }
             let prefix = format!("{pkg}.");
             for cand in lookup.by_name(name) {
                 if !is_value_kind(&cand.kind) || !cand.qualified_name.starts_with(&prefix) {

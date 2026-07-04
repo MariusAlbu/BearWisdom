@@ -309,6 +309,16 @@ pub trait SymbolLookup {
         None
     }
 
+    /// The declaration a cross-package re-export alias qname points at:
+    /// `{importing_module}.{name}` where the importing module's barrel
+    /// re-exports `name` from the package that declares it. The returned
+    /// symbol is the declaration itself — its own qualified name stays under
+    /// the declaring package; the alias only adds this lookup key. Default
+    /// returns `None`.
+    fn reexport_alias_target(&self, _qname: &str) -> Option<&Symbol> {
+        None
+    }
+
     /// Return all symbols belonging to a workspace package.
     ///
     /// Used by language resolvers to scope lookups when an import specifier

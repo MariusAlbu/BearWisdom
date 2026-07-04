@@ -12,7 +12,7 @@
 use super::*;
 use crate::ecosystem::externals::ExternalDepRoot;
 use crate::ecosystem::npm::LEGACY_ECOSYSTEM_TAG;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn mkdep(root: PathBuf, name: &str) -> ExternalDepRoot {
     ExternalDepRoot {
@@ -146,4 +146,116 @@ fn build_index_still_declines_a_genuinely_cross_package_reexport() {
         Some(entry.as_path()),
         "cross-package reexport falls back to the barrel, unchanged from before"
     );
+    assert_eq!(
+        idx.reexport_aliases().count(),
+        0,
+        "a target package that is not a scanned dep root records no alias"
+    );
+}
+
+/// Write a minimal package at `node_modules/<dir>` with a `types` entry and
+/// the given entry-file source, returning the package root.
+fn write_pkg(nm: &Path, dir: &str, name: &str, entry_source: &str) -> PathBuf {
+    let root = nm.join(dir);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        format!(r#"{{"name":"{name}","version":"1.0.0","types":"index.d.ts"}}"#),
+    )
+    .unwrap();
+    std::fs::write(root.join("index.d.ts"), entry_source).unwrap();
+    root
+}
+
+#[test]
+fn cross_package_reexport_records_alias_and_keeps_barrel_location() {
+    // A barrel binding a name declared in a SIBLING dep root: the located
+    // file stays the barrel (materialized symbols are prefixed by their own
+    // file's package), while the bridge is recorded as an alias pointing at
+    // the sibling's declaring file under its declared name.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let nm = tmp.path().join("node_modules");
+    let wrapper = write_pkg(&nm, "wrapper-pkg", "wrapper-pkg", "export { Shared } from 'lib-pkg';\n");
+    let lib = write_pkg(&nm, "lib-pkg", "lib-pkg", "export declare class Shared { run(): void; }\n");
+
+    let deps = vec![mkdep(wrapper.clone(), "wrapper-pkg"), mkdep(lib.clone(), "lib-pkg")];
+    let idx = build_npm_symbol_index(&deps);
+
+    assert_eq!(
+        idx.locate("wrapper-pkg", "Shared"),
+        Some(wrapper.join("index.d.ts").as_path()),
+        "the (module, name) slot must keep pointing at the barrel"
+    );
+    let aliases: Vec<_> = idx.reexport_aliases().collect();
+    assert_eq!(aliases.len(), 1);
+    let (module, name, target_file, target_name) = aliases[0];
+    assert_eq!(module, "wrapper-pkg");
+    assert_eq!(name, "Shared");
+    assert_eq!(target_file, lib.join("index.d.ts").as_path());
+    assert_eq!(target_name, "Shared");
+}
+
+#[test]
+fn cross_package_reexport_records_alias_from_a_scoped_sibling() {
+    // The same bridge through a scoped package name (`@scope/runner`).
+    let tmp = tempfile::TempDir::new().unwrap();
+    let nm = tmp.path().join("node_modules");
+    let runner_barrel = write_pkg(
+        &nm,
+        "test-runner",
+        "test-runner",
+        "export { describeSuite } from '@scope/runner';\n",
+    );
+    std::fs::create_dir_all(nm.join("@scope")).unwrap();
+    let runner = write_pkg(
+        &nm,
+        "@scope/runner",
+        "@scope/runner",
+        "export declare const describeSuite: SuiteApi;\ninterface SuiteApi { runIf(c: boolean): void; }\n",
+    );
+
+    let deps = vec![
+        mkdep(runner_barrel.clone(), "test-runner"),
+        mkdep(runner.clone(), "@scope/runner"),
+    ];
+    let idx = build_npm_symbol_index(&deps);
+
+    assert_eq!(
+        idx.locate("test-runner", "describeSuite"),
+        Some(runner_barrel.join("index.d.ts").as_path()),
+    );
+    let aliases: Vec<_> = idx.reexport_aliases().collect();
+    assert_eq!(aliases.len(), 1);
+    let (module, name, target_file, target_name) = aliases[0];
+    assert_eq!(module, "test-runner");
+    assert_eq!(name, "describeSuite");
+    assert_eq!(target_file, runner.join("index.d.ts").as_path());
+    assert_eq!(target_name, "describeSuite");
+}
+
+#[test]
+fn cross_package_reexport_alias_tracks_a_rename() {
+    // `export { Orig as Exposed } from 'lib-pkg'` — the alias is recorded
+    // under the EXPOSED name the importing module binds, pointing at the
+    // declaration's own name in the sibling package.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let nm = tmp.path().join("node_modules");
+    let wrapper = write_pkg(
+        &nm,
+        "wrapper-pkg",
+        "wrapper-pkg",
+        "export { Orig as Exposed } from 'lib-pkg';\n",
+    );
+    let lib = write_pkg(&nm, "lib-pkg", "lib-pkg", "export declare class Orig {}\n");
+
+    let deps = vec![mkdep(wrapper, "wrapper-pkg"), mkdep(lib.clone(), "lib-pkg")];
+    let idx = build_npm_symbol_index(&deps);
+
+    let aliases: Vec<_> = idx.reexport_aliases().collect();
+    assert_eq!(aliases.len(), 1);
+    let (module, name, target_file, target_name) = aliases[0];
+    assert_eq!(module, "wrapper-pkg");
+    assert_eq!(name, "Exposed");
+    assert_eq!(target_file, lib.join("index.d.ts").as_path());
+    assert_eq!(target_name, "Orig");
 }

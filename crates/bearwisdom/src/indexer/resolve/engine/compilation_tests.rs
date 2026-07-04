@@ -1746,3 +1746,77 @@ fn enclosing_chain_finds_nearest_type_and_namespace() {
     assert_eq!(found_type.as_deref(), Some("App.Svc"));
     assert_eq!(found_ns.as_deref(), Some("App"));
 }
+
+// ---------------------------------------------------------------------------
+// apply_external_reexport_aliases — cross-package re-export alias lookup
+// ---------------------------------------------------------------------------
+
+/// Barrel file binding `wrapper-pkg.util` as a typeless re-export marker,
+/// declaring package carrying the real `lib-pkg.util` declaration.
+fn build_reexport_alias_fixture() -> Compilation {
+    let arena = Arc::new(TypeArena::new());
+    let barrel = make_parsed_file(
+        "ext:ts:wrapper-pkg/index.d.ts",
+        vec![make_symbol(
+            "util",
+            "wrapper-pkg.util",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        )],
+        Vec::new(),
+    );
+    let decl_ty = arena.class("UtilApi");
+    let lib = make_parsed_file(
+        "ext:ts:lib-pkg/index.d.ts",
+        vec![make_symbol(
+            "util",
+            "lib-pkg.util",
+            SymbolKind::Variable,
+            None,
+            Some(decl_ty),
+            None,
+        )],
+        Vec::new(),
+    );
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        ("ext:ts:wrapper-pkg/index.d.ts".to_string(), "wrapper-pkg.util".to_string()),
+        10,
+    );
+    id_map.insert(
+        ("ext:ts:lib-pkg/index.d.ts".to_string(), "lib-pkg.util".to_string()),
+        20,
+    );
+    let mut tree = Compilation::build(&[barrel, lib], &id_map, arena);
+    tree.apply_external_reexport_aliases(&[(
+        "wrapper-pkg.util".to_string(),
+        "lib-pkg.util".to_string(),
+        "ext:ts:lib-pkg/index.d.ts".to_string(),
+    )]);
+    tree
+}
+
+#[test]
+fn reexport_alias_target_names_the_declaration_and_leaves_the_single_slot_alone() {
+    let tree = build_reexport_alias_fixture();
+    let target = tree.reexport_alias_target("wrapper-pkg.util").expect("alias registered");
+    assert_eq!(target.id, 20, "the alias resolves to the declaration's single identity");
+    assert_eq!(target.qualified_name, "lib-pkg.util");
+    assert_eq!(tree.reexport_alias_target("lib-pkg.util").map(|s| s.id), None);
+    // The single-winner slot keeps the binding symbol: type-derivation
+    // contexts read it where the binding itself is the correct referent.
+    assert_eq!(tree.by_qualified_name("wrapper-pkg.util").map(|s| s.id), Some(10));
+}
+
+#[test]
+fn reexport_alias_leads_but_keeps_same_qname_fallbacks() {
+    let tree = build_reexport_alias_fixture();
+    let all = tree.all_by_qualified_name("wrapper-pkg.util");
+    assert_eq!(all.len(), 2, "declaration first, barrel binding kept as fallback");
+    assert_eq!(all.first().unwrap().id, 20);
+    assert_eq!(all.get(1).unwrap().id, 10);
+    // The declaring package's own qname is untouched.
+    assert_eq!(tree.by_qualified_name("lib-pkg.util").map(|s| s.id), Some(20));
+}

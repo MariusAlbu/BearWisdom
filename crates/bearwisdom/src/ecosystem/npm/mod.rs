@@ -649,6 +649,7 @@ mod externals;
 mod externals_imports;
 mod externals_node_modules;
 mod post_process;
+mod reexport_bridge;
 mod symbol_index;
 mod ts_scan;
 mod walk;
