@@ -73,6 +73,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["Deferred", "Flow"],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: Some("iterator"),
     primitive_mapping: KOTLIN_PRIMITIVES,

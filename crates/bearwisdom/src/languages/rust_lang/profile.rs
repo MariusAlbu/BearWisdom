@@ -139,6 +139,19 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // absent too — they expose a GUARD's members via `.borrow()`/`.lock()`, not
     // the inner's, so peeling them to the inner would be unsound.
     single_inner_wrappers: &["Box", "Rc", "Arc", "Pin", "Cow"],
+    // Built-in containers whose missed member lookups retry on their Deref
+    // target's member set, keeping the applied args: `Vec<T>` reheads to
+    // `slice<T>` (std's inherent slice methods are qualified under `slice`),
+    // `String` to `str`, `PathBuf` to `Path`. `Array` is the canonical head
+    // the arena interns for the bracketed `[T]` / `[T; N]` syntax, so an
+    // array/slice-typed receiver reaches the same `slice` member set. The
+    // container's own members win first — `Vec::push` stays on `Vec`.
+    container_deref_targets: &[
+        ("Vec", "slice"),
+        ("Array", "slice"),
+        ("String", "str"),
+        ("PathBuf", "Path"),
+    ],
     // A user `impl Deref for C { type Target = Inner }` exposes Inner's members
     // on a `C` receiver. The peel reads the inner from the already-indexed
     // `field_type["C.Target"]` binding, gated on a real `C → Deref` supertype

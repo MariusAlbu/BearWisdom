@@ -142,6 +142,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // unwrap on a single method name — let the chain walker peel via
     // Type::Apply<Array,[T]> args[0] explicitly when needed.
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: TS_PRIMITIVES,

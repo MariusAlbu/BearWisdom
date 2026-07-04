@@ -70,6 +70,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["Future"],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: NIM_PRIMITIVES,

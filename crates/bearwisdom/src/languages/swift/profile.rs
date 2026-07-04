@@ -77,6 +77,7 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["Task", "AsyncSequence"],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: Some("makeIterator"),
     primitive_mapping: SWIFT_PRIMITIVES,

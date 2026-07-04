@@ -17,6 +17,7 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     // `.vue` <script> blocks are TypeScript; the resolve loop selects this host

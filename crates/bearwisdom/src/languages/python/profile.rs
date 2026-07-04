@@ -89,6 +89,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &["Coroutine", "Awaitable", "Future", "Task"],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: Some("__iter__"),
     primitive_mapping: PY_PRIMITIVES,

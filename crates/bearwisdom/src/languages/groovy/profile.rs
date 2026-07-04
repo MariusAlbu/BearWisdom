@@ -56,6 +56,7 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: Some("iterator"),
     primitive_mapping: GROOVY_PRIMITIVES,

@@ -137,7 +137,24 @@ pub fn bind_member_access(
         }
         let member = match lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true) {
             Some(m) => m,
-            None => return Err(member_miss_cause(lookup, arena, current)),
+            None => {
+                // Container-Deref rehead: retry the miss with the head rewritten
+                // to the profile's Deref target (`Vec<T>` → `slice<T>`), args
+                // kept. The reheaded receiver replaces `current` so the yield
+                // step substitutes the member's generics through it.
+                let Some((m, reheaded)) = lookup_member_on_deref_target(
+                    lookup,
+                    arena,
+                    current,
+                    &seg.name,
+                    Some(file_ctx),
+                    profile.container_deref_targets,
+                ) else {
+                    return Err(member_miss_cause(lookup, arena, current));
+                };
+                current = reheaded;
+                m
+            }
         };
         if i == last {
             // The final member's yield type (with the receiver's type arguments
@@ -224,6 +241,43 @@ fn peel_wrapped_receiver(recv: Receiver, arena: &TypeArena, wrappers: &[&str]) -
     } else {
         recv
     }
+}
+
+/// Retry a MISSED member lookup with the receiver's head rewritten to its
+/// container-Deref target (`profile.container_deref_targets`): `Vec<T>` retries
+/// as `slice<T>`. NOT a peel — `single_inner_wrappers` replaces the type with
+/// its argument; this keeps the applied args and changes only the head, so an
+/// element-generic member found on the target substitutes the container's args
+/// (`Vec<T>.iter()` yields `Iter<'_, T>` with `T` bound from `Vec<T>`).
+/// Consulted only after the receiver's own member set (including its supertype
+/// climb) has missed, so a container's own member always wins. Returns the
+/// member together with the reheaded receiver so the caller's yield step
+/// substitutes through the rehead. `None` when the map is empty, the head is
+/// unlisted, or the target carries no such member — the miss stands.
+fn lookup_member_on_deref_target(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    file_ctx: Option<&FileContext>,
+    targets: &[(&str, &str)],
+) -> Option<(Symbol, Receiver)> {
+    if targets.is_empty() {
+        return None;
+    }
+    let head = head_qname(arena, recv.ty)?;
+    let target = targets.iter().find(|(c, _)| *c == head).map(|(_, t)| *t)?;
+    // The reheaded type names a different declaration — drop the container's id
+    // and let `expand_receiver` re-derive it from the new head, the same id
+    // handoff a wrapper peel performs.
+    let reheaded = expand_receiver(
+        Receiver::untyped(rebind_head(arena, recv.ty, target)),
+        lookup,
+        arena,
+        file_ctx,
+    );
+    let m = lookup_member_on(lookup, arena, reheaded, member, &|_kind| true)?;
+    Some((m, reheaded))
 }
 
 /// Classify why `lookup_member_on` found nothing on `recv`, using only the

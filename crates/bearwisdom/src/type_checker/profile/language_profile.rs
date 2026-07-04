@@ -60,6 +60,19 @@ pub struct LanguageProfile {
     /// container (`Vec`, `HashMap`) must be ABSENT so its accessors stay on the
     /// container. `&[]` (the default) leaves every `Apply` receiver intact.
     pub single_inner_wrappers: &'static [&'static str],
+    /// Container heads whose MISSED member lookups retry against a Deref-target
+    /// head. Each entry maps a container type head to the head its built-in
+    /// `Deref` impl exposes (`Vec` → `slice`, `String` → `str`, `PathBuf` →
+    /// `Path`). NOT a peel: `single_inner_wrappers` REPLACES the type with its
+    /// single argument, while this REHEADS — the applied type arguments are
+    /// kept and only the head changes, so an element-generic member found on
+    /// the target still substitutes the container's args (`Vec<T>.iter()`
+    /// retries as `slice<T>.iter()` and yields `Iter<'_, T>` with `T` bound).
+    /// The container's OWN members always win: the chain walker consults this
+    /// map only after member lookup on the container has missed, so `Vec.push`
+    /// never resolves to a `slice.push`. `&[]` (the default) leaves every
+    /// member miss a miss.
+    pub container_deref_targets: &'static [(&'static str, &'static str)],
     /// A user-defined single-inner Deref wrapper: a type `C` with an
     /// `impl Deref for C { type Target = Inner }` exposes Inner's member set on
     /// a `C` receiver (Rust autoderef). Unlike `single_inner_wrappers` — which
@@ -1150,6 +1163,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: &[],

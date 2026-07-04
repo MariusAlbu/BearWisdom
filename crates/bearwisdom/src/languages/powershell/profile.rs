@@ -61,6 +61,7 @@ pub const POWERSHELL_PROFILE: LanguageProfile = LanguageProfile {
     async_wrappers: &[],
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: PS_PRIMITIVES,

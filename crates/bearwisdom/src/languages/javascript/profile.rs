@@ -56,6 +56,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // that types JS containers structurally.
     container_accessors: &[],
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: JS_PRIMITIVES,

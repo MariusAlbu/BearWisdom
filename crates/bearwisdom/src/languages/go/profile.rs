@@ -99,6 +99,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Range loops use the type-side `range` keyword, not a method call.
     // Engine iteration peeling stays off.
     single_inner_wrappers: &[],
+    container_deref_targets: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: GO_PRIMITIVES,

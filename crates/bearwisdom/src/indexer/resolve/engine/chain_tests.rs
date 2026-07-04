@@ -758,6 +758,92 @@ fn declines_wrapper_peel_when_profile_omits_it() {
     assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
 
+/// The `Vec<Elem>` container fixture the rehead tests share: `Vec` owns `push`
+/// but no `first`; `slice` (the Deref target) owns `first(): T` under generic
+/// param `T`; `Elem` owns `touch`.
+fn container_deref_lookup() -> Lookup {
+    Lookup::new()
+        .with_local_type("v", "Vec<Elem>")
+        .with(sym(1, "Vec", "Vec", "struct", "ext:idx:alloc/src/vec/mod.rs"))
+        .with_member("Vec", sym(10, "push", "Vec.push", "method", "ext:idx:alloc/src/vec/mod.rs"))
+        .with_member("slice", sym(41, "first", "slice.first", "method", "ext:idx:core/src/slice/mod.rs"))
+        .with_return_type("slice.first", "T")
+        .with_generics("slice", &["T"])
+        .with(sym(2, "Elem", "Elem", "struct", "src/lib.rs"))
+        .with_member("Elem", sym(42, "touch", "Elem.touch", "method", "src/lib.rs"))
+}
+
+/// `v.first().touch()` on `v: Vec<Elem>` — `first` misses `Vec`'s own member
+/// set, reheads onto the profile's Deref target `slice` KEEPING the applied
+/// arg, binds `slice.first`, and its generic yield `T` substitutes to `Elem`
+/// through the reheaded `slice<Elem>` receiver, so the next hop binds
+/// `Elem.touch`. Rehead + arg threading in one walk.
+#[test]
+fn reheads_container_member_miss_onto_deref_target_threading_args() {
+    let profile = LanguageProfile {
+        container_deref_targets: &[("Vec", "slice")],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = container_deref_lookup();
+    let segs = vec![
+        seg("v", false, SegmentKind::Identifier),
+        seg("first", true, SegmentKind::Property),
+        seg("touch", true, SegmentKind::Property),
+    ];
+    let leaf = "touch";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(42), "slice.first's yield T must bind Elem through the rehead");
+}
+
+/// `v.push(x)` on `v: Vec<Elem>` binds `Vec`'s OWN `push` even when the Deref
+/// target carries a same-named member — the rehead is a miss-fallback, never a
+/// pre-pass.
+#[test]
+fn container_own_member_wins_over_deref_target() {
+    let profile = LanguageProfile {
+        container_deref_targets: &[("Vec", "slice")],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = container_deref_lookup().with_member(
+        "slice",
+        sym(99, "push", "slice.push", "method", "ext:idx:core/src/slice/mod.rs"),
+    );
+    let segs = vec![
+        seg("v", false, SegmentKind::Identifier),
+        seg("push", true, SegmentKind::Property),
+    ];
+    let leaf = "push";
+    let mut r = call_ref(leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(10), "Vec's own push must win over slice.push");
+}
+
+/// The SAME `v.first()` miss under the default profile (`container_deref_targets`
+/// empty) stays a `member_missing` on `Vec` — no rehead fires, proving the
+/// fallback is gated on profile data and every other language walks byte-identically.
+#[test]
+fn declines_container_rehead_when_profile_omits_it() {
+    let lookup = container_deref_lookup();
+    let segs = vec![
+        seg("v", false, SegmentKind::Identifier),
+        seg("first", true, SegmentKind::Property),
+    ];
+    let cause = resolve_cause(&lookup, segs, "caller").expect("miss must carry a cause");
+    assert_eq!(cause.kind, CauseKind::MemberMissing);
+    assert_eq!(cause.symbol_id, Some(1), "the cause names Vec's own declaration");
+}
+
 #[test]
 fn declines_when_member_absent() {
     let lookup = Lookup::new()
