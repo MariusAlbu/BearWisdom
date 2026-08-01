@@ -134,10 +134,27 @@ pub(crate) fn expand_with_id(
                 extends,
                 true_branch,
                 false_branch,
-                ..
+                infer_binding,
             }) if !arena.format_type(*extends).contains("=> infer ") => {
                 let params = lookup.generic_params(&head).unwrap_or_default();
                 let arg_ids = apply_args(arena, ty);
+                // An `infer` capture decides the conditional structurally: if the
+                // checked type IS an application of the extends head, the pattern
+                // matched and the captured variable takes the argument it sits on.
+                if let Some(captured) = infer_binding.as_ref().and_then(|(var, slot)| {
+                    expand_infer_capture(
+                        arena,
+                        &params,
+                        &arg_ids,
+                        *check,
+                        *extends,
+                        *true_branch,
+                        var,
+                        *slot,
+                    )
+                }) {
+                    captured
+                } else {
                 match decide_conditional(arena, &params, &arg_ids, *check, *extends) {
                     Some(true) => *true_branch,
                     Some(false) => *false_branch,
@@ -145,6 +162,7 @@ pub(crate) fn expand_with_id(
                         Some(t) => t,
                         None => arena.intern(Type::Intersection(vec![*true_branch, *false_branch])),
                     },
+                }
                 }
             }
             _ => match transparent_alias_target(lookup, arena, &head) {
@@ -180,6 +198,50 @@ fn is_member_preserving_utility(root: &str) -> bool {
         root,
         "Omit" | "Pick" | "Partial" | "Required" | "Readonly" | "NonNullable" | "Awaited"
     )
+}
+
+/// Resolve a conditional whose `extends` clause captures with `infer`:
+/// `type Elem<T> = T extends Array<infer U> ? U : never` applied as
+/// `Elem<User[]>` yields `User`.
+///
+/// The check side is bound through the application's arguments first (`T` →
+/// `Array<User>`), then the capture matches only when the bound check IS an
+/// application of the extends head — the same head the pattern names — and
+/// carries an argument at the captured slot. The true branch is rewritten
+/// through that binding, so a true branch naming anything else (`Array<U>`,
+/// `Wrapper<U>`) resolves too, not just a bare `U`.
+///
+/// `None` when the pattern does not match structurally: the caller keeps its
+/// undecidable behaviour rather than picking a branch. Multi-capture clauses
+/// never reach here — the extractor records only the single-capture case.
+#[allow(clippy::too_many_arguments)]
+fn expand_infer_capture(
+    arena: &TypeArena,
+    params: &[String],
+    arg_ids: &[TypeId],
+    check: TypeId,
+    extends: TypeId,
+    true_branch: TypeId,
+    var: &str,
+    slot: usize,
+) -> Option<TypeId> {
+    let bound_check = if params.is_empty() || arg_ids.is_empty() {
+        check
+    } else {
+        let map: FxHashMap<String, TypeId> = params
+            .iter()
+            .cloned()
+            .zip(arg_ids.iter().copied())
+            .collect();
+        arena.rebind_class_params(check, &map)
+    };
+    if head_qname(arena, bound_check)? != head_qname(arena, extends)? {
+        return None;
+    }
+    let captured = *apply_args(arena, bound_check).get(slot)?;
+    let mut env: FxHashMap<String, TypeId> = FxHashMap::default();
+    env.insert(var.to_string(), captured);
+    Some(arena.rebind_class_params(true_branch, &env))
 }
 
 /// Decide a conditional's `check extends extends_ty` after binding the alias's

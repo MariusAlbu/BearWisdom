@@ -158,3 +158,56 @@ fn undecidable_conditional_carries_both_branches_as_an_intersection() {
     });
     assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "A & B");
 }
+
+#[test]
+fn infer_capture_yields_the_matched_type_argument() {
+    // type Elem<T> = T extends Array<infer U> ? U : never;   Elem<User[]>
+    let lookup = Lookup::new()
+        .with_generics("Elem", &["T"])
+        .with_alias(
+            "Elem",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Array".to_string(),
+                true_branch: "U".to_string(),
+                false_branch: "never".to_string(),
+                infer_binding: Some(("U".to_string(), 0)),
+            },
+        );
+    let arena = lookup.type_arena().unwrap();
+    let applied = arena.intern(Type::Apply {
+        base: arena.class("Elem"),
+        args: vec![arena.intern_type_str("User[]")],
+    });
+
+    let out = expand(applied, &lookup, arena);
+
+    assert_eq!(arena.get(out), Type::Class("User".to_string()));
+}
+
+#[test]
+fn infer_capture_declines_when_the_checked_type_is_not_the_pattern() {
+    // Elem<User> — `User` is not an `Array<…>`, so the capture cannot match and
+    // the expander keeps its undecidable behaviour instead of picking a branch.
+    let lookup = Lookup::new()
+        .with_generics("Elem", &["T"])
+        .with_alias(
+            "Elem",
+            AliasTarget::Conditional {
+                check: "T".to_string(),
+                extends: "Array".to_string(),
+                true_branch: "U".to_string(),
+                false_branch: "never".to_string(),
+                infer_binding: Some(("U".to_string(), 0)),
+            },
+        );
+    let arena = lookup.type_arena().unwrap();
+    let applied = arena.intern(Type::Apply {
+        base: arena.class("Elem"),
+        args: vec![arena.class("User")],
+    });
+
+    let out = expand(applied, &lookup, arena);
+
+    assert_ne!(arena.get(out), Type::Class("User".to_string()));
+}
