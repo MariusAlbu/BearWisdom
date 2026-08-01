@@ -29,8 +29,13 @@ use crate::indexer::resolve::engine::contract::{
 
 pub(crate) mod contract;
 pub mod alias;
+pub mod arg_types;
 pub mod cause;
 pub mod chain;
+pub mod generics;
+pub mod lambda_seed;
+pub mod module_augmentation;
+pub mod substitution;
 pub mod semantic_model;
 pub mod pipeline;
 pub mod rules;

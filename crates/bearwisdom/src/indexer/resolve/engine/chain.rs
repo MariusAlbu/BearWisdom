@@ -27,7 +27,11 @@ use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
+use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
+use super::generics::{bind_arg_generics, substitute_env};
+use super::lambda_seed::seed_lambda_params;
+use super::substitution::{substitute_supertype_args, substitute_through};
 use super::support::{import_scoped_package_id, is_type_kind, pick_ranked_candidate};
 
 /// Strategy tag for a member-chain bind produced by the new engine.
@@ -167,8 +171,24 @@ pub fn bind_member_access(
             // yield the method's RETURN type, not the method-as-value field type.
             let terminal_is_call = seg.is_call
                 || matches!(ref_ctx.extracted_ref.kind, crate::types::EdgeKind::Calls);
-            let resolved_yield_type =
+            let yielded =
                 yield_through(lookup, arena, &member, terminal_is_call, current.ty, current.id);
+            // A terminal call's arguments carry on the ref itself, not the
+            // segment: bind the generic parameters they pin and seed any
+            // lambda they pass.
+            let resolved_yield_type = if terminal_is_call {
+                apply_call_args(
+                    lookup,
+                    arena,
+                    &member,
+                    &ref_ctx.extracted_ref.call_args,
+                    current.ty,
+                    current.id,
+                    yielded,
+                )
+            } else {
+                yielded
+            };
             return Ok(SymbolInfo {
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
@@ -192,6 +212,22 @@ pub fn bind_member_access(
                 let kind = if seg.is_call { CauseKind::UncapturedReturn } else { CauseKind::UncapturedField };
                 return Err(Some(Cause::new(Some(member.id), kind)));
             }
+        };
+        // Mid-chain call: its own arguments bind this hop's generics, so
+        // `repo.find(user).name` advances on `User` rather than an open `T`.
+        let yielded = if seg.is_call {
+            apply_call_args(
+                lookup,
+                arena,
+                &member,
+                &seg.call_args,
+                current.ty,
+                current.id,
+                Some(yielded),
+            )
+            .unwrap_or(yielded)
+        } else {
+            yielded
         };
         let yielded_recv = peel_wrapped_receiver(
             yielded_receiver(lookup, arena, yielded, member.package_id),
@@ -1368,6 +1404,29 @@ fn yield_through(
     result
 }
 
+/// Apply a call's arguments to the callee's generics: bind the parameters the
+/// argument types pin, seed any un-annotated lambda parameters from the
+/// callback types the callee declares, and rewrite the yield through those
+/// bindings. Runs AFTER receiver substitution, so a parameter the receiver
+/// pinned is already concrete and an argument can only fill one left open.
+pub(crate) fn apply_call_args(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[crate::types::CallArg],
+    receiver: TypeId,
+    recv_id: Option<i64>,
+    yielded: Option<TypeId>,
+) -> Option<TypeId> {
+    if args.is_empty() {
+        return yielded;
+    }
+    let arg_types = resolve_arg_types(lookup, arena, args);
+    let env = bind_arg_generics(lookup, arena, callee, &arg_types);
+    seed_lambda_params(lookup, arena, callee, args, receiver, recv_id, &env);
+    yielded.map(|y| substitute_env(arena, y, &env))
+}
+
 /// Inner body of `yield_through`. See `yield_through` for the contract.
 fn yield_through_impl(
     lookup: &dyn SymbolLookup,
@@ -1396,7 +1455,7 @@ fn yield_through_impl(
     // `Child extends Base<User>` yields `T`, which the edge args bind to `User`.
     // Those args live on the edge, not the receiver, so `substitute_through`
     // (receiver-args only) cannot see them.
-    let raw = substitute_supertype_args(lookup, arena, member, raw, receiver);
+    let raw = substitute_supertype_args(lookup, arena, member, raw, receiver, recv_id);
     let substituted = substitute_through(lookup, arena, raw, receiver, recv_id);
     // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
     if is_self_head(arena, substituted) {
@@ -1582,91 +1641,6 @@ fn is_self_head(arena: &TypeArena, id: TypeId) -> bool {
         Some(h) => h == "this" || h == "Self",
         None => false,
     }
-}
-
-/// Substitute the receiver's applied type arguments for the declaring type's
-/// generic parameters throughout `yielded`. `Repository<User>` receiver with
-/// params `[T]` rebinds `Class("T")` → `User`; a non-generic receiver, or a
-/// declaring type with no parameters, leaves `yielded` untouched.
-fn substitute_through(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    yielded: TypeId,
-    receiver: TypeId,
-    recv_id: Option<i64>,
-) -> TypeId {
-    let args = apply_args(arena, receiver);
-    if args.is_empty() {
-        return yielded;
-    }
-    // Prefer the receiver's declaration id to read its generic parameters
-    // directly; fall back to rendering the receiver's nominal head only when the
-    // receiver has no bound declaration (external / ambient / string-parsed).
-    let params: Vec<String> = match recv_id.and_then(|id| lookup.generic_params_of(id)) {
-        Some(p) => p,
-        None => match head_qname(arena, receiver) {
-            Some(head) => lookup.generic_params(&head).unwrap_or_default(),
-            None => return yielded,
-        },
-    };
-    if params.is_empty() {
-        return yielded;
-    }
-    let map: FxHashMap<String, TypeId> =
-        params.into_iter().zip(args.iter().copied()).collect();
-    arena.rebind_class_params(yielded, &map)
-}
-
-/// Bind a generic SUPERTYPE's parameters from the `extends`/`implements` edge
-/// when `member` was found on that supertype, not on the receiver itself:
-/// `class Child extends Base<User>` + `Base.m: T` yields `T`, which the edge
-/// args `[User]` bind to `User`. The args ride on the edge (`inherits_args`),
-/// not on the receiver type, so `substitute_through` — which reads only the
-/// receiver's own applied args — cannot supply them.
-///
-/// No-op when the receiver has no nominal head, the member is declared on the
-/// receiver type itself (then `substitute_through` already handles it), the edge
-/// records no args, or the supertype has no generic parameters. Single-hop: the
-/// member's declaring type must be a DIRECT supertype of the receiver head.
-fn substitute_supertype_args(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    member: &Symbol,
-    yielded: TypeId,
-    receiver: TypeId,
-) -> TypeId {
-    let Some(recv_head) = head_qname(arena, receiver) else {
-        return yielded;
-    };
-    // The member's declaring type qname is its own qname minus the final segment.
-    let Some((decl_head, _)) = member.qualified_name.rsplit_once('.') else {
-        return yielded;
-    };
-    if decl_head == recv_head {
-        return yielded;
-    }
-    // Prefer the interned-id form of the edge args; fall back to interning the
-    // stored arg strings for id-less stores (incremental reload / test fixtures).
-    let id_slice = lookup.parent_class_arg_ids(&recv_head, decl_head);
-    let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
-        id_slice.to_vec()
-    } else {
-        lookup
-            .parent_class_args(&recv_head, decl_head)
-            .iter()
-            .map(|a| arena.intern_type_str(a))
-            .collect()
-    };
-    if arg_ids.is_empty() {
-        return yielded;
-    }
-    let params = lookup.generic_params(decl_head).unwrap_or_default();
-    if params.is_empty() {
-        return yielded;
-    }
-    let map: FxHashMap<String, TypeId> =
-        params.into_iter().zip(arg_ids.iter().copied()).collect();
-    arena.rebind_class_params(yielded, &map)
 }
 
 /// Type the chain's root segment. Structural cases only for now:

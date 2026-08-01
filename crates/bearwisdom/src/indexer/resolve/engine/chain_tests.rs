@@ -2525,3 +2525,92 @@ fn subscript_on_vec_return_projects_element_then_resolves_member() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(2));
 }
+
+/// A call segment carrying the arguments the call passes, as the extractor
+/// emits them for an invoked mid-chain segment.
+fn seg_call_with_args(name: &str, args: Vec<crate::types::CallArg>) -> ChainSegment {
+    let mut s = seg(name, true, SegmentKind::Property);
+    s.call_args = args;
+    s
+}
+
+/// `find(x: T): T` on `Repo<T>`, with the signature the param patterns parse.
+fn repo_find() -> Symbol {
+    Symbol {
+        signature: Some("find(x: T): T".to_string()),
+        ..sym(30, "find", "Repo.find", "method", "a.ts")
+    }
+}
+
+#[test]
+fn arg_driven_generic_binds_mid_chain_yield() {
+    // class Repo<T> { find(x: T): T }   const repo: Repo;  const user: User;
+    // repo.find(user).name — nothing types the receiver's T, so only the
+    // ARGUMENT can bind it. Without that bind `find` yields an open `T` and
+    // `.name` has no receiver to look up.
+    let lookup = Lookup::new()
+        .with_local_type("repo", "Repo")
+        .with_local_type("user", "User")
+        .with(sym(1, "Repo", "Repo", "class", "a.ts"))
+        .with_generics("Repo", &["T"])
+        .with_member("Repo", repo_find())
+        .with_return_type("Repo.find", "T")
+        .with(sym(3, "User", "User", "class", "a.ts"))
+        .with_member("User", sym(40, "name", "User.name", "property", "a.ts"));
+    let segs = vec![
+        seg("repo", false, SegmentKind::Identifier),
+        seg_call_with_args("find", vec![crate::types::CallArg::Ident("user".to_string())]),
+        seg("name", false, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(40));
+}
+
+#[test]
+fn mid_chain_receiver_binding_wins_over_the_argument() {
+    // Same call, but the receiver is `Repo<Account>`: the receiver substitution
+    // runs first and leaves no open parameter, so the `User` argument cannot
+    // retarget the chain.
+    let lookup = Lookup::new()
+        .with_local_type("repo", "Repo<Account>")
+        .with_local_type("user", "User")
+        .with(sym(1, "Repo", "Repo", "class", "a.ts"))
+        .with_generics("Repo", &["T"])
+        .with_member("Repo", repo_find())
+        .with_return_type("Repo.find", "T")
+        .with(sym(3, "User", "User", "class", "a.ts"))
+        .with_member("User", sym(40, "name", "User.name", "property", "a.ts"))
+        .with(sym(4, "Account", "Account", "class", "a.ts"))
+        .with_member("Account", sym(41, "name", "Account.name", "property", "a.ts"));
+    let segs = vec![
+        seg("repo", false, SegmentKind::Identifier),
+        seg_call_with_args("find", vec![crate::types::CallArg::Ident("user".to_string())]),
+        seg("name", false, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(41));
+}
+
+#[test]
+fn an_untyped_argument_leaves_the_mid_chain_yield_open() {
+    // The argument resolves to nothing, so the parameter stays open and the
+    // walk dies exactly where it did before argument binding existed.
+    let lookup = Lookup::new()
+        .with_local_type("repo", "Repo")
+        .with(sym(1, "Repo", "Repo", "class", "a.ts"))
+        .with_generics("Repo", &["T"])
+        .with_member("Repo", repo_find())
+        .with_return_type("Repo.find", "T")
+        .with(sym(3, "User", "User", "class", "a.ts"))
+        .with_member("User", sym(40, "name", "User.name", "property", "a.ts"));
+    let segs = vec![
+        seg("repo", false, SegmentKind::Identifier),
+        seg_call_with_args(
+            "find",
+            vec![crate::types::CallArg::Ident("mystery".to_string())],
+        ),
+        seg("name", false, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
+}
