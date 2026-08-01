@@ -895,6 +895,25 @@ fn star_reexport(module: &str) -> ExtractedRef {
     }
 }
 
+/// `export { I } from '<bare-pkg>'`: a NAMED re-export, the shape a package's
+/// entry uses to surface another package's declaration under its own module.
+fn named_reexport(name: &str, module: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: 0,
+        target_name: name.to_string(),
+        kind: EdgeKind::Imports,
+        line: 0,
+        col: 0,
+        module: Some(module.to_string()),
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: true,
+    }
+}
+
 /// A bare named import `{ computed } from 'vue'` must resolve through the indexed
 /// `vue → @vue/runtime-dom → @vue/runtime-core` `export *` chain to the `computed`
 /// defined in runtime-core. Exercises Compilation's `resolve_external_reexport` /
@@ -2012,4 +2031,74 @@ fn context_without_active_ecosystems_has_no_visibility_sets() {
     assert!(tree.ext_lang_allowed("rust").is_none());
     let kept = tree.filter_ext_langs(tree.by_name("field"), tree.ext_lang_allowed("rust"));
     assert_eq!(kept.len(), 1);
+}
+
+/// A module-augmentation graft must land on the module's exported INTERFACE,
+/// not on a same-named VALUE the module also declares. `@testing-library/jest-dom`
+/// augments `declare module 'vitest' { interface Assertion extends
+/// TestingLibraryMatchers {} }`, while `vitest` itself declares a value named
+/// `Assertion` and re-exports the interface from `@vitest/expect`. Grafting onto
+/// the value leaves every `expect(x).toBeInTheDocument()` unresolved, because the
+/// receiver types as the re-exported interface.
+#[test]
+fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value() {
+    let arena = Arc::new(TypeArena::new());
+    let aug = make_parsed_file(
+        "ext:ts:@testing-library/jest-dom/types/vitest.d.ts",
+        vec![make_symbol(
+            "Assertion",
+            "@testing-library/jest-dom.Assertion",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        )],
+        vec![inherits_ref(0, "@testing-library/jest-dom.matchers.TestingLibraryMatchers")],
+    );
+    let expect_pkg = make_parsed_file(
+        "ext:ts:@vitest/expect/index.d.ts",
+        vec![make_symbol(
+            "Assertion",
+            "@vitest/expect.Assertion",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        )],
+        vec![],
+    );
+    // vitest's own surface: a VALUE named `Assertion` plus the re-export of the
+    // interface from @vitest/expect.
+    let vitest = make_parsed_file(
+        "ext:ts:vitest/index.d.ts",
+        vec![make_symbol(
+            "Assertion",
+            "vitest.Assertion",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        )],
+        vec![named_reexport("Assertion", "@vitest/expect")],
+    );
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        ("ext:ts:@vitest/expect/index.d.ts".into(), "@vitest/expect.Assertion".into()),
+        900,
+    );
+    let mut tree = Compilation::build(&[aug, expect_pkg, vitest], &id_map, Arc::clone(&arena));
+
+    tree.apply_module_augmentations(&[(
+        "vitest".to_string(),
+        "Assertion".to_string(),
+        "@testing-library/jest-dom.Assertion".to_string(),
+    )]);
+
+    assert_eq!(
+        tree.parent_class_qnames("@vitest/expect.Assertion"),
+        ["@testing-library/jest-dom.matchers.TestingLibraryMatchers"],
+        "the augmentation's supertype must graft onto the interface the module \
+         exports, so a matcher declared on it resolves on the receiver"
+    );
 }
