@@ -647,11 +647,11 @@ fn lookup_member_on(
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
     let result = lookup_member_on_bounded(lookup, arena, recv, member, accept, MAX_MAPPED_DEPTH);
-    let recv_head = head_qname(arena, recv.ty).unwrap_or_default();
+    let recv_str = arena.format_type(recv.ty);
     crate::tracef!(
         "  MEMBER '{}' on receiver={} (recv.id={:?}) -> {}",
         member,
-        recv_head,
+        recv_str,
         recv.id,
         result.as_ref().map(|s| s.qualified_name.as_str()).unwrap_or("NOT FOUND"),
     );
@@ -1464,9 +1464,7 @@ fn resolve_root(
 ) -> Result<Receiver, Option<Cause>> {
     let result = resolve_root_impl(ref_ctx, file_ctx, lookup, arena, seg);
     let result_str = result.as_ref().ok().map_or_else(|| "UNTYPABLE".to_string(), |r| {
-        head_qname(arena, r.ty)
-            .map(|h| format!("typed {h}"))
-            .unwrap_or_else(|| "typed (structural)".to_string())
+        format!("typed {}", arena.format_type(r.ty))
     });
     crate::tracef!(
         "  ROOT '{}': local_type_id={} local_type={} declared_type={} is_call={} -> {}",

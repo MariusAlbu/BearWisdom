@@ -119,21 +119,7 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             AliasTarget::Tuple(elements)
         }
         "union_type" => {
-            let mut branches = Vec::new();
-            let mut has_object_branch = false;
-            for i in 0..node.child_count() {
-                let Some(child) = node.child(i) else { continue };
-                if child.kind() == "|" {
-                    continue;
-                }
-                if child.kind() == "object_type" {
-                    has_object_branch = true;
-                }
-                let name = branch_type_text(&child, src);
-                if !name.is_empty() {
-                    branches.push(name);
-                }
-            }
+            let (branches, has_object_branch) = super::alias_union::union_branches(&node, src);
             // A union whose only branches are anonymous object types
             // (`{kind:"a"}|{kind:"b"}`) yields no nameable branch, but
             // `recurse_for_object_types` flattens those members under the alias.
