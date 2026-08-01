@@ -153,7 +153,7 @@ fn file_lookup_local_type_empty() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     assert!(lookup.local_type("x").is_none());
 }
 
@@ -167,7 +167,7 @@ fn file_lookup_record_then_read() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     lookup.record_local_type("repo".to_string(), "UserRepository".to_string());
     assert_eq!(lookup.local_type("repo").as_deref(), Some("UserRepository"));
 }
@@ -182,7 +182,7 @@ fn file_lookup_local_type_union_single_branch() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     lookup.record_local_type("svc".to_string(), "OrderService".to_string());
     assert_eq!(
         lookup.local_type_union("svc"),
@@ -202,7 +202,7 @@ fn file_lookup_clear_evicts_bindings() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     lookup.record_local_type("x".to_string(), "Foo".to_string());
     assert!(lookup.local_type("x").is_some());
     lookup.clear_local_cache();
@@ -220,7 +220,7 @@ fn file_lookup_delegates_structural_to_tree() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     assert!(lookup.by_name("anything").iter().next().is_none());
     assert!(lookup.by_qualified_name("a.b.c").is_none());
     assert!(lookup.members_of("SomeClass").iter().next().is_none());
@@ -253,7 +253,7 @@ fn local_type_id_round_trips_primitive_without_nominalization() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
 
     // Intern a real Primitive(Int) TypeId.
     let prim_id = arena.intern(Type::Primitive(PrimKind::Int));
@@ -302,7 +302,7 @@ fn local_type_id_round_trips_optional_without_nominalization() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
 
     let user_id = arena.class("User");
     let opt_id = arena.intern(Type::Optional(user_id));
@@ -342,7 +342,7 @@ fn reassignment_latest_write_wins_across_both_caches() {
         &symbol_id_map,
         arc_clone(&arena),
     );
-    let lookup = FileLookup::new(&tree);
+    let lookup = FileLookup::new(&tree, "typescript");
     let prim_id = arena.intern(Type::Primitive(PrimKind::Int));
 
     // TypeId binding, then a String reassignment for the same name.
@@ -1429,4 +1429,114 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
         !edges.iter().any(|e| e.1 == 3),
         "the rename's original name must not divert the bind to the external declaration"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Cross-language external visibility through the per-file lookup
+// ---------------------------------------------------------------------------
+
+/// A minimal ext value file of the given language declaring one typed variable.
+fn ext_value_file(
+    path: &str,
+    language: &str,
+    name: &str,
+    ty: crate::type_checker::core::types::TypeId,
+) -> crate::types::ParsedFile {
+    crate::types::ParsedFile {
+        path: path.to_string(),
+        language: language.to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![crate::types::ExtractedSymbol {
+            name: name.to_string(),
+            qualified_name: name.to_string(),
+            kind: crate::types::SymbolKind::Variable,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            declared_type: Some(ty),
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+/// The per-file lookup drops ext candidates whose language shares no active
+/// ecosystem with the resolving file's language, and keeps co-declared ones:
+/// a python ext value never serves a rust receiver, while a TS ext value
+/// still serves a javascript receiver (both npm-declared).
+#[test]
+fn file_lookup_by_name_respects_cross_language_ext_visibility() {
+    use crate::ecosystem::EcosystemId;
+    use crate::indexer::resolve::engine::compilation::Compilation;
+
+    let arena = Arc::new(TypeArena::new());
+    let str_ty = arena.class("str");
+    let api_ty = arena.class("ApiClient");
+    let py = ext_value_file("ext:idx:C:/py/site-packages/fields.py", "python", "field", str_ty);
+    let ts = ext_value_file("ext:ts:some-pkg/index.d.ts", "typescript", "client", api_ty);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert((py.path.clone(), "field".to_string()), 1);
+    id_map.insert((ts.path.clone(), "client".to_string()), 2);
+
+    let ctx = crate::indexer::project_context::ProjectContext {
+        active_ecosystems: vec![
+            EcosystemId::new("cargo"),
+            EcosystemId::new("pypi"),
+            EcosystemId::new("npm"),
+        ],
+        ..Default::default()
+    };
+    let tree = Compilation::build_with_context(
+        &[py, ts],
+        &id_map,
+        Arc::clone(&arena),
+        Some(&ctx),
+        &std::collections::HashSet::new(),
+    );
+
+    let rust_lookup = FileLookup::new(&tree, "rust");
+    assert!(
+        rust_lookup.by_name("field").is_empty(),
+        "python ext value must not reach a rust file's by-name probe"
+    );
+
+    let js_lookup = FileLookup::new(&tree, "javascript");
+    assert_eq!(
+        js_lookup.by_name("client").len(),
+        1,
+        "TS ext value must still serve a javascript file"
+    );
+    assert!(
+        js_lookup.by_name("field").is_empty(),
+        "python ext value must not reach a javascript file either"
+    );
+
+    let py_lookup = FileLookup::new(&tree, "python");
+    assert_eq!(py_lookup.by_name("field").len(), 1, "python keeps its own ext surface");
 }

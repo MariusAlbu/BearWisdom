@@ -1847,3 +1847,169 @@ fn merged_value_type_pair_keeps_declared_type_off_field_slots() {
     assert_eq!(tree.field_type_id("gadget"), Some(api));
     assert_eq!(tree.field_type_id_of(2), Some(api));
 }
+
+// ---------------------------------------------------------------------------
+// Cross-language external visibility (ext_lang_allowed / filter_ext_langs)
+// ---------------------------------------------------------------------------
+
+use crate::ecosystem::EcosystemId;
+
+/// One ext value file of the given language, declaring `name` typed `ty`,
+/// plus the id map entry for it.
+fn ext_value_fixture(
+    path: &str,
+    language: &str,
+    name: &str,
+    ty: crate::type_checker::core::types::TypeId,
+) -> (ParsedFile, HashMap<(String, String), i64>) {
+    let mut pf = make_parsed_file(
+        path,
+        vec![make_symbol(name, name, SymbolKind::Variable, None, Some(ty), None)],
+        Vec::new(),
+    );
+    pf.language = language.to_string();
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert((path.to_string(), name.to_string()), 1);
+    (pf, id_map)
+}
+
+fn build_with_active(
+    active: Vec<EcosystemId>,
+    files: &[ParsedFile],
+    id_map: &HashMap<(String, String), i64>,
+    arena: Arc<TypeArena>,
+) -> Compilation {
+    let ctx = ProjectContext {
+        active_ecosystems: active,
+        ..Default::default()
+    };
+    Compilation::build_with_context(files, id_map, arena, Some(&ctx), &std::collections::HashSet::new())
+}
+
+#[test]
+fn foreign_language_ext_value_is_dropped_from_by_name() {
+    let arena = Arc::new(TypeArena::new());
+    let str_ty = arena.class("str");
+    let (pf, id_map) = ext_value_fixture(
+        "ext:idx:C:/py/site-packages/fields.py",
+        "python",
+        "field",
+        str_ty,
+    );
+    // cargo serves rust; pypi serves python; no active ecosystem serves both.
+    let tree = build_with_active(
+        vec![EcosystemId::new("cargo"), EcosystemId::new("pypi")],
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+    );
+
+    let rust_allowed = tree.ext_lang_allowed("rust");
+    assert!(rust_allowed.is_some(), "cargo is active — rust must carry a visibility set");
+    let filtered = tree.filter_ext_langs(tree.by_name("field"), rust_allowed);
+    assert!(
+        filtered.is_empty(),
+        "a python ext value must not serve a rust receiver's bare-name probe"
+    );
+
+    let kept = tree.filter_ext_langs(tree.by_name("field"), tree.ext_lang_allowed("python"));
+    assert_eq!(kept.len(), 1, "the same value stays visible to a python receiver");
+}
+
+#[test]
+fn co_declared_ecosystem_languages_cross_resolve() {
+    let arena = Arc::new(TypeArena::new());
+    let api = arena.class("ApiClient");
+    let (pf, id_map) =
+        ext_value_fixture("ext:ts:some-pkg/index.d.ts", "typescript", "client", api);
+    // npm declares typescript AND javascript AND vue — one ecosystem, one family.
+    let tree = build_with_active(
+        vec![EcosystemId::new("npm")],
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+    );
+
+    for receiver in ["javascript", "typescript", "vue"] {
+        let allowed = tree.ext_lang_allowed(receiver);
+        assert!(allowed.is_some(), "{receiver} is npm-served");
+        let kept = tree.filter_ext_langs(tree.by_name("client"), allowed);
+        assert_eq!(
+            kept.len(),
+            1,
+            "a TS ext declaration must stay visible to a {receiver} receiver"
+        );
+    }
+}
+
+#[test]
+fn unknown_receiver_language_is_unfiltered() {
+    let arena = Arc::new(TypeArena::new());
+    let str_ty = arena.class("str");
+    let (pf, id_map) = ext_value_fixture(
+        "ext:idx:C:/py/site-packages/fields.py",
+        "python",
+        "field",
+        str_ty,
+    );
+    let tree = build_with_active(
+        vec![EcosystemId::new("pypi")],
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+    );
+
+    // No active ecosystem serves markdown — no constraint, nothing filtered.
+    let allowed = tree.ext_lang_allowed("markdown");
+    assert!(allowed.is_none());
+    let kept = tree.filter_ext_langs(tree.by_name("field"), allowed);
+    assert_eq!(kept.len(), 1);
+}
+
+#[test]
+fn internal_candidates_are_never_language_filtered() {
+    let arena = Arc::new(TypeArena::new());
+    let str_ty = arena.class("String");
+    let mut pf = make_parsed_file(
+        "src/lib.rs",
+        vec![make_symbol("field", "field", SymbolKind::Variable, None, Some(str_ty), None)],
+        Vec::new(),
+    );
+    pf.language = "rust".to_string();
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/lib.rs".to_string(), "field".to_string()), 1);
+    let tree = build_with_active(
+        vec![EcosystemId::new("cargo"), EcosystemId::new("pypi")],
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+    );
+
+    // The python receiver's set excludes rust, but the candidate is internal
+    // (project source, not `ext:`) — mixed-language project boundaries stay legal.
+    let kept = tree.filter_ext_langs(tree.by_name("field"), tree.ext_lang_allowed("python"));
+    assert_eq!(kept.len(), 1);
+}
+
+#[test]
+fn context_without_active_ecosystems_has_no_visibility_sets() {
+    let arena = Arc::new(TypeArena::new());
+    let str_ty = arena.class("str");
+    let (pf, id_map) = ext_value_fixture(
+        "ext:idx:C:/py/site-packages/fields.py",
+        "python",
+        "field",
+        str_ty,
+    );
+    let ctx = ProjectContext::default();
+    let tree = Compilation::build_with_context(
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+        Some(&ctx),
+        &std::collections::HashSet::new(),
+    );
+    assert!(tree.ext_lang_allowed("rust").is_none());
+    let kept = tree.filter_ext_langs(tree.by_name("field"), tree.ext_lang_allowed("rust"));
+    assert_eq!(kept.len(), 1);
+}

@@ -469,6 +469,30 @@ impl ProjectContext {
             })
             .collect()
     }
+
+    /// Per-language external-declaration visibility: for each language L
+    /// served by an active ecosystem, the set of languages whose EXTERNAL
+    /// declarations code in L can bind by name — the union of `languages()`
+    /// over every active ecosystem that serves L. Two languages co-declared
+    /// by one active ecosystem legitimately cross-resolve (npm's `.d.ts`
+    /// surface types JS/Vue/Svelte refs; Maven's Java sources type Kotlin
+    /// refs); languages that share no active ecosystem do not.
+    ///
+    /// A language absent from the map has no active ecosystem and carries no
+    /// visibility constraint — consumers must treat it as unfiltered. Empty
+    /// for legacy contexts whose `active_ecosystems` was never evaluated.
+    pub fn ext_language_visibility(&self) -> HashMap<&'static str, HashSet<&'static str>> {
+        let mut vis: HashMap<&'static str, HashSet<&'static str>> = HashMap::new();
+        let reg = ecosystem::default_registry();
+        for id in &self.active_ecosystems {
+            let Some(eco) = reg.get(*id) else { continue };
+            let langs = eco.languages();
+            for &l in langs {
+                vis.entry(l).or_default().extend(langs.iter().copied());
+            }
+        }
+        vis
+    }
 }
 
 /// Walk every registered ecosystem, evaluate its `activation()` predicate
