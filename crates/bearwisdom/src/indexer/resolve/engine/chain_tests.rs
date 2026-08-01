@@ -2614,3 +2614,31 @@ fn an_untyped_argument_leaves_the_mid_chain_yield_open() {
 
     assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
+
+#[test]
+fn an_intersection_branchs_type_arguments_reach_its_members_yield() {
+    // The matcher shape: `type Shape<A> = { … } & Wrapper<A>`, reached as
+    // `Shape<User>`. The branch carries `A`, so `Wrapper.m(): T` must yield
+    // `User` — dropping the branch's arguments leaves `m` typed by an open
+    // parameter and `.name` dies.
+    let lookup = Lookup::new()
+        .with_local_type("s", "Shape<User>")
+        .with_generics("Shape", &["A"])
+        .with_alias(
+            "Shape",
+            AliasTarget::Intersection(vec!["Wrapper<A>".to_string()]),
+        )
+        .with(sym(1, "Wrapper", "Wrapper", "interface", "ext:ts:lib.d.ts"))
+        .with_generics("Wrapper", &["T"])
+        .with_member("Wrapper", sym(30, "m", "Wrapper.m", "method", "ext:ts:lib.d.ts"))
+        .with_return_type("Wrapper.m", "T")
+        .with(sym(3, "User", "User", "class", "a.ts"))
+        .with_member("User", sym(40, "name", "User.name", "property", "a.ts"));
+    let segs = vec![
+        seg("s", false, SegmentKind::Identifier),
+        seg("m", true, SegmentKind::Property),
+        seg("name", false, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(40));
+}

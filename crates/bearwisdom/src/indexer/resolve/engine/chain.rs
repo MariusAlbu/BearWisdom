@@ -27,6 +27,7 @@ use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
+use super::composite_members;
 use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
 use super::generics::{bind_arg_generics, substitute_env};
@@ -171,8 +172,16 @@ pub fn bind_member_access(
             // yield the method's RETURN type, not the method-as-value field type.
             let terminal_is_call = seg.is_call
                 || matches!(ref_ctx.extracted_ref.kind, crate::types::EdgeKind::Calls);
+            // A member found on a composite alias's branch yields through THAT
+            // branch: the alias head carries the alias's own parameters, so
+            // substituting through it would leave the member's type open.
+            let (yield_recv, yield_id) =
+                match composite_members::declaring_branch_receiver(lookup, arena, current.ty, &member) {
+                    Some(branch) => (branch, None),
+                    None => (current.ty, current.id),
+                };
             let yielded =
-                yield_through(lookup, arena, &member, terminal_is_call, current.ty, current.id);
+                yield_through(lookup, arena, &member, terminal_is_call, yield_recv, yield_id);
             // A terminal call's arguments carry on the ref itself, not the
             // segment: bind the generic parameters they pin and seed any
             // lambda they pass.
@@ -203,7 +212,12 @@ pub fn bind_member_access(
         // Pin the new receiver's id using the member's package context so the
         // chain stays anchored to the package the use site established rather
         // than falling back to a first-winner by_qname re-search.
-        let yielded = match yield_through(lookup, arena, &member, seg.is_call, current.ty, current.id) {
+        let (mid_recv, mid_id) =
+            match composite_members::declaring_branch_receiver(lookup, arena, current.ty, &member) {
+                Some(branch) => (branch, None),
+                None => (current.ty, current.id),
+            };
+        let yielded = match yield_through(lookup, arena, &member, seg.is_call, mid_recv, mid_id) {
             Some(y) => y,
             None => {
                 // The member itself was found — the hop dies because ITS OWN
@@ -357,13 +371,13 @@ fn member_miss_cause(lookup: &dyn SymbolLookup, arena: &TypeArena, recv: Receive
 /// declarations sharing a qname string never collide.
 #[derive(Clone, Copy)]
 pub(crate) struct Receiver {
-    ty: TypeId,
-    id: Option<i64>,
+    pub(crate) ty: TypeId,
+    pub(crate) id: Option<i64>,
 }
 
 impl Receiver {
     /// A receiver whose declaration is known by id.
-    fn new(ty: TypeId, id: i64) -> Self {
+    pub(crate) fn new(ty: TypeId, id: i64) -> Self {
         Self { ty, id: Some(id) }
     }
 
@@ -383,7 +397,7 @@ impl Receiver {
 /// carried. This prevents a same-qname collision in another package from
 /// overwriting an id that was pinned at the use site or by prior-hop package
 /// context.
-fn expand_receiver(
+pub(crate) fn expand_receiver(
     recv: Receiver,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -707,7 +721,7 @@ const MAX_MAPPED_DEPTH: usize = 6;
 /// member on its SOURCE object: the mapped type's keys ARE the source's keys, so
 /// `mapped.member` IS `source.member`. The source param is bound to the
 /// receiver's applied type argument, then the member walk recurses on it.
-fn lookup_member_on_bounded(
+pub(crate) fn lookup_member_on_bounded(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     recv: Receiver,
@@ -773,14 +787,18 @@ fn lookup_member_on_bounded(
     // `&` semantics). After the direct / id / supertype climbs miss, resolve the
     // member on each NAMED branch — anonymous object branches are already
     // flattened into the alias's own members, so only the named heads remain.
-    if let Some(m) = lookup_member_on_intersection(lookup, arena, &head, member, accept, depth) {
+    if let Some(m) = composite_members::lookup_member_on_intersection(
+        lookup, arena, recv.ty, &head, member, accept, depth,
+    ) {
         return Some(m);
     }
     // Union alias `A | B | …`: TS union member access is valid only for members
     // present on EVERY arm — typically all arms extend a shared base that
     // declares the member. Resolve it on each arm; the shared declaration is the
     // result.
-    if let Some(m) = lookup_member_on_union(lookup, arena, &head, member, accept, depth) {
+    if let Some(m) = composite_members::lookup_member_on_union(
+        lookup, arena, recv.ty, &head, member, accept, depth,
+    ) {
         return Some(m);
     }
     // Primitive-name capitalization: a head like `"string"` / `"number"` /
@@ -977,136 +995,6 @@ fn lookup_member_on_namespaced(
     }
     // Bare last segment as a qname (`Ns.Type` → `Type`).
     lookup_member(lookup, last, member, accept)
-}
-
-/// Resolve `member` on the named branches of an intersection alias. A branch is
-/// the head name of an `&` member (`Mapped` for `Mapped<Q> & {…}`);
-/// anonymous object branches contribute no name and are skipped (their members are
-/// flattened onto the alias itself). Each branch name is resolved to its
-/// declaration(s) by simple name, then the member walk recurses by symbol id so a
-/// branch shared across packages stays distinct and the branch's own supertypes
-/// climb. Returns the first branch that carries `member`. `None` when `head` is
-/// not an intersection alias or no branch carries the member.
-fn lookup_member_on_intersection(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    head: &str,
-    member: &str,
-    accept: &dyn Fn(&str) -> bool,
-    depth: usize,
-) -> Option<Symbol> {
-    let branches = match lookup.alias_target(head)? {
-        AliasTargetIds::Intersection(branches)
-        | AliasTargetIds::IntersectionMapped { branches, .. } => branches.clone(),
-        _ => return None,
-    };
-    for &branch_id in &branches {
-        // A branch is a NOMINAL type reference (`Class("Foo")`); resolving it to
-        // its declaration is by name (`types_by_name`), the same path every type
-        // reference uses — multi-candidate, so an ambiguous branch tries each.
-        let branch = arena.format_type(branch_id);
-        if branch.is_empty() || branch == head {
-            continue;
-        }
-        for cand in lookup.types_by_name(&branch).iter() {
-            let recv = expand_receiver(
-                Receiver::new(arena.class(&cand.qualified_name), cand.id),
-                lookup,
-                arena,
-                None,
-            );
-            // A branch that resolves back to the intersection itself makes no
-            // progress — skip rather than recurse to the depth bound.
-            if head_qname(arena, recv.ty).as_deref() == Some(head) {
-                continue;
-            }
-            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
-            {
-                return Some(m);
-            }
-        }
-    }
-    None
-}
-
-/// Resolve `member` on a UNION alias `A | B | …`. TS union member access is
-/// valid only for members present on EVERY arm, so the member resolves on the
-/// union iff every named branch carries it — the canonical shape is a tagged
-/// result union whose arms all `extends` a common base that declares the member.
-/// Each branch head is resolved to its declaration(s) and the member walk
-/// recurses by symbol id (climbing the branch's supertypes); the first arm's
-/// resolution is returned once every arm has agreed it carries the member.
-/// `None` when `head` is not a union alias, a branch is unnameable (a
-/// primitive/literal arm that cannot carry the member), or any arm lacks it.
-fn lookup_member_on_union(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    head: &str,
-    member: &str,
-    accept: &dyn Fn(&str) -> bool,
-    depth: usize,
-) -> Option<Symbol> {
-    let branches = match lookup.alias_target(head)? {
-        AliasTargetIds::Union(branches) => branches.clone(),
-        _ => return None,
-    };
-    if branches.is_empty() {
-        return None;
-    }
-    let mut resolved: Option<Symbol> = None;
-    for &branch_id in &branches {
-        // A branch is a NOMINAL type reference; resolve it to its declaration by
-        // name (`types_by_name`) — the same path every type reference uses.
-        let branch = arena.format_type(branch_id);
-        if branch.is_empty() || branch == head {
-            // A primitive/literal/self arm cannot carry the member; union access
-            // requires it on every arm, so the access is invalid.
-            return None;
-        }
-        // A branch scoped under an enclosing declaration (a nested function's
-        // synthesized `{outer}.{inner}$Ret`) is a DOTTED qualified name — an
-        // exact `by_qualified_name` lookup finds its one real declaration.
-        // `types_by_name` indexes by SIMPLE name only, so it would search for a
-        // symbol literally NAMED the whole dotted string and find nothing.
-        // Fall back to the simple-name search for a bare (unqualified) branch.
-        let exact = lookup.by_qualified_name(&branch);
-        let fallback_set = if exact.is_none() {
-            Some(lookup.types_by_name(&branch))
-        } else {
-            None
-        };
-        let candidates: Vec<&Symbol> = match exact {
-            Some(s) => vec![s],
-            None => fallback_set.iter().flat_map(|s| s.iter()).collect(),
-        };
-        let mut branch_hit: Option<Symbol> = None;
-        for cand in candidates {
-            let recv = expand_receiver(
-                Receiver::new(arena.class(&cand.qualified_name), cand.id),
-                lookup,
-                arena,
-                None,
-            );
-            // A branch that resolves back to the union itself makes no progress.
-            if head_qname(arena, recv.ty).as_deref() == Some(head) {
-                continue;
-            }
-            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
-            {
-                branch_hit = Some(m);
-                break;
-            }
-        }
-        match branch_hit {
-            None => return None,
-            Some(m) => {
-                if resolved.is_none() {
-                    resolved = Some(m);
-                }
-            }
-        }
-    }
-    resolved
 }
 
 /// The source object type of a mapped alias `{ [K in keyof Src]: … }`, with the

@@ -1,3 +1,6 @@
+use super::alias_type_text::{
+    branch_type_text, head_type_name, tuple_element_head, type_annotation_head,
+};
 use super::helpers::node_text;
 use crate::types::AliasTarget;
 use tree_sitter::Node;
@@ -126,7 +129,7 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 if child.kind() == "object_type" {
                     has_object_branch = true;
                 }
-                let name = head_type_name(&child, src);
+                let name = branch_type_text(&child, src);
                 if !name.is_empty() {
                     branches.push(name);
                 }
@@ -359,7 +362,7 @@ fn collect_intersection_branches(
             collect_intersection_branches(&child, src, branches, mapped_fallback);
             continue;
         }
-        let name = head_type_name(&child, src);
+        let name = branch_type_text(&child, src);
         if !name.is_empty() {
             branches.push(name);
         } else if matches!(child.kind(), "object_type" | "mapped_type")
@@ -459,99 +462,6 @@ fn extract_mapped_source(clause: &Node, src: &[u8], source: &mut String) {
                 }
             }
         }
-    }
-}
-
-/// Best-effort head name of a type expression. Returns the simple name
-/// for `type_identifier` / `identifier` / `generic_type` (just the
-/// `name` field, not its args), the dotted text for
-/// `nested_type_identifier` / `member_expression`, the element-type
-/// head for `array_type`, and an empty string for shapes whose head
-/// can't be reduced to a single name (unions, intersections, mapped,
-/// conditional, etc.).
-/// The head type name of one tuple element node. A labeled element parses as a
-/// `required_parameter`/`optional_parameter` whose `type` field is a
-/// `type_annotation` (`: T`); a `rest_type`/`optional_type` wraps the type as a
-/// child; an unlabeled element IS the type node.
-fn tuple_element_head(child: &Node, src: &[u8]) -> String {
-    match child.kind() {
-        "required_parameter" | "optional_parameter" => child
-            .child_by_field_name("type")
-            .map(|ta| type_annotation_head(&ta, src))
-            .unwrap_or_default(),
-        "optional_type" | "rest_type" => {
-            for i in 0..child.child_count() {
-                if let Some(n) = child.child(i) {
-                    if n.is_named() {
-                        return head_type_name(&n, src);
-                    }
-                }
-            }
-            String::new()
-        }
-        _ => head_type_name(child, src),
-    }
-}
-
-/// The head type name inside a `type_annotation` (`: T` → `T`'s head).
-fn type_annotation_head(ta: &Node, src: &[u8]) -> String {
-    for i in 0..ta.child_count() {
-        if let Some(c) = ta.child(i) {
-            if c.kind() != ":" {
-                return head_type_name(&c, src);
-            }
-        }
-    }
-    String::new()
-}
-
-fn head_type_name(node: &Node, src: &[u8]) -> String {
-    match node.kind() {
-        "type_identifier" | "identifier" => node_text(*node, src),
-        "nested_type_identifier" | "member_expression" => node_text(*node, src),
-        "generic_type" => node
-            .child_by_field_name("name")
-            .map(|n| node_text(n, src))
-            .unwrap_or_default(),
-        "array_type" => {
-            for i in 0..node.child_count() {
-                let Some(child) = node.child(i) else { continue };
-                if matches!(child.kind(), "[" | "]") {
-                    continue;
-                }
-                let name = head_type_name(&child, src);
-                if !name.is_empty() {
-                    return name;
-                }
-            }
-            String::new()
-        }
-        "parenthesized_type" | "readonly_type" => {
-            for i in 0..node.child_count() {
-                let Some(child) = node.child(i) else { continue };
-                if matches!(child.kind(), "(" | ")" | "readonly") {
-                    continue;
-                }
-                return head_type_name(&child, src);
-            }
-            String::new()
-        }
-        // `typeof value` — the value's name, so `ReturnType<typeof v>` carries `v`
-        // as its single argument for the ReturnType intrinsic to resolve.
-        "type_query" => {
-            for i in 0..node.child_count() {
-                let Some(child) = node.child(i) else { continue };
-                if child.kind() == "typeof" {
-                    continue;
-                }
-                let name = head_type_name(&child, src);
-                if !name.is_empty() {
-                    return name;
-                }
-            }
-            String::new()
-        }
-        _ => String::new(),
     }
 }
 

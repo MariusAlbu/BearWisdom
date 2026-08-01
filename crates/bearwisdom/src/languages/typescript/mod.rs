@@ -6,6 +6,7 @@
 
 // Extraction sub-modules
 mod alias_classify;
+mod alias_type_text;
 mod annotation_members;
 mod annotation_named_type;
 mod calls;

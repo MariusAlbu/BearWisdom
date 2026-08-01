@@ -42,6 +42,7 @@ pub mod pipeline;
 pub mod rules;
 pub mod support;
 pub mod compilation;
+pub mod composite_members;
 pub mod module_identity;
 pub mod trace;
 
