@@ -117,18 +117,6 @@ pub(crate) fn expand_with_id(
             // arguments. Stop here so the member walk resolves the member on each
             // arm WITH those args bound (`lookup_member_on_union` + `substitute_through`).
             Some(AliasTargetIds::Union(_)) => break,
-            // An intersection alias (`type A = B & C`) carries EVERY branch's
-            // members, so it expands to the structural intersection and the
-            // member walk resolves on whichever arm declares the member. The
-            // alias's own parameters are substituted into the branches by the
-            // tail of this loop, so a matcher shape written as
-            // `{ … } & AndNot<TNonPromise>` reaches the members of the type
-            // its argument names. Unlike a union — where an arm-by-arm walk
-            // must keep the receiver's args bound and so stops here — an
-            // intersection is member-additive and widening-only.
-            Some(AliasTargetIds::Intersection(branches)) => {
-                arena.intern(Type::Intersection(branches.clone()))
-            }
             // A conditional `C extends E ? T : F`. Evaluate it only when binding the
             // alias's params to the application's args reduces `C extends E` to a
             // DECIDABLE literal comparison (`TDynamic extends true` with
