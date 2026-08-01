@@ -41,7 +41,10 @@ use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("jinja-ansible-runtime");
 const ECOSYSTEM_TAG: &str = "jinja-ansible-runtime";
-const LANGUAGES: &[&str] = &["jinja", "yaml"];
+// The walked packages are Ansible module SOURCE (python files pulled from
+// site-packages), consumed by jinja/yaml refs — all three languages appear
+// in this ecosystem's packages.
+const LANGUAGES: &[&str] = &["jinja", "yaml", "python"];
 
 pub struct JinjaAnsibleRuntimeEcosystem;
 

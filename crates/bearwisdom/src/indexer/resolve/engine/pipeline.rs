@@ -145,6 +145,13 @@ fn unwrap_async_yield_str<'a>(ty: &'a str, async_wrappers: &[&str]) -> Option<&'
 /// still operate on type strings (return_type_str / field_type_str paths).
 struct FileLookup<'a> {
     tree: &'a Compilation,
+    /// Candidate-language codes whose EXTERNAL declarations this file's
+    /// language may bind by name (`Compilation::ext_lang_allowed`). `None`
+    /// disables the check. Applied by the by-name candidate-set delegates
+    /// (`by_name` / `types_by_name` / `ambient_symbols`) so every rule and
+    /// the chain walker inherit one visibility; qualified and import-scoped
+    /// lookups carry their own evidence and are not filtered.
+    allowed_ext_langs: Option<&'a rustc_hash::FxHashSet<u16>>,
     locals: RefCell<FxHashMap<String, String>>,
     locals_id: RefCell<FxHashMap<String, TypeId>>,
     /// First-uncaptured-type cause recorded when a local binding's forward-
@@ -162,9 +169,10 @@ struct FileLookup<'a> {
 }
 
 impl<'a> FileLookup<'a> {
-    fn new(tree: &'a Compilation) -> Self {
+    fn new(tree: &'a Compilation, language: &str) -> Self {
         Self {
             tree,
+            allowed_ext_langs: tree.ext_lang_allowed(language),
             locals: RefCell::new(FxHashMap::default()),
             locals_id: RefCell::new(FxHashMap::default()),
             root_cause_hints: RefCell::new(FxHashMap::default()),
@@ -177,7 +185,8 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     // -- Structural delegation: 22 methods forwarded directly to the tree. ----
 
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
-        self.tree.by_name(name)
+        self.tree
+            .filter_ext_langs(self.tree.by_name(name), self.allowed_ext_langs)
     }
 
     fn by_qualified_name(&self, qname: &str) -> Option<&Symbol> {
@@ -197,7 +206,8 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
-        self.tree.types_by_name(name)
+        self.tree
+            .filter_ext_langs(self.tree.types_by_name(name), self.allowed_ext_langs)
     }
 
     fn in_namespace(&self, namespace: &str) -> Vec<&Symbol> {
@@ -213,7 +223,8 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {
-        self.tree.ambient_symbols(name)
+        self.tree
+            .filter_ext_langs(self.tree.ambient_symbols(name), self.allowed_ext_langs)
     }
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {
@@ -623,7 +634,7 @@ fn resolve_one_file(
 
     // Fresh per-file flow cache: local bindings from earlier refs in this file
     // are visible to later refs in the same file only.
-    let file_lookup = FileLookup::new(tree);
+    let file_lookup = FileLookup::new(tree, &pf.language);
 
     // Seed locals whose type is declared at the binding site — an explicit
     // annotation (`const x: Array<T> = …`) or a bare literal initializer
