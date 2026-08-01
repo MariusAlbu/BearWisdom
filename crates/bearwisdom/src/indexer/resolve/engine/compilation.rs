@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
     parse_object_type_members, parse_param_types_from_signature,
@@ -187,20 +188,9 @@ pub struct Compilation {
     /// type-derivation contexts where the binding symbol itself is the
     /// correct referent. Populated by `apply_external_reexport_aliases`.
     reexport_alias: FxHashMap<String, Symbol>,
-    /// Interned language codes for the cross-language external-visibility
-    /// check. Only languages served by an active ecosystem get a code;
-    /// everything else stays un-coded and therefore unfiltered. Codes are
-    /// assigned from the sorted name set so they are deterministic per build.
-    ext_lang_codes: FxHashMap<String, u16>,
-    /// Receiver-language code → the candidate-language codes whose EXTERNAL
-    /// declarations that language may bind by name. Snapshot of
-    /// `ProjectContext::ext_language_visibility` (active ecosystems ×
-    /// `Ecosystem::languages()`); the engine only consumes the data.
-    ext_visible_langs: FxHashMap<u16, FxHashSet<u16>>,
-    /// Parse language (as an interned code) per EXTERNAL file. Keyed by the
-    /// same `Arc<str>` path the file's `Symbol` rows carry. Files whose
-    /// language has no code are absent — their symbols are never filtered.
-    ext_file_lang: FxHashMap<Arc<str>, u16>,
+    /// Cross-language external-declaration visibility: which languages'
+    /// EXTERNAL declarations a file of a given language may bind by name.
+    ext_langs: ExtLangVisibility,
     /// Shared workspace type arena — the same one threaded through extractors.
     arena: Arc<TypeArena>,
     /// Sentinel slices for Borrowed returns that must hand back a `&[…]`.
@@ -275,64 +265,23 @@ impl Compilation {
         if let Some(npm) = ctx.manifests.get(&ManifestKind::Npm) {
             self.path_aliases_global = npm.path_aliases.clone();
         }
-        // Cross-language external visibility, interned to codes. Sorted name
-        // order keeps code assignment deterministic across builds.
-        let vis = ctx.ext_language_visibility();
-        let mut names: Vec<&str> = vis.keys().copied().collect();
-        names.sort_unstable();
-        for (i, name) in names.iter().enumerate() {
-            self.ext_lang_codes.insert((*name).to_string(), i as u16);
-        }
-        for (lang, langs) in &vis {
-            let Some(&code) = self.ext_lang_codes.get(*lang) else {
-                continue;
-            };
-            let codes: FxHashSet<u16> = langs
-                .iter()
-                .filter_map(|m| self.ext_lang_codes.get(*m).copied())
-                .collect();
-            self.ext_visible_langs.insert(code, codes);
-        }
+        self.ext_langs = ExtLangVisibility::snapshot(ctx);
     }
 
     /// The candidate-language codes whose EXTERNAL declarations a file of
-    /// `lang` may bind by name, or `None` when `lang` has no visibility
-    /// constraint (no active ecosystem serves it, or no project context was
-    /// snapshot) — `None` means "do not filter".
+    /// `lang` may bind by name; `None` disables the check.
     pub(crate) fn ext_lang_allowed(&self, lang: &str) -> Option<&FxHashSet<u16>> {
-        self.ext_visible_langs.get(self.ext_lang_codes.get(lang)?)
+        self.ext_langs.allowed(lang)
     }
 
-    /// Drop external-origin candidates whose file's parse language is known
-    /// and not in `allowed`. Internal candidates and external files with no
-    /// recorded language always pass. The borrowed set is returned untouched
-    /// (zero-alloc) when nothing is dropped.
+    /// Drop external-origin candidates whose file language is outside
+    /// `allowed`, keeping the borrowed set when nothing is dropped.
     pub(crate) fn filter_ext_langs<'a>(
         &self,
         set: SymbolSet<'a>,
         allowed: Option<&FxHashSet<u16>>,
     ) -> SymbolSet<'a> {
-        let Some(allowed) = allowed else { return set };
-        if !set.iter().any(|s| self.ext_lang_blocked(s, allowed)) {
-            return set;
-        }
-        SymbolSet::Owned(
-            set.into_iter()
-                .filter(|s| !self.ext_lang_blocked(s, allowed))
-                .collect(),
-        )
-    }
-
-    /// True when `sym` lives in an external file whose recorded parse
-    /// language is outside `allowed`.
-    fn ext_lang_blocked(&self, sym: &Symbol, allowed: &FxHashSet<u16>) -> bool {
-        if !sym.file_path.starts_with("ext:") {
-            return false;
-        }
-        match self.ext_file_lang.get(&*sym.file_path) {
-            Some(code) => !allowed.contains(code),
-            None => false,
-        }
+        self.ext_langs.filter(set, allowed)
     }
 
     /// An empty store sharing `arena`. Symbols are added via `ingest`.
@@ -367,9 +316,7 @@ impl Compilation {
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
             reexport_alias: FxHashMap::default(),
-            ext_lang_codes: FxHashMap::default(),
-            ext_visible_langs: FxHashMap::default(),
-            ext_file_lang: FxHashMap::default(),
+            ext_langs: ExtLangVisibility::default(),
             arena,
             empty: Vec::new(),
             empty_pairs: Vec::new(),
@@ -413,11 +360,7 @@ impl Compilation {
             // visibility check. Languages without a code stay unrecorded and
             // therefore unfiltered.
             if pf.path.starts_with("ext:") {
-                if let Some(&code) = self.ext_lang_codes.get(pf.language.as_str()) {
-                    self.ext_file_lang
-                        .entry(Arc::clone(&file_arc))
-                        .or_insert(code);
-                }
+                self.ext_langs.record_file(&file_arc, pf.language.as_str());
             }
 
             // Pass 1 — symbol indexes for this file.
@@ -962,20 +905,38 @@ impl Compilation {
     /// same-name candidate anywhere.
     fn resolve_parent_id(&self, parent_head: &str, child_package: Option<i64>) -> Option<i64> {
         let simple = parent_head.rsplit('.').next().unwrap_or(parent_head);
+        let declares_members =
+            |id: i64| self.members_by_id.get(&id).is_some_and(|m| !m.is_empty());
+        let mut same_package: Option<i64> = None;
+        let mut member_bearing: Option<i64> = None;
         let mut fallback: Option<i64> = None;
         for cand in self.by_name(simple).iter() {
             if !is_type_like(&cand.kind) {
                 continue;
             }
-            if child_package.is_some() && cand.package_id == child_package {
+            let in_package = child_package.is_some() && cand.package_id == child_package;
+            if in_package && declares_members(cand.id) {
                 return Some(cand.id);
             }
+            if in_package {
+                same_package.get_or_insert(cand.id);
+            }
+            if declares_members(cand.id) {
+                member_bearing.get_or_insert(cand.id);
+            }
             fallback.get_or_insert(cand.id);
+        }
+        if let Some(id) = same_package {
+            return Some(id);
         }
         if let Some(parent) = self.by_qname.get(parent_head) {
             return Some(parent.id);
         }
-        fallback
+        // A supertype that declares nothing cannot satisfy the member lookup the
+        // climb exists for. When one name has several type-like declarations —
+        // a package that exports both `type X = …` and the `interface X` the
+        // members live on — the member-bearing one is the parent the walk needs.
+        member_bearing.or(fallback)
     }
 
     /// Derive per-symbol type metadata from `TypeRef` refs and signature
@@ -2464,10 +2425,8 @@ impl Compilation {
 
             // External file: record its parse language for the cross-language
             // visibility check — same capture the full pass does in `ingest`.
-            if path.starts_with("ext:") && !self.ext_file_lang.contains_key(path.as_str()) {
-                if let Some(&code) = self.ext_lang_codes.get(language.as_str()) {
-                    self.ext_file_lang.insert(Arc::from(path.as_str()), code);
-                }
+            if path.starts_with("ext:") {
+                self.ext_langs.record_path(path.as_str(), language.as_str());
             }
 
             // The freshly-parsed batch wins for the structural indexes.

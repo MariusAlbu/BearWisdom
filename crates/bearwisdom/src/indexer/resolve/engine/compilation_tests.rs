@@ -2102,3 +2102,55 @@ fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value
          exports, so a matcher declared on it resolves on the receiver"
     );
 }
+
+/// A package can export both `type X = …` and the `interface X` whose members
+/// the walk needs (`@testing-library/jest-dom` ships
+/// `matchersStandalone.TestingLibraryMatchers` beside
+/// `matchers.TestingLibraryMatchers`). A supertype named only by its bare head
+/// must climb to the declaration that DECLARES members — a member-less alias
+/// cannot satisfy the lookup the climb exists for.
+#[test]
+fn a_bare_supertype_head_climbs_to_the_member_bearing_declaration() {
+    let arena = Arc::new(TypeArena::new());
+    // The alias is ingested FIRST, so a first-wins pick would take it.
+    let alias_file = make_parsed_file(
+        "ext:ts:pkg/types/standalone.d.ts",
+        vec![make_symbol(
+            "Matchers",
+            "pkg.standalone.Matchers",
+            SymbolKind::TypeAlias,
+            None,
+            None,
+            None,
+        )],
+        vec![],
+    );
+    let iface_file = make_parsed_file(
+        "ext:ts:pkg/types/matchers.d.ts",
+        vec![
+            make_symbol("Matchers", "pkg.matchers.Matchers", SymbolKind::Interface, None, None, None),
+            make_symbol("toBeVisible", "pkg.matchers.Matchers.toBeVisible", SymbolKind::Method, Some(0), None, None),
+        ],
+        vec![],
+    );
+    let child = make_parsed_file(
+        "ext:ts:other/index.d.ts",
+        vec![make_symbol("Assertion", "other.Assertion", SymbolKind::Interface, None, None, None)],
+        vec![inherits_ref(0, "Matchers")],
+    );
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("ext:ts:pkg/types/standalone.d.ts".into(), "pkg.standalone.Matchers".into()), 10);
+    id_map.insert(("ext:ts:pkg/types/matchers.d.ts".into(), "pkg.matchers.Matchers".into()), 20);
+    id_map.insert(("ext:ts:pkg/types/matchers.d.ts".into(), "pkg.matchers.Matchers.toBeVisible".into()), 21);
+    id_map.insert(("ext:ts:other/index.d.ts".into(), "other.Assertion".into()), 30);
+
+    let tree = Compilation::build(&[alias_file, iface_file, child], &id_map, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.parent_class_ids(30),
+        vec![20],
+        "the climb must reach the interface that declares the members, not the \
+         same-named member-less alias that happened to be ingested first"
+    );
+}

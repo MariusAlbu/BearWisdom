@@ -32,6 +32,7 @@ pub mod alias;
 pub mod arg_types;
 pub mod cause;
 pub mod chain;
+pub mod ext_lang_visibility;
 pub mod generics;
 pub mod lambda_seed;
 pub mod module_augmentation;
