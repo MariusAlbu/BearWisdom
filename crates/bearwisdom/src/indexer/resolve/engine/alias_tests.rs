@@ -211,3 +211,28 @@ fn infer_capture_declines_when_the_checked_type_is_not_the_pattern() {
 
     assert_ne!(arena.get(out), Type::Class("User".to_string()));
 }
+
+#[test]
+fn intersection_alias_expands_to_the_structural_intersection() {
+    // type AndNot<T> = T & { not: T }   —  AndNot<Matchers> must reach Matchers.
+    let lookup = Lookup::new()
+        .with_generics("AndNot", &["T"])
+        .with_alias(
+            "AndNot",
+            AliasTarget::Intersection(vec!["T".to_string(), "NotHolder".to_string()]),
+        );
+    let arena = lookup.type_arena().unwrap();
+    let applied = arena.intern(Type::Apply {
+        base: arena.class("AndNot"),
+        args: vec![arena.class("Matchers")],
+    });
+
+    let out = expand(applied, &lookup, arena);
+
+    let Type::Intersection(arms) = arena.get(out) else {
+        panic!("expected an Intersection, got {:?}", arena.get(out));
+    };
+    // The alias parameter was substituted by the application's argument.
+    assert!(arms.iter().any(|&a| arena.get(a) == Type::Class("Matchers".to_string())));
+    assert!(arms.iter().any(|&a| arena.get(a) == Type::Class("NotHolder".to_string())));
+}

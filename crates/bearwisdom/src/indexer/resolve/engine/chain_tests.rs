@@ -2614,3 +2614,51 @@ fn an_untyped_argument_leaves_the_mid_chain_yield_open() {
 
     assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
+
+#[test]
+fn member_resolves_through_an_intersection_alias_arm() {
+    // The jest/vitest matcher shape: `expect(x)` yields
+    // `Shape<Matchers> = Matchers & Resolvers`, and `.toBe` is declared on the
+    // Matchers arm. Without expanding the intersection alias the receiver has
+    // no members at all and every matcher call dies.
+    let lookup = Lookup::new()
+        .with_local_type("assertion", "Shape<Matchers>")
+        .with_generics("Shape", &["A"])
+        .with_alias(
+            "Shape",
+            AliasTarget::Intersection(vec!["A".to_string(), "Resolvers".to_string()]),
+        )
+        .with(sym(1, "Matchers", "Matchers", "interface", "ext:ts:jest.d.ts"))
+        .with_member(
+            "Matchers",
+            sym(30, "toBe", "Matchers.toBe", "method", "ext:ts:jest.d.ts"),
+        );
+    let segs = vec![
+        seg("assertion", false, SegmentKind::Identifier),
+        seg("toBe", true, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(30));
+}
+
+#[test]
+fn an_intersection_alias_arm_that_lacks_the_member_does_not_bind_it() {
+    let lookup = Lookup::new()
+        .with_local_type("assertion", "Shape<Matchers>")
+        .with_generics("Shape", &["A"])
+        .with_alias(
+            "Shape",
+            AliasTarget::Intersection(vec!["A".to_string(), "Resolvers".to_string()]),
+        )
+        .with(sym(1, "Matchers", "Matchers", "interface", "ext:ts:jest.d.ts"))
+        .with_member(
+            "Matchers",
+            sym(30, "toBe", "Matchers.toBe", "method", "ext:ts:jest.d.ts"),
+        );
+    let segs = vec![
+        seg("assertion", false, SegmentKind::Identifier),
+        seg("toEqual", true, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
+}
