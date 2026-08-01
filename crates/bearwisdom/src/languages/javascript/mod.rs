@@ -2,6 +2,7 @@
 
 mod calls;
 pub mod extract;
+pub(crate) mod flow;
 mod globals;
 mod helpers;
 mod imports;
@@ -26,6 +27,10 @@ mod calls_tests;
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -116,4 +121,7 @@ impl LanguagePlugin for JavascriptPlugin {
         Some(&profile::JAVASCRIPT_PROFILE)
     }
 
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::JS_FLOW_CONFIG)
+    }
 }

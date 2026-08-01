@@ -29,6 +29,93 @@ pub const TS_RETURN_QUERY: &str = r#"
     (arrow_function body: (_) @return.tail)
 "#;
 
+/// Two block-scoped narrowing forms:
+///   `if (x instanceof Foo) { ... }`      — `x` narrows to the class `Foo`
+///   `if (typeof x === "string") { ... }` — `x` narrows to the primitive
+/// The `@guard.body` statement_block bounds the narrowed scope. Purely
+/// structural (no type syntax), so the same source compiles against the
+/// TypeScript, TSX, and JavaScript grammars — `javascript::flow::JS_FLOW_CONFIG`
+/// shares it.
+///
+/// Type predicates (`function isFoo(x): x is Foo`) stay out: they narrow at
+/// the *call* site through which function was invoked, which is a cross-
+/// function dataflow, not a lexical block a single query can capture.
+pub const TS_TYPE_GUARD_QUERY: &str = r#"
+    (if_statement
+        condition: (parenthesized_expression
+            (binary_expression
+                left: (identifier) @guard.local
+                operator: "instanceof"
+                right: (identifier) @guard.type))
+        consequence: (statement_block) @guard.body)
+
+    (if_statement
+        condition: (parenthesized_expression
+            (binary_expression
+                left: (unary_expression
+                    operator: "typeof"
+                    argument: (identifier) @guard.local)
+                operator: ["===" "=="]
+                right: (string) @guard.type))
+        consequence: (statement_block) @guard.body)
+"#;
+
+/// Discriminated-union guards. `@guard.local` is the receiver, `@guard.prop`
+/// the discriminant property, `@guard.literal` the matched literal (with
+/// quotes), `@guard.body` the scope in which `x` narrows to the branch whose
+/// `prop` equals that literal. Structural, so it also compiles against the
+/// JavaScript grammar and is shared by `JS_FLOW_CONFIG`. Three forms:
+///   if  (x.kind === "circle") { ... }        — positive guard
+///   switch (x.kind) { case "circle": ... }   — @guard.body is the switch_case
+///                                              node, whose range covers the case
+///   if  (x.kind !== "circle") return;        — negated early-exit guard,
+///                                              narrows the rest of the block
+pub const TS_DISCRIMINANT_GUARD_QUERY: &str = r#"
+    (if_statement
+        condition: (parenthesized_expression
+            (binary_expression
+                left: (member_expression
+                    object: (identifier) @guard.local
+                    property: (property_identifier) @guard.prop)
+                operator: ["===" "=="]
+                right: (string) @guard.literal))
+        consequence: (statement_block) @guard.body)
+
+    (switch_statement
+        value: (parenthesized_expression
+            (member_expression
+                object: (identifier) @guard.local
+                property: (property_identifier) @guard.prop))
+        body: (switch_body
+            (switch_case
+                value: (string) @guard.literal) @guard.body))
+
+    (if_statement
+        condition: (parenthesized_expression
+            (binary_expression
+                left: (member_expression
+                    object: (identifier) @guard.local
+                    property: (property_identifier) @guard.prop)
+                operator: ["!==" "!="]
+                right: (string) @guard.literal))) @guard.early_exit
+"#;
+
+/// Maps bare literal RHS node kinds to the wrapper type they imply when no
+/// annotation and no resolvable ref are present. Mirrors the same mapping in
+/// `languages/typescript/calls.rs` that stamps the wrapper at a literal
+/// call site; this variant covers `const x = []; x.map()` where the local
+/// is declared with a literal but called through an identifier. The node
+/// kinds are identical in the JavaScript grammar, so `JS_FLOW_CONFIG` shares
+/// the table.
+pub const TS_LITERAL_TYPE_KINDS: &[(&str, &str)] = &[
+    ("array", "Array"),
+    ("object", "Object"),
+    ("string", "String"),
+    ("template_string", "String"),
+    ("number", "Number"),
+    ("regex", "RegExp"),
+];
+
 /// TypeScript flow-typing queries. Singleton — registered on the plugin via
 /// `LanguagePlugin::flow_config()`.
 pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
@@ -76,71 +163,9 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             (type_annotation (_) @type))
     "#,
 
-    // Two block-scoped narrowing forms:
-    //   if (x instanceof Foo) { ... }       — `x` narrows to the class `Foo`
-    //   if (typeof x === "string") { ... }   — `x` narrows to the primitive
-    // The @guard.body statement_block bounds the narrowed scope.
-    //
-    // Type predicates (`function isFoo(x): x is Foo`) stay out: they narrow at
-    // the *call* site through which function was invoked, which is a cross-
-    // function dataflow, not a lexical block a single query can capture.
-    type_guard_query: r#"
-        (if_statement
-            condition: (parenthesized_expression
-                (binary_expression
-                    left: (identifier) @guard.local
-                    operator: "instanceof"
-                    right: (identifier) @guard.type))
-            consequence: (statement_block) @guard.body)
+    type_guard_query: TS_TYPE_GUARD_QUERY,
 
-        (if_statement
-            condition: (parenthesized_expression
-                (binary_expression
-                    left: (unary_expression
-                        operator: "typeof"
-                        argument: (identifier) @guard.local)
-                    operator: ["===" "=="]
-                    right: (string) @guard.type))
-            consequence: (statement_block) @guard.body)
-    "#,
-
-    // Discriminated-union guards. @guard.local is the receiver, @guard.prop the
-    // discriminant property, @guard.literal the matched literal (with quotes),
-    // @guard.body the scope in which `x` narrows to the branch whose `prop`
-    // equals that literal. Two forms:
-    //   if  (x.kind === "circle") { ... }   — `!==` intentionally unmatched
-    //                                          (it narrows the else-branch)
-    //   switch (x.kind) { case "circle": ... }  — @guard.body is the switch_case
-    //                                          node, whose range covers the case
-    discriminant_guard_query: r#"
-        (if_statement
-            condition: (parenthesized_expression
-                (binary_expression
-                    left: (member_expression
-                        object: (identifier) @guard.local
-                        property: (property_identifier) @guard.prop)
-                    operator: ["===" "=="]
-                    right: (string) @guard.literal))
-            consequence: (statement_block) @guard.body)
-
-        (switch_statement
-            value: (parenthesized_expression
-                (member_expression
-                    object: (identifier) @guard.local
-                    property: (property_identifier) @guard.prop))
-            body: (switch_body
-                (switch_case
-                    value: (string) @guard.literal) @guard.body))
-
-        (if_statement
-            condition: (parenthesized_expression
-                (binary_expression
-                    left: (member_expression
-                        object: (identifier) @guard.local
-                        property: (property_identifier) @guard.prop)
-                    operator: ["!==" "!="]
-                    right: (string) @guard.literal))) @guard.early_exit
-    "#,
+    discriminant_guard_query: TS_DISCRIMINANT_GUARD_QUERY,
 
     // Matches call sites carrying explicit type arguments:
     //   obj.findOne<User>()
@@ -162,17 +187,5 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
                 (_) @call.type_arg))
     "#,
 
-    // Maps bare literal RHS node kinds to the wrapper type they imply when no
-    // annotation and no resolvable ref are present. Mirrors the same mapping in
-    // `languages/typescript/calls.rs` that stamps the wrapper at a literal
-    // call site; this variant covers `const x = []; x.map()` where the local
-    // is declared with a literal but called through an identifier.
-    literal_type_kinds: &[
-        ("array", "Array"),
-        ("object", "Object"),
-        ("string", "String"),
-        ("template_string", "String"),
-        ("number", "Number"),
-        ("regex", "RegExp"),
-    ],
+    literal_type_kinds: TS_LITERAL_TYPE_KINDS,
 };

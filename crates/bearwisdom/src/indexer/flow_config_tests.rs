@@ -29,6 +29,11 @@ fn check_plugin(lang_id: &str) {
         Query::new(&grammar, cfg.type_guard_query)
             .unwrap_or_else(|e| panic!("{lang_id} type_guard_query failed to compile: {e:?}"));
     }
+    if !cfg.discriminant_guard_query.trim().is_empty() {
+        Query::new(&grammar, cfg.discriminant_guard_query).unwrap_or_else(|e| {
+            panic!("{lang_id} discriminant_guard_query failed to compile: {e:?}")
+        });
+    }
     if !cfg.type_args_query.trim().is_empty() {
         Query::new(&grammar, cfg.type_args_query)
             .unwrap_or_else(|e| panic!("{lang_id} type_args_query failed to compile: {e:?}"));
@@ -38,6 +43,10 @@ fn check_plugin(lang_id: &str) {
 #[test]
 fn ts_flow_queries_compile() {
     check_plugin("typescript");
+}
+#[test]
+fn js_flow_queries_compile() {
+    check_plugin("javascript");
 }
 #[test]
 fn py_flow_queries_compile() {
