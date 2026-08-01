@@ -35,6 +35,7 @@ pub mod chain;
 pub mod generics;
 pub mod lambda_seed;
 pub mod module_augmentation;
+pub mod relative_imports;
 pub mod substitution;
 pub mod semantic_model;
 pub mod pipeline;
