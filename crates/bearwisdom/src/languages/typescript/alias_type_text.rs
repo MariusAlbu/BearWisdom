@@ -73,6 +73,11 @@ pub(super) fn branch_type_text(node: &Node, src: &[u8]) -> String {
 pub(super) fn head_type_name(node: &Node, src: &[u8]) -> String {
     match node.kind() {
         "type_identifier" | "identifier" => node_text(*node, src),
+        // A literal type is the KEY of any mapped type built over the union it
+        // belongs to (`{ [K in 'click' | 'change']: V }`), so the literal text
+        // is the branch — dropping it leaves such a mapped type with no keys
+        // and every one of its members unresolvable.
+        "literal_type" => node_text(*node, src),
         "nested_type_identifier" | "member_expression" => node_text(*node, src),
         "generic_type" => node
             .child_by_field_name("name")

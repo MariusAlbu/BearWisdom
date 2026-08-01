@@ -448,20 +448,30 @@ fn classify_mapped_object(node: &Node, src: &[u8]) -> Option<AliasTarget> {
 /// Reads the clause's `type` field (a `keyof_type` / `index_type_query`) and
 /// extracts the type identifier that follows `keyof`.
 fn extract_mapped_source(clause: &Node, src: &[u8], source: &mut String) {
-    if let Some(type_node) = clause.child_by_field_name("type") {
-        if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
-            for j in 0..type_node.child_count() {
-                let Some(op) = type_node.child(j) else { continue };
-                if op.kind() == "keyof" {
-                    continue;
-                }
-                let name = head_type_name(&op, src);
-                if !name.is_empty() {
-                    *source = name;
-                    break;
-                }
+    let Some(type_node) = clause.child_by_field_name("type") else {
+        return;
+    };
+    // `[K in keyof T]` — the source is the type whose keys are mapped.
+    if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
+        for j in 0..type_node.child_count() {
+            let Some(op) = type_node.child(j) else { continue };
+            if op.kind() == "keyof" {
+                continue;
+            }
+            let name = head_type_name(&op, src);
+            if !name.is_empty() {
+                *source = name;
+                break;
             }
         }
+        return;
+    }
+    // `[K in Keys]` — the source is named directly, and when it is a union of
+    // string literals it IS the key set. Without capturing it the mapped type
+    // has no source at all and every member it generates is unresolvable.
+    let name = head_type_name(&type_node, src);
+    if !name.is_empty() {
+        *source = name;
     }
 }
 

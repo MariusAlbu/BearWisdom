@@ -263,3 +263,39 @@ fn non_single_head_return_stays_opaque() {
         "union return should stay Other, got {target:?}"
     );
 }
+
+#[test]
+fn a_mapped_type_over_a_named_union_records_that_union_as_its_source() {
+    // `{ [K in Keys]: V }` names its source directly rather than through
+    // `keyof`. Dropping it leaves the mapped type sourceless, so none of the
+    // members it generates can resolve.
+    let r = crate::languages::typescript::extract::extract(
+        "export type Keys = 'click' | 'change'
+         export type FireObject = { [K in Keys]: (el: string) => boolean }
+",
+        false,
+    );
+    let target = r
+        .alias_targets
+        .iter()
+        .find(|(n, _)| n == "FireObject")
+        .map(|(_, t)| t.clone())
+        .expect("the mapped alias is captured");
+    match target {
+        crate::types::AliasTarget::Mapped { source, .. } => assert_eq!(source, "Keys"),
+        other => panic!("expected a Mapped target, got {other:?}"),
+    }
+    // Its source union keeps the literal branches that form the key set.
+    let keys = r
+        .alias_targets
+        .iter()
+        .find(|(n, _)| n == "Keys")
+        .map(|(_, t)| t.clone())
+        .expect("the union alias is captured");
+    match keys {
+        crate::types::AliasTarget::Union(branches) => {
+            assert_eq!(branches, vec!["'click'".to_string(), "'change'".to_string()])
+        }
+        other => panic!("expected a Union target, got {other:?}"),
+    }
+}

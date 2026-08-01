@@ -28,6 +28,7 @@ use crate::types::{AliasTargetIds, SegmentKind};
 
 use super::alias;
 use super::composite_members;
+use super::mapped_members;
 use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
 use super::generics::{bind_arg_generics, substitute_env};
@@ -39,7 +40,7 @@ use super::support::{import_scoped_package_id, is_type_kind, pick_ranked_candida
 const STRATEGY: &str = "rule_chain";
 
 /// Upper bound on supertype-chain climbing when locating an inherited member.
-const MAX_SUPERTYPE_DEPTH: usize = 8;
+pub(crate) const MAX_SUPERTYPE_DEPTH: usize = 8;
 
 /// Resolve a member chain to its final segment's symbol. `Err` when the root
 /// can't be typed or a hop has no matching member — an honestly-unresolved
@@ -829,7 +830,7 @@ pub(crate) fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_namespaced(lookup, &head, member, accept) {
         return Some(m);
     }
-    if let Some(source_ty) = mapped_source_type(lookup, arena, recv.ty, &head) {
+    if let Some(source_ty) = mapped_members::mapped_source_type(lookup, arena, recv.ty, &head) {
         let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
         // A mapped source that resolves back to the mapped type itself makes no
         // progress — skip rather than spin to the depth bound.
@@ -851,7 +852,15 @@ pub(crate) fn lookup_member_on_bounded(
     // The mapped source is an UNBOUND parameter: it falls back to its declared
     // default (a `typeof <namespace>`) whose keys are the mapped object's members,
     // resolved through the receiver's wildcard re-export closure.
-    lookup_member_via_unbound_mapped_source(lookup, arena, recv.ty, &head, member, accept)
+    if let Some(m) =
+        mapped_members::lookup_member_via_unbound_mapped_source(lookup, arena, recv.ty, &head, member, accept)
+    {
+        return Some(m);
+    }
+    // The member may be a key the mapping GENERATES rather than one any
+    // declaration states: a mapped type over a union of string literals admits
+    // exactly those names.
+    mapped_members::member_from_mapped_literal_key(lookup, arena, &head, member)
 }
 
 /// Resolve `member` on a MAPPED-ALIAS supertype of the receiver. A type can
@@ -896,7 +905,7 @@ fn lookup_member_on_mapped_supertype(
         } else {
             arena.intern(Type::Apply { base, args: arg_ids })
         };
-        if let Some(source_ty) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
+        if let Some(source_ty) = mapped_members::mapped_source_type(lookup, arena, parent_ty, parent_head) {
             let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
             if head_qname(arena, source_recv.ty).as_deref() != Some(parent_head.as_str()) {
                 if let Some(m) =
@@ -906,7 +915,7 @@ fn lookup_member_on_mapped_supertype(
                 }
             }
         }
-        if let Some(m) = lookup_member_via_unbound_mapped_source(
+        if let Some(m) = mapped_members::lookup_member_via_unbound_mapped_source(
             lookup, arena, parent_ty, parent_head, member, accept,
         ) {
             return Some(m);
@@ -995,107 +1004,6 @@ fn lookup_member_on_namespaced(
     }
     // Bare last segment as a qname (`Ns.Type` → `Type`).
     lookup_member(lookup, last, member, accept)
-}
-
-/// The source object type of a mapped alias `{ [K in keyof Src]: … }`, with the
-/// mapped param bound to the receiver's applied type argument: `Override<A, B>`
-/// (params `[A, B]`, source `A`) with receiver `Override<MutationObserverResult,
-/// …>` yields `MutationObserverResult`. A source naming a concrete type rather
-/// than a param is interned directly. `None` when `head` is not a mapped alias
-/// or the mapped capture recorded no source.
-fn mapped_source_type(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    ty: TypeId,
-    head: &str,
-) -> Option<TypeId> {
-    let source_id = match lookup.alias_target(head) {
-        Some(AliasTargetIds::Mapped { source, .. })
-        | Some(AliasTargetIds::IntersectionMapped { source, .. })
-            if !arena.format_type(*source).is_empty() =>
-        {
-            *source
-        }
-        _ => return None,
-    };
-    let source = arena.format_type(source_id);
-    let args = apply_args(arena, ty);
-    let params = lookup.generic_params(head).unwrap_or_default();
-    if let Some(pos) = params.iter().position(|p| *p == source) {
-        if let Some(&arg) = args.get(pos) {
-            return Some(arg);
-        }
-        // Source names a parameter with NO applied argument — unbound. The bare
-        // parameter name carries no members; its default (a `typeof <namespace>`)
-        // is resolved by `lookup_member_via_unbound_mapped_source` through the
-        // receiver's re-export closure instead.
-        return None;
-    }
-    Some(source_id)
-}
-
-/// Resolve `member` on a mapped alias whose source parameter is UNBOUND — the
-/// receiver supplied no type argument, so the parameter falls back to its
-/// declared default. The shape: `{ [P in keyof Q]: Wrap<Q[P]> }` with
-/// `Q extends Cons = typeof ns`. `keyof Q`'s keys are the members of the value
-/// namespace `ns`, and the receiver type's package re-exports that whole
-/// namespace (`export * from '@scope/pkg'`). Walk the receiver declaration's
-/// wildcard re-exports and resolve `member` by qualified name in each re-exported
-/// module.
-///
-/// Gated to: a Mapped / IntersectionMapped alias whose source is one of the
-/// type's own generic parameters with NO applied argument (a bound source is
-/// handled by `mapped_source_type`), declared in an EXTERNAL file (the namespace
-/// + wholesale re-export shape this targets only occurs in library `.d.ts`).
-/// `None` outside that shape or when no re-exported module carries the member.
-fn lookup_member_via_unbound_mapped_source(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    ty: TypeId,
-    head: &str,
-    member: &str,
-    accept: &dyn Fn(&str) -> bool,
-) -> Option<Symbol> {
-    let source_id = match lookup.alias_target(head)? {
-        AliasTargetIds::Mapped { source, .. }
-        | AliasTargetIds::IntersectionMapped { source, .. }
-            if !arena.format_type(*source).is_empty() =>
-        {
-            *source
-        }
-        _ => return None,
-    };
-    let source = arena.format_type(source_id);
-    let params = lookup.generic_params(head).unwrap_or_default();
-    let pos = params.iter().position(|p| *p == source)?;
-    // A source param with a CONCRETE applied argument is bound — `mapped_source_type`
-    // resolved it already. But a self-applied return type echoes its own parameters
-    // as arguments (`f(): Mapped<Q, A, B>`), so the arg at `pos` is the parameter
-    // name itself — still unbound, still defaulted. Treat an argument whose head is
-    // one of the type's own parameters as unbound.
-    let bound = apply_args(arena, ty)
-        .get(pos)
-        .and_then(|&a| head_qname(arena, a))
-        .is_some_and(|h| !params.iter().any(|p| *p == h));
-    if bound {
-        return None;
-    }
-    let decl_file = lookup.by_qualified_name(head)?.file_path.clone();
-    if !lookup.is_external_file(&decl_file) {
-        return None;
-    }
-    for (orig, module) in lookup.reexports_from(&decl_file) {
-        if orig.as_str() != "*" {
-            continue;
-        }
-        let want = format!("{module}.{member}");
-        for cand in lookup.by_name(member).iter() {
-            if cand.qualified_name == want && accept(&cand.kind) {
-                return Some(cand.clone());
-            }
-        }
-    }
-    None
 }
 
 /// Resolve `member` on `type_qname`, climbing its supertypes up to
@@ -1431,7 +1339,7 @@ fn receiver_mapped_supertype_has_source(
         } else {
             arena.intern(Type::Apply { base, args: arg_ids })
         };
-        if let Some(src) = mapped_source_type(lookup, arena, parent_ty, parent_head) {
+        if let Some(src) = mapped_members::mapped_source_type(lookup, arena, parent_ty, parent_head) {
             if let Some(src_head) = head_qname(arena, src) {
                 if qnames_same_type(target, &src_head) {
                     return true;

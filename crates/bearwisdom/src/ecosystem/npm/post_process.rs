@@ -223,7 +223,31 @@ pub(crate) fn prefix_ts_external_symbols(
     // member lookup THROUGH an external alias (intersection / mapped — e.g.
     // `RenderResult`'s `BoundFunctions` branch) misses, while own-member
     // lookup still works because members key on the already-qualified parent.
-    for (name, _) in pf.alias_targets.iter_mut() {
+    // The names a target REFERS to are prefixed the same way, but only when
+    // this file declares them: a mapped type's source (`{ [K in Keys]: V }`)
+    // is a sibling type in the package's own surface, while a generic
+    // parameter, a literal, or a type imported from another package is not and
+    // must stay as written.
+    let declared: std::collections::HashSet<String> = pf
+        .symbols
+        .iter()
+        .map(|s| s.qualified_name.clone())
+        .collect();
+    let qualify = |name: &mut String| {
+        if name.is_empty() || name.starts_with(&prefix) || name.starts_with(&globals_prefix) {
+            return;
+        }
+        let candidate = format!("{prefix}{name}");
+        if declared.contains(&candidate) {
+            *name = candidate;
+        }
+    };
+    for (name, target) in pf.alias_targets.iter_mut() {
+        match target {
+            crate::types::AliasTarget::Mapped { source, .. }
+            | crate::types::AliasTarget::IntersectionMapped { source, .. } => qualify(source),
+            _ => {}
+        }
         if !name.starts_with(&prefix) && !name.starts_with(&globals_prefix) {
             *name = format!("{prefix}{name}");
         }
@@ -262,6 +286,27 @@ fn requalify_named_type(
             }
             _ => None,
         },
+        // A composite annotation (`const v: A & B`) requalifies arm by arm.
+        // Every arm must requalify: a partial rewrite would silently drop the
+        // arm that carries the members the walk is looking for.
+        Type::Intersection(arms) => requalify_arms(arena, &arms, prefix)
+            .map(|arms| arena.intern(Type::Intersection(arms))),
+        Type::Union(arms) => {
+            requalify_arms(arena, &arms, prefix).map(|arms| arena.intern(Type::Union(arms)))
+        }
         _ => None,
     }
+}
+
+/// Requalify every arm of a composite type, or `None` if any arm cannot be.
+fn requalify_arms(
+    arena: &crate::type_checker::core::types::TypeArena,
+    arms: &[crate::type_checker::core::types::TypeId],
+    prefix: &str,
+) -> Option<Vec<crate::type_checker::core::types::TypeId>> {
+    let out: Vec<_> = arms
+        .iter()
+        .filter_map(|&a| requalify_named_type(arena, a, prefix))
+        .collect();
+    (out.len() == arms.len()).then_some(out)
 }

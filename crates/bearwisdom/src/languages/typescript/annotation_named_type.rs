@@ -34,10 +34,15 @@ pub(super) fn enrich_ambient_declarator_signatures(
     symbols: &mut [ExtractedSymbol],
     decl_syms_start: usize,
 ) {
-    if !decl
+    // `declare const x: T`, and the same declaration without the keyword — in a
+    // declaration file every top-level binding is ambient, and the grammar
+    // marks only the keyword form. The structural test is the absence of an
+    // INITIALIZER: `const x: T` with no `= …` cannot be typed by a flow seed,
+    // so recording its annotation can never out-rank a seeded type.
+    let ambient_keyword = decl
         .parent()
-        .is_some_and(|p| p.kind() == "ambient_declaration")
-    {
+        .is_some_and(|p| p.kind() == "ambient_declaration");
+    if !ambient_keyword && !declarators_are_initializerless(decl) {
         return;
     }
     let mut cursor = decl.walk();
@@ -64,12 +69,18 @@ pub(super) fn enrich_ambient_declarator_signatures(
         let Some(tv) = type_value else {
             continue;
         };
-        // Named shapes only. An object-type annotation's members are emitted
-        // as symbols by `annotation_members`; a function/constructor type has
-        // no nominal member surface to root on.
+        // Named shapes, plus an INTERSECTION of them: `const v: A & B` carries
+        // every arm's members, and `intern_type_str` decomposes the recorded
+        // annotation into the structural intersection the member walk traverses
+        // arm by arm. A union is deliberately excluded — its member set is the
+        // arms' INTERSECTION, which the walker derives from the arms
+        // themselves, so recording one here would not widen anything.
+        // An object-type annotation's members are emitted as symbols by
+        // `annotation_members`; a function/constructor type has no nominal
+        // member surface to root on.
         if !matches!(
             tv.kind(),
-            "type_identifier" | "nested_type_identifier" | "generic_type"
+            "type_identifier" | "nested_type_identifier" | "generic_type" | "intersection_type"
         ) {
             continue;
         }
@@ -86,3 +97,22 @@ pub(super) fn enrich_ambient_declarator_signatures(
         sym.signature = Some(format!("const {name}: {ty}"));
     }
 }
+
+/// True when every declarator of `decl` carries a type annotation and no
+/// initializer — the shape a declaration file uses for an ambient binding.
+fn declarators_are_initializerless(decl: &Node) -> bool {
+    let mut cursor = decl.walk();
+    let declarators: Vec<Node> = decl
+        .children(&mut cursor)
+        .filter(|c| c.kind() == "variable_declarator")
+        .collect();
+    drop(cursor);
+    !declarators.is_empty()
+        && declarators.iter().all(|d| {
+            d.child_by_field_name("type").is_some() && d.child_by_field_name("value").is_none()
+        })
+}
+
+#[cfg(test)]
+#[path = "annotation_named_type_tests.rs"]
+mod tests;
