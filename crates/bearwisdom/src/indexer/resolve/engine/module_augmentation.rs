@@ -2,8 +2,8 @@
 // engine/module_augmentation — cross-module interface grafts in external source
 //
 // A package can declare members onto an interface that belongs to ANOTHER
-// module (`declare module 'chai' { interface Assertion { … } }`). The members
-// land under the augmenting package's own qname, so the compilation needs the
+// module (`declare module '<other>' { interface I { … } }`). The members land
+// under the augmenting package's own qname, so the compilation needs the
 // `(augmented module, interface, augmenting qname)` triples to graft them onto
 // the interface they extend. Source-text scanning, because the external parse
 // cache discards file content.
