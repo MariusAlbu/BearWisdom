@@ -788,6 +788,15 @@ pub(crate) fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_namespaced(lookup, &head, member, accept) {
         return Some(m);
     }
+    // Index-signature admission: a receiver (or a supertype) declaring an
+    // index signature — captured as a bracket-named member (`[key]`,
+    // `[index]`) — accepts ANY member name; the signature is the declaration
+    // such an access means (`process.env.VERCEL_URL` → `Dict.[key]`). A
+    // computed key (`[Symbol.iterator]`) is a real named member and never
+    // admits. Late in the ladder, so every named path wins first.
+    if let Some(m) = lookup_member_on_index_signature(lookup, &head, accept) {
+        return Some(m);
+    }
     if let Some(source_ty) = mapped_members::mapped_source_type(lookup, arena, recv.ty, &head) {
         let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
         // A mapped source that resolves back to the mapped type itself makes no
@@ -967,6 +976,34 @@ fn lookup_member_on_namespaced(
 /// Resolve `member` on `type_qname`, climbing its supertypes up to
 /// `MAX_SUPERTYPE_DEPTH`. `accept` gates a candidate by kind. The climb is
 /// bounded and cheap, so it is recomputed per call rather than memoized.
+/// The index-signature member declared on `type_qname` or a supertype: a
+/// bracket-named member (`[key]`, `[index]` — the binder name the extractor
+/// records) that admits any key. A computed key (`[Symbol.iterator]`) is a
+/// real named member, not an index signature, and never matches.
+fn lookup_member_on_index_signature(
+    lookup: &dyn SymbolLookup,
+    type_qname: &str,
+    accept: &dyn Fn(&str) -> bool,
+) -> Option<Symbol> {
+    let mut cur = type_qname.to_string();
+    for _ in 0..MAX_SUPERTYPE_DEPTH {
+        for m in lookup.members_of(&cur) {
+            if m.name.starts_with('[')
+                && m.name.ends_with(']')
+                && !m.name.starts_with("[Symbol.")
+                && accept(&m.kind)
+            {
+                return Some(m.clone());
+            }
+        }
+        match lookup.parent_class_qname(&cur) {
+            Some(parent) => cur = parent.to_string(),
+            None => break,
+        }
+    }
+    None
+}
+
 pub(crate) fn lookup_member(
     lookup: &dyn SymbolLookup,
     type_qname: &str,

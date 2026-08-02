@@ -2896,3 +2896,40 @@ fn a_called_method_still_yields_its_return_not_the_prototype() {
         .map(|si| si.target_symbol_id);
     assert_eq!(got, None);
 }
+
+#[test]
+fn member_miss_falls_through_to_an_index_signature() {
+    // process.env.VERCEL_URL — ProcessEnv extends Dict<string>;
+    // `interface Dict<T> { [key: string]: T | undefined }` is captured as the
+    // bracket-named member `[key]`. An arbitrary key resolves to the index
+    // signature — the declaration such an access means.
+    let lookup = Lookup::new()
+        .with_local_type("env", "ProcessEnv")
+        .with(sym(1, "ProcessEnv", "ProcessEnv", "interface", "l.d.ts"))
+        .with_parent("ProcessEnv", "Dict")
+        .with(sym(2, "Dict", "Dict", "interface", "l.d.ts"))
+        .with_member("Dict", sym(50, "[key]", "Dict.[key]", "property", "l.d.ts"));
+    let segs = vec![
+        seg("env", false, SegmentKind::Identifier),
+        seg("VERCEL_URL", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
+fn a_computed_symbol_key_is_not_an_index_signature() {
+    // `[Symbol.toPrimitive]` is a REAL named member (a computed key) — an
+    // arbitrary member miss must not resolve to it.
+    let lookup = Lookup::new()
+        .with_local_type("t", "Timer")
+        .with(sym(1, "Timer", "Timer", "interface", "l.d.ts"))
+        .with_member(
+            "Timer",
+            sym(50, "[Symbol.toPrimitive]", "Timer.[Symbol.toPrimitive]", "property", "l.d.ts"),
+        );
+    let segs = vec![
+        seg("t", false, SegmentKind::Identifier),
+        seg("missing", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
+}
