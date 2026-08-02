@@ -184,6 +184,7 @@ pub(crate) fn expand_with_id(
             let map: FxHashMap<String, TypeId> = params.into_iter().zip(ty_args).collect();
             arena.rebind_class_params(target, &map)
         };
+        crate::tracef!("  ALIAS '{}' -> {}", head, arena.format_type(ty));
     }
     ty
 }
@@ -288,6 +289,12 @@ fn head_type_id(arena: &TypeArena, id: TypeId) -> TypeId {
 /// literals. Anything else is undecidable here — there is no full subtype lattice,
 /// so `None` rather than a guess.
 fn literal_extends(arena: &TypeArena, check: TypeId, extends: TypeId) -> Option<bool> {
+    // Everything is assignable to a top type: `T extends any` / `T extends
+    // unknown` is the distributive-conditional idiom and always takes the true
+    // branch, whatever `T` bound to.
+    if head_qname(arena, extends).as_deref().is_some_and(|n| n == "any" || n == "unknown") {
+        return Some(true);
+    }
     // Identical nominal heads are assignable (structural id equality).
     if head_type_id(arena, check) == head_type_id(arena, extends) {
         return Some(true);

@@ -1430,6 +1430,91 @@ fn member_resolves_through_omit_utility_to_wrapped_type() {
 }
 
 #[test]
+fn member_resolves_through_omit_of_an_applied_wrapper() {
+    // function get<TData>(): Result<TData>
+    // type Result<TData> = Omit<Wrapper<TData>, 'x'>
+    // interface Wrapper<TData> { data: TData }
+    // get().data — the Omit source is an APPLICATION, not a bare name; member
+    // identity must resolve on Wrapper even though TData stays unbound. Only
+    // the member's own yielded type is generic — resolution is not full typing.
+    let lookup = Lookup::new()
+        .with(sym(1, "get", "get", "function", "a.ts"))
+        .with_return_type("get", "Result<TData>")
+        .with(sym(2, "Result", "Result", "type_alias", "a.ts"))
+        .with_generics("Result", &["TData"])
+        .with_alias(
+            "Result",
+            crate::types::AliasTarget::Application {
+                root: "Omit".to_string(),
+                args: vec!["Wrapper<TData>".to_string(), "'x'".to_string()],
+            },
+        )
+        .with(sym(3, "Wrapper", "Wrapper", "interface", "a.ts"))
+        .with_generics("Wrapper", &["TData"])
+        .with_member("Wrapper", sym(50, "data", "Wrapper.data", "property", "a.ts"));
+    let segs = vec![
+        seg("get", true, SegmentKind::Identifier),
+        seg("data", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
+fn member_resolves_through_a_distributive_omit_over_a_union() {
+    // function get<TData>(): R<TData>
+    // type R<TData> = DOmit<Union<TData>, 'gone'>
+    // type DOmit<TObject, TKey> = TObject extends any ? Omit<TObject, TKey> : never
+    // type Union<TData> = A<TData> | B<TData>
+    // interface Base<TData> { data: TData }
+    // interface A<TData> extends Base<TData> {}   interface B … likewise
+    // get().data — the conditional's true branch names its OWN params, so the
+    // Application's args must substitute into the branch before the walk
+    // continues; the branch's Omit then unwraps onto the union, and the member
+    // (present on every arm via the shared base) resolves. TData stays unbound.
+    let lookup = Lookup::new()
+        .with(sym(1, "get", "get", "function", "a.ts"))
+        .with_return_type("get", "R<TData>")
+        .with(sym(2, "R", "R", "type_alias", "a.ts"))
+        .with_generics("R", &["TData"])
+        .with_alias(
+            "R",
+            crate::types::AliasTarget::Application {
+                root: "DOmit".to_string(),
+                args: vec!["Union<TData>".to_string(), "'gone'".to_string()],
+            },
+        )
+        .with(sym(3, "DOmit", "DOmit", "type_alias", "a.ts"))
+        .with_generics("DOmit", &["TObject", "TKey"])
+        .with_alias(
+            "DOmit",
+            crate::types::AliasTarget::Conditional {
+                check: "TObject".to_string(),
+                extends: "any".to_string(),
+                true_branch: "Omit<TObject, TKey>".to_string(),
+                false_branch: "never".to_string(),
+                infer_binding: None,
+            },
+        )
+        .with(sym(4, "Union", "Union", "type_alias", "a.ts"))
+        .with_generics("Union", &["TData"])
+        .with_alias(
+            "Union",
+            crate::types::AliasTarget::Union(vec!["A<TData>".to_string(), "B<TData>".to_string()]),
+        )
+        .with(sym(5, "A", "A", "interface", "a.ts"))
+        .with(sym(6, "B", "B", "interface", "a.ts"))
+        .with(sym(7, "Base", "Base", "interface", "a.ts"))
+        .with_parent("A", "Base")
+        .with_parent("B", "Base")
+        .with_member("Base", sym(50, "data", "Base.data", "property", "a.ts"));
+    let segs = vec![
+        seg("get", true, SegmentKind::Identifier),
+        seg("data", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
 fn qnames_same_type_tolerates_package_prefix() {
     assert!(super::qnames_same_type("@types/chai.Chai.Assertion", "Chai.Assertion"));
     assert!(super::qnames_same_type("Chai.Assertion", "@types/chai.Chai.Assertion"));
