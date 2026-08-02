@@ -133,6 +133,7 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
         ("Protected", Visibility::Protected),
         ("Friend", Visibility::Internal),
     ],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

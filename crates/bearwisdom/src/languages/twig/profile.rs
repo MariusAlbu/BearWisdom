@@ -68,6 +68,7 @@ pub const TWIG_PROFILE: LanguageProfile = LanguageProfile {
     decorator_syntax: None,
     doc_comment_kinds: &["{#"],
     visibility_keywords: &[],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

@@ -73,6 +73,13 @@ pub struct LanguageProfile {
     /// never resolves to a `slice.push`. `&[]` (the default) leaves every
     /// member miss a miss.
     pub container_deref_targets: &'static [(&'static str, &'static str)],
+    /// Type names whose members a FUNCTION VALUE carries — a method accessed
+    /// without a call (`this.m.bind(this)`) resolves `bind`/`call`/`apply` on
+    /// these declarations. The member SET comes from the indexed lib, never a
+    /// hardcoded list; these names only say where a function value's prototype
+    /// lives. `&[]` (the default) leaves an uncalled method's member misses as
+    /// ordinary misses.
+    pub function_prototype_types: &'static [&'static str],
     /// A user-defined single-inner Deref wrapper: a type `C` with an
     /// `impl Deref for C { type Target = Inner }` exposes Inner's member set on
     /// a `C` receiver (Rust autoderef). Unlike `single_inner_wrappers` — which
@@ -1164,6 +1171,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     container_accessors: &[],
     single_inner_wrappers: &[],
     container_deref_targets: &[],
+    function_prototype_types: &[],
     deref_wrapper: None,
     iterator_method: None,
     primitive_mapping: &[],

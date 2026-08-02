@@ -118,6 +118,7 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     decorator_syntax: Some(DecoratorSyntax::AtPrefix),
     doc_comment_kinds: &["///"],
     visibility_keywords: &[],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

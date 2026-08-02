@@ -66,6 +66,7 @@ const fn minimal(id: &'static str) -> LanguageProfile {
         decorator_syntax: None,
         doc_comment_kinds: &[],
         visibility_keywords: &[],
+        function_prototype_types: &[],
     }
 }
 

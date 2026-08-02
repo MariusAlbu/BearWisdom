@@ -19,6 +19,7 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     container_accessors: &[],
     single_inner_wrappers: &[],
     container_deref_targets: &[],
+    function_prototype_types: &[],
     deref_wrapper: None,
     iterator_method: Some("[Symbol.iterator]"),
     primitive_mapping: &[],

@@ -122,6 +122,7 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
         ("private", Visibility::Private),
         ("protected", Visibility::Protected),
     ],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

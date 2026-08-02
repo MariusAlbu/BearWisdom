@@ -85,7 +85,13 @@ pub fn bind_member_access(
     let mut current = expand_receiver(root, lookup, arena, Some(file_ctx));
     let last = chain.segments.len() - 1;
 
+    // True when the PREVIOUS hop resolved a callable member accessed WITHOUT a
+    // call — the walk then holds a function VALUE, whose only members are the
+    // function prototype's (`profile.function_prototype_types`).
+    let mut prev_uncalled_callable = false;
     for (i, seg) in chain.segments.iter().enumerate().skip(1) {
+        let was_uncalled_callable = prev_uncalled_callable;
+        prev_uncalled_callable = false;
         // Positional tuple access from an array-destructure binding
         // (`const [a, b] = x`, emitted as a `tuple_index:N` ComputedAccess
         // segment): select the receiver tuple's element N, not a named member.
@@ -151,20 +157,36 @@ pub fn bind_member_access(
                 // to the profile's Deref target (`Vec<T>` → `slice<T>`), args
                 // kept. The reheaded receiver replaces `current` so the yield
                 // step substitutes the member's generics through it.
-                let Some((m, reheaded)) = lookup_member_on_deref_target(
+                if let Some((m, reheaded)) = lookup_member_on_deref_target(
                     lookup,
                     arena,
                     current,
                     &seg.name,
                     Some(file_ctx),
                     profile.container_deref_targets,
-                ) else {
+                ) {
+                    current = reheaded;
+                    m
+                } else if was_uncalled_callable {
+                    // A method accessed WITHOUT a call is a function VALUE
+                    // (`this.m.bind(this)`) — the members it carries are the
+                    // function prototype's, declared on the profile's
+                    // function-prototype types. Tried only after the ordinary
+                    // walk missed, so a real member of the yielded type wins.
+                    match profile
+                        .function_prototype_types
+                        .iter()
+                        .find_map(|t| lookup_member(lookup, t, &seg.name, &|_k| true))
+                    {
+                        Some(m) => m,
+                        None => return Err(member_miss_cause(lookup, arena, current)),
+                    }
+                } else {
                     return Err(member_miss_cause(lookup, arena, current));
-                };
-                current = reheaded;
-                m
+                }
             }
         };
+        prev_uncalled_callable = !seg.is_call && is_callable(&member.kind);
         if i == last {
             // The final member's yield type (with the receiver's type arguments
             // substituted) records x's type for `const x = a.b.c()` so a later

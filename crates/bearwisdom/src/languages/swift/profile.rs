@@ -132,6 +132,7 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
         ("fileprivate", Visibility::Private),
         ("internal", Visibility::Internal),
     ],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

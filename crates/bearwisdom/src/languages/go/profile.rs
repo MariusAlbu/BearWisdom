@@ -156,6 +156,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Go has no visibility keywords — uppercase identifier = exported, the
     // extractor surfaces that as Visibility::Public on emission.
     visibility_keywords: &[],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

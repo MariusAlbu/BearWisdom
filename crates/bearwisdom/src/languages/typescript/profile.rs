@@ -222,6 +222,9 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
         ("private", Visibility::Private),
         ("protected", Visibility::Protected),
     ],
+    // A function value's prototype members (`bind` / `call` / `apply`) are
+    // declared on lib.es5's callable interfaces.
+    function_prototype_types: &["CallableFunction", "Function"],
 };
 
 #[cfg(test)]

@@ -128,6 +128,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
         ("protected", Visibility::Protected),
         ("strict private", Visibility::Private),
     ],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

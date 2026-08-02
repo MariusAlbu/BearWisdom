@@ -154,6 +154,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // convention; the extractor encodes that as visibility, the engine
     // doesn't need keyword recognition.
     visibility_keywords: &[],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

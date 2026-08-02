@@ -142,6 +142,7 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
         ("protected", Visibility::Protected),
         ("internal", Visibility::Internal),
     ],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

@@ -118,6 +118,7 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     decorator_syntax: None,
     doc_comment_kinds: &["@doc"],
     visibility_keywords: &[],
+    function_prototype_types: &[],
 };
 
 #[cfg(test)]

@@ -2825,3 +2825,74 @@ fn an_external_member_never_roots_a_bare_name() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
+
+#[test]
+fn uncalled_method_value_resolves_function_prototype_members() {
+    // `this.fetchNextPage.bind(this)` — a method accessed WITHOUT a call is a
+    // function VALUE; `bind` resolves on the profile's function-prototype type
+    // (whose members come from the indexed lib), not on the method's return.
+    let profile = LanguageProfile {
+        function_prototype_types: &["CallableFunction", "Function"],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = Lookup::new()
+        .with_local_type("obs", "Obs")
+        .with_member("Obs", sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"))
+        .with_return_type("Obs.fetchNextPage", "Promise<Result>")
+        .with(sym(
+            20,
+            "CallableFunction",
+            "CallableFunction",
+            "interface",
+            "ext:ts:__ts_lib__/lib.es5.d.ts",
+        ))
+        .with_member(
+            "CallableFunction",
+            sym(50, "bind", "CallableFunction.bind", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+        );
+    let segs = vec![
+        seg("obs", false, SegmentKind::Identifier),
+        seg("fetchNextPage", false, SegmentKind::Property),
+        seg("bind", true, SegmentKind::Property),
+    ];
+    let mut r = call_ref("bind");
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
+        .ok()
+        .map(|si| si.target_symbol_id);
+    assert_eq!(got, Some(50));
+}
+
+#[test]
+fn a_called_method_still_yields_its_return_not_the_prototype() {
+    // `obs.fetchNextPage().bind` — the method IS called, so the walk advances
+    // on its return type; the prototype fallback must not fire.
+    let profile = LanguageProfile {
+        function_prototype_types: &["CallableFunction"],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = Lookup::new()
+        .with_local_type("obs", "Obs")
+        .with_member("Obs", sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"))
+        .with_return_type("Obs.fetchNextPage", "Result")
+        .with(sym(20, "CallableFunction", "CallableFunction", "interface", "l.d.ts"))
+        .with_member(
+            "CallableFunction",
+            sym(50, "bind", "CallableFunction.bind", "method", "l.d.ts"),
+        );
+    let segs = vec![
+        seg("obs", false, SegmentKind::Identifier),
+        seg("fetchNextPage", true, SegmentKind::Property),
+        seg("bind", true, SegmentKind::Property),
+    ];
+    let mut r = call_ref("bind");
+    r.chain = Some(MemberChain { segments: segs });
+    let s = source_symbol("caller");
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
+        .ok()
+        .map(|si| si.target_symbol_id);
+    assert_eq!(got, None);
+}
