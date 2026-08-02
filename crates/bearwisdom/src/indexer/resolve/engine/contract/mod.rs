@@ -31,7 +31,8 @@ pub(crate) use chain_walker::{
     is_plain_type_name, merge_where_bounds, parse_declared_type_from_signature_for_lang,
     parse_generic_param_clause, parse_object_type_members, parse_param_types_from_signature,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_return_type_trailing, parse_type_head_and_args,
+    parse_return_type_positional, parse_return_type_trailing, parse_top_level_conditional,
+    parse_type_head_and_args,
     parse_type_head_and_args_bracket, resolve_type_name_in_scope,
 };
 pub(crate) use util::{

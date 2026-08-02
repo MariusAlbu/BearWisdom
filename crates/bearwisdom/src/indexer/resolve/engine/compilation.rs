@@ -17,7 +17,8 @@ use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
     parse_object_type_members, parse_param_types_from_signature,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_type_head_and_args, resolve_type_name_in_scope,
+    parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
+    resolve_type_name_in_scope,
     FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
@@ -1291,6 +1292,47 @@ impl Compilation {
                             // destructure binding indexes.
                             let rid = self.arena.intern_type_str(rt);
                             Some((self.arena.format_type(rid), Some(rid)))
+                        } else if let Some((tb, fb)) =
+                            sig_rt.as_deref().and_then(parse_top_level_conditional)
+                        {
+                            // A conditional return (`… extends … ? A : B`) is
+                            // undecidable here; carry its BRANCHES, not its check —
+                            // the member-lookup semantics an undecidable conditional
+                            // ALIAS already gets. A `never` branch carries no members
+                            // and is dropped; both live branches join as an
+                            // Intersection so a member declared on whichever branch
+                            // applies still resolves. Each branch's head is
+                            // scope-qualified like every other return head, so a
+                            // package-local name binds its declaration.
+                            let intern_branch = |branch: &str| -> TypeId {
+                                let (head, args) = parse_type_head_and_args(branch);
+                                let head_is_name = !head.is_empty()
+                                    && head.chars().all(|c| {
+                                        c.is_alphanumeric() || c == '_' || c == '.'
+                                    });
+                                if !head_is_name {
+                                    return self.arena.intern_type_str(branch);
+                                }
+                                let resolved = resolve_type_name_in_scope(
+                                    head,
+                                    sym.scope_path.as_deref(),
+                                    &self.by_qname,
+                                );
+                                let args: Vec<String> =
+                                    args.iter().map(|s| s.to_string()).collect();
+                                intern_head_and_args(&self.arena, &resolved, &args)
+                            };
+                            let t_id = (tb.trim() != "never").then(|| intern_branch(&tb));
+                            let f_id = (fb.trim() != "never").then(|| intern_branch(&fb));
+                            let rid = match (t_id, f_id) {
+                                (Some(t), Some(f)) => {
+                                    self.arena.intern(Type::Intersection(vec![t, f]))
+                                }
+                                (Some(t), None) => t,
+                                (None, Some(f)) => f,
+                                (None, None) => self.arena.intern_type_str("never"),
+                            };
+                            Some((self.arena.format_type(rid), Some(rid)))
                         } else if let Some((head, args)) = sig_generic {
                             let resolved = resolve_type_name_in_scope(
                                 &head,
@@ -1299,18 +1341,30 @@ impl Compilation {
                             );
                             let rid = intern_head_and_args(&self.arena, &resolved, &args);
                             Some((resolved, Some(rid)))
-                        } else if let Some(&(last, _)) = type_refs.last().filter(|_| {
-                            // The trailing TypeRef is the return type only when the
-                            // signature expresses one (`sig_rt`). For a params-first
-                            // callable with an inferred return, the last TypeRef is
-                            // the last PARAMETER type, which must not be mistaken for
-                            // the return (`m(opts: O) { return … }` is not `(): O`).
-                            sig_rt.is_some()
-                                || sym
+                        } else if let Some(&(last, _)) = type_refs.last().filter(|&&(last, _)| {
+                            // The trailing TypeRef is the return type only when it
+                            // NAMES the signature's return. A return whose annotation
+                            // emits no TypeRef — a bare generic param (`(t: Token<T>):
+                            // T`), a conditional, an indexed access — leaves the last
+                            // PARAMETER's ref trailing, and recording that as the
+                            // return types every call site with an argument type.
+                            match sig_rt.as_deref().map(str::trim) {
+                                Some(rt) => {
+                                    last == rt || {
+                                        let (head, _) = parse_type_head_and_args(rt);
+                                        !head.is_empty() && last == head
+                                    }
+                                }
+                                // No annotated return: an inferred-return callable's
+                                // last TypeRef is its return only when the signature
+                                // carries no params at all (otherwise it is the last
+                                // parameter type).
+                                None => sym
                                     .signature
                                     .as_deref()
                                     .and_then(parse_param_types_from_signature)
-                                    .map_or(true, |params| params.is_empty())
+                                    .map_or(true, |params| params.is_empty()),
+                            }
                         }) {
                             let resolved = resolve_type_name_in_scope(
                                 last,

@@ -787,6 +787,71 @@ pub(crate) fn parse_return_type_from_signature_for_lang(
     None
 }
 
+/// Split a top-level conditional type (`C extends E ? T : F`) into its
+/// true/false branch texts. `None` when the text carries no depth-0
+/// ` extends ` followed by a depth-0 `?` — the marker pair that
+/// distinguishes a conditional from an optional member or a ternary-free
+/// type. Only the OUTERMOST `? :` pair splits; a conditional nested in a
+/// branch stays whole in that branch's text. Depth counts `()`/`<>`/`[]`/
+/// `{}`, with an arrow's `=>` exempt from angle depth (no type bracket
+/// ends in `=>`), so a function-typed branch does not derail the scan.
+pub(crate) fn parse_top_level_conditional(rt: &str) -> Option<(String, String)> {
+    let bytes = rt.as_bytes();
+    let mut depth: i32 = 0;
+    let mut extends_at: Option<usize> = None;
+    let mut question_at: Option<usize> = None;
+    let mut cond_nesting = 0usize;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'<' => depth += 1,
+            b'>' => {
+                let is_arrow = i > 0 && matches!(bytes[i - 1], b'-' | b'=');
+                if !is_arrow {
+                    depth -= 1;
+                }
+            }
+            b'e' if depth == 0 && extends_at.is_none() => {
+                // ` extends ` as a standalone keyword — both neighbours must
+                // be non-identifier bytes so `Textends`-like names don't match.
+                if rt[i..].starts_with("extends")
+                    && i > 0
+                    && !bytes[i - 1].is_ascii_alphanumeric()
+                    && bytes[i - 1] != b'_'
+                    && bytes
+                        .get(i + 7)
+                        .is_some_and(|c| !c.is_ascii_alphanumeric() && *c != b'_')
+                {
+                    extends_at = Some(i);
+                }
+            }
+            b'?' if depth == 0 && extends_at.is_some() => {
+                if question_at.is_none() {
+                    question_at = Some(i);
+                } else {
+                    cond_nesting += 1;
+                }
+            }
+            b':' if depth == 0 => {
+                let Some(q) = question_at else { continue };
+                if cond_nesting > 0 {
+                    cond_nesting -= 1;
+                    continue;
+                }
+                let true_branch = rt[q + 1..i].trim();
+                let false_branch = rt[i + 1..].trim();
+                if true_branch.is_empty() || false_branch.is_empty() {
+                    return None;
+                }
+                return Some((true_branch.to_string(), false_branch.to_string()));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Parse a Go method's result type from its signature. Go places the result
 /// AFTER the param list with no separator, in two shapes the structural
 /// member-compare consumes:
@@ -1138,3 +1203,7 @@ pub(crate) fn parse_return_type_from_jvm_descriptor(sig: &str) -> Option<String>
     }
     Some(slashed.replace('/', "."))
 }
+
+#[cfg(test)]
+#[path = "chain_walker_tests.rs"]
+mod tests;
