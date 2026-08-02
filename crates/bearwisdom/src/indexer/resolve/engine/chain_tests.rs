@@ -1389,9 +1389,11 @@ fn root_ignores_import_scope_when_module_absent() {
     // No `ext:` symbol under the imported module → the scoped branch declines and
     // the generic value-root fallback still runs, so an unrelated same-name pick
     // is unchanged (the fix only ADDS a scoped pick; it does not block fallbacks).
+    // The fallback candidate is a standalone `declare var` — an external MEMBER
+    // would be excluded from bare-name rooting.
     let lookup = Lookup::new()
-        .with(sym(99, "z", "CSSRotate.z", "property", "ext:ts:typescript/lib/lib.dom.d.ts"))
-        .with_field_type("CSSRotate.z", "CSSNumberish")
+        .with(sym(99, "z", "z", "variable", "ext:ts:typescript/lib/lib.dom.d.ts"))
+        .with_field_type("z", "CSSNumberish")
         .with_member(
             "CSSNumberish",
             sym(50, "valueOf", "CSSNumberish.valueOf", "method", "ext:ts:typescript/lib/lib.dom.d.ts"),
@@ -2794,4 +2796,32 @@ fn class_value_argument_binds_a_token_call_root() {
     root.call_args = vec![crate::types::CallArg::Ident("TasksService".to_string())];
     let segs = vec![root, seg("allTasks", false, SegmentKind::Property)];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}
+
+#[test]
+fn an_external_member_never_roots_a_bare_name() {
+    // lib.dom declares `WorkerNavigator.storage: StorageManager`; the use site
+    // has a local `storage` (a destructured param) with no captured type. A
+    // foreign type's PROPERTY must not type the bare root — members need
+    // receivers — so the chain stays unresolved instead of resolving through
+    // the wrong declaration.
+    let lookup = Lookup::new()
+        .with(sym(
+            9,
+            "storage",
+            "WorkerNavigator.storage",
+            "property",
+            "ext:ts:__ts_lib__/lib.dom.d.ts",
+        ))
+        .with_field_type("WorkerNavigator.storage", "StorageManager")
+        .with(sym(10, "StorageManager", "StorageManager", "interface", "ext:ts:__ts_lib__/lib.dom.d.ts"))
+        .with_member(
+            "StorageManager",
+            sym(50, "estimate", "StorageManager.estimate", "method", "ext:ts:__ts_lib__/lib.dom.d.ts"),
+        );
+    let segs = vec![
+        seg("storage", false, SegmentKind::Identifier),
+        seg("estimate", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
 }

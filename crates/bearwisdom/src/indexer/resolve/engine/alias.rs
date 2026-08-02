@@ -70,6 +70,38 @@ pub(crate) fn expand_with_id(
                 continue;
             }
         }
+        // `ReturnType<F>` applied DIRECTLY resolves by the intrinsic's
+        // semantics — the named callable's return — BEFORE the name-keyed
+        // alias lookup, which a package's own `ReturnType` helper can shadow
+        // (an unimporting use site means the lib intrinsic, and the name map
+        // cannot know that). Same ordering the utility unwraps above get. An
+        // uncaptured return stops rather than dereferencing a dead head.
+        if head == "ReturnType" {
+            if let [arg] = apply_args(arena, ty)[..] {
+                let formatted = arena.format_type(arg);
+                let arg_str = formatted.strip_prefix("typeof ").unwrap_or(&formatted).trim();
+                // Only an UNAMBIGUOUS callee name resolves context-free —
+                // several same-named callables need the use site's import
+                // scope, which expansion does not carry. Stopping keeps the
+                // head diagnosable instead of binding a foreign namesake.
+                let callables = lookup
+                    .by_name(arg_str)
+                    .iter()
+                    .filter(|s| matches!(s.kind.as_str(), "function" | "method"))
+                    .take(2)
+                    .count();
+                if callables > 1 {
+                    break;
+                }
+                match callable_named_return(lookup, arena, arg_str) {
+                    Some(t) => {
+                        ty = t;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+        }
         // The alias's target as a TypeId, computed as owned data so the lookup
         // borrow ends before `ty` is reassigned. An `Application` alias reduces
         // to `root<args…>`; any other alias kind is transparent through its

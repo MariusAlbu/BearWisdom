@@ -58,6 +58,15 @@ impl LookupRule for ImportedNamespaceRule {
                 let Some(module) = &import.module_path else {
                     continue;
                 };
+                // A RELATIVE import resolves inside the importing package's
+                // own tree — an `ext:` candidate can never be its target,
+                // whatever its stem looks like (`./types` must not match an
+                // unrelated dependency's `…/internal/types.d.ts`).
+                if (module.starts_with("./") || module.starts_with("../"))
+                    && sym.file_path.starts_with("ext:")
+                {
+                    continue;
+                }
                 if sym.qualified_name.starts_with(module.as_str()) {
                     let rest = &sym.qualified_name[module.len()..];
                     if rest.is_empty() || rest.starts_with('.') {

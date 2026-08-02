@@ -152,3 +152,20 @@ fn import_scope_picks_the_workspace_package_candidate_over_first_by_name() {
     let imports = vec![import("useQuery", Some("@tanstack/query-core"))];
     assert_eq!(resolve(&lookup, "useQuery", imports), Some(910));
 }
+
+#[test]
+fn relative_import_never_matches_an_external_candidate() {
+    // `import { … } from './types'` names a file in the importing package's
+    // OWN tree; an unrelated dependency's `…/internal/types.d.ts` stem-matches
+    // the module string but can never be its target. Without the guard,
+    // `new Observer(…)` bound rxjs's Observer through exactly this hole.
+    let lookup = Lookup::new().with(sym(
+        42,
+        "Observer",
+        "rxjs.Observer",
+        "interface",
+        "ext:ts:rxjs/dist/types/internal/types.d.ts",
+    ));
+    let imports = vec![import("QueryObserver", Some("./types"))];
+    assert_eq!(resolve(&lookup, "Observer", imports), None);
+}

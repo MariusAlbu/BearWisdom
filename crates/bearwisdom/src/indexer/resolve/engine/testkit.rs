@@ -14,7 +14,7 @@ use rustc_hash::FxHashMap;
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet,
 };
-use crate::type_checker::core::types::TypeArena;
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::{
     intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedRef, ExtractedSymbol,
     SymbolKind, Visibility,
@@ -36,6 +36,7 @@ pub(crate) struct Lookup {
     members_by_id: FxHashMap<i64, Vec<Symbol>>,
     generics: FxHashMap<String, Vec<String>>,
     field_types: FxHashMap<String, String>,
+    field_type_ids: FxHashMap<String, TypeId>,
     return_types: FxHashMap<String, String>,
     parents: FxHashMap<String, Vec<String>>,
     /// Id-keyed inherits: child symbol id → ALL parent symbol ids. The id-keyed
@@ -78,6 +79,7 @@ impl Lookup {
             members_by_id: Default::default(),
             generics: Default::default(),
             field_types: Default::default(),
+            field_type_ids: Default::default(),
             return_types: Default::default(),
             parents: Default::default(),
             parents_by_id: Default::default(),
@@ -164,6 +166,13 @@ impl Lookup {
     /// Register the declared type of a field/property qname.
     pub(crate) fn with_field_type(mut self, qname: &str, ty: &str) -> Self {
         self.field_types.insert(qname.to_string(), ty.to_string());
+        self
+    }
+
+    /// Register a qname's field type as an already-interned TypeId — the form
+    /// Phase A records for a declared annotation (`Ctor: typeof C`).
+    pub(crate) fn with_field_type_id(mut self, qname: &str, id: TypeId) -> Self {
+        self.field_type_ids.insert(qname.to_string(), id);
         self
     }
 
@@ -322,6 +331,9 @@ impl SymbolLookup for Lookup {
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())
+    }
+    fn field_type_id(&self, qname: &str) -> Option<TypeId> {
+        self.field_type_ids.get(qname).copied()
     }
     fn return_type_name(&self, qname: &str) -> Option<&str> {
         self.return_types.get(qname).map(|s| s.as_str())

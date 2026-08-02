@@ -211,3 +211,21 @@ fn infer_capture_declines_when_the_checked_type_is_not_the_pattern() {
 
     assert_ne!(arena.get(out), Type::Class("User".to_string()));
 }
+
+#[test]
+fn returntype_intrinsic_beats_a_same_named_package_alias() {
+    // A package declares its OWN `type ReturnType<T> = …` (an opaque helper);
+    // the name-keyed map serves it for the bare head. A receiver typed
+    // `ReturnType<render>` at an unimporting use site means the LIB intrinsic —
+    // the named function's return — whatever the shadow says.
+    let lookup = Lookup::new()
+        .with_alias("ReturnType", app("Opaque", &[]))
+        .with(sym(1, "render", "render", "function", "a.ts"))
+        .with_return_type("render", "RenderResult");
+    let arena = lookup.type_arena().unwrap();
+    let ty = arena.intern(Type::Apply {
+        base: arena.class("ReturnType"),
+        args: vec![arena.class("render")],
+    });
+    assert_eq!(arena.format_type(expand(ty, &lookup, arena)), "RenderResult");
+}

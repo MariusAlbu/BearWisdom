@@ -57,3 +57,38 @@ fn declines_with_empty_scope_chain() {
     let got = resolve(&lookup, "helper", vec![]);
     assert_eq!(got, None);
 }
+
+#[test]
+fn instantiates_through_a_constructor_valued_param_resolves_the_class() {
+    // `useBaseQuery(Observer: typeof QueryObserver) { new Observer(…) }` — the
+    // scope-visible `Observer` is a VALUE; the instantiates ref resolves
+    // through its constructor type to the class it builds.
+    use crate::type_checker::core::types::Type;
+    let lookup = Lookup::new()
+        .with(sym(1, "Observer", "useBaseQuery.Observer", "property", "src/u.ts"))
+        .with(sym(2, "QueryObserver", "QueryObserver", "class", "src/q.ts"));
+    let arena = lookup.type_arena().unwrap();
+    let ctor = arena.intern(Type::Constructor(arena.class("QueryObserver")));
+    let lookup = lookup.with_field_type_id("useBaseQuery.Observer", ctor);
+
+    let mut r = call_ref("Observer");
+    r.kind = crate::types::EdgeKind::Instantiates;
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec!["useBaseQuery".to_string()]);
+    let kind = |k: crate::types::EdgeKind, sk: &str| {
+        !(matches!(k, crate::types::EdgeKind::Instantiates)
+            && matches!(sk, "property" | "parameter" | "field"))
+    };
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &DEFAULT_PROFILE,
+    };
+    match ScopeVisibleRule.apply(&ctx) {
+        LookupResult::Resolved(res) => assert_eq!(res.target_symbol_id, 2),
+        other => panic!("expected class resolution, got {other:?}"),
+    }
+}

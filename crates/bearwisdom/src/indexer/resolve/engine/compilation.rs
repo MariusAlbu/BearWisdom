@@ -1884,12 +1884,60 @@ impl Compilation {
     /// when the field's own index is in that set, one async-wrapper layer is
     /// peeled per `profiles[pf.language].async_wrappers` before the field's type
     /// is recorded, mirroring the peel `resolve_one_file`'s binding seed applies.
+    /// The instance type a `new X(...)` initializer builds. `X` may be a VALUE
+    /// in an enclosing scope — a `Ctor: typeof C` parameter — whose
+    /// constructor type's instance is what `new` yields; a value typed by a
+    /// bare instance name (the `typeof C` capture shape) carries that instance
+    /// directly. Only when no in-scope value carries the name does `X`
+    /// scope-resolve as the class itself. The global by-name pool is never
+    /// consulted for the value form — an unrelated package's same-named value
+    /// must not type this binding.
+    fn instantiated_type(&self, name: &str, scope_path: Option<&str>, file: &str) -> TypeId {
+        let mut scope = scope_path.unwrap_or("");
+        while !scope.is_empty() {
+            let qn = format!("{scope}.{name}");
+            // Sibling packages repeat scope qnames (`useBaseQuery.Observer` in
+            // four framework adapters) — the value in THIS file is the one the
+            // initializer names, so a same-file candidate wins over the qname
+            // slot's first-winner.
+            let cands = self.all_by_qualified_name(&qn);
+            let s = cands
+                .iter()
+                .find(|s| &*s.file_path == file)
+                .or_else(|| cands.iter().next());
+            if let Some(s) = s {
+                if matches!(
+                    s.kind.as_str(),
+                    "parameter" | "property" | "field" | "variable" | "constant"
+                ) {
+                    let ft = self
+                        .type_info_by_id
+                        .get(&s.id)
+                        .and_then(|ti| ti.field_type_id)
+                        .or_else(|| self.type_info.get(&qn).and_then(|ti| ti.field_type_id));
+                    if let Some(ft) = ft {
+                        return match self.arena.get(ft) {
+                            Type::Constructor(inner) => inner,
+                            _ => ft,
+                        };
+                    }
+                }
+            }
+            scope = match scope.rfind('.') {
+                Some(i) => &scope[..i],
+                None => "",
+            };
+        }
+        let resolved = resolve_type_name_in_scope(name, scope_path, &self.by_qname);
+        self.arena.class(&resolved)
+    }
+
     pub(crate) fn infer_field_init_types(
         &mut self,
         parsed: &[ParsedFile],
         profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     ) {
-        let mut updates: Vec<(String, String, TypeId)> = Vec::new();
+        let mut updates: Vec<(String, Option<i64>, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
             let async_wrappers = profiles
                 .get(pf.language.as_str())
@@ -1949,7 +1997,25 @@ impl Compilation {
                 if field.declared_type.is_some() {
                     continue;
                 }
-                if self
+                // The guard and the write are keyed by THIS file's declaration
+                // id — sibling packages repeat qnames (`useBaseQuery.observer`
+                // in four adapters), and a shared qname slot would let the
+                // first package processed suppress and mis-type the rest.
+                let field_id = self
+                    .all_by_qualified_name(&field.qualified_name)
+                    .iter()
+                    .find(|s| &*s.file_path == pf.path.as_str())
+                    .map(|s| s.id);
+                if let Some(id) = field_id {
+                    if self
+                        .type_info_by_id
+                        .get(&id)
+                        .and_then(|ti| ti.field_type_id)
+                        .is_some()
+                    {
+                        continue;
+                    }
+                } else if self
                     .type_info
                     .get(&field.qualified_name)
                     .and_then(|ti| ti.field_type_id)
@@ -1958,8 +2024,15 @@ impl Compilation {
                     continue;
                 }
                 let ty_id = match r.kind {
-                    // `new X()` — the field IS X.
-                    EdgeKind::Instantiates => Some(self.arena.class(&r.target_name)),
+                    // `new X()` — the field is the INSTANCE `X` builds. `X`
+                    // may name a VALUE in scope (a constructor-typed
+                    // parameter), whose constructor type carries the instance;
+                    // otherwise it scope-resolves as the class itself.
+                    EdgeKind::Instantiates => Some(self.instantiated_type(
+                        &r.target_name,
+                        field.scope_path.as_deref(),
+                        &pf.path,
+                    )),
                     // `call(...)` — the field is the callee's return, with the
                     // call's argument types bound into any generic parameter
                     // the return names.
@@ -1977,15 +2050,22 @@ impl Compilation {
                 if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
                     continue;
                 }
-                updates.push((field.qualified_name.clone(), s, id));
+                updates.push((field.qualified_name.clone(), field_id, id));
             }
         }
-        for (qname, _, id) in updates {
-            let ti = self.type_info.entry(qname).or_default();
-            if ti.field_type_id.is_some() {
-                continue;
+        for (qname, sym_id, id) in updates {
+            if let Some(sym_id) = sym_id {
+                let ti = self.type_info_by_id.entry(sym_id).or_default();
+                if ti.field_type_id.is_none() {
+                    ti.field_type_id = Some(id);
+                }
             }
-            ti.field_type_id = Some(id);
+            // The qname slot stays a fallback for name-keyed readers; first
+            // writer wins there, the id slot carries each declaration's own.
+            let ti = self.type_info.entry(qname).or_default();
+            if ti.field_type_id.is_none() {
+                ti.field_type_id = Some(id);
+            }
         }
     }
 }

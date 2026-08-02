@@ -2154,3 +2154,53 @@ fn a_bare_supertype_head_climbs_to_the_member_bearing_declaration() {
          same-named member-less alias that happened to be ingested first"
     );
 }
+
+/// `useBaseQuery(Observer: typeof QueryObserver) { const observer = new Observer(…) }`
+/// — `new X()` where `X` names a VALUE in scope (a constructor-typed parameter)
+/// yields the constructed INSTANCE. Interning the bare `Observer` instead lets
+/// an unrelated package's same-named type win the later head binding.
+#[test]
+fn field_init_new_through_a_constructor_valued_name_yields_the_instance() {
+    use crate::indexer::resolve::engine::testkit::call_ref;
+    use crate::type_checker::core::types::Type;
+
+    let arena = Arc::new(TypeArena::new());
+    let ctor = arena.intern(Type::Constructor(arena.class("QueryObserver")));
+    let scope =
+        make_symbol("useBaseQuery", "useBaseQuery", SymbolKind::Function, None, None, None);
+    let param = make_symbol(
+        "Observer",
+        "useBaseQuery.Observer",
+        SymbolKind::Property,
+        Some(0),
+        Some(ctor),
+        None,
+    );
+    let mut local = make_symbol(
+        "observer",
+        "useBaseQuery.observer",
+        SymbolKind::Variable,
+        Some(0),
+        None,
+        None,
+    );
+    local.scope_path = Some("useBaseQuery".to_string());
+
+    let mut r = call_ref("Observer");
+    r.kind = EdgeKind::Instantiates;
+    r.source_symbol_index = 2;
+    let pf = make_parsed_file("src/u.ts", vec![scope, param, local], vec![r]);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/u.ts".to_string(), "useBaseQuery".to_string()), 1);
+    id_map.insert(("src/u.ts".to_string(), "useBaseQuery.Observer".to_string()), 2);
+    id_map.insert(("src/u.ts".to_string(), "useBaseQuery.observer".to_string()), 3);
+
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
+    assert_eq!(
+        tree.field_type_id("useBaseQuery.observer").map(|id| arena.format_type(id)).as_deref(),
+        Some("QueryObserver"),
+        "the instance the constructor value builds, not the bare ctor name",
+    );
+}

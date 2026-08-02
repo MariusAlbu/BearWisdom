@@ -1811,6 +1811,16 @@ fn value_root_type(
         }
         !types_named.iter().any(|t| t.file_path == s.file_path)
     };
+    // An external MEMBER — a foreign type's property/field, a function's
+    // parameter — never roots a bare name: members need receivers, parameters
+    // a scope. Only a standalone external value (a `declare var` / const /
+    // function) can be an unimported global. Without this, the blanket `ext:`
+    // ownership that ambient globals rely on lets a lib type's same-named
+    // property type an untyped local.
+    let ext_member = |s: &Symbol| {
+        s.file_path.starts_with("ext:")
+            && matches!(s.kind.as_str(), "field" | "property" | "parameter")
+    };
 
     // Ambient-global scope: a name used WITHOUT an import that is registered as a
     // global resolves to the package that DECLARES the global, not a same-named
@@ -1869,7 +1879,9 @@ fn value_root_type(
             format!("{scope}.{name}")
         };
         if let Some(s) = lookup.by_qualified_name(&qn) {
-            if is_value_kind(&s.kind) && !(scope.is_empty() && ext_yields_to_type(s)) {
+            if is_value_kind(&s.kind)
+                && !(scope.is_empty() && (ext_yields_to_type(s) || ext_member(s)))
+            {
                 // A scope-qualified hit carries the source's own scope, so it is
                 // owned regardless of file; a bare-name hit (scope exhausted) is a
                 // global pick subject to the owned/foreign split.
@@ -1899,7 +1911,7 @@ fn value_root_type(
         };
     }
     for cand in lookup.by_name(name) {
-        if !is_value_kind(&cand.kind) || ext_yields_to_type(cand) {
+        if !is_value_kind(&cand.kind) || ext_yields_to_type(cand) || ext_member(cand) {
             continue;
         }
         let owned = is_owned(cand);
