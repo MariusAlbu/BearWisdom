@@ -111,6 +111,10 @@ pub enum Type {
     AsyncWrapper(TypeId),
     /// Iterable wrapper. `for x in collection` binds `x` to the inner type.
     Iterator(TypeId),
+    /// The type of a CLASS VALUE (`typeof C`) — the constructor, not an
+    /// instance. Member lookup on it sees statics; a token-shaped parameter
+    /// (`Type<T>`) unifies its instance out of `inner`.
+    Constructor(TypeId),
     /// Singleton type (literal types).
     Literal(LitValue),
     /// Engine bailout — member lookup fails closed rather than guessing.
@@ -412,6 +416,10 @@ impl TypeArena {
                 let inner = self.rebind_class_params(inner, params);
                 self.intern(Type::Iterator(inner))
             }
+            Type::Constructor(inner) => {
+                let inner = self.rebind_class_params(inner, params);
+                self.intern(Type::Constructor(inner))
+            }
             Type::Tuple(elems) => {
                 let elems = elems
                     .iter()
@@ -563,6 +571,10 @@ impl TypeArena {
                 out.push_str("Iterator<");
                 self.format_type_into(inner, out);
                 out.push('>');
+            }
+            Type::Constructor(inner) => {
+                out.push_str("typeof ");
+                self.format_type_into(inner, out);
             }
             Type::Literal(v) => {
                 let _ = write!(out, "{v:?}");

@@ -72,6 +72,14 @@ fn ident_type(lookup: &dyn SymbolLookup, arena: &TypeArena, name: &str) -> TypeI
     let [only] = candidates.iter().collect::<Vec<_>>()[..] else {
         return arena.intern(Type::Unknown);
     };
+    // A class name used as a VALUE is its constructor (`typeof C`), never an
+    // instance — `inject(TasksService)` passes the class object. The
+    // constructor form is what a token-shaped parameter (`Type<T>`) unifies
+    // an instance out of.
+    if only.kind == "class" {
+        let instance = arena.class(&only.qualified_name);
+        return arena.intern(Type::Constructor(instance));
+    }
     lookup
         .field_type_id_of(only.id)
         .or_else(|| lookup.field_type_id(&only.qualified_name))

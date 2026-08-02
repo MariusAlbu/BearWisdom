@@ -31,7 +31,7 @@ use super::composite_members;
 use super::mapped_members;
 use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
-use super::generics::{bind_arg_generics, substitute_env};
+use super::generics::{bind_arg_generics, fill_yield_from_args, substitute_env};
 use super::head_decl::{
     head_symbol_id, head_symbol_id_preferring_package, receiver_type_for_head, yielded_receiver,
 };
@@ -1500,7 +1500,10 @@ fn resolve_root_impl(
 
     if seg.is_call {
         match resolve_callee_return_and_id(lookup, arena, file_ctx, &seg.name, None) {
-            Ok((ty, _id)) => return Ok(Receiver::untyped(ty)),
+            Ok((ty, id)) => {
+                let ty = bind_call_args_into_return(lookup, arena, id, &seg.call_args, ty);
+                return Ok(Receiver::untyped(ty));
+            }
             Err(c) => cause = cause.or(c),
         }
         // The callee is not a callable declaration (function/method) but may be
@@ -2134,6 +2137,40 @@ pub(crate) fn callee_return_type(
     resolve_callee_return_and_id(lookup, arena, file_ctx, name, None)
         .ok()
         .map(|(ret, _)| ret)
+}
+
+/// The type a call-initializer yields: the callee's return, rewritten through
+/// the bindings the call's ARGUMENT types impose on its generic parameters —
+/// `#svc = inject(TasksService)` records `TasksService`, not an open `T`.
+pub(crate) fn init_call_return_type(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    file_ctx: &FileContext,
+    r: &crate::types::ExtractedRef,
+) -> Option<TypeId> {
+    let (ret, id) =
+        resolve_callee_return_and_id(lookup, arena, file_ctx, &r.target_name, None).ok()?;
+    Some(bind_call_args_into_return(lookup, arena, id, &r.call_args, ret))
+}
+
+/// Rewrite a callee's return through the bindings its argument types impose on
+/// its generic parameters. The return unchanged when the call passes no
+/// arguments or the callee declaration is not in hand.
+fn bind_call_args_into_return(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee_id: i64,
+    args: &[crate::types::CallArg],
+    ret: TypeId,
+) -> TypeId {
+    if args.is_empty() {
+        return ret;
+    }
+    let Some(callee) = lookup.symbol_by_id(callee_id) else {
+        return ret;
+    };
+    let arg_types = resolve_arg_types(lookup, arena, args);
+    fill_yield_from_args(lookup, arena, callee, &arg_types, ret)
 }
 
 /// `callee_return_type` that, among same-named callables, prefers one declared

@@ -1960,8 +1960,10 @@ impl Compilation {
                 let ty_id = match r.kind {
                     // `new X()` — the field IS X.
                     EdgeKind::Instantiates => Some(self.arena.class(&r.target_name)),
-                    // `call(...)` — the field is the callee's return.
-                    _ => super::chain::callee_return_type(self, &self.arena, &file_ctx, &r.target_name),
+                    // `call(...)` — the field is the callee's return, with the
+                    // call's argument types bound into any generic parameter
+                    // the return names.
+                    _ => super::chain::init_call_return_type(self, &self.arena, &file_ctx, r),
                 };
                 let Some(id) = ty_id else {
                     continue;

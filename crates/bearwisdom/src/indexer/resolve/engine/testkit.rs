@@ -255,11 +255,13 @@ impl Lookup {
 
 /// `true` when `kind` names a type-like declaration `types_by_name` should
 /// surface.
+// Mirrors the production predicate (`contract::is_type_like_kind`), extended
+// with the kinds only synthetic fixtures use — the fixture must classify a
+// `type_alias` the way `SymbolIndex` does, or alias-aware walks diverge
+// between test and prod.
 fn is_type_like(kind: &str) -> bool {
-    matches!(
-        kind,
-        "class" | "struct" | "interface" | "enum" | "trait" | "type" | "object" | "record"
-    )
+    super::contract::is_type_like_kind(kind)
+        || matches!(kind, "trait" | "type" | "object" | "record")
 }
 
 impl SymbolLookup for Lookup {

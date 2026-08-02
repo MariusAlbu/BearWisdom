@@ -2760,3 +2760,38 @@ fn a_mapped_type_over_a_literal_union_admits_those_keys() {
     assert_eq!(resolve(&lookup, hit, "caller"), Some(1));
     assert_eq!(resolve(&lookup, miss, "caller"), None);
 }
+
+#[test]
+fn class_value_argument_binds_a_token_call_root() {
+    // function inject<T>(token: Token<T>): T
+    // type Token<T> = Type<T>;  interface Type<T> { new (...args): T }
+    // class TasksService { allTasks() }
+    // inject(TasksService).allTasks — only the ARGUMENT can bind T; the
+    // token's construct signature is the evidence its param is the instance.
+    let lookup = Lookup::new()
+        .with(Symbol {
+            signature: Some("function inject<T>(token: Token<T>): T".to_string()),
+            ..sym(1, "inject", "inject", "function", "a.ts")
+        })
+        .with_return_type("inject", "T")
+        .with_generics("inject", &["T"])
+        .with(sym(2, "Token", "Token", "type_alias", "a.ts"))
+        .with_alias(
+            "Token",
+            crate::types::AliasTarget::Application {
+                root: "Type".to_string(),
+                args: vec!["T".to_string()],
+            },
+        )
+        .with(sym(3, "Type", "Type", "interface", "a.ts"))
+        .with_member("Type", sym(4, "new", "Type.new", "constructor", "a.ts"))
+        .with(sym(5, "TasksService", "TasksService", "class", "a.ts"))
+        .with_member(
+            "TasksService",
+            sym(50, "allTasks", "TasksService.allTasks", "method", "a.ts"),
+        );
+    let mut root = seg("inject", true, SegmentKind::Identifier);
+    root.call_args = vec![crate::types::CallArg::Ident("TasksService".to_string())];
+    let segs = vec![root, seg("allTasks", false, SegmentKind::Property)];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}

@@ -43,6 +43,7 @@ pub(crate) enum CachedType {
     Optional(Box<CachedType>),
     AsyncWrapper(Box<CachedType>),
     Iterator(Box<CachedType>),
+    Constructor(Box<CachedType>),
     Literal(LitValue),
     Unknown,
 }
@@ -106,6 +107,7 @@ impl<'a> TypeExporter<'a> {
             Type::Optional(inner) => CachedType::Optional(Box::new(self.export(inner))),
             Type::AsyncWrapper(inner) => CachedType::AsyncWrapper(Box::new(self.export(inner))),
             Type::Iterator(inner) => CachedType::Iterator(Box::new(self.export(inner))),
+            Type::Constructor(inner) => CachedType::Constructor(Box::new(self.export(inner))),
             Type::Literal(v) => CachedType::Literal(v),
             Type::Unknown => CachedType::Unknown,
         }
@@ -201,6 +203,10 @@ impl<'a> TypeImporter<'a> {
             CachedType::Iterator(inner) => {
                 let inner = self.import(inner);
                 self.arena.intern(Type::Iterator(inner))
+            }
+            CachedType::Constructor(inner) => {
+                let inner = self.import(inner);
+                self.arena.intern(Type::Constructor(inner))
             }
             CachedType::Literal(v) => self.arena.intern(Type::Literal(v.clone())),
             CachedType::Unknown => self.arena.intern(Type::Unknown),

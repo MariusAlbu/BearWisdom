@@ -37,6 +37,7 @@ use super::chain::head_qname;
 /// `Unknown` or to another generic parameter, so an untyped argument can never
 /// erase a binding a later argument would have supplied.
 pub(crate) fn unify_into(
+    lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     pattern: TypeId,
     actual: TypeId,
@@ -50,6 +51,33 @@ pub(crate) fn unify_into(
         (Type::Class(name), _) => {
             if params.contains(&name) {
                 env.entry(name).or_insert(actual);
+            }
+        }
+        // A class VALUE against a token-shaped parameter: `inject(TasksService)`
+        // with `token: ProviderToken<T>` binds `T` to the INSTANCE the
+        // constructor builds. Token evidence is structural — the pattern's
+        // declaration (through its alias, on any union arm) declares a
+        // construct signature — and exactly one open slot keeps the binding
+        // unambiguous. A pattern without that evidence stays a silent no-op:
+        // a constructor never structurally matches an applied instance type.
+        (
+            Type::Apply {
+                base: p_base,
+                args: p_args,
+            },
+            Type::Constructor(inner),
+        ) => {
+            let open: Vec<String> = p_args
+                .iter()
+                .filter_map(|&a| match arena.get(a) {
+                    Type::Class(n) if params.contains(&n) => Some(n),
+                    _ => None,
+                })
+                .collect();
+            if let [slot] = &open[..] {
+                if pattern_head_constructs(lookup, arena, p_base) {
+                    env.entry(slot.clone()).or_insert(inner);
+                }
             }
         }
         (
@@ -68,7 +96,7 @@ pub(crate) fn unify_into(
                 return;
             }
             for (p, a) in p_args.iter().zip(a_args.iter()) {
-                unify_into(arena, *p, *a, params, env);
+                unify_into(lookup, arena, *p, *a, params, env);
             }
         }
         (
@@ -82,25 +110,75 @@ pub(crate) fn unify_into(
             },
         ) => {
             for (p, a) in p_params.iter().zip(a_params.iter()) {
-                unify_into(arena, *p, *a, params, env);
+                unify_into(lookup, arena, *p, *a, params, env);
             }
-            unify_into(arena, p_ret, a_ret, params, env);
+            unify_into(lookup, arena, p_ret, a_ret, params, env);
         }
         (Type::Tuple(p_elems), Type::Tuple(a_elems)) if p_elems.len() == a_elems.len() => {
             for (p, a) in p_elems.iter().zip(a_elems.iter()) {
-                unify_into(arena, *p, *a, params, env);
+                unify_into(lookup, arena, *p, *a, params, env);
             }
         }
         (Type::Optional(p_in), Type::Optional(a_in))
         | (Type::AsyncWrapper(p_in), Type::AsyncWrapper(a_in))
         | (Type::Iterator(p_in), Type::Iterator(a_in)) => {
-            unify_into(arena, p_in, a_in, params, env)
+            unify_into(lookup, arena, p_in, a_in, params, env)
         }
         // `x?: T` given a bare `User`: the nullable wrapper belongs to the
         // parameter, not the argument — unify through it.
-        (Type::Optional(p_in), _) => unify_into(arena, p_in, actual, params, env),
+        (Type::Optional(p_in), _) => unify_into(lookup, arena, p_in, actual, params, env),
         _ => {}
     }
+}
+
+/// `true` when the type a pattern head names declares a construct signature —
+/// directly, through its alias, or on any arm of a union alias. The evidence a
+/// generic position carries the constructed INSTANCE (`Type<T>` is
+/// `new (...) => T`), read structurally off the index: every same-simple-name
+/// type candidate is consulted, since a signature-sourced head carries no
+/// package qualifier.
+fn pattern_head_constructs(lookup: &dyn SymbolLookup, arena: &TypeArena, base: TypeId) -> bool {
+    let Some(head) = head_qname(arena, base) else {
+        return false;
+    };
+    let simple = head.rsplit('.').next().unwrap_or(&head);
+    for cand in lookup.types_by_name(simple).iter() {
+        if declares_constructor(lookup, cand) {
+            return true;
+        }
+        // Follow the head's alias one level: any arm of a union
+        // (`ProviderToken<T> = Type<T> | …`) or the root of a direct redirect
+        // (`Token<T> = Type<T>`) carrying a construct signature counts.
+        let target = lookup
+            .alias_target_by_id(cand.id)
+            .or_else(|| lookup.alias_target(&cand.qualified_name));
+        let arm_ids: Vec<TypeId> = match target {
+            Some(crate::types::AliasTargetIds::Union(arms)) => arms.clone(),
+            Some(crate::types::AliasTargetIds::Application { root, .. }) => vec![*root],
+            _ => Vec::new(),
+        };
+        for arm in arm_ids {
+            let Some(arm_head) = head_qname(arena, arm) else { continue };
+            let arm_simple = arm_head.rsplit('.').next().unwrap_or(&arm_head);
+            if lookup
+                .types_by_name(arm_simple)
+                .iter()
+                .any(|s| declares_constructor(lookup, s))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `true` when `sym` declares a construct-signature member (`new (...): T`).
+fn declares_constructor(lookup: &dyn SymbolLookup, sym: &Symbol) -> bool {
+    lookup
+        .members_of_id(sym.id)
+        .iter()
+        .chain(lookup.members_of(&sym.qualified_name).iter())
+        .any(|m| m.kind == "constructor")
 }
 
 /// True when `actual` carries nothing a binding could use: the engine's bailout
@@ -165,7 +243,7 @@ pub(crate) fn bind_arg_generics(
         return env;
     }
     for (pattern, actual) in param_patterns(arena, callee).iter().zip(arg_types.iter()) {
-        unify_into(arena, *pattern, *actual, &params, &mut env);
+        unify_into(lookup, arena, *pattern, *actual, &params, &mut env);
     }
     env
 }
