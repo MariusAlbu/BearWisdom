@@ -2933,3 +2933,22 @@ fn a_computed_symbol_key_is_not_an_index_signature() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
+
+#[test]
+fn index_signature_climb_requalifies_a_bare_parent_in_a_namespace() {
+    // `declare namespace NodeJS { interface ProcessEnv extends Dict<string> }`
+    // — the extends clause names `Dict` BARE while the index holds
+    // `NodeJS.Dict`; the climb requalifies the parent under the child's
+    // namespace so `process.env.ANY` reaches `NodeJS.Dict.[key]`.
+    let lookup = Lookup::new()
+        .with_local_type("env", "NodeJS.ProcessEnv")
+        .with(sym(1, "ProcessEnv", "NodeJS.ProcessEnv", "interface", "l.d.ts"))
+        .with_parent("NodeJS.ProcessEnv", "Dict")
+        .with(sym(2, "Dict", "NodeJS.Dict", "interface", "l.d.ts"))
+        .with_member("NodeJS.Dict", sym(50, "[key]", "NodeJS.Dict.[key]", "property", "l.d.ts"));
+    let segs = vec![
+        seg("env", false, SegmentKind::Identifier),
+        seg("VERCEL_URL", false, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
+}

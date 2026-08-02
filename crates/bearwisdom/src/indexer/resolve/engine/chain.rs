@@ -788,15 +788,6 @@ pub(crate) fn lookup_member_on_bounded(
     if let Some(m) = lookup_member_on_namespaced(lookup, &head, member, accept) {
         return Some(m);
     }
-    // Index-signature admission: a receiver (or a supertype) declaring an
-    // index signature — captured as a bracket-named member (`[key]`,
-    // `[index]`) — accepts ANY member name; the signature is the declaration
-    // such an access means (`process.env.VERCEL_URL` → `Dict.[key]`). A
-    // computed key (`[Symbol.iterator]`) is a real named member and never
-    // admits. Late in the ladder, so every named path wins first.
-    if let Some(m) = lookup_member_on_index_signature(lookup, &head, accept) {
-        return Some(m);
-    }
     if let Some(source_ty) = mapped_members::mapped_source_type(lookup, arena, recv.ty, &head) {
         let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
         // A mapped source that resolves back to the mapped type itself makes no
@@ -827,7 +818,17 @@ pub(crate) fn lookup_member_on_bounded(
     // The member may be a key the mapping GENERATES rather than one any
     // declaration states: a mapped type over a union of string literals admits
     // exactly those names.
-    mapped_members::member_from_mapped_literal_key(lookup, arena, &head, member)
+    if let Some(m) = mapped_members::member_from_mapped_literal_key(lookup, arena, &head, member) {
+        return Some(m);
+    }
+    // Index-signature admission: a receiver (or a supertype) declaring an
+    // index signature — captured as a bracket-named member (`[key]`,
+    // `[index]`) — accepts ANY member name; the signature is the declaration
+    // such an access means (`process.env.VERCEL_URL` → `Dict.[key]`). A
+    // computed key (`[Symbol.iterator]`) is a real named member and never
+    // admits. The LAST fallback: every named and mapped path carries richer
+    // yields, so they all win first.
+    lookup_member_on_index_signature(lookup, &head, accept)
 }
 
 /// Resolve `member` on a MAPPED-ALIAS supertype of the receiver. A type can
@@ -996,8 +997,29 @@ fn lookup_member_on_index_signature(
                 return Some(m.clone());
             }
         }
-        match lookup.parent_class_qname(&cur) {
-            Some(parent) => cur = parent.to_string(),
+        // A namespaced type's extends clause names its parent BARE
+        // (`NodeJS.ProcessEnv extends Dict<string>`), and the inherits map may
+        // key either form — probe the dotted qname, then its bare segment, and
+        // requalify a bare parent under the child's namespace when the bare
+        // name indexes no members.
+        let parent = lookup.parent_class_qname(&cur).map(str::to_string).or_else(|| {
+            cur.rsplit_once('.')
+                .and_then(|(_, bare)| lookup.parent_class_qname(bare))
+                .map(str::to_string)
+        });
+        match parent {
+            Some(parent) => {
+                cur = if !parent.contains('.')
+                    && lookup.members_of(&parent).iter().next().is_none()
+                {
+                    match cur.rsplit_once('.') {
+                        Some((ns, _)) => format!("{ns}.{parent}"),
+                        None => parent,
+                    }
+                } else {
+                    parent
+                };
+            }
             None => break,
         }
     }
