@@ -238,17 +238,9 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
     // there's no per-language drift.
     resolve_import_refs(&mut refs, &import_map);
 
-    // SYM-002: scope_path equals symbols[parent_index].qualified_name. The
-    // scope-tree path can drift for synthetic-name child symbols (index
-    // signature parameters `[s]`, computed property keys `[Symbol.match]`,
-    // mapped-type binder names) emitted inside method bodies — their scope
-    // is the method, not the enclosing class. Re-derive from parent_index.
-    for i in 0..symbols.len() {
-        if let Some(p) = symbols[i].parent_index {
-            let parent_qname = symbols[p].qualified_name.clone();
-            symbols[i].scope_path = Some(parent_qname);
-        }
-    }
+    // A member is named and scoped by its structural parent; the scope tree
+    // knows only lexical scopes, so both are re-derived from `parent_index`.
+    super::qualify_members::name_under_parents(&mut symbols);
 
     // REF-001: every ref's source_symbol_index must be in bounds. Ambient
     // .d.ts files that are pure triple-slash reference hubs

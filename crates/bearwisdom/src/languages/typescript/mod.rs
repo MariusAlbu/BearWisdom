@@ -24,6 +24,7 @@ mod imports;
 pub(crate) mod keywords;
 mod narrowing;
 mod params;
+mod qualify_members;
 mod symbols;
 mod symbols_casts;
 mod symbols_fields;
