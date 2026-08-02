@@ -52,7 +52,9 @@ fn conditional_captures_infer_binding_in_generic_extends() {
             infer_binding,
         } => {
             assert_eq!(check, "T");
-            assert_eq!(extends, "Array");
+            // The extends clause keeps its whole applied text; branch selection
+            // compares peeled heads, so `Array<infer U>` still keys on `Array`.
+            assert_eq!(extends, "Array<infer U>");
             assert_eq!(true_branch, "U");
             assert_eq!(false_branch, "never");
             assert_eq!(infer_binding, Some(("U".to_string(), 0)));
@@ -86,7 +88,7 @@ fn conditional_with_multiple_infer_declines_binding() {
             infer_binding,
             ..
         } => {
-            assert_eq!(extends, "Map");
+            assert_eq!(extends, "Map<infer K, infer V>");
             assert_eq!(infer_binding, None);
         }
         other => panic!("expected Conditional, got {other:?}"),
@@ -234,6 +236,54 @@ fn callable_alias_with_params_still_captures_return() {
     match target {
         AliasTarget::Application { root, .. } => assert_eq!(root, "T"),
         other => panic!("expected Application {{ root: \"T\" }}, got {other:?}"),
+    }
+}
+
+#[test]
+fn application_args_keep_their_own_applications_and_positions() {
+    // `type X<A, B> = Wrap<Inner<A, B>, 'x' | 'y'>` — the first arg stays a
+    // whole application and the literal-union arg is kept (as raw text) so the
+    // SECOND position still binds the second parameter. Dropping it would bind
+    // every later arg to the wrong param.
+    let target = classify("type X<A, B> = Wrap<Inner<A, B>, 'x' | 'y'>;");
+    match target {
+        AliasTarget::Application { root, args } => {
+            assert_eq!(root, "Wrap");
+            assert_eq!(args, vec!["Inner<A, B>".to_string(), "'x' | 'y'".to_string()]);
+        }
+        other => panic!("expected Application {{ root: \"Wrap\" }}, got {other:?}"),
+    }
+}
+
+#[test]
+fn conditional_branches_keep_their_applied_args() {
+    // The distributive-conditional idiom: the true branch must keep
+    // `Omit<TObject, TKey>` whole — the expander substitutes the alias's params
+    // into it, and an amputated `Omit` leaves nothing to bind.
+    let target =
+        classify("type DOmit<TObject, TKey> = TObject extends any ? Omit<TObject, TKey> : never;");
+    match target {
+        AliasTarget::Conditional { check, extends, true_branch, false_branch, .. } => {
+            assert_eq!(check, "TObject");
+            assert_eq!(extends, "any");
+            assert_eq!(true_branch, "Omit<TObject, TKey>");
+            assert_eq!(false_branch, "never");
+        }
+        other => panic!("expected Conditional, got {other:?}"),
+    }
+}
+
+#[test]
+fn array_alias_keeps_the_element_application() {
+    // `type L<T> = Wrapper<T>[]` — the element keeps its args so `L<User>`
+    // substitutes through to `Wrapper<User>`.
+    let target = classify("type L<T> = Wrapper<T>[];");
+    match target {
+        AliasTarget::Application { root, args } => {
+            assert_eq!(root, "Array");
+            assert_eq!(args, vec!["Wrapper<T>".to_string()]);
+        }
+        other => panic!("expected Application {{ root: \"Array\" }}, got {other:?}"),
     }
 }
 

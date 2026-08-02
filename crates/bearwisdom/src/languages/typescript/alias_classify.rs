@@ -65,9 +65,17 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                     if matches!(arg.kind(), "<" | ">" | ",") {
                         continue;
                     }
-                    let arg_name = head_type_name(&arg, src);
-                    if !arg_name.is_empty() {
-                        args.push(arg_name);
+                    // Each argument keeps its WHOLE applied text
+                    // (`Inner<A, B>` stays applied, not `Inner`), and a shape
+                    // with no reducible head (a literal union, a function type)
+                    // keeps its raw text — an arg must never be DROPPED, or
+                    // every later position binds to the wrong parameter.
+                    let mut arg_text = branch_type_text(&arg, src);
+                    if arg_text.is_empty() {
+                        arg_text = node_text(arg, src);
+                    }
+                    if !arg_text.is_empty() {
+                        args.push(arg_text);
                     }
                 }
             }
@@ -86,7 +94,7 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 if matches!(child.kind(), "[" | "]") {
                     continue;
                 }
-                element = head_type_name(&child, src);
+                element = branch_type_text(&child, src);
                 if !element.is_empty() {
                     break;
                 }
@@ -187,7 +195,10 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 if parts.len() == 1 {
                     extends_node = Some(child);
                 }
-                let name = head_type_name(&child, src);
+                // A branch keeps its whole applied text (`Omit<TObject, TKey>`,
+                // not `Omit`) — the expander substitutes the alias's params into
+                // the branch, and amputated args leave nothing to bind.
+                let name = branch_type_text(&child, src);
                 if !name.is_empty() {
                     parts.push(name);
                 } else {

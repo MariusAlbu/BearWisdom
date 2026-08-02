@@ -56,10 +56,12 @@ pub(super) fn type_annotation_head(ta: &Node, src: &[u8]) -> String {
     String::new()
 }
 
-/// The text of a union/intersection branch, kept WHOLE so its type arguments
-/// survive: `AndNot<TNonPromise>` stays applied instead of reducing to
-/// `AndNot`. `intern_alias_target` interns this through `intern_type_str`,
-/// which decomposes it into `Apply { base, args }` — every consumer keys on the
+/// The text of a type expression kept WHOLE so its type arguments survive:
+/// `AndNot<TNonPromise>` stays applied instead of reducing to `AndNot`. Used
+/// wherever a captured position feeds substitution — union/intersection
+/// branches, application arguments, conditional parts, array elements.
+/// `intern_alias_target` interns this through `intern_type_str`, which
+/// decomposes it into `Apply { base, args }` — every consumer keys on the
 /// head, so the head readings are unchanged while the arguments become
 /// available to substitution. Falls back to the head name for every other
 /// shape, which carries no arguments to preserve.
