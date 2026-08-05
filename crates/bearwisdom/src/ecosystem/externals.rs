@@ -176,6 +176,22 @@ pub(crate) fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
     }
 }
 
+/// Materialize a VIRTUAL external path — a demand-index entry that names no
+/// file on disk — into a `ParsedFile`. Dispatched by scheme: the ecosystem
+/// that minted the scheme owns the decode. `None` when the path is a real
+/// file (no known virtual scheme) or the decode fails; the caller falls
+/// through to its filesystem parse or skips gracefully.
+pub(crate) fn materialize_virtual_external(path: &str) -> Option<crate::types::ParsedFile> {
+    // `ext:dotnet-type:<dll>!!<assembly>!!<Qualified.Type>` — a single .NET
+    // type cracked from a NuGet DLL's ECMA-335 metadata. The IL surface is
+    // language-neutral; symbols are stamped `csharp`, the family's visibility
+    // anchor.
+    if path.starts_with("ext:dotnet-type:") {
+        return crate::ecosystem::nuget::crack_one_dll_type(path, "csharp");
+    }
+    None
+}
+
 /// Convenience — build the fixed set of 5 locators that ship today. Post-
 /// Phase 4 the authoritative dispatch path is
 /// `ecosystem::default_registry()`; this standalone builder stays available

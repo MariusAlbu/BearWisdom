@@ -1719,6 +1719,11 @@ fn collect_return_type_files(
 /// resulting file is ingested into the new tree rather than the old store.
 fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile> {
     let path_str = file.to_string_lossy();
+    // A virtual demand-index entry (no file on disk) materializes through the
+    // ecosystem that minted its scheme.
+    if let Some(pf) = crate::ecosystem::externals::materialize_virtual_external(&path_str) {
+        return Some(pf);
+    }
     if path_str.starts_with("ext:jar:") || path_str.starts_with("ext:dotnet-type:") {
         return None;
     }

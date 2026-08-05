@@ -114,6 +114,7 @@ pub(crate) fn locate_dlls_for_project(
     for p in &project_files {
         if let Some(proj_dir) = p.parent() {
             coords.extend(collect_transitive_coords_from_deps_json(proj_dir));
+            coords.extend(collect_transitive_coords_from_assets_json(proj_dir));
         }
     }
     if coords.is_empty() {
@@ -416,6 +417,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
     for p in &project_files {
         if let Some(proj_dir) = p.parent() {
             coords.extend(collect_transitive_coords_from_deps_json(proj_dir));
+            coords.extend(collect_transitive_coords_from_assets_json(proj_dir));
         }
     }
 
@@ -576,6 +578,38 @@ fn collect_transitive_coords_from_deps_json(proj_dir: &Path) -> Vec<NuGetCoord> 
                 version: Some(version.to_string()),
             });
         }
+    }
+    out
+}
+
+/// Transitive package coordinates from the RESTORE artifact
+/// `obj/project.assets.json` — present after `dotnet restore` with no build.
+/// Same `libraries` shape as `*.deps.json` (`"Pkg/1.2.3": {"type":"package"}`),
+/// so a restored-but-never-built project still surfaces its full transitive
+/// closure (the packages that declare `IdentityUser`, `ModelBuilder`, …).
+fn collect_transitive_coords_from_assets_json(proj_dir: &Path) -> Vec<NuGetCoord> {
+    let path = proj_dir.join("obj").join("project.assets.json");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return Vec::new();
+    };
+    let Some(libs) = json.get("libraries").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (key, value) in libs {
+        if value.get("type").and_then(|t| t.as_str()) != Some("package") {
+            continue;
+        }
+        let Some((name, version)) = key.rsplit_once('/') else {
+            continue;
+        };
+        out.push(NuGetCoord {
+            name: name.to_string(),
+            version: Some(version.to_string()),
+        });
     }
     out
 }
@@ -1085,3 +1119,7 @@ fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize
         }
     }
 }
+
+#[cfg(test)]
+#[path = "dll_metadata_tests.rs"]
+mod tests;
