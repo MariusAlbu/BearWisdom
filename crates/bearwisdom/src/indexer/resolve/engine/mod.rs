@@ -35,6 +35,7 @@ pub mod chain;
 pub mod ext_lang_visibility;
 pub mod generics;
 pub mod head_decl;
+pub mod import_qualify;
 pub mod lambda_seed;
 pub mod mapped_members;
 pub mod module_augmentation;

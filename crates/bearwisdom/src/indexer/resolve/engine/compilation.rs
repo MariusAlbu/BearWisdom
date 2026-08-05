@@ -13,6 +13,7 @@ use std::sync::Arc;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
+use crate::indexer::resolve::engine::import_qualify;
 use crate::indexer::resolve::engine::contract::{
     find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
     parse_object_type_members, parse_param_types_from_signature,
@@ -95,6 +96,10 @@ pub struct Compilation {
     /// rather than the colliding qname winner. Same relationship as
     /// `members_by_id` ↔ `members_by_parent`.
     type_info_by_id: FxHashMap<i64, TypeInfo>,
+    /// Deferred import-scoped head requalification, retained across `ingest`
+    /// calls so an import whose package materializes in a LATER batch still
+    /// rewrites the earlier batch's annotation heads. See `import_qualify`.
+    pending_import_requalify: Vec<import_qualify::PendingFile>,
     /// Re-export map: file_path → [(original_name, source_module)].
     /// Populated from `pf.refs` where `is_reexport` is true.
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
@@ -298,6 +303,7 @@ impl Compilation {
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
             type_info_by_id: FxHashMap::default(),
+            pending_import_requalify: Vec::new(),
             reexport_map: FxHashMap::default(),
             module_entry: FxHashMap::default(),
             selector_to_qname: FxHashMap::default(),
@@ -774,6 +780,23 @@ impl Compilation {
         // parent id — same-qname parents stay distinct — so there is no qname-keyed
         // rebuild here. It accumulates across `ingest` calls (internal files, then
         // materialized externals).
+
+        // Import-scoped annotation heads. Each file's bare-headed type slots
+        // requalify to the imports that lexically bind them. Collected per
+        // batch, applied on EVERY ingest — a candidate the current batch
+        // doesn't materialize is retried when a later external batch does.
+        for pf in parsed {
+            if let Some(pending) = import_qualify::collect_pending(pf, symbol_id_map) {
+                self.pending_import_requalify.push(pending);
+            }
+        }
+        import_qualify::apply_pending(
+            &mut self.pending_import_requalify,
+            &self.arena,
+            &self.by_qname,
+            &self.by_file,
+            &mut self.type_info_by_id,
+        );
 
         // Id-keyed inherits, derived from the now-complete `inherits` (child qname
         // → parent head string) + `by_qname`. Each edge resolves to specific
