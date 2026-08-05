@@ -498,6 +498,10 @@ pub fn resolve_single_pass(
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
     tree.infer_field_init_types(parsed, &profiles);
+    // Chain-initialized bindings (`const c = base.with(x).use(cb)`) walk their
+    // initializer chain with the full member walker; runs after the single-init
+    // pass so a fluent chain roots on the just-typed base binding.
+    tree.infer_chain_init_types(parsed, &profiles);
 
     let solver = SemanticModel::production();
 
@@ -583,6 +587,10 @@ pub fn resolve_incremental_pass(
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
     tree.infer_field_init_types(parsed, &profiles);
+    // Chain-initialized bindings (`const c = base.with(x).use(cb)`) walk their
+    // initializer chain with the full member walker; runs after the single-init
+    // pass so a fluent chain roots on the just-typed base binding.
+    tree.infer_chain_init_types(parsed, &profiles);
 
     let solver = SemanticModel::production();
 

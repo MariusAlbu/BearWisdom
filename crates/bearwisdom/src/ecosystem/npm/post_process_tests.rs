@@ -112,13 +112,12 @@ fn non_variable_type_fields_still_cleared() {
 
 #[test]
 fn variable_non_nominal_declared_type_dropped() {
+    // A shape with no requalifiable head (a bare tuple) still drops — Phase B
+    // re-derives it from refs.
     let arena = TypeArena::new();
-    let fun = arena.intern(Type::Function {
-        params: Vec::new(),
-        return_: arena.class("Widget"),
-    });
-    let mut v = sym("make", SymbolKind::Variable);
-    v.declared_type = Some(fun);
+    let tup = arena.intern(Type::Tuple(vec![arena.class("A"), arena.class("B")]));
+    let mut v = sym("pair", SymbolKind::Variable);
+    v.declared_type = Some(tup);
     let mut pf = pf_with(vec![v]);
     prefix_ts_external_symbols(&mut pf, "fake-ui", &arena);
     assert_eq!(pf.symbols[0].declared_type, None);
@@ -134,4 +133,42 @@ fn post_process_requalifies_through_package_detection() {
     assert_eq!(pf.symbols[0].qualified_name, "fake-ui.gadget");
     let id = pf.symbols[0].declared_type.expect("declared_type survives");
     assert!(matches!(arena.get(id), Type::Class(n) if n == "fake-ui.ApiKind"));
+}
+
+#[test]
+fn function_typed_variable_keeps_its_shape_with_requalified_return() {
+    // `declare const make: (opts: Opts) => Client<Cfg>` — the function shape
+    // must survive prefixing (a call root peels through it to the return);
+    // the return's head is a name in the package's own surface.
+    let arena = TypeArena::new();
+    let param = arena.class("Opts");
+    let ret_base = arena.class("Client");
+    let ret_arg = arena.class("Cfg");
+    let ret = arena.intern(Type::Apply { base: ret_base, args: vec![ret_arg] });
+    let f = arena.intern(Type::Function { params: vec![param], return_: ret });
+    let mut v = sym("make", SymbolKind::Variable);
+    v.declared_type = Some(f);
+    let mut pf = pf_with(vec![v]);
+    prefix_ts_external_symbols(&mut pf, "fake-ui", &arena);
+    let id = pf.symbols[0].declared_type.expect("function type survives prefixing");
+    let Type::Function { params, return_ } = arena.get(id) else {
+        panic!("expected Function, got {:?}", arena.get(id));
+    };
+    assert_eq!(params, vec![param], "param types pass through unqualified");
+    let Type::Apply { base, .. } = arena.get(return_) else {
+        panic!("expected Apply return, got {:?}", arena.get(return_));
+    };
+    assert!(matches!(arena.get(base), Type::Class(n) if n == "fake-ui.Client"));
+}
+
+#[test]
+fn function_typed_variable_with_primitive_return_passes_through() {
+    let arena = TypeArena::new();
+    let ret = arena.primitive(crate::type_checker::core::types::PrimKind::Bool);
+    let f = arena.intern(Type::Function { params: Vec::new(), return_: ret });
+    let mut v = sym("flag", SymbolKind::Variable);
+    v.declared_type = Some(f);
+    let mut pf = pf_with(vec![v]);
+    prefix_ts_external_symbols(&mut pf, "fake-ui", &arena);
+    assert_eq!(pf.symbols[0].declared_type, Some(f), "unrequalifiable return keeps the annotation as written");
 }

@@ -72,20 +72,30 @@ pub(super) fn enrich_ambient_declarator_signatures(
         // Named shapes, plus an INTERSECTION of them: `const v: A & B` carries
         // every arm's members, and `intern_type_str` decomposes the recorded
         // annotation into the structural intersection the member walk traverses
-        // arm by arm. A union is deliberately excluded — its member set is the
+        // arm by arm. A FUNCTION type (`const make: <G>(opts) => Client<…>`) is
+        // recorded whole: the value has no member surface of its own, but a
+        // CALL of it roots the chain on the signature's return type, which
+        // does. A union is deliberately excluded — its member set is the
         // arms' INTERSECTION, which the walker derives from the arms
         // themselves, so recording one here would not widen anything.
         // An object-type annotation's members are emitted as symbols by
-        // `annotation_members`; a function/constructor type has no nominal
-        // member surface to root on.
+        // `annotation_members`; a constructor type has no call surface
+        // without `new`.
         if !matches!(
             tv.kind(),
-            "type_identifier" | "nested_type_identifier" | "generic_type" | "intersection_type"
+            "type_identifier"
+                | "nested_type_identifier"
+                | "generic_type"
+                | "intersection_type"
+                | "function_type"
         ) {
             continue;
         }
         let name = node_text(name_node, src);
-        let ty = node_text(tv, src);
+        // A multi-line annotation (a function type returning a large applied
+        // generic) collapses to single-space tokens so the signature stays one
+        // line and the type-string parsers see uniform whitespace.
+        let ty = node_text(tv, src).split_whitespace().collect::<Vec<_>>().join(" ");
         if ty.is_empty() {
             continue;
         }

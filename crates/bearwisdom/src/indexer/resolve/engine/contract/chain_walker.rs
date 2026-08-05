@@ -452,12 +452,7 @@ pub(crate) fn parse_declared_type_from_signature_for_lang(
             '>' | ']' | ')' | '}' => depth -= 1,
             ':' if depth == 0 => {
                 let after = trimmed[i + 1..].trim();
-                let end = after
-                    .char_indices()
-                    .find(|&(_, c)| c == '=')
-                    .map(|(j, _)| j)
-                    .unwrap_or(after.len());
-                let ty = after[..end].trim();
+                let ty = after[..initializer_split(after)].trim();
                 if ty.is_empty() {
                     return None;
                 }
@@ -498,6 +493,33 @@ pub(crate) fn parse_declared_type_from_signature_for_lang(
         }
         _ => None,
     }
+}
+
+/// The byte offset where a `Type = default` annotation's initializer begins —
+/// the first depth-0 `=` that is not the `=` of a `=>` arrow. An `=` inside a
+/// bracket group (`<T = X>` generic defaults, `(a = 1)` parameter defaults) is
+/// part of the annotation, not an initializer. Returns `s.len()` when no
+/// initializer is present.
+fn initializer_split(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'<' | b'[' | b'(' | b'{' => depth += 1,
+            b'>' | b']' | b')' | b'}' => depth -= 1,
+            b'=' if i + 1 < bytes.len() && bytes[i + 1] == b'>' => {
+                // A function-type arrow — skip both bytes so the `>` doesn't
+                // decrement the bracket depth.
+                i += 2;
+                continue;
+            }
+            b'=' if depth == 0 => return i,
+            _ => {}
+        }
+        i += 1;
+    }
+    s.len()
 }
 
 /// Per-language parameter-type extraction. Recognized shapes:

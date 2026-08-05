@@ -1761,12 +1761,20 @@ fn import_scoped_external_root(
             }
         }
         // A value whose declared type is a callable interface (`const expect:
-        // ExpectStatic`) yields that interface's call-signature return.
+        // ExpectStatic`) yields that interface's call-signature return; one
+        // typed by an INLINE function type yields the signature's return
+        // directly.
         for s in scoped.iter().filter(|s| is_value_kind(&s.kind)) {
             let Some(vty) = field_type_of(lookup, arena, s.id, &s.qualified_name) else {
                 continue;
             };
+            if let Some(r) = function_typed_value_call_yield(arena, vty) {
+                return Some(Receiver::untyped(r));
+            }
             let recv = expand_receiver(Receiver::untyped(vty), lookup, arena, None);
+            if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
+                return Some(Receiver::untyped(r));
+            }
             if let Some(call) =
                 lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_| true)
             {
@@ -2202,9 +2210,26 @@ fn call_value_root_type(
 ) -> Option<TypeId> {
     let value_ty =
         value_root_type(lookup, arena, name, source_qname, file_ctx, file_package_id).ok()?;
+    if let Some(r) = function_typed_value_call_yield(arena, value_ty) {
+        return Some(r);
+    }
     let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
+    if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
+        return Some(r);
+    }
     let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
     yield_through(lookup, arena, &call, true, recv.ty, recv.id)
+}
+
+/// The call yield of a value typed by an INLINE function type: `declare const
+/// make: <G>(opts) => Client` yields `Client` when called. `None` when the
+/// value's type is not a `Type::Function` — a nominal callable interface takes
+/// the call-signature-member path instead.
+fn function_typed_value_call_yield(arena: &TypeArena, value_ty: TypeId) -> Option<TypeId> {
+    match arena.get(value_ty) {
+        Type::Function { return_, .. } => Some(return_),
+        _ => None,
+    }
 }
 
 /// The name the extractor synthesises for an interface's call signature
@@ -2372,6 +2397,17 @@ fn resolve_callee_return_and_id(
     // unrelated method named the same as an ambient callable-interface const does
     // not shadow the const's call-signature path.
     let Some(callee) = candidates.iter().find(|s| s.kind == "function") else {
+        // Not a callable declaration — the name may bind a VALUE whose declared
+        // type is an inline function type (`declare const make: (opts) =>
+        // Client<…>`); calling it yields the signature's return.
+        for cand in candidates.iter().filter(|s| is_value_kind(&s.kind)) {
+            let Some(vty) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) else {
+                continue;
+            };
+            if let Some(r) = function_typed_value_call_yield(arena, vty) {
+                return Ok((r, cand.id));
+            }
+        }
         return Err(untyped_callee.map(|id| Cause::new(Some(id), CauseKind::UncapturedReturn)));
     };
     if let Some(id) = lookup.return_type_id_of(callee.id) {

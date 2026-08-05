@@ -48,3 +48,27 @@ fn a_declaration_files_uninitialized_binding_records_its_annotation() {
         "const fire: FireFunction & FireObject"
     );
 }
+
+#[test]
+fn an_ambient_function_type_annotation_is_recorded_whole() {
+    // `declare const make: <G>(opts) => Client<…>` — the value's call yield
+    // lives on the signature's RETURN type; the annotation must survive intact
+    // (generic defaults included) for the arena pass to intern it as a
+    // function type.
+    assert_eq!(
+        declarator_signature(
+            "declare const make: <A extends B | undefined = undefined, E = string>(opts?: Opts<A, E>) => Client<E, A>;",
+            "make"
+        ),
+        "const make: <A extends B | undefined = undefined, E = string>(opts?: Opts<A, E>) => Client<E, A>"
+    );
+}
+
+#[test]
+fn a_multi_line_function_type_annotation_collapses_to_one_line() {
+    let src = "declare const make: <E = string>(opts?: Opts<E>) => Client<E, {\n    fetch(): boolean;\n}>;\n";
+    assert_eq!(
+        declarator_signature(src, "make"),
+        "const make: <E = string>(opts?: Opts<E>) => Client<E, { fetch(): boolean; }>"
+    );
+}

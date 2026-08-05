@@ -19,8 +19,8 @@ use crate::indexer::resolve::engine::contract::{
     parse_object_type_members, parse_param_types_from_signature,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
-    resolve_type_name_in_scope,
-    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet, TypeInfo,
+    build_scope_chain, resolve_type_name_in_scope,
+    FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::ecosystem::externals::ts_package_from_virtual_path;
@@ -1966,26 +1966,7 @@ impl Compilation {
                 .get(pf.language.as_str())
                 .map(|p| p.async_wrappers)
                 .unwrap_or_default();
-            let imports: Vec<ImportEntry> = pf
-                .refs
-                .iter()
-                .filter(|r| r.is_import_binding)
-                .filter_map(|r| {
-                    let module = r.module.clone()?;
-                    Some(ImportEntry {
-                        imported_name: r.target_name.clone(),
-                        module_path: Some(module),
-                        alias: None,
-                        is_wildcard: r.target_name == "*",
-                    })
-                })
-                .collect();
-            let file_ctx = FileContext {
-                file_path: pf.path.clone(),
-                language: pf.language.clone(),
-                imports,
-                file_namespace: None,
-            };
+            let file_ctx = init_pass_file_ctx(pf);
             // Per field symbol, the outermost (leftmost) call/new ref = its
             // initializer. A chained initializer's leftmost ref is multi-segment;
             // skip it (the chain walker types those).
@@ -2090,6 +2071,125 @@ impl Compilation {
                 ti.field_type_id = Some(id);
             }
         }
+    }
+
+    /// Type a CHAIN-initialized binding (`const c = base.with(x).use(cb)`)
+    /// from its initializer chain's final yield, walked with the full member
+    /// walker. Runs after `infer_field_init_types` so a chain rooted on a
+    /// single-init binding (`base = make()`) reads that binding's type;
+    /// bindings are processed in declaration order within a file so a later
+    /// chain roots on an earlier chain's result.
+    ///
+    /// The trigger is the chain-bearing TypeRef the extractor emits ONLY for
+    /// an annotation-less initializer, so the yield is authoritative: it
+    /// OVERWRITES the id-keyed slot, where a name-derived pass could only
+    /// have recorded a type read off the initializer's parts.
+    pub(crate) fn infer_chain_init_types(
+        &mut self,
+        parsed: &[ParsedFile],
+        profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+    ) {
+        for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
+            let Some(profile) = profiles.get(pf.language.as_str()) else {
+                continue;
+            };
+            let mut candidates: Vec<(usize, &crate::types::ExtractedRef)> = Vec::new();
+            for r in &pf.refs {
+                if r.kind != EdgeKind::TypeRef {
+                    continue;
+                }
+                if r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0) < 2 {
+                    continue;
+                }
+                let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
+                    continue;
+                };
+                if !matches!(
+                    sym.kind,
+                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
+                ) || sym.declared_type.is_some()
+                {
+                    continue;
+                }
+                candidates.push((r.source_symbol_index, r));
+            }
+            // Declaration order; one marker per binding (the first).
+            candidates.sort_by_key(|(idx, r)| {
+                let s = &pf.symbols[*idx];
+                (s.start_line, s.start_col, r.byte_offset)
+            });
+            candidates.dedup_by_key(|(idx, _)| *idx);
+
+            let file_ctx = init_pass_file_ctx(pf);
+            let async_wrappers = profiles
+                .get(pf.language.as_str())
+                .map(|p| p.async_wrappers)
+                .unwrap_or_default();
+            for (field_idx, r) in candidates {
+                let field = &pf.symbols[field_idx];
+                let field_id = self
+                    .all_by_qualified_name(&field.qualified_name)
+                    .iter()
+                    .find(|s| &*s.file_path == pf.path.as_str())
+                    .map(|s| s.id);
+                let yield_id = {
+                    let ref_ctx = RefContext {
+                        extracted_ref: r,
+                        source_symbol: field,
+                        scope_chain: build_scope_chain(field.scope_path.as_deref()),
+                        file_package_id: pf.package_id,
+                    };
+                    match super::chain::bind_member_access(&ref_ctx, &file_ctx, self, profile) {
+                        Ok(res) => res.resolved_yield_type,
+                        Err(_) => None,
+                    }
+                };
+                let Some(id) = yield_id else {
+                    continue;
+                };
+                let id = if pf.flow.flow_binding_await.contains(&field_idx) {
+                    super::pipeline::unwrap_async_yield_id(id, &self.arena, async_wrappers)
+                } else {
+                    id
+                };
+                let s = self.arena.format_type(id);
+                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                    continue;
+                }
+                if let Some(sym_id) = field_id {
+                    self.type_info_by_id.entry(sym_id).or_default().field_type_id = Some(id);
+                }
+                let ti = self.type_info.entry(field.qualified_name.clone()).or_default();
+                if ti.field_type_id.is_none() {
+                    ti.field_type_id = Some(id);
+                }
+            }
+        }
+    }
+}
+
+/// The import surface of one parsed file, as the `FileContext` the
+/// initializer-typing passes hand to the chain walker.
+fn init_pass_file_ctx(pf: &ParsedFile) -> FileContext {
+    let imports: Vec<ImportEntry> = pf
+        .refs
+        .iter()
+        .filter(|r| r.is_import_binding)
+        .filter_map(|r| {
+            let module = r.module.clone()?;
+            Some(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(module),
+                alias: None,
+                is_wildcard: r.target_name == "*",
+            })
+        })
+        .collect();
+    FileContext {
+        file_path: pf.path.clone(),
+        language: pf.language.clone(),
+        imports,
+        file_namespace: None,
     }
 }
 

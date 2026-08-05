@@ -2204,3 +2204,75 @@ fn field_init_new_through_a_constructor_valued_name_yields_the_instance() {
         "the instance the constructor value builds, not the bare ctor name",
     );
 }
+
+
+// ---------------------------------------------------------------------------
+// infer_chain_init_types — chain-initialized binding typing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn chain_initialized_binding_types_from_the_chains_final_yield() {
+    // const base = make();               // make(): Builder — single-init pass
+    // const client = base.use(cb);       // chain-init pass walks [base, use]
+    use crate::types::{ChainSegment, MemberChain, SegmentKind};
+
+    let arena = Arc::new(crate::type_checker::core::types::TypeArena::new());
+    let builder_ty = arena.class("Builder");
+
+    let seg = |name: &str, is_call: bool| ChainSegment {
+        name: name.to_string(),
+        node_kind: String::new(),
+        kind: SegmentKind::Identifier,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: 0,
+        declared_type_id: None,
+        is_call,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    };
+    let build_pf = || {
+        let symbols = vec![
+            make_symbol("make", "make", SymbolKind::Function, None, None, Some(builder_ty)),
+            make_symbol("Builder", "Builder", SymbolKind::Class, None, None, None),
+            make_symbol("use", "Builder.use", SymbolKind::Method, Some(1), None, Some(builder_ty)),
+            make_symbol("base", "base", SymbolKind::Variable, None, None, None),
+            make_symbol("client", "client", SymbolKind::Variable, None, None, None),
+        ];
+        // base's initializer: a single-segment call ref to `make`.
+        let mut init_base = type_ref(3, "make");
+        init_base.kind = EdgeKind::Calls;
+        // client's initializer marker: the chain-bearing TypeRef [base, use].
+        let mut init_client = type_ref(4, "use");
+        init_client.chain = Some(MemberChain {
+            segments: vec![seg("base", false), seg("use", true)],
+        });
+        make_parsed_file("src/clients.ts", symbols, vec![init_base, init_client])
+    };
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    for (i, q) in ["make", "Builder", "Builder.use", "base", "client"].iter().enumerate() {
+        id_map.insert(("src/clients.ts".to_string(), q.to_string()), (i + 1) as i64);
+    }
+    let mut profiles: rustc_hash::FxHashMap<
+        &'static str,
+        &'static crate::type_checker::profile::language_profile::LanguageProfile,
+    > = Default::default();
+    for plugin in crate::languages::default_registry().all() {
+        if let Some(profile) = plugin.profile() {
+            for &lang in plugin.language_ids() {
+                profiles.insert(lang, profile);
+            }
+        }
+    }
+
+    let mut tree = Compilation::build(&[build_pf()], &id_map, Arc::clone(&arena));
+    tree.infer_field_init_types(&[build_pf()], &profiles);
+    tree.infer_chain_init_types(&[build_pf()], &profiles);
+
+    let base_ft = tree.field_type_id_of(4).expect("base typed by single-init pass");
+    assert_eq!(arena.format_type(base_ft), "Builder");
+    let client_ft = tree.field_type_id_of(5).expect("client typed by chain-init pass");
+    assert_eq!(arena.format_type(client_ft), "Builder");
+}

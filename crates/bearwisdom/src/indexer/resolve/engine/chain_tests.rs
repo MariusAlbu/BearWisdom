@@ -2952,3 +2952,33 @@ fn index_signature_climb_requalifies_a_bare_parent_in_a_namespace() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(50));
 }
+
+#[test]
+fn arrow_typed_value_call_root_yields_the_signature_return() {
+    // `declare const make: <E = string>(opts?: Opts<E>) => Builder<E>` — a
+    // CALL of the value roots the chain on the arrow's RETURN type, whose
+    // members carry the fluent surface. The generic-default `=` and the arrow
+    // survive the annotation capture; the root peels the interned
+    // `Type::Function` to its return the same way a callable property does.
+    let lookup = Lookup::new()
+        .with(sym(1, "make", "make", "const", "ext:ts:pkg/index.d.ts"))
+        .with_field_type(
+            "make",
+            "<A extends B | undefined = undefined, E = string>(opts?: Opts<A, E>) => Builder<E, A>",
+        )
+        .with_member(
+            "Builder",
+            sym(50, "use", "Builder.use", "method", "ext:ts:pkg/index.d.ts"),
+        )
+        .with_return_type("Builder.use", "Builder<E, A>")
+        .with_member(
+            "Builder",
+            sym(51, "action", "Builder.action", "method", "ext:ts:pkg/index.d.ts"),
+        );
+    let segs = vec![
+        seg("make", true, SegmentKind::Identifier),
+        seg("use", true, SegmentKind::Property),
+        seg("action", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "caller"), Some(51));
+}

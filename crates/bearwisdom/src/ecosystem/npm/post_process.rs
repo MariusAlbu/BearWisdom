@@ -294,6 +294,21 @@ fn requalify_named_type(
         Type::Union(arms) => {
             requalify_arms(arena, &arms, prefix).map(|arms| arena.intern(Type::Union(arms)))
         }
+        // A function-typed value (`declare const make: (opts) => Client<…>`)
+        // yields its RETURN when called — the return's head is the name in the
+        // package's own surface, so requalify it; a return that can't be
+        // (a primitive, a generic param) keeps the annotation as written. The
+        // params stay untouched — bare param heads resolve by name at walk
+        // time. Never drop the whole capture: the function shape itself is
+        // what lets a call root peel through to the return.
+        Type::Function { params, return_ } => {
+            let new_return = requalify_named_type(arena, return_, prefix).unwrap_or(return_);
+            if new_return == return_ {
+                Some(id)
+            } else {
+                Some(arena.intern(Type::Function { params, return_: new_return }))
+            }
+        }
         _ => None,
     }
 }
