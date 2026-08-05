@@ -54,6 +54,7 @@ pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: NameNormalization::Spec(ROBOT_NAME_NORM),
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    namespace_imports_are_wildcards: false,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     // A `.robot` / `.resource` resource import or a Python-library import brings

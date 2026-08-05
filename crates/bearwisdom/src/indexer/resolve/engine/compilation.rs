@@ -174,6 +174,11 @@ pub struct Compilation {
     path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
     /// Workspace-wide path aliases, for files not under a per-package manifest.
     path_aliases_global: Vec<(String, String)>,
+    /// Manifest-declared implicit/global namespace imports (`<ImplicitUsings>`,
+    /// `<Using Include>`), per package and workspace-wide. Backs
+    /// `SymbolLookup::implicit_wildcard_namespaces`.
+    implicit_namespaces_by_pkg: FxHashMap<i64, Vec<String>>,
+    implicit_namespaces_global: Vec<String>,
     /// Per-package Cargo dependency renames: (alias, target_package_name),
     /// snapshot of the cargo manifest's dep_renames. Per-consumer only.
     dep_renames_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
@@ -267,9 +272,19 @@ impl Compilation {
                 .map(|m| m.dep_renames.clone())
                 .unwrap_or_default();
             self.dep_renames_by_pkg.insert(pkg_id, renames);
+            if let Some(usings) = manifests
+                .get(&ManifestKind::NuGet)
+                .map(|m| m.global_usings.clone())
+                .filter(|u| !u.is_empty())
+            {
+                self.implicit_namespaces_by_pkg.insert(pkg_id, usings);
+            }
         }
         if let Some(npm) = ctx.manifests.get(&ManifestKind::Npm) {
             self.path_aliases_global = npm.path_aliases.clone();
+        }
+        if let Some(nuget) = ctx.manifests.get(&ManifestKind::NuGet) {
+            self.implicit_namespaces_global = nuget.global_usings.clone();
         }
         self.ext_langs = ExtLangVisibility::snapshot(ctx);
     }
@@ -319,6 +334,8 @@ impl Compilation {
             workspace_pkg_by_declared_name: FxHashMap::default(),
             path_aliases_by_pkg: FxHashMap::default(),
             path_aliases_global: Vec::new(),
+            implicit_namespaces_by_pkg: FxHashMap::default(),
+            implicit_namespaces_global: Vec::new(),
             dep_renames_by_pkg: FxHashMap::default(),
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
@@ -2500,6 +2517,13 @@ impl SymbolLookup for Compilation {
 
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.workspace_pkg_by_declared_name.contains_key(name)
+    }
+
+    fn implicit_wildcard_namespaces(&self, package_id: Option<i64>) -> &[String] {
+        match package_id.and_then(|id| self.implicit_namespaces_by_pkg.get(&id)) {
+            Some(per_pkg) => per_pkg.as_slice(),
+            None => self.implicit_namespaces_global.as_slice(),
+        }
     }
 
     fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {

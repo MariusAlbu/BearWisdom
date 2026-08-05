@@ -61,6 +61,9 @@ pub(crate) struct Lookup {
     /// Declared workspace-package specifier → package id, backing
     /// `workspace_package_id` / `is_workspace_declared_name`.
     workspace_pkgs: FxHashMap<String, i64>,
+    /// Manifest-declared implicit namespace imports, backing
+    /// `implicit_wildcard_namespaces` (workspace-wide only in tests).
+    implicit_namespaces: Vec<String>,
     /// Workspace arena the chain walker interns roots / yields into. Mirrors the
     /// real `Compilation`, which owns one; the chain walk declines without it.
     arena: TypeArena,
@@ -85,6 +88,7 @@ impl Lookup {
             parents_by_id: Default::default(),
             inherits_args: Default::default(),
             local_types: Default::default(),
+            implicit_namespaces: Vec::new(),
             local_callable_heads: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
@@ -205,6 +209,13 @@ impl Lookup {
     /// Register a local variable's forward-inferred type.
     pub(crate) fn with_local_type(mut self, name: &str, ty: &str) -> Self {
         self.local_types.insert(name.to_string(), ty.to_string());
+        self
+    }
+
+    /// Register manifest-declared implicit namespace imports (the
+    /// `<ImplicitUsings>` set), backing `implicit_wildcard_namespaces`.
+    pub(crate) fn with_implicit_namespaces(mut self, namespaces: &[&str]) -> Self {
+        self.implicit_namespaces = namespaces.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -396,6 +407,9 @@ impl SymbolLookup for Lookup {
                 .map(|v| v.as_slice())
                 .unwrap_or(&self.empty),
         )
+    }
+    fn implicit_wildcard_namespaces(&self, _package_id: Option<i64>) -> &[String] {
+        &self.implicit_namespaces
     }
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
         if let Some(&id) = self.workspace_pkgs.get(specifier) {

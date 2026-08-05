@@ -101,7 +101,8 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
@@ -109,6 +110,9 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    // A plain `using System;` opens the namespace's direct members to bare
+    // scope — the C# analogue of `import java.util.*`.
+    namespace_imports_are_wildcards: true,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,

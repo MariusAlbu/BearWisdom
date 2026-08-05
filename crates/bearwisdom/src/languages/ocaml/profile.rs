@@ -97,6 +97,7 @@ pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
         underscore_prefix: false,
     },
+    namespace_imports_are_wildcards: false,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,

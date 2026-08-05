@@ -46,6 +46,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    namespace_imports_are_wildcards: false,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     // A dotted target whose head names an in-file `provider` block
     // (`google.compute_instance` → the `provider "google"` class) binds the

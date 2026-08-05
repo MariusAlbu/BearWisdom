@@ -355,6 +355,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.resolve_path_alias(package_id, specifier)
     }
 
+    fn implicit_wildcard_namespaces(&self, package_id: Option<i64>) -> &[String] {
+        self.tree.implicit_wildcard_namespaces(package_id)
+    }
+
     fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
         self.tree.dep_rename(consumer_pkg, alias)
     }
@@ -1364,6 +1368,15 @@ fn build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
 /// - Other modes — only `EdgeKind::Imports` refs; `module_path` is either empty
 ///   (`None` mode) or echoes the target name (`EchoTarget` mode).
 fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfile) -> FileContext {
+    // A plain namespace import (`using System;`) is a wildcard of its module
+    // path when the profile says so; a literal `*` target always is. Binding
+    // imports (named `import { X }` forms) are never namespace wildcards.
+    let entry_is_wildcard = |r: &crate::types::ExtractedRef| {
+        r.target_name == "*"
+            || (profile.namespace_imports_are_wildcards
+                && r.kind == EdgeKind::Imports
+                && !r.is_import_binding)
+    };
     let imports: Vec<ImportEntry> = match profile.import_module_path {
         // Build entries from import-describing refs only: an explicit import
         // binding (`import { X } from 'm'`) or an `Imports`-kind ref (require /
@@ -1397,7 +1410,7 @@ fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfi
                         imported_name: r.target_name.clone(),
                         module_path: Some(module),
                         alias: None,
-                        is_wildcard: r.target_name == "*",
+                        is_wildcard: entry_is_wildcard(r),
                     },
                 })
             })
@@ -1414,7 +1427,7 @@ fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfi
                     ImportModulePath::FromModuleField => unreachable!(),
                 },
                 alias: None,
-                is_wildcard: r.target_name == "*",
+                is_wildcard: entry_is_wildcard(r),
             })
             .collect(),
     };

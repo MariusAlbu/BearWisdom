@@ -103,3 +103,101 @@ fn filestem_mode_binds_by_file_basename() {
         _ => panic!("expected Resolved"),
     }
 }
+
+// --- qname-distinct hit counting + implicit namespaces -----------------------
+
+static NAMESPACE_WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
+    namespace_imports_are_wildcards: true,
+    ..DEFAULT_PROFILE
+};
+
+fn resolve_with_profile(
+    lookup: &Lookup,
+    target: &str,
+    imports: Vec<ImportEntry>,
+    profile: &LanguageProfile,
+) -> Option<i64> {
+    let r = call_ref(target);
+    let s = source_symbol("caller");
+    let fc = file_ctx(imports, None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup,
+        kind: &kind,
+        profile,
+    };
+    match WildcardImportRule.apply(&ctx) {
+        LookupResult::Resolved(res) => Some(res.target_symbol_id),
+        _ => None,
+    }
+}
+
+#[test]
+fn same_qname_duplicate_rows_are_one_unambiguous_hit() {
+    // One declaration surfaced as several rows under a single qname (arity
+    // overloads: IEquatable / IEquatable<T>) is NOT ambiguous.
+    let lookup = Lookup::new()
+        .with(sym(10, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(11, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(12, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"));
+    let imports = vec![wildcard_import("System", "System")];
+    assert_eq!(resolve(&lookup, "IEquatable", imports), Some(10));
+}
+
+#[test]
+fn two_distinct_qnames_stay_ambiguous() {
+    let lookup = Lookup::new()
+        .with(sym(10, "Color", "System.Color", "class", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(11, "Color", "MyApp.Color", "class", "src/Color.cs"));
+    let imports = vec![
+        wildcard_import("System", "System"),
+        wildcard_import("MyApp", "MyApp"),
+    ];
+    assert_eq!(resolve(&lookup, "Color", imports), None);
+}
+
+#[test]
+fn manifest_implicit_namespaces_open_bare_scope() {
+    // `<ImplicitUsings>enable</ImplicitUsings>` — no `using System;` in the
+    // file, yet bare `Guid` binds to `System.Guid`. Internal or external
+    // origin is immaterial; the candidate set is the whole index.
+    let lookup = Lookup::new()
+        .with(sym(20, "Guid", "System.Guid", "struct", "ext:dotnet:CoreLib/CoreLib"))
+        .with_implicit_namespaces(&["System"]);
+    assert_eq!(
+        resolve_with_profile(&lookup, "Guid", vec![], &NAMESPACE_WILDCARD_PROFILE),
+        Some(20)
+    );
+}
+
+#[test]
+fn implicit_namespaces_gated_on_the_profile_flag() {
+    let lookup = Lookup::new()
+        .with(sym(20, "Guid", "System.Guid", "struct", "ext:dotnet:CoreLib/CoreLib"))
+        .with_implicit_namespaces(&["System"]);
+    assert_eq!(
+        resolve_with_profile(&lookup, "Guid", vec![], &DEFAULT_PROFILE),
+        None
+    );
+}
+
+#[test]
+fn internal_namespace_member_binds_the_same_as_external() {
+    // `using Microsoft.FluentUI.AspNetCore.Components;` + bare `Icon` where
+    // Icon is an INTERNAL class in that namespace — no origin distinction.
+    let lookup = Lookup::new().with(sym(
+        30,
+        "Icon",
+        "Microsoft.FluentUI.AspNetCore.Components.Icon",
+        "class",
+        "src/Components/Icon.cs",
+    ));
+    let imports = vec![wildcard_import(
+        "Microsoft.FluentUI.AspNetCore.Components",
+        "Microsoft.FluentUI.AspNetCore.Components",
+    )];
+    assert_eq!(resolve(&lookup, "Icon", imports), Some(30));
+}

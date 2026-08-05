@@ -1486,3 +1486,61 @@ fn file_lookup_by_name_respects_cross_language_ext_visibility() {
     let py_lookup = FileLookup::new(&tree, "python");
     assert_eq!(py_lookup.by_name("field").len(), 1, "python keeps its own ext surface");
 }
+
+/// A plain namespace import (`using System.Linq;`) becomes a WILDCARD entry
+/// when the profile opts in — the C# shape. Named binding imports never do.
+#[test]
+fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
+    use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
+    fn using_ref(ns: &str) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: ns.into(),
+            kind: EdgeKind::Imports,
+            line: 0,
+            col: 0,
+            module: Some(ns.into()),
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+    let pf = ParsedFile {
+        path: "src/Program.cs".into(),
+        language: "csharp".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: Vec::new(),
+        refs: vec![using_ref("System.Linq")],
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let fc = super::build_file_context(
+        "csharp",
+        &pf,
+        &crate::languages::csharp::profile::CSHARP_PROFILE,
+    );
+    let entry = fc
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "System.Linq")
+        .expect("using directive must land an import entry");
+    assert_eq!(entry.module_path.as_deref(), Some("System.Linq"));
+    assert!(entry.is_wildcard, "a plain using opens the namespace as a wildcard");
+}

@@ -60,6 +60,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::SameDir,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    namespace_imports_are_wildcards: false,
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,

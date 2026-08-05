@@ -40,7 +40,7 @@ impl LookupRule for WildcardImportRule {
         let mode = ctx.profile.wildcard_match;
         let norm = ctx.profile.name_normalization;
 
-        let wildcards: Vec<&str> = ctx
+        let mut wildcards: Vec<&str> = ctx
             .file_ctx
             .imports
             .iter()
@@ -48,12 +48,30 @@ impl LookupRule for WildcardImportRule {
             .filter_map(|imp| imp.module_path.as_deref())
             .filter(|m| !m.is_empty())
             .collect();
+        // Manifest-declared implicit/global namespaces (`<ImplicitUsings>`,
+        // `<Using Include="X">`) open the same bare scope as a written
+        // namespace import — files under those SDKs carry no `using` line for
+        // them at all. Gated with the namespace-wildcard opt-in: a language
+        // whose plain imports aren't wildcards has no implicit-namespace
+        // semantics either.
+        if ctx.profile.namespace_imports_are_wildcards {
+            wildcards.extend(
+                ctx.lookup
+                    .implicit_wildcard_namespaces(ctx.ref_ctx.file_package_id)
+                    .iter()
+                    .map(String::as_str),
+            );
+        }
         if wildcards.is_empty() {
             return LookupResult::Pass;
         }
 
         let target_norm = normalize_name(norm, target);
-        let mut hits: Vec<i64> = Vec::new();
+        // Hits are keyed by QUALIFIED NAME: one declaration surfaced as
+        // several same-qname rows (arity overloads, partials, merged decls)
+        // is ONE unambiguous hit. Two DIFFERENT qnames stay ambiguous.
+        let mut hit_qname: Option<String> = None;
+        let mut hit_id: Option<i64> = None;
         for sym in ctx.lookup.by_name(target) {
             if !(ctx.kind)(edge_kind, &sym.kind) {
                 continue;
@@ -75,13 +93,20 @@ impl LookupRule for WildcardImportRule {
                 }
             };
             if under_a_wildcard {
-                hits.push(sym.id);
+                match &hit_qname {
+                    None => {
+                        hit_qname = Some(sym.qualified_name.clone());
+                        hit_id = Some(sym.id);
+                    }
+                    Some(q) if *q == sym.qualified_name => {}
+                    // A second DISTINCT qname — ambiguous; stay unresolved and
+                    // let ranked_candidates decide later.
+                    Some(_) => return LookupResult::Pass,
+                }
             }
         }
-        // Single hit — accept. Multiple — stay unresolved; let ranked_candidates
-        // decide later.
-        if hits.len() == 1 {
-            return LookupResult::Resolved(ctx.resolved(hits[0], "default_wildcard_import"));
+        if let Some(id) = hit_id {
+            return LookupResult::Resolved(ctx.resolved(id, "default_wildcard_import"));
         }
         LookupResult::Pass
     }

@@ -226,6 +226,14 @@ pub struct LanguageProfile {
     /// `name_normalization` for the name comparison, with an optional
     /// `{stem}_`-prefixed include-file probe. See `WildcardMatch`.
     pub wildcard_match: WildcardMatch,
+    /// Whether a plain namespace import (`using System;`, `Imports System`,
+    /// `open System`) brings every DIRECT member of the namespace into bare
+    /// scope — the same admission a `*` wildcard import grants. When `true`,
+    /// every non-binding Imports entry becomes a wildcard of its module path,
+    /// and the wildcard rung also unions the manifest-declared implicit/global
+    /// namespaces (`SymbolLookup::implicit_wildcard_namespaces`). `false` (the
+    /// default) keeps wildcardness on the literal `*` target only.
+    pub namespace_imports_are_wildcards: bool,
     /// How the import-scoped external bind (`resolve_via_external_by_import`)
     /// matches an external candidate's file against the file's imports.
     /// `PkgSegment` (the default) keys on the `ext:<lang>:<pkg>` package segment
@@ -1192,6 +1200,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: NameNormalization::None,
     module_scope: ModuleScope::Off,
     wildcard_match: WildcardMatch::QnameUnder,
+    namespace_imports_are_wildcards: false,
     ext_match: ExtMatch::PkgSegment,
     head_alias: HeadAliasBind::Off,
     file_scoped_imports: FileScopedImports::Off,

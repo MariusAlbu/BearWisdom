@@ -350,6 +350,15 @@ pub trait SymbolLookup {
     /// declares it — TS `tsconfig.json#paths`, `jsconfig.json`, framework
     /// configs — so the resolver tower can rewrite aliased specifiers without
     /// baking any one config format into the language-agnostic path.
+    /// Namespaces the build manifest opens for EVERY file of a package
+    /// without a written import — `<ImplicitUsings>` / `<Using Include>`
+    /// global usings. Consulted by the wildcard-import rung alongside the
+    /// file's own wildcard imports. Empty by default; keyed by the ref's
+    /// `file_package_id`, falling back to the workspace-wide set.
+    fn implicit_wildcard_namespaces(&self, _package_id: Option<i64>) -> &[String] {
+        &[]
+    }
+
     fn resolve_path_alias(&self, _package_id: Option<i64>, _specifier: &str) -> Option<String> {
         None
     }
