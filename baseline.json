@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-07-03T00:00:00Z",
+  "captured_at": "2026-08-05T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -97,6 +97,447 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 30
+      },
+      "code_chunks": 2531,
+      "files": 124,
+      "flow_edge_types": {
+        "http_call": 4
+      },
+      "flow_edges": 4,
+      "generated_files_reclassified": 3,
+      "internal_edges": 865,
+      "internal_unresolved": 2017,
+      "languages": {
+        "csharp": 110,
+        "json": 10,
+        "markdown": 4
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
+      "perf": {
+        "end_ws_mb": 113,
+        "files_per_sec": 5,
+        "index_duration_ms": 27366
+      },
+      "project": "dotnet-CleanArchitecture",
+      "rate_by_language": {
+        "csharp": 30.01
+      },
+      "resolution_rate": 30.01,
+      "routes": 6,
+      "symbols": 978,
+      "unresolved_by_lang_kind": {
+        "csharp.calls": 552,
+        "csharp.implements": 40,
+        "csharp.imports": 92,
+        "csharp.inherits": 30,
+        "csharp.instantiates": 66,
+        "csharp.type_ref": 1237
+      },
+      "vendored_files_reclassified": 72
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 19
+      },
+      "code_chunks": 2776,
+      "files": 139,
+      "flow_edge_types": {
+        "http_call": 20
+      },
+      "flow_edges": 20,
+      "generated_files_reclassified": 1,
+      "internal_edges": 762,
+      "internal_unresolved": 3130,
+      "languages": {
+        "csharp": 90,
+        "css": 1,
+        "dockerfile": 2,
+        "javascript": 2,
+        "json": 14,
+        "markdown": 4,
+        "razor": 22,
+        "sql": 1,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
+      "perf": {
+        "end_ws_mb": 93,
+        "files_per_sec": 8,
+        "index_duration_ms": 17212
+      },
+      "project": "dotnet-EquinoxProject",
+      "rate_by_language": {
+        "csharp": 19.79,
+        "dockerfile": 9.09,
+        "javascript": 9.09,
+        "razor": 9.09
+      },
+      "resolution_rate": 19.58,
+      "routes": 20,
+      "symbols": 979,
+      "unresolved_by_lang_kind": {
+        "csharp.calls": 1263,
+        "csharp.implements": 18,
+        "csharp.imports": 245,
+        "csharp.inherits": 29,
+        "csharp.instantiates": 43,
+        "csharp.type_ref": 1462,
+        "dockerfile.imports": 12,
+        "dockerfile.inherits": 8,
+        "javascript.calls": 10,
+        "razor.imports": 12,
+        "razor.type_ref": 28
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 61
+      },
+      "code_chunks": 215539,
+      "files": 3397,
+      "flow_edge_types": {
+        "http_call": 46
+      },
+      "flow_edges": 46,
+      "internal_edges": 105506,
+      "internal_unresolved": 66858,
+      "languages": {
+        "csharp": 749,
+        "css": 128,
+        "html": 636,
+        "javascript": 51,
+        "json": 138,
+        "markdown": 27,
+        "powershell": 4,
+        "razor": 1376,
+        "xml": 282,
+        "yaml": 6
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-fluentui-blazor",
+      "perf": {
+        "end_ws_mb": 134,
+        "files_per_sec": 3,
+        "index_duration_ms": 1271192
+      },
+      "project": "dotnet-fluentui-blazor",
+      "rate_by_language": {
+        "csharp": 62.85,
+        "html": 0.55,
+        "javascript": 54.99,
+        "markdown": 10.0,
+        "powershell": 3.31,
+        "razor": 20.45
+      },
+      "resolution_rate": 61.21,
+      "routes": 46,
+      "symbols": 81826,
+      "unresolved_by_lang_kind": {
+        "csharp.calls": 11341,
+        "csharp.implements": 88,
+        "csharp.imports": 1059,
+        "csharp.inherits": 178,
+        "csharp.instantiates": 934,
+        "csharp.type_ref": 47667,
+        "html.calls": 695,
+        "html.imports": 17,
+        "html.instantiates": 4,
+        "html.type_ref": 10,
+        "javascript.calls": 455,
+        "javascript.imports": 93,
+        "javascript.inherits": 1,
+        "javascript.type_ref": 91,
+        "markdown.calls": 5,
+        "markdown.type_ref": 4,
+        "powershell.calls": 141,
+        "powershell.imports": 5,
+        "razor.calls": 119,
+        "razor.implements": 24,
+        "razor.imports": 1711,
+        "razor.inherits": 197,
+        "razor.instantiates": 257,
+        "razor.type_ref": 1762
+      },
+      "vendored_files_reclassified": 12
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 57
+      },
+      "code_chunks": 186304,
+      "files": 2697,
+      "flow_edge_types": {
+        "http_call": 183
+      },
+      "flow_edges": 183,
+      "generated_files_reclassified": 1,
+      "internal_edges": 81255,
+      "internal_unresolved": 61308,
+      "languages": {
+        "csharp": 2403,
+        "css": 11,
+        "dockerfile": 1,
+        "javascript": 3,
+        "json": 34,
+        "markdown": 6,
+        "razor": 195,
+        "sql": 31,
+        "xml": 10,
+        "yaml": 3
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-nopcommerce",
+      "perf": {
+        "end_ws_mb": 115,
+        "files_per_sec": 19,
+        "index_duration_ms": 139932
+      },
+      "project": "dotnet-nopcommerce",
+      "rate_by_language": {
+        "csharp": 57.77,
+        "dockerfile": 0.0,
+        "javascript": 8.61,
+        "razor": 44.71,
+        "sql": 86.67
+      },
+      "resolution_rate": 57.0,
+      "routes": 860,
+      "symbols": 51042,
+      "unresolved_by_lang_kind": {
+        "csharp.calls": 23255,
+        "csharp.implements": 244,
+        "csharp.imports": 2164,
+        "csharp.inherits": 217,
+        "csharp.instantiates": 3490,
+        "csharp.type_ref": 29591,
+        "dockerfile.imports": 2,
+        "dockerfile.inherits": 1,
+        "javascript.calls": 1867,
+        "javascript.type_ref": 11,
+        "razor.calls": 123,
+        "razor.imports": 88,
+        "razor.inherits": 32,
+        "razor.instantiates": 19,
+        "razor.type_ref": 198,
+        "sql.type_ref": 6
+      },
+      "vendored_files_reclassified": 2430
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 44
+      },
+      "code_chunks": 33850,
+      "files": 457,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "generated_files_reclassified": 8,
+      "internal_edges": 9464,
+      "internal_unresolved": 11654,
+      "languages": {
+        "csharp": 432,
+        "json": 7,
+        "markdown": 15,
+        "powershell": 3
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
+      "perf": {
+        "end_ws_mb": 114,
+        "files_per_sec": 32,
+        "index_duration_ms": 14212
+      },
+      "project": "dotnet-spectre-console",
+      "rate_by_language": {
+        "csharp": 45.0,
+        "markdown": 24.55,
+        "powershell": 0.0
+      },
+      "resolution_rate": 44.81,
+      "routes": 0,
+      "symbols": 9103,
+      "unresolved_by_lang_kind": {
+        "csharp.calls": 3743,
+        "csharp.implements": 38,
+        "csharp.imports": 53,
+        "csharp.inherits": 30,
+        "csharp.instantiates": 1175,
+        "csharp.type_ref": 6495,
+        "markdown.calls": 26,
+        "markdown.instantiates": 13,
+        "markdown.type_ref": 44,
+        "powershell.calls": 37
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 44
+      },
+      "code_chunks": 177525,
+      "drained_refs": 2,
+      "files": 4359,
+      "flow_edge_types": {
+        "http_call": 510
+      },
+      "flow_edges": 510,
+      "generated_files_reclassified": 2,
+      "internal_edges": 140546,
+      "internal_unresolved": 173084,
+      "languages": {
+        "angular_template": 291,
+        "csharp": 2692,
+        "css": 3,
+        "dockerfile": 7,
+        "gotemplate": 2,
+        "html": 19,
+        "javascript": 13,
+        "json": 58,
+        "liquid": 4,
+        "markdown": 10,
+        "powershell": 10,
+        "razor": 13,
+        "scss": 304,
+        "shell": 7,
+        "sql": 4,
+        "typescript": 721,
+        "xml": 172,
+        "yaml": 29
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
+      "perf": {
+        "end_ws_mb": 160,
+        "files_per_sec": 32,
+        "index_duration_ms": 135399
+      },
+      "project": "dotnet-squidex",
+      "rate_by_language": {
+        "angular_template": 59.23,
+        "csharp": 39.54,
+        "dockerfile": 12.5,
+        "html": 13.04,
+        "javascript": 72.24,
+        "powershell": 0.0,
+        "razor": 20.0,
+        "scss": 6.35,
+        "typescript": 61.37
+      },
+      "resolution_rate": 44.81,
+      "routes": 512,
+      "symbols": 79472,
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 1497,
+        "csharp.calls": 57931,
+        "csharp.implements": 322,
+        "csharp.imports": 2951,
+        "csharp.inherits": 211,
+        "csharp.instantiates": 2567,
+        "csharp.type_ref": 78341,
+        "dockerfile.imports": 7,
+        "dockerfile.inherits": 7,
+        "html.calls": 6,
+        "html.imports": 14,
+        "javascript.calls": 110,
+        "javascript.imports": 17,
+        "javascript.type_ref": 24,
+        "powershell.calls": 43,
+        "powershell.imports": 1,
+        "razor.calls": 1,
+        "razor.imports": 4,
+        "razor.type_ref": 11,
+        "scss.calls": 354,
+        "scss.imports": 428,
+        "typescript.calls": 11466,
+        "typescript.implements": 18,
+        "typescript.imports": 2,
+        "typescript.inherits": 92,
+        "typescript.instantiates": 1618,
+        "typescript.type_ref": 15041
+      },
+      "vendored_files_reclassified": 39
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 32
+      },
+      "code_chunks": 35780,
+      "files": 925,
+      "flow_edge_types": {
+        "http_call": 73
+      },
+      "flow_edges": 73,
+      "internal_edges": 14815,
+      "internal_unresolved": 30947,
+      "languages": {
+        "astro": 19,
+        "csharp": 688,
+        "css": 13,
+        "dockerfile": 1,
+        "hcl": 52,
+        "javascript": 2,
+        "json": 15,
+        "markdown": 10,
+        "mdx": 50,
+        "powershell": 3,
+        "razor": 67,
+        "typescript": 2,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-starter-kit",
+      "perf": {
+        "end_ws_mb": 164,
+        "files_per_sec": 21,
+        "index_duration_ms": 43377
+      },
+      "project": "dotnet-starter-kit",
+      "rate_by_language": {
+        "astro": 83.33,
+        "csharp": 30.75,
+        "dockerfile": 16.67,
+        "hcl": 68.55,
+        "html": 0.0,
+        "javascript": 59.22,
+        "mdx": 53.6,
+        "powershell": 0.0,
+        "razor": 34.54,
+        "typescript": 84.94
+      },
+      "resolution_rate": 32.37,
+      "routes": 73,
+      "symbols": 18917,
+      "unresolved_by_lang_kind": {
+        "astro.calls": 1,
+        "astro.type_ref": 3,
+        "csharp.calls": 11469,
+        "csharp.implements": 174,
+        "csharp.imports": 1220,
+        "csharp.inherits": 87,
+        "csharp.instantiates": 1045,
+        "csharp.type_ref": 15708,
+        "dockerfile.imports": 3,
+        "dockerfile.inherits": 2,
+        "hcl.calls": 160,
+        "hcl.imports": 11,
+        "hcl.type_ref": 208,
+        "html.calls": 29,
+        "javascript.calls": 40,
+        "javascript.type_ref": 2,
+        "mdx.calls": 170,
+        "mdx.instantiates": 26,
+        "mdx.type_ref": 152,
+        "powershell.calls": 85,
+        "powershell.imports": 1,
+        "razor.calls": 10,
+        "razor.implements": 2,
+        "razor.imports": 62,
+        "razor.inherits": 25,
+        "razor.instantiates": 68,
+        "razor.type_ref": 159,
+        "typescript.calls": 11,
+        "typescript.type_ref": 14
+      }
+    },
+    {
+      "assertions": {
         "min_resolution_rate": 89
       },
       "code_chunks": 48196,
@@ -159,6 +600,350 @@
         "typescript.instantiates": 44,
         "typescript.type_ref": 2135,
         "vue.calls": 10
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 81
+      },
+      "code_chunks": 16958,
+      "files": 177,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "generated_files_reclassified": 1,
+      "internal_edges": 26011,
+      "internal_unresolved": 5976,
+      "languages": {
+        "javascript": 1,
+        "json": 29,
+        "markdown": 5,
+        "python": 9,
+        "rust": 119,
+        "toml": 14
+      },
+      "path": "F:/Work/Projects/TestProjects/rust-ast-grep",
+      "perf": {
+        "end_ws_mb": 113,
+        "files_per_sec": 1,
+        "index_duration_ms": 139727
+      },
+      "project": "rust-ast-grep",
+      "rate_by_language": {
+        "javascript": 64.29,
+        "python": 54.78,
+        "rust": 81.79
+      },
+      "resolution_rate": 81.32,
+      "routes": 0,
+      "symbols": 9214,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 10,
+        "python.calls": 129,
+        "python.imports": 3,
+        "python.type_ref": 114,
+        "rust.calls": 4347,
+        "rust.implements": 25,
+        "rust.imports": 213,
+        "rust.type_ref": 1135
+      },
+      "vendored_files_reclassified": 73
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 71
+      },
+      "code_chunks": 34404,
+      "drained_refs": 143,
+      "files": 1408,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 54576,
+      "internal_unresolved": 22015,
+      "languages": {
+        "dockerfile": 1,
+        "javascript": 2,
+        "json": 121,
+        "markdown": 10,
+        "nginx": 2,
+        "rust": 514,
+        "shell": 32,
+        "sql": 666,
+        "toml": 44,
+        "typescript": 12,
+        "yaml": 4
+      },
+      "path": "F:/Work/Projects/TestProjects/rust-lemmy",
+      "perf": {
+        "end_ws_mb": 133,
+        "files_per_sec": 5,
+        "index_duration_ms": 264589
+      },
+      "project": "rust-lemmy",
+      "rate_by_language": {
+        "dockerfile": 16.67,
+        "markdown": 100.0,
+        "rust": 72.77,
+        "shell": 28.57,
+        "sql": 99.83,
+        "typescript": 46.74
+      },
+      "resolution_rate": 71.26,
+      "routes": 0,
+      "symbols": 19319,
+      "unresolved_by_lang_kind": {
+        "dockerfile.imports": 6,
+        "dockerfile.inherits": 4,
+        "rust.calls": 9235,
+        "rust.implements": 88,
+        "rust.imports": 1600,
+        "rust.inherits": 1,
+        "rust.type_ref": 7745,
+        "shell.calls": 16,
+        "shell.imports": 4,
+        "sql.type_ref": 3,
+        "typescript.calls": 1558,
+        "typescript.instantiates": 40,
+        "typescript.type_ref": 1715
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 72
+      },
+      "code_chunks": 20259,
+      "drained_refs": 1,
+      "files": 324,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "generated_files_reclassified": 5,
+      "internal_edges": 24897,
+      "internal_unresolved": 9630,
+      "languages": {
+        "css": 4,
+        "freemarker": 3,
+        "html": 26,
+        "javascript": 3,
+        "json": 3,
+        "markdown": 67,
+        "rust": 196,
+        "shell": 1,
+        "toml": 6,
+        "xml": 11,
+        "yaml": 4
+      },
+      "path": "F:/Work/Projects/TestProjects/rust-loco",
+      "perf": {
+        "end_ws_mb": 140,
+        "files_per_sec": 2,
+        "index_duration_ms": 137877
+      },
+      "project": "rust-loco",
+      "rate_by_language": {
+        "html": 0.0,
+        "javascript": 24.76,
+        "markdown": 100.0,
+        "rust": 72.21
+      },
+      "resolution_rate": 72.11,
+      "routes": 0,
+      "symbols": 10801,
+      "unresolved_by_lang_kind": {
+        "html.imports": 4,
+        "javascript.calls": 70,
+        "javascript.imports": 1,
+        "javascript.type_ref": 8,
+        "rust.calls": 6624,
+        "rust.implements": 45,
+        "rust.imports": 406,
+        "rust.type_ref": 2472
+      },
+      "vendored_files_reclassified": 9
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 78
+      },
+      "code_chunks": 170270,
+      "drained_refs": 5,
+      "files": 1602,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "generated_files_reclassified": 6,
+      "internal_edges": 262344,
+      "internal_unresolved": 70722,
+      "languages": {
+        "html": 32,
+        "json": 7,
+        "markdown": 41,
+        "python": 1,
+        "rust": 1465,
+        "shell": 1,
+        "toml": 53,
+        "xml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/rust-rust-analyzer",
+      "perf": {
+        "end_ws_mb": 164,
+        "files_per_sec": 2,
+        "index_duration_ms": 878853
+      },
+      "project": "rust-rust-analyzer",
+      "rate_by_language": {
+        "markdown": 94.83,
+        "python": 40.82,
+        "rust": 78.76,
+        "typescript": 100.0
+      },
+      "resolution_rate": 78.77,
+      "routes": 0,
+      "symbols": 92381,
+      "unresolved_by_lang_kind": {
+        "markdown.calls": 3,
+        "python.calls": 16,
+        "python.imports": 3,
+        "python.type_ref": 10,
+        "rust.calls": 52907,
+        "rust.implements": 373,
+        "rust.imports": 1891,
+        "rust.inherits": 16,
+        "rust.type_ref": 15503
+      },
+      "vendored_files_reclassified": 36
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 84
+      },
+      "code_chunks": 63528,
+      "files": 472,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 96066,
+      "internal_unresolved": 18052,
+      "languages": {
+        "c": 1,
+        "json": 5,
+        "markdown": 23,
+        "python": 1,
+        "rust": 426,
+        "toml": 15,
+        "xml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/rust-tantivy",
+      "perf": {
+        "end_ws_mb": 145,
+        "files_per_sec": 4,
+        "index_duration_ms": 116018
+      },
+      "project": "rust-tantivy",
+      "rate_by_language": {
+        "markdown": 100.0,
+        "python": 0.0,
+        "rust": 84.18
+      },
+      "resolution_rate": 84.18,
+      "routes": 0,
+      "symbols": 30307,
+      "unresolved_by_lang_kind": {
+        "python.imports": 1,
+        "python.type_ref": 2,
+        "rust.calls": 14726,
+        "rust.implements": 69,
+        "rust.imports": 452,
+        "rust.inherits": 4,
+        "rust.type_ref": 2798
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 80
+      },
+      "code_chunks": 58006,
+      "drained_refs": 500,
+      "files": 2700,
+      "flow_edge_types": {
+        "http_call": 7,
+        "service_dependency": 5
+      },
+      "flow_edges": 12,
+      "internal_edges": 73530,
+      "internal_unresolved": 17893,
+      "languages": {
+        "angular_template": 276,
+        "c": 1,
+        "css": 93,
+        "dart": 66,
+        "dockerfile": 1,
+        "graphql": 24,
+        "groovy": 3,
+        "handlebars": 31,
+        "html": 105,
+        "javascript": 16,
+        "json": 133,
+        "kotlin": 1,
+        "markdown": 38,
+        "scss": 398,
+        "swift": 1,
+        "toml": 1,
+        "typescript": 1470,
+        "xml": 35,
+        "yaml": 7
+      },
+      "path": "F:/Work/Projects/TestProjects/ts-ever-demand",
+      "perf": {
+        "end_ws_mb": 220,
+        "files_per_sec": 11,
+        "index_duration_ms": 240120
+      },
+      "project": "ts-ever-demand",
+      "rate_by_language": {
+        "angular_template": 35.52,
+        "dart": 13.88,
+        "dockerfile": 50.0,
+        "graphql": 96.53,
+        "handlebars": 100.0,
+        "html": 15.14,
+        "javascript": 43.9,
+        "kotlin": 0.0,
+        "markdown": 55.56,
+        "scss": 0.57,
+        "swift": 10.53,
+        "typescript": 84.68
+      },
+      "resolution_rate": 80.43,
+      "routes": 7,
+      "symbols": 39785,
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 2282,
+        "dart.calls": 46,
+        "dart.imports": 104,
+        "dart.inherits": 61,
+        "dart.instantiates": 214,
+        "dart.type_ref": 841,
+        "dockerfile.imports": 2,
+        "dockerfile.inherits": 2,
+        "graphql.calls": 1,
+        "graphql.type_ref": 9,
+        "html.calls": 583,
+        "javascript.calls": 39,
+        "javascript.imports": 22,
+        "javascript.type_ref": 8,
+        "kotlin.imports": 1,
+        "kotlin.inherits": 1,
+        "kotlin.type_ref": 1,
+        "markdown.calls": 8,
+        "scss.calls": 464,
+        "scss.imports": 228,
+        "scss.inherits": 2,
+        "swift.calls": 1,
+        "swift.imports": 2,
+        "swift.inherits": 1,
+        "swift.type_ref": 13,
+        "typescript.calls": 8470,
+        "typescript.implements": 52,
+        "typescript.imports": 20,
+        "typescript.instantiates": 456,
+        "typescript.type_ref": 3959
       }
     },
     {
@@ -896,350 +1681,6 @@
         "vue.imports": 4,
         "vue.type_ref": 1
       }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 80
-      },
-      "code_chunks": 58006,
-      "drained_refs": 500,
-      "files": 2700,
-      "flow_edge_types": {
-        "http_call": 7,
-        "service_dependency": 5
-      },
-      "flow_edges": 12,
-      "internal_edges": 73530,
-      "internal_unresolved": 17893,
-      "languages": {
-        "angular_template": 276,
-        "c": 1,
-        "css": 93,
-        "dart": 66,
-        "dockerfile": 1,
-        "graphql": 24,
-        "groovy": 3,
-        "handlebars": 31,
-        "html": 105,
-        "javascript": 16,
-        "json": 133,
-        "kotlin": 1,
-        "markdown": 38,
-        "scss": 398,
-        "swift": 1,
-        "toml": 1,
-        "typescript": 1470,
-        "xml": 35,
-        "yaml": 7
-      },
-      "path": "F:/Work/Projects/TestProjects/ts-ever-demand",
-      "perf": {
-        "end_ws_mb": 220,
-        "files_per_sec": 11,
-        "index_duration_ms": 240120
-      },
-      "project": "ts-ever-demand",
-      "rate_by_language": {
-        "angular_template": 35.52,
-        "dart": 13.88,
-        "dockerfile": 50.0,
-        "graphql": 96.53,
-        "handlebars": 100.0,
-        "html": 15.14,
-        "javascript": 43.9,
-        "kotlin": 0.0,
-        "markdown": 55.56,
-        "scss": 0.57,
-        "swift": 10.53,
-        "typescript": 84.68
-      },
-      "resolution_rate": 80.43,
-      "routes": 7,
-      "symbols": 39785,
-      "unresolved_by_lang_kind": {
-        "angular_template.calls": 2282,
-        "dart.calls": 46,
-        "dart.imports": 104,
-        "dart.inherits": 61,
-        "dart.instantiates": 214,
-        "dart.type_ref": 841,
-        "dockerfile.imports": 2,
-        "dockerfile.inherits": 2,
-        "graphql.calls": 1,
-        "graphql.type_ref": 9,
-        "html.calls": 583,
-        "javascript.calls": 39,
-        "javascript.imports": 22,
-        "javascript.type_ref": 8,
-        "kotlin.imports": 1,
-        "kotlin.inherits": 1,
-        "kotlin.type_ref": 1,
-        "markdown.calls": 8,
-        "scss.calls": 464,
-        "scss.imports": 228,
-        "scss.inherits": 2,
-        "swift.calls": 1,
-        "swift.imports": 2,
-        "swift.inherits": 1,
-        "swift.type_ref": 13,
-        "typescript.calls": 8470,
-        "typescript.implements": 52,
-        "typescript.imports": 20,
-        "typescript.instantiates": 456,
-        "typescript.type_ref": 3959
-      }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 81
-      },
-      "code_chunks": 16958,
-      "files": 177,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "generated_files_reclassified": 1,
-      "internal_edges": 26011,
-      "internal_unresolved": 5976,
-      "languages": {
-        "javascript": 1,
-        "json": 29,
-        "markdown": 5,
-        "python": 9,
-        "rust": 119,
-        "toml": 14
-      },
-      "path": "F:/Work/Projects/TestProjects/rust-ast-grep",
-      "perf": {
-        "end_ws_mb": 113,
-        "files_per_sec": 1,
-        "index_duration_ms": 139727
-      },
-      "project": "rust-ast-grep",
-      "rate_by_language": {
-        "javascript": 64.29,
-        "python": 54.78,
-        "rust": 81.79
-      },
-      "resolution_rate": 81.32,
-      "routes": 0,
-      "symbols": 9214,
-      "unresolved_by_lang_kind": {
-        "javascript.calls": 10,
-        "python.calls": 129,
-        "python.imports": 3,
-        "python.type_ref": 114,
-        "rust.calls": 4347,
-        "rust.implements": 25,
-        "rust.imports": 213,
-        "rust.type_ref": 1135
-      },
-      "vendored_files_reclassified": 73
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 71
-      },
-      "code_chunks": 34404,
-      "drained_refs": 143,
-      "files": 1408,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 54576,
-      "internal_unresolved": 22015,
-      "languages": {
-        "dockerfile": 1,
-        "javascript": 2,
-        "json": 121,
-        "markdown": 10,
-        "nginx": 2,
-        "rust": 514,
-        "shell": 32,
-        "sql": 666,
-        "toml": 44,
-        "typescript": 12,
-        "yaml": 4
-      },
-      "path": "F:/Work/Projects/TestProjects/rust-lemmy",
-      "perf": {
-        "end_ws_mb": 133,
-        "files_per_sec": 5,
-        "index_duration_ms": 264589
-      },
-      "project": "rust-lemmy",
-      "rate_by_language": {
-        "dockerfile": 16.67,
-        "markdown": 100.0,
-        "rust": 72.77,
-        "shell": 28.57,
-        "sql": 99.83,
-        "typescript": 46.74
-      },
-      "resolution_rate": 71.26,
-      "routes": 0,
-      "symbols": 19319,
-      "unresolved_by_lang_kind": {
-        "dockerfile.imports": 6,
-        "dockerfile.inherits": 4,
-        "rust.calls": 9235,
-        "rust.implements": 88,
-        "rust.imports": 1600,
-        "rust.inherits": 1,
-        "rust.type_ref": 7745,
-        "shell.calls": 16,
-        "shell.imports": 4,
-        "sql.type_ref": 3,
-        "typescript.calls": 1558,
-        "typescript.instantiates": 40,
-        "typescript.type_ref": 1715
-      }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 72
-      },
-      "code_chunks": 20259,
-      "drained_refs": 1,
-      "files": 324,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "generated_files_reclassified": 5,
-      "internal_edges": 24897,
-      "internal_unresolved": 9630,
-      "languages": {
-        "css": 4,
-        "freemarker": 3,
-        "html": 26,
-        "javascript": 3,
-        "json": 3,
-        "markdown": 67,
-        "rust": 196,
-        "shell": 1,
-        "toml": 6,
-        "xml": 11,
-        "yaml": 4
-      },
-      "path": "F:/Work/Projects/TestProjects/rust-loco",
-      "perf": {
-        "end_ws_mb": 140,
-        "files_per_sec": 2,
-        "index_duration_ms": 137877
-      },
-      "project": "rust-loco",
-      "rate_by_language": {
-        "html": 0.0,
-        "javascript": 24.76,
-        "markdown": 100.0,
-        "rust": 72.21
-      },
-      "resolution_rate": 72.11,
-      "routes": 0,
-      "symbols": 10801,
-      "unresolved_by_lang_kind": {
-        "html.imports": 4,
-        "javascript.calls": 70,
-        "javascript.imports": 1,
-        "javascript.type_ref": 8,
-        "rust.calls": 6624,
-        "rust.implements": 45,
-        "rust.imports": 406,
-        "rust.type_ref": 2472
-      },
-      "vendored_files_reclassified": 9
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 84
-      },
-      "code_chunks": 63528,
-      "files": 472,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "internal_edges": 96066,
-      "internal_unresolved": 18052,
-      "languages": {
-        "c": 1,
-        "json": 5,
-        "markdown": 23,
-        "python": 1,
-        "rust": 426,
-        "toml": 15,
-        "xml": 1
-      },
-      "path": "F:/Work/Projects/TestProjects/rust-tantivy",
-      "perf": {
-        "end_ws_mb": 145,
-        "files_per_sec": 4,
-        "index_duration_ms": 116018
-      },
-      "project": "rust-tantivy",
-      "rate_by_language": {
-        "markdown": 100.0,
-        "python": 0.0,
-        "rust": 84.18
-      },
-      "resolution_rate": 84.18,
-      "routes": 0,
-      "symbols": 30307,
-      "unresolved_by_lang_kind": {
-        "python.imports": 1,
-        "python.type_ref": 2,
-        "rust.calls": 14726,
-        "rust.implements": 69,
-        "rust.imports": 452,
-        "rust.inherits": 4,
-        "rust.type_ref": 2798
-      }
-    },
-    {
-      "assertions": {
-        "min_resolution_rate": 78
-      },
-      "code_chunks": 170270,
-      "drained_refs": 5,
-      "files": 1602,
-      "flow_edge_types": {},
-      "flow_edges": 0,
-      "generated_files_reclassified": 6,
-      "internal_edges": 262344,
-      "internal_unresolved": 70722,
-      "languages": {
-        "html": 32,
-        "json": 7,
-        "markdown": 41,
-        "python": 1,
-        "rust": 1465,
-        "shell": 1,
-        "toml": 53,
-        "xml": 2
-      },
-      "path": "F:/Work/Projects/TestProjects/rust-rust-analyzer",
-      "perf": {
-        "end_ws_mb": 164,
-        "files_per_sec": 2,
-        "index_duration_ms": 878853
-      },
-      "project": "rust-rust-analyzer",
-      "rate_by_language": {
-        "markdown": 94.83,
-        "python": 40.82,
-        "rust": 78.76,
-        "typescript": 100.0
-      },
-      "resolution_rate": 78.77,
-      "routes": 0,
-      "symbols": 92381,
-      "unresolved_by_lang_kind": {
-        "markdown.calls": 3,
-        "python.calls": 16,
-        "python.imports": 3,
-        "python.type_ref": 10,
-        "rust.calls": 52907,
-        "rust.implements": 373,
-        "rust.imports": 1891,
-        "rust.inherits": 16,
-        "rust.type_ref": 15503
-      },
-      "vendored_files_reclassified": 36
     }
   ]
 }
