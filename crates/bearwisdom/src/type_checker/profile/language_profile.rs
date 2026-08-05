@@ -234,6 +234,14 @@ pub struct LanguageProfile {
     /// namespaces (`SymbolLookup::implicit_wildcard_namespaces`). `false` (the
     /// default) keeps wildcardness on the literal `*` target only.
     pub namespace_imports_are_wildcards: bool,
+    /// Nominal DELEGATE wrappers whose generic arguments carry a callback's
+    /// parameter types — `Action<T1,T2>` (every argument is a parameter),
+    /// `Func<T1,R>` (the last argument is the return). The lambda seeder
+    /// unwraps a callee parameter of this shape into the function type it
+    /// wraps, so an un-annotated lambda argument's parameters seed from the
+    /// delegate's arguments. Empty (the default) leaves nominal callee
+    /// parameters opaque.
+    pub delegate_wrappers: &'static [(&'static str, DelegateShape)],
     /// How the import-scoped external bind (`resolve_via_external_by_import`)
     /// matches an external candidate's file against the file's imports.
     /// `PkgSegment` (the default) keys on the `ext:<lang>:<pkg>` package segment
@@ -630,6 +638,17 @@ pub struct NamespaceDecline {
 /// like every other strategy; the unit field only opts a language in.
 #[derive(Debug, Clone, Copy)]
 pub struct ExternalByImport;
+
+/// How a delegate wrapper's generic arguments map onto the callback shape it
+/// wraps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelegateShape {
+    /// Every generic argument is a callback PARAMETER (`Action<T1,T2>`).
+    AllParams,
+    /// The LAST generic argument is the callback's return; the rest are its
+    /// parameters (`Func<T1,T2,R>`).
+    LastIsReturn,
+}
 
 /// How `resolve_via_wildcard_import` tests whether a candidate sits under a
 /// wildcard import's module.
@@ -1201,6 +1220,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     module_scope: ModuleScope::Off,
     wildcard_match: WildcardMatch::QnameUnder,
     namespace_imports_are_wildcards: false,
+    delegate_wrappers: &[],
     ext_match: ExtMatch::PkgSegment,
     head_alias: HeadAliasBind::Off,
     file_scoped_imports: FileScopedImports::Off,

@@ -113,6 +113,22 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     // A plain `using System;` opens the namespace's direct members to bare
     // scope — the C# analogue of `import java.util.*`.
     namespace_imports_are_wildcards: true,
+    // BCL delegate wrappers: a callee parameter of this shape carries the
+    // callback's parameter types in its generic arguments.
+    delegate_wrappers: &[
+        (
+            "Action",
+            crate::type_checker::profile::language_profile::DelegateShape::AllParams,
+        ),
+        (
+            "Func",
+            crate::type_checker::profile::language_profile::DelegateShape::LastIsReturn,
+        ),
+        (
+            "Predicate",
+            crate::type_checker::profile::language_profile::DelegateShape::AllParams,
+        ),
+    ],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
     file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,

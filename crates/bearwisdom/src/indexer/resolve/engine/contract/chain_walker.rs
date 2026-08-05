@@ -628,6 +628,23 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
     if start < inner.len() {
         parts.push(inner[start..].to_string());
     }
+    // A `this`-marked first parameter is a C# extension-method receiver —
+    // unambiguous regardless of `lang_id` (no other signature shape writes
+    // `(this Type name`). The receiver is NOT a call argument: drop it so the
+    // pattern positions align with the call's actual arguments, and read the
+    // remaining slots prefix-shaped.
+    let is_extension = parts
+        .first()
+        .is_some_and(|p| p.trim_start().starts_with("this "));
+    if is_extension {
+        let types: Vec<String> = parts
+            .into_iter()
+            .skip(1)
+            .map(|p| extract_param_type_prefix(&p))
+            .filter(|s| !s.is_empty())
+            .collect();
+        return Some(types);
+    }
     // Dispatch per language. Each strategy extracts the TYPE portion of
     // one parameter slot, after the comma split above.
     let extract = match lang_id {
@@ -641,6 +658,31 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
         .filter(|s| !s.is_empty())
         .collect();
     Some(types)
+}
+
+/// The receiver TYPE text of a C#-style extension-method signature — the
+/// `this`-marked first parameter of `void UseSnapshot(this ModelBuilder
+/// builder, …)`, with the `this` marker and the parameter NAME stripped.
+/// `None` when the signature carries no `(this ` marker (not an extension).
+pub(crate) fn extension_receiver_type(sig: &str) -> Option<String> {
+    let idx = sig.find("(this ")?;
+    let rest = &sig[idx + "(this ".len()..];
+    // End of the first parameter: the first `,` or `)` at bracket depth 0.
+    let mut depth: i32 = 0;
+    let mut end = rest.len();
+    for (i, ch) in rest.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' if depth > 0 => depth -= 1,
+            ',' | ')' if depth == 0 => {
+                end = i;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let ty = extract_param_type_prefix(&rest[..end]);
+    (!ty.is_empty()).then_some(ty)
 }
 
 /// TS / Rust / Python / Kotlin / Swift / Scala / Dart / Haskell / OCaml
@@ -690,6 +732,10 @@ fn extract_param_type_postfix_no_colon(part: &str) -> String {
 /// Take everything up to the last whitespace at top-level — that's the
 /// type expression, possibly with pointer/reference markers.
 fn extract_param_type_prefix(part: &str) -> String {
+    // A default value (`Action<T>? configure = null`) is not part of the
+    // parameter's type-name pair — strip it at the first depth-0 `=` before
+    // taking the type prefix.
+    let part = part[..initializer_split(part)].trim_end();
     let trimmed = part.trim();
     if trimmed.is_empty() {
         return String::new();

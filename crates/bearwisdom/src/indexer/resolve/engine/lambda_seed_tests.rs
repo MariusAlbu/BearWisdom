@@ -100,6 +100,7 @@ fn a_lambda_parameter_is_seeded_from_the_receivers_element_type() {
         array_of(&arena, "User"),
         None,
         &FxHashMap::default(),
+        &[],
     );
 
     let seeded = lookup.seeded.borrow();
@@ -125,6 +126,7 @@ fn an_unbindable_receiver_seeds_nothing() {
         arena.class("Array"),
         None,
         &FxHashMap::default(),
+        &[],
     );
 
     assert!(lookup.seeded.borrow().is_empty());
@@ -147,6 +149,7 @@ fn an_unnamed_lambda_binding_is_skipped() {
         array_of(&arena, "User"),
         None,
         &FxHashMap::default(),
+        &[],
     );
 
     assert!(lookup.seeded.borrow().is_empty());
@@ -166,6 +169,7 @@ fn a_call_with_no_lambda_argument_seeds_nothing() {
         array_of(&arena, "User"),
         None,
         &FxHashMap::default(),
+        &[],
     );
 
     assert!(lookup.seeded.borrow().is_empty());
@@ -190,8 +194,109 @@ fn an_argument_driven_binding_reaches_the_callback_parameter() {
         arena.class("Array"),
         None,
         &arg_env,
+        &[],
     );
 
     let seeded = lookup.seeded.borrow();
     assert_eq!(arena.get(seeded[0].1), Type::Class("Account".to_string()));
+}
+
+// --- delegate-wrapper unwrap --------------------------------------------------
+
+/// `void UseSnapshot<TEntity>(this ModelBuilder b, Action<EntityTypeBuilder<TEntity>>? configure = null)`
+fn use_snapshot_method() -> Symbol {
+    let mut s = crate::indexer::resolve::engine::testkit::sym(
+        7,
+        "UseSnapshot",
+        "EFSnapshotBuilder.UseSnapshot",
+        "method",
+        "src/EFSnapshotBuilder.cs",
+    );
+    s.signature = Some(
+        "void UseSnapshot<TEntity>(this ModelBuilder builder, Action<EntityTypeBuilder<TEntity>>? configure = null)"
+            .to_string(),
+    );
+    s
+}
+
+#[test]
+fn a_delegate_wrapped_lambda_seeds_from_the_wrappers_generic_args() {
+    use crate::type_checker::profile::language_profile::DelegateShape;
+    let lookup = SeedLookup::new("EFSnapshotBuilder.UseSnapshot", &["TEntity"]);
+    let arena = TypeArena::new();
+    let args = vec![CallArg::Lambda {
+        params: vec!["b".to_string()],
+    }];
+    // Explicit type argument bound: TEntity -> EFAppEntity.
+    let mut env = FxHashMap::default();
+    env.insert("TEntity".to_string(), arena.class("EFAppEntity"));
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &use_snapshot_method(),
+        &args,
+        arena.class("ModelBuilder"),
+        None,
+        &env,
+        &[("Action", DelegateShape::AllParams), ("Func", DelegateShape::LastIsReturn)],
+    );
+
+    let seeded = lookup.seeded.borrow();
+    assert_eq!(seeded.len(), 1);
+    assert_eq!(seeded[0].0, "b");
+    assert_eq!(
+        arena.format_type(seeded[0].1),
+        "EntityTypeBuilder<EFAppEntity>"
+    );
+}
+
+#[test]
+fn a_nominal_non_delegate_parameter_stays_opaque() {
+    use crate::type_checker::profile::language_profile::DelegateShape;
+    let lookup = SeedLookup::new("EFSnapshotBuilder.UseSnapshot", &["TEntity"]);
+    let arena = TypeArena::new();
+    let args = vec![CallArg::Lambda {
+        params: vec!["b".to_string()],
+    }];
+    // No delegate table — Action is just a nominal type; nothing seeds.
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &use_snapshot_method(),
+        &args,
+        arena.class("ModelBuilder"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+    assert!(lookup.seeded.borrow().is_empty());
+}
+
+#[test]
+fn func_shaped_delegates_drop_the_trailing_return_arg() {
+    use crate::type_checker::profile::language_profile::DelegateShape;
+    let lookup = SeedLookup::new("Runner.Run", &[]);
+    let arena = TypeArena::new();
+    let mut callee = crate::indexer::resolve::engine::testkit::sym(
+        9, "Run", "Runner.Run", "method", "src/Runner.cs",
+    );
+    callee.signature = Some("void Run(Func<Widget, bool> pred)".to_string());
+    let args = vec![CallArg::Lambda {
+        params: vec!["w".to_string()],
+    }];
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        &[("Func", DelegateShape::LastIsReturn)],
+    );
+    let seeded = lookup.seeded.borrow();
+    assert_eq!(seeded.len(), 1);
+    assert_eq!(seeded[0].0, "w");
+    assert_eq!(arena.format_type(seeded[0].1), "Widget");
 }

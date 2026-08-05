@@ -12,6 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_profile::DelegateShape;
 use crate::types::CallArg;
 
 use super::generics::{bindable_params, param_patterns, substitute_env};
@@ -37,6 +38,7 @@ pub(crate) fn seed_lambda_params(
     receiver: TypeId,
     recv_id: Option<i64>,
     arg_env: &FxHashMap<String, TypeId>,
+    delegate_wrappers: &[(&str, DelegateShape)],
 ) {
     if !args.iter().any(|a| matches!(a, CallArg::Lambda { .. })) {
         return;
@@ -55,14 +57,44 @@ pub(crate) fn seed_lambda_params(
         let Some(&pattern) = patterns.get(i) else {
             continue;
         };
-        let Type::Function {
-            params: callback_params,
-            ..
-        } = arena.get(substitute_env(arena, pattern, &env))
+        let substituted = substitute_env(arena, pattern, &env);
+        let Some(callback_params) = callback_param_types(arena, substituted, delegate_wrappers)
         else {
             continue;
         };
         seed_names(lookup, arena, params, &callback_params, &open);
+    }
+}
+
+/// The PARAMETER types of a callback-shaped callee parameter: an inline
+/// function type yields its params directly; a nominal DELEGATE wrapper
+/// (`Action<T1,T2>`, `Func<T,R>`, peeled through an `Optional`) yields its
+/// generic arguments per the profile's declared shape. `None` for anything
+/// else — a nominal parameter that is not a declared delegate stays opaque.
+fn callback_param_types(
+    arena: &TypeArena,
+    ty: TypeId,
+    delegate_wrappers: &[(&str, DelegateShape)],
+) -> Option<Vec<TypeId>> {
+    match arena.get(ty) {
+        Type::Function { params, .. } => Some(params),
+        // `Action<T>?` — the nullable annotation doesn't change the shape.
+        Type::Optional(inner) => callback_param_types(arena, inner, delegate_wrappers),
+        Type::Apply { base, args } => {
+            let Type::Class(head) = arena.get(base) else {
+                return None;
+            };
+            let simple = head.rsplit('.').next().unwrap_or(&head);
+            let (_, shape) = delegate_wrappers.iter().find(|(n, _)| *n == simple)?;
+            match shape {
+                DelegateShape::AllParams => Some(args),
+                DelegateShape::LastIsReturn => {
+                    let n = args.len().checked_sub(1)?;
+                    Some(args[..n].to_vec())
+                }
+            }
+        }
+        _ => None,
     }
 }
 

@@ -270,6 +270,16 @@ impl TypeArena {
         // `readonly T[]` — the modifier doesn't change the array shape; strip it
         // so the suffix and the bare form converge.
         let trimmed = trimmed.strip_prefix("readonly ").map(str::trim).unwrap_or(trimmed);
+        // Trailing nullable marker (`Action<T>?`, `string?` — C#/Kotlin/Swift).
+        // A conditional type's `?` is interior, never trailing, so the suffix
+        // strip is unambiguous.
+        if let Some(inner) = trimmed.strip_suffix('?') {
+            let inner = inner.trim_end();
+            if !inner.is_empty() {
+                let i = self.intern_type_str(inner);
+                return self.intern(Type::Optional(i));
+            }
+        }
         // `T[]` array suffix → the lib `Array<T>` so member calls (map / push /
         // …) root on the Array type. Checked before the generic-bracket search
         // so `User[]` becomes `Apply(Array, [User])` rather than collapsing to

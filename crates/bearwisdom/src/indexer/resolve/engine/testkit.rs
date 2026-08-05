@@ -444,6 +444,21 @@ pub(crate) fn sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> S
     }
 }
 
+/// `sym` with a signature attached — for rungs that read the declaration's
+/// signature text (extension receivers, param patterns).
+pub(crate) fn sym_with_sig(
+    id: i64,
+    name: &str,
+    qname: &str,
+    kind: &str,
+    file: &str,
+    signature: &str,
+) -> Symbol {
+    let mut s = sym(id, name, qname, kind, file);
+    s.signature = Some(signature.to_string());
+    s
+}
+
 /// An `import name from module` entry.
 pub(crate) fn import(name: &str, module: Option<&str>) -> ImportEntry {
     ImportEntry {

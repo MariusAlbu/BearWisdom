@@ -41,6 +41,7 @@ pub const NIX_PROFILE: LanguageProfile = LanguageProfile {
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
     namespace_imports_are_wildcards: false,
+    delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::OnSameFile {
         require_kind: None,

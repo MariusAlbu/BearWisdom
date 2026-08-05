@@ -17,7 +17,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{
-    parse_param_types_from_signature, Symbol, SymbolLookup,
+    Symbol, SymbolLookup,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
@@ -217,12 +217,29 @@ pub(crate) fn bindable_params(lookup: &dyn SymbolLookup, callee: &Symbol) -> FxH
 /// external cache) exposes the same patterns. Empty when the signature carries
 /// no parameter list.
 pub(crate) fn param_patterns(arena: &TypeArena, callee: &Symbol) -> Vec<TypeId> {
+    let lang = lang_for_symbol_path(&callee.file_path);
     callee
         .signature
         .as_deref()
-        .and_then(parse_param_types_from_signature)
+        .and_then(|s| {
+            crate::indexer::resolve::engine::contract::chain_walker::parse_param_types_from_signature_for_lang(s, lang)
+        })
         .map(|ps| ps.iter().map(|p| arena.intern_type_str(p)).collect())
         .unwrap_or_default()
+}
+
+/// The language whose signature SHAPE a symbol's declaration carries, derived
+/// from the declaring file: registry extension table for real files, the
+/// virtual-scheme owner for demand-index entries. `""` (the colon-shaped
+/// default) when neither identifies it.
+fn lang_for_symbol_path(path: &str) -> &'static str {
+    if let Some(lang) = crate::ecosystem::externals::language_for_virtual_path(path) {
+        return lang;
+    }
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    crate::languages::default_registry()
+        .language_by_extension(name)
+        .unwrap_or("")
 }
 
 /// The bindings a call's argument types impose on `callee`'s generic

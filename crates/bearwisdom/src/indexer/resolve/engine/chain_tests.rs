@@ -2982,3 +2982,97 @@ fn arrow_typed_value_call_root_yields_the_signature_return() {
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(51));
 }
+
+// --- extension-method member dispatch ----------------------------------------
+
+#[test]
+fn extension_method_resolves_on_instance_member_miss() {
+    // `builder.UseSnapshot(...)` — UseSnapshot is not a member of ModelBuilder;
+    // it is a static method elsewhere whose signature marks the receiver with
+    // `this ModelBuilder`. The miss ladder must find it.
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    let lookup = Lookup::new()
+        .with(sym(1, "builder", "Cfg.builder", "parameter", "src/Cfg.cs"))
+        .with_field_type("Cfg.builder", "ModelBuilder")
+        .with(sym(10, "ModelBuilder", "ModelBuilder", "class", "ext:dotnet:EF/EF"))
+        .with(sym_with_sig(
+            20,
+            "UseSnapshot",
+            "EFSnapshotBuilder.UseSnapshot",
+            "method",
+            "src/EFSnapshotBuilder.cs",
+            "void UseSnapshot<T>(this ModelBuilder builder, string? col)",
+        ));
+    let segs = vec![
+        seg("builder", false, SegmentKind::Identifier),
+        seg("UseSnapshot", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "Cfg.Use"), Some(20));
+}
+
+#[test]
+fn extension_on_a_supertype_applies_to_the_derived_receiver() {
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    let lookup = Lookup::new()
+        .with(sym(1, "list", "M.list", "parameter", "src/M.cs"))
+        .with_field_type("M.list", "MyList")
+        .with(sym(10, "MyList", "MyList", "class", "src/MyList.cs"))
+        .with_parent("MyList", "BaseSeq")
+        .with(sym(11, "BaseSeq", "BaseSeq", "class", "src/BaseSeq.cs"))
+        .with(sym_with_sig(
+            20,
+            "Shuffle",
+            "SeqExtensions.Shuffle",
+            "method",
+            "src/SeqExtensions.cs",
+            "void Shuffle(this BaseSeq seq)",
+        ));
+    let segs = vec![
+        seg("list", false, SegmentKind::Identifier),
+        seg("Shuffle", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(20));
+}
+
+#[test]
+fn two_distinct_extension_declarations_stay_ambiguous() {
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    let lookup = Lookup::new()
+        .with(sym(1, "b", "C.b", "parameter", "src/C.cs"))
+        .with_field_type("C.b", "Widget")
+        .with(sym(10, "Widget", "Widget", "class", "src/Widget.cs"))
+        .with(sym_with_sig(20, "Fit", "ExtA.Fit", "method", "src/A.cs",
+            "void Fit(this Widget w)"))
+        .with(sym_with_sig(21, "Fit", "ExtB.Fit", "method", "src/B.cs",
+            "void Fit(this Widget w)"));
+    let segs = vec![
+        seg("b", false, SegmentKind::Identifier),
+        seg("Fit", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "C.Run"), None);
+}
+
+#[test]
+fn call_args_bind_against_the_arity_matching_overload() {
+    // Two cracked overloads share one qname; the member lookup hands back the
+    // 1-param one, but the call passes (string, lambda) — the seeder must read
+    // the 2-param sibling's patterns so the lambda seeds from its delegate.
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    use crate::types::CallArg;
+    let one = sym_with_sig(
+        30, "Entity", "ModelBuilder.Entity", "method", "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
+        "Entity(string): EntityTypeBuilder",
+    );
+    let two = sym_with_sig(
+        31, "Entity", "ModelBuilder.Entity", "method", "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
+        "Entity(string, Action<EntityTypeBuilder>): EntityTypeBuilder",
+    );
+    let lookup = Lookup::new().with(one.clone()).with(two);
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![
+        CallArg::StringLit("users".to_string()),
+        CallArg::Lambda { params: vec!["b".to_string()] },
+    ];
+    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
+    assert_eq!(picked.id, 31, "the 2-param delegate overload must win");
+}

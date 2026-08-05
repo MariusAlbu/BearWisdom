@@ -181,6 +181,17 @@ pub(crate) fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
 /// that minted the scheme owns the decode. `None` when the path is a real
 /// file (no known virtual scheme) or the decode fails; the caller falls
 /// through to its filesystem parse or skips gracefully.
+/// The language whose declaration SHAPES a virtual demand-index path carries.
+/// Scheme-owned: `ext:dotnet-type:` entries synthesize C#-shaped signatures.
+/// `None` for real file paths — the caller falls through to the registry's
+/// extension table.
+pub(crate) fn language_for_virtual_path(path: &str) -> Option<&'static str> {
+    if path.starts_with("ext:dotnet-type:") {
+        return Some("csharp");
+    }
+    None
+}
+
 pub(crate) fn materialize_virtual_external(path: &str) -> Option<crate::types::ParsedFile> {
     // `ext:dotnet-type:<dll>!!<assembly>!!<Qualified.Type>` — a single .NET
     // type cracked from a NuGet DLL's ECMA-335 metadata. The IL surface is

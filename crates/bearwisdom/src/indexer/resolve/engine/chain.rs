@@ -19,6 +19,9 @@
 
 use rustc_hash::FxHashMap;
 
+use crate::indexer::resolve::engine::contract::chain_walker::{
+    extension_receiver_type, parse_type_head_and_args,
+};
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
@@ -31,7 +34,7 @@ use super::composite_members;
 use super::mapped_members;
 use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
-use super::generics::{bind_arg_generics, fill_yield_from_args, substitute_env};
+use super::generics::{param_patterns, bind_arg_generics, fill_yield_from_args, substitute_env};
 use super::head_decl::{
     head_symbol_id, head_symbol_id_preferring_package, receiver_type_for_head, yielded_receiver,
 };
@@ -167,6 +170,10 @@ pub fn bind_member_access(
                 ) {
                     current = reheaded;
                     m
+                } else if let Some(m) =
+                    lookup_extension_method(lookup, arena, current, &seg.name)
+                {
+                    m
                 } else if was_uncalled_callable {
                     // A method accessed WITHOUT a call is a function VALUE
                     // (`this.m.bind(this)`) — the members it carries are the
@@ -220,6 +227,7 @@ pub fn bind_member_access(
                     current.ty,
                     current.id,
                     yielded,
+                    profile.delegate_wrappers,
                 )
             } else {
                 yielded
@@ -264,6 +272,7 @@ pub fn bind_member_access(
                 current.ty,
                 current.id,
                 Some(yielded),
+                profile.delegate_wrappers,
             )
             .unwrap_or(yielded)
         } else {
@@ -496,6 +505,66 @@ fn reroot_bare_head(
         ty: rebind_head(arena, ty, &decl.qualified_name),
         id: Some(decl.id),
     }
+}
+
+/// An EXTENSION METHOD found after an instance-member miss: a method declared
+/// OUTSIDE the receiver's type whose signature marks its first parameter with
+/// `this` (`void UseSnapshot(this ModelBuilder builder, …)`) and whose
+/// receiver-parameter head names the receiver's type — or one of its
+/// supertypes, so an extension on a base applies to the derived receiver.
+/// The `(this ` signature shape is the gate: only extension declarations
+/// carry it, so the probe is structurally inert for every other language.
+/// A single distinct declaring qname wins; two different qnames decline.
+fn lookup_extension_method(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+) -> Option<Symbol> {
+    let recv_head = head_qname(arena, recv.ty)?;
+    // The receiver's simple name plus its supertypes', climbed breadth-first
+    // and bounded like the member walk itself.
+    let mut recv_names: Vec<String> = Vec::new();
+    let mut frontier: Vec<String> = vec![recv_head.clone()];
+    for _ in 0..=MAX_SUPERTYPE_DEPTH {
+        let mut next = Vec::new();
+        for head in &frontier {
+            let simple = head.rsplit('.').next().unwrap_or(head);
+            if !recv_names.iter().any(|n| n == simple) {
+                recv_names.push(simple.to_string());
+            }
+            for parent in lookup.parent_class_qnames(head) {
+                next.push(parent.clone());
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    let mut hit: Option<Symbol> = None;
+    for cand in lookup.by_name(member) {
+        if !is_callable(&cand.kind) {
+            continue;
+        }
+        let Some(sig) = cand.signature.as_deref() else {
+            continue;
+        };
+        let Some(recv_param) = extension_receiver_type(sig) else {
+            continue;
+        };
+        let (param_head, _args) = parse_type_head_and_args(&recv_param);
+        let param_simple = param_head.rsplit('.').next().unwrap_or(param_head);
+        if !recv_names.iter().any(|n| n == param_simple) {
+            continue;
+        }
+        match &hit {
+            None => hit = Some(cand.clone()),
+            Some(h) if h.qualified_name == cand.qualified_name => {}
+            Some(_) => return None,
+        }
+    }
+    hit
 }
 
 /// Rewrite a type's nominal head `Class` to `qname`, preserving generic application
@@ -1230,14 +1299,72 @@ pub(crate) fn apply_call_args(
     receiver: TypeId,
     recv_id: Option<i64>,
     yielded: Option<TypeId>,
+    delegate_wrappers: &[(&str, crate::type_checker::profile::language_profile::DelegateShape)],
 ) -> Option<TypeId> {
     if args.is_empty() {
         return yielded;
     }
+    let callee = select_overload_for_args(lookup, arena, callee, args);
     let arg_types = resolve_arg_types(lookup, arena, args);
-    let env = bind_arg_generics(lookup, arena, callee, &arg_types);
-    seed_lambda_params(lookup, arena, callee, args, receiver, recv_id, &env);
+    let env = bind_arg_generics(lookup, arena, &callee, &arg_types);
+    seed_lambda_params(
+        lookup, arena, &callee, args, receiver, recv_id, &env, delegate_wrappers,
+    );
     yielded.map(|y| substitute_env(arena, y, &env))
+}
+
+/// The same-qname OVERLOAD whose parameter list fits the call. The member
+/// lookup returns one first-winner declaration; a call whose argument count
+/// doesn't match that overload's parameters must read its patterns off the
+/// sibling that does (`Entity(string)` vs `Entity(string, Action<…>)`), or
+/// argument binding and lambda seeding zip against the wrong positions.
+/// Preference among arity-exact siblings: one whose pattern at every lambda
+/// argument position is callback-shaped. The original callee stands when no
+/// sibling fits — its patterns may still bind a prefix.
+#[cfg(test)]
+pub(super) fn _test_select_overload_for_args(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[crate::types::CallArg],
+) -> Symbol {
+    select_overload_for_args(lookup, arena, callee, args)
+}
+
+fn select_overload_for_args(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[crate::types::CallArg],
+) -> Symbol {
+    let n = args.len();
+    if param_patterns(arena, callee).len() == n {
+        return callee.clone();
+    }
+    let mut arity_match: Option<Symbol> = None;
+    for cand in lookup.all_by_qualified_name(&callee.qualified_name) {
+        let patterns = param_patterns(arena, cand);
+        if patterns.len() != n {
+            continue;
+        }
+        let lambdas_fit = args.iter().zip(patterns.iter()).all(|(a, &p)| {
+            if !matches!(a, crate::types::CallArg::Lambda { .. }) {
+                return true;
+            }
+            // A lambda argument's parameter must be callback-shaped: an inline
+            // function type, a (possibly nullable) delegate application — not
+            // a bare nominal or primitive.
+            matches!(
+                arena.get(p),
+                Type::Function { .. } | Type::Apply { .. } | Type::Optional(_)
+            )
+        });
+        if lambdas_fit {
+            return cand.clone();
+        }
+        arity_match.get_or_insert_with(|| cand.clone());
+    }
+    arity_match.unwrap_or_else(|| callee.clone())
 }
 
 /// Inner body of `yield_through`. See `yield_through` for the contract.

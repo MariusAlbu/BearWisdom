@@ -88,3 +88,36 @@ fn declared_type_keeps_a_bare_arrow_annotation() {
         Some("(e: Event) => Response")
     );
 }
+
+// --- extension_receiver_type + this-param alignment --------------------------
+
+#[test]
+fn extension_receiver_type_reads_the_this_marked_param() {
+    assert_eq!(
+        extension_receiver_type(
+            "void UseSnapshot<T, TEntity>(this ModelBuilder builder, IJsonSerializer json, Action<EntityTypeBuilder<TEntity>>? configure = null)"
+        ).as_deref(),
+        Some("ModelBuilder")
+    );
+    assert_eq!(
+        extension_receiver_type(
+            "PropertyBuilder<DomainId> AsString(this PropertyBuilder<DomainId> propertyBuilder)"
+        ).as_deref(),
+        Some("PropertyBuilder<DomainId>")
+    );
+    assert_eq!(extension_receiver_type("void Configure(ModelBuilder builder)"), None);
+}
+
+#[test]
+fn extension_signature_params_drop_the_receiver_and_align_with_args() {
+    // The `this` receiver is not a call argument — pattern positions must
+    // match the actual argument list.
+    let params = parse_param_types_from_signature(
+        "void UseSnapshot<T>(this ModelBuilder builder, IJsonSerializer json, string? col, Action<EntityTypeBuilder<T>>? configure = null)",
+    )
+    .unwrap();
+    assert_eq!(
+        params,
+        vec!["IJsonSerializer", "string?", "Action<EntityTypeBuilder<T>>?"]
+    );
+}

@@ -253,14 +253,13 @@ fn local_type_id_round_trips_optional_without_nominalization() {
     let user_id = arena.class("User");
     let opt_id = arena.intern(Type::Optional(user_id));
 
-    // Confirm the old round-trip produces a Class, not Optional.
+    // The string round-trip also preserves the shape now — the trailing-`?`
+    // nullable suffix interns as `Optional(User)` rather than nominalizing to
+    // a member-less `Class("User?")`. The TypeId cache remains the identity
+    // path either way.
     let formatted = arena.format_type(opt_id); // "User?"
-    let nominalized = arena.intern_type_str(&formatted);
-    assert!(
-        matches!(arena.get(nominalized), Type::Class(_)),
-        "intern_type_str(\"User?\") must yield Class — confirms the corruption"
-    );
-    assert_ne!(nominalized, opt_id, "Class(\"User?\") and Optional(User) must be distinct");
+    let reinterned = arena.intern_type_str(&formatted);
+    assert_eq!(reinterned, opt_id, "intern_type_str(\"User?\") must round-trip to Optional(User)");
 
     // New path: TypeId stored and retrieved intact.
     lookup.record_local_type_id("maybeUser".to_string(), opt_id);
