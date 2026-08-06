@@ -10,15 +10,17 @@
 
 use std::collections::HashSet;
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol};
+use crate::types::{ExtractedRef, ExtractedSymbol};
 
 pub(super) struct ScanAttribution {
     /// line → innermost enclosing symbol index. Wider spans are written
     /// first so narrower (inner) symbols overwrite: namespace → class →
     /// member. Lines outside every span fall back to symbol 0.
     by_line: Vec<usize>,
-    /// `(target_name, line)` of every TypeRef an earlier pass emitted. The
-    /// scanner is a gap-filler; re-emitting the same name at the same line
+    /// `(target_name, line)` of every ref an earlier pass emitted, any kind.
+    /// The scanner is a gap-filler; a site the symbol passes already covered
+    /// needs no second emission — a member CALL at the site makes a scanned
+    /// TypeRef of the same name pure chain noise, and a same-name TypeRef
     /// under a second source symbol duplicates the ref.
     seen: HashSet<(String, u32)>,
 }
@@ -44,7 +46,6 @@ impl ScanAttribution {
         }
         let seen = refs
             .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
             .map(|r| (r.target_name.clone(), r.line))
             .collect();
         Self { by_line, seen }

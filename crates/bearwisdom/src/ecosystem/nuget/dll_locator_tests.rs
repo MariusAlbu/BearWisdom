@@ -63,3 +63,51 @@ fn find_dlls_returns_all_tfm_assets_primary_first() {
     assert_eq!(names, vec!["Pkg.Mtp-V1.dll", "pkg.core.dll"]);
 }
 
+
+#[test]
+fn probe_interface_crack() {
+    let pf = crate::ecosystem::nuget::parse_dotnet_dll_public(
+        std::path::Path::new(
+            "C:/Users/Reaper/.nuget/packages/fakeiteasy/9.0.1/lib/net8.0/FakeItEasy.dll",
+        ),
+        "fakeiteasy",
+        "csharp",
+    )
+    .expect("crack");
+    let n = pf
+        .symbols
+        .iter()
+        .filter(|s| s.qualified_name.contains("IVoidArgumentValidationConfiguration"))
+        .count();
+    eprintln!("PROBE ivoid-related symbols: {n}");
+    for s in pf.symbols.iter().filter(|s| s.qualified_name.contains("IVoidArgumentValidationConfiguration")).take(6) {
+        eprintln!("PROBE   {} [{}]", s.qualified_name, s.kind.as_str());
+    }
+}
+
+#[test]
+fn probe_crack_refs() {
+    let pf = crate::ecosystem::nuget::parse_dotnet_dll_public(
+        std::path::Path::new(
+            "C:/Users/Reaper/.nuget/packages/fakeiteasy/9.0.1/lib/net8.0/FakeItEasy.dll",
+        ),
+        "fakeiteasy",
+        "csharp",
+    )
+    .expect("crack");
+    eprintln!("PROBE refs: {}", pf.refs.len());
+    let ivoid_idx = pf
+        .symbols
+        .iter()
+        .position(|s| s.qualified_name.ends_with("IVoidArgumentValidationConfiguration"));
+    eprintln!("PROBE ivoid idx: {ivoid_idx:?}");
+    if let Some(i) = ivoid_idx {
+        let parents: Vec<_> = pf
+            .refs
+            .iter()
+            .filter(|r| r.source_symbol_index == i)
+            .map(|r| (r.target_name.clone(), r.kind))
+            .collect();
+        eprintln!("PROBE ivoid parents: {parents:?}");
+    }
+}

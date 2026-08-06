@@ -218,3 +218,43 @@ fn external_same_name_symbol_does_not_veto_ref_pull() {
         "an external same-name squatter must not suppress the pull"
     );
 }
+
+/// A delegate-wrapped callback parameter in a cracked signature names the
+/// type a caller's lambda parameter will be seeded as — that type must be
+/// demanded even though no ref and no return head ever names it.
+#[test]
+fn callback_param_type_head_is_demanded() {
+    let symbol = method_with_signature(
+        "CreateTable(string, Action<Microsoft.EntityFrameworkCore.Migrations.Operations.Builders.ColumnsBuilder>): OperationBuilder",
+    );
+
+    let mut loc = SymbolLocationIndex::new();
+    let builder_file = PathBuf::from(
+        "ext:dotnet-type:/pkgs/efrel.dll!!efrel!!Microsoft.EntityFrameworkCore.Migrations.Operations.Builders.ColumnsBuilder",
+    );
+    loc.insert("microsoft.entityframeworkcore.relational", "ColumnsBuilder", builder_file.clone());
+    // The return head resolves elsewhere; only the callback arg matters here.
+    loc.insert("microsoft.entityframeworkcore.relational", "OperationBuilder", PathBuf::from("ext:x"));
+
+    let arena = Arc::new(TypeArena::new());
+    let tree = Compilation::build(&[], &HashMap::new(), arena);
+
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut out: Vec<PathBuf> = Vec::new();
+    super::collect_callback_param_type_files(
+        std::slice::from_ref(&symbol),
+        "csharp",
+        &profiles,
+        &tree,
+        &loc,
+        &mut seen,
+        &mut out,
+    );
+
+    assert_eq!(
+        out,
+        vec![builder_file],
+        "the Action<> type argument must be demand-pulled"
+    );
+}

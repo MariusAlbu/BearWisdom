@@ -383,6 +383,12 @@ pub fn emit_chain_type_ref(
         return;
     }
     let type_seg = &c.segments[c.segments.len() - 2];
+    // A CALLED segment is a method, never a type — `A.CallTo(x).Invokes(y)`
+    // has an uppercase called middle segment that the uppercase heuristic
+    // would otherwise misread as the `Ns.Type.method()` shape.
+    if type_seg.is_call {
+        return;
+    }
     if type_seg
         .name
         .chars()

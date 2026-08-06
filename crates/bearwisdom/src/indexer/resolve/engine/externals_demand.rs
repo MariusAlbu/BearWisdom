@@ -24,8 +24,10 @@ use crate::indexer::resolve::engine::contract::chain_walker::{
 use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::indexer::resolve::engine::relative_imports;
 use crate::type_checker::core::types::TypeArena;
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 use crate::walker::WalkedFile;
+use rustc_hash::FxHashMap;
 
 pub(super) fn materialize_externals(
     db: &mut Database,
@@ -33,6 +35,7 @@ pub(super) fn materialize_externals(
     parsed: &[ParsedFile],
     loc: &SymbolLocationIndex,
     arena: &Arc<TypeArena>,
+    profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
 ) -> Result<()> {
     if loc.is_empty() {
         return Ok(());
@@ -80,6 +83,15 @@ pub(super) fn materialize_externals(
         for (abs, pf) in &batch {
             collect_external_files(&pf.refs, tree, loc, &mut seen, &mut next);
             collect_return_type_files(&pf.symbols, &pf.language, tree, loc, &mut seen, &mut next);
+            collect_callback_param_type_files(
+                &pf.symbols,
+                &pf.language,
+                profiles,
+                tree,
+                loc,
+                &mut seen,
+                &mut next,
+            );
             relative_imports::collect_relative_supertype_imports(
                 abs,
                 &pf.refs,
@@ -286,34 +298,135 @@ fn collect_return_type_files(
             continue;
         };
         let (head, _args) = parse_type_head_and_args(&ret);
-        // The lookup key is the bare declared name — TS/namespace paths join
-        // segments with `.` (`ns.Type`), Rust/C++ paths with `::`
-        // (`gadgetcrate::Gadget`) — while the location index keys locations
-        // by leaf name.
-        let leaf = head.rsplit("::").next().unwrap_or(head);
-        let leaf = leaf.rsplit('.').next().unwrap_or(leaf);
-        if leaf.is_empty() {
+        demand_type_head(head, tree, loc, seen, out);
+    }
+}
+
+/// Pull the files defining the types a materialized external callable's
+/// CALLBACK parameters name. A signature `CreateTable(string,
+/// Action<ColumnsBuilder>)` seeds a caller's lambda parameter as
+/// `ColumnsBuilder` — the seed types the local from the signature STRING, so
+/// nothing else ever demands the type and every member on the lambda
+/// parameter misses. Scoped to the profile's delegate wrappers: those are
+/// exactly the parameter positions whose type arguments become caller-local
+/// bindings.
+fn collect_callback_param_type_files(
+    symbols: &[crate::types::ExtractedSymbol],
+    lang: &str,
+    profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+    tree: &Compilation,
+    loc: &SymbolLocationIndex,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    let Some(profile) = profiles.get(lang) else {
+        return;
+    };
+    if profile.delegate_wrappers.is_empty() {
+        return;
+    }
+    for s in symbols {
+        let Some(sig) = s.signature.as_deref() else {
             continue;
-        }
-        // Guard on the identity the chain walker will look the yield up by.
-        // For a QUALIFIED head the bare-leaf check is wrong in both
-        // directions: a same-named type from an unrelated module satisfies
-        // `by_name` and suppresses the pull of the one the signature names,
-        // while the walk needs the qualified type and misses. An unqualified
-        // head keeps the name check.
-        let already_indexed = if leaf == head {
-            !tree.by_name(leaf).is_empty()
-        } else {
-            tree.by_qualified_name(head).is_some()
         };
-        if already_indexed {
-            continue;
-        }
-        for (_module, file) in loc.find_by_name(leaf) {
-            let file = file.to_path_buf();
-            if seen.insert(file.clone()) {
-                out.push(file);
+        for (wrapper, _shape) in profile.delegate_wrappers {
+            let mut search_from = 0;
+            while let Some(pos) = sig[search_from..].find(wrapper) {
+                let abs = search_from + pos;
+                search_from = abs + wrapper.len();
+                // Require an applied form `Wrapper<...>` at a token boundary so
+                // `Func` doesn't match inside `FuncFactory`.
+                let boundary_ok = abs == 0
+                    || !sig.as_bytes()[abs - 1].is_ascii_alphanumeric()
+                        && sig.as_bytes()[abs - 1] != b'_';
+                if !boundary_ok || !sig[search_from..].starts_with('<') {
+                    continue;
+                }
+                let Some(args) = balanced_generic_args(&sig[search_from..]) else {
+                    continue;
+                };
+                for arg in split_top_level_commas(args) {
+                    let (head, _args) = parse_type_head_and_args(arg.trim());
+                    demand_type_head(head, tree, loc, seen, out);
+                }
             }
+        }
+    }
+}
+
+/// The text between an applied generic's outermost angle brackets, balanced:
+/// for `<A, Func<B, C>>rest` returns `A, Func<B, C>`.
+fn balanced_generic_args(s: &str) -> Option<&str> {
+    let mut depth = 0usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[1..i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Split a generic-argument list on commas at nesting depth zero.
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (i, c) in s.char_indices() {
+        match c {
+            '<' | '(' | '[' => depth += 1,
+            '>' | ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&s[start..]);
+    out
+}
+
+/// Demand-pull the file(s) defining `head` when the tree does not already
+/// hold it. The lookup key is the bare declared name — TS/namespace paths
+/// join segments with `.` (`ns.Type`), Rust/C++ paths with `::`
+/// (`gadgetcrate::Gadget`) — while the location index keys locations by leaf
+/// name. The already-indexed guard compares the identity the chain walker
+/// will look the type up by: for a QUALIFIED head the bare-leaf check is
+/// wrong in both directions — a same-named type from an unrelated module
+/// satisfies `by_name` and suppresses the pull of the one the signature
+/// names, while the walk needs the qualified type and misses. An unqualified
+/// head keeps the name check.
+fn demand_type_head(
+    head: &str,
+    tree: &Compilation,
+    loc: &SymbolLocationIndex,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    let leaf = head.rsplit("::").next().unwrap_or(head);
+    let leaf = leaf.rsplit('.').next().unwrap_or(leaf);
+    if leaf.is_empty() {
+        return;
+    }
+    let already_indexed = if leaf == head {
+        !tree.by_name(leaf).is_empty()
+    } else {
+        tree.by_qualified_name(head).is_some()
+    };
+    if already_indexed {
+        return;
+    }
+    for (_module, file) in loc.find_by_name(leaf) {
+        let file = file.to_path_buf();
+        if seen.insert(file.clone()) {
+            out.push(file.clone());
         }
     }
 }

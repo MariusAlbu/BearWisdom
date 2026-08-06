@@ -205,6 +205,48 @@ pub(crate) fn crack_one_dll_type(
     reply_rx.recv().ok()?
 }
 
+/// `Inherits`/`Implements` refs for a cracked type's base class and interface
+/// list. The refs make the inheritance map climbable for DLL types — a member
+/// declared on a base interface resolves on the derived receiver — and let
+/// the demand closure pull each supertype's own defining file, so an
+/// interface chain materializes transitively. Targets carry the bare declared
+/// name, matching the source-level extractor's base-list emission.
+fn emit_supertype_refs(
+    type_def: &dotscope::metadata::typesystem::CilType,
+    source_symbol_index: usize,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    use crate::types::{EdgeKind, ExtractedRef};
+    let mut push = |name: &str, kind: EdgeKind| {
+        let simple = strip_backtick_arity(name);
+        if simple.is_empty() {
+            return;
+        }
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index,
+            target_name: simple.to_string(),
+            kind,
+            line: 0,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
+    };
+    if let Some(base) = type_def.base() {
+        push(&base.name, EdgeKind::Inherits);
+    }
+    for (_, iface_ref) in type_def.interfaces.iter() {
+        if let Some(iface) = iface_ref.upgrade() {
+            push(&iface.name, EdgeKind::Implements);
+        }
+    }
+}
+
 /// Extract one type (and its public methods) from an already-parsed assembly.
 /// Runs ONLY on the dotscope thread (see `DOTSCOPE_TX`).
 fn extract_type_from_assembly(
@@ -219,6 +261,7 @@ fn extract_type_from_assembly(
 
     // Find the matching type definition by qualified name.
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
     for type_def in assembly.types().all_types().iter() {
         let name = type_def.name.clone();
         let namespace = type_def.namespace.clone();
@@ -253,6 +296,7 @@ fn extract_type_from_assembly(
             .map(|(_, gp)| gp.name.clone())
             .collect();
         let type_gp_suffix = format_generic_suffix(&type_generic_names);
+        emit_supertype_refs(type_def, symbols.len(), &mut refs);
         symbols.push(ExtractedSymbol {
             name: display_name.to_string(),
             qualified_name: qualified_type.to_string(),
@@ -352,7 +396,7 @@ fn extract_type_from_assembly(
         mtime,
         package_id: None,
         symbols,
-        refs: Vec::new(),
+        refs,
         routes: Vec::new(),
         db_sets: Vec::new(),
         symbol_origin_languages: Vec::new(),
@@ -571,6 +615,7 @@ fn parse_dotnet_dll(
         .unwrap_or_else(|| package_name.to_string());
     let virtual_path = format!("ext:dotnet:{}/{}", package_name, assembly_name);
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
 
     for type_def in assembly.types().all_types().iter() {
         let name = type_def.name.clone();
@@ -606,6 +651,7 @@ fn parse_dotnet_dll(
             .collect();
         let type_gp_suffix = format_generic_suffix(&type_generic_names);
 
+        emit_supertype_refs(type_def, symbols.len(), &mut refs);
         symbols.push(ExtractedSymbol {
             name: display_name.to_string(),
             qualified_name: qualified_name.clone(),
@@ -712,7 +758,7 @@ fn parse_dotnet_dll(
         mtime,
         package_id: None,
         symbols,
-        refs: Vec::new(),
+        refs,
         routes: Vec::new(),
         db_sets: Vec::new(),
         symbol_origin_languages: Vec::new(),

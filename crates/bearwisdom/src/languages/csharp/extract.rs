@@ -993,9 +993,17 @@ fn scan_all_type_positions(
                 scan_all_type_positions(child, src, attr, refs);
             }
 
-            // `generic_name` always contains type arguments — recurse into it.
+            // `generic_name` always contains type arguments — recurse into it
+            // (the ARGUMENTS are genuine type positions). The head identifier
+            // is a type only outside call position: as the callee of an
+            // invocation or the `name` of a member access
+            // (`table.Column<string>(…)`, `A.Fake<IUser>()`) it names a
+            // generic METHOD; as a member access's `expression`
+            // (`List<int>.Empty`) it stays a type.
             "generic_name" => {
-                emit_csharp_type_ref(child, src, attr, refs);
+                if !super::calls::generic_name_in_method_position(&node, &child) {
+                    emit_csharp_type_ref(child, src, attr, refs);
+                }
                 scan_all_type_positions(child, src, attr, refs);
             }
 

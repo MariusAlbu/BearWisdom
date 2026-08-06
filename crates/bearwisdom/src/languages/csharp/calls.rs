@@ -29,6 +29,23 @@ fn named_child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
     None
 }
 
+/// `true` when a `generic_name` sits in call position under `parent`: the
+/// `name` of a member access or the `function` of an invocation — where it
+/// names a generic METHOD, not a type.
+pub(super) fn generic_name_in_method_position(parent: &Node, generic_name: &Node) -> bool {
+    match parent.kind() {
+        "member_access_expression" => parent
+            .child_by_field_name("name")
+            .map(|n| n.id() == generic_name.id())
+            .unwrap_or(false),
+        "invocation_expression" => parent
+            .child_by_field_name("function")
+            .map(|n| n.id() == generic_name.id())
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 /// Extract positional arguments from a C# `invocation_expression`'s
 /// `argument_list`. Each `argument` named child wraps the value
 /// expression. Captures string literals, verbatim strings, interpolated
@@ -346,15 +363,36 @@ pub(super) fn extract_calls_from_body(
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
-            // `generic_name` in expression position (e.g. method type arguments `Method<Foo>()`,
-            // type constraint expressions, etc.) — emit TypeRef for both the name and its args.
+            // `generic_name` in expression position. The type ARGUMENTS are
+            // always type positions. The head is a type only OUTSIDE call
+            // position: as an invocation's callee or a member access's `name`
+            // (`Method<Foo>()`, `table.Column<string>(…)`) it names a generic
+            // METHOD; as a member access's `expression` (`List<int>.Empty`)
+            // it names a type.
             "generic_name" => {
-                super::types::extract_type_refs_from_type_node(
-                    child,
-                    src,
-                    source_symbol_index,
-                    refs,
-                );
+                if generic_name_in_method_position(node, &child) {
+                    let mut gnc = child.walk();
+                    for part in child.children(&mut gnc) {
+                        if part.kind() == "type_argument_list" {
+                            let mut tac = part.walk();
+                            for arg in part.children(&mut tac) {
+                                super::types::extract_type_refs_from_type_node(
+                                    arg,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    super::types::extract_type_refs_from_type_node(
+                        child,
+                        src,
+                        source_symbol_index,
+                        refs,
+                    );
+                }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             // `type_argument_list` in expression position — emit TypeRef for each argument.

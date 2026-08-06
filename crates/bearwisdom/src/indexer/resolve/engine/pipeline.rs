@@ -478,9 +478,11 @@ pub fn resolve_single_pass(
         &ambient_qnames,
     );
 
+    let profiles = build_profiles();
+
     // Grow the tree with the externals the project reaches. After this the tree
     // holds internal + external symbols and the resolve loop treats them alike.
-    materialize_externals(db, &mut tree, parsed, &loc, &arena)
+    materialize_externals(db, &mut tree, parsed, &loc, &arena, &profiles)
         .context("Failed to materialize external symbols")?;
 
     // Resolve `ReturnType<typeof fn>` declared return types now that the wrapped
@@ -492,9 +494,6 @@ pub fn resolve_single_pass(
     // `const { data } = usePost()` destructure roots on the result type. Runs
     // after externals materialize so a wrapper of an external call resolves too.
     tree.infer_call_wrapper_returns(parsed);
-    // Built here (rather than at its previous call site below) so
-    // `infer_field_init_types` can read each file's `async_wrappers` too.
-    let profiles = build_profiles();
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
     tree.infer_field_init_types(parsed, &profiles);
@@ -1341,6 +1340,11 @@ fn edge_kind_str(kind: EdgeKind) -> &'static str {
 ///
 /// Registers each profile under every language id the plugin claims, matching
 /// the same multi-id pattern `Engine::build_from_registry` uses.
+#[cfg(test)]
+pub(crate) fn _test_build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
+    build_profiles()
+}
+
 fn build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
     let mut profiles: FxHashMap<&'static str, &'static LanguageProfile> = FxHashMap::default();
     for plugin in crate::languages::default_registry().all() {

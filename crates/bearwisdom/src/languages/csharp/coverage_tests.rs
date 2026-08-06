@@ -681,3 +681,38 @@ fn coverage_attribute_on_property_declaration_emits_type_ref() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn generic_method_call_head_is_not_a_type_ref() {
+    // `table.Column<string>("Id")` — `Column` names a generic METHOD; the
+    // scanner must not emit a TypeRef for the call head. The type ARGUMENT
+    // is still a genuine type position.
+    let src = "class C { void M(B table) { table.Column<User>(\"Id\"); } }";
+    let r = refs(src);
+    assert!(
+        !r.iter()
+            .any(|x| x.target_name == "Column" && x.kind == EdgeKind::TypeRef),
+        "call head must not be a TypeRef; refs: {:?}",
+        r.iter().map(|x| (&x.target_name, x.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter()
+            .any(|x| x.target_name == "User" && x.kind == EdgeKind::TypeRef),
+        "the type argument must stay a TypeRef"
+    );
+}
+
+#[test]
+fn called_chain_middle_segment_is_not_a_type_ref() {
+    // `A.CallTo(x).Invokes(y)` — `CallTo` is a CALLED middle segment (a
+    // method), which the `Ns.Type.method()` chain heuristic must not read
+    // as a type. `Stripe.Event.create()`-style uncalled middles still emit.
+    let src = "class T { void M() { A.CallTo(x).Invokes(y); } }";
+    let r = refs(src);
+    assert!(
+        !r.iter()
+            .any(|x| x.target_name == "CallTo" && x.kind == EdgeKind::TypeRef),
+        "called middle segment must not be a TypeRef; refs: {:?}",
+        r.iter().map(|x| (&x.target_name, x.kind)).collect::<Vec<_>>()
+    );
+}
