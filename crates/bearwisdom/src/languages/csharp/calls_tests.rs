@@ -174,3 +174,20 @@ class C { void M() { F(name: "Events", columns: table => table); } }
         "named lambda arg must capture its params, got: {args:?}"
     );
 }
+
+#[test]
+fn predefined_type_receiver_roots_the_chain_on_its_bcl_type() {
+    let src = r#"class C { void M(string x) { string.IsNullOrWhiteSpace(x); } }"#;
+    let result = extract::extract(src);
+    let r = result
+        .refs
+        .iter()
+        .find(|r| r.target_name == "IsNullOrWhiteSpace")
+        .expect("call ref");
+    let chain = r.chain.as_ref().expect("chain must survive a keyword receiver");
+    assert_eq!(chain.segments[0].name, "string");
+    assert_eq!(
+        chain.segments[0].declared_type.as_deref(),
+        Some("System.String")
+    );
+}

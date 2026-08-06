@@ -689,6 +689,28 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
             Some(())
         }
 
+        // `string.IsNullOrWhiteSpace(…)` — a static-member call on a
+        // predefined-type keyword. The segment carries the aliased BCL type
+        // as its declared type so the chain roots on it directly.
+        "predefined_type" => {
+            let kw = node_text(node, src);
+            let bcl = super::keywords::bcl_type_for_keyword(&kw)?;
+            segments.push(ChainSegment {
+                name: kw,
+                node_kind: "predefined_type".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some(bcl.to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+                byte_offset: node.start_byte() as u32,
+                declared_type_id: None,
+                is_call: false,
+                call_args: Vec::new(),
+                type_arg_ids: Vec::new(),
+            });
+            Some(())
+        }
+
         "identifier" => {
             segments.push(ChainSegment {
                 name: node_text(node, src),
