@@ -50,9 +50,10 @@ impl Ecosystem for FreePascalRuntimeEcosystem {
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        // Lazarus ships test fixtures and example apps inside the LCL
-        // package tree. Skip them so they don't leak into project symbols.
-        &["tests", "examples", "demos", "ide", "designer"]
+        // A runtime locator owns no project-side caches. This set feeds the
+        // PROJECT workspace scan — content dirs (tests/, examples/) must
+        // never appear here or they prune every project's same-named dirs.
+        &[]
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

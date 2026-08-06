@@ -144,3 +144,77 @@ fn qualified_return_head_not_suppressed_by_same_named_type() {
          another module is already indexed"
     );
 }
+
+/// An EXTERNAL symbol already in the tree (eager stdlib pass, earlier closure
+/// iteration) must not veto the demand pull for a same-named ref — the
+/// internal-wins rule gates on INTERNAL definitions only. One package's
+/// `Assert` method must not suppress pulling another package's `Assert` class.
+#[test]
+fn external_same_name_symbol_does_not_veto_ref_pull() {
+    use crate::types::{EdgeKind, ExtractedRef};
+
+    let mut squatter = method_with_signature("");
+    squatter.name = "Assert".into();
+    squatter.qualified_name = "System.Diagnostics.Debug.Assert".into();
+    squatter.signature = None;
+    let ext_pf = ParsedFile {
+        path: "ext:dotnet:CoreLib/debug.cs".into(),
+        language: "csharp".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: vec![squatter],
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    id_map.insert(
+        (
+            "ext:dotnet:CoreLib/debug.cs".to_string(),
+            "System.Diagnostics.Debug.Assert".to_string(),
+        ),
+        1i64,
+    );
+    let arena = Arc::new(TypeArena::new());
+    let tree = Compilation::build(std::slice::from_ref(&ext_pf), &id_map, arena);
+
+    let mut loc = SymbolLocationIndex::new();
+    let assert_file = PathBuf::from("ext:dotnet-type:/pkgs/xa.dll!!xunit.v3.assert!!Xunit.Assert");
+    loc.insert("xunit.v3.assert", "Assert", assert_file.clone());
+
+    let r = ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "Assert".into(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    };
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut out: Vec<PathBuf> = Vec::new();
+    super::collect_external_files(std::slice::from_ref(&r), &tree, &loc, &mut seen, &mut out);
+    assert_eq!(
+        out,
+        vec![assert_file],
+        "an external same-name squatter must not suppress the pull"
+    );
+}

@@ -456,7 +456,7 @@ fn coverage_attribute() {
     let r = refs(src);
     assert!(
         r.iter()
-            .any(|r| r.target_name == "ApiController" && r.kind == EdgeKind::TypeRef),
+            .any(|r| r.target_name == "ApiControllerAttribute" && r.kind == EdgeKind::TypeRef),
         "expected TypeRef edge for ApiController attribute; refs: {:?}",
         r.iter()
             .map(|r| (&r.target_name, r.kind))
@@ -470,7 +470,7 @@ fn coverage_attribute_with_args() {
     let r = refs(src);
     assert!(
         r.iter()
-            .any(|r| r.target_name == "HttpGet" && r.kind == EdgeKind::TypeRef),
+            .any(|r| r.target_name == "HttpGetAttribute" && r.kind == EdgeKind::TypeRef),
         "expected TypeRef edge for HttpGet attribute; refs: {:?}",
         r.iter()
             .map(|r| (&r.target_name, r.kind))
@@ -674,7 +674,7 @@ fn coverage_attribute_on_property_declaration_emits_type_ref() {
     let r = refs(src);
     assert!(
         r.iter()
-            .any(|r| r.target_name == "Required" && r.kind == EdgeKind::TypeRef),
+            .any(|r| r.target_name == "RequiredAttribute" && r.kind == EdgeKind::TypeRef),
         "expected TypeRef for [Required] attribute on property; refs: {:?}",
         r.iter()
             .map(|r| (&r.target_name, r.kind))

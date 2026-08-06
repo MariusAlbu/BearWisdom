@@ -56,7 +56,9 @@ impl Ecosystem for OcamlStdlibEcosystem {
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        &["caml", "threads"]
+        // A stdlib locator owns no project-side caches; content names here
+        // would prune same-named dirs from every project's workspace scan.
+        &[]
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

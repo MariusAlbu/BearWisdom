@@ -153,3 +153,24 @@ class C { void M(System.Collections.Generic.List<int> xs) { xs.Select((x, y) => 
         "expected Lambda {{ params: [\"x\", \"y\"] }}, got: {args:?}"
     );
 }
+
+#[test]
+fn named_argument_unwraps_to_the_value_expression() {
+    // A named argument (`columns: table => ...`) wraps the value behind a
+    // name-colon node; the capture must skip the name and take the VALUE, or
+    // the lambda degrades to Other and its params never seed.
+    let src = r#"
+class C { void M() { F(name: "Events", columns: table => table); } }
+"#;
+    let args = parse_call_args(src);
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::StringLit(s) if s == "Events")),
+        "named string arg must capture its value, got: {args:?}"
+    );
+    assert!(
+        args.iter()
+            .any(|a| matches!(a, CallArg::Lambda { params } if params == &["table".to_string()])),
+        "named lambda arg must capture its params, got: {args:?}"
+    );
+}

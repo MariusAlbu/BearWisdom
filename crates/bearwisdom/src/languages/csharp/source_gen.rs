@@ -391,7 +391,8 @@ fn synthesize_relay_command(method: &ExtractedSymbol, lines: &[&str], emit: &mut
 // =============================================================================
 
 /// Class-level attribute names that inject the change-notification surface.
-const OBSERVABLE_OBJECT_ATTRS: &[&str] = &["ObservableObject", "INotifyPropertyChanged"];
+const OBSERVABLE_OBJECT_ATTRS: &[&str] =
+    &["ObservableObjectAttribute", "INotifyPropertyChangedAttribute"];
 
 /// MVVM Toolkit base classes that carry the change-notification surface.
 const OBSERVABLE_OBJECT_BASES: &[&str] = &[

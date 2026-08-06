@@ -117,7 +117,7 @@ fn extract_from_attribute_list(
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
-                    target_name: name,
+                    target_name: canonical_attribute_name(&name),
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
                     col: 0,
@@ -151,6 +151,22 @@ fn extract_attribute_arg_type_refs(
         if child.kind() == "attribute_argument_list" {
             super::calls::extract_calls_from_body(&child, src, source_symbol_index, refs);
         }
+    }
+}
+
+/// The short attribute form `[Fact]` names the class `FactAttribute`: the
+/// language resolves an attribute identifier by appending `Attribute` (the
+/// suffixed long form is also legal as written). The ref carries the
+/// canonical class name per the `target_name` invariant — canonical declared
+/// name, not the use-site alias. A dotted name suffixes its final segment.
+/// Borderline: an attribute CLASS declared without the `Attribute` suffix
+/// resolves only via its verbatim name and is not canonicalized here.
+fn canonical_attribute_name(name: &str) -> String {
+    let last = name.rsplit('.').next().unwrap_or(name);
+    if last.ends_with("Attribute") {
+        name.to_string()
+    } else {
+        format!("{name}Attribute")
     }
 }
 
@@ -232,47 +248,5 @@ fn try_extract_string_from_node(node: &Node, src: &[u8]) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::super::extract::extract;
-    use crate::types::EdgeKind;
-
-    fn decorator_refs(source: &str) -> Vec<(String, Option<String>)> {
-        extract(source)
-            .refs
-            .into_iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| (r.target_name, r.module))
-            .collect()
-    }
-
-    #[test]
-    fn marker_attribute_on_class() {
-        let src = "[ApiController]\npublic class UsersController {}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "ApiController"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn attribute_with_route_arg() {
-        let src = "public class C {\n    [HttpGet(\"{id}\")]\n    public User Get(int id) { return null; }\n}";
-        let dr = decorator_refs(src);
-        let found = dr.iter().find(|(n, _)| n == "HttpGet");
-        assert!(found.is_some(), "refs: {dr:?}");
-        assert_eq!(found.unwrap().1, Some("{id}".to_string()));
-    }
-
-    #[test]
-    fn multiple_attributes() {
-        let src = "[ApiController]\n[Route(\"api/[controller]\")]\npublic class C {}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "ApiController"), "refs: {dr:?}");
-        assert!(dr.iter().any(|(n, _)| n == "Route"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn attribute_no_arg() {
-        let src = "public class C {\n    [Authorize]\n    public void Act() {}\n}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "Authorize"), "refs: {dr:?}");
-    }
-}
+#[path = "decorators_tests.rs"]
+mod tests;

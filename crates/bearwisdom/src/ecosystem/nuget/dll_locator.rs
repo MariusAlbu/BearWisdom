@@ -68,7 +68,7 @@ pub(crate) fn locate_dlls_for_project(
             }
         };
         let version_dir = pkg_dir.join(&version);
-        if let Some(dll_path) = find_dll_in_version_dir(&version_dir, &coord.name) {
+        for dll_path in find_dlls_in_version_dir(&version_dir, &coord.name) {
             if seen.insert(dll_path.clone()) {
                 out.push((coord.name.clone(), dll_path, lang_id));
             }
@@ -216,13 +216,17 @@ pub fn nuget_packages_root() -> Option<PathBuf> {
     }
 }
 
-/// Locate the `.dll` matching `pkg_name` inside an already-resolved
-/// `<nuget-cache>/<pkg-id>/<version>/` directory. Returns `None` for
-/// source-only packages that ship no `lib/` directory.
-pub(super) fn find_dll_in_version_dir(version_dir: &Path, pkg_name: &str) -> Option<PathBuf> {
+/// Locate every managed `.dll` in the preferred-TFM `lib/` directory of an
+/// already-resolved `<nuget-cache>/<pkg-id>/<version>/` directory. All DLLs in
+/// the chosen TFM dir are the package's compile assets — a package id and its
+/// assembly name are independent, so matching only `<pkg-id>.dll` silently
+/// drops packages whose assembly is named differently. The `<pkg-id>.dll`
+/// exact match sorts first as the primary assembly. Empty for source-only
+/// packages that ship no `lib/` directory.
+pub(super) fn find_dlls_in_version_dir(version_dir: &Path, pkg_name: &str) -> Vec<PathBuf> {
     let lib_dir = version_dir.join("lib");
     if !lib_dir.is_dir() {
-        return None;
+        return Vec::new();
     }
 
     let preferred_tfms = [
@@ -241,17 +245,32 @@ pub(super) fn find_dll_in_version_dir(version_dir: &Path, pkg_name: &str) -> Opt
             break;
         }
     }
-    let tfm_dir = chosen_tfm.or_else(|| largest_subdir(&lib_dir))?;
+    let Some(tfm_dir) = chosen_tfm.or_else(|| largest_subdir(&lib_dir)) else {
+        return Vec::new();
+    };
 
-    let entries = std::fs::read_dir(&tfm_dir).ok()?;
+    let Ok(entries) = std::fs::read_dir(&tfm_dir) else {
+        return Vec::new();
+    };
     let target_lower = pkg_name.to_lowercase() + ".dll";
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_lowercase();
-        if name == target_lower {
-            return Some(entry.path());
-        }
-    }
-    None
+    let mut out: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .ends_with(".dll")
+        })
+        .map(|e| e.path())
+        .collect();
+    out.sort_by_key(|p| {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        (name != target_lower, name)
+    });
+    out
 }
 
 pub(super) fn largest_version_subdir(dir: &Path) -> Option<String> {

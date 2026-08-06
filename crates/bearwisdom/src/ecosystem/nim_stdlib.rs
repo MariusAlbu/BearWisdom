@@ -55,7 +55,9 @@ impl Ecosystem for NimStdlibEcosystem {
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        &["deprecated", "genode_cpp", "wrappers"]
+        // A stdlib locator owns no project-side caches; content names here
+        // would prune same-named dirs from every project's workspace scan.
+        &[]
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

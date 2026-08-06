@@ -81,6 +81,11 @@ impl ManifestReader for NuGetManifest {
                     data.global_usings.push(ns.to_string());
                 }
             }
+            for ns in parse_using_items(&content) {
+                if !data.global_usings.contains(&ns) {
+                    data.global_usings.push(ns);
+                }
+            }
             for path in find_global_using_files(&package_dir) {
                 if let Ok(gu_content) = std::fs::read_to_string(&path) {
                     for ns in parse_global_usings(&gu_content) {
@@ -250,6 +255,42 @@ pub fn parse_project_references(content: &str) -> Vec<String> {
     out
 }
 
+/// Namespaces opened project-wide by `<Using Include="X" />` MSBuild items —
+/// the csproj-level counterpart of a `global using X;` statement. `<Using`
+/// with `Remove`/`Alias`/`Static` metadata is skipped: a removal closes a
+/// namespace, an alias binds a name (not a wildcard scope), and a static
+/// using imports members of one type.
+pub fn parse_using_items(content: &str) -> Vec<String> {
+    let tag = "<Using ";
+    let mut out = Vec::new();
+    let mut search_from = 0;
+    while let Some(pos) = content[search_from..].find(tag) {
+        let abs_pos = search_from + pos;
+        search_from = abs_pos + tag.len();
+        let rest = &content[search_from..];
+        let window = clamp_to_char_boundary(rest, 512);
+        let element = window.split('>').next().unwrap_or(window);
+        if element.contains("Remove=\"")
+            || element.contains("Alias=\"")
+            || element.contains("Static=\"true\"")
+        {
+            continue;
+        }
+        let Some(inc_pos) = element.find("Include=\"") else {
+            continue;
+        };
+        let after_inc = &element[inc_pos + 9..];
+        let Some(end) = after_inc.find('"') else {
+            continue;
+        };
+        let ns = &after_inc[..end];
+        if !ns.is_empty() && !out.contains(&ns.to_string()) {
+            out.push(ns.to_string());
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone)]
 pub struct NuGetCoord {
     pub name: String,
@@ -404,3 +445,7 @@ pub fn parse_global_usings(content: &str) -> Vec<String> {
     }
     usings
 }
+
+#[cfg(test)]
+#[path = "manifest_tests.rs"]
+mod tests;

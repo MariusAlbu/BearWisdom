@@ -163,7 +163,8 @@ pub fn extract(source: &str) -> ExtractionResult {
     // (e.g. deeply-nested generic arguments, as-casts, typeof expressions,
     // pattern-matching type patterns, etc.).
     if !symbols.is_empty() {
-        scan_all_type_positions(root, src_bytes, 0, &mut refs);
+        let mut attr = super::enclosing::ScanAttribution::build(&symbols, &refs);
+        scan_all_type_positions(root, src_bytes, &mut attr, &mut refs);
     }
 
     // Collect using directives for qualification context.
@@ -972,7 +973,7 @@ fn extract_constructor_initializer_call(
 fn scan_all_type_positions(
     node: tree_sitter::Node,
     src: &[u8],
-    sym_idx: usize,
+    attr: &mut super::enclosing::ScanAttribution,
     refs: &mut Vec<ExtractedRef>,
 ) {
     use super::helpers::{is_builtin_type, node_text};
@@ -986,25 +987,25 @@ fn scan_all_type_positions(
                 // Scan immediate children for identifier / generic_name.
                 let mut tc = child.walk();
                 for grandchild in child.children(&mut tc) {
-                    emit_csharp_type_ref(grandchild, src, sym_idx, refs);
+                    emit_csharp_type_ref(grandchild, src, attr, refs);
                 }
                 // Recurse so deeply-nested type arguments are also found.
-                scan_all_type_positions(child, src, sym_idx, refs);
+                scan_all_type_positions(child, src, attr, refs);
             }
 
             // `generic_name` always contains type arguments — recurse into it.
             "generic_name" => {
-                emit_csharp_type_ref(child, src, sym_idx, refs);
-                scan_all_type_positions(child, src, sym_idx, refs);
+                emit_csharp_type_ref(child, src, attr, refs);
+                scan_all_type_positions(child, src, attr, refs);
             }
 
             // `(Admin)user` — cast expression; emit TypeRef for the cast type.
             // The type field is a direct child (not inside a type-container).
             "cast_expression" => {
                 if let Some(type_node) = child.child_by_field_name("type") {
-                    super::types::extract_type_refs_from_type_node(type_node, src, sym_idx, refs);
+                    super::types::extract_type_refs_from_type_node(type_node, src, attr.source_at(type_node.start_position().row as u32), refs);
                 }
-                scan_all_type_positions(child, src, sym_idx, refs);
+                scan_all_type_positions(child, src, attr, refs);
             }
 
             // `typeof(Admin)` — emit TypeRef for the type argument.
@@ -1014,7 +1015,7 @@ fn scan_all_type_positions(
                 let mut tc = child.walk();
                 for c in child.children(&mut tc) {
                     if !matches!(c.kind(), "typeof" | "(" | ")") {
-                        super::types::extract_type_refs_from_type_node(c, src, sym_idx, refs);
+                        super::types::extract_type_refs_from_type_node(c, src, attr.source_at(c.start_position().row as u32), refs);
                         break;
                     }
                 }
@@ -1031,7 +1032,7 @@ fn scan_all_type_positions(
                 refs.push(crate::types::ExtractedRef {
                     is_import_binding: false,
                     is_reexport: false,
-                    source_symbol_index: sym_idx,
+                    source_symbol_index: attr.source_at(child.start_position().row as u32),
                     target_name: String::new(),
                     kind: crate::types::EdgeKind::Instantiates,
                     line: child.start_position().row as u32,
@@ -1042,7 +1043,7 @@ fn scan_all_type_positions(
                     namespace_segments: Vec::new(),
                     call_args: Vec::new(),
                 });
-                scan_all_type_positions(child, src, sym_idx, refs);
+                scan_all_type_positions(child, src, attr, refs);
             }
 
             // `default(SomeType)` — emit TypeRef for the type argument.
@@ -1051,7 +1052,7 @@ fn scan_all_type_positions(
                 let mut tc = child.walk();
                 for c in child.children(&mut tc) {
                     if !matches!(c.kind(), "default" | "(" | ")") {
-                        super::types::extract_type_refs_from_type_node(c, src, sym_idx, refs);
+                        super::types::extract_type_refs_from_type_node(c, src, attr.source_at(c.start_position().row as u32), refs);
                         break;
                     }
                 }
@@ -1079,7 +1080,7 @@ fn scan_all_type_positions(
                                     if val.kind() == "identifier"
                                         || val.kind() == "member_access_expression"
                                     {
-                                        emit_csharp_type_ref(val, src, sym_idx, refs);
+                                        emit_csharp_type_ref(val, src, attr, refs);
                                         break;
                                     }
                                 }
@@ -1089,7 +1090,7 @@ fn scan_all_type_positions(
                     }
                     // Don't recurse further — nameof args are not code positions.
                 } else {
-                    scan_all_type_positions(child, src, sym_idx, refs);
+                    scan_all_type_positions(child, src, attr, refs);
                 }
             }
 
@@ -1104,13 +1105,13 @@ fn scan_all_type_positions(
                 let mut ic = child.walk();
                 for inner in child.children(&mut ic) {
                     if inner.kind() == "interpolation" {
-                        scan_all_type_positions(inner, src, sym_idx, refs);
+                        scan_all_type_positions(inner, src, attr, refs);
                     }
                 }
             }
 
             _ => {
-                scan_all_type_positions(child, src, sym_idx, refs);
+                scan_all_type_positions(child, src, attr, refs);
             }
         }
     }
@@ -1121,7 +1122,7 @@ fn scan_all_type_positions(
 fn emit_csharp_type_ref(
     node: tree_sitter::Node,
     src: &[u8],
-    sym_idx: usize,
+    attr: &mut super::enclosing::ScanAttribution,
     refs: &mut Vec<ExtractedRef>,
 ) {
     use super::calls::is_csharp_keyword;
@@ -1130,14 +1131,19 @@ fn emit_csharp_type_ref(
     match node.kind() {
         "identifier" if node.is_named() => {
             let name = node_text(node, src);
-            if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
+            let line = node.start_position().row as u32;
+            if !name.is_empty()
+                && !is_builtin_type(&name)
+                && !is_csharp_keyword(&name)
+                && attr.claim(&name, line)
+            {
                 refs.push(ExtractedRef {
                     is_import_binding: false,
                     is_reexport: false,
-                    source_symbol_index: sym_idx,
+                    source_symbol_index: attr.source_at(line),
                     target_name: name,
                     kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
+                    line,
                     col: 0,
                     module: None,
                     chain: None,
@@ -1153,14 +1159,19 @@ fn emit_csharp_type_ref(
             for id_child in node.children(&mut gc) {
                 if id_child.kind() == "identifier" && id_child.is_named() {
                     let name = node_text(id_child, src);
-                    if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
+                    let line = id_child.start_position().row as u32;
+                    if !name.is_empty()
+                        && !is_builtin_type(&name)
+                        && !is_csharp_keyword(&name)
+                        && attr.claim(&name, line)
+                    {
                         refs.push(ExtractedRef {
                             is_import_binding: false,
                             is_reexport: false,
-                            source_symbol_index: sym_idx,
+                            source_symbol_index: attr.source_at(line),
                             target_name: name,
                             kind: EdgeKind::TypeRef,
-                            line: id_child.start_position().row as u32,
+                            line,
                             col: 0,
                             module: None,
                             chain: None,

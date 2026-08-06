@@ -41,3 +41,25 @@ fn missing_or_malformed_assets_json_yields_nothing() {
     let bad = temp_project_with_assets("{ not json");
     assert!(collect_transitive_coords_from_assets_json(bad.path()).is_empty());
 }
+
+
+
+#[test]
+fn find_dlls_returns_all_tfm_assets_primary_first() {
+    // A package's assembly names are independent of its package id: the
+    // package `pkg.mtp-v1` here ships `pkg.core.dll` + `pkg.mtp-v1.dll`.
+    // Every lib/<tfm> DLL is a compile asset; the id-matching one sorts first.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tfm = dir.path().join("lib").join("net8.0");
+    std::fs::create_dir_all(&tfm).expect("mkdir tfm");
+    std::fs::write(tfm.join("pkg.core.dll"), b"x").unwrap();
+    std::fs::write(tfm.join("Pkg.Mtp-V1.dll"), b"x").unwrap();
+    std::fs::write(tfm.join("notes.txt"), b"x").unwrap();
+    let dlls = find_dlls_in_version_dir(dir.path(), "pkg.mtp-v1");
+    let names: Vec<String> = dlls
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["Pkg.Mtp-V1.dll", "pkg.core.dll"]);
+}
+

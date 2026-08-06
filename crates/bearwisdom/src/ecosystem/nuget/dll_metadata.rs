@@ -18,7 +18,7 @@ use tracing::debug;
 
 use super::dll_locator::{
     collect_dotnet_project_files, collect_transitive_coords_from_assets_json,
-    collect_transitive_coords_from_deps_json, dominant_dotnet_language, find_dll_in_version_dir,
+    collect_transitive_coords_from_deps_json, dominant_dotnet_language, find_dlls_in_version_dir,
     largest_version_subdir, nuget_packages_root,
 };
 use super::manifest::{parse_package_references_full, NuGetCoord};
@@ -418,7 +418,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
     // solution (2000+ transitives) this is the dominant externals cost
     // and a near-linear win per available core.
     struct CoordResult {
-        dll: Option<(PathBuf, crate::types::ParsedFile)>,
+        dlls: Vec<(PathBuf, crate::types::ParsedFile)>,
         srcs: Vec<(PathBuf, crate::types::ParsedFile)>,
     }
 
@@ -428,7 +428,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
             let pkg_dir = nuget_root.join(coord.name.to_lowercase());
             if !pkg_dir.is_dir() {
                 return CoordResult {
-                    dll: None,
+                    dlls: Vec::new(),
                     srcs: Vec::new(),
                 };
             }
@@ -442,7 +442,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
                         Some(v) => v,
                         None => {
                             return CoordResult {
-                                dll: None,
+                                dlls: Vec::new(),
                                 srcs: Vec::new(),
                             }
                         }
@@ -453,7 +453,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
                     Some(v) => v,
                     None => {
                         return CoordResult {
-                            dll: None,
+                            dlls: Vec::new(),
                             srcs: Vec::new(),
                         }
                     }
@@ -461,15 +461,19 @@ pub(crate) fn parse_dotnet_externals_with_source(
             };
             let version_dir = pkg_dir.join(&version);
 
-            let dll = find_dll_in_version_dir(&version_dir, &coord.name).and_then(|dll_path| {
-                match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
-                    Ok(pf) => Some((dll_path, pf)),
-                    Err(e) => {
-                        debug!("Failed .NET metadata read {}: {e}", dll_path.display());
-                        None
-                    }
-                }
-            });
+            let dlls: Vec<(PathBuf, crate::types::ParsedFile)> =
+                find_dlls_in_version_dir(&version_dir, &coord.name)
+                    .into_iter()
+                    .filter_map(|dll_path| {
+                        match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
+                            Ok(pf) => Some((dll_path, pf)),
+                            Err(e) => {
+                                debug!("Failed .NET metadata read {}: {e}", dll_path.display());
+                                None
+                            }
+                        }
+                    })
+                    .collect();
 
             let mut srcs = Vec::new();
             for src_path in discover_nuget_source_files(&version_dir) {
@@ -479,7 +483,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
                 }
             }
 
-            CoordResult { dll, srcs }
+            CoordResult { dlls, srcs }
         })
         .collect();
 
@@ -488,7 +492,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
     let mut seen_dll: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut seen_src: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for res in per_coord {
-        if let Some((path, pf)) = res.dll {
+        for (path, pf) in res.dlls {
             if seen_dll.insert(path) {
                 dll_out.push(pf);
             }
@@ -724,4 +728,6 @@ fn parse_dotnet_dll(
         plugin_flow_emissions: Vec::new(),
     })
 }
+
+
 

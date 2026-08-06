@@ -179,3 +179,4 @@ fn dll_roots_for_project(project_root: &Path) -> Vec<ExternalDepRoot> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+

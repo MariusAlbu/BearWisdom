@@ -45,9 +45,12 @@ pub(super) fn extract_call_args(invocation: &Node, src: &[u8]) -> Vec<CallArg> {
         if child.kind() != "argument" {
             continue;
         }
-        // `argument` wraps an expression. Take the first named child.
+        // `argument` wraps an expression, preceded by an optional argument
+        // name (`name: value`) and/or ref-kind modifier. Take the LAST named
+        // child — the value expression — so a named argument captures its
+        // value instead of degrading to `Other`.
         let mut inner_cursor = child.walk();
-        let Some(expr) = child.named_children(&mut inner_cursor).next() else {
+        let Some(expr) = child.named_children(&mut inner_cursor).last() else {
             out.push(CallArg::Other);
             continue;
         };

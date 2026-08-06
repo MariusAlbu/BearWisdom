@@ -210,9 +210,16 @@ fn collect_external_files(
                     }
                 }
             }
-            // No module tag. Only pull when the name has no internal definition —
-            // an internal symbol always wins over an external.
-            None if tree.by_name(&r.target_name).is_empty() => {
+            // No module tag. Only pull when the name has no INTERNAL definition —
+            // an internal symbol always wins over an external. Symbols already
+            // in the tree from eager-external passes or earlier closure
+            // iterations do NOT veto: one package's `Assert` method must not
+            // suppress pulling another package's `Assert` class.
+            None if tree
+                .by_name(&r.target_name)
+                .iter()
+                .all(|s| s.file_path.starts_with("ext:")) =>
+            {
                 // Import-free global registered under the ambient-scope namespace
                 // (`declare global`, test-runner global); bounded to global-
                 // declaring packages, so a bare `expect()` materializes its

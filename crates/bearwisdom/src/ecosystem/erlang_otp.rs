@@ -70,7 +70,10 @@ impl Ecosystem for ErlangOtpEcosystem {
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
-        &["test", "examples", "doc", "priv"]
+        // A stdlib locator owns no project-side caches. This set feeds the
+        // PROJECT workspace scan — content dirs (test/, doc/) must never
+        // appear here or they prune every project's same-named dirs.
+        &[]
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
