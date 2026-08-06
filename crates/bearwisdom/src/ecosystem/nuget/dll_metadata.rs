@@ -296,7 +296,8 @@ fn extract_type_from_assembly(
             .map(|(_, gp)| gp.name.clone())
             .collect();
         let type_gp_suffix = format_generic_suffix(&type_generic_names);
-        emit_supertype_refs(type_def, symbols.len(), &mut refs);
+        let type_sym_idx = symbols.len();
+        emit_supertype_refs(type_def, type_sym_idx, &mut refs);
         symbols.push(ExtractedSymbol {
             name: display_name.to_string(),
             qualified_name: qualified_type.to_string(),
@@ -367,7 +368,7 @@ fn extract_type_from_assembly(
                 signature: Some(signature),
                 doc_comment: None,
                 scope_path: Some(qualified_type.to_string()),
-                parent_index: None,
+                parent_index: Some(type_sym_idx),
                 byte_offset: 0,
                 declared_type: None,
                 return_type: None,
@@ -651,7 +652,8 @@ fn parse_dotnet_dll(
             .collect();
         let type_gp_suffix = format_generic_suffix(&type_generic_names);
 
-        emit_supertype_refs(type_def, symbols.len(), &mut refs);
+        let type_sym_idx = symbols.len();
+        emit_supertype_refs(type_def, type_sym_idx, &mut refs);
         symbols.push(ExtractedSymbol {
             name: display_name.to_string(),
             qualified_name: qualified_name.clone(),
@@ -724,7 +726,7 @@ fn parse_dotnet_dll(
                 signature: Some(signature),
                 doc_comment: None,
                 scope_path: Some(qualified_name.clone()),
-                parent_index: None,
+                parent_index: Some(type_sym_idx),
                 byte_offset: 0,
                 declared_type: None,
                 return_type: None,
