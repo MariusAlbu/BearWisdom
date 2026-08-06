@@ -248,6 +248,17 @@ pub(crate) fn score_candidate(
             }
         }
     }
+    // An implicit/global wildcard namespace (`<Using Include>`, SDK implicit
+    // usings, manifest-declared opens) scopes a candidate exactly like a
+    // written namespace import: the file sees `Xunit.*` without a `using`
+    // line, so `Xunit.Assert` outranks a same-named type from a package no
+    // scope names.
+    for ns in lookup.implicit_wildcard_namespaces(file_package_id) {
+        if qname_under_module(&sym.qualified_name, ns) {
+            s += 300;
+            break;
+        }
+    }
     if lookup.is_ambient_path(&sym.file_path) {
         s += 200;
     }

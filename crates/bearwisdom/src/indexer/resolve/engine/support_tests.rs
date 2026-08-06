@@ -125,3 +125,41 @@ fn path_proximity_score_no_overlap() {
 fn path_proximity_score_partial_overlap() {
     assert_eq!(path_proximity_score("src/a/b/X.ts", "src/a/c/Y.ts"), 20);
 }
+
+#[test]
+fn implicit_wildcard_namespace_scopes_ranked_pick() {
+    use crate::indexer::resolve::engine::testkit::{sym, Lookup};
+
+    // Two external classes share the bare name; only one sits under a
+    // manifest-declared implicit namespace (`<Using Include="Xunit"/>`).
+    // The scoped one must win the ranked pick even though the decoy has
+    // the lower id (the insertion-order/first-winner fallback).
+    let decoy = sym(
+        1,
+        "Assert",
+        "NetTopologySuite.Utilities.Assert",
+        "class",
+        "ext:dotnet-type:/nts.dll!!nts!!NetTopologySuite.Utilities.Assert",
+    );
+    let scoped = sym(
+        2,
+        "Assert",
+        "Xunit.Assert",
+        "class",
+        "ext:dotnet-type:/xa.dll!!xa!!Xunit.Assert",
+    );
+    let lookup = Lookup::new()
+        .with(decoy.clone())
+        .with(scoped.clone())
+        .with_implicit_namespaces(&["Xunit"]);
+    let fc = FileContext {
+        file_path: "tests/ParserTests.cs".into(),
+        language: "csharp".into(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+    let cands = [&decoy, &scoped];
+    let picked = pick_ranked_candidate(&fc, None, &lookup, &cands)
+        .expect("scoped candidate must win by more than the rank margin");
+    assert_eq!(picked.qualified_name, "Xunit.Assert");
+}
