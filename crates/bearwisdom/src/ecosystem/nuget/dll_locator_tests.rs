@@ -1,5 +1,5 @@
 // =============================================================================
-// nuget/dll_metadata_tests.rs — unit tests for NuGet coordinate discovery
+// nuget/dll_locator_tests.rs — unit tests for NuGet coordinate discovery
 // =============================================================================
 
 use super::*;

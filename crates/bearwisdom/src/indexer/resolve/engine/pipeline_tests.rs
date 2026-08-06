@@ -1138,69 +1138,6 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// collect_return_type_files — non-TS languages
-// ---------------------------------------------------------------------------
-
-/// A Rust method's return type is a `::`-qualified path (`gadgetcrate::Gadget`),
-/// never emitted as a `.`-joined string the way a TS/namespace type is. The
-/// return-type-head closure must (a) run for a non-TS/TSX language at all, and
-/// (b) reduce the path to its bare leaf before looking it up in the location
-/// index — the index keys locations by bare declared name, not by path.
-#[test]
-fn collect_return_type_files_follows_rust_path_qualified_head() {
-    use crate::ecosystem::symbol_index::SymbolLocationIndex;
-    use crate::types::{ExtractedSymbol, SymbolKind};
-    use std::collections::HashSet;
-    use std::path::PathBuf;
-
-    let symbol = ExtractedSymbol {
-        name: "make".into(),
-        qualified_name: "Thing.make".into(),
-        kind: SymbolKind::Method,
-        visibility: None,
-        start_line: 0,
-        end_line: 0,
-        start_col: 0,
-        end_col: 0,
-        byte_offset: 0,
-        signature: Some("pub fn make(&self) -> gadgetcrate::Gadget".into()),
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-        declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-    };
-
-    let mut loc = SymbolLocationIndex::new();
-    let gadget_file = PathBuf::from("/fake/registry/gadgetcrate-0.1.0/src/lib.rs");
-    loc.insert("gadgetcrate", "Gadget", gadget_file.clone());
-
-    let arena = Arc::new(TypeArena::new());
-    let tree =
-        crate::indexer::resolve::engine::compilation::Compilation::build(&[], &HashMap::new(), arena);
-
-    let mut seen: HashSet<PathBuf> = HashSet::new();
-    let mut out: Vec<PathBuf> = Vec::new();
-    super::collect_return_type_files(
-        std::slice::from_ref(&symbol),
-        "rust",
-        &tree,
-        &loc,
-        &mut seen,
-        &mut out,
-    );
-
-    assert_eq!(
-        out,
-        vec![gadget_file],
-        "a Rust return-type head must be followed for a non-TS language and its \
-         `::`-qualified path reduced to the bare leaf the location index keys on"
-    );
-}
-
 /// A rename import ref (`use m::Orig as Bound;`) carries the module's original
 /// declared name as a single-segment chain. `build_file_context` must key the
 /// entry on the ORIGINAL name — that is what the module's files declare — with

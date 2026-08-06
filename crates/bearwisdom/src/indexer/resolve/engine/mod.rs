@@ -33,6 +33,7 @@ pub mod arg_types;
 pub mod cause;
 pub mod chain;
 pub mod ext_lang_visibility;
+pub mod externals_demand;
 pub mod generics;
 pub mod head_decl;
 pub mod import_qualify;

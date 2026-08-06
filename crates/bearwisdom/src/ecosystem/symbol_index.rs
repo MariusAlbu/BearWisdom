@@ -169,10 +169,14 @@ impl SymbolLocationIndex {
     /// don't lose cross-module locations.
     pub fn extend(&mut self, other: SymbolLocationIndex) {
         for ((module, name), file) in other.entries {
-            self.entries
-                .entry((module.clone(), name.clone()))
-                .or_insert_with(|| file.clone());
-            self.by_name.entry(name).or_default().push((module, file));
+            self.entries.entry((module, name)).or_insert(file);
+        }
+        // Merge the reverse index DIRECTLY — re-deriving it from `entries`
+        // (a first-wins map) would drop every same-(module, name) sibling
+        // beyond the first: two static classes in one package offering the
+        // same method name must BOTH stay locatable by name.
+        for (name, locs) in other.by_name {
+            self.by_name.entry(name).or_default().extend(locs);
         }
         for (module, entry) in other.module_entries {
             self.module_entries.entry(module).or_insert(entry);
@@ -197,71 +201,5 @@ impl SymbolLocationIndex {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn insert_and_locate_roundtrip() {
-        let mut idx = SymbolLocationIndex::new();
-        idx.insert("modernc.org/sqlite", "Open", "/cache/sqlite/sqlite.go");
-        let hit = idx.locate("modernc.org/sqlite", "Open");
-        assert_eq!(hit, Some(Path::new("/cache/sqlite/sqlite.go")));
-    }
-
-    #[test]
-    fn miss_returns_none() {
-        let idx = SymbolLocationIndex::new();
-        assert!(idx.locate("anything", "anything").is_none());
-    }
-
-    #[test]
-    fn first_writer_wins_on_duplicate() {
-        let mut idx = SymbolLocationIndex::new();
-        idx.insert("pkg", "Foo", "/a.go");
-        idx.insert("pkg", "Foo", "/b.go");
-        assert_eq!(idx.locate("pkg", "Foo"), Some(Path::new("/a.go")));
-    }
-
-    #[test]
-    fn extend_preserves_existing_entries() {
-        let mut base = SymbolLocationIndex::new();
-        base.insert("pkg", "Foo", "/a.go");
-        let mut other = SymbolLocationIndex::new();
-        other.insert("pkg", "Foo", "/b.go");
-        other.insert("pkg", "Bar", "/c.go");
-        base.extend(other);
-        assert_eq!(base.locate("pkg", "Foo"), Some(Path::new("/a.go")));
-        assert_eq!(base.locate("pkg", "Bar"), Some(Path::new("/c.go")));
-        assert_eq!(base.len(), 2);
-    }
-
-    #[test]
-    fn empty_by_default() {
-        let idx = SymbolLocationIndex::new();
-        assert!(idx.is_empty());
-        assert_eq!(idx.len(), 0);
-    }
-
-    #[test]
-    fn find_by_name_returns_all_modules_with_match() {
-        let mut idx = SymbolLocationIndex::new();
-        idx.insert("pkg-a", "Query", "/a/query.rs");
-        idx.insert("pkg-b", "Query", "/b/query.rs");
-        idx.insert("pkg-a", "Other", "/a/other.rs");
-
-        let mut hits = idx.find_by_name("Query");
-        hits.sort_by_key(|(m, _)| *m);
-        assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].0, "pkg-a");
-        assert_eq!(hits[0].1, Path::new("/a/query.rs"));
-        assert_eq!(hits[1].0, "pkg-b");
-        assert_eq!(hits[1].1, Path::new("/b/query.rs"));
-    }
-
-    #[test]
-    fn find_by_name_empty_when_no_match() {
-        let mut idx = SymbolLocationIndex::new();
-        idx.insert("pkg", "Foo", "/x.rs");
-        assert!(idx.find_by_name("NotThere").is_empty());
-    }
-}
+#[path = "symbol_index_tests.rs"]
+mod tests;

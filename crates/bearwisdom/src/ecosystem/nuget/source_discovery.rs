@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use super::cs_header::scan_cs_header;
-use super::dll_metadata::largest_subdir;
+use super::dll_locator::largest_subdir;
 
 /// Discover `.cs` source files shipped inside a NuGet package version dir.
 /// Checks in priority order:
