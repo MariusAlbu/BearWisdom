@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-05T00:00:00Z",
+  "captured_at": "2026-08-06T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -97,7 +97,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 47
+        "min_resolution_rate": 48
       },
       "code_chunks": 2531,
       "files": 124,
@@ -106,8 +106,8 @@
       },
       "flow_edges": 4,
       "generated_files_reclassified": 3,
-      "internal_edges": 1354,
-      "internal_unresolved": 1470,
+      "internal_edges": 1364,
+      "internal_unresolved": 1460,
       "languages": {
         "csharp": 110,
         "json": 10,
@@ -115,19 +115,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
       "perf": {
-        "end_ws_mb": 1387,
-        "files_per_sec": 5,
-        "index_duration_ms": 23823
+        "end_ws_mb": 1745,
+        "files_per_sec": 6,
+        "index_duration_ms": 22350
       },
       "project": "dotnet-CleanArchitecture",
       "rate_by_language": {
-        "csharp": 47.95
+        "csharp": 48.3
       },
-      "resolution_rate": 47.95,
+      "resolution_rate": 48.3,
       "routes": 6,
       "symbols": 978,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 509,
+        "csharp.calls": 499,
         "csharp.implements": 1,
         "csharp.imports": 92,
         "csharp.inherits": 15,
@@ -138,7 +138,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 43
+        "min_resolution_rate": 60
       },
       "code_chunks": 2776,
       "files": 139,
@@ -147,8 +147,8 @@
       },
       "flow_edges": 20,
       "generated_files_reclassified": 1,
-      "internal_edges": 1676,
-      "internal_unresolved": 2172,
+      "internal_edges": 2301,
+      "internal_unresolved": 1518,
       "languages": {
         "csharp": 90,
         "css": 1,
@@ -163,27 +163,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
       "perf": {
-        "end_ws_mb": 2368,
-        "files_per_sec": 8,
-        "index_duration_ms": 17492
+        "end_ws_mb": 3996,
+        "files_per_sec": 9,
+        "index_duration_ms": 14695
       },
       "project": "dotnet-EquinoxProject",
       "rate_by_language": {
-        "csharp": 44.21,
+        "csharp": 61.25,
         "dockerfile": 9.09,
         "javascript": 9.09,
         "razor": 13.64
       },
-      "resolution_rate": 43.56,
+      "resolution_rate": 60.25,
       "routes": 20,
       "symbols": 979,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 743,
+        "csharp.calls": 454,
         "csharp.implements": 13,
         "csharp.imports": 245,
         "csharp.inherits": 15,
         "csharp.instantiates": 12,
-        "csharp.type_ref": 1076,
+        "csharp.type_ref": 711,
         "dockerfile.imports": 12,
         "dockerfile.inherits": 8,
         "javascript.calls": 10,
@@ -193,7 +193,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 63
+        "min_resolution_rate": 64
       },
       "code_chunks": 215539,
       "files": 3397,
@@ -201,8 +201,8 @@
         "http_call": 46
       },
       "flow_edges": 46,
-      "internal_edges": 109395,
-      "internal_unresolved": 62501,
+      "internal_edges": 110720,
+      "internal_unresolved": 60912,
       "languages": {
         "csharp": 749,
         "css": 128,
@@ -217,29 +217,29 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-fluentui-blazor",
       "perf": {
-        "end_ws_mb": 2901,
-        "files_per_sec": 3,
-        "index_duration_ms": 1281867
+        "end_ws_mb": 5412,
+        "files_per_sec": 4,
+        "index_duration_ms": 881509
       },
       "project": "dotnet-fluentui-blazor",
       "rate_by_language": {
-        "csharp": 65.4,
+        "csharp": 66.31,
         "html": 0.55,
         "javascript": 54.99,
         "markdown": 10.0,
         "powershell": 3.31,
         "razor": 20.45
       },
-      "resolution_rate": 63.64,
+      "resolution_rate": 64.51,
       "routes": 46,
       "symbols": 81826,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 9862,
+        "csharp.calls": 9281,
         "csharp.implements": 18,
         "csharp.imports": 1059,
         "csharp.inherits": 160,
         "csharp.instantiates": 711,
-        "csharp.type_ref": 45100,
+        "csharp.type_ref": 44092,
         "html.calls": 695,
         "html.imports": 17,
         "html.instantiates": 4,
@@ -263,7 +263,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 65
+        "min_resolution_rate": 66
       },
       "code_chunks": 186304,
       "files": 2697,
@@ -272,8 +272,8 @@
       },
       "flow_edges": 183,
       "generated_files_reclassified": 1,
-      "internal_edges": 92675,
-      "internal_unresolved": 48979,
+      "internal_edges": 93834,
+      "internal_unresolved": 47767,
       "languages": {
         "csharp": 2403,
         "css": 11,
@@ -288,28 +288,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-nopcommerce",
       "perf": {
-        "end_ws_mb": 8985,
-        "files_per_sec": 22,
-        "index_duration_ms": 124498
+        "end_ws_mb": 13183,
+        "files_per_sec": 29,
+        "index_duration_ms": 94299
       },
       "project": "dotnet-nopcommerce",
       "rate_by_language": {
-        "csharp": 66.38,
+        "csharp": 67.25,
         "dockerfile": 0.0,
         "javascript": 8.61,
         "razor": 44.71,
         "sql": 86.67
       },
-      "resolution_rate": 65.42,
+      "resolution_rate": 66.27,
       "routes": 860,
       "symbols": 51042,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 21602,
+        "csharp.calls": 20450,
         "csharp.implements": 214,
         "csharp.imports": 2163,
         "csharp.inherits": 106,
-        "csharp.instantiates": 1503,
-        "csharp.type_ref": 21044,
+        "csharp.instantiates": 1495,
+        "csharp.type_ref": 20992,
         "dockerfile.imports": 2,
         "dockerfile.inherits": 1,
         "javascript.calls": 1867,
@@ -325,15 +325,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 67
+        "min_resolution_rate": 68
       },
       "code_chunks": 33850,
       "files": 457,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 8,
-      "internal_edges": 14254,
-      "internal_unresolved": 6869,
+      "internal_edges": 14367,
+      "internal_unresolved": 6755,
       "languages": {
         "csharp": 432,
         "json": 7,
@@ -342,25 +342,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
       "perf": {
-        "end_ws_mb": 9406,
-        "files_per_sec": 28,
-        "index_duration_ms": 16432
+        "end_ws_mb": 14059,
+        "files_per_sec": 29,
+        "index_duration_ms": 15839
       },
       "project": "dotnet-spectre-console",
       "rate_by_language": {
-        "csharp": 67.81,
+        "csharp": 68.35,
         "markdown": 27.27,
         "powershell": 0.0
       },
-      "resolution_rate": 67.48,
+      "resolution_rate": 68.02,
       "routes": 0,
       "symbols": 9103,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 3176,
+        "csharp.calls": 3066,
         "csharp.implements": 13,
         "csharp.imports": 53,
         "csharp.instantiates": 309,
-        "csharp.type_ref": 3201,
+        "csharp.type_ref": 3197,
         "markdown.calls": 23,
         "markdown.instantiates": 13,
         "markdown.type_ref": 44,
@@ -369,7 +369,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 54
+        "min_resolution_rate": 64
       },
       "code_chunks": 177525,
       "drained_refs": 2,
@@ -379,8 +379,8 @@
       },
       "flow_edges": 510,
       "generated_files_reclassified": 2,
-      "internal_edges": 170309,
-      "internal_unresolved": 140465,
+      "internal_edges": 199606,
+      "internal_unresolved": 107942,
       "languages": {
         "angular_template": 291,
         "csharp": 2692,
@@ -403,33 +403,33 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 11973,
-        "files_per_sec": 29,
-        "index_duration_ms": 152343
+        "end_ws_mb": 15928,
+        "files_per_sec": 38,
+        "index_duration_ms": 114159
       },
       "project": "dotnet-squidex",
       "rate_by_language": {
         "angular_template": 59.23,
-        "csharp": 52.82,
+        "csharp": 66.34,
         "dockerfile": 12.5,
         "html": 13.04,
         "javascript": 72.24,
         "powershell": 0.0,
         "razor": 20.0,
         "scss": 6.35,
-        "typescript": 61.37
+        "typescript": 61.36
       },
-      "resolution_rate": 54.8,
+      "resolution_rate": 64.9,
       "routes": 512,
       "symbols": 79472,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 1497,
-        "csharp.calls": 43004,
+        "csharp.calls": 26789,
         "csharp.implements": 259,
         "csharp.imports": 2950,
         "csharp.inherits": 118,
-        "csharp.instantiates": 1440,
-        "csharp.type_ref": 61933,
+        "csharp.instantiates": 1426,
+        "csharp.type_ref": 45637,
         "dockerfile.imports": 7,
         "dockerfile.inherits": 7,
         "html.calls": 6,
@@ -444,7 +444,7 @@
         "razor.type_ref": 11,
         "scss.calls": 354,
         "scss.imports": 428,
-        "typescript.calls": 11466,
+        "typescript.calls": 11468,
         "typescript.implements": 18,
         "typescript.imports": 2,
         "typescript.inherits": 92,
@@ -455,7 +455,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 51
+        "min_resolution_rate": 57
       },
       "code_chunks": 35780,
       "files": 925,
@@ -463,8 +463,8 @@
         "http_call": 73
       },
       "flow_edges": 73,
-      "internal_edges": 23164,
-      "internal_unresolved": 21810,
+      "internal_edges": 25922,
+      "internal_unresolved": 18797,
       "languages": {
         "astro": 19,
         "csharp": 688,
@@ -483,35 +483,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-starter-kit",
       "perf": {
-        "end_ws_mb": 12047,
-        "files_per_sec": 22,
-        "index_duration_ms": 41469
+        "end_ws_mb": 15967,
+        "files_per_sec": 27,
+        "index_duration_ms": 33855
       },
       "project": "dotnet-starter-kit",
       "rate_by_language": {
         "astro": 83.33,
-        "csharp": 51.12,
+        "csharp": 58.01,
         "dockerfile": 16.67,
         "hcl": 68.55,
         "html": 0.0,
         "javascript": 59.22,
-        "mdx": 55.47,
+        "mdx": 56.13,
         "powershell": 0.0,
         "razor": 34.54,
         "typescript": 84.94
       },
-      "resolution_rate": 51.51,
+      "resolution_rate": 57.97,
       "routes": 73,
       "symbols": 18917,
       "unresolved_by_lang_kind": {
         "astro.calls": 1,
         "astro.type_ref": 3,
-        "csharp.calls": 9611,
+        "csharp.calls": 7933,
         "csharp.implements": 141,
         "csharp.imports": 1220,
         "csharp.inherits": 18,
         "csharp.instantiates": 490,
-        "csharp.type_ref": 9100,
+        "csharp.type_ref": 7770,
         "dockerfile.imports": 3,
         "dockerfile.inherits": 2,
         "hcl.calls": 160,
@@ -520,7 +520,7 @@
         "html.calls": 29,
         "javascript.calls": 40,
         "javascript.type_ref": 2,
-        "mdx.calls": 157,
+        "mdx.calls": 152,
         "mdx.instantiates": 26,
         "mdx.type_ref": 151,
         "powershell.calls": 85,
