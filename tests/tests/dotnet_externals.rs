@@ -203,9 +203,9 @@ fn external_dotnet_package_is_indexed_and_resolved() {
         stats.symbol_count
     );
 
-    // External symbols from FakeLib.dll: Greeter + IFormatter + their
-    // public methods. Also includes Object-inherited members? No — we only
-    // scan types defined in the assembly, not base types.
+    // External symbols land demand-driven: a type is cracked out of the DLL
+    // when a project ref demands it, and the crack is type-granular — the
+    // demanded type plus ALL its public methods, not the whole assembly.
     let external_files: i64 = db
         .query_row(
             "SELECT COUNT(*) FROM files WHERE origin = 'external'",
@@ -244,19 +244,37 @@ fn external_dotnet_package_is_indexed_and_resolved() {
         "FakeExt.Greeter missing from external index"
     );
 
-    // IFormatter interface must land too.
+    // IFormatter is declared in FakeLib.dll but referenced by nothing in the
+    // consumer, so the demand-driven crack must NOT materialize it.
     let iformatter_exists: i64 = db
         .query_row(
             "SELECT COUNT(*) FROM symbols
              WHERE qualified_name = 'FakeExt.IFormatter'
-               AND origin = 'external' AND kind = 'interface'",
+               AND origin = 'external'",
             [],
             |r| r.get(0),
         )
         .unwrap();
     assert_eq!(
-        iformatter_exists, 1,
-        "FakeExt.IFormatter interface missing from external index"
+        iformatter_exists, 0,
+        "FakeExt.IFormatter is undemanded and must not be materialized"
+    );
+
+    // The sibling method of a demanded type rides along with the crack even
+    // though nothing references it — the crack is type-granular, not
+    // member-granular.
+    let count_method: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols
+             WHERE qualified_name = 'FakeExt.Greeter.Count'
+               AND origin = 'external' AND kind = 'method'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count_method, 1,
+        "FakeExt.Greeter.Count must ride along with the demanded Greeter crack"
     );
 
     // Method Greet should land with qualified_name = FakeExt.Greeter.Greet.
