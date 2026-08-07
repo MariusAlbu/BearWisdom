@@ -25,11 +25,13 @@ fn resolve_for(lookup: &Lookup, target: &str, profile: &LanguageProfile) -> Opti
 }
 
 static JAVA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "java",
     ..DEFAULT_PROFILE
 };
 
 static KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "kotlin",
     ..DEFAULT_PROFILE
 };

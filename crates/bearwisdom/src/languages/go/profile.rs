@@ -76,6 +76,7 @@ const GO_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const GO_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "go",
     qname_separator: ".",
     // Go has no `self`/`this`; methods take an explicit receiver parameter.

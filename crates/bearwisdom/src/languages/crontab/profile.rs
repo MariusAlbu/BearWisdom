@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const CRONTAB_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "crontab",
     qname_separator: ".",
     self_keywords: &[],

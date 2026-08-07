@@ -9,6 +9,7 @@ const PROTO_KIND_TABLE: KindTable = &[(
 )];
 
 pub const PROTO_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "proto",
     qname_separator: ".",
     self_keywords: &[],

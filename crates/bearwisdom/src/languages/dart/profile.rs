@@ -49,6 +49,7 @@ const DART_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const DART_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "dart",
     qname_separator: ".",
     self_keywords: &["this", "super"],

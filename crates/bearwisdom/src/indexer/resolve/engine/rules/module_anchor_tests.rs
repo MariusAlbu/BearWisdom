@@ -61,6 +61,7 @@ fn passes_when_gate_off() {
 fn by_name_under_module_dir_qname_probe() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             module_prefix_rewrites: ModulePrefixRewrites::Off,
             ..DEFAULT_PROFILE
@@ -74,6 +75,7 @@ fn by_name_under_module_dir_qname_probe() {
 fn by_name_under_module_dir_path_containment() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             module_prefix_rewrites: ModulePrefixRewrites::Off,
             ..DEFAULT_PROFILE
@@ -92,6 +94,7 @@ fn by_name_under_module_dir_path_containment() {
 fn path_containment_prefers_top_level_over_member() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             module_prefix_rewrites: ModulePrefixRewrites::Off,
             ..DEFAULT_PROFILE
@@ -110,6 +113,7 @@ fn path_containment_prefers_top_level_over_member() {
 fn path_containment_falls_back_to_member_when_no_top_level() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             module_prefix_rewrites: ModulePrefixRewrites::Off,
             ..DEFAULT_PROFILE
@@ -124,6 +128,7 @@ fn path_containment_falls_back_to_member_when_no_top_level() {
 fn member_of_module_type_resolves() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
             ..DEFAULT_PROFILE
         };
@@ -137,6 +142,7 @@ fn member_of_module_type_resolves() {
 fn passes_when_no_module_on_ref() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
             module_prefix_rewrites: ModulePrefixRewrites::Off,
             ..DEFAULT_PROFILE

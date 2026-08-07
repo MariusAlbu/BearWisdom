@@ -56,6 +56,7 @@ const NIM_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "nim",
     qname_separator: ".",
     self_keywords: &[],

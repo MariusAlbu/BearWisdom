@@ -53,6 +53,7 @@ const FSHARP_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "fsharp",
     qname_separator: ".",
     self_keywords: &["this"],

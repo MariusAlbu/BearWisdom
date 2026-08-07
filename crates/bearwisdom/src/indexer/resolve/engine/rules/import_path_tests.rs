@@ -109,6 +109,7 @@ const HBS_IR: ImportResolution = ImportResolution {
 };
 
 static HBS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     import_resolution: Some(HBS_IR),
     ..DEFAULT_PROFILE
 };

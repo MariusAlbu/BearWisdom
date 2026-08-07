@@ -47,6 +47,7 @@ const PS_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const POWERSHELL_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "powershell",
     qname_separator: ".",
     self_keywords: &["$this"],

@@ -39,6 +39,7 @@ const JS_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "javascript",
     qname_separator: ".",
     self_keywords: &["this"],

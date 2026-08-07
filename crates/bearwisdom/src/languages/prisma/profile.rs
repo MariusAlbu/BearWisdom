@@ -14,6 +14,7 @@ const PRISMA_KIND_TABLE: KindTable = &[(
 )];
 
 pub const PRISMA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "prisma",
     qname_separator: ".",
     self_keywords: &[],

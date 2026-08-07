@@ -67,6 +67,7 @@ const CS_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &["Object", "object"],
     id: "csharp",
     qname_separator: ".",
     self_keywords: &["this", "base"],

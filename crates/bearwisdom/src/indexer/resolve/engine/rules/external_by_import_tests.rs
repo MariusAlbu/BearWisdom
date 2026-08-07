@@ -46,6 +46,7 @@ fn passes_when_gate_off() {
 fn pkg_segment_matches_import_root() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             external_by_import: Some(ExternalByImport),
             ext_match: ExtMatch::PkgSegment,
             ..DEFAULT_PROFILE
@@ -61,6 +62,7 @@ fn pkg_segment_matches_import_root() {
 fn pkg_segment_matches_family_prefix() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             external_by_import: Some(ExternalByImport),
             ext_match: ExtMatch::PkgSegment,
             ..DEFAULT_PROFILE
@@ -81,6 +83,7 @@ fn pkg_segment_matches_family_prefix() {
 fn file_stem_or_dir_matches_import_leaf() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             external_by_import: Some(ExternalByImport),
             ext_match: ExtMatch::FileStemOrDir,
             ..DEFAULT_PROFILE
@@ -101,6 +104,7 @@ fn file_stem_or_dir_matches_import_leaf() {
 fn skips_non_external_symbols() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             external_by_import: Some(ExternalByImport),
             ext_match: ExtMatch::PkgSegment,
             ..DEFAULT_PROFILE

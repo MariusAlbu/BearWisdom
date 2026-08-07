@@ -56,6 +56,7 @@ const OCAML_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const OCAML_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "ocaml",
     qname_separator: ".",
     self_keywords: &[],

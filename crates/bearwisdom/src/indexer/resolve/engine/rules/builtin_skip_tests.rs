@@ -5,6 +5,7 @@ use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 static SKIP_ECHO_PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
     crate::type_checker::profile::language_profile::LanguageProfile {
+        implicit_root_types: &[],
         builtin_skip: Some(|t| t == "echo"),
         ..DEFAULT_PROFILE
     };

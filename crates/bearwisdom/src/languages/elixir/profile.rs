@@ -55,6 +55,7 @@ const ELIXIR_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "elixir",
     qname_separator: ".",
     self_keywords: &[],

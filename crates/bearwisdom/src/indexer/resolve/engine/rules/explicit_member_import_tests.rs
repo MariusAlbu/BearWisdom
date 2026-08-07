@@ -9,6 +9,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 const ENABLED_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     explicit_member_import: true,
     ..DEFAULT_PROFILE
 };

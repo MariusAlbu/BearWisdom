@@ -5,8 +5,11 @@
 // resolution time.
 // =============================================================================
 
+pub mod chain_specs;
+pub mod import_specs;
 pub mod language_profile;
 pub mod registry;
+pub mod syntax_specs;
 
 pub use language_profile::{
     ArgKey, BucketContainer, ClassBuilderSpec, ClassNameSource, ConstructorPattern,

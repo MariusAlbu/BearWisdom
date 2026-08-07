@@ -5,6 +5,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const TWIG_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "twig",
     qname_separator: ".",
     self_keywords: &[],

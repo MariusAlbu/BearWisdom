@@ -41,6 +41,7 @@ const LUA_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "lua",
     qname_separator: ".",
     self_keywords: &["self"],

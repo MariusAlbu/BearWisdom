@@ -31,6 +31,7 @@ const PERL_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const PERL_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "perl",
     qname_separator: "::",
     self_keywords: &["$self"],

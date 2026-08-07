@@ -48,6 +48,7 @@ const RUBY_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 /// Ruby profile.
 pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "ruby",
     qname_separator: "::",
     self_keywords: &["self"],

@@ -7,6 +7,7 @@ use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 static SKIP_STD_PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
     crate::type_checker::profile::language_profile::LanguageProfile {
+        implicit_root_types: &[],
         module_skip: Some(|m| m == "std"),
         ..DEFAULT_PROFILE
     };

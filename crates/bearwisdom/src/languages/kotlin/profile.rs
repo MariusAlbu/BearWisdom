@@ -59,6 +59,7 @@ const KOTLIN_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "kotlin",
     qname_separator: ".",
     self_keywords: &["this", "super"],

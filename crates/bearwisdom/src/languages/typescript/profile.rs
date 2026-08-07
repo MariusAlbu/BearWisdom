@@ -101,6 +101,7 @@ pub(crate) const TS_PRIMITIVES: &[(&str, PrimKind)] = &[
 /// inference + member lookup fall back to dynamic property resolution which
 /// the engine handles uniformly with TS).
 pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "typescript",
     qname_separator: ".",
     // `this` is the only receiver keyword TS surfaces at the chain-walker

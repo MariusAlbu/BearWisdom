@@ -63,6 +63,7 @@ const SWIFT_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "swift",
     qname_separator: ".",
     self_keywords: &["self", "Self", "super"],

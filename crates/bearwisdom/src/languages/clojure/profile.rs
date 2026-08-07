@@ -30,6 +30,7 @@ const CLOJURE_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const CLOJURE_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "clojure",
     qname_separator: "/",
     self_keywords: &[],

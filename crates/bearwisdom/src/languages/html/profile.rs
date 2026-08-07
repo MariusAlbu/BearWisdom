@@ -8,6 +8,7 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::EdgeKind;
 
 pub const HTML_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "html",
     qname_separator: ".",
     self_keywords: &[],

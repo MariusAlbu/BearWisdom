@@ -11,9 +11,9 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use crate::indexer::resolve::engine::contract::{
-    FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet,
-};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
+
+pub(crate) use super::testkit_fixtures::*;
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::{
     intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedRef, ExtractedSymbol,
@@ -38,6 +38,9 @@ pub(crate) struct Lookup {
     field_types: FxHashMap<String, String>,
     field_type_ids: FxHashMap<String, TypeId>,
     return_types: FxHashMap<String, String>,
+    /// Id-keyed return types — the collision-free counterpart of
+    /// `return_types`, for same-qname overload rows with distinct yields.
+    return_types_by_id: FxHashMap<i64, String>,
     parents: FxHashMap<String, Vec<String>>,
     /// Id-keyed inherits: child symbol id → ALL parent symbol ids. The id-keyed
     /// counterpart of `parents`; a child may have several supertypes.
@@ -84,6 +87,7 @@ impl Lookup {
             field_types: Default::default(),
             field_type_ids: Default::default(),
             return_types: Default::default(),
+            return_types_by_id: Default::default(),
             parents: Default::default(),
             parents_by_id: Default::default(),
             inherits_args: Default::default(),
@@ -183,6 +187,14 @@ impl Lookup {
     /// Register the return type of a method/function qname.
     pub(crate) fn with_return_type(mut self, qname: &str, ty: &str) -> Self {
         self.return_types.insert(qname.to_string(), ty.to_string());
+        self
+    }
+
+    /// Register a return type under the symbol's ID — the collision-free
+    /// counterpart of `with_return_type`, for same-qname overload rows whose
+    /// yields differ.
+    pub(crate) fn with_return_type_of(mut self, id: i64, ty: &str) -> Self {
+        self.return_types_by_id.insert(id, ty.to_string());
         self
     }
 
@@ -349,6 +361,11 @@ impl SymbolLookup for Lookup {
     fn return_type_name(&self, qname: &str) -> Option<&str> {
         self.return_types.get(qname).map(|s| s.as_str())
     }
+    fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.return_types_by_id
+            .get(&symbol_id)
+            .map(|s| self.arena.intern_type_str(s))
+    }
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.parents.get(class_qname).and_then(|v| v.first()).map(|s| s.as_str())
     }
@@ -427,114 +444,4 @@ impl SymbolLookup for Lookup {
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.workspace_pkgs.contains_key(name)
     }
-}
-
-/// A symbol-index row.
-pub(crate) fn sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> Symbol {
-    Symbol {
-        id,
-        name: name.to_string(),
-        qualified_name: qname.to_string(),
-        kind: kind.to_string(),
-        visibility: None,
-        file_path: Arc::from(file),
-        scope_path: None,
-        package_id: None,
-        signature: None,
-    }
-}
-
-/// `sym` with a signature attached — for rungs that read the declaration's
-/// signature text (extension receivers, param patterns).
-pub(crate) fn sym_with_sig(
-    id: i64,
-    name: &str,
-    qname: &str,
-    kind: &str,
-    file: &str,
-    signature: &str,
-) -> Symbol {
-    let mut s = sym(id, name, qname, kind, file);
-    s.signature = Some(signature.to_string());
-    s
-}
-
-/// An `import name from module` entry.
-pub(crate) fn import(name: &str, module: Option<&str>) -> ImportEntry {
-    ImportEntry {
-        imported_name: name.to_string(),
-        module_path: module.map(|s| s.to_string()),
-        alias: None,
-        is_wildcard: false,
-    }
-}
-
-/// A file context with the given imports and namespace.
-pub(crate) fn file_ctx(imports: Vec<ImportEntry>, ns: Option<&str>) -> FileContext {
-    FileContext {
-        file_path: "src/main.ts".to_string(),
-        language: "typescript".to_string(),
-        imports,
-        file_namespace: ns.map(|s| s.to_string()),
-    }
-}
-
-/// A bare `Calls` ref to `target`.
-pub(crate) fn call_ref(target: &str) -> ExtractedRef {
-    ExtractedRef {
-        is_import_binding: false,
-        is_reexport: false,
-        source_symbol_index: 0,
-        target_name: target.to_string(),
-        kind: EdgeKind::Calls,
-        line: 0,
-        col: 0,
-        module: None,
-        namespace_segments: Vec::new(),
-        chain: None,
-        byte_offset: 0,
-        call_args: Vec::new(),
-    }
-}
-
-/// A source symbol the ref lives in.
-pub(crate) fn source_symbol(name: &str) -> ExtractedSymbol {
-    ExtractedSymbol {
-        name: name.to_string(),
-        qualified_name: name.to_string(),
-        kind: SymbolKind::Function,
-        visibility: Some(Visibility::Public),
-        start_line: 0,
-        end_line: 0,
-        start_col: 0,
-        end_col: 0,
-        byte_offset: 0,
-        signature: None,
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-        declared_type: None,
-        return_type: None,
-        param_types: Vec::new(),
-        generic_params: Vec::new(),
-    }
-}
-
-/// A ref context for `r` in `sym`, with the given scope chain.
-pub(crate) fn ref_ctx<'a>(
-    r: &'a ExtractedRef,
-    sym: &'a ExtractedSymbol,
-    scope_chain: Vec<String>,
-) -> RefContext<'a> {
-    RefContext {
-        extracted_ref: r,
-        source_symbol: sym,
-        scope_chain,
-        file_package_id: None,
-    }
-}
-
-/// Permissive kind predicate — accepts every candidate kind.
-pub(crate) fn accept_any(_: EdgeKind, _: &str) -> bool {
-    true
 }

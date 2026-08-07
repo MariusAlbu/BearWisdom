@@ -9,6 +9,7 @@ use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
 
 static WWS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     workspace_packages: true,
     reexport_barrel_stems: &["index"],
     wildcard_workspace_scope: true,
@@ -16,6 +17,7 @@ static WWS_PROFILE: LanguageProfile = LanguageProfile {
 };
 
 static WWS_SELF_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     workspace_packages: true,
     reexport_barrel_stems: &["index"],
     wildcard_workspace_scope: true,

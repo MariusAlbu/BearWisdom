@@ -889,6 +889,7 @@ fn roots_self_via_scope_path_when_scope_chain_empty() {
 #[test]
 fn peels_single_inner_wrapper_before_member_lookup() {
     let profile = LanguageProfile {
+        implicit_root_types: &[],
         single_inner_wrappers: &["Box"],
         ..DEFAULT_PROFILE
     };
@@ -951,6 +952,7 @@ fn container_deref_lookup() -> Lookup {
 #[test]
 fn reheads_container_member_miss_onto_deref_target_threading_args() {
     let profile = LanguageProfile {
+        implicit_root_types: &[],
         container_deref_targets: &[("Vec", "slice")],
         ..DEFAULT_PROFILE
     };
@@ -977,6 +979,7 @@ fn reheads_container_member_miss_onto_deref_target_threading_args() {
 #[test]
 fn container_own_member_wins_over_deref_target() {
     let profile = LanguageProfile {
+        implicit_root_types: &[],
         container_deref_targets: &[("Vec", "slice")],
         ..DEFAULT_PROFILE
     };
@@ -2147,6 +2150,7 @@ use crate::indexer::resolve::engine::semantic_model::{SemanticModel, SolveOutcom
 use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     workspace_packages: true,
     reexport_barrel_stems: &["index"],
     ..DEFAULT_PROFILE
@@ -2832,6 +2836,7 @@ fn uncalled_method_value_resolves_function_prototype_members() {
     // function VALUE; `bind` resolves on the profile's function-prototype type
     // (whose members come from the indexed lib), not on the method's return.
     let profile = LanguageProfile {
+        implicit_root_types: &[],
         function_prototype_types: &["CallableFunction", "Function"],
         ..DEFAULT_PROFILE
     };
@@ -2870,6 +2875,7 @@ fn a_called_method_still_yields_its_return_not_the_prototype() {
     // `obs.fetchNextPage().bind` — the method IS called, so the walk advances
     // on its return type; the prototype fallback must not fire.
     let profile = LanguageProfile {
+        implicit_root_types: &[],
         function_prototype_types: &["CallableFunction"],
         ..DEFAULT_PROFILE
     };
@@ -3075,4 +3081,124 @@ fn call_args_bind_against_the_arity_matching_overload() {
     ];
     let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
     assert_eq!(picked.id, 31, "the 2-param delegate overload must win");
+}
+
+#[test]
+fn closest_receiver_extension_overload_wins() {
+    // Two same-name extensions in ONE declaring class: one on the receiver's
+    // direct supertype, one on a remoter ancestor. The closest match is the
+    // overload whose return type is the receiver's real yield.
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    let lookup = Lookup::new()
+        .with(sym(1, "items", "M.items", "parameter", "src/M.cs"))
+        .with_field_type("M.items", "MyList")
+        .with(sym(10, "MyList", "MyList", "class", "src/MyList.cs"))
+        .with_parent("MyList", "Seq")
+        .with(sym(11, "Seq", "Seq", "class", "src/Seq.cs"))
+        .with_parent("Seq", "Root")
+        .with(sym(12, "Root", "Root", "class", "src/Root.cs"))
+        .with(sym_with_sig(20, "Should", "Ext.Should", "method", "src/Ext.cs",
+            "SeqAssertions Should(this Seq actual)"))
+        .with(sym_with_sig(21, "Should", "Ext.Should", "method", "src/Ext.cs",
+            "RootAssertions Should(this Root actual)"));
+    let segs = vec![
+        seg("items", false, SegmentKind::Identifier),
+        seg("Should", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(20));
+}
+
+#[test]
+fn implicit_root_extension_applies_to_a_baseless_receiver() {
+    // `result.Should()` where `JobResult` declares no base list: the language's
+    // implicit root closes the climb, so `Should(this object …)` matches.
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    static ROOTY: LanguageProfile = LanguageProfile {
+        implicit_root_types: &["object"],
+        ..DEFAULT_PROFILE
+    };
+    let lookup = Lookup::new()
+        .with(sym(1, "result", "M.result", "parameter", "src/M.cs"))
+        .with_field_type("M.result", "JobResult")
+        .with(sym(10, "JobResult", "JobResult", "class", "src/JobResult.cs"))
+        .with(sym_with_sig(20, "Should", "Ext.Should", "method", "src/Ext.cs",
+            "ObjectAssertions Should(this object actual)"));
+    let segs = vec![
+        seg("result", false, SegmentKind::Identifier),
+        seg("Should", true, SegmentKind::Property),
+    ];
+    let leaf = segs.last().unwrap().name.clone();
+    let mut r = call_ref(&leaf);
+    r.chain = Some(MemberChain { segments: segs });
+    let mut s = source_symbol("caller");
+    s.qualified_name = "M.Run".to_string();
+    let rc = ref_ctx(&r, &s, vec![]);
+    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &ROOTY)
+        .ok()
+        .map(|res| res.target_symbol_id);
+    assert_eq!(got, Some(20));
+}
+
+#[test]
+fn next_hop_miss_retries_sibling_overload_yields() {
+    // Two same-qname `CallTo` overloads yield different configuration types.
+    // The member index hands back the void-config row; `Returns` lives only on
+    // the sibling's value-config yield, so the next hop retries the sibling.
+    let lookup = Lookup::new()
+        .with(sym(1, "fake", "M.fake", "parameter", "src/M.cs"))
+        .with_field_type("M.fake", "Fake")
+        .with(sym(10, "Fake", "Fake", "class", "src/Fake.cs"))
+        .with_member("Fake", sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with(sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with(sym(21, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with_return_type_of(20, "VoidConfig")
+        .with_return_type_of(21, "ValueConfig")
+        .with(sym(30, "VoidConfig", "VoidConfig", "class", "src/VoidConfig.cs"))
+        .with(sym(31, "ValueConfig", "ValueConfig", "class", "src/ValueConfig.cs"))
+        .with_member(
+            "ValueConfig",
+            sym(32, "Returns", "ValueConfig.Returns", "method", "src/ValueConfig.cs"),
+        );
+    let segs = vec![
+        seg("fake", false, SegmentKind::Identifier),
+        seg("CallTo", true, SegmentKind::Property),
+        seg("Returns", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(32));
+}
+
+#[test]
+fn alt_yield_retry_probes_extension_methods_too() {
+    // The member the retry looks for is declared as an EXTENSION on the
+    // sibling yield's supertype, not as an instance member: the alt probe
+    // must run the extension fallback (with the supertype climb) after the
+    // instance miss.
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    let lookup = Lookup::new()
+        .with(sym(1, "fake", "M.fake", "parameter", "src/M.cs"))
+        .with_field_type("M.fake", "Fake")
+        .with(sym(10, "Fake", "Fake", "class", "src/Fake.cs"))
+        .with_member("Fake", sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with(sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with(sym(21, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with_return_type_of(20, "VoidConfig")
+        .with_return_type_of(21, "ValueConfig")
+        .with(sym(30, "VoidConfig", "VoidConfig", "class", "src/VoidConfig.cs"))
+        .with(sym(31, "ValueConfig", "ValueConfig", "class", "src/ValueConfig.cs"))
+        .with_parent("ValueConfig", "ReturnConfig")
+        .with(sym(40, "ReturnConfig", "ReturnConfig", "interface", "src/ReturnConfig.cs"))
+        .with(sym_with_sig(
+            32,
+            "Returns",
+            "Ext.Returns",
+            "method",
+            "src/Ext.cs",
+            "ValueConfig Returns(this ReturnConfig configuration, object value)",
+        ));
+    let segs = vec![
+        seg("fake", false, SegmentKind::Identifier),
+        seg("CallTo", true, SegmentKind::Property),
+        seg("Returns", true, SegmentKind::Property),
+    ];
+    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(32));
 }

@@ -48,6 +48,7 @@ const ZIG_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "zig",
     qname_separator: ".",
     self_keywords: &[],

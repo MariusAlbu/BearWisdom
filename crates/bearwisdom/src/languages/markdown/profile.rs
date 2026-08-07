@@ -23,6 +23,7 @@ const MARKDOWN_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const MARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "markdown",
     qname_separator: ".",
     self_keywords: &[],

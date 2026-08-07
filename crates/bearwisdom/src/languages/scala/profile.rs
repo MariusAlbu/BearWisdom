@@ -57,6 +57,7 @@ const SCALA_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "scala",
     qname_separator: ".",
     self_keywords: &["this", "super"],

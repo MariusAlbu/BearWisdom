@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const HEEX_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "heex",
     qname_separator: ".",
     self_keywords: &[],

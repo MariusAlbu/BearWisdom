@@ -10,6 +10,7 @@ use crate::type_checker::profile::language_profile::{
 
 /// Profile with the gate active — `PackageShortName`.
 const PSN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     chain_qualification: ChainQualification::PackageShortName,
     ..DEFAULT_PROFILE
 };

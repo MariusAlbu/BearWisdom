@@ -9,6 +9,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 static FILESTEM_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     wildcard_match: WildcardMatch::FileStem {
         underscore_prefix: false,
     },
@@ -107,6 +108,7 @@ fn filestem_mode_binds_by_file_basename() {
 // --- qname-distinct hit counting + implicit namespaces -----------------------
 
 static NAMESPACE_WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     namespace_imports_are_wildcards: true,
     ..DEFAULT_PROFILE
 };

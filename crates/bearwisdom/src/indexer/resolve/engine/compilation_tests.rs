@@ -542,6 +542,7 @@ fn field_init_await_unwraps_the_async_wrapper() {
     use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
     static ASYNC_PROFILE: LanguageProfile = LanguageProfile {
+        implicit_root_types: &[],
         async_wrappers: &["Promise"],
         ..DEFAULT_PROFILE
     };

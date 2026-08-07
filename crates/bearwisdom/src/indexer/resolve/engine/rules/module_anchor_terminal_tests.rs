@@ -9,6 +9,7 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::EdgeKind;
 
 static TERMINAL_ON_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     module_anchor_terminal: true,
     module_anchor: ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
     ..DEFAULT_PROFILE
@@ -51,6 +52,7 @@ fn passes_when_terminal_flag_is_false() {
 #[test]
 fn passes_when_anchor_is_off() {
     static TERMINAL_ANCHOR_OFF: LanguageProfile = LanguageProfile {
+        implicit_root_types: &[],
         module_anchor_terminal: true,
         module_anchor: ModuleAnchor::Off,
         ..DEFAULT_PROFILE

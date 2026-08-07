@@ -22,6 +22,7 @@ const PUG_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const PUG_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "pug",
     qname_separator: ".",
     self_keywords: &[],

@@ -19,6 +19,7 @@ const DOCKERFILE_KIND_TABLE: KindTable = &[
 ];
 
 pub const DOCKERFILE_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "dockerfile",
     qname_separator: ".",
     self_keywords: &[],

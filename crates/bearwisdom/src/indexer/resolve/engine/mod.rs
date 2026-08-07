@@ -33,6 +33,7 @@ pub mod arg_types;
 pub mod cause;
 pub mod chain;
 pub mod ext_lang_visibility;
+pub mod extension_method;
 pub mod externals_demand;
 pub mod generics;
 pub mod head_decl;
@@ -40,6 +41,7 @@ pub mod import_qualify;
 pub mod lambda_seed;
 pub mod mapped_members;
 pub mod module_augmentation;
+pub mod overload_alts;
 pub mod relative_imports;
 pub mod substitution;
 pub mod semantic_model;
@@ -53,6 +55,8 @@ pub mod trace;
 
 #[cfg(test)]
 pub(crate) mod testkit;
+#[cfg(test)]
+pub(crate) mod testkit_fixtures;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

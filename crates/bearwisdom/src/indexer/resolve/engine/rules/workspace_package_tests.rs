@@ -9,6 +9,7 @@ use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     workspace_packages: true,
     reexport_barrel_stems: &["index"],
     ..DEFAULT_PROFILE

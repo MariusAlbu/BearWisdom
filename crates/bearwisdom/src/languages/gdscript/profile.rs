@@ -28,6 +28,7 @@ const GD_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const GDSCRIPT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "gdscript",
     qname_separator: ".",
     self_keywords: &["self"],

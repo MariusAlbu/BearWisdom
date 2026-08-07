@@ -43,6 +43,7 @@ fn passes_when_gate_off() {
 fn same_dir_resolves_sibling() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_scope: ModuleScope::SameDir,
             ..DEFAULT_PROFILE
         };
@@ -56,6 +57,7 @@ fn same_dir_resolves_sibling() {
 fn same_dir_declines_different_dir() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_scope: ModuleScope::SameDir,
             ..DEFAULT_PROFILE
         };
@@ -69,6 +71,7 @@ fn same_dir_declines_different_dir() {
 fn same_dir_unique_resolves_single_candidate() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_scope: ModuleScope::SameDirUnique,
             ..DEFAULT_PROFILE
         };
@@ -81,6 +84,7 @@ fn same_dir_unique_resolves_single_candidate() {
 fn same_dir_unique_declines_ambiguous() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_scope: ModuleScope::SameDirUnique,
             ..DEFAULT_PROFILE
         };
@@ -95,6 +99,7 @@ fn same_dir_unique_declines_ambiguous() {
 fn sources_target_subtree_resolves() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             module_scope: ModuleScope::SourcesTargetSubtree,
             ..DEFAULT_PROFILE
         };

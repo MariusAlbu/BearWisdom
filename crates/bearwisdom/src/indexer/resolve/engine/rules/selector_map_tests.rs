@@ -90,6 +90,7 @@ impl SymbolLookup for SelectorLookup {
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
 static SELECTOR_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     selector_resolution: Some(SelectorResolution {
         edge_kinds: &[EdgeKind::Calls],
         name_transforms: &[],
@@ -98,6 +99,7 @@ static SELECTOR_PROFILE: LanguageProfile = LanguageProfile {
 };
 
 static SELECTOR_KEBAB_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     selector_resolution: Some(SelectorResolution {
         edge_kinds: &[EdgeKind::Calls],
         name_transforms: &[NameTransform::PascalToKebab],

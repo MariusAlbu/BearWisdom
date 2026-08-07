@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const PUPPET_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "puppet",
     qname_separator: "::",
     self_keywords: &[],

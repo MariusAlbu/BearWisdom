@@ -21,6 +21,7 @@ const MDX_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "mdx",
     qname_separator: ".",
     self_keywords: &[],

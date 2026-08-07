@@ -19,6 +19,7 @@ const ROBOT_NAME_NORM: NormSpec = NormSpec {
 };
 
 pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "robot",
     qname_separator: ".",
     self_keywords: &[],

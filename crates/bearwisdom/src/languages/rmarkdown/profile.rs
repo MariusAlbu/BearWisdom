@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const RMARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "rmarkdown",
     qname_separator: ".",
     self_keywords: &[],
@@ -72,6 +73,7 @@ pub const RMARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
 };
 
 pub const QUARTO_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "quarto",
     qname_separator: ".",
     self_keywords: &[],

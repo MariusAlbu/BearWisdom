@@ -31,6 +31,7 @@ fn apply_with_gate(
 ) -> Option<i64> {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            implicit_root_types: &[],
             alias_module_qname: true,
             ..DEFAULT_PROFILE
         };

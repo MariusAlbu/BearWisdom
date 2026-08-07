@@ -51,6 +51,7 @@ const PASCAL_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "pascal",
     qname_separator: ".",
     self_keywords: &["Self"],

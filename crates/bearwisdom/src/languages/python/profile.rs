@@ -63,6 +63,7 @@ const PY_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 /// Python profile.
 pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "python",
     qname_separator: ".",
     self_keywords: &["self", "cls"],

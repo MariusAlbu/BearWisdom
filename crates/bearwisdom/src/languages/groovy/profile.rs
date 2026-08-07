@@ -42,6 +42,7 @@ const GROOVY_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "groovy",
     qname_separator: ".",
     self_keywords: &["this", "super"],

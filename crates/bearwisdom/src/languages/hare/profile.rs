@@ -24,6 +24,7 @@ const HARE_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "hare",
     qname_separator: "::",
     self_keywords: &[],

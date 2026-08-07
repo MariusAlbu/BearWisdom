@@ -4,6 +4,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "vba",
     qname_separator: ".",
     self_keywords: &["Me"],

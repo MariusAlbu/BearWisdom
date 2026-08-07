@@ -72,6 +72,7 @@ const ADA_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "ada",
     qname_separator: ".",
     self_keywords: &[],

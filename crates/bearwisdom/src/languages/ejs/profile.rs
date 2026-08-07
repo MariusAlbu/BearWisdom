@@ -22,6 +22,7 @@ const EJS_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const EJS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "ejs",
     qname_separator: ".",
     self_keywords: &[],

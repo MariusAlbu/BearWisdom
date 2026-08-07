@@ -81,6 +81,7 @@ impl SymbolLookup for ScoredLookup {
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
 static RANKED_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     multi_candidate_ranking: true,
     ..DEFAULT_PROFILE
 };

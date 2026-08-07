@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const THYMELEAF_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "thymeleaf",
     qname_separator: ".",
     self_keywords: &[],

@@ -22,6 +22,7 @@ const NUNJUCKS_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const NUNJUCKS_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "nunjucks",
     qname_separator: ".",
     self_keywords: &[],

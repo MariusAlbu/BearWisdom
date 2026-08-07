@@ -23,6 +23,7 @@ const FORTRAN_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "fortran",
     qname_separator: ".",
     self_keywords: &[],

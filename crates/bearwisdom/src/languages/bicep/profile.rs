@@ -35,6 +35,7 @@ const BICEP_KIND_TABLE: KindTable = &[
 ];
 
 pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "bicep",
     qname_separator: ".",
     self_keywords: &[],

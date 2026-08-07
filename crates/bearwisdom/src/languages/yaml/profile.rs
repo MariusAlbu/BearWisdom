@@ -26,6 +26,7 @@ const YAML_IMPORTS: ImportResolution = ImportResolution {
 };
 
 pub const YAML_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "yaml",
     qname_separator: ".",
     self_keywords: &[],

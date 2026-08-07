@@ -41,6 +41,7 @@ const BASH_KIND_TABLE: KindTable = &[
 ];
 
 pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "shell",
     qname_separator: ".",
     self_keywords: &[],

@@ -53,6 +53,7 @@ const HASKELL_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const HASKELL_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "haskell",
     qname_separator: ".",
     self_keywords: &[],

@@ -19,9 +19,6 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::indexer::resolve::engine::contract::chain_walker::{
-    extension_receiver_type, parse_type_head_and_args,
-};
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
@@ -92,6 +89,14 @@ pub fn bind_member_access(
     // call — the walk then holds a function VALUE, whose only members are the
     // function prototype's (`profile.function_prototype_types`).
     let mut prev_uncalled_callable = false;
+    // Same-qname overload siblings' DISTINCT yields, collected when advancing
+    // past a CALLED member. The member index hands back one row of an
+    // overload set, so the hop's yield is provisional — when the NEXT hop's
+    // member misses on it, the walk retries the sibling overloads' yields:
+    // the sibling that carries the member is the overload the call actually
+    // bound (`A.CallTo(() => valueCall).Returns(…)` lives on the
+    // value-configuration yield, not the void one the first row named).
+    let mut alt_yields: Vec<Receiver> = Vec::new();
     for (i, seg) in chain.segments.iter().enumerate().skip(1) {
         let was_uncalled_callable = prev_uncalled_callable;
         prev_uncalled_callable = false;
@@ -170,9 +175,22 @@ pub fn bind_member_access(
                 ) {
                     current = reheaded;
                     m
-                } else if let Some(m) =
-                    lookup_extension_method(lookup, arena, current, &seg.name)
-                {
+                } else if let Some(m) = super::extension_method::lookup_extension_method(
+                    lookup,
+                    arena,
+                    current,
+                    &seg.name,
+                    profile.implicit_root_types,
+                ) {
+                    m
+                } else if let Some((m, alt)) = super::overload_alts::member_on_alt_yields(
+                    lookup,
+                    arena,
+                    &alt_yields,
+                    &seg.name,
+                    profile.implicit_root_types,
+                ) {
+                    current = alt;
                     m
                 } else if was_uncalled_callable {
                     // A method accessed WITHOUT a call is a function VALUE
@@ -284,6 +302,13 @@ pub fn bind_member_access(
             profile.single_inner_wrappers,
         );
         current = expand_receiver(yielded_recv, lookup, arena, Some(file_ctx));
+        alt_yields = if seg.is_call {
+            super::overload_alts::collect_overload_alt_yields(
+                lookup, arena, &member, mid_recv, mid_id, current.ty, file_ctx, profile,
+            )
+        } else {
+            Vec::new()
+        };
     }
     Err(None)
 }
@@ -299,7 +324,7 @@ pub fn bind_member_access(
 /// absent, unlisted, or not a single-argument application returns unchanged —
 /// this is why a real container (`Vec`, `HashMap`) must stay OFF the list: its
 /// accessors belong to the container itself, not a peeled element.
-fn peel_wrapped_receiver(recv: Receiver, arena: &TypeArena, wrappers: &[&str]) -> Receiver {
+pub(super) fn peel_wrapped_receiver(recv: Receiver, arena: &TypeArena, wrappers: &[&str]) -> Receiver {
     if wrappers.is_empty() {
         return recv;
     }
@@ -507,66 +532,6 @@ fn reroot_bare_head(
     }
 }
 
-/// An EXTENSION METHOD found after an instance-member miss: a method declared
-/// OUTSIDE the receiver's type whose signature marks its first parameter with
-/// `this` (`void UseSnapshot(this ModelBuilder builder, …)`) and whose
-/// receiver-parameter head names the receiver's type — or one of its
-/// supertypes, so an extension on a base applies to the derived receiver.
-/// The `(this ` signature shape is the gate: only extension declarations
-/// carry it, so the probe is structurally inert for every other language.
-/// A single distinct declaring qname wins; two different qnames decline.
-fn lookup_extension_method(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    recv: Receiver,
-    member: &str,
-) -> Option<Symbol> {
-    let recv_head = head_qname(arena, recv.ty)?;
-    // The receiver's simple name plus its supertypes', climbed breadth-first
-    // and bounded like the member walk itself.
-    let mut recv_names: Vec<String> = Vec::new();
-    let mut frontier: Vec<String> = vec![recv_head.clone()];
-    for _ in 0..=MAX_SUPERTYPE_DEPTH {
-        let mut next = Vec::new();
-        for head in &frontier {
-            let simple = head.rsplit('.').next().unwrap_or(head);
-            if !recv_names.iter().any(|n| n == simple) {
-                recv_names.push(simple.to_string());
-            }
-            for parent in lookup.parent_class_qnames(head) {
-                next.push(parent.clone());
-            }
-        }
-        if next.is_empty() {
-            break;
-        }
-        frontier = next;
-    }
-    let mut hit: Option<Symbol> = None;
-    for cand in lookup.by_name(member) {
-        if !is_callable(&cand.kind) {
-            continue;
-        }
-        let Some(sig) = cand.signature.as_deref() else {
-            continue;
-        };
-        let Some(recv_param) = extension_receiver_type(sig) else {
-            continue;
-        };
-        let (param_head, _args) = parse_type_head_and_args(&recv_param);
-        let param_simple = param_head.rsplit('.').next().unwrap_or(param_head);
-        if !recv_names.iter().any(|n| n == param_simple) {
-            continue;
-        }
-        match &hit {
-            None => hit = Some(cand.clone()),
-            Some(h) if h.qualified_name == cand.qualified_name => {}
-            Some(_) => return None,
-        }
-    }
-    hit
-}
-
 /// Rewrite a type's nominal head `Class` to `qname`, preserving generic application
 /// and the nullable/async/iterator wrappers `head_qname` looks through. A structural
 /// type with no nominal head is returned unchanged.
@@ -666,7 +631,7 @@ fn file_matches_module(file_path: &str, module: &str) -> bool {
 /// is bound to a declaration id, climb its supertypes by id via
 /// `lookup_member_by_id`; otherwise fall back to the qname-string climb. The
 /// id path is what keeps two same-qname receiver types apart.
-fn lookup_member_on(
+pub(super) fn lookup_member_on(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     recv: Receiver,
@@ -1266,7 +1231,7 @@ pub(crate) fn apply_args(arena: &TypeArena, id: TypeId) -> Vec<TypeId> {
 /// yield type is a function type (`Type::Function { return_ }`), the call
 /// result is the function's own return type — a property whose declared type
 /// is a call signature (`fn: () => Mock<T>`) yields `Mock<T>` when called.
-fn yield_through(
+pub(super) fn yield_through(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     member: &Symbol,
@@ -2732,7 +2697,7 @@ fn with_segment_args(arena: &TypeArena, id: TypeId, type_args: &[String]) -> Typ
 
 /// `true` when `kind` names something a call can root on — a free function or a
 /// method whose return type carries the chain forward.
-fn is_callable(kind: &str) -> bool {
+pub(super) fn is_callable(kind: &str) -> bool {
     matches!(kind, "function" | "method")
 }
 

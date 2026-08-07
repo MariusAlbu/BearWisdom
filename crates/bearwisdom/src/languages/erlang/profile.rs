@@ -30,6 +30,7 @@ const ERLANG_PRIMITIVES: &[(&str, PrimKind)] = &[
 ];
 
 pub const ERLANG_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "erlang",
     qname_separator: ":",
     self_keywords: &[],

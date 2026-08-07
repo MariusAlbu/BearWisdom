@@ -98,6 +98,7 @@ fn make_ctx<'a>(
 
 // profile: file_scoped_imports ON, every import scanned (wildcard_only: false)
 const ON_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     file_scoped_imports: FileScopedImports::On {
         wildcard_only: false,
         alias_decode: None,
@@ -107,6 +108,7 @@ const ON_PROFILE: LanguageProfile = LanguageProfile {
 
 // profile: file_scoped_imports ON, wildcard_only
 const WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     file_scoped_imports: FileScopedImports::On {
         wildcard_only: true,
         alias_decode: None,
@@ -116,6 +118,7 @@ const WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
 
 // profile: file_scoped_imports ON with alias_decode
 const ALIAS_DECODE_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     file_scoped_imports: FileScopedImports::On {
         wildcard_only: false,
         alias_decode: Some(AliasDecode {

@@ -3,6 +3,7 @@ use crate::type_checker::profile::language_profile::{
 };
 
 pub const HAML_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
     id: "haml",
     qname_separator: ".",
     self_keywords: &[],
