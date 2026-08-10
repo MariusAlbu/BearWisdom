@@ -3202,3 +3202,86 @@ fn alt_yield_retry_probes_extension_methods_too() {
     ];
     assert_eq!(resolve(&lookup, segs, "M.Run"), Some(32));
 }
+
+// ---------------------------------------------------------------------------
+// Explicit call-site type arguments — the only binding source when a method's
+// own param appears solely in its return type
+// ---------------------------------------------------------------------------
+
+/// `sp.GetDependency<IOrgRepo>().GetByIdAsync()` where the method is
+/// `T GetDependency<T>(string name = "")`: no argument mentions `T` and the
+/// receiver carries no class-level args, so the segment's explicit type
+/// argument is the single source that can pin `T`. The walk must bind it and
+/// continue the chain on the argument type's members.
+#[test]
+fn an_explicit_type_argument_binds_a_method_own_param_for_the_next_hop() {
+    let lookup = Lookup::new()
+        .with(sym(1, "sp", "M.sp", "parameter", "src/M.cs"))
+        .with_field_type("M.sp", "SutProvider")
+        .with(sym(10, "SutProvider", "SutProvider", "class", "src/S.cs"))
+        .with_member(
+            "SutProvider",
+            sym(11, "GetDependency", "SutProvider.GetDependency", "method", "src/S.cs"),
+        )
+        .with_generics("SutProvider.GetDependency", &["T"])
+        .with_return_type("SutProvider.GetDependency", "T")
+        .with(sym(20, "IOrgRepo", "IOrgRepo", "interface", "src/I.cs"))
+        .with_member(
+            "IOrgRepo",
+            sym(21, "GetByIdAsync", "IOrgRepo.GetByIdAsync", "method", "src/I.cs"),
+        );
+    let mut gd = seg("GetDependency", true, SegmentKind::Property);
+    gd.type_args = vec!["IOrgRepo".to_string()];
+    let segs = vec![seg("sp", false, SegmentKind::Identifier), gd, seg("GetByIdAsync", true, SegmentKind::Property)];
+    assert_eq!(
+        resolve(&lookup, segs, "M.Run"),
+        Some(21),
+        "the explicit type argument must bind T so the next hop walks IOrgRepo"
+    );
+}
+
+/// The same binding when the generic call IS the chain root:
+/// `GetService<IClock>().Now` — a free generic function whose return is its
+/// own param, pinned only by the root segment's explicit argument.
+#[test]
+fn an_explicit_type_argument_binds_a_root_call_yield() {
+    let lookup = Lookup::new()
+        .with(sym(10, "GetService", "GetService", "function", "src/S.cs"))
+        .with_generics("GetService", &["T"])
+        .with_return_type("GetService", "T")
+        .with(sym(20, "IClock", "IClock", "interface", "src/I.cs"))
+        .with_member("IClock", sym(21, "Now", "IClock.Now", "property", "src/I.cs"));
+    let mut root = seg("GetService", true, SegmentKind::Identifier);
+    root.type_args = vec!["IClock".to_string()];
+    let segs = vec![root, seg("Now", false, SegmentKind::Property)];
+    assert_eq!(
+        resolve(&lookup, segs, "M.Run"),
+        Some(21),
+        "the root call's explicit type argument must bind T so .Now walks IClock"
+    );
+}
+
+/// An explicit argument beats argument-type inference when both are present:
+/// `wrap<Admin>(user)` with `T wrap<T>(T x)` yields Admin, not User.
+#[test]
+fn an_explicit_type_argument_wins_over_argument_inference() {
+    let lookup = Lookup::new()
+        .with(sym(1, "b", "M.b", "parameter", "src/M.cs"))
+        .with_field_type("M.b", "Box")
+        .with(sym(10, "Box", "Box", "class", "src/B.cs"))
+        .with_member("Box", sym(11, "wrap", "Box.wrap", "method", "src/B.cs"))
+        .with_generics("Box.wrap", &["T"])
+        .with_return_type("Box.wrap", "T")
+        .with(sym(20, "Admin", "Admin", "class", "src/A.cs"))
+        .with_member("Admin", sym(21, "audit", "Admin.audit", "method", "src/A.cs"))
+        .with(sym(30, "User", "User", "class", "src/U.cs"))
+        .with_member("User", sym(31, "audit", "User.audit", "method", "src/U.cs"));
+    let mut wrap = seg("wrap", true, SegmentKind::Property);
+    wrap.type_args = vec!["Admin".to_string()];
+    let segs = vec![seg("b", false, SegmentKind::Identifier), wrap, seg("audit", true, SegmentKind::Property)];
+    assert_eq!(
+        resolve(&lookup, segs, "M.Run"),
+        Some(21),
+        "explicit <Admin> must pin T before argument inference can suggest otherwise"
+    );
+}

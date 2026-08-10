@@ -36,6 +36,7 @@ use super::head_decl::{
     head_symbol_id, head_symbol_id_preferring_package, receiver_type_for_head, yielded_receiver,
 };
 use super::lambda_seed::seed_lambda_params;
+use super::segment_args::{bind_explicit_type_args, with_segment_args};
 use super::substitution::{substitute_supertype_args, substitute_through};
 use super::support::{import_scoped_package_id, is_type_kind, pick_ranked_candidate};
 
@@ -232,7 +233,8 @@ pub fn bind_member_access(
                     None => (current.ty, current.id),
                 };
             let yielded =
-                yield_through(lookup, arena, &member, terminal_is_call, yield_recv, yield_id);
+                yield_through(lookup, arena, &member, terminal_is_call, yield_recv, yield_id)
+                    .map(|y| bind_explicit_type_args(lookup, arena, &member, seg, y));
             // A terminal call's arguments carry on the ref itself, not the
             // segment: bind the generic parameters they pin and seed any
             // lambda they pass.
@@ -270,7 +272,7 @@ pub fn bind_member_access(
                 None => (current.ty, current.id),
             };
         let yielded = match yield_through(lookup, arena, &member, seg.is_call, mid_recv, mid_id) {
-            Some(y) => y,
+            Some(y) => bind_explicit_type_args(lookup, arena, &member, seg, y),
             None => {
                 // The member itself was found — the hop dies because ITS OWN
                 // return/field type was never captured, the same shape as a
@@ -1674,6 +1676,14 @@ fn resolve_root_impl(
     if seg.is_call {
         match resolve_callee_return_and_id(lookup, arena, file_ctx, &seg.name, None) {
             Ok((ty, id)) => {
+                // A root call's explicit type arguments bind the callee's own
+                // generic params before argument inference fills the rest.
+                let ty = lookup
+                    .by_name(&seg.name)
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map(|callee| bind_explicit_type_args(lookup, arena, callee, seg, ty))
+                    .unwrap_or(ty);
                 let ty = bind_call_args_into_return(lookup, arena, id, &seg.call_args, ty);
                 return Ok(Receiver::untyped(ty));
             }
@@ -2674,25 +2684,6 @@ fn is_return_type_extraction(arena: &TypeArena, target: &AliasTargetIds) -> bool
     }
     let true_branch_str = arena.format_type(*true_branch);
     infer_var == true_branch_str.trim()
-}
-
-/// Attach a segment's in-source type arguments to a freshly-interned bare head
-/// that didn't already carry its own. A declared annotation reaches the chain
-/// pre-split — `repo: Repository<User>` as head `Repository` + args `[User]` —
-/// so the args must be reattached, else generic substitution sees no arguments.
-fn with_segment_args(arena: &TypeArena, id: TypeId, type_args: &[String]) -> TypeId {
-    if type_args.is_empty() {
-        return id;
-    }
-    match arena.get(id) {
-        Type::Class(_) => {
-            let args = type_args.iter().map(|a| arena.intern_type_str(a)).collect();
-            arena.intern(Type::Apply { base: id, args })
-        }
-        // Already an application (or another structural type) — the inline args
-        // win and the segment's split args are redundant.
-        _ => id,
-    }
 }
 
 /// `true` when `kind` names something a call can root on — a free function or a

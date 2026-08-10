@@ -48,6 +48,7 @@ pub mod mapped_members;
 pub mod module_augmentation;
 pub mod overload_alts;
 pub mod relative_imports;
+pub mod segment_args;
 pub mod substitution;
 pub mod type_mention_demand;
 pub mod semantic_model;
