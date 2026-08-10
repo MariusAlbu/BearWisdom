@@ -35,6 +35,7 @@ mod signature_format;
 mod source_discovery;
 mod symbol_index;
 mod type_qname;
+mod version_select;
 
 pub use dll_locator::nuget_packages_root;
 pub use dll_metadata::parse_dotnet_externals;

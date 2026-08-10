@@ -9,6 +9,7 @@
 // =============================================================================
 
 use std::path::{Path, PathBuf};
+use super::version_select::select_version_subdir;
 
 use super::manifest::{parse_package_references_full, NuGetCoord};
 
@@ -51,21 +52,9 @@ pub(crate) fn locate_dlls_for_project(
         if !pkg_dir.is_dir() {
             continue;
         }
-        let version = if let Some(v) = &coord.version {
-            let concrete = pkg_dir.join(v);
-            if concrete.is_dir() {
-                v.clone()
-            } else {
-                match largest_version_subdir(&pkg_dir) {
-                    Some(v) => v,
-                    None => continue,
-                }
-            }
-        } else {
-            match largest_version_subdir(&pkg_dir) {
-                Some(v) => v,
-                None => continue,
-            }
+        let version = match select_version_subdir(&pkg_dir, coord.version.as_deref()) {
+            Some(v) => v,
+            None => continue,
         };
         let version_dir = pkg_dir.join(&version);
         for dll_path in find_dlls_in_version_dir(&version_dir, &coord.name) {
@@ -273,21 +262,6 @@ pub(super) fn find_dlls_in_version_dir(version_dir: &Path, pkg_name: &str) -> Ve
     out
 }
 
-pub(super) fn largest_version_subdir(dir: &Path) -> Option<String> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    let mut versions: Vec<String> = entries
-        .flatten()
-        .filter_map(|e| {
-            if e.file_type().ok()?.is_dir() {
-                e.file_name().into_string().ok()
-            } else {
-                None
-            }
-        })
-        .collect();
-    versions.sort();
-    versions.into_iter().next_back()
-}
 
 pub(crate) fn largest_subdir(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;

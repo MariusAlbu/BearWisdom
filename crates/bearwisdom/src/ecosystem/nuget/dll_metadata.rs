@@ -19,8 +19,9 @@ use tracing::debug;
 use super::dll_locator::{
     collect_dotnet_project_files, collect_transitive_coords_from_assets_json,
     collect_transitive_coords_from_deps_json, dominant_dotnet_language, find_dlls_in_version_dir,
-    largest_version_subdir, nuget_packages_root,
+    nuget_packages_root,
 };
+use super::version_select::select_version_subdir;
 use super::manifest::{parse_package_references_full, NuGetCoord};
 use super::signature_format::{
     format_generic_suffix, format_method_signature, strip_backtick_arity,
@@ -468,29 +469,12 @@ pub(crate) fn parse_dotnet_externals_with_source(
                 };
             }
 
-            let version = if let Some(v) = &coord.version {
-                let concrete = pkg_dir.join(v);
-                if concrete.is_dir() {
-                    v.clone()
-                } else {
-                    match largest_version_subdir(&pkg_dir) {
-                        Some(v) => v,
-                        None => {
-                            return CoordResult {
-                                dlls: Vec::new(),
-                                srcs: Vec::new(),
-                            }
-                        }
-                    }
-                }
-            } else {
-                match largest_version_subdir(&pkg_dir) {
-                    Some(v) => v,
-                    None => {
-                        return CoordResult {
-                            dlls: Vec::new(),
-                            srcs: Vec::new(),
-                        }
+            let version = match select_version_subdir(&pkg_dir, coord.version.as_deref()) {
+                Some(v) => v,
+                None => {
+                    return CoordResult {
+                        dlls: Vec::new(),
+                        srcs: Vec::new(),
                     }
                 }
             };
