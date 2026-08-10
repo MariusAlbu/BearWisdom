@@ -248,9 +248,9 @@ pub struct LanguageProfile {
     pub delegate_wrappers: &'static [(&'static str, DelegateShape)],
     /// Simple names of the language's implicit root type — the base every
     /// declaration inherits without writing it (`Object`/`object` for the
-    /// CLR). The extension-method receiver climb appends these so an
-    /// extension on the root (`Should(this object …)`) applies to a receiver
-    /// whose source declares no base list. Empty disables the probe.
+    /// CLR). Closes both climbs at the root: the member walk resolves a missed
+    /// member on the root's own declaration, and the extension-method receiver
+    /// climb appends these names. Empty disables both probes.
     pub implicit_root_types: &'static [&'static str],
     /// How the import-scoped external bind (`resolve_via_external_by_import`)
     /// matches an external candidate's file against the file's imports.

@@ -15,11 +15,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
 use crate::indexer::resolve::engine::import_qualify;
 use crate::indexer::resolve::engine::contract::{
-    find_matching_bracket, is_jvm_language, merge_where_bounds, parse_generic_param_clause,
-    parse_object_type_members, parse_param_types_from_signature,
+    is_jvm_language, parse_object_type_members, parse_param_types_from_signature,
     parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
     parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
-    build_scope_chain, resolve_type_name_in_scope,
+    build_scope_chain, resolve_type_name_in_scope, signature_generic_params,
     FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
@@ -201,7 +200,7 @@ pub struct Compilation {
     reexport_alias: FxHashMap<String, Symbol>,
     /// Cross-language external-declaration visibility: which languages'
     /// EXTERNAL declarations a file of a given language may bind by name.
-    ext_langs: ExtLangVisibility,
+    pub(super) ext_langs: ExtLangVisibility,
     /// Shared workspace type arena — the same one threaded through extractors.
     arena: Arc<TypeArena>,
     /// Sentinel slices for Borrowed returns that must hand back a `&[…]`.
@@ -1475,7 +1474,8 @@ impl Compilation {
         }
 
         // Generic-param extraction from signatures for types and callables.
-        let bracket_pairs: &[(char, char)] = &[('<', '>'), ('[', ']')];
+        // The clause locator is name-anchored: the declaration name's own
+        // bracket group, never a return-type application's argument list.
         for sym in &pf.symbols {
             if !matches!(
                 sym.kind,
@@ -1491,60 +1491,45 @@ impl Compilation {
             let Some(sig) = &sym.signature else {
                 continue;
             };
-            for &(open, close) in bracket_pairs {
-                if let Some(start) = sig.find(open) {
-                    if let Some(relative_end) =
-                        find_matching_bracket(&sig[start..], open, close)
-                    {
-                        let end = start + relative_end;
-                        let mut gparams = parse_generic_param_clause(&sig[start + 1..end]);
-                        merge_where_bounds(&mut gparams, sig);
-                        if !gparams.is_empty() {
-                            let mut param_ids = Vec::with_capacity(gparams.len());
-                            let mut default_ids = Vec::with_capacity(gparams.len());
-                            for (n, b, d) in gparams {
-                                let bound = b
-                                    .as_deref()
-                                    .map(|s| self.arena.intern_type_str(s));
-                                let gp_id = self.arena.intern_generic(GenericParamData {
-                                    name: n,
-                                    owner_symbol_index: 0,
-                                    bound,
-                                });
-                                param_ids.push(gp_id);
-                                default_ids.push(
-                                    d.map(|s| self.arena.intern_type_str(&s)),
-                                );
-                            }
-                            // Key on both simple name and qname so callers
-                            // using either form get the params.
-                            for key in [&sym.name, &sym.qualified_name] {
-                                let ti =
-                                    self.type_info.entry(key.clone()).or_default();
-                                if ti.generic_param_ids.is_empty() {
-                                    ti.generic_param_ids = param_ids.clone();
-                                    ti.generic_param_default_ids = default_ids.clone();
-                                }
-                            }
-                            // Id slot — immune to the qname collision that collapses a
-                            // name like `useQuery` (shared by several packages and doc
-                            // fences) to a single first-winner in the qname slot, so
-                            // the real source declarations lose their params. The
-                            // (path,qname) map resolves an overload set to its
-                            // implementation id, co-locating the overloads' params with
-                            // the return the resolver reads there.
-                            if let Some(&id) =
-                                symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
-                            {
-                                let tid = self.type_info_by_id.entry(id).or_default();
-                                if tid.generic_param_ids.is_empty() {
-                                    tid.generic_param_ids = param_ids.clone();
-                                    tid.generic_param_default_ids = default_ids.clone();
-                                }
-                            }
-                            break;
-                        }
-                    }
+            let gparams = signature_generic_params(sig, &sym.name);
+            if gparams.is_empty() {
+                continue;
+            }
+            let mut param_ids = Vec::with_capacity(gparams.len());
+            let mut default_ids = Vec::with_capacity(gparams.len());
+            for (n, b, d) in gparams {
+                let bound = b.as_deref().map(|s| self.arena.intern_type_str(s));
+                let gp_id = self.arena.intern_generic(GenericParamData {
+                    name: n,
+                    owner_symbol_index: 0,
+                    bound,
+                });
+                param_ids.push(gp_id);
+                default_ids.push(d.map(|s| self.arena.intern_type_str(&s)));
+            }
+            // Key on both simple name and qname so callers
+            // using either form get the params.
+            for key in [&sym.name, &sym.qualified_name] {
+                let ti = self.type_info.entry(key.clone()).or_default();
+                if ti.generic_param_ids.is_empty() {
+                    ti.generic_param_ids = param_ids.clone();
+                    ti.generic_param_default_ids = default_ids.clone();
+                }
+            }
+            // Id slot — immune to the qname collision that collapses a
+            // name like `useQuery` (shared by several packages and doc
+            // fences) to a single first-winner in the qname slot, so
+            // the real source declarations lose their params. The
+            // (path,qname) map resolves an overload set to its
+            // implementation id, co-locating the overloads' params with
+            // the return the resolver reads there.
+            if let Some(&id) =
+                symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+            {
+                let tid = self.type_info_by_id.entry(id).or_default();
+                if tid.generic_param_ids.is_empty() {
+                    tid.generic_param_ids = param_ids.clone();
+                    tid.generic_param_default_ids = default_ids.clone();
                 }
             }
         }

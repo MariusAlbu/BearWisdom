@@ -66,7 +66,7 @@ fn find_dlls_returns_all_tfm_assets_primary_first() {
 
 #[test]
 fn probe_interface_crack() {
-    let pf = crate::ecosystem::nuget::parse_dotnet_dll_public(
+    let pf = crate::ecosystem::nuget::dll_metadata::parse_dotnet_dll(
         std::path::Path::new(
             "C:/Users/Reaper/.nuget/packages/fakeiteasy/9.0.1/lib/net8.0/FakeItEasy.dll",
         ),
@@ -87,7 +87,7 @@ fn probe_interface_crack() {
 
 #[test]
 fn probe_crack_refs() {
-    let pf = crate::ecosystem::nuget::parse_dotnet_dll_public(
+    let pf = crate::ecosystem::nuget::dll_metadata::parse_dotnet_dll(
         std::path::Path::new(
             "C:/Users/Reaper/.nuget/packages/fakeiteasy/9.0.1/lib/net8.0/FakeItEasy.dll",
         ),

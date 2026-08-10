@@ -82,6 +82,26 @@ impl ExtLangVisibility {
         self.visible.get(self.codes.get(lang)?)
     }
 
+    /// True when a declaration written in `other` is a binding candidate for a
+    /// file of `lang`: the same language always, plus any language an active
+    /// ecosystem co-declares with it. A pair with no recorded relation co-binds
+    /// on identity alone — an absent relation is not evidence of one.
+    ///
+    /// The same relation `allowed` gates external candidates by, asked as a
+    /// name-to-name question so a caller holding a candidate's LANGUAGE rather
+    /// than its file path can consult it.
+    pub(crate) fn co_bound(&self, lang: &str, other: &str) -> bool {
+        if lang == other {
+            return true;
+        }
+        let (Some(&code), Some(&other_code)) = (self.codes.get(lang), self.codes.get(other)) else {
+            return false;
+        };
+        self.visible
+            .get(&code)
+            .is_some_and(|langs| langs.contains(&other_code))
+    }
+
     /// Drop external candidates whose file language is known and not allowed.
     /// Internal candidates and external files with no recorded language always
     /// pass; the borrowed set is returned untouched when nothing is dropped.

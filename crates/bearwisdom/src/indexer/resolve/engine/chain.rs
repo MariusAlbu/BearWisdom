@@ -26,7 +26,7 @@ use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{AliasTargetIds, SegmentKind};
 
-use super::alias;
+use super::{alias, chain_root, implicit_root};
 use super::composite_members;
 use super::mapped_members;
 use super::arg_types::resolve_arg_types;
@@ -73,7 +73,7 @@ pub fn bind_member_access(
     // distinct, and the supertype climb is id-keyed. The id is `None` for a head
     // with no indexed declaration (external/ambient/string-parsed), and the walk
     // falls back to the qname-string member lookup there.
-    let mut root = resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0])?;
+    let (mut root, start) = chain_root::anchor(ref_ctx, file_ctx, lookup, arena, profile, chain)?;
     // Pin the receiver's declaration id when the root is an untyped value typed by
     // a bare-name alias that COLLIDES (two `type Logger = …`): resolve the one the
     // use site imported so expansion keys on its id, not the name map's last
@@ -97,7 +97,7 @@ pub fn bind_member_access(
     // bound (`A.CallTo(() => valueCall).Returns(…)` lives on the
     // value-configuration yield, not the void one the first row named).
     let mut alt_yields: Vec<Receiver> = Vec::new();
-    for (i, seg) in chain.segments.iter().enumerate().skip(1) {
+    for (i, seg) in chain.segments.iter().enumerate().skip(start) {
         let was_uncalled_callable = prev_uncalled_callable;
         prev_uncalled_callable = false;
         // Positional tuple access from an array-destructure binding
@@ -158,7 +158,7 @@ pub fn bind_member_access(
                 continue;
             }
         }
-        let member = match lookup_member_on(lookup, arena, current, &seg.name, &|_kind| true) {
+        let member = match implicit_root::walk_member(lookup, arena, current, &seg.name, profile) {
             Some(m) => m,
             None => {
                 // Container-Deref rehead: retry the miss with the head rewritten
@@ -254,7 +254,7 @@ pub fn bind_member_access(
                 target_symbol_id: member.id,
                 confidence: RESOLVED_CONFIDENCE,
                 strategy: STRATEGY,
-                resolved_yield_type,
+                resolved_yield_type: resolved_yield_type.map(|y| super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, y)),
                 flow_emit: None,
             });
         }
@@ -297,7 +297,7 @@ pub fn bind_member_access(
             yielded
         };
         let yielded_recv = peel_wrapped_receiver(
-            yielded_receiver(lookup, arena, yielded, member.package_id),
+            yielded_receiver(lookup, arena, super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, yielded), member.package_id),
             arena,
             profile.single_inner_wrappers,
         );
@@ -1564,7 +1564,7 @@ fn is_self_head(arena: &TypeArena, id: TypeId) -> bool {
 /// type, a callee return) leave the id unbound; `expand_receiver` recovers it
 /// from the type's head. The id is what keeps a same-named receiver type in one
 /// package distinct from another's during the member walk.
-fn resolve_root(
+pub(super) fn resolve_root(
     ref_ctx: &RefContext,
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,

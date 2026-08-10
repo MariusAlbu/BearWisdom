@@ -65,6 +65,7 @@ use external_by_import::ExternalByImportRule;
 use file_import::FileImportRule;
 use file_scoped_import::FileScopedImportRule;
 use generic_param::GenericParamRule;
+use super::generic_shadow::GenericParamShadowRule;
 use head_alias::HeadAliasRule;
 use implicit_prelude::ImplicitPreludeRule;
 use imported_namespace::ImportedNamespaceRule;
@@ -104,6 +105,7 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
     vec![
         Box::new(ModuleSkipRule),
         Box::new(BuiltinSkipRule),
+        Box::new(GenericParamShadowRule),
         Box::new(ImportPathRule),
         Box::new(WorkspacePackageRule),
         Box::new(SelectorMapRule),

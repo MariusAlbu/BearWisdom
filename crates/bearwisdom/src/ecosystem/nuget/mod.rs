@@ -34,8 +34,8 @@ mod manifest;
 mod signature_format;
 mod source_discovery;
 mod symbol_index;
+mod type_qname;
 
-pub(crate) use dll_metadata::parse_dotnet_dll_public;
 pub use dll_locator::nuget_packages_root;
 pub use dll_metadata::parse_dotnet_externals;
 pub use manifest::{
@@ -46,7 +46,7 @@ pub use manifest::{
 
 pub(crate) use dll_metadata::crack_one_dll_type;
 use dll_locator::locate_dlls_for_project;
-use dll_metadata::list_dll_type_names;
+pub(crate) use dll_metadata::list_dll_type_names;
 use symbol_index::{build_nuget_source_symbol_index, resolve_nuget_source_symbols};
 
 pub const ID: EcosystemId = EcosystemId::new("nuget");

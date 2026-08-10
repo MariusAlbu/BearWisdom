@@ -26,6 +26,7 @@ use super::signature_format::{
     format_generic_suffix, format_method_signature, strip_backtick_arity,
 };
 use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file};
+use super::type_qname::{assembly_type_defs, qualified_type_name};
 
 /// A request to crack one type out of a DLL, sent to the dedicated dotscope
 /// thread. `reply` carries the resulting `ParsedFile` (or `None`) back.
@@ -101,13 +102,16 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
 }
 
 /// Enumerate the public type names from a DLL without synthesizing full
-/// ParsedFile entries for each. Returns `(simple_name, namespace, virtual_path)`
-/// for every public/public-nested type. Cheap: only reads the type-definition
+/// ParsedFile entries for each. Returns `(lookup_name, virtual_path)` for every
+/// public/public-nested type — its simple name, plus each public method name of
+/// a static class, since an extension method is reached by METHOD name and no
+/// ref ever names the declaring class. Cheap: only reads the type-definition
 /// table header from the ECMA-335 metadata, not method bodies.
 ///
-/// `virtual_path` encodes `"ext:dotnet-type:<dll_abs>!!<namespace>.<TypeName>"`
-/// (using `!!` as separator because `!` cannot appear in filesystem paths on
-/// either Windows or Unix).
+/// `virtual_path` encodes
+/// `"ext:dotnet-type:<dll_abs>!!<assembly_name>!!<QualifiedTypeName>"` (using
+/// `!!` as separator because `!` cannot appear in filesystem paths on either
+/// Windows or Unix).
 pub(crate) fn list_dll_type_names(
     dll_path: &Path,
     package_name: &str,
@@ -130,9 +134,8 @@ pub(crate) fn list_dll_type_names(
         .unwrap_or_else(|| package_name.to_string());
     let dll_str = dll_path.to_string_lossy().replace('\\', "/");
     let mut out = Vec::new();
-    for type_def in assembly.types().all_types().iter() {
+    for type_def in assembly_type_defs(&assembly).iter() {
         let name = type_def.name.clone();
-        let namespace = type_def.namespace.clone();
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
@@ -141,11 +144,7 @@ pub(crate) fn list_dll_type_names(
             continue;
         }
         let simple = strip_backtick_arity(&name).to_string();
-        let qualified = if namespace.is_empty() {
-            simple.clone()
-        } else {
-            format!("{namespace}.{simple}")
-        };
+        let (qualified, _) = qualified_type_name(type_def, &simple);
         // Virtual path encodes the DLL location + assembly name + qualified type name.
         // The materialize path decodes this to re-open just this one type.
         let virt = format!("ext:dotnet-type:{dll_str}!!{assembly_name}!!{qualified}");
@@ -262,9 +261,8 @@ fn extract_type_from_assembly(
     // Find the matching type definition by qualified name.
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
-    for type_def in assembly.types().all_types().iter() {
+    for type_def in assembly_type_defs(assembly).iter() {
         let name = type_def.name.clone();
-        let namespace = type_def.namespace.clone();
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
@@ -273,11 +271,7 @@ fn extract_type_from_assembly(
             continue;
         }
         let display_name = strip_backtick_arity(&name);
-        let this_qualified = if namespace.is_empty() {
-            display_name.to_string()
-        } else {
-            format!("{namespace}.{display_name}")
-        };
+        let (this_qualified, scope_path) = qualified_type_name(type_def, display_name);
         if this_qualified != qualified_type {
             continue;
         }
@@ -314,11 +308,7 @@ fn extract_type_from_assembly(
                 type_gp_suffix
             )),
             doc_comment: None,
-            scope_path: if namespace.is_empty() {
-                None
-            } else {
-                Some(namespace.clone())
-            },
+            scope_path,
             parent_index: None,
             byte_offset: 0,
             declared_type: None,
@@ -566,18 +556,7 @@ pub(crate) fn parse_dotnet_externals_with_source(
     (dll_out, src_out)
 }
 
-/// Public shim so the DotnetStdlib ecosystem can reuse this DLL→ParsedFile
-/// synthesizer for .NET reference assemblies. Identical contract to the
-/// private helper.
-pub(crate) fn parse_dotnet_dll_public(
-    dll_path: &Path,
-    package_name: &str,
-    lang_id: &str,
-) -> std::result::Result<crate::types::ParsedFile, String> {
-    parse_dotnet_dll(dll_path, package_name, lang_id)
-}
-
-fn parse_dotnet_dll(
+pub(super) fn parse_dotnet_dll(
     dll_path: &Path,
     package_name: &str,
     lang_id: &str,
@@ -618,9 +597,8 @@ fn parse_dotnet_dll(
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
 
-    for type_def in assembly.types().all_types().iter() {
+    for type_def in assembly_type_defs(&assembly).iter() {
         let name = type_def.name.clone();
-        let namespace = type_def.namespace.clone();
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
@@ -639,11 +617,7 @@ fn parse_dotnet_dll(
         };
 
         let display_name = strip_backtick_arity(&name);
-        let qualified_name = if namespace.is_empty() {
-            display_name.to_string()
-        } else {
-            format!("{namespace}.{display_name}")
-        };
+        let (qualified_name, scope_path) = qualified_type_name(type_def, display_name);
 
         let type_generic_names: Vec<String> = type_def
             .generic_params
@@ -670,11 +644,7 @@ fn parse_dotnet_dll(
                 type_gp_suffix
             )),
             doc_comment: None,
-            scope_path: if namespace.is_empty() {
-                None
-            } else {
-                Some(namespace.clone())
-            },
+            scope_path,
             parent_index: None,
             byte_offset: 0,
             declared_type: None,

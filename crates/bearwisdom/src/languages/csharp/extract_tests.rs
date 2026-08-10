@@ -1635,3 +1635,37 @@ fn print_csharp_node_tree(node: tree_sitter::Node, depth: usize) {
         }
     }
 }
+
+#[test]
+fn generic_record_signature_keeps_the_type_parameter_clause() {
+    // On record_declaration the `<T>` clause is not exposed through the
+    // `type_parameters` field (same tree-sitter-c-sharp quirk as the record's
+    // `parameter_list`), so the signature builder must fall back to the child
+    // node kind. Without the clause the indexed signature reads
+    // `class NamedId where T : notnull` and generic-param extraction yields
+    // nothing for the record.
+    let src = r#"
+namespace Squidex.Infrastructure {
+    public sealed record NamedId<T>(T Id, string Name) where T : notnull;
+}"#;
+    let symbols = sym(src);
+    let rec = symbols.iter().find(|s| s.name == "NamedId").unwrap();
+    let sig = rec.signature.as_ref().unwrap();
+    assert!(
+        sig.contains("NamedId<T>"),
+        "record signature must carry its <T> clause: {sig:?}"
+    );
+    assert!(
+        sig.contains("where T : notnull"),
+        "record signature must keep the where constraint: {sig:?}"
+    );
+}
+
+#[test]
+fn non_generic_record_signature_has_no_type_parameter_clause() {
+    let src = "public record Point(int X, int Y);";
+    let symbols = sym(src);
+    let rec = symbols.iter().find(|s| s.name == "Point").unwrap();
+    let sig = rec.signature.as_ref().unwrap();
+    assert_eq!(sig, "class Point", "no clause may be invented: {sig:?}");
+}

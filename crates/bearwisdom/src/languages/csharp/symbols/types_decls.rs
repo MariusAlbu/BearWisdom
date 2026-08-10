@@ -86,8 +86,12 @@ pub(in super::super) fn push_type_decl(
         SymbolKind::Interface => "interface",
         _ => "class",
     };
+    // On record_declaration the clause is not exposed through the
+    // `type_parameters` field (same quirk as the record's `parameter_list` —
+    // see extract_record_primary_params); fall back to the child node kind.
     let type_params = node
         .child_by_field_name("type_parameters")
+        .or_else(|| find_child_kind(node, "type_parameter_list"))
         .map(|tp| node_text(tp, src))
         .unwrap_or_default();
     let constraints = collect_type_param_constraints(node, src);

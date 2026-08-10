@@ -6,18 +6,22 @@
 // The DLLs there are reference assemblies for System.*, Microsoft.*
 // namespaces — the .NET equivalent of what JdkSrc provides for Java.
 //
-// Synthesis reuses the same dotscope path the NuGet ecosystem uses for
-// package DLLs. Activation: any .NET language source present.
+// Demand-driven: `build_symbol_index` offers every public type name from
+// those DLLs under the same `ext:dotnet-type:` virtual path NuGet mints, so a
+// demanded type is cracked one type at a time through the shared materialize
+// path. Activation: any CLR-family source present.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use tracing::debug;
+use tracing::{debug, warn};
 
-use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
-use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
+use super::{
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
+};
+use crate::ecosystem::externals::{pick_newest_version, ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("dotnet-stdlib");
@@ -57,52 +61,35 @@ impl Ecosystem for DotnetStdlibEcosystem {
     }
 
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        // .NET stdlib is metadata-only (DLLs), not source. The indexer's
-        // metadata path is where the real work happens; walk_root returns
-        // empty so no source walk is attempted.
+        // .NET stdlib ships DLL metadata, not source. Types surface through
+        // `build_symbol_index`; walk_root returns empty so no source walk is
+        // attempted.
         Vec::new()
-    }
-
-    fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<crate::types::ParsedFile>> {
-        // Defer to NuGet's existing DLL→ParsedFile helper. Skip if the
-        // probe returned a non-dir for any reason.
-        if !dep.root.is_dir() {
-            return None;
-        }
-        let mut dlls: Vec<PathBuf> = Vec::new();
-        collect_dlls(&dep.root, &mut dlls);
-        if dlls.is_empty() {
-            return None;
-        }
-        let mut out = Vec::new();
-        for dll in dlls.iter().take(400) {
-            let Some(stem) = dll.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            match super::nuget::parse_dotnet_dll_public(dll, stem, "csharp") {
-                Ok(pf) => out.push(pf),
-                Err(e) => debug!("dotnet-stdlib: skip {}: {}", stem, e),
-            }
-        }
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
     }
 
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }
 
-    fn build_symbol_index(
-        &self,
-        _dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
-    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
-        // .NET stdlib uses DLL metadata via `parse_metadata_only` — the
-        // symbols land as ParsedFile entries directly and are indexed by
-        // the normal write pass. No source symbol index needed.
-        crate::ecosystem::symbol_index::SymbolLocationIndex::new()
+    /// Offer `(module, TypeName) → ext:dotnet-type virtual path` for every
+    /// public type in the framework's DLLs, in the exact encoding NuGet mints,
+    /// so a demanded type materializes through the same per-type crack.
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+        let mut index = SymbolLocationIndex::new();
+        for dep in dep_roots {
+            let mut dlls: Vec<PathBuf> = Vec::new();
+            collect_dlls(&dep.root, &mut dlls);
+            // `read_dir` has no defined order and the index is first-writer-wins
+            // on `(module, name)`, so the scan order decides which assembly owns
+            // a name two of them both declare.
+            dlls.sort();
+            for dll in &dlls {
+                for (name, virt_path) in super::nuget::list_dll_type_names(dll, &dep.module_path) {
+                    index.insert(dep.module_path.clone(), name, PathBuf::from(&virt_path));
+                }
+            }
+        }
+        index
     }
 }
 
@@ -113,20 +100,9 @@ impl ExternalSourceLocator for DotnetStdlibEcosystem {
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_dotnet_stdlib()
     }
-    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
-        let roots = discover_dotnet_stdlib();
-        let mut out = Vec::new();
-        for r in roots {
-            if let Some(parsed) = <Self as Ecosystem>::parse_metadata_only(self, &r) {
-                out.extend(parsed);
-            }
-        }
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
-    }
+
+    // parse_metadata_only returns None (trait default): every framework type is
+    // offered through `build_symbol_index` and cracked only when demanded.
 }
 
 fn discover_dotnet_stdlib() -> Vec<ExternalDepRoot> {
@@ -158,13 +134,38 @@ fn probe_shared_framework_dir() -> Option<PathBuf> {
         return None;
     }
     let entries = std::fs::read_dir(&shared).ok()?;
-    let mut versions: Vec<PathBuf> = entries
+    let versions: Vec<PathBuf> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
         .map(|e| e.path())
         .collect();
-    versions.sort();
-    versions.into_iter().next_back()
+    pick_framework_version(&versions)
+}
+
+/// The highest installed shared-framework directory. Version segments compare
+/// numerically, so `10.0.8` outranks `8.0.7` and `6.0.32` outranks `6.0.16`.
+///
+/// Nothing at this layer carries the project's target framework, so with more
+/// than one install on the machine the pick is speculative and says so.
+fn pick_framework_version(version_dirs: &[PathBuf]) -> Option<PathBuf> {
+    let names: Vec<String> = version_dirs
+        .iter()
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+        .map(str::to_string)
+        .collect();
+    let newest = pick_newest_version(&names)?;
+    if names.len() > 1 {
+        warn!(
+            "dotnet-stdlib: {} shared frameworks installed and no target-framework signal; \
+             resolving against {}",
+            names.len(),
+            newest
+        );
+    }
+    version_dirs
+        .iter()
+        .find(|p| p.file_name().and_then(|n| n.to_str()) == Some(newest.as_str()))
+        .cloned()
 }
 
 fn probe_dotnet_root() -> Option<PathBuf> {
@@ -241,3 +242,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
         .get_or_init(|| Arc::new(DotnetStdlibEcosystem))
         .clone()
 }
+
+#[cfg(test)]
+#[path = "dotnet_stdlib_tests.rs"]
+mod tests;
