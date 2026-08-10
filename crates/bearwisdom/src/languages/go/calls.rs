@@ -204,10 +204,19 @@ pub(super) fn extract_body_with_symbols(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    extract_body_with_symbols_inner(body, source, enclosing_idx, qualified_prefix, symbols, refs);
+    // Refs: `extract_refs_from_body` walks the full subtree on its own, so it
+    // runs exactly once from the body root. Re-entering it per statement level
+    // would emit every nested ref once per level of statement wrapping.
+    extract_refs_from_body(body, source, enclosing_idx, refs);
+    // Local symbols: a separate recursive walk over the symbol-declaring
+    // statement kinds only.
+    extract_local_symbols(body, source, enclosing_idx, qualified_prefix, symbols, refs);
 }
 
-fn extract_body_with_symbols_inner(
+/// Recursive walk collecting local symbols — `:=` bindings, var/const/type
+/// declarations, `for range` and `select` case variables — without emitting
+/// body refs (the dispatcher pass in `extract_body_with_symbols` owns those).
+fn extract_local_symbols(
     node: &Node,
     source: &str,
     enclosing_idx: usize,
@@ -261,7 +270,6 @@ fn extract_body_with_symbols_inner(
                     Some(enclosing_idx),
                     qualified_prefix,
                 );
-                extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
 
             // `const x = val` — explicit const declaration inside a function body.
@@ -276,7 +284,6 @@ fn extract_body_with_symbols_inner(
                     "const",
                     "const_spec",
                 );
-                extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
 
             // `type inner struct { X int }` — type declaration inside a function body.
@@ -306,7 +313,7 @@ fn extract_body_with_symbols_inner(
                 let mut fc = child.walk();
                 for fc_child in child.children(&mut fc) {
                     if fc_child.kind() == "block" {
-                        extract_body_with_symbols_inner(
+                        extract_local_symbols(
                             &fc_child,
                             source,
                             enclosing_idx,
@@ -316,8 +323,6 @@ fn extract_body_with_symbols_inner(
                         );
                     }
                 }
-                // Also extract plain refs from the whole for_statement.
-                extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
 
             // `select { case msg := <-ch: ... }` — variables in communication_case
@@ -341,7 +346,7 @@ fn extract_body_with_symbols_inner(
                             }
                         }
                         // Recurse into case body.
-                        extract_body_with_symbols_inner(
+                        extract_local_symbols(
                             &case_child,
                             source,
                             enclosing_idx,
@@ -350,7 +355,7 @@ fn extract_body_with_symbols_inner(
                             refs,
                         );
                     } else if case_child.kind() == "default_case" {
-                        extract_body_with_symbols_inner(
+                        extract_local_symbols(
                             &case_child,
                             source,
                             enclosing_idx,
@@ -360,14 +365,11 @@ fn extract_body_with_symbols_inner(
                         );
                     }
                 }
-                // Also extract plain refs.
-                extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
 
-            // All other nodes: extract refs and recurse for nested symbols.
+            // All other nodes: recurse for nested symbol-declaring statements.
             _ => {
-                extract_refs_from_body(&child, source, enclosing_idx, refs);
-                extract_body_with_symbols_inner(
+                extract_local_symbols(
                     &child,
                     source,
                     enclosing_idx,
@@ -447,10 +449,6 @@ fn extract_for_range_vars(
             });
         }
 
-        // Extract refs from the right-hand side (the range expression).
-        if let Some(right) = child.child_by_field_name("right") {
-            extract_refs_from_body(&right, source, enclosing_idx, refs);
-        }
     }
 }
 

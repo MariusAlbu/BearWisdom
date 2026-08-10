@@ -12,7 +12,7 @@
 use super::calls::extract_call_args;
 use super::chain::build_chain;
 use super::helpers::node_text;
-use super::refs::extract_refs_from_body;
+use super::refs::{extract_func_literal_type_refs, extract_refs_from_body};
 use super::type_refs::go_type_node_name;
 use crate::types::{EdgeKind, ExtractedRef};
 use tree_sitter::Node;
@@ -40,16 +40,21 @@ pub(super) fn extract_call_ref(
     };
 
     // Anonymous-function IIFE: `func(...) { ... }(args)`. The function is
-    // defined and invoked in place — no resolvable name. Walk inside the
-    // body so any nested call/type refs still surface, but skip emitting
-    // a `Calls` edge with the literal source as the target.
+    // defined and invoked in place — no resolvable name. Walk the callee's
+    // body so nested call/type refs still surface; the call's own arguments
+    // are covered by the `call_expression` dispatch arm after this returns.
+    // Skip emitting a `Calls` edge with the literal source as the target.
     if matches!(
         func_node.kind(),
         "func_literal" | "parenthesized_expression"
     ) {
-        extract_refs_from_body(&func_node, source, source_symbol_index, refs);
-        if let Some(args) = node.child_by_field_name("arguments") {
-            extract_refs_from_body(&args, source, source_symbol_index, refs);
+        if func_node.kind() == "func_literal" {
+            extract_func_literal_type_refs(&func_node, source, source_symbol_index, refs);
+            if let Some(body) = func_node.child_by_field_name("body") {
+                extract_refs_from_body(&body, source, source_symbol_index, refs);
+            }
+        } else {
+            extract_refs_from_body(&func_node, source, source_symbol_index, refs);
         }
         return;
     }

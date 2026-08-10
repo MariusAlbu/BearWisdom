@@ -202,11 +202,6 @@ pub(super) fn extract_short_var_decl(
             }
         }
 
-        // Recurse into the RHS call expressions to extract any nested calls.
-        // We do this via the body extractor on the full RHS node.
-        if let Some(rhs_node) = rhs_values.get(i) {
-            super::calls::extract_refs_from_body(rhs_node, source, enclosing_symbol_index, refs);
-        }
     }
 }
 

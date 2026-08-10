@@ -1359,3 +1359,217 @@ fn short_var_decl_qualified_composite_literal_emits_typeref() {
             .collect::<Vec<_>>()
     );
 }
+
+// -----------------------------------------------------------------------
+// Double-visit regression coverage: func_literal / IIFE / type_switch /
+// type_assertion each recurse exactly once into their own subtrees.
+// -----------------------------------------------------------------------
+
+#[test]
+fn closure_param_in_call_argument_no_double_visit() {
+    // `func(t *testing.T) {...}` as a call argument is reached once via the
+    // `func_literal` dispatch arm: `extract_func_literal_type_refs` emits the
+    // param type once (still doubled by the `qualified_type` budget — one
+    // TypeRef for the `qualified_type` node, one for its inner
+    // `type_identifier`, per that arm's own contract), and the closure body
+    // is walked exactly once for calls. `run`'s own parameter uses a
+    // different type name (`Harness`) so it can't be mistaken for the
+    // closure's contribution.
+    let source = r#"package p
+
+func run(t Harness) {
+    ok := t.Run("a", func(t *testing.T) {
+        t.Parallel()
+    })
+    _ = ok
+}
+"#;
+    let r = extract::extract(source);
+
+    let t_type_refs = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "T")
+        .count();
+    assert_eq!(
+        t_type_refs, 2,
+        "expected 2 TypeRefs to T (qualified_type budget double from a single \
+         extract_func_literal_type_refs pass, not 4+ from a double-visit), got {t_type_refs}"
+    );
+
+    let parallel_calls = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Parallel")
+        .count();
+    assert_eq!(
+        parallel_calls, 1,
+        "expected 1 Calls edge to Parallel from the closure body, got {parallel_calls}"
+    );
+}
+
+#[test]
+fn nested_closures_three_deep_type_refs_do_not_compound_with_depth() {
+    // Each closure's `func_literal` arm dispatch recurses into its own body
+    // only — a closure's param-type count does not depend on how many
+    // enclosing closures it sits inside. Level3 (deepest) must show the same
+    // count as level1, proving the fix doesn't compound with nesting depth.
+    let source = r#"package p
+
+func run() {
+    level1 := func(a *pkg.A) {
+        level2 := func(b *pkg.B) {
+            level3 := func(c *pkg.C) {
+                consume(c)
+            }
+            _ = level3
+            consume(b)
+        }
+        _ = level2
+        consume(a)
+    }
+    _ = level1
+}
+"#;
+    let r = extract::extract(source);
+
+    let type_ref_count = |name: &str| {
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == name)
+            .count()
+    };
+    assert_eq!(type_ref_count("A"), 2, "level1 param type ref count");
+    assert_eq!(type_ref_count("B"), 2, "level2 param type ref count");
+    assert_eq!(
+        type_ref_count("C"),
+        2,
+        "level3 (deepest) param type ref count must equal level1's, not compound with depth"
+    );
+
+    let consume_calls = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "consume")
+        .count();
+    assert_eq!(
+        consume_calls, 3,
+        "expected exactly one Calls edge to consume per nesting level, got {consume_calls}"
+    );
+}
+
+#[test]
+fn iife_argument_list_call_not_double_visited() {
+    // `func(x int) {}(compute())` — an IIFE whose own argument list holds a
+    // call. The IIFE branch in `extract_call_ref` no longer walks the
+    // argument list itself; the `call_expression` dispatch arm walks it
+    // exactly once after `extract_call_ref` returns.
+    let source = r#"package p
+
+func run() {
+    setup := func() {
+        func(x int) {}(compute())
+    }
+    _ = setup
+}
+"#;
+    let r = extract::extract(source);
+
+    let compute_calls = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "compute")
+        .count();
+    assert_eq!(
+        compute_calls, 1,
+        "expected exactly 1 Calls edge to compute from the IIFE's argument list, got {compute_calls}"
+    );
+}
+
+#[test]
+fn type_switch_case_types_and_bodies_emit_once_each() {
+    // Each `type_case`'s type is emitted once by `extract_type_switch_refs`;
+    // the dedicated `type_case` dispatch arm walks only the case's
+    // `statement_list` body, so the case's own type node is never re-visited.
+    let source = r#"package app
+
+func run() {
+    process := func(x interface{}) {
+        switch v := x.(type) {
+        case *Admin:
+            handleAdmin(v)
+        case *User:
+            handleUser(v)
+        }
+    }
+    _ = process
+}
+"#;
+    let r = extract::extract(source);
+
+    let type_ref_count = |name: &str| {
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == name)
+            .count()
+    };
+    assert_eq!(type_ref_count("Admin"), 1, "Admin case type should be emitted exactly once");
+    assert_eq!(type_ref_count("User"), 1, "User case type should be emitted exactly once");
+
+    let calls_count = |name: &str| {
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == name)
+            .count()
+    };
+    assert_eq!(
+        calls_count("handleAdmin"),
+        1,
+        "Admin case body call should be emitted exactly once"
+    );
+    assert_eq!(
+        calls_count("handleUser"),
+        1,
+        "User case body call should be emitted exactly once"
+    );
+}
+
+#[test]
+fn type_assertion_call_operand_and_asserted_type_emit_once_each() {
+    // The asserted type is emitted by `extract_type_assertion_ref`; the
+    // operand is dispatched once more as a single node (not by re-walking
+    // the whole assertion node), so a call operand still surfaces its own
+    // Calls edge without re-visiting the asserted type.
+    let source = r#"package app
+
+func run() {
+    wrap := func() {
+        admin, ok := getV().(*Admin)
+        _ = admin
+        _ = ok
+    }
+    _ = wrap
+}
+"#;
+    let r = extract::extract(source);
+
+    let admin_type_refs = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Admin")
+        .count();
+    assert_eq!(
+        admin_type_refs, 1,
+        "expected exactly 1 TypeRef to Admin from the assertion, got {admin_type_refs}"
+    );
+
+    let get_v_calls = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "getV")
+        .count();
+    assert_eq!(
+        get_v_calls, 1,
+        "expected exactly 1 Calls edge to getV from the assertion operand, got {get_v_calls}"
+    );
+}
