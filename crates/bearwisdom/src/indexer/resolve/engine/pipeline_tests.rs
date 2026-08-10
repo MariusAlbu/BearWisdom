@@ -1480,3 +1480,74 @@ fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
     assert_eq!(entry.module_path.as_deref(), Some("System.Linq"));
     assert!(entry.is_wildcard, "a plain using opens the namespace as a wildcard");
 }
+
+// ---------------------------------------------------------------------------
+// Ref-site dedup — duplicate emissions collapse before resolution
+// ---------------------------------------------------------------------------
+
+/// Extractors can emit the same ref node more than once (double-visited
+/// constructs, per-node-kind coverage double-emits). `resolve_one_file` must
+/// process each ref SITE exactly once: emissions sharing (source symbol, kind,
+/// target, line, byte offset) collapse to one row, while two same-name refs on
+/// the same line at distinct byte offsets stay separate rows.
+#[test]
+fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
+    use crate::types::{
+        EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
+    };
+    fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(), qualified_name: qname.into(), kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
+            signature: None, doc_comment: None, scope_path: None,
+            parent_index: None, declared_type: None, return_type: None,
+            param_types: Vec::new(), generic_params: Vec::new(),
+        }
+    }
+    fn eref(target: &str, line: u32, byte: u32) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false, is_reexport: false, source_symbol_index: 0,
+            target_name: target.into(), kind: EdgeKind::Calls, line, col: 0,
+            module: None, chain: None, byte_offset: byte,
+            namespace_segments: Vec::new(), call_args: Vec::new(),
+        }
+    }
+    let pf = ParsedFile {
+        path: "dup.ts".into(), language: "typescript".into(), content_hash: String::new(),
+        size: 0, line_count: 0, mtime: None, package_id: None,
+        symbols: vec![esym("f", "f", SymbolKind::Function)],
+        refs: vec![
+            // The same node emitted three times — one row survives.
+            eref("missingA", 1, 10),
+            eref("missingA", 1, 10),
+            eref("missingA", 1, 10),
+            // Two distinct same-name sites on one line — both survive in-memory.
+            eref("missingB", 1, 30),
+            eref("missingB", 1, 40),
+        ],
+        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
+        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
+        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    id_map.insert(("dup.ts".to_string(), "f".to_string()), 1i64);
+    let arena = Arc::new(TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map,
+        arena,
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (_edges, unresolved, ref_log) =
+        super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+
+    let count_a = unresolved.iter().filter(|(_, n, ..)| n == "missingA").count();
+    let count_b = unresolved.iter().filter(|(_, n, ..)| n == "missingB").count();
+    assert_eq!(count_a, 1, "triple emission of one site must land one row; unresolved={unresolved:?}");
+    assert_eq!(count_b, 2, "distinct byte offsets on one line are separate sites");
+    // The resolution log sees each SITE once too — not each emission.
+    assert_eq!(ref_log.len(), 3, "ref_log must carry one row per distinct site; got {ref_log:?}");
+}

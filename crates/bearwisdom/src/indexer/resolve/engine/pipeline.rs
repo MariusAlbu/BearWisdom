@@ -14,40 +14,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
-/// A resolved edge row: (source_id, target_id, kind, source_line, confidence, strategy).
-type Edge = (i64, i64, &'static str, u32, f64, &'static str);
-/// An unresolved-ref row: (source_id, target_name, kind, source_line, module,
-/// package_id, from_snippet, drained, cause_symbol_id, cause_kind).
-type Unresolved = (
-    i64,
-    String,
-    &'static str,
-    u32,
-    Option<String>,
-    Option<i64>,
-    bool,
-    bool,
-    Option<i64>,
-    Option<&'static str>,
-);
-/// A per-ref resolution log row: (source_id, target_name, kind, source_line,
-/// source_col, outcome, target_id, confidence, strategy). One row per ref site
-/// processed, regardless of how `edges` / `unresolved_refs` dedup — the
-/// resolution-snapshot instrument's write side (see `db/schema.rs`'s
-/// `ref_resolutions` table).
-type RefLog = (
-    i64,
-    String,
-    &'static str,
-    u32,
-    u32,
-    &'static str,
-    Option<i64>,
-    Option<f64>,
-    Option<&'static str>,
-);
+
+use super::flush::{Edge, RefLog, Unresolved, flush_to_db};
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
@@ -675,7 +645,23 @@ fn resolve_one_file(
         Vec::new()
     };
 
+    // Extractors may emit the same node more than once (double-visited
+    // constructs, per-node-kind coverage double-emits). A duplicate re-runs
+    // the full strategy ladder for an identical outcome and lands on the same
+    // UNIQUE row, so only the first occurrence of a ref site is resolved.
+    // byte_offset keeps distinct same-name refs on one line separate.
+    let mut seen_sites = FxHashSet::default();
+
     for (ref_idx, r) in pf.refs.iter().enumerate() {
+        if !seen_sites.insert((
+            r.source_symbol_index,
+            r.kind,
+            r.target_name.as_str(),
+            r.line,
+            r.byte_offset,
+        )) {
+            continue;
+        }
         let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
             continue;
         };
@@ -1136,188 +1122,6 @@ fn resolve_one_file(
     (edges, unresolved, ref_log)
 }
 
-// ---------------------------------------------------------------------------
-// DB flush — inline because write_buf::{FileWriteBuf, flush_resolve_buf} are
-// pub(super) relative to resolve/, which does not include resolve::engine.
-// The logic is identical to flush_resolve_buf with persist_speculative=true.
-// ---------------------------------------------------------------------------
-
-fn flush_to_db(
-    db: &mut Database,
-    edges: &[(i64, i64, &'static str, u32, f64, &'static str)],
-    unresolved: &[Unresolved],
-    ref_log: &[RefLog],
-    clear_existing: bool,
-) -> Result<()> {
-    use rusqlite::types::Value;
-
-    let conn = db.conn();
-    let tx = conn
-        .unchecked_transaction()
-        .context("Failed to begin single-pass resolution transaction")?;
-
-    // The full pass replaces all four tables; the incremental pass inserts only
-    // (the changed files' old rows were already dropped upstream when their
-    // symbols were rewritten, and the rest of the tables must survive).
-    if clear_existing {
-        tx.execute("DELETE FROM edges", [])
-            .context("Failed to clear edges")?;
-        tx.execute("DELETE FROM unresolved_refs", [])
-            .context("Failed to clear unresolved_refs")?;
-        tx.execute("DELETE FROM external_refs", [])
-            .context("Failed to clear external_refs")?;
-        tx.execute("DELETE FROM ref_resolutions", [])
-            .context("Failed to clear ref_resolutions")?;
-    }
-
-    const EDGE_CHUNK: usize = 256;
-    const UNRESOLVED_CHUNK: usize = 256;
-    const REF_LOG_CHUNK: usize = 256;
-
-    fn placeholders(rows: usize, cols: usize) -> String {
-        let mut s = String::with_capacity(rows * (cols * 2 + 4));
-        for i in 0..rows {
-            if i > 0 {
-                s.push(',');
-            }
-            s.push('(');
-            for j in 0..cols {
-                if j > 0 {
-                    s.push(',');
-                }
-                s.push('?');
-            }
-            s.push(')');
-        }
-        s
-    }
-
-    // Edges: (source_id, target_id, kind, source_line, confidence, strategy)
-    if !edges.is_empty() {
-        let mut start = 0;
-        while start < edges.len() {
-            let end = (start + EDGE_CHUNK).min(edges.len());
-            let rows = end - start;
-            let sql = format!(
-                "INSERT OR IGNORE INTO edges \
-                 (source_id, target_id, kind, source_line, confidence, strategy) \
-                 VALUES {}",
-                placeholders(rows, 6),
-            );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 6);
-            for (sid, tid, kind, line, conf, strat) in &edges[start..end] {
-                params.push(Value::Integer(*sid));
-                params.push(Value::Integer(*tid));
-                params.push(Value::Text((*kind).to_string()));
-                params.push(Value::Integer(*line as i64));
-                params.push(Value::Real(*conf));
-                params.push(Value::Text((*strat).to_string()));
-            }
-            tx.prepare_cached(&sql)
-                .context("Failed to prepare edges insert")?
-                .execute(rusqlite::params_from_iter(params.iter()))
-                .context("Failed to execute edges insert")?;
-            start = end;
-        }
-    }
-
-    // Unresolved refs: (source_id, target_name, kind, source_line, module,
-    // package_id, from_snippet, drained, cause_symbol_id, cause_kind)
-    if !unresolved.is_empty() {
-        let mut start = 0;
-        while start < unresolved.len() {
-            let end = (start + UNRESOLVED_CHUNK).min(unresolved.len());
-            let rows = end - start;
-            let sql = format!(
-                "INSERT INTO unresolved_refs \
-                 (source_id, target_name, kind, source_line, module, package_id, from_snippet, drained, \
-                  cause_symbol_id, cause_kind) \
-                 VALUES {}",
-                placeholders(rows, 10),
-            );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 10);
-            for (sid, name, kind, line, module, pkg, from_snippet, drained, cause_symbol_id, cause_kind) in
-                &unresolved[start..end]
-            {
-                params.push(Value::Integer(*sid));
-                params.push(Value::Text(name.clone()));
-                params.push(Value::Text((*kind).to_string()));
-                params.push(Value::Integer(*line as i64));
-                params.push(match module {
-                    Some(s) => Value::Text(s.clone()),
-                    None => Value::Null,
-                });
-                params.push(match pkg {
-                    Some(v) => Value::Integer(*v),
-                    None => Value::Null,
-                });
-                params.push(Value::Integer(if *from_snippet { 1 } else { 0 }));
-                params.push(Value::Integer(if *drained { 1 } else { 0 }));
-                params.push(match cause_symbol_id {
-                    Some(v) => Value::Integer(*v),
-                    None => Value::Null,
-                });
-                params.push(match cause_kind {
-                    Some(s) => Value::Text((*s).to_string()),
-                    None => Value::Null,
-                });
-            }
-            tx.prepare_cached(&sql)
-                .context("Failed to prepare unresolved_refs insert")?
-                .execute(rusqlite::params_from_iter(params.iter()))
-                .context("Failed to execute unresolved_refs insert")?;
-            start = end;
-        }
-    }
-
-    // Ref resolution log: (source_id, target_name, kind, source_line,
-    // source_col, outcome, target_id, confidence, strategy)
-    if !ref_log.is_empty() {
-        let mut start = 0;
-        while start < ref_log.len() {
-            let end = (start + REF_LOG_CHUNK).min(ref_log.len());
-            let rows = end - start;
-            let sql = format!(
-                "INSERT INTO ref_resolutions \
-                 (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence, strategy) \
-                 VALUES {}",
-                placeholders(rows, 9),
-            );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 9);
-            for (sid, name, kind, line, col, outcome, target_id, confidence, strategy) in
-                &ref_log[start..end]
-            {
-                params.push(Value::Integer(*sid));
-                params.push(Value::Text(name.clone()));
-                params.push(Value::Text((*kind).to_string()));
-                params.push(Value::Integer(*line as i64));
-                params.push(Value::Integer(*col as i64));
-                params.push(Value::Text((*outcome).to_string()));
-                params.push(match target_id {
-                    Some(v) => Value::Integer(*v),
-                    None => Value::Null,
-                });
-                params.push(match confidence {
-                    Some(v) => Value::Real(*v),
-                    None => Value::Null,
-                });
-                params.push(match strategy {
-                    Some(s) => Value::Text((*s).to_string()),
-                    None => Value::Null,
-                });
-            }
-            tx.prepare_cached(&sql)
-                .context("Failed to prepare ref_resolutions insert")?
-                .execute(rusqlite::params_from_iter(params.iter()))
-                .context("Failed to execute ref_resolutions insert")?;
-            start = end;
-        }
-    }
-
-    tx.commit()
-        .context("Failed to commit single-pass resolution transaction")?;
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // EdgeKind → &'static str

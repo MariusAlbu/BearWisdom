@@ -432,3 +432,85 @@ fn unique_edge_constraint_prevents_duplicates() {
         "Duplicate edge should fail UNIQUE constraint"
     );
 }
+
+/// The failure side mirrors the edges invariant: `idx_unresolved_refs_unique`
+/// rejects a second identical (source_id, target_name, kind, line, module) row,
+/// while a different module on the same line stays insertable.
+#[test]
+fn unique_unresolved_constraint_prevents_duplicates() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.go', 'h1', 'go', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id: i64 = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'f', 'f', 'function', 1, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let src: i64 = conn.last_insert_rowid();
+
+    conn.execute(
+        "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Ctx', 'type_ref', 7)",
+        [src],
+    )
+    .unwrap();
+    let dup = conn.execute(
+        "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Ctx', 'type_ref', 7)",
+        [src],
+    );
+    assert!(dup.is_err(), "duplicate unresolved ref should fail the UNIQUE index");
+
+    // Same site, different module — a distinct logical ref, must insert.
+    conn.execute(
+        "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line, module) VALUES (?1, 'Ctx', 'type_ref', 7, 'fiber')",
+        [src],
+    )
+    .unwrap();
+}
+
+/// Migration path: a DB carrying pre-constraint duplicate rows gets purged down
+/// to one row per logical ref when the unique index is first created.
+#[test]
+fn unresolved_dup_purge_migration_keeps_one_row_per_ref() {
+    let conn = make_db();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.go', 'h1', 'go', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id: i64 = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'f', 'f', 'function', 1, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let src: i64 = conn.last_insert_rowid();
+
+    // Simulate the pre-constraint state: drop the index, insert dup-laden rows.
+    conn.execute_batch("DROP INDEX idx_unresolved_refs_unique").unwrap();
+    for _ in 0..3 {
+        conn.execute(
+            "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Ctx', 'type_ref', 7)",
+            [src],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Other', 'calls', 9)",
+        [src],
+    )
+    .unwrap();
+
+    // Re-running schema creation triggers the purge + index recreation.
+    crate::db::schema::create_schema(&conn).unwrap();
+
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(total, 2, "three dups collapse to one row; the distinct ref survives");
+}
