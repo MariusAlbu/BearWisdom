@@ -14,6 +14,8 @@ pub mod concepts;
 pub mod context;
 pub mod coverage;
 pub mod dead_code;
+pub mod drain_audit;
+pub mod flow_stats;
 pub mod diagnostics;
 pub mod entry_points;
 pub mod full_trace;

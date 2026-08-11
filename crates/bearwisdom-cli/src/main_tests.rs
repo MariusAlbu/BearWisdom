@@ -3,6 +3,7 @@
 // and fixture-heavy repos, with duplicates excluded from every total.
 
 use super::*;
+use crate::drain_audit_report::corpus_class_report;
 
 fn entry(project: &str, class: Option<&str>) -> serde_json::Value {
     match class {

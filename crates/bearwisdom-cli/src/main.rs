@@ -26,6 +26,8 @@ use anyhow::{Context, Result};
 use bearwisdom::db::Database;
 use clap::{Parser, Subcommand};
 
+mod drain_audit_report;
+
 #[cfg(test)]
 #[path = "main_tests.rs"]
 mod tests;
@@ -2014,6 +2016,8 @@ fn cmd_quality_check(
             eprintln!("  OK (no changes)");
         }
 
+        drain_audit_report::print_findings(&rb.drain_audit);
+
         project_results.push(serde_json::json!({
             "project": name,
             "status": status,
@@ -2034,6 +2038,7 @@ fn cmd_quality_check(
                 "unresolved_flow_starts": unresolved_flows,
                 "flow_edge_types": flow_edge_types,
             },
+            "drain_audit": rb.drain_audit,
             "regressions": proj_regressions,
             "improvements": proj_improvements,
         }));
@@ -2045,7 +2050,7 @@ fn cmd_quality_check(
     // framework-source and fixture-heavy repos are reported apart so their
     // engine-bound-source noise doesn't drag the application figure.
     // Duplicates contributed to no group and so appear in none of these.
-    let corpus_class_rates = corpus_class_report(&corpus_groups);
+    let corpus_class_rates = drain_audit_report::corpus_class_report(&corpus_groups);
 
     eprintln!(
         "\n=== SUMMARY: {regressions} regressions, {improvements} improvements ===",
@@ -2098,28 +2103,6 @@ fn corpus_group_key(corpus_class: Option<&str>) -> Option<&str> {
         Some(c) if c.starts_with("duplicate-of:") => None,
         Some(c) => Some(c),
     }
-}
-
-/// Build the sorted per-class pooled rate report:
-/// `(class, edges, unresolved, rate)`. Rate is
-/// `edges / (edges + unresolved) * 100`, two decimals, 100.0 for an empty
-/// group.
-fn corpus_class_report(
-    groups: &std::collections::BTreeMap<String, (i64, i64)>,
-) -> Vec<(String, i64, i64, f64)> {
-    groups
-        .iter()
-        .map(|(class, (edges, unresolved))| {
-            let denom = edges + unresolved;
-            let rate = if denom == 0 {
-                100.0
-            } else {
-                (*edges as f64) * 100.0 / (denom as f64)
-            };
-            let rate = (rate * 100.0).round() / 100.0;
-            (class.clone(), *edges, *unresolved, rate)
-        })
-        .collect()
 }
 
 /// Recapture the quality baseline: re-index every project that still has

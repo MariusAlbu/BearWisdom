@@ -973,6 +973,21 @@ pub fn quality_check(rb: &ResolutionBreakdown) -> String {
             let _ = writeln!(body, "{lang}|{rate:.2}%|{edges}edges");
         }
     }
+    if !rb.drain_audit.is_empty() {
+        body.push_str("\n#drain_audit\n");
+        for f in &rb.drain_audit {
+            let top = f
+                .matches
+                .first()
+                .map(|m| format!("{}({},{})", m.qualified_name, m.symbol_kind, m.origin))
+                .unwrap_or_default();
+            let _ = writeln!(
+                body,
+                "{}.{}|{}|drained:{}|matches:{}|{}",
+                f.language, f.kind, f.target_name, f.drained_count, f.total_matches, top
+            );
+        }
+    }
     if !rb.unresolved_by_origin_language.is_empty() {
         body.push_str("\n#unresolved_by_origin_lang\n");
         for (lang, count) in &rb.unresolved_by_origin_language {
