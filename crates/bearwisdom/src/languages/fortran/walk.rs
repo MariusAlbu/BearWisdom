@@ -8,8 +8,8 @@
 // =============================================================================
 
 use super::extract::{
-    collect_local_decls, collect_local_type_decls, is_fortran_callable_text, is_local,
-    local_derived_type, push_sym, text,
+    collect_local_decls, collect_local_type_decls, is_fortran_callable_text,
+    is_fortran_statement_keyword, is_local, local_derived_type, push_sym, text,
 };
 use super::extractors::{
     emit_reexport_synthetics, extract_bound_procedures, extract_extends,
@@ -355,42 +355,12 @@ pub(super) fn walk_node(
                                 .named_child(0)
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
-                            if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                                refs.push(ExtractedRef {
-                                    is_import_binding: false,
-                                    is_reexport: false,
-                                    source_symbol_index: sym_idx,
-                                    target_name: name,
-                                    kind: EdgeKind::Calls,
-                                    line: node.start_position().row as u32,
-                                    col: 0,
-                                    module: None,
-                                    chain: None,
-                                    byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-                                });
-                            }
+                            push_bare_call_ref(refs, name, locals, node, sym_idx);
                         }
                     }
                     _ => {
                         let name = text(sub_node, src);
-                        if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: name,
-                                kind: EdgeKind::Calls,
-                                line: node.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: node.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        }
+                        push_bare_call_ref(refs, name, locals, node, sym_idx);
                     }
                 }
             }
@@ -408,22 +378,7 @@ pub(super) fn walk_node(
                 match callee.kind() {
                     "identifier" => {
                         let name = text(callee, src);
-                        if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index: sym_idx,
-                                target_name: name,
-                                kind: EdgeKind::Calls,
-                                line: node.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: node.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
-                        }
+                        push_bare_call_ref(refs, name, locals, node, sym_idx);
                     }
                     // derived_type_member_expression: obj%method
                     // named children: [0] = object, [last] = method name
@@ -468,22 +423,7 @@ pub(super) fn walk_node(
                                 .named_child(0)
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
-                            if is_fortran_callable_text(&name) && !is_local(&name, locals) {
-                                refs.push(ExtractedRef {
-                                    is_import_binding: false,
-                                    is_reexport: false,
-                                    source_symbol_index: sym_idx,
-                                    target_name: name,
-                                    kind: EdgeKind::Calls,
-                                    line: node.start_position().row as u32,
-                                    col: 0,
-                                    module: None,
-                                    chain: None,
-                                    byte_offset: node.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-                                });
-                            }
+                            push_bare_call_ref(refs, name, locals, node, sym_idx);
                         }
                     }
                     _ => {}
@@ -511,3 +451,40 @@ pub(super) fn walk_children(
         walk_node(child, src, symbols, refs, parent_idx, locals, local_types);
     }
 }
+
+
+/// Emit a bare-callee `Calls` ref for `name` unless it is a local binding,
+/// fails the callable-text shape, or names a Fortran statement keyword
+/// (statement forms parse as call expressions but reference no procedure).
+fn push_bare_call_ref(
+    refs: &mut Vec<ExtractedRef>,
+    name: String,
+    locals: &[std::collections::HashSet<String>],
+    node: Node,
+    sym_idx: usize,
+) {
+    if !is_fortran_callable_text(&name)
+        || is_local(&name, locals)
+        || is_fortran_statement_keyword(&name)
+    {
+        return;
+    }
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: sym_idx,
+        target_name: name,
+        kind: EdgeKind::Calls,
+        line: node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+}
+
+#[cfg(test)]
+#[path = "walk_tests.rs"]
+mod tests;

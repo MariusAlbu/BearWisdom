@@ -44,7 +44,7 @@ pub const FORTRAN_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: FORTRAN_PRIMITIVES,
     kind_compatible_table: FORTRAN_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_fortran_intrinsic),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,

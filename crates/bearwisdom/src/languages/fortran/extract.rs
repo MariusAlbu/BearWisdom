@@ -46,6 +46,21 @@ pub(super) fn is_fortran_callable_text(name: &str) -> bool {
     !name.contains('$')
 }
 
+/// True when `name` is a Fortran statement keyword that the grammar has no
+/// dedicated statement rule for, so it parses through the same production
+/// as an ordinary bare function/subroutine call. `DEALLOCATE(x)` and
+/// `NULLIFY(p)` are statements (Fortran 2018 §9.7, §9.8), but
+/// tree-sitter-fortran 0.5's `_statements` choice has no `deallocate_statement`
+/// or `nullify_statement` arm — unlike `allocate_statement`, which IS its own
+/// rule — so both fall through to the bare `$.call_expression` alternative.
+/// Checked case-insensitively (Fortran identifiers are case-insensitive)
+/// only against a BARE callee name; `obj%deallocate()` invokes a real
+/// user-defined type-bound procedure and is never checked against this.
+#[inline]
+pub(super) fn is_fortran_statement_keyword(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "deallocate" | "nullify")
+}
+
 pub fn extract(source: &str) -> ExtractionResult {
     let mut parser = Parser::new();
     if parser
