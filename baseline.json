@@ -8040,16 +8040,16 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 54
+        "min_resolution_rate": 58
       },
       "code_chunks": 478468,
-      "drained_refs": 3298,
+      "drained_refs": 31961,
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 214390,
-      "internal_unresolved": 178554,
+      "internal_edges": 214794,
+      "internal_unresolved": 149488,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -8077,9 +8077,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 5123,
-        "files_per_sec": 7,
-        "index_duration_ms": 564549
+        "end_ws_mb": 5089,
+        "files_per_sec": 5,
+        "index_duration_ms": 763210
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
@@ -8087,15 +8087,15 @@
         "cmake": 80.47,
         "cpp": 56.64,
         "html": 0.0,
-        "java": 46.47,
+        "java": 60.77,
         "markdown": 42.86,
         "matlab": 54.19,
-        "pascal": 53.75,
+        "pascal": 59.07,
         "php": 0.0,
         "scss": 0.0,
         "shell": 36.36
       },
-      "resolution_rate": 54.56,
+      "resolution_rate": 58.96,
       "routes": 0,
       "symbols": 271329,
       "unresolved_by_lang_kind": {
@@ -8112,14 +8112,14 @@
         "cpp.type_ref": 12816,
         "html.calls": 14,
         "html.imports": 5,
-        "java.calls": 822,
-        "java.implements": 6,
+        "java.calls": 737,
+        "java.implements": 5,
         "java.imports": 90,
-        "java.instantiates": 68,
-        "java.type_ref": 524,
+        "java.instantiates": 29,
+        "java.type_ref": 246,
         "markdown.calls": 4,
         "matlab.calls": 82,
-        "pascal.calls": 143616,
+        "pascal.calls": 114953,
         "pascal.imports": 2465,
         "pascal.inherits": 1058,
         "php.calls": 4,
@@ -8133,15 +8133,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 34
+        "min_resolution_rate": 41
       },
       "code_chunks": 183810,
-      "drained_refs": 168,
+      "drained_refs": 30532,
       "files": 1051,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 59554,
-      "internal_unresolved": 113361,
+      "internal_unresolved": 82997,
       "languages": {
         "c": 6,
         "cpp": 2,
@@ -8159,9 +8159,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-doublecmd",
       "perf": {
-        "end_ws_mb": 111,
-        "files_per_sec": 9,
-        "index_duration_ms": 118449
+        "end_ws_mb": 113,
+        "files_per_sec": 8,
+        "index_duration_ms": 124201
       },
       "project": "pascal-doublecmd",
       "rate_by_language": {
@@ -8169,18 +8169,18 @@
         "cpp": 100.0,
         "lua": 3.85,
         "make": 100.0,
-        "pascal": 34.37,
+        "pascal": 41.72,
         "python": 26.67,
         "shell": 3.13
       },
-      "resolution_rate": 34.44,
+      "resolution_rate": 41.78,
       "routes": 0,
       "symbols": 104136,
       "unresolved_by_lang_kind": {
         "c.calls": 3,
         "c.type_ref": 78,
         "lua.calls": 25,
-        "pascal.calls": 110418,
+        "pascal.calls": 80054,
         "pascal.imports": 2154,
         "pascal.inherits": 630,
         "python.calls": 12,

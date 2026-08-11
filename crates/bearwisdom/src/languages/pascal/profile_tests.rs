@@ -44,6 +44,20 @@ fn pascal_profile_identity_and_shadow_mode() {
 }
 
 #[test]
+fn pascal_builtin_skip_drains_casts_declines_project_declared_names() {
+    // Type-cast/compiler-intrinsic names with zero project declarations
+    // drain; names the Pascal reference corpus declares internally (an
+    // RTL-compat shim, a GTK binding, a code-generated field-type class)
+    // fall through to the ladder's normal lookup rungs instead.
+    let skip = PASCAL_PROFILE.builtin_skip.expect("pascal builtin_skip set");
+    assert!(skip("Integer"));
+    assert!(skip("single")); // case-insensitive: Pascal identifiers fold case
+    assert!(!skip("FreeAndNil"));
+    assert!(!skip("Inc"));
+    assert!(!skip("TObject"));
+}
+
+#[test]
 fn pascal_case_folds_and_matches_units_by_file_stem() {
     // The former resolve_ref case-insensitive same-file match drains to the
     // case-folding NameNormalization; the wildcard unit-import match drains to
