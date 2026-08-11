@@ -15,6 +15,28 @@ pub(super) fn is_external_namespace_fallback(ns: &str) -> bool {
     matches!(root, "System" | "Microsoft" | "FSharp")
 }
 
+/// The F# `Printf`-format and exception-raising operators: always available
+/// without an `open`, defined by the compiler itself in
+/// `Microsoft.FSharp.Core.Operators` / `ExtraTopLevelOperators`, and — unlike
+/// `box`, `ignore`, `defaultArg`, or the `Option`/`Result` case constructors
+/// — never observed shadowed by a project declaration of the same bare name.
+/// A target in this set declines the strategy ladder as a language builtin
+/// rather than binding to a same-named project symbol.
+pub(super) fn is_fsharp_prelude_operator(target: &str) -> bool {
+    matches!(
+        target,
+        "sprintf"
+            | "printf"
+            | "printfn"
+            | "eprintf"
+            | "eprintfn"
+            | "failwith"
+            | "invalidArg"
+            | "invalidOp"
+            | "reraise"
+    )
+}
+
 /// Manifest-aware external namespace check. Matches against declared NuGet
 /// packages when a manifest is present; falls back to the closed BCL/FSharp
 /// set otherwise.

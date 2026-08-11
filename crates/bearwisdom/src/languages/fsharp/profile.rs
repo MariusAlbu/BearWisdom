@@ -1,5 +1,6 @@
 // LanguageProfile for F# in shadow mode.
 
+use super::predicates;
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
     ChainQualification, DecoratorSyntax, DispatchAxis, KindTable, LanguageProfile,
@@ -74,14 +75,18 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: FSHARP_PRIMITIVES,
     kind_compatible_table: FSHARP_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(predicates::is_fsharp_prelude_operator),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `open Foo` (and the `#r "Foo.dll"` assembly-reference form) always sets
+    // `ExtractedRef::module`, so the module-field path carries every import
+    // without a separate target-echo.
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
@@ -89,7 +94,10 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
+    // `open Namespace` has no named-member form in F# — every `open` brings
+    // every direct member of the namespace into bare scope, so it is always
+    // a wildcard.
+    namespace_imports_are_wildcards: true,
     delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,

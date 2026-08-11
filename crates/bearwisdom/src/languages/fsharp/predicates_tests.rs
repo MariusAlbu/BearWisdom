@@ -2,7 +2,9 @@
 // purge: NuGet-declared packages classify external, platform roots stay, and
 // the purged framework namespaces are gone from the fallback.
 
-use super::predicates::{is_external_namespace_fallback, is_manifest_external_namespace};
+use super::predicates::{
+    is_external_namespace_fallback, is_fsharp_prelude_operator, is_manifest_external_namespace,
+};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
 
@@ -72,4 +74,47 @@ fn purged_thirdparty_namespaces_absent_from_fallback() {
             "third-party namespace `{name}` survived the purge"
         );
     }
+}
+
+#[test]
+fn prelude_operator_family_drains() {
+    for name in [
+        "sprintf",
+        "printf",
+        "printfn",
+        "eprintf",
+        "eprintfn",
+        "failwith",
+        "invalidArg",
+        "invalidOp",
+        "reraise",
+    ] {
+        assert!(is_fsharp_prelude_operator(name), "`{name}` should drain");
+    }
+}
+
+#[test]
+fn collision_prone_names_never_drain() {
+    // Union-case constructors and other core-library functions that real F#
+    // projects declare under the same bare name (custom `Option`/`Result`-like
+    // unions, Fable's own multi-backend `defaultArg`/`ignore`/`box`
+    // reimplementations, `nullArg` overrides). Draining these would decline
+    // the ladder before the project's own declaration ever gets a chance to
+    // bind, so none of them belong in the predicate.
+    for name in [
+        "Some", "None", "Ok", "Error", "box", "defaultArg", "ignore", "nullArg",
+    ] {
+        assert!(
+            !is_fsharp_prelude_operator(name),
+            "`{name}` collides with real project declarations and must not drain"
+        );
+    }
+}
+
+#[test]
+fn arbitrary_identifiers_do_not_drain() {
+    assert!(!is_fsharp_prelude_operator(""));
+    assert!(!is_fsharp_prelude_operator("DateTime"));
+    assert!(!is_fsharp_prelude_operator("testCase"));
+    assert!(!is_fsharp_prelude_operator("Sprintf"));
 }
