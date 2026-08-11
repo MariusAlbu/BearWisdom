@@ -3279,15 +3279,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 43
+        "min_resolution_rate": 89
       },
       "code_chunks": 79354,
-      "drained_refs": 202,
+      "drained_refs": 117156,
       "files": 784,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 103403,
-      "internal_unresolved": 131997,
+      "internal_edges": 103401,
+      "internal_unresolved": 11788,
       "languages": {
         "c": 7,
         "cmake": 93,
@@ -3300,20 +3300,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/fortran-stdlib",
       "perf": {
-        "end_ws_mb": 109,
-        "files_per_sec": 6,
-        "index_duration_ms": 128100
+        "end_ws_mb": 105,
+        "files_per_sec": 7,
+        "index_duration_ms": 116277
       },
       "project": "fortran-stdlib",
       "rate_by_language": {
         "c": 48.64,
         "cmake": 83.86,
         "cpp": 33.42,
-        "fortran": 43.83,
+        "fortran": 90.58,
         "markdown": 52.69,
-        "python": 27.03
+        "python": 29.85
       },
-      "resolution_rate": 43.93,
+      "resolution_rate": 89.77,
       "routes": 0,
       "symbols": 29429,
       "unresolved_by_lang_kind": {
@@ -3324,12 +3324,11 @@
         "cpp.calls": 736,
         "cpp.imports": 3,
         "cpp.type_ref": 68,
-        "fortran.calls": 129441,
-        "fortran.imports": 1380,
+        "fortran.calls": 9340,
+        "fortran.imports": 1279,
         "markdown.calls": 44,
-        "python.calls": 48,
-        "python.imports": 5,
-        "python.type_ref": 1
+        "python.calls": 42,
+        "python.imports": 5
       }
     },
     {
@@ -3401,15 +3400,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 38
+        "min_resolution_rate": 47
       },
       "code_chunks": 254110,
-      "drained_refs": 976,
+      "drained_refs": 6260,
       "files": 1281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 87977,
-      "internal_unresolved": 139084,
+      "internal_edges": 105220,
+      "internal_unresolved": 117400,
       "languages": {
         "dart": 8,
         "erlang": 38,
@@ -3428,55 +3427,55 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fable",
       "perf": {
-        "end_ws_mb": 5937,
-        "files_per_sec": 5,
-        "index_duration_ms": 233877
+        "end_ws_mb": 5972,
+        "files_per_sec": 6,
+        "index_duration_ms": 214800
       },
       "project": "fsharp-fable",
       "rate_by_language": {
-        "dart": 17.59,
-        "erlang": 61.8,
-        "fsharp": 33.95,
-        "javascript": 63.87,
+        "dart": 17.62,
+        "erlang": 62.09,
+        "fsharp": 43.13,
+        "javascript": 58.06,
         "markdown": 83.33,
-        "php": 67.12,
-        "python": 34.41,
-        "rust": 64.91,
+        "php": 66.5,
+        "python": 54.55,
+        "rust": 64.9,
         "shell": 0.0,
-        "typescript": 92.99
+        "typescript": 93.33
       },
-      "resolution_rate": 38.75,
+      "resolution_rate": 47.26,
       "routes": 0,
       "symbols": 103315,
       "unresolved_by_lang_kind": {
         "dart.calls": 100,
         "dart.imports": 37,
         "dart.type_ref": 2191,
-        "erlang.calls": 1076,
-        "fsharp.calls": 118409,
-        "fsharp.implements": 211,
-        "fsharp.imports": 1058,
-        "fsharp.inherits": 99,
-        "javascript.calls": 58,
+        "erlang.calls": 1068,
+        "fsharp.calls": 100057,
+        "fsharp.implements": 149,
+        "fsharp.imports": 979,
+        "fsharp.inherits": 35,
+        "javascript.calls": 62,
         "javascript.imports": 35,
-        "javascript.type_ref": 19,
+        "javascript.type_ref": 33,
         "markdown.calls": 2,
-        "php.calls": 173,
+        "php.calls": 177,
         "php.implements": 6,
         "php.instantiates": 15,
         "php.type_ref": 1,
-        "python.calls": 2862,
-        "python.imports": 147,
-        "python.type_ref": 5212,
-        "rust.calls": 2802,
+        "python.calls": 1207,
+        "python.imports": 95,
+        "python.type_ref": 3783,
+        "rust.calls": 2803,
         "rust.implements": 7,
         "rust.imports": 102,
         "rust.type_ref": 3969,
         "shell.calls": 1,
-        "typescript.calls": 240,
+        "typescript.calls": 237,
         "typescript.imports": 4,
         "typescript.instantiates": 14,
-        "typescript.type_ref": 234
+        "typescript.type_ref": 231
       }
     },
     {
@@ -8797,14 +8796,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 2
+        "min_resolution_rate": 28
       },
       "code_chunks": 12405,
+      "drained_refs": 1325,
       "files": 332,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 129,
-      "internal_unresolved": 5441,
+      "internal_edges": 1198,
+      "internal_unresolved": 3060,
       "languages": {
         "html": 1,
         "json": 1,
@@ -8816,28 +8816,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/powershell-importexcel",
       "perf": {
-        "end_ws_mb": 2452,
-        "files_per_sec": 33,
-        "index_duration_ms": 10075
+        "end_ws_mb": 2450,
+        "files_per_sec": 31,
+        "index_duration_ms": 10842
       },
       "project": "powershell-importexcel",
       "rate_by_language": {
         "html": 0.0,
         "javascript": 0.0,
         "markdown": 19.23,
-        "powershell": 2.24,
+        "powershell": 28.28,
         "yaml": 0.0
       },
-      "resolution_rate": 2.32,
+      "resolution_rate": 28.14,
       "routes": 0,
       "symbols": 7764,
       "unresolved_by_lang_kind": {
         "html.imports": 4,
         "javascript.calls": 5,
         "markdown.calls": 21,
-        "powershell.calls": 5058,
-        "powershell.imports": 228,
-        "powershell.type_ref": 120,
+        "powershell.calls": 2787,
+        "powershell.imports": 134,
+        "powershell.type_ref": 104,
         "yaml.calls": 5
       }
     },
@@ -8939,14 +8939,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 2
+        "min_resolution_rate": 18
       },
       "code_chunks": 57274,
+      "drained_refs": 11875,
       "files": 977,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1405,
-      "internal_unresolved": 65568,
+      "internal_edges": 10432,
+      "internal_unresolved": 44695,
       "languages": {
         "csharp": 2,
         "markdown": 50,
@@ -8955,18 +8956,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/powershell-sqlserverdsc",
       "perf": {
-        "end_ws_mb": 2437,
-        "files_per_sec": 68,
-        "index_duration_ms": 14334
+        "end_ws_mb": 2433,
+        "files_per_sec": 62,
+        "index_duration_ms": 15734
       },
       "project": "powershell-sqlserverdsc",
       "rate_by_language": {
         "csharp": 95.5,
         "markdown": 3.81,
-        "powershell": 1.0,
+        "powershell": 17.9,
         "yaml": 0.0
       },
-      "resolution_rate": 2.1,
+      "resolution_rate": 18.92,
       "routes": 0,
       "symbols": 26556,
       "unresolved_by_lang_kind": {
@@ -8976,10 +8977,10 @@
         "csharp.type_ref": 8,
         "markdown.calls": 100,
         "markdown.type_ref": 1,
-        "powershell.calls": 63219,
-        "powershell.imports": 1644,
+        "powershell.calls": 43322,
+        "powershell.imports": 688,
         "powershell.inherits": 3,
-        "powershell.type_ref": 443,
+        "powershell.type_ref": 423,
         "yaml.calls": 110,
         "yaml.imports": 13
       }
@@ -10040,17 +10041,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 51
+        "min_resolution_rate": 53
       },
       "code_chunks": 293720,
-      "drained_refs": 335,
+      "drained_refs": 15060,
       "files": 4369,
       "flow_edge_types": {
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 163931,
-      "internal_unresolved": 152828,
+      "internal_edges": 163108,
+      "internal_unresolved": 142408,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10073,9 +10074,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 118,
-        "files_per_sec": 21,
-        "index_duration_ms": 210681
+        "end_ws_mb": 120,
+        "files_per_sec": 15,
+        "index_duration_ms": 283361
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -10088,11 +10089,11 @@
         "mako": 0.0,
         "markdown": 48.89,
         "mdx": 25.84,
-        "python": 45.89,
+        "python": 49.24,
         "shell": 72.13,
         "typescript": 56.53
       },
-      "resolution_rate": 51.75,
+      "resolution_rate": 53.39,
       "routes": 0,
       "symbols": 143806,
       "unresolved_by_lang_kind": {
@@ -10113,9 +10114,9 @@
         "markdown.type_ref": 32,
         "mdx.calls": 38,
         "mdx.type_ref": 28,
-        "python.calls": 47875,
+        "python.calls": 41700,
         "python.imports": 4451,
-        "python.type_ref": 23744,
+        "python.type_ref": 19499,
         "shell.calls": 17,
         "typescript.calls": 56178,
         "typescript.imports": 104,
