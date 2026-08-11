@@ -4661,7 +4661,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 41
+        "min_resolution_rate": 62
       },
       "code_chunks": 178588,
       "drained_refs": 372,
@@ -4671,8 +4671,8 @@
       },
       "flow_edges": 8,
       "generated_files_reclassified": 84,
-      "internal_edges": 89908,
-      "internal_unresolved": 124908,
+      "internal_edges": 133701,
+      "internal_unresolved": 81206,
       "languages": {
         "css": 121,
         "groovy": 4450,
@@ -4689,38 +4689,38 @@
       },
       "path": "F:/Work/Projects/TestProjects/gsp-grails-core",
       "perf": {
-        "end_ws_mb": 113,
+        "end_ws_mb": 112,
         "files_per_sec": 31,
-        "index_duration_ms": 226966
+        "index_duration_ms": 220684
       },
       "project": "gsp-grails-core",
       "rate_by_language": {
-        "groovy": 34.65,
+        "groovy": 42.23,
         "gsp": 9.36,
         "html": 0.0,
-        "java": 46.12,
+        "java": 73.47,
         "javascript": 61.09,
         "markdown": 29.79
       },
-      "resolution_rate": 41.85,
+      "resolution_rate": 62.21,
       "routes": 8,
       "symbols": 59309,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 30483,
-        "groovy.implements": 1308,
-        "groovy.imports": 6837,
-        "groovy.inherits": 1388,
-        "groovy.instantiates": 2702,
-        "groovy.type_ref": 4443,
+        "groovy.calls": 29444,
+        "groovy.implements": 1307,
+        "groovy.imports": 6697,
+        "groovy.inherits": 1372,
+        "groovy.instantiates": 1466,
+        "groovy.type_ref": 1425,
         "gsp.calls": 2224,
         "gsp.imports": 3,
         "html.imports": 10,
-        "java.calls": 23196,
-        "java.implements": 202,
-        "java.imports": 3985,
-        "java.inherits": 98,
-        "java.instantiates": 3803,
-        "java.type_ref": 44100,
+        "java.calls": 18672,
+        "java.implements": 195,
+        "java.imports": 3828,
+        "java.inherits": 88,
+        "java.instantiates": 971,
+        "java.type_ref": 13378,
         "javascript.calls": 81,
         "javascript.type_ref": 12,
         "markdown.calls": 33
@@ -6068,15 +6068,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 45
+        "min_resolution_rate": 70
       },
       "code_chunks": 82869,
       "drained_refs": 63,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 97748,
-      "internal_unresolved": 117088,
+      "internal_edges": 151174,
+      "internal_unresolved": 64441,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -6097,21 +6097,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 157,
+        "end_ws_mb": 152,
         "files_per_sec": 6,
-        "index_duration_ms": 422237
+        "index_duration_ms": 435158
       },
       "project": "kotlin-ktor",
       "rate_by_language": {
         "c": 94.64,
         "cmake": 21.21,
         "cpp": 98.84,
-        "kotlin": 45.17,
+        "kotlin": 70.03,
         "markdown": 55.56,
         "rust": 72.44,
         "shell": 100.0
       },
-      "resolution_rate": 45.5,
+      "resolution_rate": 70.11,
       "routes": 0,
       "symbols": 45305,
       "unresolved_by_lang_kind": {
@@ -6119,11 +6119,11 @@
         "cmake.imports": 5,
         "cmake.type_ref": 21,
         "cpp.type_ref": 4,
-        "kotlin.calls": 67840,
-        "kotlin.implements": 117,
-        "kotlin.imports": 2665,
-        "kotlin.inherits": 786,
-        "kotlin.type_ref": 45227,
+        "kotlin.calls": 42401,
+        "kotlin.implements": 99,
+        "kotlin.imports": 2262,
+        "kotlin.inherits": 254,
+        "kotlin.type_ref": 18972,
         "markdown.calls": 4,
         "rust.calls": 175,
         "rust.imports": 56,
@@ -11289,7 +11289,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 41
+        "min_resolution_rate": 79
       },
       "code_chunks": 31773,
       "drained_refs": 129,
@@ -11297,8 +11297,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 37874,
-      "internal_unresolved": 54218,
+      "internal_edges": 76449,
+      "internal_unresolved": 19799,
       "languages": {
         "css": 2,
         "html": 6,
@@ -11312,35 +11312,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-gatling",
       "perf": {
-        "end_ws_mb": 116,
-        "files_per_sec": 12,
-        "index_duration_ms": 88114
+        "end_ws_mb": 113,
+        "files_per_sec": 11,
+        "index_duration_ms": 91370
       },
       "project": "scala-gatling",
       "rate_by_language": {
         "html": 0.0,
-        "java": 42.09,
+        "java": 75.54,
         "javascript": 31.0,
-        "scala": 40.8
+        "scala": 80.86
       },
-      "resolution_rate": 41.13,
+      "resolution_rate": 79.43,
       "routes": 0,
       "symbols": 16619,
       "unresolved_by_lang_kind": {
         "html.calls": 7,
         "html.imports": 8,
-        "java.calls": 4032,
-        "java.implements": 23,
-        "java.imports": 395,
-        "java.inherits": 31,
-        "java.instantiates": 339,
-        "java.type_ref": 9346,
+        "java.calls": 2212,
+        "java.implements": 1,
+        "java.imports": 328,
+        "java.inherits": 8,
+        "java.instantiates": 129,
+        "java.type_ref": 3359,
         "javascript.calls": 69,
-        "scala.calls": 17367,
-        "scala.implements": 322,
-        "scala.imports": 2165,
-        "scala.inherits": 722,
-        "scala.type_ref": 19392
+        "scala.calls": 7757,
+        "scala.implements": 17,
+        "scala.imports": 1301,
+        "scala.inherits": 579,
+        "scala.type_ref": 4024
       }
     },
     {
@@ -13811,7 +13811,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 46
+        "min_resolution_rate": 71
       },
       "code_chunks": 93482,
       "drained_refs": 270,
@@ -13819,8 +13819,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 95899,
-      "internal_unresolved": 108852,
+      "internal_edges": 145718,
+      "internal_unresolved": 59119,
       "languages": {
         "css": 13,
         "freemarker": 191,
@@ -13834,19 +13834,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/velocity-apache-struts",
       "perf": {
-        "end_ws_mb": 114,
-        "files_per_sec": 31,
-        "index_duration_ms": 98435
+        "end_ws_mb": 115,
+        "files_per_sec": 29,
+        "index_duration_ms": 104477
       },
       "project": "velocity-apache-struts",
       "rate_by_language": {
         "freemarker": 1.58,
         "html": 0.0,
-        "java": 46.88,
+        "java": 71.29,
         "javascript": 53.61,
         "markdown": 34.85
       },
-      "resolution_rate": 46.84,
+      "resolution_rate": 71.14,
       "routes": 0,
       "symbols": 40044,
       "unresolved_by_lang_kind": {
@@ -13854,12 +13854,12 @@
         "freemarker.imports": 248,
         "html.calls": 4,
         "html.imports": 1,
-        "java.calls": 46836,
-        "java.implements": 54,
-        "java.imports": 3329,
+        "java.calls": 37643,
+        "java.implements": 46,
+        "java.imports": 2900,
         "java.inherits": 76,
-        "java.instantiates": 5436,
-        "java.type_ref": 52528,
+        "java.instantiates": 1029,
+        "java.type_ref": 16832,
         "javascript.calls": 266,
         "javascript.type_ref": 30,
         "markdown.calls": 18,

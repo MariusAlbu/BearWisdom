@@ -61,3 +61,19 @@ fn declines_when_file_path_does_not_match_module() {
     let imports = vec![import("Foo", Some("./foo"))];
     assert_eq!(resolve(&lookup, "Foo", imports), None);
 }
+
+#[test]
+fn binds_fqn_import_against_package_directory_path() {
+    // `import java.util.Map` — the module path is the full dotted FQN
+    // including the type name; the declaration lives at a path whose
+    // directory run mirrors the package (`…/java/util/Map.java`).
+    let lookup = Lookup::new().with(sym(
+        14,
+        "Map",
+        "java.util.Map",
+        "interface",
+        "ext:idx:C:/cache/jdk-src/java.base/java/util/Map.java",
+    ));
+    let imports = vec![import("Map", Some("java.util.Map"))];
+    assert_eq!(resolve(&lookup, "Map", imports), Some(14));
+}

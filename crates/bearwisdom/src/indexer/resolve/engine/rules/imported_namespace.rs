@@ -18,7 +18,9 @@
 // helpers inlined here from `default_resolver`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{import_scoped_package_id, normalize_name};
+use crate::indexer::resolve::engine::support::{
+    import_scoped_package_id, normalize_name, trim_path_extension, trim_source_extension,
+};
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
@@ -126,7 +128,7 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
     let normalized = file_path.replace('\\', "/");
     let cleaned =
         trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_source_extension(&normalized);
+    let stem = trim_path_extension(&normalized);
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }
@@ -157,24 +159,6 @@ fn path_contains_segment_run(path: &str, run: &str) -> bool {
         from = start + 1;
     }
     false
-}
-
-/// Trim known source-file extensions for stem comparison.
-fn trim_source_extension(path: &str) -> &str {
-    path.trim_end_matches(".svelte")
-        .trim_end_matches(".vue")
-        .trim_end_matches(".tsx")
-        .trim_end_matches(".jsx")
-        .trim_end_matches(".mts")
-        .trim_end_matches(".cts")
-        .trim_end_matches(".ts")
-        .trim_end_matches(".js")
-        .trim_end_matches(".cs")
-        .trim_end_matches(".cljc")
-        .trim_end_matches(".cljs")
-        .trim_end_matches(".clj")
-        .trim_end_matches(".astro")
-        .trim_end_matches(".mdx")
 }
 
 #[cfg(test)]

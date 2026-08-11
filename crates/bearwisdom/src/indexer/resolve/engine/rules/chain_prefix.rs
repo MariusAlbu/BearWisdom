@@ -8,7 +8,7 @@
 // path segment equal to the prefix.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::trim_source_extension;
+use crate::indexer::resolve::engine::support::{trim_path_extension, trim_source_extension};
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 
 pub struct ChainPrefixRule;
@@ -70,7 +70,7 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
     let normalized = file_path.replace('\\', "/");
     let cleaned =
         trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_source_extension(&normalized);
+    let stem = trim_path_extension(&normalized);
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }

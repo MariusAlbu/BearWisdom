@@ -12,6 +12,11 @@ use std::collections::BTreeMap;
 
 use rustc_hash::FxHashMap;
 
+pub(crate) use super::path_match::{
+    basename_stem_matches, is_bare_module_specifier, is_relative_specifier, parent_dir,
+    path_stem_matches, trim_path_extension, trim_source_extension,
+};
+
 use crate::indexer::resolve::engine::contract::{
     FileContext, Symbol, SymbolInfo, SymbolLookup, TypeInfo, RESOLVED_CONFIDENCE,
 };
@@ -125,15 +130,6 @@ pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> 
         }
     }
     None
-}
-
-/// A bare module specifier names a package, not a project-relative path.
-/// Rejects specifiers that start with `.`, `/`, or a Windows drive letter
-/// (`C:/`). Shared by `workspace_package` and `wildcard_workspace_package` —
-/// both scope a specifier to a workspace package's symbol set and must first
-/// rule out a relative/absolute path.
-pub(crate) fn is_bare_module_specifier(spec: &str) -> bool {
-    !(spec.starts_with('.') || spec.starts_with('/') || (spec.len() >= 2 && spec.as_bytes()[1] == b':'))
 }
 
 /// When `specifier`'s leading segment is `profile.self_package_root`
@@ -321,66 +317,6 @@ fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
         .take_while(|(a, b)| a == b)
         .count() as i32
         * 10
-}
-
-/// The full directory portion of a file path (everything before the final
-/// segment). Path separators are normalized to `/`. Returns `None` for a bare
-/// filename. For `schema/users/model.prisma` returns `Some("schema/users")`.
-pub(crate) fn parent_dir(file_path: &str) -> Option<String> {
-    let normalized = file_path.replace('\\', "/");
-    normalized.rsplit_once('/').map(|(dir, _)| dir.to_string())
-}
-
-/// The file's basename-stem equals the module (case-insensitive on both
-/// inputs). A basename with no extension matches whole. Does NOT consider
-/// directory segments.
-pub(crate) fn basename_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
-    if module_lower.is_empty() {
-        return false;
-    }
-    let normalized = file_path_lower.replace('\\', "/");
-    let Some(basename) = normalized.rsplit('/').next() else {
-        return false;
-    };
-    match basename.rsplit_once('.') {
-        Some((stem, _ext)) => stem == module_lower,
-        None => basename == module_lower,
-    }
-}
-
-/// File path's basename stem or any path segment matches the module
-/// (case-insensitive on both inputs). External `ext:<lang>:<pkg>` paths match on
-/// the trailing colon-delimited component.
-pub(crate) fn path_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
-    if basename_stem_matches(file_path_lower, module_lower) {
-        return true;
-    }
-    let normalized = file_path_lower.replace('\\', "/");
-    normalized.split('/').any(|seg| {
-        seg == module_lower
-            || seg
-                .split(':')
-                .next_back()
-                .map_or(false, |tail| tail == module_lower)
-    })
-}
-
-/// Trim a source-file extension off a module/path string for stem comparison.
-pub(crate) fn trim_source_extension(path: &str) -> &str {
-    path.trim_end_matches(".svelte")
-        .trim_end_matches(".vue")
-        .trim_end_matches(".tsx")
-        .trim_end_matches(".jsx")
-        .trim_end_matches(".mts")
-        .trim_end_matches(".cts")
-        .trim_end_matches(".ts")
-        .trim_end_matches(".js")
-        .trim_end_matches(".cs")
-        .trim_end_matches(".cljc")
-        .trim_end_matches(".cljs")
-        .trim_end_matches(".clj")
-        .trim_end_matches(".astro")
-        .trim_end_matches(".mdx")
 }
 
 /// Strip a leading `{kw}.` from `target` when `kw` is one of `self_keywords`
@@ -928,12 +864,6 @@ fn reexport_file_path_matches_module(file_path: &str, source_module: &str) -> bo
     candidates
         .iter()
         .any(|candidate| normalized == *candidate || normalized.ends_with(&format!("/{candidate}")))
-}
-
-/// A specifier is relative — and therefore project-internal — when it starts
-/// with `.`, `/`, or is a Windows drive path.
-pub(crate) fn is_relative_specifier(s: &str) -> bool {
-    s.starts_with('.') || s.starts_with('/') || (s.len() >= 2 && s.as_bytes()[1] == b':')
 }
 
 #[cfg(test)]

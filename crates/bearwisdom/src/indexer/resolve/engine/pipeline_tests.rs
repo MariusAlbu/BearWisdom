@@ -1551,3 +1551,75 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     // The resolution log sees each SITE once too — not each emission.
     assert_eq!(ref_log.len(), 3, "ref_log must carry one row per distinct site; got {ref_log:?}");
 }
+
+/// A dotted-FQN import (`import java.util.Map` → target `Map`, module
+/// `java.util.Map`; `import com.foo.*` → target `*`, module `com.foo`) must
+/// surface its module path in the file context: the import rungs bind a bare
+/// name by matching the imported declaration's file path against that module,
+/// and the wildcard entry feeds the open-namespace set the chain root anchors
+/// through.
+#[test]
+fn fqn_import_refs_carry_module_path_into_file_context() {
+    use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
+    fn import_ref(target: &str, module: &str) -> ExtractedRef {
+        ExtractedRef {
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Imports,
+            line: 0,
+            col: 0,
+            module: Some(module.into()),
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+    let pf = ParsedFile {
+        path: "src/main/java/org/demo/OrdersService.java".into(),
+        language: "java".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: Vec::new(),
+        refs: vec![
+            import_ref("Map", "java.util.Map"),
+            import_ref("*", "com.foo"),
+        ],
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    };
+    let fc = super::build_file_context(
+        "java",
+        &pf,
+        &crate::languages::java::profile::JAVA_PROFILE,
+    );
+    let exact = fc
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "Map")
+        .expect("exact import must land an entry");
+    assert_eq!(exact.module_path.as_deref(), Some("java.util.Map"));
+    assert!(!exact.is_wildcard, "an exact import is not a wildcard");
+    let wildcard = fc
+        .imports
+        .iter()
+        .find(|i| i.imported_name == "*")
+        .expect("wildcard import must land an entry");
+    assert_eq!(wildcard.module_path.as_deref(), Some("com.foo"));
+    assert!(wildcard.is_wildcard, "a `*` target is a wildcard entry");
+}

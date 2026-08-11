@@ -27,39 +27,6 @@ fn qname_directly_under_requires_one_segment() {
 }
 
 #[test]
-fn parent_dir_drops_final_segment() {
-    assert_eq!(
-        parent_dir("schema/users/model.prisma").as_deref(),
-        Some("schema/users")
-    );
-    assert_eq!(parent_dir("bare.rs"), None);
-    assert_eq!(parent_dir("a\\b\\c.ts").as_deref(), Some("a/b"));
-}
-
-#[test]
-fn basename_stem_matches_ignores_directories() {
-    assert!(basename_stem_matches("components/synedit/foo.pas", "foo"));
-    assert!(!basename_stem_matches("components/synedit/foo.pas", "synedit"));
-    assert!(basename_stem_matches("foo", "foo"));
-    assert!(!basename_stem_matches("foo.pas", ""));
-}
-
-#[test]
-fn path_stem_matches_checks_stem_and_segments() {
-    assert!(path_stem_matches("a/b/foo.ts", "foo"));
-    assert!(path_stem_matches("a/foo/bar.ts", "foo"));
-    assert!(path_stem_matches("ext:ruby:aws-sdk-s3/lib/x.rb", "aws-sdk-s3"));
-    assert!(!path_stem_matches("a/b/c.ts", "foo"));
-}
-
-#[test]
-fn trim_source_extension_strips_known_extensions() {
-    assert_eq!(trim_source_extension("foo.ts"), "foo");
-    assert_eq!(trim_source_extension("foo.vue"), "foo");
-    assert_eq!(trim_source_extension("foo.rb"), "foo.rb");
-}
-
-#[test]
 fn strip_self_keyword_strips_first_matching_prefix() {
     assert_eq!(strip_self_keyword("self.method", &["self"]), "method");
     assert_eq!(strip_self_keyword("this.x", &["self", "this"]), "x");

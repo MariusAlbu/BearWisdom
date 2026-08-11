@@ -90,7 +90,8 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
