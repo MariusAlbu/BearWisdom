@@ -6068,15 +6068,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 70
+        "min_resolution_rate": 74
       },
       "code_chunks": 82869,
       "drained_refs": 63,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 151174,
-      "internal_unresolved": 64441,
+      "internal_edges": 159708,
+      "internal_unresolved": 55907,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -6097,21 +6097,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 152,
-        "files_per_sec": 6,
-        "index_duration_ms": 435158
+        "end_ws_mb": 150,
+        "files_per_sec": 9,
+        "index_duration_ms": 277119
       },
       "project": "kotlin-ktor",
       "rate_by_language": {
         "c": 94.64,
         "cmake": 21.21,
         "cpp": 98.84,
-        "kotlin": 70.03,
+        "kotlin": 74.02,
         "markdown": 55.56,
         "rust": 72.44,
         "shell": 100.0
       },
-      "resolution_rate": 70.11,
+      "resolution_rate": 74.07,
       "routes": 0,
       "symbols": 45305,
       "unresolved_by_lang_kind": {
@@ -6119,11 +6119,11 @@
         "cmake.imports": 5,
         "cmake.type_ref": 21,
         "cpp.type_ref": 4,
-        "kotlin.calls": 42401,
+        "kotlin.calls": 41868,
         "kotlin.implements": 99,
-        "kotlin.imports": 2262,
-        "kotlin.inherits": 254,
-        "kotlin.type_ref": 18972,
+        "kotlin.imports": 1933,
+        "kotlin.inherits": 229,
+        "kotlin.type_ref": 11325,
         "markdown.calls": 4,
         "rust.calls": 175,
         "rust.imports": 56,
@@ -8617,7 +8617,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 20
+        "min_resolution_rate": 37
       },
       "code_chunks": 208171,
       "drained_refs": 1252,
@@ -8627,8 +8627,8 @@
       },
       "flow_edges": 45,
       "generated_files_reclassified": 3,
-      "internal_edges": 43772,
-      "internal_unresolved": 173945,
+      "internal_edges": 82816,
+      "internal_unresolved": 138032,
       "languages": {
         "blade": 83,
         "css": 1,
@@ -8643,17 +8643,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 105,
-        "files_per_sec": 51,
-        "index_duration_ms": 56800
+        "end_ws_mb": 100,
+        "files_per_sec": 65,
+        "index_duration_ms": 44573
       },
       "project": "php-laravel",
       "rate_by_language": {
         "blade": 0.0,
         "markdown": 100.0,
-        "php": 20.12
+        "php": 37.52
       },
-      "resolution_rate": 20.1,
+      "resolution_rate": 37.5,
       "routes": 51,
       "symbols": 37700,
       "unresolved_by_lang_kind": {
@@ -8661,12 +8661,12 @@
         "blade.imports": 9,
         "blade.instantiates": 1,
         "blade.type_ref": 13,
-        "php.calls": 129021,
-        "php.implements": 1655,
-        "php.imports": 5267,
-        "php.inherits": 2389,
-        "php.instantiates": 11310,
-        "php.type_ref": 24183
+        "php.calls": 125537,
+        "php.implements": 1110,
+        "php.imports": 1854,
+        "php.inherits": 756,
+        "php.instantiates": 2676,
+        "php.type_ref": 5979
       },
       "vendored_files_reclassified": 58
     },
@@ -8731,7 +8731,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 29
+        "min_resolution_rate": 55
       },
       "code_chunks": 47279,
       "drained_refs": 168,
@@ -8740,8 +8740,8 @@
         "http_call": 300
       },
       "flow_edges": 300,
-      "internal_edges": 16731,
-      "internal_unresolved": 40820,
+      "internal_edges": 32573,
+      "internal_unresolved": 26060,
       "languages": {
         "blade": 5,
         "css": 1,
@@ -8757,21 +8757,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-monica",
       "perf": {
-        "end_ws_mb": 97,
-        "files_per_sec": 37,
-        "index_duration_ms": 54501
+        "end_ws_mb": 98,
+        "files_per_sec": 50,
+        "index_duration_ms": 40341
       },
       "project": "php-monica",
       "rate_by_language": {
         "blade": 30.77,
         "dockerfile": 0.0,
         "javascript": 56.05,
-        "php": 23.96,
+        "php": 54.17,
         "scss": 0.0,
         "shell": 0.0,
         "vue": 90.75
       },
-      "resolution_rate": 29.07,
+      "resolution_rate": 55.55,
       "routes": 306,
       "symbols": 9576,
       "unresolved_by_lang_kind": {
@@ -8781,12 +8781,12 @@
         "javascript.calls": 990,
         "javascript.imports": 986,
         "javascript.type_ref": 193,
-        "php.calls": 18325,
-        "php.implements": 1029,
-        "php.imports": 2384,
-        "php.inherits": 1113,
-        "php.instantiates": 1379,
-        "php.type_ref": 14168,
+        "php.calls": 17359,
+        "php.implements": 750,
+        "php.imports": 754,
+        "php.inherits": 169,
+        "php.instantiates": 185,
+        "php.type_ref": 4421,
         "scss.calls": 50,
         "shell.calls": 1,
         "vue.calls": 55,
@@ -10668,8 +10668,8 @@
         "service_dependency": 1
       },
       "flow_edges": 291,
-      "internal_edges": 52342,
-      "internal_unresolved": 55431,
+      "internal_edges": 52399,
+      "internal_unresolved": 55374,
       "languages": {
         "c": 1,
         "dockerfile": 1,
@@ -10690,9 +10690,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ruby-chatwoot",
       "perf": {
-        "end_ws_mb": 107,
-        "files_per_sec": 88,
-        "index_duration_ms": 81502
+        "end_ws_mb": 103,
+        "files_per_sec": 84,
+        "index_duration_ms": 85750
       },
       "project": "ruby-chatwoot",
       "rate_by_language": {
@@ -10701,13 +10701,13 @@
         "erb": 16.64,
         "javascript": 63.91,
         "markdown": 100.0,
-        "ruby": 21.58,
+        "ruby": 21.72,
         "scss": 3.9,
         "shell": 0.0,
         "typescript": 71.15,
         "vue": 81.65
       },
-      "resolution_rate": 48.57,
+      "resolution_rate": 48.62,
       "routes": 443,
       "symbols": 38112,
       "unresolved_by_lang_kind": {
@@ -10724,10 +10724,10 @@
         "javascript.type_ref": 3717,
         "ruby.calls": 19113,
         "ruby.implements": 198,
-        "ruby.imports": 70,
+        "ruby.imports": 63,
         "ruby.inherits": 452,
-        "ruby.instantiates": 385,
-        "ruby.type_ref": 11630,
+        "ruby.instantiates": 383,
+        "ruby.type_ref": 11582,
         "scss.calls": 42,
         "scss.imports": 32,
         "shell.calls": 3,
@@ -12959,8 +12959,8 @@
       "flow_edges": 18,
       "generated_excluded": 10625,
       "generated_files_reclassified": 29,
-      "internal_edges": 155417,
-      "internal_unresolved": 91238,
+      "internal_edges": 156515,
+      "internal_unresolved": 90145,
       "languages": {
         "c": 3,
         "cmake": 1,
@@ -12994,9 +12994,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-immich",
       "perf": {
-        "end_ws_mb": 183,
-        "files_per_sec": 8,
-        "index_duration_ms": 418138
+        "end_ws_mb": 182,
+        "files_per_sec": 10,
+        "index_duration_ms": 325068
       },
       "project": "ts-immich",
       "rate_by_language": {
@@ -13010,7 +13010,7 @@
         "html": 0.0,
         "java": 78.95,
         "javascript": 32.92,
-        "kotlin": 57.82,
+        "kotlin": 72.2,
         "markdown": 20.0,
         "mdx": 12.0,
         "python": 22.86,
@@ -13020,7 +13020,7 @@
         "swift": 25.25,
         "typescript": 80.52
       },
-      "resolution_rate": 63.01,
+      "resolution_rate": 63.45,
       "routes": 18,
       "symbols": 76018,
       "unresolved_by_lang_kind": {
@@ -13046,11 +13046,11 @@
         "javascript.calls": 18,
         "javascript.imports": 45,
         "javascript.type_ref": 45,
-        "kotlin.calls": 1686,
+        "kotlin.calls": 1462,
         "kotlin.implements": 6,
-        "kotlin.imports": 195,
-        "kotlin.inherits": 25,
-        "kotlin.type_ref": 1298,
+        "kotlin.imports": 181,
+        "kotlin.inherits": 21,
+        "kotlin.type_ref": 447,
         "markdown.calls": 12,
         "markdown.type_ref": 4,
         "mdx.calls": 21,

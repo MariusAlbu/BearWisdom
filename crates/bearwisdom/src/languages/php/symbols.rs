@@ -10,6 +10,9 @@ use super::helpers::{
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
+/// Extract a `namespace_definition` symbol. Braced (`namespace X { ... }`)
+/// recurses into its own body and returns `None`; unbraced (`namespace X;`,
+/// no body node) returns the new prefix pair for the caller's loop to adopt.
 pub(super) fn extract_namespace(
     node: &Node,
     src: &[u8],
@@ -17,11 +20,8 @@ pub(super) fn extract_namespace(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
-) {
-    let name_node = match node.child_by_field_name("name") {
-        Some(n) => n,
-        None => return,
-    };
+) -> Option<(String, String)> {
+    let name_node = node.child_by_field_name("name")?;
     let name = node_text(&name_node, src);
     let qualified_name = qualify_ns(&name, qualified_prefix);
     let new_prefix = qualified_name.clone();
@@ -48,17 +48,11 @@ pub(super) fn extract_namespace(
         generic_params: Vec::new(),
     });
 
-    if let Some(body) = node.child_by_field_name("body") {
-        super::extract::extract_from_node(
-            body,
-            src,
-            symbols,
-            refs,
-            Some(idx),
-            &new_prefix,
-            &ns_prefix,
-        );
-    }
+    let Some(body) = node.child_by_field_name("body") else {
+        return Some((new_prefix, ns_prefix));
+    };
+    super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, &ns_prefix);
+    None
 }
 
 pub(super) fn extract_class(
@@ -785,7 +779,7 @@ pub(super) fn extract_expression_statement(
             | "include_once_expression"
             | "require_expression"
             | "require_once_expression" => {
-                super::calls::extract_include_require(&child, src, refs, source_idx);
+                super::imports::extract_include_require(&child, src, refs, source_idx);
             }
             // Direct call-site nodes: pass the whole statement so that
             // `extract_calls_from_body` sees the call node as a child.

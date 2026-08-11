@@ -426,3 +426,116 @@ fn static_call_emits_type_access_chain() {
         "chain method name must be 'whereIn'"
     );
 }
+
+// -----------------------------------------------------------------------
+// Namespace hoisting into qualified_name
+// -----------------------------------------------------------------------
+
+#[test]
+fn unbraced_namespace_qualifies_top_level_class() {
+    let source = "<?php\nnamespace Illuminate\\Support;\nclass Str {}\n";
+    let r = extract::extract(source);
+    let cls = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Str")
+        .expect("Str class symbol");
+    assert_eq!(cls.qualified_name, "Illuminate\\Support.Str");
+}
+
+#[test]
+fn unbraced_namespace_qualifies_class_method_and_const() {
+    let source = r#"<?php
+namespace App\Models;
+class User {
+    const STATUS_ACTIVE = 1;
+    public function getName(): string { return "x"; }
+}
+"#;
+    let r = extract::extract(source);
+    let method = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "getName")
+        .expect("getName method symbol");
+    assert_eq!(method.qualified_name, "App\\Models.User.getName");
+
+    let konst = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "STATUS_ACTIVE")
+        .expect("STATUS_ACTIVE const symbol");
+    assert_eq!(konst.qualified_name, "App\\Models.User.STATUS_ACTIVE");
+}
+
+#[test]
+fn unbraced_namespace_qualifies_top_level_function() {
+    let source = "<?php\nnamespace App\\Support;\nfunction enum_value() {}\n";
+    let r = extract::extract(source);
+    let func = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "enum_value")
+        .expect("enum_value function symbol");
+    assert_eq!(func.qualified_name, "App\\Support.enum_value");
+}
+
+#[test]
+fn file_without_namespace_keeps_bare_qualified_names() {
+    let source = "<?php\nclass Foo {}\n";
+    let r = extract::extract(source);
+    let cls = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Foo")
+        .expect("Foo class symbol");
+    assert_eq!(cls.qualified_name, "Foo");
+}
+
+#[test]
+fn braced_namespace_still_scopes_its_own_body_only() {
+    let source = "<?php\nnamespace App\\Models {\n    class User {}\n}\nclass Outside {}\n";
+    let r = extract::extract(source);
+    let user = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "User")
+        .expect("User class symbol");
+    assert_eq!(user.qualified_name, "App\\Models.User");
+
+    let outside = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "Outside")
+        .expect("Outside class symbol");
+    assert_eq!(
+        outside.qualified_name, "Outside",
+        "a sibling after a BRACED namespace block must not inherit its prefix"
+    );
+}
+
+#[test]
+fn namespace_hoisting_composes_with_aliased_use_rewrite() {
+    let source = r#"<?php
+namespace App\Models;
+use App\Contracts\Auth\Factory as FactoryContract;
+class User implements FactoryContract {}
+"#;
+    let r = extract::extract(source);
+    let cls = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "User")
+        .expect("User class symbol");
+    assert_eq!(cls.qualified_name, "App\\Models.User");
+
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Implements)
+        .expect("Implements ref");
+    assert_eq!(
+        imp.target_name, "Factory",
+        "the alias rewrite from the imports module must still fire alongside namespace hoisting"
+    );
+}

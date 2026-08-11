@@ -398,7 +398,7 @@ pub(super) fn extract_calls_from_body(
             | "include_once_expression"
             | "require_expression"
             | "require_once_expression" => {
-                extract_include_require(&child, src, refs, source_symbol_index);
+                super::imports::extract_include_require(&child, src, refs, source_symbol_index);
             }
 
             // `"Hello $name and {$obj->method()}"` — interpolated string with embedded expressions.
@@ -410,57 +410,6 @@ pub(super) fn extract_calls_from_body(
             _ => {}
         }
         extract_calls_from_body(&child, src, source_symbol_index, refs);
-    }
-}
-
-/// Extract an Imports edge from an `include`/`require`/`include_once`/`require_once` expression.
-pub(super) fn extract_include_require(
-    node: &Node,
-    src: &[u8],
-    refs: &mut Vec<ExtractedRef>,
-    source_symbol_index: usize,
-) {
-    // The path expression is the only named child.
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "string" || child.kind() == "encapsed_string" {
-            let raw = node_text(&child, src);
-            // Strip surrounding quotes.
-            let path = raw
-                .trim_start_matches('"')
-                .trim_end_matches('"')
-                .trim_start_matches('\'')
-                .trim_end_matches('\'')
-                .to_string();
-            if path.is_empty() {
-                continue;
-            }
-            let parts: Vec<&str> = path.split('/').collect();
-            let target = parts
-                .last()
-                .unwrap_or(&path.as_str())
-                .trim_end_matches(".php")
-                .to_string();
-            let module = if parts.len() > 1 {
-                Some(parts[..parts.len() - 1].join("/"))
-            } else {
-                None
-            };
-            refs.push(ExtractedRef {
-                is_import_binding: false,
-                is_reexport: false,
-                source_symbol_index,
-                target_name: target,
-                kind: EdgeKind::Imports,
-                line: node.start_position().row as u32,
-                col: 0,
-                module,
-                chain: None,
-                byte_offset: node.start_byte() as u32,
-                namespace_segments: Vec::new(),
-                call_args: Vec::new(),
-            });
-        }
     }
 }
 
@@ -1006,90 +955,6 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
 
         _ => None,
     }
-}
-
-// ---------------------------------------------------------------------------
-// Use declaration / import reference extraction
-// ---------------------------------------------------------------------------
-
-pub(super) fn extract_use_declaration(
-    node: &Node,
-    src: &[u8],
-    refs: &mut Vec<ExtractedRef>,
-    current_symbol_count: usize,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "namespace_use_clause" => {
-                push_use_ref_for_name(&child, src, refs, current_symbol_count);
-            }
-            "qualified_name" | "name" => {
-                let full = node_text(&child, src);
-                push_fq_import(
-                    full,
-                    child.start_position().row as u32,
-                    child.start_byte() as u32,
-                    refs,
-                    current_symbol_count,
-                );
-            }
-            _ => {}
-        }
-    }
-}
-
-fn push_use_ref_for_name(
-    node: &Node,
-    src: &[u8],
-    refs: &mut Vec<ExtractedRef>,
-    current_symbol_count: usize,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "qualified_name" || child.kind() == "name" {
-            let full = node_text(&child, src);
-            push_fq_import(
-                full,
-                child.start_position().row as u32,
-                child.start_byte() as u32,
-                refs,
-                current_symbol_count,
-            );
-            return;
-        }
-    }
-}
-
-/// Push an Imports edge for a fully-qualified PHP name like `Foo\Bar\Baz`.
-fn push_fq_import(
-    full: String,
-    line: u32,
-    byte_offset: u32,
-    refs: &mut Vec<ExtractedRef>,
-    current_symbol_count: usize,
-) {
-    let parts: Vec<&str> = full.split('\\').collect();
-    let target = parts.last().unwrap_or(&full.as_str()).to_string();
-    let module = if parts.len() > 1 {
-        Some(parts[..parts.len() - 1].join("\\"))
-    } else {
-        None
-    };
-    refs.push(ExtractedRef {
-        is_import_binding: false,
-        is_reexport: false,
-        source_symbol_index: current_symbol_count,
-        target_name: target,
-        kind: EdgeKind::Imports,
-        line,
-        module,
-        chain: None,
-        byte_offset,
-        namespace_segments: Vec::new(),
-        call_args: Vec::new(),
-        col: 0,
-    });
 }
 
 pub(super) fn extract_trait_use(

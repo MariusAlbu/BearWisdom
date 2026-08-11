@@ -2,7 +2,7 @@
 // parser/extractors/php/mod.rs  —  PHP symbol and reference extractor
 // =============================================================================
 
-use super::{calls, decorators, symbols};
+use super::{calls, decorators, imports, symbols};
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
@@ -94,27 +94,10 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // nodes in type positions, emitting TypeRef for any missed by the walker.
     scan_all_type_refs(root, src, &mut refs);
 
-    // Dedup identical refs — `scan_all_type_refs` overlaps with per-arm
-    // walks. Key includes `module` so refs with different qualifier paths
-    // survive. Same shape as Kotlin / Scala / Elixir.
-    {
-        let mut seen: std::collections::HashSet<(
-            usize,
-            String,
-            crate::types::EdgeKind,
-            u32,
-            Option<String>,
-        )> = std::collections::HashSet::with_capacity(refs.len());
-        refs.retain(|r| {
-            seen.insert((
-                r.source_symbol_index,
-                r.target_name.clone(),
-                r.kind,
-                r.line,
-                r.module.clone(),
-            ))
-        });
-    }
+    // Rewrite aliased-import usage refs to their declared name, then dedup —
+    // `scan_all_type_refs` overlaps with the per-arm walk above. Same shape
+    // as Kotlin / Scala / Elixir.
+    imports::finalize_refs(&mut refs);
 
     super::ExtractionResult::new(syms, refs, has_errors)
 }
@@ -123,6 +106,13 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 // Core traversal
 // ---------------------------------------------------------------------------
 
+/// `qp`/`np` track the file's CURRENT namespace: `qualified_prefix` and
+/// `namespace_prefix` seed them, but a body-less `namespace X;` statement
+/// (no `{ }` block — everything after it up to the next `namespace` or EOF is
+/// implicitly inside it) updates them in place for every sibling this loop
+/// visits afterward. A braced `namespace X { ... }` instead recurses into its
+/// own body with a scoped prefix, same as before, and leaves `qp`/`np`
+/// untouched for what follows it here.
 pub(super) fn extract_from_node(
     node: Node,
     src: &[u8],
@@ -132,22 +122,22 @@ pub(super) fn extract_from_node(
     qualified_prefix: &str,
     namespace_prefix: &str,
 ) {
+    let mut qp = qualified_prefix.to_string();
+    let mut np = namespace_prefix.to_string();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "namespace_definition" => {
-                symbols::extract_namespace(
-                    &child,
-                    src,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                );
+                if let Some((new_qp, new_np)) =
+                    symbols::extract_namespace(&child, src, symbols, refs, parent_index, &qp)
+                {
+                    qp = new_qp;
+                    np = new_np;
+                }
             }
 
             "namespace_use_declaration" => {
-                calls::extract_use_declaration(&child, src, refs, parent_index.unwrap_or(0));
+                imports::extract_use_declaration(&child, src, refs, parent_index.unwrap_or(0));
             }
 
             "function_definition" => {
@@ -158,8 +148,8 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
+                    &qp,
+                    &np,
                     false,
                 );
                 if symbols.len() > fn_idx {
@@ -175,8 +165,8 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
+                    &qp,
+                    &np,
                     SymbolKind::Class,
                 );
                 if symbols.len() > class_idx {
@@ -192,8 +182,8 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
+                    &qp,
+                    &np,
                     SymbolKind::Interface,
                 );
                 if symbols.len() > class_idx {
@@ -209,8 +199,8 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
+                    &qp,
+                    &np,
                     SymbolKind::Class,
                 );
                 if symbols.len() > class_idx {
@@ -220,15 +210,7 @@ pub(super) fn extract_from_node(
 
             "enum_declaration" => {
                 let enum_idx = symbols.len();
-                symbols::extract_enum(
-                    &child,
-                    src,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
-                );
+                symbols::extract_enum(&child, src, symbols, refs, parent_index, &qp, &np);
                 if symbols.len() > enum_idx {
                     decorators::extract_decorators(&child, src, enum_idx, refs);
                 }
@@ -243,7 +225,7 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
+                    &qp,
                     source_idx,
                 );
             }
@@ -257,7 +239,7 @@ pub(super) fn extract_from_node(
                     refs,
                     symbols,
                     parent_index,
-                    qualified_prefix,
+                    &qp,
                     source_idx,
                 );
             }
@@ -269,7 +251,7 @@ pub(super) fn extract_from_node(
                     src,
                     symbols,
                     parent_index,
-                    qualified_prefix,
+                    &qp,
                     false,
                 );
             }
@@ -281,7 +263,7 @@ pub(super) fn extract_from_node(
                     src,
                     symbols,
                     parent_index,
-                    qualified_prefix,
+                    &qp,
                     true,
                 );
             }
@@ -294,7 +276,7 @@ pub(super) fn extract_from_node(
                     symbols,
                     refs,
                     parent_index,
-                    qualified_prefix,
+                    &qp,
                 );
             }
 
@@ -319,15 +301,7 @@ pub(super) fn extract_from_node(
             "ERROR" | "MISSING" => {}
 
             _ => {
-                extract_from_node(
-                    child,
-                    src,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                    namespace_prefix,
-                );
+                extract_from_node(child, src, symbols, refs, parent_index, &qp, &np);
             }
         }
     }

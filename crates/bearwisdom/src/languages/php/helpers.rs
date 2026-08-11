@@ -18,7 +18,9 @@ pub(super) fn qualify(name: &str, prefix: &str) -> String {
     }
 }
 
-/// Backslash-separated qualifier for namespace symbols themselves.
+/// Dot-separated qualifier for namespace symbols themselves — same scheme as
+/// `qualify()`, so a namespace's qualified name composes with a class's the
+/// same way a class's composes with a member's.
 pub(super) fn qualify_ns(name: &str, prefix: &str) -> String {
     if prefix.is_empty() {
         name.to_string()
