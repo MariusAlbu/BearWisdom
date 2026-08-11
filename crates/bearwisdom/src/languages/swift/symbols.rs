@@ -753,46 +753,6 @@ pub(super) fn push_subscript(
     Some(idx)
 }
 
-pub(super) fn push_import(
-    node: &Node,
-    src: &[u8],
-    current_symbol_count: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let mut parts: Vec<String> = Vec::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "import_path_component" => {
-                parts.push(node_text(child, src));
-            }
-            "identifier" => {
-                parts.push(node_text(child, src));
-            }
-            _ => {}
-        }
-    }
-    if parts.is_empty() {
-        return;
-    }
-    let full = parts.join(".");
-    let target = parts.last().cloned().unwrap_or_else(|| full.clone());
-    refs.push(ExtractedRef {
-        is_import_binding: false,
-        is_reexport: false,
-        source_symbol_index: current_symbol_count,
-        target_name: target,
-        kind: EdgeKind::Imports,
-        line: node.start_position().row as u32,
-        col: 0,
-        module: Some(full),
-        chain: None,
-        byte_offset: node.start_byte() as u32,
-        namespace_segments: Vec::new(),
-        call_args: Vec::new(),
-    });
-}
-
 pub(super) fn extract_type_inheritance(
     node: &Node,
     src: &[u8],

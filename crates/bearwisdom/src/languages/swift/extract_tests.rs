@@ -138,7 +138,11 @@ struct Matrix {
 }
 
 #[test]
-fn import_produces_import_ref() {
+fn whole_module_import_carries_wildcard_target_and_module_name() {
+    // A whole-module import (`import Foundation`) brings every one of the
+    // module's members into unqualified scope, so it carries the wildcard
+    // sentinel as its target — the same convention Java/Groovy/Rust use for
+    // `import a.b.*` — with the module name on `module`.
     let src = "import Foundation\nimport UIKit\n";
     let r = extract::extract(src);
     let imports: Vec<_> = r
@@ -146,12 +150,66 @@ fn import_produces_import_ref() {
         .iter()
         .filter(|r| r.kind == EdgeKind::Imports)
         .collect();
-    let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
     assert!(
-        targets.contains(&"Foundation"),
-        "missing Foundation: {targets:?}"
+        imports
+            .iter()
+            .any(|rf| rf.target_name == "*" && rf.module.as_deref() == Some("Foundation")),
+        "missing wildcard import of Foundation: {:?}",
+        imports
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module))
+            .collect::<Vec<_>>()
     );
-    assert!(targets.contains(&"UIKit"), "missing UIKit: {targets:?}");
+    assert!(
+        imports
+            .iter()
+            .any(|rf| rf.target_name == "*" && rf.module.as_deref() == Some("UIKit")),
+        "missing wildcard import of UIKit: {:?}",
+        imports
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn testable_import_still_carries_wildcard_target() {
+    // `@testable import` is a whole-module import (grants access to
+    // internal-visibility declarations); the leading `modifiers` node must
+    // not change the target/module split.
+    let src = "@testable import MyModule\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "*"
+            && rf.module.as_deref() == Some("MyModule")),
+        "expected wildcard import of MyModule; refs: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module, rf.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn declaration_specific_import_splits_target_from_module() {
+    // `import struct Foundation.Date` names ONE declaration within a module:
+    // the target is the declaration's own bare name (so a later bare `Date`
+    // usage matches it), while `module` keeps the full dotted path (so
+    // `explicit_member_import` can match its last segment against the
+    // target).
+    let src = "import struct Foundation.Date\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports
+            && rf.target_name == "Date"
+            && rf.module.as_deref() == Some("Foundation.Date")),
+        "expected split target 'Date' / module 'Foundation.Date'; refs: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, &rf.module, rf.kind))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

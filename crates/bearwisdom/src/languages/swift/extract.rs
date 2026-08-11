@@ -10,10 +10,10 @@ use super::decorators::{
 use super::helpers::find_child_by_kind;
 use super::symbols::{
     extract_type_inheritance, handle_class_declaration, push_associatedtype, push_deinit,
-    push_extension, push_function_decl, push_import, push_init, push_parameters, push_property,
+    push_extension, push_function_decl, push_init, push_parameters, push_property,
     push_subscript, push_type_decl, push_typealias, recurse_into_body,
 };
-use super::{calls, decorators, helpers, symbols};
+use super::{calls, decorators, helpers, imports, symbols};
 
 use crate::parser::scope_tree::{self, ScopeKind};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -97,7 +97,7 @@ pub(super) fn extract_node<'a>(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "import_declaration" => {
-                push_import(&child, src, symbols.len(), refs);
+                imports::push_import(&child, src, symbols.len(), refs);
             }
 
             "class_declaration" => {
