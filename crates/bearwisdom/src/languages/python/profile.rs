@@ -110,7 +110,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     // A module-carrying ref binds by anchor: a relative `.foo`/`..bar` module
     // resolves via `in_module_from` and binds the bare name there; an absolute
     // `models`-style module maps to a directory and accepts any kind-compatible

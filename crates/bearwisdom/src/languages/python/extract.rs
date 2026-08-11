@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use super::{assignments, calls, helpers, statements, symbols, types};
+use super::{assignments, calls, helpers, imports, statements, symbols, types};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use rustc_hash::FxHashSet;
@@ -45,7 +45,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     // Build the import map once from the top-level CST so every call site can
     // annotate qualified call refs with their source module.
-    let import_map = calls::build_import_map(root, source);
+    let import_map = imports::build_import_map(root, source);
 
     // Collect the module-level `__all__` export contract. A name imported into
     // this file AND listed here is a genuine re-export; its Imports ref is
@@ -277,12 +277,12 @@ pub(super) fn extract_from_node(
                 // to the most-recently-pushed symbol (index 0 fallback).
                 // The index is always clamped so it stays in-bounds.
                 let owner = clamp_owner(parent_index, symbols.len());
-                calls::extract_import_statement(&child, source, refs, owner, dunder_all);
+                imports::extract_import_statement(&child, source, refs, owner, dunder_all);
             }
 
             "import_from_statement" => {
                 let owner = clamp_owner(parent_index, symbols.len());
-                calls::extract_import_from_statement(&child, source, refs, owner, dunder_all);
+                imports::extract_import_from_statement(&child, source, refs, owner, dunder_all);
             }
 
             // `from __future__ import annotations` — emit Imports refs for

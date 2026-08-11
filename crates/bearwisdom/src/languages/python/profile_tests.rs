@@ -1,12 +1,23 @@
 use super::*;
 use crate::type_checker::profile::language_profile::{
-    DispatchAxis, KindCompatibility, SupertypeDiscovery,
+    DispatchAxis, ImportModulePath, KindCompatibility, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
 fn id_matches_language_extractor() {
     assert_eq!(PYTHON_PROFILE.id, "python");
+}
+
+#[test]
+fn import_module_path_reads_the_ref_module_field() {
+    // Every Python import statement now attaches a `module` (the dotted
+    // package path, or a dot-prefixed relative specifier); the file-level
+    // import table is built from that field rather than left empty.
+    assert_eq!(
+        PYTHON_PROFILE.import_module_path,
+        ImportModulePath::FromModuleField
+    );
 }
 
 #[test]

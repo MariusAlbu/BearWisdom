@@ -10040,7 +10040,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 40
+        "min_resolution_rate": 51
       },
       "code_chunks": 293720,
       "drained_refs": 335,
@@ -10049,8 +10049,8 @@
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 125703,
-      "internal_unresolved": 188038,
+      "internal_edges": 163348,
+      "internal_unresolved": 153400,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10073,9 +10073,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 120,
-        "files_per_sec": 16,
-        "index_duration_ms": 268616
+        "end_ws_mb": 121,
+        "files_per_sec": 20,
+        "index_duration_ms": 221140
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -10088,11 +10088,11 @@
         "mako": 0.0,
         "markdown": 48.89,
         "mdx": 25.84,
-        "python": 19.11,
+        "python": 45.47,
         "shell": 72.13,
         "typescript": 56.53
       },
-      "resolution_rate": 40.07,
+      "resolution_rate": 51.57,
       "routes": 0,
       "symbols": 143806,
       "unresolved_by_lang_kind": {
@@ -10113,15 +10113,15 @@
         "markdown.type_ref": 32,
         "mdx.calls": 38,
         "mdx.type_ref": 28,
-        "python.calls": 67046,
-        "python.imports": 5862,
-        "python.type_ref": 38360,
+        "python.calls": 48193,
+        "python.imports": 4682,
+        "python.type_ref": 23767,
         "shell.calls": 17,
-        "typescript.calls": 56187,
+        "typescript.calls": 56178,
         "typescript.imports": 104,
-        "typescript.inherits": 74,
+        "typescript.inherits": 73,
         "typescript.instantiates": 52,
-        "typescript.type_ref": 18820
+        "typescript.type_ref": 18818
       },
       "vendored_files_reclassified": 1997
     },
