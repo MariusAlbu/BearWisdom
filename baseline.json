@@ -10049,8 +10049,8 @@
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 163348,
-      "internal_unresolved": 153400,
+      "internal_edges": 163931,
+      "internal_unresolved": 152828,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10073,9 +10073,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 121,
-        "files_per_sec": 20,
-        "index_duration_ms": 221140
+        "end_ws_mb": 118,
+        "files_per_sec": 21,
+        "index_duration_ms": 210681
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -10088,11 +10088,11 @@
         "mako": 0.0,
         "markdown": 48.89,
         "mdx": 25.84,
-        "python": 45.47,
+        "python": 45.89,
         "shell": 72.13,
         "typescript": 56.53
       },
-      "resolution_rate": 51.57,
+      "resolution_rate": 51.75,
       "routes": 0,
       "symbols": 143806,
       "unresolved_by_lang_kind": {
@@ -10113,9 +10113,9 @@
         "markdown.type_ref": 32,
         "mdx.calls": 38,
         "mdx.type_ref": 28,
-        "python.calls": 48193,
-        "python.imports": 4682,
-        "python.type_ref": 23767,
+        "python.calls": 47875,
+        "python.imports": 4451,
+        "python.type_ref": 23744,
         "shell.calls": 17,
         "typescript.calls": 56178,
         "typescript.imports": 104,

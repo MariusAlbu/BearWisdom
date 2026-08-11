@@ -14,13 +14,13 @@ fn imports_refs(source: &str) -> Vec<crate::types::ExtractedRef> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn plain_single_segment_import_has_no_module() {
+fn plain_single_segment_import_targets_itself_as_module() {
     let refs = imports_refs("import json\n");
     let imp = refs
         .iter()
         .find(|r| r.target_name == "json")
         .expect("expected an Imports ref for 'json'");
-    assert!(imp.module.is_none());
+    assert_eq!(imp.module.as_deref(), Some("json"));
     assert!(imp.chain.is_none());
 }
 
@@ -49,13 +49,13 @@ fn dotted_import_with_alias_carries_declared_name_as_chain_and_alias_as_target()
 }
 
 #[test]
-fn single_segment_import_with_alias_carries_declared_name_as_chain() {
+fn single_segment_import_with_alias_carries_declared_name_as_chain_and_module() {
     let refs = imports_refs("import numpy as np\n");
     let imp = refs
         .iter()
         .find(|r| r.target_name == "np")
         .expect("expected an Imports ref bound to the alias 'np'");
-    assert!(imp.module.is_none());
+    assert_eq!(imp.module.as_deref(), Some("numpy"));
     let chain = imp.chain.as_ref().expect("expected a rename chain");
     assert_eq!(chain.segments[0].name, "numpy");
 }

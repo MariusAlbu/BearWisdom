@@ -174,10 +174,14 @@ pub(super) fn extract_import_statement(
                 let full = node_text(&child, source);
                 let parts: Vec<&str> = full.split('.').collect();
                 let target = parts.last().unwrap_or(&full.as_str()).to_string();
+                // `import foo.bar` carries the parent package as `module`; a
+                // single-segment `import foo` has no parent, so `module` names
+                // the imported module itself — the file-path matcher resolves
+                // it the same way a dotted module resolves its last segment.
                 let module = if parts.len() > 1 {
                     Some(parts[..parts.len() - 1].join("."))
                 } else {
-                    None
+                    Some(target.clone())
                 };
                 // `import foo.bar` binds the TOP segment `foo` as the local name.
                 let local = parts.first().copied().unwrap_or(full.as_str());
@@ -201,10 +205,12 @@ pub(super) fn extract_import_statement(
                     let full = node_text(&name_node, source);
                     let parts: Vec<&str> = full.split('.').collect();
                     let declared = parts.last().unwrap_or(&full.as_str()).to_string();
+                    // Same single-segment rule as the unaliased form above:
+                    // `import foo as f` names `foo` itself as `module`.
                     let module = if parts.len() > 1 {
                         Some(parts[..parts.len() - 1].join("."))
                     } else {
-                        None
+                        Some(declared.clone())
                     };
                     let local = child
                         .child_by_field_name("alias")
