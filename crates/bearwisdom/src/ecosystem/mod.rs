@@ -26,7 +26,9 @@ use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
 pub mod ambient;
+pub mod coursier_cache;
 pub mod externals;
+pub mod jvm_caches;
 pub mod imports;
 pub mod manifest;
 pub mod symbol_index;
