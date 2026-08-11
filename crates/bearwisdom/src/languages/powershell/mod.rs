@@ -10,11 +10,13 @@
 //! - `class_property_definition` → Property
 //! - `using_statement` / `Import-Module` commands → Imports
 
+mod builtins;
 mod commands;
 mod dotnet_bindings;
 pub mod extract;
 pub mod keywords;
 mod node_helpers;
+mod predicates;
 pub(crate) mod profile;
 pub use profile::POWERSHELL_PROFILE;
 

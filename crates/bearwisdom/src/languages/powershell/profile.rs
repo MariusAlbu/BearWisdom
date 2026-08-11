@@ -68,7 +68,7 @@ pub const POWERSHELL_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: PS_PRIMITIVES,
     kind_compatible_table: PS_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    builtin_skip: None,
+    builtin_skip: Some(super::predicates::is_powershell_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
@@ -103,8 +103,13 @@ pub const POWERSHELL_PROFILE: LanguageProfile = LanguageProfile {
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
     selector_resolution: None,
+    // PowerShell has no file-scoped module/namespace system: functions
+    // loaded via dot-sourcing or `Import-Module` become callable from
+    // anywhere in the process once loaded, so an in-project function-name
+    // call resolves against the whole project's declarations, not just
+    // files reachable through a captured import edge.
     namespaceless_global_type_lookup:
-        crate::type_checker::profile::language_profile::NamespaceScope::Off,
+        crate::type_checker::profile::language_profile::NamespaceScope::Global,
     explicit_member_import: false,
     multi_candidate_ranking: false,
     scope_functions: &[],
