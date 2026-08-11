@@ -76,7 +76,12 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `require`/`require_relative` refs always carry `module` (the full
+    // require path) — harvesting them into the file's import table gives
+    // `external_by_import` a package root to scope gem-name binding by,
+    // beyond what `module_anchor` already does for the require ref itself.
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     // `require`/`require_relative` anchor: resolve the require path to its
     // project file and bind the same-named module/class symbol when present,
     // else the first symbol in the file (anchors the cross-file edge).

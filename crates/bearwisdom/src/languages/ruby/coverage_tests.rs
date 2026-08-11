@@ -467,6 +467,22 @@ fn cov_require_produces_imports_ref() {
     );
 }
 
+/// `require 'spree/product'` carries the full require path (not just the
+/// stem) in `module`, so import-scoped resolver rules can read a package
+/// root off it.
+#[test]
+fn cov_require_carries_full_path_in_module() {
+    let src = "require 'spree/product'\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports)
+        .expect("expected Imports ref from require 'spree/product'");
+    assert_eq!(imp.target_name, "product");
+    assert_eq!(imp.module.as_deref(), Some("spree/product"));
+}
+
 /// `require_relative 'base'` → EdgeKind::Imports
 #[test]
 fn cov_require_relative_produces_imports_ref() {
@@ -486,6 +502,22 @@ fn cov_require_relative_produces_imports_ref() {
             .map(|rf| (&rf.target_name, rf.kind))
             .collect::<Vec<_>>()
     );
+}
+
+/// `require_relative '../lib/base'` normalizes `module` to a `./`-prefixed
+/// relative path so the engine's `module.starts_with('.')` relative check
+/// classifies it correctly.
+#[test]
+fn cov_require_relative_normalizes_module_to_dot_prefix() {
+    let src = "require_relative '../lib/base'\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports)
+        .expect("expected Imports ref from require_relative '../lib/base'");
+    assert_eq!(imp.target_name, "base");
+    assert_eq!(imp.module.as_deref(), Some("../lib/base"));
 }
 
 // ---------------------------------------------------------------------------
