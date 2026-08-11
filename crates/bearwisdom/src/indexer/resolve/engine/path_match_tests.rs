@@ -43,6 +43,25 @@ fn trim_source_extension_strips_known_extensions() {
 }
 
 #[test]
+fn file_path_matches_module_covers_the_three_forms() {
+    // Stem suffix — relative import.
+    assert!(file_path_matches_module("src/app/foo.ts", "./foo"));
+    // Dot-to-slash suffix — dotted FQN whose leaf names the file.
+    assert!(file_path_matches_module(
+        "ext:idx:C:/cache/jdk-src/java.base/java/util/Map.java",
+        "java.util.Map"
+    ));
+    // Segment-bounded run — package directory inside a deeper path.
+    assert!(file_path_matches_module(
+        "site-packages/posthog/models/__init__.py",
+        "posthog.models"
+    ));
+    // Boundary check: a segment run must not match inside a longer segment.
+    assert!(!file_path_matches_module("src/posthog_models/x.py", "posthog.models"));
+    assert!(!file_path_matches_module("src/a/b.ts", ""));
+}
+
+#[test]
 fn specifier_kind_predicates_split_on_leading_shape() {
     assert!(is_bare_module_specifier("lodash"));
     assert!(!is_bare_module_specifier("./local"));

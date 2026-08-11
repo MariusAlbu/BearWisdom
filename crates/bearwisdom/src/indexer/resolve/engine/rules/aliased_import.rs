@@ -8,7 +8,7 @@
 // ran in `file_import`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{trim_path_extension, trim_source_extension};
+use crate::indexer::resolve::engine::support::file_path_matches_module;
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 
 pub struct AliasedImportRule;
@@ -56,42 +56,6 @@ impl LookupRule for AliasedImportRule {
         }
         LookupResult::Pass
     }
-}
-
-/// Match a symbol's file path against a (rewritten) module specifier. The same
-/// multi-form matcher as in `file_import`: stem-suffix, dot-to-slash rewrite,
-/// and segment-bounded package-directory run.
-fn file_path_matches_module(file_path: &str, module: &str) -> bool {
-    if module.is_empty() {
-        return false;
-    }
-    let normalized = file_path.replace('\\', "/");
-    let cleaned =
-        trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_path_extension(&normalized);
-    if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
-        return true;
-    }
-    let dotted = cleaned.replace('.', "/");
-    if dotted.is_empty() {
-        return false;
-    }
-    path_contains_segment_run(&normalized, &dotted)
-}
-
-fn path_contains_segment_run(path: &str, run: &str) -> bool {
-    let mut from = 0;
-    while let Some(rel) = path[from..].find(run) {
-        let start = from + rel;
-        let end = start + run.len();
-        let left_ok = start == 0 || path.as_bytes()[start - 1] == b'/';
-        let right_ok = end == path.len() || path.as_bytes()[end] == b'/';
-        if left_ok && right_ok {
-            return true;
-        }
-        from = start + 1;
-    }
-    false
 }
 
 #[cfg(test)]

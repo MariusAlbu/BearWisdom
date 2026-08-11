@@ -55,6 +55,7 @@ pub mod semantic_model;
 pub mod pipeline;
 pub mod rules;
 pub mod path_match;
+pub mod reexports;
 pub mod support;
 pub mod compilation;
 pub mod composite_members;

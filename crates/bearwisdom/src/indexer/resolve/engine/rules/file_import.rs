@@ -6,12 +6,11 @@
 // (directly or via an `alias`) and find a same-named symbol whose file path
 // matches the import's module specifier.
 //
-// `file_path_matches_module` is the canonical multi-form matcher: stem suffix,
-// dot-to-slash, and segment-bounded package-directory run. It is inlined here
-// because it is non-trivial and specific to this rule.
+// `file_path_matches_module` (engine/path_match) is the canonical multi-form
+// matcher: stem suffix, dot-to-slash, and segment-bounded package-directory run.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{trim_path_extension, trim_source_extension};
+use crate::indexer::resolve::engine::support::file_path_matches_module;
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 
 pub struct FileImportRule;
@@ -51,48 +50,6 @@ impl LookupRule for FileImportRule {
     }
 }
 
-/// Match a symbol's file path against an import module specifier. Returns `true`
-/// when the path plausibly names the same file as `module`:
-/// - Stem-suffix: the path's extension-stripped form ends with the module's
-///   extension-stripped, `./`/`../`-trimmed form (covers relative imports).
-/// - Dot-to-slash: same after replacing `.` with `/` in the module (covers
-///   dotted package imports like `posthog.models`).
-/// - Segment-bounded run: the slash-form of the module appears as a
-///   `/`-bounded contiguous run inside the path (covers `__init__.py` re-exports
-///   and deep package paths that the stem-suffix check misses).
-fn file_path_matches_module(file_path: &str, module: &str) -> bool {
-    if module.is_empty() {
-        return false;
-    }
-    let normalized = file_path.replace('\\', "/");
-    let cleaned =
-        trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_path_extension(&normalized);
-    if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
-        return true;
-    }
-    let dotted = cleaned.replace('.', "/");
-    if dotted.is_empty() {
-        return false;
-    }
-    path_contains_segment_run(&normalized, &dotted)
-}
-
-/// `true` when `run` appears in `path` as a `/`-bounded contiguous segment run.
-fn path_contains_segment_run(path: &str, run: &str) -> bool {
-    let mut from = 0;
-    while let Some(rel) = path[from..].find(run) {
-        let start = from + rel;
-        let end = start + run.len();
-        let left_ok = start == 0 || path.as_bytes()[start - 1] == b'/';
-        let right_ok = end == path.len() || path.as_bytes()[end] == b'/';
-        if left_ok && right_ok {
-            return true;
-        }
-        from = start + 1;
-    }
-    false
-}
 
 #[cfg(test)]
 #[path = "file_import_tests.rs"]

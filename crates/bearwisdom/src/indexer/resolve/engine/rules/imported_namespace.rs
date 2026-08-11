@@ -14,12 +14,13 @@
 // `namespace_import` requires a `.` in the prefix; this rule scans by_name +
 // file_path_matches_module instead.
 //
-// `file_path_matches_module` and `path_contains_segment_run` are single-use
-// helpers inlined here from `default_resolver`.
+// The local `file_path_matches_module` widens the shared matcher (see
+// `engine/path_match`) with a hyphen-to-underscore folded segment-run retry.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::{
-    import_scoped_package_id, normalize_name, trim_path_extension, trim_source_extension,
+    file_path_matches_module as shared_file_path_matches_module, import_scoped_package_id,
+    normalize_name, path_contains_segment_run, trim_source_extension,
 };
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::NameNormalization;
@@ -122,43 +123,19 @@ impl LookupRule for ImportedNamespaceRule {
 /// hyphens folded to underscores. The segment-boundary requirement still
 /// applies after normalization, so `turbo_tasks_macros` never matches `turbo_tasks`.
 fn file_path_matches_module(file_path: &str, module: &str) -> bool {
-    if module.is_empty() {
-        return false;
+    if shared_file_path_matches_module(file_path, module) {
+        return true;
     }
     let normalized = file_path.replace('\\', "/");
     let cleaned =
         trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_path_extension(&normalized);
-    if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
-        return true;
-    }
     let dotted = cleaned.replace('.', "/");
     if dotted.is_empty() {
         return false;
     }
-    if path_contains_segment_run(&normalized, &dotted) {
-        return true;
-    }
     let path_norm = normalized.replace('-', "_");
     let run_norm = dotted.replace('-', "_");
     path_contains_segment_run(&path_norm, &run_norm)
-}
-
-/// Returns `true` when `run` appears as a contiguous, segment-bounded
-/// substring of `path` (bounded by `/` or string start/end).
-fn path_contains_segment_run(path: &str, run: &str) -> bool {
-    let mut from = 0;
-    while let Some(rel) = path[from..].find(run) {
-        let start = from + rel;
-        let end = start + run.len();
-        let left_ok = start == 0 || path.as_bytes()[start - 1] == b'/';
-        let right_ok = end == path.len() || path.as_bytes()[end] == b'/';
-        if left_ok && right_ok {
-            return true;
-        }
-        from = start + 1;
-    }
-    false
 }
 
 #[cfg(test)]

@@ -95,6 +95,50 @@ pub(crate) fn trim_source_extension(path: &str) -> &str {
         .trim_end_matches(".mdx")
 }
 
+/// Match a symbol's file path against an import module specifier. Returns `true`
+/// when the path plausibly names the same file as `module`:
+/// - Stem-suffix: the path's extension-stripped form ends with the module's
+///   extension-stripped, `./`/`../`-trimmed form (covers relative imports).
+/// - Dot-to-slash: same after replacing `.` with `/` in the module (covers
+///   dotted package imports like `posthog.models` and dotted FQNs like
+///   `java.util.Map`).
+/// - Segment-bounded run: the slash-form of the module appears as a
+///   `/`-bounded contiguous run inside the path (covers `__init__.py`
+///   re-exports and deep package paths the stem-suffix check misses).
+pub(crate) fn file_path_matches_module(file_path: &str, module: &str) -> bool {
+    if module.is_empty() {
+        return false;
+    }
+    let normalized = file_path.replace('\\', "/");
+    let cleaned =
+        trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
+    let stem = trim_path_extension(&normalized);
+    if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
+        return true;
+    }
+    let dotted = cleaned.replace('.', "/");
+    if dotted.is_empty() {
+        return false;
+    }
+    path_contains_segment_run(&normalized, &dotted)
+}
+
+/// `true` when `run` appears in `path` as a `/`-bounded contiguous segment run.
+pub(crate) fn path_contains_segment_run(path: &str, run: &str) -> bool {
+    let mut from = 0;
+    while let Some(rel) = path[from..].find(run) {
+        let start = from + rel;
+        let end = start + run.len();
+        let left_ok = start == 0 || path.as_bytes()[start - 1] == b'/';
+        let right_ok = end == path.len() || path.as_bytes()[end] == b'/';
+        if left_ok && right_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
 #[cfg(test)]
 #[path = "path_match_tests.rs"]
 mod tests;
