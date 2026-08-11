@@ -32,12 +32,7 @@ use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
 };
-use crate::ecosystem::externals::{
-    collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
-    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar,
-    resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
-    ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
-};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
     clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
