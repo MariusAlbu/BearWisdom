@@ -30,3 +30,11 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 pub(super) fn is_relative_import(module: &str) -> bool {
     module.starts_with('.') || module.starts_with('/')
 }
+
+/// A name in Python's `builtins` module surface — a bare reference to it is
+/// a language construct, never a missing project symbol, regardless of
+/// whether it appears as a `Calls` target or a `TypeRef` target. Wired as
+/// the profile's `builtin_skip` gate.
+pub(super) fn is_python_builtin(name: &str) -> bool {
+    super::keywords::BUILTIN_NAMES.contains(&name)
+}

@@ -61,6 +61,23 @@ fn primitives_include_python_built_in_types() {
 }
 
 #[test]
+fn builtin_skip_drains_interpreter_builtins_declines_project_and_stdlib_names() {
+    let skip = PYTHON_PROFILE.builtin_skip.expect("python builtin_skip set");
+    // C-implemented builtins, no `.py` source anywhere — drain both edge
+    // shapes (builtin_skip is keyed on target_name only, kind-agnostic).
+    assert!(skip("len"));
+    assert!(skip("isinstance"));
+    assert!(skip("dict"));
+    assert!(skip("Exception"));
+    // typing.Optional / unittest.mock.MagicMock have real stdlib source —
+    // must resolve through the ladder, not drain.
+    assert!(!skip("Optional"));
+    assert!(!skip("MagicMock"));
+    // A project name is never a builtin.
+    assert!(!skip("UserDAO"));
+}
+
+#[test]
 fn calls_kind_table_accepts_class_and_function() {
     // Python class objects ARE callable (instantiation); `Foo()` produces
     // a Foo. The Calls kind matrix must include Class.

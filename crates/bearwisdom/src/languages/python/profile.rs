@@ -96,14 +96,16 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     primitive_mapping: PY_PRIMITIVES,
     kind_compatible_table: PY_KIND_TABLE,
     chain_qualification: ChainQualification::None,
-    // Phase 6 wave-A diagnosis: engine-primary on vs off produced
-    // identical rates on python-black (91.86%), confirming the engine
-    // doesn't regress Python chain resolution today. The 0.5pp gap vs
-    // baseline 92.38% was the extractor adding 67 new refs in
-    // tests/data/cases/ test corpus (intentionally weird Python that
-    // black formats) — most unresolvable by design. Baseline updated to
-    // reflect new extraction; engine-primary safe.
-    builtin_skip: None,
+    // `builtins` module names have no `.py` source anywhere the
+    // `cpython-stdlib` walker can index — declined pre-ladder so a bare
+    // `len(x)` / `isinstance(...)` / `dict` annotation classifies as a
+    // language construct instead of an unresolved project ref. Member
+    // calls (`obj.list()`) never reach this gate: a multi-segment chain the
+    // value walk declines with no qualifying module short-circuits straight
+    // to unresolved (`engine/semantic_model.rs`) without consulting the
+    // rule ladder at all, so a project method that happens to share a
+    // builtin's name is never at risk.
+    builtin_skip: Some(super::predicates::is_python_builtin),
     namespace_decline: None,
     decline_qualified_when_prefix_imported: false,
     module_skip: None,
