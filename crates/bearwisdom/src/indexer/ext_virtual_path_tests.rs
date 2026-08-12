@@ -100,10 +100,67 @@ fn dart_pulled_flutter_package_file_matches_eager_walker_shape() {
 }
 
 #[test]
-fn dart_pulled_non_flutter_path_falls_through() {
-    // Pub-cache / dart-sdk layouts keep the ext:idx: fallback until a walker
-    // scheme exists to agree with.
+fn dart_pulled_pub_cache_file_matches_eager_walker_shape() {
+    // A demand-pulled pub-cache package file must reconstruct the eager
+    // `PubEcosystem` walker's `ext:dart:<pkg>/<rel>` shape (version stripped,
+    // `rel` relative to the package's `lib/` dir), so the `already_walked`
+    // dedupe recognizes a re-pulled file.
     let abs = Path::new("/home/u/.pub-cache/hosted/pub.dev/collection-1.18.0/lib/collection.dart");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "dart").as_deref(),
+        Some("ext:dart:collection/collection.dart"),
+    );
+}
+
+#[test]
+fn dart_pulled_pub_cache_file_with_subdir() {
+    let abs = Path::new(
+        "/home/u/.pub-cache/hosted/pub.dev/riverpod-2.4.0/lib/src/framework.dart",
+    );
+    assert_eq!(
+        virtual_path_for_pulled(abs, "dart").as_deref(),
+        Some("ext:dart:riverpod/src/framework.dart"),
+    );
+}
+
+#[test]
+fn dart_pulled_pub_cache_file_windows_separators() {
+    let abs = Path::new(
+        r"C:\Users\u\AppData\Local\Pub\Cache\hosted\pub.dev\collection-1.18.0\lib\collection.dart",
+    );
+    assert_eq!(
+        virtual_path_for_pulled(abs, "dart").as_deref(),
+        Some("ext:dart:collection/collection.dart"),
+    );
+}
+
+#[test]
+fn dart_pulled_dart_sdk_file_matches_eager_walker_shape() {
+    // A demand-pulled Dart-SDK file must reconstruct the eager
+    // `DartSdkEcosystem` walker's `ext:dart-sdk:<lib>/<rel>` shape
+    // (dart_sdk.rs — `rel` relative to the SDK's `lib/` dir), recognized by
+    // the sub-library name rather than an install-root literal.
+    let abs = Path::new(r"C:\Program Files\Dart\dart-sdk\lib\core\core.dart");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "dart").as_deref(),
+        Some("ext:dart-sdk:core/core.dart"),
+    );
+}
+
+#[test]
+fn dart_pulled_dart_sdk_file_unix_install() {
+    let abs = Path::new("/usr/lib/dart/lib/async/async.dart");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "dart").as_deref(),
+        Some("ext:dart-sdk:async/async.dart"),
+    );
+}
+
+#[test]
+fn dart_pulled_project_lib_file_falls_through() {
+    // A project's own `lib/main.dart` is not under a recognized SDK
+    // sub-library — no walker scheme to agree with.
+    let abs = Path::new("/home/u/myproject/lib/main.dart");
     assert_eq!(virtual_path_for_pulled(abs, "dart"), None);
 }
 

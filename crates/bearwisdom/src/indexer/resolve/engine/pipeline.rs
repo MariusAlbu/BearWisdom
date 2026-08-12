@@ -16,13 +16,15 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 
+use super::file_context::{self, build_file_context, build_plugin_lookup, build_profiles};
 use super::file_lookup::FileLookup;
 use super::flush::{Edge, RefLog, Unresolved, flush_to_db};
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
+use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{RefContext, SymbolLookup};
 use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
 use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::{
@@ -32,8 +34,9 @@ use crate::indexer::resolve::engine::{
 use crate::indexer::resolve::engine::externals_demand::materialize_externals;
 use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
+use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
-use crate::type_checker::profile::language_profile::{ImportModulePath, LanguageProfile};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 
 use crate::indexer::resolve::engine::contract::build_scope_chain;
@@ -128,6 +131,8 @@ pub fn resolve_single_pass(
     );
 
     let profiles = build_profiles();
+    let plugins = build_plugin_lookup();
+    let plugin_state = project_ctx.map(|c| &c.plugin_state);
 
     // Grow the tree with the externals the project reaches. After this the tree
     // holds internal + external symbols and the resolve loop treats them alike.
@@ -160,7 +165,17 @@ pub fn resolve_single_pass(
     let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
-        .map(|pf| resolve_one_file(pf, &tree, &profiles, &solver, symbol_id_map))
+        .map(|pf| {
+            resolve_one_file(
+                pf,
+                &tree,
+                &profiles,
+                &plugins,
+                plugin_state,
+                &solver,
+                symbol_id_map,
+            )
+        })
         .collect();
 
     let mut edges: Vec<Edge> = Vec::new();
@@ -232,6 +247,8 @@ pub fn resolve_incremental_pass(
     // Built here (rather than at its previous call site below) so
     // `infer_field_init_types` can read each file's `async_wrappers` too.
     let profiles = build_profiles();
+    let plugins = build_plugin_lookup();
+    let plugin_state = project_ctx.map(|c| &c.plugin_state);
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
     tree.infer_field_init_types(parsed, &profiles);
@@ -245,7 +262,17 @@ pub fn resolve_incremental_pass(
     let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
-        .map(|pf| resolve_one_file(pf, &tree, &profiles, &solver, &full_id_map))
+        .map(|pf| {
+            resolve_one_file(
+                pf,
+                &tree,
+                &profiles,
+                &plugins,
+                plugin_state,
+                &solver,
+                &full_id_map,
+            )
+        })
         .collect();
 
     let mut edges: Vec<Edge> = Vec::new();
@@ -276,6 +303,8 @@ fn resolve_one_file(
     pf: &ParsedFile,
     tree: &Compilation,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+    plugins: &FxHashMap<&'static str, &'static dyn LanguagePlugin>,
+    plugin_state: Option<&PluginStateBag>,
     solver: &SemanticModel,
     symbol_id_map: &HashMap<(String, String), i64>,
 ) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
@@ -287,7 +316,8 @@ fn resolve_one_file(
         return (edges, unresolved, ref_log);
     };
 
-    let file_ctx = build_file_context(&pf.language, pf, profile);
+    let plugin = plugins.get(pf.language.as_str()).copied();
+    let file_ctx = build_file_context(&pf.language, pf, profile, plugin, plugin_state);
 
     // Fresh per-file flow cache: local bindings from earlier refs in this file
     // are visible to later refs in the same file only.
@@ -816,115 +846,11 @@ fn edge_kind_str(kind: EdgeKind) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// Profile map
-// ---------------------------------------------------------------------------
-
-/// Build a language-id → LanguageProfile map from the default plugin registry.
-///
-/// Registers each profile under every language id the plugin claims, matching
-/// the same multi-id pattern `Engine::build_from_registry` uses.
-#[cfg(test)]
-pub(crate) fn _test_build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
-    build_profiles()
-}
-
-fn build_profiles() -> FxHashMap<&'static str, &'static LanguageProfile> {
-    let mut profiles: FxHashMap<&'static str, &'static LanguageProfile> = FxHashMap::default();
-    for plugin in crate::languages::default_registry().all() {
-        if let Some(profile) = plugin.profile() {
-            for &lang in plugin.language_ids() {
-                profiles.insert(lang, profile);
-            }
-        }
-    }
-    profiles
-}
-
-// ---------------------------------------------------------------------------
-// FileContext builder
-// ---------------------------------------------------------------------------
-
-/// Build a `FileContext` from profile data alone, without invoking the Engine.
-///
-/// Replicates the logic from `engine.rs::generic_file_context`:
-/// - `FromModuleField` — any ref with a `module` field becomes an import entry.
-/// - Other modes — only `EdgeKind::Imports` refs; `module_path` is either empty
-///   (`None` mode) or echoes the target name (`EchoTarget` mode).
-fn build_file_context(language: &str, file: &ParsedFile, profile: &LanguageProfile) -> FileContext {
-    // A plain namespace import (`using System;`) is a wildcard of its module
-    // path when the profile says so; a literal `*` target always is. Binding
-    // imports (named `import { X }` forms) are never namespace wildcards.
-    let entry_is_wildcard = |r: &crate::types::ExtractedRef| {
-        r.target_name == "*"
-            || (profile.namespace_imports_are_wildcards
-                && r.kind == EdgeKind::Imports
-                && !r.is_import_binding)
-    };
-    let imports: Vec<ImportEntry> = match profile.import_module_path {
-        // Build entries from import-describing refs only: an explicit import
-        // binding (`import { X } from 'm'`) or an `Imports`-kind ref (require /
-        // side-effect). A bare usage ref now also carries `module` (set from the
-        // import that binds its name), so an unfiltered scan would re-derive a
-        // duplicate entry per use site; sourcing the import map from binding refs
-        // leaves one entry per imported name while the usage ref's module
-        // attribution still reaches the rules via `ctx.r().module`.
-        ImportModulePath::FromModuleField => file
-            .refs
-            .iter()
-            .filter(|r| r.is_import_binding || r.kind == EdgeKind::Imports)
-            .filter_map(|r| {
-                let module = r.module.clone()?;
-                // A rename import carries the module's ORIGINAL declared name
-                // as a single-segment chain (`use m::Orig as Bound`). The entry
-                // keys the original name — that is what the module's files
-                // declare — with the locally bound name as the alias.
-                let original = r.chain.as_ref().and_then(|c| match c.segments.as_slice() {
-                    [seg] if seg.name != r.target_name => Some(seg.name.clone()),
-                    _ => None,
-                });
-                Some(match original {
-                    Some(orig) => ImportEntry {
-                        imported_name: orig,
-                        module_path: Some(module),
-                        alias: Some(r.target_name.clone()),
-                        is_wildcard: false,
-                    },
-                    None => ImportEntry {
-                        imported_name: r.target_name.clone(),
-                        module_path: Some(module),
-                        alias: None,
-                        is_wildcard: entry_is_wildcard(r),
-                    },
-                })
-            })
-            .collect(),
-        mode => file
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .map(|r| ImportEntry {
-                imported_name: r.target_name.clone(),
-                module_path: match mode {
-                    ImportModulePath::None => None,
-                    ImportModulePath::EchoTarget => Some(r.target_name.clone()),
-                    ImportModulePath::FromModuleField => unreachable!(),
-                },
-                alias: None,
-                is_wildcard: entry_is_wildcard(r),
-            })
-            .collect(),
-    };
-    FileContext {
-        file_path: file.path.clone(),
-        language: language.to_string(),
-        imports,
-        file_namespace: None,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Smoke test
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+pub(crate) use file_context::_test_build_profiles;
 
 #[cfg(test)]
 #[path = "pipeline_tests.rs"]

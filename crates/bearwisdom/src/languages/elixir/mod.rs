@@ -25,9 +25,11 @@ mod coverage_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+use crate::indexer::plugin_state::PluginStateBag;
+use crate::indexer::resolve::engine::contract::ImportEntry;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractionResult, ParsedFile};
 
 pub struct ElixirPlugin;
 
@@ -120,4 +122,71 @@ impl LanguagePlugin for ElixirPlugin {
         // `parsed` slice lets the injection map see them.
         state.set(using_injection::build_using_injection_map(parsed));
     }
+
+    /// One-hop `use M` redirect: for each wildcard-eligible `Imports` ref
+    /// whose module M defines `__using__`/`using do` (per
+    /// `ElixirProjectState`), turn M's own `import`/`alias` injection
+    /// directives into synthetic imports for the `use`ing file.
+    ///
+    /// `alias`/`require` directives never invoke `__using__`, so they're
+    /// excluded via `is_import_binding`. A plain `import M` is structurally
+    /// identical to `use M` at the ref level — Elixir's extractor emits the
+    /// same shape for both — but `injections_for` only returns entries for
+    /// modules that actually define the macro, and real code only ever
+    /// `use`s such a module rather than `import`ing it, so that lookup
+    /// doubles as the `use`-site filter without a separate directive-kind
+    /// field on `ExtractedRef`.
+    fn extra_wildcard_imports(&self, state: &PluginStateBag, file: &ParsedFile) -> Vec<ImportEntry> {
+        let Some(project_state) = state.get::<using_injection::ElixirProjectState>() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports || r.is_import_binding {
+                continue;
+            }
+            let Some(used_module) = r.module.as_deref() else {
+                continue;
+            };
+            let Some(injections) = project_state.injections_for(used_module) else {
+                continue;
+            };
+            for inj in injections {
+                match inj {
+                    using_injection::ElixirInjection::Import { module } => {
+                        let name = module.rsplit('.').next().unwrap_or(module).to_string();
+                        out.push(ImportEntry {
+                            imported_name: name,
+                            module_path: Some(module.clone()),
+                            alias: None,
+                            is_wildcard: true,
+                        });
+                    }
+                    using_injection::ElixirInjection::Alias { local, module } => {
+                        // Elixir's own directive extraction bakes an `as:`
+                        // rename directly into `imported_name` (its refs
+                        // never carry a `chain`, so `build_file_context`'s
+                        // alias-detection never fires) — mirror that shape
+                        // here so `AliasModuleQnameRule` matches on the
+                        // local bound name the same way it does for a
+                        // hand-written `alias M.Foo, as: Bar`.
+                        out.push(ImportEntry {
+                            imported_name: local.clone(),
+                            module_path: Some(module.clone()),
+                            alias: None,
+                            is_wildcard: false,
+                        });
+                    }
+                    // A nested `use N` inside M's own quote block is a
+                    // second hop — left for a future transitive expansion.
+                    using_injection::ElixirInjection::Use { .. } => {}
+                }
+            }
+        }
+        out
+    }
 }
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod mod_tests;

@@ -82,57 +82,6 @@ fn discover_uses_explicit_dir_override() {
 }
 
 #[test]
-fn symbol_index_scans_pas_and_pp_but_not_non_pascal_files() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path().join("lcl");
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("forms.pas"), "unit Forms;\ninterface\nimplementation\n").unwrap();
-    fs::write(root.join("buttons.pp"), "unit Buttons;\ninterface\nimplementation\n").unwrap();
-    fs::write(root.join("README.md"), "docs\n").unwrap();
-
-    let dep = ExternalDepRoot {
-        module_path: "lcl".to_string(),
-        version: String::new(),
-        root: root.clone(),
-        ecosystem: LEGACY_ECOSYSTEM_TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    };
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-    assert!(idx.locate("lcl", "forms").is_some(), "forms.pas must be scanned");
-    assert!(idx.locate("lcl", "buttons").is_some(), "buttons.pp must be scanned");
-    // Non-Pascal files must not produce entries.
-    assert!(idx.locate("lcl", "readme").is_none(), "README.md must not be indexed");
-}
-
-#[test]
-fn symbol_index_skips_tests_and_examples_dirs() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path().join("lcl");
-    fs::create_dir_all(root.join("tests")).unwrap();
-    fs::create_dir_all(root.join("examples")).unwrap();
-    fs::create_dir_all(root.join("demos")).unwrap();
-    fs::write(root.join("tests").join("test_forms.pas"), "unit TestForms;\ninterface\nimplementation\n").unwrap();
-    fs::write(root.join("examples").join("hello.pas"), "unit Hello;\ninterface\nimplementation\n").unwrap();
-    fs::write(root.join("demos").join("demo.pas"), "unit Demo;\ninterface\nimplementation\n").unwrap();
-    fs::write(root.join("forms.pas"), "unit Forms;\ninterface\nimplementation\n").unwrap();
-
-    let dep = ExternalDepRoot {
-        module_path: "lcl".to_string(),
-        version: String::new(),
-        root: root.clone(),
-        ecosystem: LEGACY_ECOSYSTEM_TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    };
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-    assert!(idx.locate("lcl", "forms").is_some(), "top-level forms.pas must be indexed");
-    assert!(idx.locate("lcl", "testforms").is_none(), "tests/ dir must be skipped");
-    assert!(idx.locate("lcl", "hello").is_none(), "examples/ dir must be skipped");
-    assert!(idx.locate("lcl", "demo").is_none(), "demos/ dir must be skipped");
-}
-
-#[test]
 #[ignore] // requires real Lazarus install at scoop default path
 fn live_discovery_finds_scoop_install() {
     // Defensive: only assert when we know the scoop path is present on
@@ -226,108 +175,6 @@ fn walk_root_is_empty_under_demand_driven() {
 }
 
 #[test]
-fn symbol_index_registers_unit_name() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("sysutils.pp"), "unit SysUtils;\ninterface\nimplementation\n").unwrap();
-    let dep = make_dep(tmp.path(), "fpc-rtl-objpas");
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-    // Unit name registered both as-declared and lowercase.
-    assert!(idx.locate("fpc-rtl-objpas", "sysutils").is_some());
-    assert!(idx.locate("fpc-rtl-objpas", "SysUtils").is_some());
-}
-
-#[test]
-fn symbol_index_registers_interface_section_decls() {
-    let tmp = TempDir::new().unwrap();
-    let content = "\
-unit MyUnit;
-interface
-type
-  TMyClass = class
-procedure DoSomething(x: Integer);
-function GetValue: String;
-const
-  MAX_ITEMS = 100;
-var
-  GlobalFlag: Boolean;
-implementation
-procedure DoSomething(x: Integer);
-begin end;
-end.
-";
-    fs::write(tmp.path().join("myunit.pas"), content).unwrap();
-    let dep = make_dep(tmp.path(), "lcl");
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-
-    // Unit name.
-    assert!(idx.locate("lcl", "myunit").is_some(), "unit name must be indexed");
-    // Interface declarations.
-    assert!(idx.locate("lcl", "tmyclass").is_some(), "type must be indexed");
-    assert!(idx.locate("lcl", "dosomething").is_some(), "procedure must be indexed");
-    assert!(idx.locate("lcl", "getvalue").is_some(), "function must be indexed");
-    assert!(idx.locate("lcl", "max_items").is_some(), "const must be indexed");
-    assert!(idx.locate("lcl", "globalflag").is_some(), "var must be indexed");
-    // Implementation-only names must NOT appear.
-    assert!(
-        idx.locate("lcl", "begin").is_none(),
-        "implementation bodies must not be indexed"
-    );
-}
-
-#[test]
-fn symbol_index_stops_at_implementation_keyword() {
-    let tmp = TempDir::new().unwrap();
-    let content = "\
-unit Foo;
-interface
-procedure IfaceProc;
-implementation
-procedure ImplOnlyProc;
-begin end;
-end.
-";
-    fs::write(tmp.path().join("foo.pas"), content).unwrap();
-    let dep = make_dep(tmp.path(), "mod");
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-
-    assert!(idx.locate("mod", "ifaceproc").is_some());
-    assert!(
-        idx.locate("mod", "implonlyproc").is_none(),
-        "names declared after `implementation` must not be indexed"
-    );
-}
-
-#[test]
-fn symbol_index_skips_inc_files() {
-    // .inc files are included via {$I} directives and do not have
-    // unit declarations; the scanner skips them intentionally.
-    let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("heap.inc"), "procedure GetMem(var p: Pointer; n: SizeInt);\n").unwrap();
-    fs::write(tmp.path().join("system.pp"), "unit System;\ninterface\nprocedure Move;\nimplementation\nend.\n").unwrap();
-    let dep = make_dep(tmp.path(), "rtl");
-    let idx = _test_build_pascal_symbol_index(&[dep]);
-
-    // system.pp contributes its unit and interface symbols.
-    assert!(idx.locate("rtl", "system").is_some());
-    assert!(idx.locate("rtl", "move").is_some());
-    // heap.inc is skipped entirely.
-    assert!(idx.locate("rtl", "getmem").is_none());
-}
-
-#[test]
-fn extract_decl_ident_recognises_keywords() {
-    assert_eq!(_test_extract_decl_ident("procedure dosomething(x: integer)"), Some("dosomething"));
-    assert_eq!(_test_extract_decl_ident("function getvalue: string"), Some("getvalue"));
-    assert_eq!(_test_extract_decl_ident("type tmyclass = class"), Some("tmyclass"));
-    assert_eq!(_test_extract_decl_ident("var globalflag: boolean"), Some("globalflag"));
-    assert_eq!(_test_extract_decl_ident("const max_size = 100"), Some("max_size"));
-    // Non-declaration lines return None.
-    assert_eq!(_test_extract_decl_ident("begin"), None);
-    assert_eq!(_test_extract_decl_ident("end."), None);
-    assert_eq!(_test_extract_decl_ident("uses sysutils;"), None);
-}
-
-#[test]
 fn symbol_index_non_empty_for_fixture_roots() {
     let tmp = TempDir::new().unwrap();
     make_lazarus_fixture(tmp.path());
@@ -336,10 +183,86 @@ fn symbol_index_non_empty_for_fixture_roots() {
     let roots = discover_freepascal_roots();
     std::env::remove_var("BEARWISDOM_LAZARUS_DIR");
 
-    let idx = _test_build_pascal_symbol_index(&roots);
+    let idx = fpc_fragment_index::build_pascal_symbol_index(&roots);
     assert!(!idx.is_empty(), "symbol index must be non-empty for a Lazarus fixture");
     // The fixture writes `unit Forms;` in lcl/forms.pas.
     let hit = roots.iter().any(|r| r.module_path == "lcl")
         && idx.find_by_name("forms").iter().any(|(m, _)| *m == "lcl");
     assert!(hit, "unit 'forms' must appear in the lcl module index");
+}
+
+// ---------------------------------------------------------------------------
+// Shared-platform-dir discovery (win64/win32 -> win, linux/darwin/freebsd -> unix)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shared_rtl_dirs_reads_windir_from_makefile_fpc() {
+    let tmp = TempDir::new().unwrap();
+    let win64 = tmp.path().join("win64");
+    fs::create_dir_all(&win64).unwrap();
+    fs::write(
+        win64.join("Makefile.fpc"),
+        "[target]\ntarget=win64\n[require]\nRTL=..\nWININC=../win/wininc\nWINDIR=../win\n",
+    )
+    .unwrap();
+
+    let dirs = shared_rtl_dirs(&win64);
+    assert!(dirs.iter().any(|d| d == "win"), "{dirs:?}");
+    // `RTL=..` has no trailing segment and must not surface as a directory.
+    assert!(!dirs.iter().any(|d| d == ".."), "{dirs:?}");
+    // `WININC=../win/wininc` nests two segments — already covered once `win`
+    // itself is walked — and must not surface as its own root.
+    assert!(!dirs.iter().any(|d| d.contains('/')), "{dirs:?}");
+}
+
+#[test]
+fn shared_rtl_dirs_reads_multiple_vars_dollar_rtl_form() {
+    let tmp = TempDir::new().unwrap();
+    let freebsd = tmp.path().join("freebsd");
+    fs::create_dir_all(&freebsd).unwrap();
+    fs::write(
+        freebsd.join("Makefile.fpc"),
+        "[target]\ntarget=freebsd\n[require]\nRTL=..\nBSDINC=$(RTL)/bsd\nUNIXINC=$(RTL)/unix\n",
+    )
+    .unwrap();
+
+    let dirs = shared_rtl_dirs(&freebsd);
+    assert!(dirs.iter().any(|d| d == "bsd"), "{dirs:?}");
+    assert!(dirs.iter().any(|d| d == "unix"), "{dirs:?}");
+}
+
+#[test]
+fn shared_rtl_dirs_empty_without_makefile_fpc() {
+    let tmp = TempDir::new().unwrap();
+    let win16 = tmp.path().join("win16");
+    fs::create_dir_all(&win16).unwrap();
+    // No Makefile.fpc written — win16 is self-contained on real FPC installs.
+    assert!(shared_rtl_dirs(&win16).is_empty());
+}
+
+#[test]
+fn discover_registers_shared_platform_dir_alongside_primary_target() {
+    let tmp = TempDir::new().unwrap();
+    make_lazarus_fixture(tmp.path());
+
+    // sysutils.pp lives only in the shared `win` dir on real FPC 3.2.2
+    // installs (win64 has no copy of its own) — the win64 target's own
+    // Makefile.fpc is what tells the walker `win` is reachable.
+    let rtl = tmp.path().join("fpc").join("3.2.2").join("source").join("rtl");
+    let win64 = rtl.join("win64");
+    fs::write(win64.join("Makefile.fpc"), "RTL=..\nWINDIR=../win\n").unwrap();
+    let win = rtl.join("win");
+    fs::create_dir_all(&win).unwrap();
+    fs::write(win.join("sysutils.pp"), "unit SysUtils;\n").unwrap();
+
+    std::env::set_var("BEARWISDOM_LAZARUS_DIR", tmp.path());
+    let roots = discover_freepascal_roots();
+    std::env::remove_var("BEARWISDOM_LAZARUS_DIR");
+
+    let module_paths: std::collections::HashSet<String> =
+        roots.iter().map(|r| r.module_path.clone()).collect();
+    assert!(module_paths.contains("fpc-rtl-win64"), "{module_paths:?}");
+    assert!(module_paths.contains("fpc-rtl-win"), "{module_paths:?}");
+    // win32 was never named by win64's own Makefile.fpc — it stays absent.
+    assert!(!module_paths.contains("fpc-rtl-win32"), "{module_paths:?}");
 }

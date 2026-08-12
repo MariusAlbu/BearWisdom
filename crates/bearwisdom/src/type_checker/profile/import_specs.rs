@@ -197,6 +197,21 @@ pub enum WildcardMatch {
     /// is `{module}_…` — the include-file convention where a unit's symbols are
     /// split across `{unit}_part.inc` siblings (Pascal units / FPC includes).
     FileStem { underscore_prefix: bool },
+    /// The candidate's EXTERNAL file's `ext:<lang>:<pkg>/…` package segment
+    /// equals the wildcard's module (`wildcard_package_segment`, the same
+    /// `ext:<lang>:<pkg>` convention `ExtMatch::PkgSegment` reads), compared
+    /// under the profile's `NameNormalization`. Unlike `FileStem`, this
+    /// doesn't require the candidate's own file to name the wildcard's
+    /// module — only to share its PACKAGE — so it reaches through a barrel
+    /// re-export (`package:flutter/material.dart` re-exporting
+    /// `src/widgets/framework.dart`) to the file that actually declares the
+    /// member. Falls back to the same file-stem check `FileStem` uses for an
+    /// internal candidate or a wildcard whose module carries no package
+    /// identity (a relative import) — the extractor is responsible for
+    /// reducing a language's real import syntax (a `package:` URI, a dotted
+    /// namespace, …) to a bare package name at capture time; this variant
+    /// does no URI parsing itself.
+    PackageRoot,
 }
 
 /// How `resolve_via_external_by_import` matches an external candidate's file

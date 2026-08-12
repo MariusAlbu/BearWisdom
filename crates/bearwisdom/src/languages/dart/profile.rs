@@ -98,17 +98,16 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     // Dart top-level declarations carry no namespace prefix in their qname
     // (`BuildContext`, not `widgets.BuildContext`), so `QnameUnder` can never
-    // match a whole-library import. Externals are indexed one file per real
-    // SDK source file, so the module's bare STEM — the extractor already
-    // reduces a wildcard import's `module` to this stem — lines up with the
-    // declaring file's own basename for a direct (non-barrel) library. A
-    // barrel library (`package:flutter/material.dart` re-exporting
-    // `src/widgets/framework.dart`) still declines: `FileStem` cannot walk
-    // a multi-hop re-export chain to the file that actually declares the
-    // member.
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
-        underscore_prefix: false,
-    },
+    // match a whole-library import. A scheme-prefixed wildcard
+    // (`package:flutter/material.dart`, `dart:async`) carries its bare
+    // PACKAGE identity on `module` (the extractor reduces the URI at capture
+    // time) — `PackageRoot` matches that against a candidate's external
+    // `ext:<lang>:<pkg>/…` package segment, so it reaches through a barrel
+    // library re-exporting `src/widgets/framework.dart` to the file that
+    // actually declares the member. A schemeless (relative, same-project)
+    // wildcard carries the old bare file stem instead, and `PackageRoot`
+    // falls back to the file-stem check for it — unchanged from before.
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::PackageRoot,
     namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,

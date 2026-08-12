@@ -10,12 +10,19 @@
 //   FileStem    — the candidate's FILE basename-stem or a path dir-segment
 //                 matches the module name under `name_normalization`, with an
 //                 optional `{stem}_`-prefixed include-file probe.
+//   PackageRoot — the candidate's EXTERNAL file's `ext:<lang>:<pkg>/…`
+//                 package segment matches the module name; falls back to the
+//                 same FileStem check for an internal candidate or a module
+//                 with no package identity, so it's a strict superset of
+//                 FileStem for a language whose wildcards mix package-scheme
+//                 imports (barrel-defeating) with plain relative ones.
 //
 // Fires only when at least one wildcard import is present.  A dotted or
 // `::` target is declined — qualified refs are handled earlier in the ladder.
 // Accepts only when EXACTLY ONE candidate matches — ambiguity stays unresolved.
 //
-// `wildcard_file_stem_matches` is inlined here; it is specific to this rule.
+// `wildcard_file_stem_matches` / `wildcard_package_segment` are inlined here;
+// both are specific to this rule.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::{
@@ -91,6 +98,25 @@ impl LookupRule for WildcardImportRule {
                         })
                     }
                 }
+                WildcardMatch::PackageRoot => {
+                    if normalize_name(norm, &sym.name) != target_norm {
+                        false
+                    } else {
+                        let is_external = ctx.lookup.is_external_file(&sym.file_path);
+                        let pkg_seg = is_external
+                            .then(|| wildcard_package_segment(&sym.file_path))
+                            .filter(|p| !p.is_empty());
+                        let file_lower = sym.file_path.to_lowercase();
+                        wildcards.iter().any(|ns| {
+                            if let Some(pkg) = pkg_seg {
+                                if normalize_name(norm, pkg) == normalize_name(norm, ns) {
+                                    return true;
+                                }
+                            }
+                            wildcard_file_stem_matches(&file_lower, &ns.to_lowercase(), false)
+                        })
+                    }
+                }
             };
             if under_a_wildcard {
                 match &hit_qname {
@@ -134,6 +160,20 @@ fn wildcard_file_stem_matches(
         .map(|(s, _)| s)
         .unwrap_or(basename);
     stem.starts_with(&format!("{module_lower}_"))
+}
+
+/// The package segment of a candidate's `ext:<lang>:<pkg>/…` virtual path —
+/// the same three-colon convention `ExternalByImportRule` reads for
+/// `ExtMatch::PkgSegment`. Empty for a path that doesn't match the shape,
+/// including every internal (non-`ext:`) path.
+fn wildcard_package_segment(path: &str) -> &str {
+    let Some(rest) = path.strip_prefix("ext:") else {
+        return "";
+    };
+    let Some((_lang, after_lang)) = rest.split_once(':') else {
+        return "";
+    };
+    after_lang.split('/').next().unwrap_or("")
 }
 
 #[cfg(test)]

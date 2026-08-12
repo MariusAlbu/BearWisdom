@@ -17,7 +17,9 @@ fn import_directive_produces_import_ref() {
 fn plain_whole_library_import_is_wildcard() {
     // A bare `import 'uri';` — no `as`, no `show`/`hide` — brings every
     // declaration into unqualified scope: the wildcard sentinel target, the
-    // library's bare stem on `module`.
+    // `package:` URI's bare PACKAGE identity on `module` (not the library
+    // file's stem) — `WildcardMatch::PackageRoot` compares it against a
+    // candidate's external `ext:<lang>:<pkg>/…` segment.
     let src = "import 'package:flutter/material.dart';\n";
     let r = extract::extract(src);
     let imp = r
@@ -26,7 +28,40 @@ fn plain_whole_library_import_is_wildcard() {
         .find(|r| r.kind == EdgeKind::Imports)
         .expect("import ref");
     assert_eq!(imp.target_name, "*");
-    assert_eq!(imp.module.as_deref(), Some("material"));
+    assert_eq!(imp.module.as_deref(), Some("flutter"));
+}
+
+#[test]
+fn dart_scheme_wildcard_import_carries_library_name() {
+    // `dart:async` has no `/` segment — the whole post-scheme string is the
+    // package identity, matching the Dart-SDK ecosystem's `ext:dart-sdk:
+    // async/…` virtual-path segment.
+    let src = "import 'dart:async';\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "*");
+    assert_eq!(imp.module.as_deref(), Some("async"));
+}
+
+#[test]
+fn relative_wildcard_import_falls_back_to_file_stem() {
+    // A schemeless (project-relative) wildcard URI carries no package
+    // identity — `module` falls back to the bare library stem, same as
+    // before, so `WildcardMatch::PackageRoot`'s internal-candidate fallback
+    // still lines up against a same-project file's basename.
+    let src = "import 'widgets.dart';\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "*");
+    assert_eq!(imp.module.as_deref(), Some("widgets"));
 }
 
 #[test]

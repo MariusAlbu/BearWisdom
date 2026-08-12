@@ -16,6 +16,12 @@ static FILESTEM_PROFILE: LanguageProfile = LanguageProfile {
     ..DEFAULT_PROFILE
 };
 
+static PACKAGE_ROOT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
+    wildcard_match: WildcardMatch::PackageRoot,
+    ..DEFAULT_PROFILE
+};
+
 fn wildcard_import(name: &str, module: &str) -> ImportEntry {
     ImportEntry {
         imported_name: name.to_string(),
@@ -103,6 +109,73 @@ fn filestem_mode_binds_by_file_basename() {
         LookupResult::Resolved(res) => assert_eq!(res.target_symbol_id, 20),
         _ => panic!("expected Resolved"),
     }
+}
+
+// --- PackageRoot mode ---------------------------------------------------------
+
+#[test]
+fn package_root_mode_binds_external_candidate_by_package_segment() {
+    // `import 'package:flutter/material.dart'` reduces to package identity
+    // "flutter" on `module`; a candidate declared in a DIFFERENT file under
+    // the same `ext:flutter-sdk:flutter/…` package still binds — PackageRoot
+    // reaches through the barrel without requiring the candidate's own file
+    // to be named "material".
+    let lookup = Lookup::new().with(sym(
+        10,
+        "BuildContext",
+        "BuildContext",
+        "class",
+        "ext:flutter-sdk:flutter/src/widgets/framework.dart",
+    ));
+    let imports = vec![wildcard_import("*", "flutter")];
+    assert_eq!(
+        resolve_with_profile(&lookup, "BuildContext", imports, &PACKAGE_ROOT_PROFILE),
+        Some(10)
+    );
+}
+
+#[test]
+fn package_root_mode_declines_a_different_package() {
+    let lookup = Lookup::new().with(sym(
+        10,
+        "Foo",
+        "Foo",
+        "class",
+        "ext:dart:some_other_pkg/lib/foo.dart",
+    ));
+    let imports = vec![wildcard_import("*", "flutter")];
+    assert_eq!(
+        resolve_with_profile(&lookup, "Foo", imports, &PACKAGE_ROOT_PROFILE),
+        None
+    );
+}
+
+#[test]
+fn package_root_mode_falls_back_to_file_stem_for_internal_candidate() {
+    // A schemeless (relative, same-project) wildcard's `module` carries the
+    // bare file stem, not a package id — PackageRoot falls back to the same
+    // file-stem check FileStem uses so a same-project wildcard import keeps
+    // resolving exactly as it did before this mode existed.
+    let lookup = Lookup::new().with(sym(20, "Bar", "Bar", "class", "src/widgets.dart"));
+    let imports = vec![wildcard_import("*", "widgets")];
+    assert_eq!(
+        resolve_with_profile(&lookup, "Bar", imports, &PACKAGE_ROOT_PROFILE),
+        Some(20)
+    );
+}
+
+#[test]
+fn package_root_mode_internal_candidate_ignores_package_name_match() {
+    // An internal candidate is never package-segment matched (only an
+    // external `ext:` file carries a package segment) — a same-named wildcard
+    // module must still line up via the file-stem fallback, not a bare
+    // string coincidence.
+    let lookup = Lookup::new().with(sym(30, "Baz", "Baz", "class", "src/other.dart"));
+    let imports = vec![wildcard_import("*", "flutter")];
+    assert_eq!(
+        resolve_with_profile(&lookup, "Baz", imports, &PACKAGE_ROOT_PROFILE),
+        None
+    );
 }
 
 // --- qname-distinct hit counting + implicit namespaces -----------------------

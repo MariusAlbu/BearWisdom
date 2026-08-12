@@ -90,15 +90,54 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             // is the eager walker's shape (flutter_sdk.rs), so demand-pulled SDK
             // files dedupe against walker output and `ExtMatch::PkgSegment`
             // reads a real package name instead of a drive-letter fragment.
-            // Pub-cache and dart-sdk lib layouts have no walker scheme to agree
-            // with; they keep the `ext:idx:` fallback.
-            let pk_idx = s.rfind("/packages/")?;
-            let after = &s[pk_idx + "/packages/".len()..];
-            let (pkg, rel) = after.split_once('/')?;
-            if pkg.is_empty() || rel.is_empty() {
-                return None;
+            if let Some(pk_idx) = s.rfind("/packages/") {
+                let after = &s[pk_idx + "/packages/".len()..];
+                if let Some((pkg, rel)) = after.split_once('/') {
+                    if !pkg.is_empty() && !rel.is_empty() {
+                        return Some(format!("ext:flutter-sdk:{pkg}/{rel}"));
+                    }
+                }
             }
-            Some(format!("ext:flutter-sdk:{pkg}/{rel}"))
+            // Pub-cache layout: `.../hosted/pub.dev/<pkg>-<ver>/lib/<rel>`.
+            // `ext:dart:<pkg>/<rel>` is the eager `PubEcosystem` walker's shape
+            // (pub_pkg/walk.rs — `dep.root` is the package's `lib/` dir, so its
+            // own `rel` is already relative to `lib/`), version stripped, so a
+            // demand-pulled package file dedupes against walker output.
+            if let Some(hosted_idx) = s.rfind("/hosted/pub.dev/") {
+                let after = &s[hosted_idx + "/hosted/pub.dev/".len()..];
+                if let Some((pkg_dir, rest)) = after.split_once('/') {
+                    if let Some(rel) = rest.strip_prefix("lib/") {
+                        if let Some((pkg, _version)) =
+                            crate::ecosystem::cargo::split_crate_dir_name(pkg_dir)
+                        {
+                            if !rel.is_empty() {
+                                return Some(format!("ext:dart:{pkg}/{rel}"));
+                            }
+                        }
+                    }
+                }
+            }
+            // Dart-SDK layout: `.../lib/<lib>/<rel>`, `<lib>` one of the
+            // recognized stdlib sub-libraries. `ext:dart-sdk:<lib>/<rel>` is
+            // the eager `DartSdkEcosystem` walker's shape (dart_sdk.rs —
+            // `dep.root` is the SDK's `lib/` dir), matched by SUB-LIBRARY name
+            // rather than an install-root literal since the SDK's `lib/`
+            // parent varies by platform and probe path (`dart-sdk/lib`,
+            // `usr/lib/dart/lib`, a `FLUTTER_ROOT`-bundled cache, …).
+            let mut search = 0;
+            while let Some(i) = s[search..].find("/lib/") {
+                let start = search + i + "/lib/".len();
+                let after = &s[start..];
+                if let Some((lib_name, rel)) = after.split_once('/') {
+                    if crate::ecosystem::dart_sdk::DART_SDK_LIBS.contains(&lib_name)
+                        && !rel.is_empty()
+                    {
+                        return Some(format!("ext:dart-sdk:{lib_name}/{rel}"));
+                    }
+                }
+                search = start;
+            }
+            None
         }
         "elixir" => {
             // Mix vendors hex deps into the project: `.../deps/<pkg>/<rel>`.

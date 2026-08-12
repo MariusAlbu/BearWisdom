@@ -126,7 +126,15 @@ fn trace_captures_untypable_root_and_unresolved_result() {
     // Activate trace with a filter matching this file and line.
     trace::set_filter("trace_test.ts".to_string(), 1, String::new());
     trace::activate();
-    super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &rustc_hash::FxHashMap::default(),
+        None,
+        &solver,
+        &id_map,
+    );
     trace::deactivate();
     let collected = trace::drain_collected();
     trace::clear_filter();
@@ -215,7 +223,15 @@ fn trace_captures_resolved_ref_and_seed_none() {
     // Filter on line 2 (the Target ref).
     trace::set_filter("trace_resolved.ts".to_string(), 2, "Target".to_string());
     trace::activate();
-    super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &rustc_hash::FxHashMap::default(),
+        None,
+        &solver,
+        &id_map,
+    );
     trace::deactivate();
     let collected = trace::drain_collected();
     trace::clear_filter();
@@ -335,7 +351,15 @@ fn trace_batch_filters_collect_multiple_refs() {
         ("trace_batch.ts".to_string(), 3, "TargetB".to_string()),
     ]);
     trace::activate();
-    super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &rustc_hash::FxHashMap::default(),
+        None,
+        &solver,
+        &id_map,
+    );
     trace::deactivate();
     let collected = trace::drain_collected();
     trace::clear_filter();

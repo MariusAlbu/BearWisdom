@@ -42,13 +42,13 @@ fn dart_wildcard_import_carries_module_path() {
 }
 
 #[test]
-fn dart_wildcard_match_is_file_stem() {
+fn dart_wildcard_match_is_package_root() {
     // Dart top-level declarations carry no namespace prefix in their
     // qualified name, so `QnameUnder` can never match a whole-library
-    // import; only `FileStem` can line up a wildcard's module stem against
-    // a candidate's declaring-file basename.
-    assert_eq!(
-        DART_PROFILE.wildcard_match,
-        WildcardMatch::FileStem { underscore_prefix: false }
-    );
+    // import. `PackageRoot` reaches through a barrel library
+    // (`package:flutter/material.dart` re-exporting `src/widgets/
+    // framework.dart`) by matching the wildcard's package identity against
+    // a candidate's external package segment, falling back to the same
+    // file-stem check `FileStem` used before it for relative imports.
+    assert_eq!(DART_PROFILE.wildcard_match, WildcardMatch::PackageRoot);
 }

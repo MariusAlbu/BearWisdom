@@ -3,8 +3,16 @@ use std::sync::Arc;
 
 use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::type_checker::core::types::TypeArena;
+use crate::types::ParsedFile;
 
 use super::{FileLookup, resolve_single_pass};
+
+/// Empty plugin registry for `resolve_one_file` tests that exercise the
+/// profile-driven path only — no plugin contributes synthetic imports.
+fn no_plugins() -> rustc_hash::FxHashMap<&'static str, &'static dyn crate::languages::LanguagePlugin>
+{
+    rustc_hash::FxHashMap::default()
+}
 
 // ---------------------------------------------------------------------------
 // BuiltinSkipRule drain — end-to-end through the full resolve pipeline
@@ -116,6 +124,112 @@ fn file_lookup_record_then_read() {
     let lookup = FileLookup::new(&tree, "typescript");
     lookup.record_local_type("repo".to_string(), "UserRepository".to_string());
     assert_eq!(lookup.local_type("repo").as_deref(), Some("UserRepository"));
+}
+
+// ---------------------------------------------------------------------------
+// build_file_context — plugin-contributed imports
+// ---------------------------------------------------------------------------
+
+/// Minimal plugin double whose `extra_wildcard_imports` always contributes
+/// one synthetic entry — stands in for a real plugin's cross-file-derived
+/// redirect (Elixir's one-hop `use` injection, etc.) without depending on
+/// any language-specific behavior.
+struct FakeInjectingPlugin;
+
+impl crate::languages::LanguagePlugin for FakeInjectingPlugin {
+    fn id(&self) -> &str {
+        "fake"
+    }
+    fn language_ids(&self) -> &[&str] {
+        &["fake"]
+    }
+    fn extensions(&self) -> &[&str] {
+        &[]
+    }
+    fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
+        None
+    }
+    fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
+        &[]
+    }
+    fn extract(&self, _source: &str, _file_path: &str, _lang_id: &str) -> crate::types::ExtractionResult {
+        crate::types::ExtractionResult::default()
+    }
+    fn extra_wildcard_imports(
+        &self,
+        _state: &crate::indexer::plugin_state::PluginStateBag,
+        _file: &ParsedFile,
+    ) -> Vec<crate::indexer::resolve::engine::contract::ImportEntry> {
+        vec![crate::indexer::resolve::engine::contract::ImportEntry {
+            imported_name: "Injected".to_string(),
+            module_path: Some("Some.Module".to_string()),
+            alias: None,
+            is_wildcard: true,
+        }]
+    }
+}
+
+fn blank_parsed_file(lang: &str) -> ParsedFile {
+    ParsedFile {
+        path: format!("f.{lang}"),
+        language: lang.to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: Vec::new(),
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+    }
+}
+
+/// A plugin's `extra_wildcard_imports` entry is appended to
+/// `FileContext.imports` alongside the profile-driven scan — the generic
+/// seam every `LookupRule` that reads `ctx.file_ctx.imports` (wildcard
+/// import, alias-module-qname, …) consults without any rule-level change.
+#[test]
+fn plugin_contributed_import_reaches_file_context() {
+    let file = blank_parsed_file("fake");
+    let bag = crate::indexer::plugin_state::PluginStateBag::new();
+    let profile = &crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let ctx = super::build_file_context(
+        "fake",
+        &file,
+        profile,
+        Some(&FakeInjectingPlugin as &dyn crate::languages::LanguagePlugin),
+        Some(&bag),
+    );
+
+    assert_eq!(ctx.imports.len(), 1);
+    assert_eq!(ctx.imports[0].imported_name, "Injected");
+    assert_eq!(ctx.imports[0].module_path.as_deref(), Some("Some.Module"));
+    assert!(ctx.imports[0].is_wildcard);
+}
+
+/// No plugin registered for the file's language (the common case — most
+/// plugins carry no cross-file import state) leaves `imports` exactly as
+/// the profile-driven scan produced it.
+#[test]
+fn no_plugin_leaves_file_context_imports_unchanged() {
+    let file = blank_parsed_file("rust");
+    let profile = &crate::languages::rust_lang::profile::RUST_PROFILE;
+
+    let ctx = super::build_file_context("rust", &file, profile, None, None);
+
+    assert!(ctx.imports.is_empty());
 }
 
 /// `local_type_union` wraps the single result in a `vec!`.
@@ -367,7 +481,7 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
     // mount (target id 4) must resolve as an edge from SolidQueryDevtools (1).
     assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
 }
@@ -442,7 +556,7 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
     assert!(
         edges.iter().any(|e| e.1 == 4),
         "observer.getCurrentResult must resolve to QueryObserver.getCurrentResult via new-expression typing"
@@ -565,7 +679,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     let mount_b = id_map[&("packages/vue-query/devtools.ts".to_string(), "VueDevtoolsImpl.mount".to_string())];
 
     // Package A resolves to A's mount, NOT B's.
-    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &solver, &id_map);
+    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
     assert!(
         edges_a.iter().any(|e| e.1 == mount_a),
         "package A's devtools.mount must bind A's ReactDevtoolsImpl.mount (id {mount_a}); edges={edges_a:?}"
@@ -576,7 +690,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     );
 
     // Package B resolves to B's mount, NOT A's.
-    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &solver, &id_map);
+    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
     assert!(
         edges_b.iter().any(|e| e.1 == mount_b),
         "package B's devtools.mount must bind B's VueDevtoolsImpl.mount (id {mount_b}); edges={edges_b:?}"
@@ -684,7 +798,7 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     let solver = super::SemanticModel::production();
 
     let (_edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
 
     // The ref to "NonexistentApi" must be unresolved (no matching symbol in the
     // compilation tree) and the unresolved row must carry from_snippet=true.
@@ -864,7 +978,7 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
 
     // `res.json()` must resolve to `Response.json` (id 4).
     assert!(
@@ -1024,7 +1138,7 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
 
     // `p.then()` must resolve to `Promise.then` (id 4) — Promise head is preserved.
     assert!(
@@ -1121,7 +1235,7 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
 
     // The factory call itself resolves.
     assert!(
@@ -1207,6 +1321,8 @@ fn rename_import_ref_splits_original_name_and_alias() {
         "rust",
         &pf,
         &crate::languages::rust_lang::profile::RUST_PROFILE,
+        None,
+        None,
     );
     let renamed = fc
         .imports
@@ -1302,7 +1418,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &solver, &id_map);
+    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
     assert!(
         edges.iter().any(|e| e.1 == 1),
         "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
@@ -1471,6 +1587,8 @@ fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
         "csharp",
         &pf,
         &crate::languages::csharp::profile::CSHARP_PROFILE,
+        None,
+        None,
     );
     let entry = fc
         .imports
@@ -1542,7 +1660,7 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (_edges, unresolved, ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
 
     let count_a = unresolved.iter().filter(|(_, n, ..)| n == "missingA").count();
     let count_b = unresolved.iter().filter(|(_, n, ..)| n == "missingB").count();
@@ -1607,6 +1725,8 @@ fn fqn_import_refs_carry_module_path_into_file_context() {
         "java",
         &pf,
         &crate::languages::java::profile::JAVA_PROFILE,
+        None,
+        None,
     );
     let exact = fc
         .imports

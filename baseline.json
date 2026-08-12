@@ -1704,7 +1704,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 56
+        "min_resolution_rate": 63
       },
       "code_chunks": 111356,
       "drained_refs": 717,
@@ -1712,8 +1712,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 124493,
-      "internal_unresolved": 95149,
+      "internal_edges": 140218,
+      "internal_unresolved": 78978,
       "languages": {
         "c": 22,
         "cmake": 22,
@@ -1739,27 +1739,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/dart-appflowy",
       "perf": {
-        "end_ws_mb": 7007,
+        "end_ws_mb": 148,
         "files_per_sec": 7,
-        "index_duration_ms": 600592
+        "index_duration_ms": 607522
       },
       "project": "dart-appflowy",
       "rate_by_language": {
         "c": 62.26,
         "cmake": 75.84,
         "cpp": 25.84,
-        "dart": 43.47,
+        "dart": 56.99,
         "dockerfile": 0.0,
         "html": 0.0,
         "java": 39.81,
         "javascript": 41.18,
         "kotlin": 23.75,
-        "rust": 73.31,
+        "rust": 73.33,
         "shell": 86.36,
         "sql": 100.0,
         "swift": 10.26
       },
-      "resolution_rate": 56.68,
+      "resolution_rate": 63.97,
       "routes": 0,
       "symbols": 62952,
       "unresolved_by_lang_kind": {
@@ -1771,12 +1771,12 @@
         "cpp.calls": 697,
         "cpp.imports": 20,
         "cpp.type_ref": 847,
-        "dart.calls": 11994,
-        "dart.implements": 8,
-        "dart.imports": 16596,
-        "dart.inherits": 1780,
-        "dart.instantiates": 3606,
-        "dart.type_ref": 32754,
+        "dart.calls": 7995,
+        "dart.implements": 52,
+        "dart.imports": 16595,
+        "dart.inherits": 387,
+        "dart.instantiates": 1071,
+        "dart.type_ref": 24487,
         "dockerfile.imports": 1,
         "dockerfile.inherits": 1,
         "html.calls": 3,
@@ -1792,11 +1792,11 @@
         "kotlin.imports": 7,
         "kotlin.inherits": 7,
         "kotlin.type_ref": 31,
-        "rust.calls": 14412,
+        "rust.calls": 14391,
         "rust.implements": 26,
         "rust.imports": 2596,
         "rust.inherits": 5,
-        "rust.type_ref": 9135,
+        "rust.type_ref": 9136,
         "shell.calls": 24,
         "swift.calls": 89,
         "swift.implements": 5,
@@ -2793,8 +2793,8 @@
         "http_call": 207
       },
       "flow_edges": 207,
-      "internal_edges": 73597,
-      "internal_unresolved": 60502,
+      "internal_edges": 73588,
+      "internal_unresolved": 60511,
       "languages": {
         "c": 1,
         "css": 6,
@@ -2816,16 +2816,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/elixir-plausible",
       "perf": {
-        "end_ws_mb": 15871,
-        "files_per_sec": 26,
-        "index_duration_ms": 67813
+        "end_ws_mb": 169,
+        "files_per_sec": 32,
+        "index_duration_ms": 54557
       },
       "project": "elixir-plausible",
       "rate_by_language": {
         "c": 0.0,
         "dockerfile": 0.0,
         "eex": 14.41,
-        "elixir": 52.44,
+        "elixir": 52.43,
         "hcl": 100.0,
         "heex": 14.44,
         "html": 40.0,
@@ -2845,7 +2845,7 @@
         "dockerfile.inherits": 1,
         "eex.calls": 90,
         "eex.type_ref": 11,
-        "elixir.calls": 44267,
+        "elixir.calls": 44276,
         "elixir.imports": 104,
         "elixir.type_ref": 10394,
         "heex.calls": 1099,
@@ -8020,7 +8020,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 68
+        "min_resolution_rate": 69
       },
       "code_chunks": 478468,
       "drained_refs": 31961,
@@ -8028,8 +8028,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 250006,
-      "internal_unresolved": 114459,
+      "internal_edges": 252918,
+      "internal_unresolved": 111556,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -8057,9 +8057,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 20288,
-        "files_per_sec": 6,
-        "index_duration_ms": 641032
+        "end_ws_mb": 5242,
+        "files_per_sec": 4,
+        "index_duration_ms": 1019485
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
@@ -8067,15 +8067,15 @@
         "cmake": 80.47,
         "cpp": 56.64,
         "html": 0.0,
-        "java": 60.77,
+        "java": 60.99,
         "markdown": 42.86,
         "matlab": 54.19,
-        "pascal": 71.19,
+        "pascal": 72.19,
         "php": 0.0,
         "scss": 0.0,
         "shell": 36.36
       },
-      "resolution_rate": 68.6,
+      "resolution_rate": 69.39,
       "routes": 0,
       "symbols": 271329,
       "unresolved_by_lang_kind": {
@@ -8092,14 +8092,14 @@
         "cpp.type_ref": 12816,
         "html.calls": 14,
         "html.imports": 5,
-        "java.calls": 737,
+        "java.calls": 731,
         "java.implements": 5,
         "java.imports": 90,
         "java.instantiates": 29,
         "java.type_ref": 246,
         "markdown.calls": 4,
         "matlab.calls": 82,
-        "pascal.calls": 80351,
+        "pascal.calls": 77454,
         "pascal.imports": 2460,
         "pascal.inherits": 636,
         "php.calls": 4,

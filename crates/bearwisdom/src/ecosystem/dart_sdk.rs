@@ -31,7 +31,7 @@ const LEGACY_ECOSYSTEM_TAG: &str = "dart-sdk";
 const LANGUAGES: &[&str] = &["dart"];
 
 /// Sub-libraries of `lib/` that constitute the public Dart SDK stdlib.
-const DART_SDK_LIBS: &[&str] = &[
+pub(crate) const DART_SDK_LIBS: &[&str] = &[
     "core",
     "async",
     "collection",
