@@ -54,6 +54,7 @@ const PHP_PRIMITIVES: &[(&str, PrimKind)] = &[
 /// PHP profile.
 pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "php",
     qname_separator: "\\",
     self_keywords: &["$this", "self", "static", "parent"],

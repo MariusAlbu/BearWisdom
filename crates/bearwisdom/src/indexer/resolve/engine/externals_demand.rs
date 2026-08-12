@@ -342,7 +342,7 @@ fn language_from_file_ext(path: &Path) -> Option<&'static str> {
 
 /// Virtual path under which a pulled external file is indexed.
 fn virtual_path_for_indexed_file(path: &Path, language: &str) -> String {
-    crate::indexer::stage_link::virtual_path_for_pulled(path, language)
+    crate::indexer::ext_virtual_path::virtual_path_for_pulled(path, language)
         .unwrap_or_else(|| format!("ext:idx:{}", path.to_string_lossy().replace('\\', "/")))
 }
 

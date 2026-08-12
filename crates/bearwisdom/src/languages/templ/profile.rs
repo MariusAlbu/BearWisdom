@@ -36,6 +36,7 @@ const TEMPL_KIND_TABLE: KindTable = &[
 
 pub const TEMPL_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "templ",
     qname_separator: ".",
     self_keywords: &[],

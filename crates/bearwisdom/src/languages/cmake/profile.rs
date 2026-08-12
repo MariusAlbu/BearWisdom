@@ -18,6 +18,7 @@ const CMAKE_KIND_TABLE: KindTable = &[
 
 pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "cmake",
     qname_separator: ".",
     self_keywords: &[],

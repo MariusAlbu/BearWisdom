@@ -55,6 +55,12 @@ const FSHARP_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    // FSharp.Core's Option cases are always in scope without an `open`; the
+    // compiled surface keeps friendly member names (`FSharpOption.Some`), so
+    // the prelude rule can bind them directly. FSharpValueOption is
+    // deliberately absent: its compiled `.Some` would make the rule's
+    // distinct-qname ambiguity check decline both.
+    implicit_prelude_namespaces: &["Microsoft.FSharp.Core.FSharpOption"],
     id: "fsharp",
     qname_separator: ".",
     self_keywords: &["this"],

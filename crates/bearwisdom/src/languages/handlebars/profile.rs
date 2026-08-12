@@ -29,6 +29,7 @@ const HANDLEBARS_IMPORTS: ImportResolution = ImportResolution {
 
 pub const HANDLEBARS_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "handlebars",
     qname_separator: ".",
     self_keywords: &[],

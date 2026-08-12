@@ -2,26 +2,6 @@ use super::*;
 use crate::types::EdgeKind;
 
 #[test]
-fn default_profile_uses_dot_separator_and_receiver_dispatch() {
-    assert_eq!(DEFAULT_PROFILE.qname_separator, ".");
-    assert_eq!(DEFAULT_PROFILE.dispatch_axis, DispatchAxis::Receiver);
-    assert_eq!(
-        DEFAULT_PROFILE.supertype_discovery,
-        SupertypeDiscovery::Explicit
-    );
-    assert!(!DEFAULT_PROFILE.has_generics);
-    assert!(!DEFAULT_PROFILE.has_sum_types);
-}
-
-#[test]
-fn default_profile_treats_class_as_callable_constructor() {
-    assert_eq!(
-        DEFAULT_PROFILE.constructor_patterns,
-        &[ConstructorPattern::CallableClass]
-    );
-}
-
-#[test]
 fn permissive_kind_table_accepts_all_kinds() {
     assert!(KindCompatibility::check(
         PERMISSIVE_KIND_TABLE,
@@ -79,11 +59,6 @@ fn kind_compat_table_defaults_unlisted_edge_kinds_to_permissive() {
         EdgeKind::TypeRef,
         SymbolKind::Variable,
     ));
-}
-
-#[test]
-fn default_profile_declares_no_wildcard_builtins() {
-    assert!(DEFAULT_PROFILE.wildcard_builtins.is_empty());
 }
 
 #[test]

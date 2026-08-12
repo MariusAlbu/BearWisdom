@@ -647,6 +647,64 @@ fn castlefields_simplemult_classes_extracted() {
 }
 
 // ---------------------------------------------------------------------------
+// `uses <unit1>, <unit2>;` → Imports ref per unit, `module` set to the unit
+// name. `build_file_context` reads `module` (via `FromModuleField`) and, with
+// `namespace_imports_are_wildcards` set, promotes each entry to a wildcard
+// import — the FileStem rung then binds bare names declared in a file whose
+// basename-stem matches one of the listed units.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uses_clause_emits_imports_refs_with_module_set() {
+    use crate::types::EdgeKind;
+    let source = r#"unit GameViewPlay;
+interface
+uses Classes, SysUtils, CastleVectors;
+implementation
+end.
+"#;
+    let result = extract(source);
+    for unit in ["Classes", "SysUtils", "CastleVectors"] {
+        let found = result.refs.iter().find(|r| {
+            r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case(unit)
+        });
+        let Some(r) = found else {
+            panic!("expected an Imports ref for unit `{unit}`; got: {:?}",
+                result.refs.iter().map(|r| (r.kind, r.target_name.as_str())).collect::<Vec<_>>());
+        };
+        assert_eq!(
+            r.module.as_deref(),
+            Some(unit),
+            "Imports ref for `{unit}` must carry its own name as `module` \
+             (FromModuleField reads this to build the wildcard entry)"
+        );
+        assert!(!r.is_import_binding, "`uses` entries are not binding refs");
+    }
+}
+
+#[test]
+fn uses_clause_in_implementation_section_also_emits_imports_refs() {
+    use crate::types::EdgeKind;
+    // `_definition` (implementation-section grammar) admits `declUses` just
+    // like `_declarations` (interface section) — a second `uses` clause after
+    // `implementation` is common Pascal style and must extract identically.
+    let source = r#"unit GameViewPlay;
+interface
+uses Classes;
+implementation
+uses SysUtils, Math;
+end.
+"#;
+    let result = extract(source);
+    assert!(
+        result.refs.iter().any(|r| r.kind == EdgeKind::Imports
+            && r.target_name.eq_ignore_ascii_case("Math")),
+        "expected an Imports ref for implementation-section unit `Math`; got: {:?}",
+        result.refs.iter().map(|r| (r.kind, r.target_name.as_str())).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
 // `{$include}` / `{$i}` directive → Imports ref keyed by the .inc file stem.
 //
 // An `.inc` fragment's symbols extract under the fragment's own file path, so

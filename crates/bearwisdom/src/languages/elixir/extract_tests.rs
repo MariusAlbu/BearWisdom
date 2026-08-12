@@ -54,6 +54,80 @@ end
 }
 
 #[test]
+fn import_and_use_are_wildcard_eligible_alias_and_require_are_binding() {
+    let src = r#"
+defmodule Foo do
+  alias MyApp.Repo
+  import MyApp.Factory
+  use MyApp.CaseTemplate
+  require MyApp.Logger
+end
+"#;
+    let r = extract::extract(src);
+    let find = |name: &str| {
+        r.refs
+            .iter()
+            .find(|ref_| ref_.kind == EdgeKind::Imports && ref_.target_name == name)
+            .unwrap_or_else(|| panic!("missing import ref for {name}"))
+    };
+    assert!(
+        find("Repo").is_import_binding,
+        "alias must stay binding-only (never a wildcard)"
+    );
+    assert!(
+        !find("Factory").is_import_binding,
+        "import brings the whole module's surface into bare-name scope"
+    );
+    assert!(
+        !find("CaseTemplate").is_import_binding,
+        "use is approximated as a wildcard import of the used module"
+    );
+    assert!(
+        find("Logger").is_import_binding,
+        "require binds the qualified name only, never a wildcard"
+    );
+}
+
+#[test]
+fn directive_refs_carry_module_path_for_wildcard_lookup() {
+    let src = r#"
+defmodule Foo do
+  import MyApp.Support.Factory
+end
+"#;
+    let r = extract::extract(src);
+    let factory_import = r
+        .refs
+        .iter()
+        .find(|ref_| ref_.kind == EdgeKind::Imports && ref_.target_name == "Factory")
+        .expect("missing Factory import ref");
+    assert_eq!(
+        factory_import.module.as_deref(),
+        Some("MyApp.Support.Factory")
+    );
+}
+
+#[test]
+fn single_segment_directive_target_still_carries_module() {
+    // `alias Foo` (no dot — a top-level module) must still populate `module`
+    // with the bare name itself, not None. Otherwise `FromModuleField`'s
+    // `filter_map` (which requires `r.module` to build an ImportEntry) drops
+    // the ref entirely and `alias_module_qname` never sees it.
+    let src = r#"
+defmodule Bar do
+  alias Foo
+end
+"#;
+    let r = extract::extract(src);
+    let foo_import = r
+        .refs
+        .iter()
+        .find(|ref_| ref_.kind == EdgeKind::Imports && ref_.target_name == "Foo")
+        .expect("missing Foo import ref");
+    assert_eq!(foo_import.module.as_deref(), Some("Foo"));
+}
+
+#[test]
 fn defstruct_produces_struct_symbol() {
     let src = r#"
 defmodule MyApp.User do

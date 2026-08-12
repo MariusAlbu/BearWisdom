@@ -60,6 +60,17 @@ const KOTLIN_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[
+        "kotlin",
+        "kotlin.collections",
+        "kotlin.text",
+        "kotlin.io",
+        "kotlin.ranges",
+        "kotlin.sequences",
+        "kotlin.annotation",
+        "kotlin.comparisons",
+        "kotlin.jvm",
+    ],
     id: "kotlin",
     qname_separator: ".",
     self_keywords: &["this", "super"],

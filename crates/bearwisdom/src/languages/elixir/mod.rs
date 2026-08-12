@@ -106,4 +106,18 @@ impl LanguagePlugin for ElixirPlugin {
     ) {
         state.set(using_injection::build_using_injection_map(parsed));
     }
+
+    fn populate_project_state_post_externals(
+        &self,
+        state: &mut crate::indexer::plugin_state::PluginStateBag,
+        parsed: &[crate::types::ParsedFile],
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        // `use ExUnit.Case`/`use ExUnit.CaseTemplate`'s `__using__`/`using do`
+        // quote blocks live in ExUnit's own external source, invisible to the
+        // pre-externals pass. Rebuilding here against the now-externals-merged
+        // `parsed` slice lets the injection map see them.
+        state.set(using_injection::build_using_injection_map(parsed));
+    }
 }

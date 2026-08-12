@@ -1669,3 +1669,102 @@ fn non_generic_record_signature_has_no_type_parameter_clause() {
     let sig = rec.signature.as_ref().unwrap();
     assert_eq!(sig, "class Point", "no clause may be invented: {sig:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Target-typed `new()` — declared-type recovery for implicit_object_creation_expression
+// ---------------------------------------------------------------------------
+
+#[test]
+fn target_typed_new_local_variable_carries_declared_type() {
+    let src = "class C { void M() { List<int> x = new(); } }";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "List"),
+        "expected Instantiates(List) from local declaration; refs: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter()
+            .all(|r| r.kind != EdgeKind::Instantiates || !r.target_name.is_empty()),
+        "must never emit an empty-name Instantiates ref: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn target_typed_new_field_declaration_carries_declared_type() {
+    let src = "class C { private readonly Dictionary<string, int> _d = new(); }";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "Dictionary"),
+        "expected Instantiates(Dictionary) from field declaration; refs: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn target_typed_new_property_initializer_carries_declared_type() {
+    let src = "class C { public Foo Bar { get; set; } = new(); }";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "Foo"),
+        "expected Instantiates(Foo) from property initializer; refs: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn target_typed_new_parameter_default_carries_declared_type() {
+    let src = "class C { void M(List<int> items = new()) { } }";
+    let r = refs(src);
+    assert!(
+        r.iter()
+            .any(|r| r.kind == EdgeKind::Instantiates && r.target_name == "List"),
+        "expected Instantiates(List) from parameter default; refs: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn target_typed_new_in_return_statement_emits_no_ref() {
+    // No declared type is syntactically reachable from `return new();` —
+    // the extractor must skip emission rather than push an empty target_name.
+    let src = "class C { Foo M() { return new(); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().all(|r| r.kind != EdgeKind::Instantiates),
+        "return-position new() must not emit an Instantiates ref: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn target_typed_new_in_argument_position_emits_no_ref() {
+    // No declared type is syntactically reachable from an argument slot —
+    // the callee's parameter type would require a signature lookup this
+    // scan does not perform.
+    let src = "class C { void M() { Foo(new()); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().all(|r| r.kind != EdgeKind::Instantiates),
+        "argument-position new() must not emit an Instantiates ref: {:?}",
+        r.iter()
+            .map(|r| (&r.target_name, r.kind))
+            .collect::<Vec<_>>()
+    );
+}

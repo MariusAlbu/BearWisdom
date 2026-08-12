@@ -26,6 +26,7 @@ const MATLAB_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "matlab",
     qname_separator: ".",
     self_keywords: &[],

@@ -13,6 +13,7 @@ mod flow_config_tests;
 #[cfg(test)]
 #[path = "flow_tests.rs"]
 mod flow_tests;
+pub mod ext_virtual_path;
 pub mod full;
 pub mod incremental;
 pub mod keywords;

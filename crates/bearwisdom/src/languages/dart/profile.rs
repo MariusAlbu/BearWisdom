@@ -50,6 +50,7 @@ const DART_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "dart",
     qname_separator: ".",
     self_keywords: &["this", "super"],
@@ -77,7 +78,12 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // A plain (unprefixed, unrestricted) `import 'uri';` is marked wildcard
+    // at extract time (`target_name: "*"`); `FromModuleField` is what carries
+    // that ref's `module` (the wildcard's bare library stem, or the raw URI
+    // for a scoped import) onto `ImportEntry.module_path` for the ladder.
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     // Library-prefix bind: a `i0.Value` ref carries the prefix's import URI on
     // `module`. Resolve that URI to its project file via `in_module_from` and
     // bind the bare name there; on a miss, terminate so an external prefix is
@@ -90,7 +96,19 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
     external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+    // Dart top-level declarations carry no namespace prefix in their qname
+    // (`BuildContext`, not `widgets.BuildContext`), so `QnameUnder` can never
+    // match a whole-library import. Externals are indexed one file per real
+    // SDK source file, so the module's bare STEM — the extractor already
+    // reduces a wildcard import's `module` to this stem — lines up with the
+    // declaring file's own basename for a direct (non-barrel) library. A
+    // barrel library (`package:flutter/material.dart` re-exporting
+    // `src/widgets/framework.dart`) still declines: `FileStem` cannot walk
+    // a multi-hop re-export chain to the file that actually declares the
+    // member.
+    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
+        underscore_prefix: false,
+    },
     namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,

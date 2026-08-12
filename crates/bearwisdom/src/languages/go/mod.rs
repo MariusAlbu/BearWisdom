@@ -8,6 +8,8 @@ pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
+mod param_symbols;
+mod qualified_types;
 mod refs;
 mod statements;
 mod symbols;

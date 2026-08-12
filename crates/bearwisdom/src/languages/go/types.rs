@@ -4,8 +4,8 @@
 // =============================================================================
 
 use super::helpers::{
-    build_method_elem_signature, extract_go_doc_comment, extract_go_type_name, go_visibility,
-    is_go_builtin_type, node_text, pointer_type_name, qualify, scope_from_prefix,
+    build_method_elem_signature, extract_go_doc_comment, go_visibility, is_go_builtin_type,
+    node_text, qualify, scope_from_prefix,
 };
 use super::tags;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -141,23 +141,16 @@ fn emit_alias_head_ref(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // `List[int]` (Go 1.18+) recurses to its base via `go_type_ref_target`,
+    // which may itself be a `qualified_type` (`pkg.List[int]`). Every other
+    // structural RHS shape has no nameable head.
     let (head, module) = match rhs.kind() {
-        "type_identifier" => (node_text(rhs, source), None),
-        "qualified_type" => {
-            let pkg = (0..rhs.named_child_count())
-                .filter_map(|i| rhs.named_child(i))
-                .find(|c| c.kind() == "package_identifier")
-                .map(|n| node_text(&n, source));
-            let name = (0..rhs.named_child_count())
-                .filter_map(|i| rhs.named_child(i))
-                .find(|c| c.kind() == "type_identifier")
-                .map(|n| node_text(&n, source))
-                .unwrap_or_default();
-            (name, pkg)
+        "type_identifier" | "qualified_type" | "generic_type" => {
+            match super::qualified_types::go_type_ref_target(rhs, source) {
+                Some(parts) => parts,
+                None => return,
+            }
         }
-        // `List[int]` (Go 1.18+) — the head is the generic base name.
-        "generic_type" => (extract_go_type_name(rhs, source), None),
-        // Structural RHS — no nameable head.
         _ => return,
     };
 
@@ -390,7 +383,7 @@ fn extract_field_declaration(
 ) {
     let mut field_names: Vec<String> = Vec::new();
     let mut type_text: Option<String> = None;
-    let mut embedded_type: Option<String> = None;
+    let mut embedded_type: Option<(String, Option<String>)> = None;
     let mut tag_doc: Option<String> = None;
 
     let mut cursor = node.walk();
@@ -402,24 +395,14 @@ fn extract_field_declaration(
             "field_identifier" => {
                 field_names.push(node_text(&child, source));
             }
-            "type_identifier" if field_names.is_empty() && type_text.is_none() => {
-                // The only named child — this is an embedded type.
-                embedded_type = Some(node_text(&child, source));
-            }
-            "pointer_type" if field_names.is_empty() && type_text.is_none() => {
-                // `*EmbeddedType`
-                embedded_type = Some(pointer_type_name(&child, source));
-            }
-            // `pkg.Type` embedded field (e.g. `http.Handler`, `sync.Mutex`).
-            "qualified_type" if field_names.is_empty() && type_text.is_none() => {
-                let leaf = (0..child.named_child_count())
-                    .filter_map(|i| child.named_child(i))
-                    .filter(|c| c.kind() == "type_identifier")
-                    .last();
-                embedded_type = Some(match leaf {
-                    Some(n) => node_text(&n, source),
-                    None => node_text(&child, source),
-                });
+            // Embedded field — `EmbeddedType`, `*EmbeddedType`, or the
+            // package-qualified forms `pkg.Type` / `*pkg.Type` (e.g.
+            // `http.Handler`, `sync.Mutex`). The package qualifier, when
+            // present, carries through as `module` on the Inherits edge.
+            "type_identifier" | "pointer_type" | "qualified_type"
+                if field_names.is_empty() && type_text.is_none() =>
+            {
+                embedded_type = super::qualified_types::go_type_ref_target(&child, source);
             }
             "raw_string_literal" => {
                 // Struct tag: `json:"name" db:"col"`
@@ -450,7 +433,7 @@ fn extract_field_declaration(
         }
     }
 
-    if let Some(et) = embedded_type {
+    if let Some((et, module)) = embedded_type {
         if !et.is_empty() {
             // Emit Inherits edge from the struct (parent_index) to the embedded type.
             refs.push(ExtractedRef {
@@ -461,7 +444,7 @@ fn extract_field_declaration(
                 kind: EdgeKind::Inherits,
                 line: node.start_position().row as u32,
                 col: 0,
-                module: None,
+                module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
@@ -580,30 +563,24 @@ fn emit_type_refs_from_subtree(
         // type_identifier child would otherwise produce a duplicate ref
         // with no module set.
         "qualified_type" => {
-            let pkg = (0..node.named_child_count())
-                .filter_map(|i| node.named_child(i))
-                .find(|c| c.kind() == "package_identifier")
-                .map(|n| node_text(&n, source));
-            let name = (0..node.named_child_count())
-                .filter_map(|i| node.named_child(i))
-                .find(|c| c.kind() == "type_identifier")
-                .map(|n| node_text(&n, source))
-                .unwrap_or_default();
-            if !name.is_empty() && !is_go_builtin_type(&name) {
-                refs.push(ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    col: 0,
-                    module: pkg,
-                    chain: None,
-                    byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
+            let parts = super::qualified_types::qualified_type_parts(node, source);
+            if let Some((package, name)) = parts {
+                if !name.is_empty() && !is_go_builtin_type(&name) {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: node.start_position().row as u32,
+                        col: 0,
+                        module: Some(package),
+                        chain: None,
+                        byte_offset: node.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
             }
         }
 

@@ -1030,27 +1030,27 @@ fn scan_all_type_positions(
                 // No further recursion needed — typeof has no nested statements.
             }
 
-            // `new()` — implicit target-typed new expression.
-            // Emit a synthetic Instantiates ref so the coverage tool sees a match
-            // on this node's line.  The initializer's contents are handled by the
-            // type-position scanner recursion below.
+            // `new()` — implicit target-typed new expression. Recover the
+            // declared type from the enclosing declaration (local/field
+            // variable, property, parameter default); other contexts emit
+            // no ref rather than an unresolvable empty target_name.
             "implicit_object_creation_expression" => {
-                // Emit a placeholder Instantiates ref on this line so the coverage
-                // tool can correlate the node.  Target is empty (type inferred).
-                refs.push(crate::types::ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index: attr.source_at(child.start_position().row as u32),
-                    target_name: String::new(),
-                    kind: crate::types::EdgeKind::Instantiates,
-                    line: child.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: child.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
+                if let Some(type_name) = types::declared_type_for_target_typed_new(child, src) {
+                    refs.push(crate::types::ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index: attr.source_at(child.start_position().row as u32),
+                        target_name: type_name,
+                        kind: crate::types::EdgeKind::Instantiates,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module: None,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
                 scan_all_type_positions(child, src, attr, refs);
             }
 

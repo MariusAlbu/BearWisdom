@@ -27,6 +27,9 @@ use bearwisdom::db::Database;
 use clap::{Parser, Subcommand};
 
 mod drain_audit_report;
+mod quality_recapture;
+mod recapture_entry;
+mod recapture_requests;
 
 #[cfg(test)]
 #[path = "main_tests.rs"]
@@ -503,7 +506,8 @@ enum Commands {
         /// of these names. Repeatable. When set, only these projects are
         /// indexed / compared / recaptured — but the file written is still
         /// the full baseline.json with the matching entries replaced
-        /// in-place.
+        /// in-place. A name that matches no entry, or whose source is
+        /// missing on disk, fails the run instead of passing silently.
         #[arg(long = "project")]
         only_projects: Vec<String>,
         /// Re-index projects (don't use cached). Slower but catches indexing regressions.
@@ -513,8 +517,8 @@ enum Commands {
         /// list in the existing baseline, re-indexes each one, and writes the
         /// new metrics back to the baseline file. Use after intentional
         /// quality improvements to avoid noisy regression reports on the next
-        /// run. Ghost projects (source missing) are preserved in place with
-        /// their existing values and a marker comment.
+        /// run. A project whose source is missing keeps its existing values in
+        /// an unscoped sweep, but fails the run when `--project` named it.
         #[arg(long, conflicts_with = "reindex")]
         recapture: bool,
     },
@@ -868,7 +872,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
             recapture,
         } => {
             if recapture {
-                cmd_quality_recapture(&baseline, &only_projects)
+                quality_recapture::run(&baseline, &only_projects)
             } else {
                 cmd_quality_check(&baseline, &only_projects, reindex)
             }
@@ -1527,49 +1531,13 @@ fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
     bearwisdom::resolve_db_path(project_root)
 }
 
-/// Detect projects whose source tree has been deleted, leaving only a cached
-/// `.bearwisdom/` index (and possibly `.git/`) behind. Used by `quality-check`
-/// to skip them instead of re-indexing an empty directory and producing a
-/// full set of false-regression zeroes.
+/// True when the project root holds no non-hidden entry — the source tree was
+/// deleted and only cached directories such as `.bearwisdom/` and `.git/`
+/// remain. An unreadable root counts as a ghost.
 ///
-/// Heuristic: if the project root contains no non-hidden entries (everything
-/// starts with `.`), or contains only entries whose names match a small
-/// allowlist of known cache/metadata dirs, it's a ghost.
-/// Current process working set in MiB (Windows: PSAPI; others: 0).
-/// Sampled at the end of each project's indexing pass — captures memory
-/// the indexer is still holding after full_index returns (the pipeline
-/// has already slimmed parsed state by phase 13, so this is the retained
-/// floor, not the in-flight peak). Process-cumulative PeakWorkingSetSize
-/// is NOT used here because it only ever grows across a batch run,
-/// making every project after the biggest one report identical numbers.
-#[cfg(windows)]
-fn current_working_set_mb() -> u64 {
-    use windows_sys::Win32::System::ProcessStatus::{
-        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
-    };
-    use windows_sys::Win32::System::Threading::GetCurrentProcess;
-    unsafe {
-        let mut counters: PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
-        let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
-        let ok = GetProcessMemoryInfo(
-            GetCurrentProcess(),
-            (&mut counters as *mut PROCESS_MEMORY_COUNTERS_EX) as *mut PROCESS_MEMORY_COUNTERS,
-            size,
-        );
-        if ok == 0 {
-            0
-        } else {
-            counters.WorkingSetSize as u64 / (1024 * 1024)
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn current_working_set_mb() -> u64 {
-    0
-}
-
-fn is_ghost_project(root: &Path) -> bool {
+/// Indexing such a root would replace every metric with zero, so both
+/// `quality-check` and its recapture treat it as uncapturable.
+pub(crate) fn is_ghost_project(root: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(root) else {
         return true;
     };
@@ -1844,31 +1812,24 @@ fn cmd_quality_check(
     let mut corpus_groups: std::collections::BTreeMap<String, (i64, i64)> =
         std::collections::BTreeMap::new();
 
-    let project_filter: std::collections::HashSet<&str> =
-        only_projects.iter().map(String::as_str).collect();
+    let mut requests = recapture_requests::RecaptureRequests::new(only_projects);
 
     for proj in projects {
         let name = proj["project"].as_str().unwrap_or("?");
-        if !project_filter.is_empty() && !project_filter.contains(name) {
+        if !requests.selects(name) {
             continue;
         }
         let proj_path = proj["path"].as_str().unwrap_or("");
         let root = PathBuf::from(proj_path);
 
         eprint!("--- {name} ---\n  ");
-        if !root.exists() {
-            eprintln!("SKIP (path not found: {proj_path})");
-            continue;
-        }
-        // Ghost-project guard: the source tree was deleted but `.bearwisdom/`
-        // (and nothing else) remains, so `exists()` returns true but there is
-        // nothing to index. Re-indexing would wipe the old DB and produce
-        // zeroes across every metric, surfacing a sea of false regressions.
-        // Detect by checking for ANY non-dotfile entry in the root; if the
-        // project has only hidden dirs (.bearwisdom, .git), treat it as a
-        // ghost and skip.
-        if is_ghost_project(&root) {
-            eprintln!("SKIP (ghost project: source missing, only .bearwisdom/ present)");
+        // A root with no source cannot be checked. In an unscoped sweep the
+        // entry is passed over; when `--project` named it, the skip is
+        // recorded and the run fails rather than reporting a clean pass for a
+        // project it never looked at.
+        if let Some(reason) = quality_recapture::capture_blocker(&root) {
+            eprintln!("SKIP ({})", reason.detail(proj_path));
+            requests.record_skip(name, proj_path, reason);
             continue;
         }
 
@@ -2044,7 +2005,10 @@ fn cmd_quality_check(
         }));
     }
 
-    let passed = regressions == 0;
+    // A project named by `--project` that was never checked cannot count as a
+    // pass — its metrics are unknown, not unchanged.
+    let failures = requests.into_failures();
+    let passed = regressions == 0 && failures.is_empty();
 
     // Per-corpus-class pooled rates. The application rate is the headline;
     // framework-source and fixture-heavy repos are reported apart so their
@@ -2053,8 +2017,15 @@ fn cmd_quality_check(
     let corpus_class_rates = drain_audit_report::corpus_class_report(&corpus_groups);
 
     eprintln!(
-        "\n=== SUMMARY: {regressions} regressions, {improvements} improvements ===",
+        "\n=== SUMMARY: {regressions} regressions, {improvements} improvements, {} uncheckable ===",
+        failures.len(),
     );
+    if !failures.is_empty() {
+        eprintln!(
+            "Requested project(s) produced no metrics:\n{}",
+            recapture_requests::failure_summary(&failures)
+        );
+    }
     for (class, edges, unresolved, rate) in &corpus_class_rates {
         eprintln!(
             "  corpus[{class}]: {rate:.2}% ({edges} edges / {unresolved} unresolved)",
@@ -2080,6 +2051,7 @@ fn cmd_quality_check(
         "passed": passed,
         "regressions": regressions,
         "improvements": improvements,
+        "failures": recapture_requests::failures_json(&failures),
         "corpus_class_rates": corpus_class_json,
         "projects": project_results,
     }))
@@ -2103,270 +2075,6 @@ fn corpus_group_key(corpus_class: Option<&str>) -> Option<&str> {
         Some(c) if c.starts_with("duplicate-of:") => None,
         Some(c) => Some(c),
     }
-}
-
-/// Recapture the quality baseline: re-index every project that still has
-/// source on disk, snapshot its current metrics, and write a new
-/// `quality-baseline.json`. Preserves the `project`, `path`, `languages`,
-/// and `assertions` fields from the existing baseline, and updates the
-/// numeric metrics (`files`, `symbols`, `edges`, `routes`, `flow_edges`,
-/// `unresolved_refs`, `flow_edge_types`) in place.
-///
-/// Ghost projects (source directory empty / only `.bearwisdom/` remains)
-/// and path-not-found entries are **kept as-is** with their old values —
-/// the rationale is that the user may intend to restore the source later,
-/// and wiping entries silently would hide that intent. Assertion thresholds
-/// are auto-updated to the new captured values so future runs compare
-/// apples-to-apples.
-fn cmd_quality_recapture(baseline_path: &str, only_projects: &[String]) -> Result<String> {
-    let baseline_file = PathBuf::from(baseline_path);
-    let content = std::fs::read_to_string(&baseline_file)
-        .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
-    let mut baseline: serde_json::Value =
-        serde_json::from_str(&content).context("Failed to parse baseline JSON")?;
-
-    let Some(projects) = baseline["projects"].as_array().cloned() else {
-        anyhow::bail!("baseline.projects is not an array");
-    };
-
-    let mut new_projects: Vec<serde_json::Value> = Vec::with_capacity(projects.len());
-    let mut recaptured = 0u32;
-    let mut skipped_missing = 0u32;
-    let mut skipped_ghost = 0u32;
-
-    let project_filter: std::collections::HashSet<&str> =
-        only_projects.iter().map(String::as_str).collect();
-
-    for proj in projects {
-        let name = proj["project"].as_str().unwrap_or("?").to_string();
-        // Project filter — when set, projects not on the list pass
-        // through unchanged (baseline values preserved). The file is
-        // still rewritten with every project; only the targeted ones
-        // get fresh values.
-        if !project_filter.is_empty() && !project_filter.contains(name.as_str()) {
-            new_projects.push(proj);
-            continue;
-        }
-        let proj_path = proj["path"].as_str().unwrap_or("").to_string();
-        let root = PathBuf::from(&proj_path);
-
-        eprint!("--- {name} ---\n  ");
-
-        if !root.exists() {
-            eprintln!("SKIP (path not found — keeping old values)");
-            skipped_missing += 1;
-            new_projects.push(proj);
-            continue;
-        }
-        if is_ghost_project(&root) {
-            eprintln!("SKIP (ghost project — keeping old values)");
-            skipped_ghost += 1;
-            new_projects.push(proj);
-            continue;
-        }
-
-        eprintln!("Reindexing...");
-        let db_path = resolve_db_path(&root)?;
-        let mut db =
-            Database::open(&db_path).with_context(|| format!("Failed to open DB for {name}"))?;
-
-        // Capture performance around the actual full_index call so the
-        // baseline catches indexing perf regressions. `index_duration_ms`
-        // is wall-clock for the indexer pipeline itself (excludes DB
-        // open, stats queries, JSON writes). `end_ws_mb` is the
-        // process's peak working set after the index — on Windows via
-        // PSAPI, 0 on other platforms (we only run the baseline on
-        // Windows anyway).
-        let index_start = std::time::Instant::now();
-        bearwisdom::full_index(&mut db, &root, None, None, None)
-            .with_context(|| format!("Index failed for {name}"))?;
-        let index_duration_ms = index_start.elapsed().as_millis() as u64;
-        let end_ws_mb = current_working_set_mb();
-
-        let stats = bearwisdom::index_stats(&db)?;
-        let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
-        let flow_edge_types: std::collections::BTreeMap<String, u32> = flow_breakdown
-            .into_iter()
-            .map(|b| (b.edge_type, b.count))
-            .collect();
-
-        // The consolidated baseline measures five quality dimensions:
-        //   1. Language detection  — `languages` map (ecosystem + manifest).
-        //   2. Extraction + resolution — `internal_edges` /
-        //      `internal_unresolved` / `resolution_rate` plus the
-        //      per-(language, kind) breakdown that pinpoints which
-        //      extractor is leaking.
-        //   3. Connector wiring — `flow_edges` + `flow_edge_types` + `routes`.
-        //   4. Dead-code trust — transitively measured by resolution_rate.
-        //   5. Doc drift — `code_chunks` count (markdown fences chunk too).
-        // Plus a performance block: duration and peak working set so
-        // regressions in indexer perf surface on the next run.
-        let rb = bearwisdom::resolution_breakdown(&db)?;
-
-        let mut updated = proj.clone();
-        // Drop legacy fields so the schema is clean (ignore if absent).
-        let stale_keys = [
-            "edges",
-            "unresolved_refs",
-            "unresolved_ref_count",
-            "external_ref_count",
-        ];
-        if let Some(obj) = updated.as_object_mut() {
-            for k in stale_keys {
-                obj.remove(k);
-            }
-        }
-
-        // Write the consolidated schema in a stable order.
-        updated["files"] = serde_json::json!(stats.file_count);
-        updated["languages"] = serde_json::json!(rb.languages);
-        updated["symbols"] = serde_json::json!(stats.symbol_count);
-        updated["internal_edges"] = serde_json::json!(rb.internal_edges);
-        updated["internal_unresolved"] = serde_json::json!(rb.internal_unresolved);
-        updated["resolution_rate"] = serde_json::json!(rb.resolution_rate);
-        // Refs excluded from the rate by the Dart generated-code filter.
-        // Zero (and omitted on read) for projects with no build_runner output.
-        if rb.generated_excluded > 0 {
-            updated["generated_excluded"] = serde_json::json!(rb.generated_excluded);
-        }
-        // Refs a rule drained as a language builtin / non-project construct.
-        // Zero (and omitted on read) for languages with no `builtin_skip`.
-        if rb.drained_refs > 0 {
-            updated["drained_refs"] = serde_json::json!(rb.drained_refs);
-        }
-        // Files reclassified `ext:vendored:`/`ext:generated:` at walk time.
-        // Zero (and omitted on read) for projects with no checked-in vendor
-        // or build/codegen output.
-        if rb.vendored_files_reclassified > 0 {
-            updated["vendored_files_reclassified"] =
-                serde_json::json!(rb.vendored_files_reclassified);
-        }
-        if rb.generated_files_reclassified > 0 {
-            updated["generated_files_reclassified"] =
-                serde_json::json!(rb.generated_files_reclassified);
-        }
-        updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
-        updated["rate_by_language"] = serde_json::json!(rb.rate_by_language);
-        updated["flow_edges"] = serde_json::json!(stats.flow_edge_count);
-        updated["flow_edge_types"] = serde_json::json!(flow_edge_types);
-        updated["routes"] = serde_json::json!(stats.route_count);
-        updated["code_chunks"] = serde_json::json!(rb.code_chunks);
-        // Performance block: duration + peak working set. Separate from
-        // correctness metrics so a perf regression doesn't masquerade as
-        // a resolution regression.
-        updated["perf"] = serde_json::json!({
-            "index_duration_ms": index_duration_ms,
-            "end_ws_mb": end_ws_mb,
-            "files_per_sec": if index_duration_ms > 0 {
-                (stats.file_count as f64 * 1000.0 / index_duration_ms as f64).round() as u64
-            } else { 0 },
-        });
-
-        // Rebuild assertions using the newly captured values so future
-        // quality-check runs compare to the NEW floor, not the old one.
-        // Adds `min_resolution_rate` if absent (integer floor of current
-        // rate — gives a small headroom against decimal jitter).
-        let assertions = updated.as_object_mut().and_then(|o| {
-            o.entry("assertions".to_string())
-                .or_insert_with(|| serde_json::json!({}))
-                .as_object_mut()
-        });
-        if let Some(assertions) = assertions {
-            let existing_keys: Vec<String> = assertions.keys().cloned().collect();
-            for key in existing_keys {
-                if let Some(new_value) = match key.as_str() {
-                    "min_routes" => Some(serde_json::json!(stats.route_count)),
-                    "min_flow_edges" => Some(serde_json::json!(stats.flow_edge_count)),
-                    "min_edges" => Some(serde_json::json!(rb.internal_edges)),
-                    "min_symbols" => Some(serde_json::json!(stats.symbol_count)),
-                    "min_files" => Some(serde_json::json!(stats.file_count)),
-                    "min_resolution_rate" => {
-                        Some(serde_json::json!(rb.resolution_rate.floor() as u32))
-                    }
-                    _ => {
-                        // Flow-edge-type thresholds: min_{type}_edges.
-                        // Missing type means the connector produced zero —
-                        // record as 0 rather than keeping the old threshold,
-                        // otherwise every quality-check run would perpetually
-                        // flag the same "regression" against a stale floor.
-                        if let Some(ty) = key
-                            .strip_prefix("min_")
-                            .and_then(|s| s.strip_suffix("_edges"))
-                        {
-                            let count = flow_edge_types.get(ty).copied().unwrap_or(0);
-                            Some(serde_json::json!(count))
-                        } else {
-                            None
-                        }
-                    }
-                } {
-                    assertions.insert(key, new_value);
-                }
-            }
-            // Bake in min_resolution_rate on first recapture if absent.
-            if !assertions.contains_key("min_resolution_rate") {
-                assertions.insert(
-                    "min_resolution_rate".to_string(),
-                    serde_json::json!(rb.resolution_rate.floor() as u32),
-                );
-            }
-        }
-
-        new_projects.push(updated);
-        recaptured += 1;
-        eprintln!(
-            "  OK ({} files, {} symbols, {} int_edges, {:.1}% resolved, {} ms, {} MB end_ws)",
-            stats.file_count,
-            stats.symbol_count,
-            rb.internal_edges,
-            rb.resolution_rate,
-            index_duration_ms,
-            end_ws_mb
-        );
-    }
-
-    baseline["projects"] = serde_json::Value::Array(new_projects);
-    // Update captured_at to the current UTC date (time precision not
-    // needed — baselines are recaptured by hand, not continuously).
-    // Format YYYY-MM-DD manually from the UNIX epoch to avoid a chrono
-    // dependency for a single use.
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // Days since 1970-01-01.
-    let days = (now / 86_400) as i64;
-    // Convert to civil date using Howard Hinnant's date algorithms.
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if m <= 2 { y + 1 } else { y };
-    baseline["captured_at"] = serde_json::json!(format!("{:04}-{:02}-{:02}T00:00:00Z", year, m, d));
-
-    let serialized =
-        serde_json::to_string_pretty(&baseline).context("Failed to serialize baseline JSON")?;
-    std::fs::write(&baseline_file, serialized)
-        .with_context(|| format!("Failed to write baseline: {}", baseline_file.display()))?;
-
-    eprintln!(
-        "\n=== RECAPTURE: {recaptured} re-indexed, {skipped_missing} missing, {skipped_ghost} ghost ===\n\
-         Wrote {} ({} total projects)",
-        baseline_file.display(),
-        baseline["projects"].as_array().map(|a| a.len()).unwrap_or(0)
-    );
-
-    ok_json(serde_json::json!({
-        "recaptured": recaptured,
-        "skipped_missing": skipped_missing,
-        "skipped_ghost": skipped_ghost,
-        "baseline": baseline_file.display().to_string(),
-    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -2648,7 +2356,7 @@ fn parse_refs_file(path: &str) -> Result<Vec<(String, u32, String)>> {
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.
-fn ok_json<T: serde::Serialize>(value: T) -> Result<String> {
+pub(crate) fn ok_json<T: serde::Serialize>(value: T) -> Result<String> {
     let inner = serde_json::to_value(value).context("Failed to serialize result")?;
     serde_json::to_string(&serde_json::json!({"ok": true, "data": inner}))
         .context("Failed to serialize JSON envelope")

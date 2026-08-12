@@ -1369,12 +1369,9 @@ fn short_var_decl_qualified_composite_literal_emits_typeref() {
 fn closure_param_in_call_argument_no_double_visit() {
     // `func(t *testing.T) {...}` as a call argument is reached once via the
     // `func_literal` dispatch arm: `extract_func_literal_type_refs` emits the
-    // param type once (still doubled by the `qualified_type` budget — one
-    // TypeRef for the `qualified_type` node, one for its inner
-    // `type_identifier`, per that arm's own contract), and the closure body
-    // is walked exactly once for calls. `run`'s own parameter uses a
-    // different type name (`Harness`) so it can't be mistaken for the
-    // closure's contribution.
+    // param type exactly once, and the closure body is walked exactly once
+    // for calls. `run`'s own parameter uses a different type name (`Harness`)
+    // so it can't be mistaken for the closure's contribution.
     let source = r#"package p
 
 func run(t Harness) {
@@ -1386,15 +1383,22 @@ func run(t Harness) {
 "#;
     let r = extract::extract(source);
 
-    let t_type_refs = r
+    let t_type_refs: Vec<_> = r
         .refs
         .iter()
         .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "T")
-        .count();
+        .collect();
     assert_eq!(
-        t_type_refs, 2,
-        "expected 2 TypeRefs to T (qualified_type budget double from a single \
-         extract_func_literal_type_refs pass, not 4+ from a double-visit), got {t_type_refs}"
+        t_type_refs.len(),
+        1,
+        "expected 1 TypeRef to T from a single extract_func_literal_type_refs pass \
+         (not 2+ from a double-visit), got {}",
+        t_type_refs.len()
+    );
+    assert_eq!(
+        t_type_refs[0].module.as_deref(),
+        Some("testing"),
+        "the `*testing.T` qualifier must carry through as module attribution"
     );
 
     let parallel_calls = r
@@ -1439,11 +1443,11 @@ func run() {
             .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == name)
             .count()
     };
-    assert_eq!(type_ref_count("A"), 2, "level1 param type ref count");
-    assert_eq!(type_ref_count("B"), 2, "level2 param type ref count");
+    assert_eq!(type_ref_count("A"), 1, "level1 param type ref count");
+    assert_eq!(type_ref_count("B"), 1, "level2 param type ref count");
     assert_eq!(
         type_ref_count("C"),
-        2,
+        1,
         "level3 (deepest) param type ref count must equal level1's, not compound with depth"
     );
 
@@ -1571,5 +1575,142 @@ func run() {
     assert_eq!(
         get_v_calls, 1,
         "expected exactly 1 Calls edge to getV from the assertion operand, got {get_v_calls}"
+    );
+}
+
+// -----------------------------------------------------------------------
+// Qualified-type module attribution: `pkg.Type` positions must carry the
+// package qualifier on `ExtractedRef::module`, not drop it.
+// -----------------------------------------------------------------------
+
+#[test]
+fn pointer_to_qualified_param_carries_module_and_faithful_signature() {
+    // `t *testing.T` — the parameter symbol's own signature must read the
+    // full qualified type (not the bare "T" the target_name reduces to), and
+    // its TypeRef must carry the package qualifier as module attribution.
+    let source = r#"package p
+
+func TestSomething(t *testing.T) {
+    t.Parallel()
+}
+"#;
+    let r = extract::extract(source);
+
+    let (param_idx, param) = r
+        .symbols
+        .iter()
+        .enumerate()
+        .find(|(_, s)| s.name == "t" && s.kind == SymbolKind::Property)
+        .expect("expected Property symbol 't'");
+    assert_eq!(
+        param.signature.as_deref(),
+        Some("t *testing.T"),
+        "parameter signature must preserve the pointer and package qualifier"
+    );
+
+    let type_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::TypeRef && rf.source_symbol_index == param_idx)
+        .expect("expected TypeRef from the param symbol");
+    assert_eq!(type_ref.target_name, "T");
+    assert_eq!(type_ref.module.as_deref(), Some("testing"));
+}
+
+#[test]
+fn value_qualified_param_carries_module() {
+    // `c fiber.Config` — no pointer, qualified_type directly as the param type.
+    let source = r#"package p
+
+func Setup(c fiber.Config) {
+    _ = c
+}
+"#;
+    let r = extract::extract(source);
+
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Config")
+        .collect();
+    assert!(
+        !type_refs.is_empty(),
+        "expected a TypeRef to Config; refs: {:?}",
+        r.refs
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.module.as_deref() == Some("fiber")),
+        "expected a Config TypeRef with module \"fiber\"; got: {type_refs:?}"
+    );
+}
+
+#[test]
+fn slice_of_pointer_to_qualified_type_carries_module() {
+    // `xs []*foo.Bar` — slice_type wrapping pointer_type wrapping qualified_type.
+    let source = r#"package p
+
+func Collect(xs []*foo.Bar) {
+    _ = xs
+}
+"#;
+    let r = extract::extract(source);
+
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Bar")
+        .collect();
+    assert!(
+        !type_refs.is_empty(),
+        "expected a TypeRef to Bar; refs: {:?}",
+        r.refs
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.module.as_deref() == Some("foo")),
+        "expected a Bar TypeRef with module \"foo\"; got: {type_refs:?}"
+    );
+}
+
+#[test]
+fn generic_type_argument_qualified_type_carries_module() {
+    // `m Map[string, *pkg.Type]` — the qualified type argument must resolve
+    // the same as any other qualified_type site, independent of the
+    // (bare) generic base `Map`.
+    let source = r#"package p
+
+func Use(m Map[string, *pkg.Type]) {
+    _ = m
+}
+"#;
+    let r = extract::extract(source);
+
+    let map_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Map")
+        .collect();
+    assert!(
+        !map_refs.is_empty(),
+        "expected a TypeRef to the bare generic base Map; refs: {:?}",
+        r.refs
+    );
+    assert!(
+        map_refs.iter().all(|rf| rf.module.is_none()),
+        "the bare generic base Map must not carry a module; got: {map_refs:?}"
+    );
+
+    let type_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Type")
+        .collect();
+    assert!(
+        !type_refs.is_empty(),
+        "expected a TypeRef to the qualified type argument Type; refs: {:?}",
+        r.refs
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.module.as_deref() == Some("pkg")),
+        "expected a Type TypeRef with module \"pkg\"; got: {type_refs:?}"
     );
 }

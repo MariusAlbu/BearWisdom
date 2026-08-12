@@ -1,6 +1,6 @@
 use super::PASCAL_PROFILE;
 use crate::type_checker::profile::language_profile::{
-    KindCompatibility, NameNormalization, WildcardMatch,
+    ImportModulePath, KindCompatibility, NameNormalization, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -71,5 +71,20 @@ fn pascal_case_folds_and_matches_units_by_file_stem() {
         WildcardMatch::FileStem {
             underscore_prefix: true
         }
+    ));
+}
+
+#[test]
+fn pascal_uses_clause_reaches_the_wildcard_rung() {
+    // `WildcardMatch::FileStem` above is inert data unless `build_file_context`
+    // actually marks a `uses` entry as a wildcard import. That gate is
+    // `namespace_imports_are_wildcards` (a bare `uses X;` opens the whole unit,
+    // same as C#'s plain `using X;`), and it requires `module_path` to be
+    // populated — `extract_uses` sets `ExtractedRef::module`, so the profile
+    // must read it via `FromModuleField` rather than leaving it unset.
+    assert!(PASCAL_PROFILE.namespace_imports_are_wildcards);
+    assert!(matches!(
+        PASCAL_PROFILE.import_module_path,
+        ImportModulePath::FromModuleField
     ));
 }

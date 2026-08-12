@@ -12,8 +12,8 @@
 use super::calls::extract_call_args;
 use super::chain::build_chain;
 use super::helpers::node_text;
+use super::qualified_types::go_type_ref_target;
 use super::refs::{extract_func_literal_type_refs, extract_refs_from_body};
-use super::type_refs::go_type_node_name;
 use crate::types::{EdgeKind, ExtractedRef};
 use tree_sitter::Node;
 
@@ -179,22 +179,23 @@ fn extract_make_chan_type_ref(
                 if !elem.is_named() {
                     continue; // skip `chan` keyword
                 }
-                let elem_name = go_type_node_name(&elem, source);
-                if !elem_name.is_empty() {
-                    refs.push(ExtractedRef {
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: elem_name,
-                        kind: EdgeKind::TypeRef,
-                        line: elem.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: elem.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                    });
+                if let Some((elem_name, module)) = go_type_ref_target(&elem, source) {
+                    if !elem_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
+                            source_symbol_index,
+                            target_name: elem_name,
+                            kind: EdgeKind::TypeRef,
+                            line: elem.start_position().row as u32,
+                            col: 0,
+                            module,
+                            chain: None,
+                            byte_offset: elem.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
+                    }
                 }
                 break;
             }
@@ -224,31 +225,20 @@ pub(super) fn extract_composite_literal_ref(
         return;
     }
 
-    let type_name = match type_node.kind() {
-        "type_identifier" => node_text(&type_node, source),
-        "qualified_type" => {
-            // `pkg.TypeName` — find the last `type_identifier` by index.
-            let last_ti = (0..type_node.named_child_count())
-                .filter_map(|i| type_node.named_child(i))
-                .filter(|c| c.kind() == "type_identifier")
-                .last();
-            match last_ti {
-                Some(n) => node_text(&n, source),
-                None => node_text(&type_node, source),
+    let (type_name, module) = match type_node.kind() {
+        "type_identifier" | "qualified_type" | "generic_type" => {
+            match go_type_ref_target(&type_node, source) {
+                Some(parts) => parts,
+                None => return,
             }
         }
-        // Generic type instantiation `Repo[User]` — pull the base name.
-        "generic_type" => type_node
-            .named_child(0)
-            .map(|n| node_text(&n, source))
-            .unwrap_or_default(),
         // Anonymous types (`struct{}{...}`, `[]int{1,2}`, `map[K]V{}`,
         // `[N]T{}`, `chan T(...)`, `func(){}` etc.) have no named symbol
         // to point at — skip rather than emit the literal source as the
         // target name.
         "struct_type" | "slice_type" | "map_type" | "array_type" | "channel_type"
         | "function_type" | "pointer_type" | "interface_type" => return,
-        _ => node_text(&type_node, source),
+        _ => (node_text(&type_node, source), None),
     };
 
     if type_name.is_empty() {
@@ -263,7 +253,7 @@ pub(super) fn extract_composite_literal_ref(
         kind: EdgeKind::Instantiates,
         line: type_node.start_position().row as u32,
         col: 0,
-        module: None,
+        module,
         chain: None,
         byte_offset: type_node.start_byte() as u32,
         namespace_segments: Vec::new(),
@@ -299,10 +289,10 @@ pub(super) fn extract_type_assertion_ref(
         None => return,
     };
 
-    let type_name = go_type_node_name(&type_node, source);
-    if type_name.is_empty() {
-        return;
-    }
+    let (type_name, module) = match go_type_ref_target(&type_node, source) {
+        Some(parts) if !parts.0.is_empty() => parts,
+        _ => return,
+    };
 
     refs.push(ExtractedRef {
         is_import_binding: false,
@@ -312,7 +302,7 @@ pub(super) fn extract_type_assertion_ref(
         kind: EdgeKind::TypeRef,
         line: type_node.start_position().row as u32,
         col: 0,
-        module: None,
+        module,
         chain: None,
         byte_offset: type_node.start_byte() as u32,
         namespace_segments: Vec::new(),
@@ -345,22 +335,23 @@ pub(super) fn extract_type_switch_refs(
             for type_child in child.children(&mut inner) {
                 match type_child.kind() {
                     "type_identifier" | "pointer_type" | "qualified_type" => {
-                        let name = go_type_node_name(&type_child, source);
-                        if !name.is_empty() {
-                            refs.push(ExtractedRef {
-                                is_import_binding: false,
-                                is_reexport: false,
-                                source_symbol_index,
-                                target_name: name,
-                                kind: EdgeKind::TypeRef,
-                                line: type_child.start_position().row as u32,
-                                col: 0,
-                                module: None,
-                                chain: None,
-                                byte_offset: type_child.start_byte() as u32,
-                                namespace_segments: Vec::new(),
-                                call_args: Vec::new(),
-                            });
+                        if let Some((name, module)) = go_type_ref_target(&type_child, source) {
+                            if !name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    is_import_binding: false,
+                                    is_reexport: false,
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: type_child.start_position().row as u32,
+                                    col: 0,
+                                    module,
+                                    chain: None,
+                                    byte_offset: type_child.start_byte() as u32,
+                                    namespace_segments: Vec::new(),
+                                    call_args: Vec::new(),
+                                });
+                            }
                         }
                     }
                     _ => {}

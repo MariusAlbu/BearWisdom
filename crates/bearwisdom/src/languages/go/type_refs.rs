@@ -2,7 +2,6 @@
 // go/type_refs.rs  —  Type reference extraction and type-context detection
 // =============================================================================
 
-use super::helpers::node_text;
 use crate::types::{EdgeKind, ExtractedRef};
 use tree_sitter::Node;
 
@@ -62,29 +61,6 @@ fn ancestor_of(ancestor: &Node, node: &Node) -> bool {
     false
 }
 
-/// Extract a simple type name from a Go type node, dereferencing pointer types.
-pub(super) fn go_type_node_name(node: &Node, source: &str) -> String {
-    match node.kind() {
-        "type_identifier" => node_text(node, source),
-        "pointer_type" => {
-            // `*Admin` — the named child is the underlying type.
-            node.named_child(0)
-                .map(|n| go_type_node_name(&n, source))
-                .unwrap_or_default()
-        }
-        "qualified_type" => {
-            // `pkg.Admin` — use the last type_identifier.
-            (0..node.named_child_count())
-                .filter_map(|i| node.named_child(i))
-                .filter(|c| c.kind() == "type_identifier")
-                .last()
-                .map(|n| node_text(&n, source))
-                .unwrap_or_else(|| node_text(node, source))
-        }
-        _ => String::new(),
-    }
-}
-
 /// Extract TypeRef edges from function/method parameter types and return types.
 ///
 /// Walks the parameter_list and result nodes, emitting TypeRef for each
@@ -136,10 +112,12 @@ pub(super) fn extract_type_refs_from_param_list(
 }
 
 /// Walk a Go type AST node and emit `TypeRef` edges for every `type_identifier`
-/// that is not a builtin.  Handles composite types (slices, maps, channels,
-/// pointers, function types, qualified types, generics) by recursing into named
-/// children.  Also emits a second TypeRef for `qualified_type` so that both the
-/// `qualified_type` and inner `type_identifier` budget entries are satisfied.
+/// and `qualified_type` that is not a builtin. Handles composite types
+/// (slices, maps, channels, pointers, function types, generics) by recursing
+/// into named children. A `qualified_type` (`pkg.Type`) emits the bare member
+/// name as `target_name` with the package qualifier carried on `module` — the
+/// same shape [`super::qualified_types::go_type_ref_target`] produces
+/// everywhere else, so the resolve engine's module-qualified rungs bind it.
 pub(super) fn emit_type_refs_from_type_node(
     node: &Node,
     source: &str,
@@ -147,63 +125,23 @@ pub(super) fn emit_type_refs_from_type_node(
     refs: &mut Vec<ExtractedRef>,
 ) {
     match node.kind() {
-        "type_identifier" => {
-            let name = node_text(node, source);
-            if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
-                refs.push(ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
-            }
-        }
-        // `pkg.Type` — emit one TypeRef for `qualified_type` and one for the
-        // inner `type_identifier` so both budget entries are satisfied.
-        "qualified_type" => {
-            let leaf = (0..node.named_child_count())
-                .filter_map(|i| node.named_child(i))
-                .filter(|c| c.kind() == "type_identifier")
-                .last();
-            if let Some(n) = leaf {
-                let name = node_text(&n, source);
+        "type_identifier" | "qualified_type" => {
+            if let Some((name, module)) = super::qualified_types::go_type_ref_target(node, source)
+            {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
-                    let line = n.start_position().row as u32;
-                    refs.push(ExtractedRef {
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: name.clone(),
-                        kind: EdgeKind::TypeRef,
-                        line,
-                        module: None,
-                        chain: None,
-                        byte_offset: n.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                        col: 0,
-                    });
                     refs.push(ExtractedRef {
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
-                        line,
-                        module: None,
+                        line: node.start_position().row as u32,
+                        col: 0,
+                        module,
                         chain: None,
-                        byte_offset: n.start_byte() as u32,
+                        byte_offset: node.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
-                        col: 0,
                     });
                 }
             }

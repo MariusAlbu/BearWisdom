@@ -93,20 +93,12 @@ pub(super) fn build_method_elem_signature(node: &Node, source: &str) -> Option<S
     }
 }
 
-/// Extract the base type name from a `pointer_type` node (`*Foo` → `"Foo"`).
+/// Extract the base type name from a `pointer_type` node (`*Foo` → `"Foo"`,
+/// `*pkg.Foo` → `"Foo"`, `**Foo` → `"Foo"`).
 pub(super) fn pointer_type_name(node: &Node, source: &str) -> String {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "type_identifier" {
-            return node_text(&child, source);
-        }
-        if child.kind() == "pointer_type" {
-            // Handle `**Foo`
-            return pointer_type_name(&child, source);
-        }
-    }
-    // Fallback: strip leading `*` from raw text.
-    node_text(node, source).trim_start_matches('*').to_string()
+    super::qualified_types::go_type_ref_target(node, source)
+        .map(|(name, _)| name)
+        .unwrap_or_default()
 }
 
 /// Return true for Go builtin types that don't reference user symbols.
@@ -138,108 +130,6 @@ pub(super) fn is_go_builtin_type(name: &str) -> bool {
     )
 }
 
-/// Extract a simple type name from a Go type node for TypeRef emission.
-///
-/// Handles:
-/// - `type_identifier`            → `"Foo"`
-/// - `pointer_type`               → `"Foo"` (strips `*`)
-/// - `qualified_type`             → `"Foo"` (last segment of `pkg.Foo`)
-/// - `slice_type`                 → recursively extracts element type
-/// - `map_type`                   → recursively extracts value type
-/// - `array_type`                 → `[N]Foo` → extracts element type
-/// - `channel_type`               → `chan Foo` → extracts element type
-/// - `generic_type`               → `List[T]` → base type name (Go 1.18+)
-pub(super) fn extract_go_type_name(node: &Node, source: &str) -> String {
-    match node.kind() {
-        "type_identifier" => node_text(node, source),
-        "pointer_type" => {
-            // Find the inner type.
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    return extract_go_type_name(&child, source);
-                }
-            }
-            String::new()
-        }
-        "qualified_type" => {
-            // `pkg.Type` — take the last segment.
-            let text = node_text(node, source);
-            text.rsplit('.').next().unwrap_or(&text).to_string()
-        }
-        "slice_type" => {
-            // `[]Foo` — extract element type.
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    return extract_go_type_name(&child, source);
-                }
-            }
-            String::new()
-        }
-        "map_type" => {
-            // `map[K]V` — extract value type (second named child).
-            let named: Vec<_> = {
-                let mut cursor = node.walk();
-                node.children(&mut cursor)
-                    .filter(|c| c.is_named())
-                    .collect()
-            };
-            if named.len() >= 2 {
-                return extract_go_type_name(&named[1], source);
-            }
-            String::new()
-        }
-        "array_type" => {
-            // `[N]Foo` — extract element type (last named child after the length).
-            // tree-sitter-go: array_type { length: _, element: _type }
-            if let Some(elem) = node.child_by_field_name("element") {
-                return extract_go_type_name(&elem, source);
-            }
-            // Fallback: last named child.
-            let named: Vec<_> = {
-                let mut cursor = node.walk();
-                node.children(&mut cursor)
-                    .filter(|c| c.is_named())
-                    .collect()
-            };
-            if let Some(last) = named.last() {
-                return extract_go_type_name(last, source);
-            }
-            String::new()
-        }
-        "channel_type" => {
-            // `chan Foo` / `<-chan Foo` — extract element type (last named child).
-            let mut cursor = node.walk();
-            let mut last_name = String::new();
-            for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    let name = extract_go_type_name(&child, source);
-                    if !name.is_empty() {
-                        last_name = name;
-                    }
-                }
-            }
-            last_name
-        }
-        "generic_type" => {
-            // `List[int]` (Go 1.18+) — extract base type name.
-            // tree-sitter-go generic_type: type_identifier, type_arguments
-            if let Some(base) = node.child_by_field_name("name") {
-                return node_text(&base, source);
-            }
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "type_identifier" {
-                    return node_text(&child, source);
-                }
-            }
-            String::new()
-        }
-        _ => String::new(),
-    }
-}
-
 /// Emit TypeRef edges for all non-builtin named types referenced inside a
 /// `function_type` node (`func(A, B) C`).
 ///
@@ -268,7 +158,33 @@ pub(super) fn extract_function_type_refs(
                                 .filter(|c| c.is_named() && c.kind() != "identifier")
                                 .last();
                             if let Some(tn) = type_node {
-                                let name = extract_go_type_name(&tn, source);
+                                if let Some((name, module)) =
+                                    super::qualified_types::go_type_ref_target(&tn, source)
+                                {
+                                    if !name.is_empty() && !is_go_builtin_type(&name) {
+                                        refs.push(crate::types::ExtractedRef {
+                                            is_import_binding: false,
+                                            is_reexport: false,
+                                            source_symbol_index,
+                                            target_name: name,
+                                            kind: EdgeKind::TypeRef,
+                                            line: tn.start_position().row as u32,
+                                            col: 0,
+                                            module,
+                                            chain: None,
+                                            byte_offset: tn.start_byte() as u32,
+                                            namespace_segments: Vec::new(),
+                                            call_args: Vec::new(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // Bare type in result or single-type result.
+                            if let Some((name, module)) =
+                                super::qualified_types::go_type_ref_target(&param_child, source)
+                            {
                                 if !name.is_empty() && !is_go_builtin_type(&name) {
                                     refs.push(crate::types::ExtractedRef {
                                         is_import_binding: false,
@@ -276,35 +192,15 @@ pub(super) fn extract_function_type_refs(
                                         source_symbol_index,
                                         target_name: name,
                                         kind: EdgeKind::TypeRef,
-                                        line: tn.start_position().row as u32,
+                                        line: param_child.start_position().row as u32,
                                         col: 0,
-                                        module: None,
+                                        module,
                                         chain: None,
-                                        byte_offset: tn.start_byte() as u32,
+                                        byte_offset: param_child.start_byte() as u32,
                                         namespace_segments: Vec::new(),
                                         call_args: Vec::new(),
                                     });
                                 }
-                            }
-                        }
-                        _ => {
-                            // Bare type in result or single-type result.
-                            let name = extract_go_type_name(&param_child, source);
-                            if !name.is_empty() && !is_go_builtin_type(&name) {
-                                refs.push(crate::types::ExtractedRef {
-                                    is_import_binding: false,
-                                    is_reexport: false,
-                                    source_symbol_index,
-                                    target_name: name,
-                                    kind: EdgeKind::TypeRef,
-                                    line: param_child.start_position().row as u32,
-                                    col: 0,
-                                    module: None,
-                                    chain: None,
-                                    byte_offset: param_child.start_byte() as u32,
-                                    namespace_segments: Vec::new(),
-                                    call_args: Vec::new(),
-                                });
                             }
                         }
                     }

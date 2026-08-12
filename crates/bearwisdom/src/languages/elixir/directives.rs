@@ -78,7 +78,12 @@ pub(super) fn extract_directive(
     refs: &mut Vec<ExtractedRef>,
     directive: &str,
 ) {
-    let _ = directive;
+    // `import M` brings M's whole public function surface into bare-name
+    // scope; `use M` runs M's `__using__/1` macro, which at minimum makes
+    // M's own top-level definitions reachable bare in the calling module —
+    // both are wildcard-eligible. `alias`/`require` bind only the qualified
+    // name itself and never widen bare-name lookup.
+    let is_binding = !matches!(directive, "import" | "use");
 
     // Walk arguments to collect ALL alias/identifier children — handles both
     // single: `alias MyApp.User` and multi: `alias MyApp.{User, Post}`.
@@ -99,16 +104,17 @@ pub(super) fn extract_directive(
                         "alias" | "identifier" => {
                             let name = node_text(arg, src);
                             if !name.is_empty() {
-                                let module = if name.contains('.') {
-                                    Some(name.clone())
-                                } else {
-                                    None
-                                };
+                                // Always carry the directive's own target as
+                                // `module` — including a single-segment,
+                                // undotted name, whose qname IS the bare name
+                                // — so `alias_module_qname`/`wildcard_import`
+                                // have a module path to search under.
+                                let module = Some(name.clone());
                                 let default_simple =
                                     name.rsplit('.').next().unwrap_or(&name).to_string();
                                 let simple = as_alias.clone().unwrap_or(default_simple);
                                 refs.push(ExtractedRef {
-                                    is_import_binding: false,
+                                    is_import_binding: is_binding,
                                     is_reexport: false,
                                     source_symbol_index: current_symbol_count,
                                     target_name: simple,
@@ -131,15 +137,11 @@ pub(super) fn extract_directive(
                                 if item.kind() == "alias" || item.kind() == "identifier" {
                                     let name = node_text(item, src);
                                     if !name.is_empty() {
-                                        let module = if name.contains('.') {
-                                            Some(name.clone())
-                                        } else {
-                                            None
-                                        };
+                                        let module = Some(name.clone());
                                         let simple =
                                             name.rsplit('.').next().unwrap_or(&name).to_string();
                                         refs.push(ExtractedRef {
-                                            is_import_binding: false,
+                                            is_import_binding: is_binding,
                                             is_reexport: false,
                                             source_symbol_index: current_symbol_count,
                                             target_name: simple,
@@ -166,6 +168,7 @@ pub(super) fn extract_directive(
                                 src,
                                 current_symbol_count,
                                 refs,
+                                is_binding,
                             );
                         }
                         _ => {}
@@ -182,14 +185,10 @@ pub(super) fn extract_directive(
         if target.is_empty() {
             return;
         }
-        let module = if target.contains('.') {
-            Some(target.clone())
-        } else {
-            None
-        };
+        let module = Some(target.clone());
         let simple = target.rsplit('.').next().unwrap_or(&target).to_string();
         refs.push(ExtractedRef {
-            is_import_binding: false,
+            is_import_binding: is_binding,
             is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,
@@ -208,12 +207,17 @@ pub(super) fn extract_directive(
 /// Handle `alias MyApp.{User, Post}` — the `binary_operator` node for `.`
 /// whose right side is a `tuple` or `list` containing the module names.
 ///
+/// `is_binding` carries the caller's directive-kind classification (`alias`/
+/// `require` bind a qualified name; `import`/`use` are wildcard-eligible)
+/// through to the emitted refs.
+///
 /// Returns true if at least one ref was emitted.
 fn extract_qualified_multi_alias(
     node: &Node,
     src: &str,
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
+    is_binding: bool,
 ) -> bool {
     // The binary_operator for `MyApp.{User, Post}` has children:
     //   alias "MyApp"  .  tuple "{User, Post}"
@@ -256,7 +260,7 @@ fn extract_qualified_multi_alias(
                 if !simple_name.is_empty() {
                     let full_module = format!("{prefix}.{simple_name}");
                     refs.push(ExtractedRef {
-                        is_import_binding: false,
+                        is_import_binding: is_binding,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,
                         target_name: simple_name,
@@ -278,7 +282,7 @@ fn extract_qualified_multi_alias(
         let name = format!("{prefix}.{}", node_text(*right, src));
         let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
         refs.push(ExtractedRef {
-            is_import_binding: false,
+            is_import_binding: is_binding,
             is_reexport: false,
             source_symbol_index: current_symbol_count,
             target_name: simple,

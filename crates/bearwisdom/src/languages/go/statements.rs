@@ -3,8 +3,8 @@
 // =============================================================================
 
 use super::helpers::{
-    extract_go_doc_comment, go_visibility, is_go_builtin_type, node_text, pointer_type_name,
-    qualify, scope_from_prefix,
+    extract_go_doc_comment, go_visibility, is_go_builtin_type, node_text, qualify,
+    scope_from_prefix,
 };
 use super::types::extract_struct_fields;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
@@ -166,19 +166,9 @@ pub(super) fn extract_short_var_decl(
                 "composite_literal" => {
                     if let Some(type_node) = rhs_node.named_child(0) {
                         if type_node.kind() != "literal_value" {
-                            let type_name = match type_node.kind() {
-                                "type_identifier" => node_text(&type_node, source),
-                                "qualified_type" => {
-                                    // `pkg.Foo` — take the last type_identifier
-                                    (0..type_node.named_child_count())
-                                        .filter_map(|j| type_node.named_child(j))
-                                        .filter(|c| c.kind() == "type_identifier")
-                                        .last()
-                                        .map(|c| node_text(&c, source))
-                                        .unwrap_or_default()
-                                }
-                                _ => node_text(&type_node, source),
-                            };
+                            let (type_name, module) =
+                                super::qualified_types::go_type_ref_target(&type_node, source)
+                                    .unwrap_or_else(|| (node_text(&type_node, source), None));
                             if !type_name.is_empty() && !is_go_builtin_type(&type_name) {
                                 refs.push(ExtractedRef {
                                     is_import_binding: false,
@@ -188,7 +178,7 @@ pub(super) fn extract_short_var_decl(
                                     kind: EdgeKind::TypeRef,
                                     line: rhs_node.start_position().row as u32,
                                     col: 0,
-                                    module: None,
+                                    module,
                                     chain: None,
                                     byte_offset: rhs_node.start_byte() as u32,
                                     namespace_segments: Vec::new(),
@@ -299,32 +289,29 @@ fn extract_const_var_decl_inner(
 
 /// `const_spec` / `var_spec` children:
 ///   identifier+ (names), [type], [= expression_list]
-/// Extract a clean type name from a var/const spec's type node. Strips
-/// pointer prefixes, peels generic instantiation, returns the final
-/// identifier for selector expressions, and emits the empty string for
-/// anonymous types so the caller skips the TypeRef entirely.
-fn extract_var_type_name(node: &Node, source: &str) -> String {
+/// Extract a clean `(target_name, module)` pair from a var/const spec's type
+/// node. Strips pointer prefixes, peels generic instantiation, splits a
+/// qualified type into its bare name and package qualifier, and returns
+/// `None` for anonymous types so the caller skips the TypeRef entirely.
+fn extract_var_type_name(node: &Node, source: &str) -> Option<(String, Option<String>)> {
     match node.kind() {
-        "type_identifier" => node_text(node, source),
-        "pointer_type" => pointer_type_name(node, source),
-        "qualified_type" => (0..node.named_child_count())
-            .filter_map(|i| node.named_child(i))
-            .filter(|c| c.kind() == "type_identifier")
-            .last()
-            .map(|c| node_text(&c, source))
-            .unwrap_or_default(),
-        "generic_type" => node
+        "type_identifier" | "qualified_type" | "pointer_type" => {
+            super::qualified_types::go_type_ref_target(node, source)
+        }
+        "generic_type" | "parenthesized_type" => node
             .named_child(0)
-            .map(|n| extract_var_type_name(&n, source))
-            .unwrap_or_default(),
-        "parenthesized_type" => node
-            .named_child(0)
-            .map(|n| extract_var_type_name(&n, source))
-            .unwrap_or_default(),
+            .and_then(|n| extract_var_type_name(&n, source)),
         // Anonymous types — no symbolic target to reference.
         "struct_type" | "slice_type" | "map_type" | "array_type" | "channel_type"
-        | "function_type" | "interface_type" => String::new(),
-        _ => node_text(node, source),
+        | "function_type" | "interface_type" => None,
+        _ => {
+            let text = node_text(node, source);
+            if text.is_empty() {
+                None
+            } else {
+                Some((text, None))
+            }
+        }
     }
 }
 
@@ -338,7 +325,7 @@ fn extract_const_var_spec(
     keyword: &str,
 ) {
     let mut names: Vec<(String, u32, u32)> = Vec::new();
-    let mut type_text: Option<String> = None;
+    let mut type_node: Option<Node> = None;
     let mut type_node_for_struct: Option<Node> = None;
     let mut past_names = false;
 
@@ -360,33 +347,40 @@ fn extract_const_var_spec(
                     child.start_position().column as u32,
                 ));
             }
-            _ if !past_names && type_text.is_none() && !names.is_empty() => {
+            _ if !past_names && type_node.is_none() && !names.is_empty() => {
                 // When the declared type is an anonymous struct (e.g.
                 // `var opts struct { Verbose bool }`), remember the node so we
                 // can extract its field_declaration children below.
                 if child.kind() == "struct_type" {
                     type_node_for_struct = Some(child);
                 }
-                type_text = Some(extract_var_type_name(&child, source));
+                type_node = Some(child);
                 past_names = true;
             }
             _ => {}
         }
     }
 
+    // The signature renders the type's raw source text (`*sql.DB`, faithful
+    // to what was written); the TypeRef below resolves against the bare name
+    // plus its package qualifier — the two serve different consumers and
+    // must not collapse to the same reduced string.
+    let sig_type_text = type_node.map(|n| node_text(&n, source));
+    let ref_target = type_node.and_then(|n| extract_var_type_name(&n, source));
+
     // Emit TypeRef for a declared type that references a user-defined symbol.
     // We do this once, not per-name, because all names share the same type.
-    if let Some(ref t) = type_text {
-        if !t.is_empty() && !is_go_builtin_type(t) {
+    if let Some((name, module)) = ref_target {
+        if !name.is_empty() && !is_go_builtin_type(&name) {
             refs.push(ExtractedRef {
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
-                target_name: t.clone(),
+                target_name: name,
                 kind: EdgeKind::TypeRef,
                 line: node.start_position().row as u32,
                 col: 0,
-                module: None,
+                module,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
                 namespace_segments: Vec::new(),
@@ -398,7 +392,7 @@ fn extract_const_var_spec(
     for (name, start_line, start_col) in names {
         let qualified_name = qualify(&name, qualified_prefix);
         let visibility = go_visibility(&name);
-        let sig = if let Some(ref t) = type_text {
+        let sig = if let Some(ref t) = sig_type_text {
             format!("{keyword} {name} {t}")
         } else {
             format!("{keyword} {name}")

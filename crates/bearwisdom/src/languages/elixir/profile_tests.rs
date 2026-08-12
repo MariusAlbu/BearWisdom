@@ -1,11 +1,25 @@
 use super::ELIXIR_PROFILE;
-use crate::type_checker::profile::language_profile::KindCompatibility;
+use crate::type_checker::profile::language_profile::{ImportModulePath, KindCompatibility};
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
 fn elixir_profile_identity() {
     assert_eq!(ELIXIR_PROFILE.id, "elixir");
     assert_eq!(ELIXIR_PROFILE.qname_separator, ".");
+}
+
+#[test]
+fn elixir_import_and_use_are_wildcards_via_module_field() {
+    // `import`/`use` bring a whole module's surface into bare-name scope;
+    // `directives.rs` marks only those two non-binding, so this flag widens
+    // exactly them. `module_path` must come from the ref's own `module` field
+    // (set to the directive's fully-qualified target) or the wildcard rung has
+    // no module to search under.
+    assert!(ELIXIR_PROFILE.namespace_imports_are_wildcards);
+    assert_eq!(
+        ELIXIR_PROFILE.import_module_path,
+        ImportModulePath::FromModuleField
+    );
 }
 
 #[test]

@@ -29,6 +29,7 @@ const GLEAM_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "gleam",
     qname_separator: ".",
     self_keywords: &[],

@@ -26,6 +26,17 @@ fn bicep_profile_strips_sys_az_namespace_aliases() {
 }
 
 #[test]
+fn bicep_declares_implicit_prelude_namespaces() {
+    // Bicep has no import statements — the bicep-runtime stub qualifies every
+    // ARM function under `bicep.builtins` and every decorator under
+    // `bicep.decorators`, both implicitly in scope for a bare call.
+    assert_eq!(
+        BICEP_PROFILE.implicit_prelude_namespaces,
+        &["bicep.builtins", "bicep.decorators"]
+    );
+}
+
+#[test]
 fn bicep_declares_list_wildcard_builtin() {
     // The `az` `list*` regex overload is expressed as a single anchored
     // wildcard folding onto the vendored `list` family base.

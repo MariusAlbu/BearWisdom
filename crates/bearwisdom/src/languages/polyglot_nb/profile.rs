@@ -4,6 +4,7 @@ use crate::type_checker::profile::language_profile::{
 
 pub const POLYGLOT_NB_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "polyglot_nb",
     qname_separator: ".",
     self_keywords: &[],

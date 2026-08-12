@@ -54,6 +54,7 @@ const C_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "c",
     qname_separator: "::",
     self_keywords: &["this"],

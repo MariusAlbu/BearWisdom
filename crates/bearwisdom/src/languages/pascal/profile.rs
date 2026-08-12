@@ -52,6 +52,7 @@ const PASCAL_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "pascal",
     qname_separator: ".",
     self_keywords: &["Self"],
@@ -79,7 +80,11 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `extract_uses` already sets `ExtractedRef::module` to the unit name on
+    // every `uses` entry, so `FromModuleField` reuses that instead of
+    // re-deriving a module path from `target_name`.
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
@@ -96,7 +101,12 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
         underscore_prefix: true,
     },
-    namespace_imports_are_wildcards: false,
+    // `uses SysUtils, Classes;` brings every public symbol of each named unit
+    // into unqualified scope, the same "plain namespace import" semantics as
+    // C#'s `using System;` — required for the FileStem wildcard rung above to
+    // ever see a wildcard entry (`build_file_context` only marks an `Imports`
+    // ref as wildcard when this is set; Pascal's `uses` never emits `*`).
+    namespace_imports_are_wildcards: true,
     delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,

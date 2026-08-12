@@ -6,6 +6,7 @@
 // =============================================================================
 
 pub mod chain_specs;
+pub mod default_profile;
 pub mod import_specs;
 pub mod language_profile;
 pub mod registry;

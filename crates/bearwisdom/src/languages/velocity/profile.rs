@@ -4,6 +4,7 @@ use crate::type_checker::profile::language_profile::{
 
 pub const VELOCITY_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "velocity",
     qname_separator: ".",
     self_keywords: &[],

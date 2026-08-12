@@ -37,6 +37,7 @@ pub mod demand_veto;
 pub mod ext_lang_visibility;
 pub mod extension_method;
 pub mod externals_demand;
+mod file_lookup;
 mod flush;
 pub mod generic_shadow;
 pub mod generics;

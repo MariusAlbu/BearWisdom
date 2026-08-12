@@ -6,6 +6,7 @@ use crate::type_checker::profile::language_profile::{
 
 pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "hcl",
     qname_separator: ".",
     // `var.X` / `local.X` carry a sigil head the bare-name probes strip so the

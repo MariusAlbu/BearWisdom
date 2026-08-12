@@ -2,8 +2,8 @@
 // engine/rules/implicit_prelude — compiler-implicit namespace imports
 //
 // Some languages make a fixed set of namespaces available without an explicit
-// import: Java `java.lang.*`, Kotlin's default-import set, Elixir `Kernel`,
-// R `base`.  The set is determined by language id via `implicit_prelude_namespaces`.
+// import. The set is `LanguageProfile::implicit_prelude_namespaces` — per-language
+// data, not code.
 //
 // Binds only to a DIRECT member of one of those namespaces — the candidate's
 // qname must be exactly `<ns><sep><target>`.  Nested types, methods, and
@@ -14,9 +14,6 @@
 // prelude namespace means the ref could name either one — stay unresolved rather
 // than guess.  Deduplication by qname is applied first so multiple rows for the
 // same logical symbol (declaration merging, multi-jar stdlib) count as one.
-//
-// `implicit_prelude_namespaces` is copied inline — it is the sole consumer in
-// this rule engine path.
 // =============================================================================
 
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
@@ -29,7 +26,7 @@ impl LookupRule for ImplicitPreludeRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let namespaces = implicit_prelude_namespaces(ctx.profile.id);
+        let namespaces = ctx.profile.implicit_prelude_namespaces;
         if namespaces.is_empty() {
             return LookupResult::Pass;
         }
@@ -70,28 +67,6 @@ impl LookupRule for ImplicitPreludeRule {
             Some(id) => LookupResult::Resolved(ctx.resolved(id, "implicit_prelude")),
             None => LookupResult::Pass,
         }
-    }
-}
-
-/// The namespaces a language's compiler makes available without an explicit
-/// import.  Returns an empty slice for languages with no implicit prelude.
-fn implicit_prelude_namespaces(language_id: &str) -> &'static [&'static str] {
-    match language_id {
-        "java" => &["java.lang"],
-        "kotlin" => &[
-            "kotlin",
-            "kotlin.collections",
-            "kotlin.text",
-            "kotlin.io",
-            "kotlin.ranges",
-            "kotlin.sequences",
-            "kotlin.annotation",
-            "kotlin.comparisons",
-            "kotlin.jvm",
-        ],
-        "elixir" => &["Kernel"],
-        "r" => &["base"],
-        _ => &[],
     }
 }
 

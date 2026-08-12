@@ -56,6 +56,7 @@ const ELIXIR_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &["Kernel"],
     id: "elixir",
     qname_separator: ".",
     self_keywords: &[],
@@ -83,7 +84,11 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+    // `directives.rs` sets the `module` field on every alias/import/use/require
+    // ref to the directive's fully-qualified target, so the wildcard rung can
+    // search under the right module path instead of losing it.
+    import_module_path:
+        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
     module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
     module_anchor_terminal: false,
     relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
@@ -91,7 +96,11 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
     wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
+    // `import M` brings M's whole public surface into bare-name scope; `use M`
+    // is approximated the same way. `directives.rs` marks both non-binding
+    // (wildcard-eligible) and marks `alias`/`require` binding-only, so those
+    // two stay excluded here via `entry_is_wildcard`'s `!is_import_binding` gate.
+    namespace_imports_are_wildcards: true,
     delegate_wrappers: &[],
     ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
     head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,

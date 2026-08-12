@@ -1936,6 +1936,49 @@ fn foreign_language_ext_value_is_dropped_from_by_name() {
     assert_eq!(kept.len(), 1, "the same value stays visible to a python receiver");
 }
 
+/// A demand-pulled file of a language NO active ecosystem serves must still be
+/// rejected by a constrained receiver: its language is interned at record time
+/// rather than staying unrecorded, so it cannot slip through `blocked`'s
+/// unknown-language pass.
+#[test]
+fn ecosystem_less_ext_language_is_dropped_for_constrained_receiver() {
+    let arena = Arc::new(TypeArena::new());
+    let ty = arena.class("Option");
+    let (pf, id_map) = ext_value_fixture(
+        "ext:idx:C:/rustup/toolchains/stable/lib/core/src/option.rs",
+        "rust",
+        "Some",
+        ty,
+    );
+    // nuget serves csharp/fsharp/vbnet; nothing in the active set serves rust.
+    let tree = build_with_active(
+        vec![EcosystemId::new("nuget")],
+        &[pf],
+        &id_map,
+        Arc::clone(&arena),
+    );
+
+    let fsharp_allowed = tree.ext_lang_allowed("fsharp");
+    assert!(
+        fsharp_allowed.is_some(),
+        "nuget is active — fsharp must carry a visibility set"
+    );
+    let filtered = tree.filter_ext_langs(tree.by_name("Some"), fsharp_allowed);
+    assert!(
+        filtered.is_empty(),
+        "a rust ext value must not serve an fsharp receiver's bare-name probe"
+    );
+
+    // The same composition FileLookup's qualified delegates use: a colliding
+    // QNAME from the foreign external is filtered identically — a dotted
+    // source-text target is not cross-language evidence.
+    let by_qname = tree.filter_ext_langs(tree.all_by_qualified_name("Some"), fsharp_allowed);
+    assert!(
+        by_qname.is_empty(),
+        "a rust ext value must not serve an fsharp receiver's qualified probe either"
+    );
+}
+
 #[test]
 fn co_declared_ecosystem_languages_cross_resolve() {
     let arena = Arc::new(TypeArena::new());

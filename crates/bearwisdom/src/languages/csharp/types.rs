@@ -29,6 +29,30 @@ pub(super) fn simple_type_name(node: Node, src: &[u8]) -> String {
     node_text(node, src)
 }
 
+/// Declared type of the context enclosing a target-typed `new()` expression
+/// (`implicit_object_creation_expression`). C# resolves the type from the
+/// syntax that owns the expression: a local/field variable declaration, a
+/// property declaration, or a parameter default value — the only three
+/// ancestor shapes that carry a `type` field reachable without a symbol
+/// lookup. `return new()`, an argument, and a member-initializer assignment
+/// have no such field, so those contexts yield `None`.
+pub(super) fn declared_type_for_target_typed_new(node: Node, src: &[u8]) -> Option<String> {
+    let parent = node.parent()?;
+    let type_node = match parent.kind() {
+        "variable_declarator" => {
+            let decl = parent.parent()?;
+            if decl.kind() != "variable_declaration" {
+                return None;
+            }
+            decl.child_by_field_name("type")?
+        }
+        "property_declaration" | "parameter" => parent.child_by_field_name("type")?,
+        _ => return None,
+    };
+    let name = simple_type_name(type_node, src);
+    (!name.is_empty() && name != "var").then_some(name)
+}
+
 pub(super) fn extract_base_types(
     node: &Node,
     src: &[u8],

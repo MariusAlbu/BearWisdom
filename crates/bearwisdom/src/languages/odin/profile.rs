@@ -29,6 +29,7 @@ const ODIN_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const ODIN_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "odin",
     qname_separator: ".",
     self_keywords: &[],

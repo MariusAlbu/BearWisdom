@@ -146,49 +146,25 @@ fn dispatch_ref_node(
             extract_refs_from_body(&child, source, source_symbol_index, refs);
         }
 
-        // `pkg.Type` in a type position — emit a TypeRef for the leaf name.
-        // Emit it twice: once to satisfy the `qualified_type` budget entry,
-        // and once to satisfy the inner `type_identifier` budget entry.
-        // Both nodes are on the same line so the coverage system needs 2
-        // separate TypeRef edges at that line to credit both ref_node_kinds.
+        // `pkg.Type` in a type position — emit a TypeRef for the bare member
+        // name, with the package qualifier carried on `module` so the resolve
+        // engine's module-qualified rungs can bind it.
         "qualified_type" => {
-            let leaf = (0..child.named_child_count())
-                .filter_map(|i| child.named_child(i))
-                .filter(|c| c.kind() == "type_identifier")
-                .last();
-            if let Some(n) = leaf {
-                let name = node_text(&n, source);
+            if let Some((name, module)) =
+                super::qualified_types::go_type_ref_target(&child, source)
+            {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
-                    let type_ref_line = n.start_position().row as u32;
-                    let type_ref_byte = n.start_byte() as u32;
-                    // First TypeRef — consumed by the `qualified_type` budget.
-                    refs.push(ExtractedRef {
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: name.clone(),
-                        kind: EdgeKind::TypeRef,
-                        line: type_ref_line,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: type_ref_byte,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                    });
-                    // Second TypeRef at the same line — consumed by the
-                    // `type_identifier` budget inside the qualified_type.
                     refs.push(ExtractedRef {
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
                         target_name: name,
                         kind: EdgeKind::TypeRef,
-                        line: type_ref_line,
+                        line: child.start_position().row as u32,
                         col: 0,
-                        module: None,
+                        module,
                         chain: None,
-                        byte_offset: type_ref_byte,
+                        byte_offset: child.start_byte() as u32,
                         namespace_segments: Vec::new(),
                         call_args: Vec::new(),
                     });
@@ -225,22 +201,25 @@ fn dispatch_ref_node(
         // Also recurse into the operand expression for nested calls.
         "type_conversion_expression" => {
             if let Some(type_node) = child.child_by_field_name("type") {
-                let type_name = super::helpers::extract_go_type_name(&type_node, source);
-                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
-                    refs.push(ExtractedRef {
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: type_name,
-                        kind: EdgeKind::TypeRef,
-                        line: type_node.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: type_node.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                    });
+                if let Some((type_name, module)) =
+                    super::qualified_types::go_type_ref_target(&type_node, source)
+                {
+                    if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                        refs.push(ExtractedRef {
+                            is_import_binding: false,
+                            is_reexport: false,
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: type_node.start_position().row as u32,
+                            col: 0,
+                            module,
+                            chain: None,
+                            byte_offset: type_node.start_byte() as u32,
+                            namespace_segments: Vec::new(),
+                            call_args: Vec::new(),
+                        });
+                    }
                 }
             }
             extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -277,22 +256,25 @@ fn dispatch_ref_node(
 
         // `[N]Foo` — array type used as a value expression (e.g. in composite literals).
         "array_type" => {
-            let type_name = super::helpers::extract_go_type_name(&child, source);
-            if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
-                refs.push(ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index,
-                    target_name: type_name,
-                    kind: EdgeKind::TypeRef,
-                    line: child.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: child.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
+            if let Some((type_name, module)) =
+                super::qualified_types::go_type_ref_target(&child, source)
+            {
+                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
             }
             extract_refs_from_body(&child, source, source_symbol_index, refs);
         }
@@ -306,22 +288,25 @@ fn dispatch_ref_node(
 
         // `List[int]` — generic type (Go 1.18+).
         "generic_type" => {
-            let type_name = super::helpers::extract_go_type_name(&child, source);
-            if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
-                refs.push(ExtractedRef {
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index,
-                    target_name: type_name,
-                    kind: EdgeKind::TypeRef,
-                    line: child.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: child.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
+            if let Some((type_name, module)) =
+                super::qualified_types::go_type_ref_target(&child, source)
+            {
+                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                    refs.push(ExtractedRef {
+                        is_import_binding: false,
+                        is_reexport: false,
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        col: 0,
+                        module,
+                        chain: None,
+                        byte_offset: child.start_byte() as u32,
+                        namespace_segments: Vec::new(),
+                        call_args: Vec::new(),
+                    });
+                }
             }
             // Also recurse into type arguments for their contained type refs.
             extract_refs_from_body(&child, source, source_symbol_index, refs);

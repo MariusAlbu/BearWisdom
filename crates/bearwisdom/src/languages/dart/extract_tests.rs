@@ -93,18 +93,6 @@ class Config {
 }
 
 #[test]
-fn import_directive_produces_import_ref() {
-    let src = "import 'dart:core';\nimport 'package:flutter/material.dart';\n";
-    let r = extract::extract(src);
-    let imports: Vec<_> = r
-        .refs
-        .iter()
-        .filter(|r| r.kind == EdgeKind::Imports)
-        .collect();
-    assert!(!imports.is_empty(), "expected import refs");
-}
-
-#[test]
 fn library_prefix_dropped_across_usage_kinds() {
     // Generated drift code: `import '...' as i0;` then `i0.X` in type,
     // field, inheritance, and instantiation positions. The bare prefix

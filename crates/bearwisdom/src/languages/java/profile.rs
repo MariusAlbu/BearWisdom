@@ -49,6 +49,7 @@ const JAVA_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &["java.lang"],
     id: "java",
     qname_separator: ".",
     self_keywords: &["this", "super"],

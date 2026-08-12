@@ -23,8 +23,9 @@ use crate::indexer::resolve::engine::contract::{Symbol, SymbolSet};
 /// project context was snapshot, which disables the check entirely.
 #[derive(Default)]
 pub(crate) struct ExtLangVisibility {
-    /// Language name → code. Only languages served by an active ecosystem get
-    /// one; everything else stays un-coded and therefore unfiltered.
+    /// Language name → code. Seeded from active-ecosystem language sets at
+    /// snapshot; recording an external file interns its language on demand so
+    /// candidate-side checks recognize ecosystem-less languages too.
     codes: FxHashMap<String, u16>,
     /// Receiver-language code → the candidate-language codes it may bind.
     visible: FxHashMap<u16, FxHashSet<u16>>,
@@ -57,12 +58,17 @@ impl ExtLangVisibility {
         out
     }
 
-    /// Record an external file's parse language. A language with no code stays
-    /// unrecorded, so its symbols are never filtered.
+    /// Record an external file's parse language. The language is interned on
+    /// first sight even when no active ecosystem declares it: a CONSTRAINED
+    /// receiver must be able to reject a candidate whose language is known and
+    /// outside its visible set, or every ecosystem-less external language
+    /// (a demand-pulled toolchain source, a stray vendored tree) leaks through
+    /// the unknown-language pass in `blocked`. Receiver-side semantics are
+    /// unchanged — `visible` entries come only from active ecosystems, so a
+    /// language interned here gains no binding constraint of its own.
     pub(crate) fn record_file(&mut self, path: &Arc<str>, language: &str) {
-        if let Some(&code) = self.codes.get(language) {
-            self.file_lang.entry(Arc::clone(path)).or_insert(code);
-        }
+        let code = self.intern(language);
+        self.file_lang.entry(Arc::clone(path)).or_insert(code);
     }
 
     /// `record_file` for a path not yet interned as an `Arc<str>` — the DB
@@ -71,9 +77,20 @@ impl ExtLangVisibility {
         if self.file_lang.contains_key(path) {
             return;
         }
+        let code = self.intern(language);
+        self.file_lang.insert(Arc::from(path), code);
+    }
+
+    /// Code for `language`, assigning the next free one on first sight.
+    /// Code values are process-local and never persisted; `blocked`/`co_bound`
+    /// outcomes depend only on set membership, not on assignment order.
+    fn intern(&mut self, language: &str) -> u16 {
         if let Some(&code) = self.codes.get(language) {
-            self.file_lang.insert(Arc::from(path), code);
+            return code;
         }
+        let code = self.codes.len() as u16;
+        self.codes.insert(language.to_string(), code);
+        code
     }
 
     /// The codes a file of `lang` may bind, or `None` when `lang` carries no

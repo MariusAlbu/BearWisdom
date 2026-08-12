@@ -36,6 +36,13 @@ const BICEP_KIND_TABLE: KindTable = &[
 
 pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    // The `bicep-runtime` ecosystem stub (ext:bicep-runtime:namespace.bicep)
+    // qualifies every ARM function under `bicep.builtins` and every decorator
+    // under `bicep.decorators`. Bicep has no import statements — both sets
+    // are implicitly in scope for every file — so a bare `uniqueString(...)`
+    // or `@description(...)` binds as a direct member of one of these two
+    // namespaces via `ImplicitPreludeRule`.
+    implicit_prelude_namespaces: &["bicep.builtins", "bicep.decorators"],
     id: "bicep",
     qname_separator: ".",
     self_keywords: &[],

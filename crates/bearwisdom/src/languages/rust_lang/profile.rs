@@ -99,6 +99,7 @@ const RUST_PRIMITIVES: &[(&str, PrimKind)] = &[
 /// Rust profile.
 pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &[],
     id: "rust",
     // Rust's source separator is `::`. The symbol-index qname join is the
     // universal `.` (`helpers::qualify` builds `Bar.foo`), so the scope /

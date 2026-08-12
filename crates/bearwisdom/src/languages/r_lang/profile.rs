@@ -52,6 +52,7 @@ const R_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const R_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
+    implicit_prelude_namespaces: &["base"],
     id: "r",
     qname_separator: "::",
     self_keywords: &[],

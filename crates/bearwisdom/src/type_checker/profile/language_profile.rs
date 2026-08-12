@@ -5,8 +5,7 @@
 //
 // All 17 axes (11 engine-side, 5 extractor-side, 1 hybrid). Profile data is
 // 'static — every concrete profile is a `static const` value referenced by
-// the registry. DEFAULT_PROFILE is the conservative fallback applied to
-// languages with no bespoke profile yet.
+// the registry. The conservative fallback lives in `default_profile.rs`.
 // =============================================================================
 
 use crate::types::{EdgeKind, SymbolKind, Visibility};
@@ -14,6 +13,7 @@ use crate::types::{EdgeKind, SymbolKind, Visibility};
 use super::super::core::types::PrimKind;
 
 pub use super::chain_specs::*;
+pub use super::default_profile::DEFAULT_PROFILE;
 pub use super::import_specs::*;
 pub use super::syntax_specs::*;
 
@@ -252,6 +252,15 @@ pub struct LanguageProfile {
     /// member on the root's own declaration, and the extension-method receiver
     /// climb appends these names. Empty disables both probes.
     pub implicit_root_types: &'static [&'static str],
+    /// Namespaces the compiler brings into scope without an explicit import.
+    /// `ImplicitPreludeRule` binds a bare target that is a DIRECT member of one
+    /// of these namespaces (an extra `qname_separator` segment beyond the
+    /// namespace is a nested type/method and stays excluded — the compiler
+    /// demands an explicit import to reach it). Two candidates under different
+    /// listed namespaces both matching the same bare name is treated as
+    /// ambiguous and declined rather than guessed. `&[]` (the default) leaves
+    /// the rule inert for a language with no compiler-implicit namespace.
+    pub implicit_prelude_namespaces: &'static [&'static str],
     /// How the import-scoped external bind (`resolve_via_external_by_import`)
     /// matches an external candidate's file against the file's imports.
     /// `PkgSegment` (the default) keys on the `ext:<lang>:<pkg>` package segment
@@ -454,79 +463,6 @@ pub struct LanguageProfile {
     pub doc_comment_kinds: &'static [&'static str],
     pub visibility_keywords: &'static [(&'static str, Visibility)],
 }
-
-// ---------------------------------------------------------------------------
-// Default profile
-// ---------------------------------------------------------------------------
-
-/// Conservative defaults applied to languages without a bespoke profile.
-/// Every value is the safe fallback per doc 3's per-axis "Default" entry.
-pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
-    implicit_root_types: &[],
-    id: "default",
-    qname_separator: ".",
-    self_keywords: &[],
-    supertype_discovery: SupertypeDiscovery::Explicit,
-    ancestor_order: AncestorOrder::Bfs,
-    members_can_be_external: false,
-    dispatch_axis: DispatchAxis::Receiver,
-    has_generics: false,
-    has_sum_types: false,
-    look_through_optional: true,
-    literal_narrowing: false,
-    async_wrappers: &[],
-    container_accessors: &[],
-    single_inner_wrappers: &[],
-    container_deref_targets: &[],
-    function_prototype_types: &[],
-    deref_wrapper: None,
-    iterator_method: None,
-    primitive_mapping: &[],
-    kind_compatible_table: PERMISSIVE_KIND_TABLE,
-    chain_qualification: ChainQualification::None,
-    builtin_skip: None,
-    namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
-    module_skip: None,
-    ambient_namespace_prefixes: &[],
-    wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path: ImportModulePath::None,
-    module_anchor: ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: RelativeMarker::None,
-    external_by_import: None,
-    name_normalization: NameNormalization::None,
-    module_scope: ModuleScope::Off,
-    wildcard_match: WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
-    delegate_wrappers: &[],
-    ext_match: ExtMatch::PkgSegment,
-    head_alias: HeadAliasBind::Off,
-    file_scoped_imports: FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites: ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
-    overload_pick_all: false,
-    argument_dependent_lookup: false,
-    associated_type_projection: false,
-    blanket_impl_resolution: false,
-    ambient_globals: AmbientGlobals::Off,
-    namespaceless_global_type_lookup: NamespaceScope::Off,
-    explicit_member_import: false,
-    self_receiver_discovery: SelfReceiverDiscovery::ScopePathThenDefault,
-    selector_resolution: None,
-    multi_candidate_ranking: false,
-    scope_functions: &[],
-    constructor_patterns: &[ConstructorPattern::CallableClass],
-    class_builder_specs: &[],
-    decorator_syntax: None,
-    doc_comment_kinds: &[],
-    visibility_keywords: &[],
-};
 
 #[cfg(test)]
 #[path = "language_profile_tests.rs"]
