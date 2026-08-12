@@ -1352,11 +1352,6 @@
       }
     },
     {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/cmake-superbuild",
-      "project": "cmake-superbuild"
-    },
-    {
       "assertions": {
         "min_resolution_rate": 33
       },
@@ -4196,11 +4191,6 @@
       }
     },
     {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/go-gitea",
-      "project": "go-gitea"
-    },
-    {
       "assertions": {
         "min_resolution_rate": 50
       },
@@ -4309,11 +4299,6 @@
         "html.imports": 1
       },
       "vendored_files_reclassified": 39
-    },
-    {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/grandnode",
-      "project": "grandnode"
     },
     {
       "assertions": {
@@ -10033,11 +10018,6 @@
       "vendored_files_reclassified": 6
     },
     {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/python-posthog",
-      "project": "python-posthog"
-    },
-    {
       "assertions": {
         "min_resolution_rate": 53
       },
@@ -10786,11 +10766,6 @@
       }
     },
     {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/ruby-discourse",
-      "project": "ruby-discourse"
-    },
-    {
       "assertions": {
         "min_resolution_rate": 16
       },
@@ -11343,11 +11318,6 @@
       }
     },
     {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/scala-lila",
-      "project": "scala-lila"
-    },
-    {
       "assertions": {
         "min_resolution_rate": 75
       },
@@ -11729,11 +11699,6 @@
         "slim.calls": 46,
         "slim.type_ref": 3
       }
-    },
-    {
-      "assertions": {},
-      "path": "F:/Work/Projects/TestProjects/Smartstore",
-      "project": "Smartstore"
     },
     {
       "assertions": {
